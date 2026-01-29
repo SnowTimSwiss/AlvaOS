@@ -221,6 +221,7 @@ log "Installing AlvaOS components..."
 mkdir -p /mnt/opt/alvaos/bin
 mkdir -p /mnt/opt/alvaos/webui
 mkdir -p /mnt/etc/alvaos
+mkdir -p /mnt/var/lib/alvaos
 mkdir -p /mnt/var/log/alvaos
 
 # Copy backend
