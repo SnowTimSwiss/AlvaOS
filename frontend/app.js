@@ -2,6 +2,15 @@
 const API_BASE = '/api/v1';
 let updateInterval;
 
+// Update Clock
+function updateClock() {
+    const clockElement = document.getElementById('clock');
+    if (!clockElement) return;
+
+    const now = new Date();
+    clockElement.textContent = now.toLocaleTimeString();
+}
+
 // Fetch system information
 async function fetchSystemInfo() {
     try {
@@ -15,7 +24,11 @@ async function fetchSystemInfo() {
         updateDashboard(data);
     } catch (error) {
         console.error('Error fetching system info:', error);
-        showError('Failed to fetch system information. Please check if the backend is running.');
+        showError('System connection interrupted. Check backend status.');
+
+        // Update status dot to critical
+        const dot = document.querySelector('.status-dot');
+        if (dot) dot.className = 'status-dot critical';
     }
 }
 
@@ -38,6 +51,8 @@ function updateDashboard(data) {
         `${data.memory.used_gb} GB`;
     document.getElementById('mem-available').textContent =
         `${data.memory.available_gb} GB`;
+    document.getElementById('mem-usage-percent').textContent =
+        `${data.memory.percent.toFixed(1)}%`;
     document.getElementById('mem-progress').style.width =
         `${data.memory.percent}%`;
 
@@ -48,6 +63,8 @@ function updateDashboard(data) {
         `${data.disk.used_gb} GB`;
     document.getElementById('disk-free').textContent =
         `${data.disk.free_gb} GB`;
+    document.getElementById('disk-usage-percent').textContent =
+        `${data.disk.percent.toFixed(1)}%`;
     document.getElementById('disk-progress').style.width =
         `${data.disk.percent}%`;
 
@@ -57,15 +74,19 @@ function updateDashboard(data) {
     document.getElementById('os-version').textContent =
         `${data.system.os} ${data.system.os_version}`;
     document.getElementById('uptime').textContent =
-        `${data.system.uptime_hours} hours`;
+        `${data.system.uptime_hours.toFixed(1)} hours`;
 
     // Update timestamp
     const now = new Date();
     document.getElementById('last-update').textContent =
         now.toLocaleTimeString();
 
+    // Reset status dot
+    const dot = document.querySelector('.status-dot');
+    if (dot) dot.className = 'status-dot online';
+
     // Remove error if present
-    const errorDiv = document.querySelector('.error');
+    const errorDiv = document.querySelector('.error-banner');
     if (errorDiv) {
         errorDiv.remove();
     }
@@ -73,20 +94,24 @@ function updateDashboard(data) {
 
 // Show error message
 function showError(message) {
-    const existing = document.querySelector('.error');
+    const existing = document.querySelector('.error-banner');
     if (existing) return;
 
     const errorDiv = document.createElement('div');
-    errorDiv.className = 'error';
+    errorDiv.className = 'error-banner';
+    errorDiv.style.cssText = 'background: #f85149; color: white; padding: 10px; text-align: center; font-size: 0.875rem;';
     errorDiv.textContent = message;
 
-    const container = document.querySelector('.container');
-    container.insertBefore(errorDiv, container.firstChild);
+    document.body.prepend(errorDiv);
 }
 
 // Initialize dashboard
 function init() {
     console.log('AlvaOS Dashboard initializing...');
+
+    // Start clock
+    updateClock();
+    setInterval(updateClock, 1000);
 
     // Initial fetch
     fetchSystemInfo();
@@ -94,7 +119,7 @@ function init() {
     // Update every 5 seconds
     updateInterval = setInterval(fetchSystemInfo, 5000);
 
-    console.log('Dashboard initialized. Updating every 5 seconds.');
+    console.log('Dashboard initialized.');
 }
 
 // Cleanup on page unload
