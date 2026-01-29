@@ -139,6 +139,13 @@ FSTAB_EOF
 
 # Install kernel and essential packages
 log "Installing kernel and packages..."
+
+# Mount virtual filesystems for chroot
+mount --bind /dev /mnt/dev
+mount --bind /dev/pts /mnt/dev/pts
+mount -t proc proc /mnt/proc
+mount -t sysfs sysfs /mnt/sys
+
 chroot /mnt apt-get update
 chroot /mnt apt-get install -y \
     linux-image-amd64 \
@@ -222,6 +229,10 @@ chroot /mnt apt-get clean
 
 # Unmount
 log "Unmounting filesystems..."
+umount /mnt/sys || true
+umount /mnt/proc || true
+umount /mnt/dev/pts || true
+umount /mnt/dev || true
 umount /mnt/boot/efi
 umount /mnt
 

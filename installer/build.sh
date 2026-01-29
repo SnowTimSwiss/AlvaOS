@@ -25,6 +25,16 @@ error() {
     exit 1
 }
 
+# Cleanup function to ensure virtual filesystems are unmounted
+cleanup() {
+    log "Cleaning up..."
+    umount "${ROOTFS_DIR}/sys" 2>/dev/null || true
+    umount "${ROOTFS_DIR}/proc" 2>/dev/null || true
+    umount "${ROOTFS_DIR}/dev/pts" 2>/dev/null || true
+    umount "${ROOTFS_DIR}/dev" 2>/dev/null || true
+}
+trap cleanup EXIT
+
 warn() {
     echo -e "${YELLOW}[WARN]${NC} $1"
 }
@@ -137,9 +147,31 @@ To install AlvaOS, run:
 For help, visit: https://github.com/SnowTimSwiss/AlvaOS
 EOF
 
-# Regenerate initramfs with live-boot support
+# Mount virtual filesystems for chroot operations (required for initramfs generation)
+log "Mounting virtual filesystems in chroot..."
+mkdir -p "${ROOTFS_DIR}/dev/pts"
+mount --bind /dev "${ROOTFS_DIR}/dev"
+mount --bind /dev/pts "${ROOTFS_DIR}/dev/pts"
+mount -t proc proc "${ROOTFS_DIR}/proc"
+mount -t sysfs sysfs "${ROOTFS_DIR}/sys"
+
+# Create live-boot configuration
+log "Configuring live-boot..."
+mkdir -p "${ROOTFS_DIR}/etc/live/boot.conf.d"
+cat > "${ROOTFS_DIR}/etc/live/boot.conf.d/alvaos.conf" << 'EOF'
+LIVE_MEDIA_PATH=/live
+EOF
+
+# Regenerate initramfs with live-boot support (clean rebuild)
 log "Regenerating initramfs with live-boot support..."
-chroot "${ROOTFS_DIR}" update-initramfs -u
+chroot "${ROOTFS_DIR}" update-initramfs -c -k all
+
+# Unmount virtual filesystems before creating squashfs
+log "Unmounting virtual filesystems..."
+umount "${ROOTFS_DIR}/sys" || true
+umount "${ROOTFS_DIR}/proc" || true
+umount "${ROOTFS_DIR}/dev/pts" || true
+umount "${ROOTFS_DIR}/dev" || true
 
 # Create squashfs filesystem
 log "Creating squashfs filesystem..."
