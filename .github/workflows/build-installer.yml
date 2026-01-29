@@ -35,7 +35,7 @@ jobs:
             git \
             live-build \
             syslinux-utils \
-            squashfs-tools \ \
+            squashfs-tools \
             apt-file
       
       - name: Build installer image
