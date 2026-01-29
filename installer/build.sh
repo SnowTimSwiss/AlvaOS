@@ -51,6 +51,8 @@ lb config \
     --archive-areas "main contrib non-free non-free-firmware" \
     --architectures amd64 \
     --linux-flavours amd64 \
+    --linux-packages "linux-image-amd64" \
+    --debian-installer false \
     --source false \
     --binary-images iso-hybrid \
     --bootappend-live "boot=live components hostname=alvaos-installer console=ttyS0,115200n8 console=tty0 locales=en_US.UTF-8 keyboard-layouts=us quiet nosplash nomodeset" \
