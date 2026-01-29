@@ -49,7 +49,7 @@ log "Creating minimal Debian rootfs with debootstrap..."
 debootstrap \
     --arch=amd64 \
     --variant=minbase \
-    --include=linux-image-amd64,grub-efi-amd64,grub-pc,systemd,udev,iproute2,iputils-ping,curl,vim-tiny,openssh-server,parted,dosfstools,e2fsprogs \
+    --include=linux-image-amd64,live-boot,live-boot-initramfs-tools,grub-efi-amd64,grub-pc,systemd,udev,iproute2,iputils-ping,curl,vim-tiny,openssh-server,parted,dosfstools,e2fsprogs \
     bookworm \
     "${ROOTFS_DIR}" \
     http://deb.debian.org/debian
@@ -137,6 +137,10 @@ To install AlvaOS, run:
 For help, visit: https://github.com/SnowTimSwiss/AlvaOS
 EOF
 
+# Regenerate initramfs with live-boot support
+log "Regenerating initramfs with live-boot support..."
+chroot "${ROOTFS_DIR}" update-initramfs -u
+
 # Create squashfs filesystem
 log "Creating squashfs filesystem..."
 mksquashfs "${ROOTFS_DIR}" "${BUILD_DIR}/filesystem.squashfs" \
@@ -159,12 +163,12 @@ set timeout=5
 set default=0
 
 menuentry "AlvaOS Installer" {
-    linux /live/vmlinuz boot=live quiet splash
+    linux /live/vmlinuz boot=live quiet splash nomodeset
     initrd /live/initrd
 }
 
 menuentry "AlvaOS Installer (safe mode)" {
-    linux /live/vmlinuz boot=live single
+    linux /live/vmlinuz boot=live single nomodeset
     initrd /live/initrd
 }
 EOF
