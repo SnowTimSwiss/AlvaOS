@@ -8,6 +8,7 @@ on:
 jobs:
   build-installer:
     runs-on: ubuntu-latest
+    container: debian:bookworm
     permissions:
       contents: write
     
@@ -28,11 +29,13 @@ jobs:
       
       - name: Install build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          apt-get update
+          apt-get install -y \
+            sudo \
+            git \
             live-build \
             syslinux-utils \
-            squashfs-tools \
+            squashfs-tools \ \
             apt-file
       
       - name: Build installer image
