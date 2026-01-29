@@ -155,6 +155,19 @@ mount --bind /dev/pts "${ROOTFS_DIR}/dev/pts"
 mount -t proc proc "${ROOTFS_DIR}/proc"
 mount -t sysfs sysfs "${ROOTFS_DIR}/sys"
 
+# Configure network (DNS) for apt inside chroot
+cp /etc/resolv.conf "${ROOTFS_DIR}/etc/resolv.conf"
+
+# Explicitly install live-boot and dependencies inside chroot to ensure hooks are present
+log "Installing live-boot components inside chroot..."
+chroot "${ROOTFS_DIR}" apt-get update
+chroot "${ROOTFS_DIR}" apt-get install -y --no-install-recommends \
+    live-boot \
+    live-config \
+    initramfs-tools \
+    busybox \
+    file
+
 # Create live-boot configuration
 log "Configuring live-boot..."
 mkdir -p "${ROOTFS_DIR}/etc/live/boot.conf.d"
@@ -172,6 +185,9 @@ umount "${ROOTFS_DIR}/sys" || true
 umount "${ROOTFS_DIR}/proc" || true
 umount "${ROOTFS_DIR}/dev/pts" || true
 umount "${ROOTFS_DIR}/dev" || true
+rm -f "${ROOTFS_DIR}/etc/resolv.conf" # Cleanup DNS config
+
+
 
 # Create squashfs filesystem
 log "Creating squashfs filesystem..."
