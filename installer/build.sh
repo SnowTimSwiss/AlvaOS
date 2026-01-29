@@ -40,6 +40,9 @@ cd "${BUILD_DIR}"
 log "Initializing live-build configuration..."
 lb config \
     --distribution bookworm \
+    --mode debian \
+    --system false \
+    --keyring-packages debian-archive-keyring \
     --debian-installer live \
     --mirror-bootstrap "http://deb.debian.org/debian/" \
     --mirror-chroot "http://deb.debian.org/debian/" \
