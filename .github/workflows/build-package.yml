@@ -2,12 +2,14 @@ name: Build and Release AlvaOS Package
 
 on:
   release:
-    types: [created, published]
+    types: [published]
   workflow_dispatch:
 
 jobs:
   build-package:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     
     steps:
       - name: Checkout repository

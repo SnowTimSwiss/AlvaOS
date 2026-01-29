@@ -2,12 +2,14 @@ name: Build AlvaOS Installer
 
 on:
   release:
-    types: [created, published]
+    types: [published]
   workflow_dispatch:
 
 jobs:
   build-installer:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     
     steps:
       - name: Checkout repository
@@ -49,7 +51,8 @@ jobs:
       - name: Generate checksums
         run: |
           cd installer/build
-          sha256sum alvaos-installer-*.iso > checksums.txt
+          sudo sha256sum alvaos-installer-*.iso > checksums.txt
+          sudo chown $USER:$USER checksums.txt
           cat checksums.txt
       
       - name: Upload installer artifact (for non-release builds)
