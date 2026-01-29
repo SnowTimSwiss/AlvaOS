@@ -48,8 +48,6 @@ lb config \
     --mirror-chroot "http://deb.debian.org/debian/" \
     --mirror-binary "http://deb.debian.org/debian/" \
     --security false \
-    --updates false \
-    --backports false \
     --archive-areas "main non-free-firmware" \
     --architectures amd64 \
     --linux-flavours amd64 \
