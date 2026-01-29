@@ -8,7 +8,9 @@ on:
 jobs:
   build-installer:
     runs-on: ubuntu-latest
-    container: debian:bookworm
+    container: 
+      image: debian:bookworm
+      options: --privileged
     permissions:
       contents: write
     
