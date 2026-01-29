@@ -47,12 +47,12 @@ lb config \
     --mirror-bootstrap "http://deb.debian.org/debian" \
     --mirror-chroot "http://deb.debian.org/debian" \
     --mirror-binary "http://deb.debian.org/debian" \
-    --apt-indices false \
-    --security false \
+    --apt-indices true \
+    --security true \
     --archive-areas "main contrib non-free non-free-firmware" \
     --architectures amd64 \
-    --linux-flavours amd64 \
-    --linux-packages linux-image \
+    --linux-flavours none \
+    --linux-packages none \
     --source false \
     --binary-images iso-hybrid \
     --bootappend-live "boot=live components hostname=alvaos-installer console=ttyS0,115200n8 console=tty0 locales=en_US.UTF-8 keyboard-layouts=us quiet nosplash nomodeset" \
