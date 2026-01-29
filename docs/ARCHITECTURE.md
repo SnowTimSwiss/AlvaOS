@@ -1,15 +1,13 @@
 # AlvaOS Architecture
 
-This document describes the complete architecture of AlvaOS.
+Conservative, proven technology designed for stability and self-hosted, unattended operation.
 
 ## Design Principles
-
-1. **Stability over features** - Conservative, proven technology
-2. **Simple workflows over flexibility** - Opinionated but intuitive
-3. **No cloud dependency** - Fully self-hosted
-4. **Designed for years of unattended operation** - Ultra-reliable
-5. **API-first** - UI never executes system commands directly
-6. **Modular design** - Clear separation of concerns
+- **Stability first**: Proven, conservative tech.
+- **Opinionated UX**: Simple, intuitive workflows over complex flexibility.
+- **Self-hosted**: No cloud dependencies or telemetry.
+- **Reliable**: Designed for years of unattended operation.
+- **API-first**: Decoupled UI and system logic.
 
 ## System Layers
 
@@ -42,174 +40,28 @@ This document describes the complete architecture of AlvaOS.
 
 ## Core Components
 
-### 1. Base OS
+### 1. Base OS (Debian Stable)
+Minimal headless install using `systemd`. Deployed via custom debootstrap-based installer for deterministic builds.
 
-**Technology:** Debian Stable (minimal install)
+### 2. Storage (Btrfs)
+Features storage pools (easy disk expansion), snapshots, background rebalancing, and self-healing (checksums). Managed via Web UI with health dashboards.
 
-**Characteristics:**
-- No desktop environment
-- systemd for service management
-- Minimal package footprint
-- No rolling releases (Debian Stable only)
-- Conservative defaults
-
-**Installed via:**
-- Custom installer image (debootstrap-based)
-- Deterministic, reproducible builds
-
-### 2. Storage Management
-
-**Technology:** Btrfs
-
-**Features:**
-- **Storage pools** - Combine multiple disks
-- **Easy expansion** - Add disks like Unraid (simple workflow)
-- **Snapshots** - Point-in-time backups
-- **Background rebalance** - Automatic data distribution
-- **SMART monitoring** - Disk health tracking
-- **Self-healing** - Checksums and automatic repair
-
-**Management:**
-- Web UI for creation and expansion
-- Automatic mount management
-- Health dashboards
-
-### 3. Containers & Apps
-
-**Technology:** Docker + Docker Compose
-
-**App Store:**
-- Git-based template repositories
-- One-click install/update/remove
-- Pre-configured compose files
-- Automatic updates via API
-
-**Explicitly NOT included:**
-- Kubernetes
-- VMs (not for now)
-- Complex orchestration
+### 3. Containers (Docker + Compose)
+Git-based template repository for one-click app installs. No Kubernetes or complex orchestration.
 
 ### 4. Buddy Backup (Core Feature)
+NAS-to-NAS encrypted incremental backup. 
+- **Setup**: Link devices via pairing codes.
+- **Security**: End-to-end encryption (WireGuard based).
+- **Scope**: Backs up configs, shares, and app state (not the OS itself).
 
-**Purpose:** NAS-to-NAS backup over the internet
+### 5. Web UI & API
+- **UI**: Modern, dark-mode first (Svelte/Vue), responsive, Unraid-inspired.
+- **API**: Versioned REST API (Go/Python), uses JSON and JWT. UI never runs shell commands directly.
 
-**Features:**
-- **Pairing** - Short code-based device linking
-- **Encryption** - End-to-end, automatic key management
-- **Incremental** - Only changed data transfers
-- **Snapshot-based** - Consistent point-in-time backups
-- **Full restore** - Rebuild entire NAS from backup
-
-**What is backed up:**
-- Storage layout and pool configuration
-- Shares and permissions
-- Docker containers and app configurations
-- Users and system settings
-
-**What is NOT backed up:**
-- The operating system itself (reinstall from installer)
-
-**Protocol:**
-- Encrypted tunnel (likely WireGuard-based)
-- Rsync or custom incremental transfer
-- Automatic verify and health checks
-
-**Workflow:**
-1. User generates pairing code on NAS A
-2. User enters code on NAS B
-3. Automatic encrypted connection established
-4. Background incremental backups begin
-5. On disaster: reinstall AlvaOS, pair with buddy, restore
-
-### 5. Web UI
-
-**Technology:** Svelte or Vue (lightweight, modern)
-
-**Design:**
-- **Dark mode first** - Primary color scheme
-- **Unraid-inspired UX** - Simple, clean workflows
-- **Minimal clicks** - Common tasks are fast
-- **Responsive** - Works on desktop, tablet, mobile
-- **API-driven** - NO direct system commands
-
-**Key Views:**
-- Dashboard (system status, storage, containers)
-- Storage pool management
-- Docker app store
-- Buddy Backup setup and monitoring
-- System settings and users
-
-### 6. REST API (Backend)
-
-**Technology:** Go (recommended) or Python
-
-**Why Go:**
-- Single binary deployment
-- Great for system tooling
-- Fast, reliable, good concurrency
-- Cross-compilation for easy distribution
-
-**API Design:**
-- **Versioned** - `/api/v1/...`
-- **RESTful** - Standard HTTP methods
-- **JSON** - Request/response format
-- **Authentication** - JWT or session-based
-- **Documentation** - OpenAPI/Swagger
-
-**API Modules:**
-- `/api/v1/storage` - Pool management, disks
-- `/api/v1/docker` - Container management
-- `/api/v1/apps` - App store operations
-- `/api/v1/backup` - Buddy Backup pairing and status
-- `/api/v1/system` - Users, network, updates
-- `/api/v1/health` - System health and monitoring
-
-**Security:**
-- UI never calls shell commands directly
-- API validates and sanitizes all inputs
-- Fine-grained permission model
-- Audit logging
-
-## Distribution Model
-
-AlvaOS is **NOT a classic live ISO**.
-
-**Build Process:**
-
-1. **Minimal installer image** (ISO or IMG)
-   - Created with `debootstrap`
-   - Contains just enough to bootstrap Debian
-   - Bootable on BIOS and UEFI
-   - Target size: < 500 MB
-
-2. **Post-install scripts**
-   - Install AlvaOS backend
-   - Configure storage
-   - Set up Docker
-   - Deploy Web UI
-   - Initialize services
-
-3. **System assembly**
-   - Deterministic and automated
-   - Reproducible builds
-   - Version-controlled configs
-
-**Advantages:**
-- Small, fast builds
-- Easy to maintain
-- Flexible post-install customization
-- No bloated live environment
-
-## Update Strategy
-
-See [UPDATE_STRATEGY.md](UPDATE_STRATEGY.md) for detailed update architecture.
-
-**Key points:**
-- AlvaOS backend as a `.deb` package
-- System updates via Web UI
-- Automatic rollback on failure
-- Minimal downtime
-- No mandatory cloud updates
+## Distribution & Updates
+- **Installer**: Minimal (<500MB) debootstrap image (BIOS/UEFI).
+- **Updates**: Backend delivered as `.deb`. Web-based updates with automatic rollbacks. No mandatory cloud updates.
 
 ## Security Model
 
@@ -243,36 +95,18 @@ See [UPDATE_STRATEGY.md](UPDATE_STRATEGY.md) for detailed update architecture.
 - `/opt/alvaos/` - Application binaries
 - `/srv/` - User data and shares
 
-## Technology Stack Summary
-
-| Component | Technology | Rationale |
+## Tech Stack Summary
+| Component | Tech | Rationale |
 |-----------|-----------|-----------|
-| Base OS | Debian Stable | Ultra-stable, long-term support |
-| Init system | systemd | Standard, reliable |
-| Storage | Btrfs | Snapshots, pooling, self-healing |
-| Containers | Docker + Compose | Simple, proven, widely supported |
-| Backend API | Go or Python | Go: single binary; Python: prototyping |
-| Frontend UI | Svelte or Vue | Lightweight, modern, reactive |
-| Backup transport | WireGuard + rsync | Encrypted, efficient, incremental |
-| Package format | .deb | Native Debian packaging |
+| Base OS | Debian Stable | Ultra-stable |
+| Storage | Btrfs | Snapshots, pooling |
+| Containers| Docker | Proven, simple |
+| Backend | Go/Python | Performance/Prototyping |
+| UI | Svelte/Vue | Lightweight, reactive |
+| Backup | WireGuard+rsync| Secure, efficient |
 
-## Non-Goals
+## Non-Goals & Future
+- **No**: VMs (current), Kubernetes, Desktops, Cloud/Telemetry.
+- **Future**: ZFS alternative, plugin system, basic VM support.
 
-To maintain simplicity, AlvaOS explicitly **does not**:
-- Support VMs (for now)
-- Include Kubernetes
-- Run a desktop environment
-- Require cloud services
-- Phone home or include telemetry
-- Support rolling releases
-
-## Future Considerations
-
-- ZFS as alternative to Btrfs (community request)
-- VM support (via KVM/QEMU, low priority)
-- Plugin system for extensions
-- Multi-node clustering (far future)
-
----
-
-**Philosophy:** Keep it boring, stable, and reliable. AlvaOS should run for years without intervention.
+**Philosophy**: Boring, stable, reliable. Runs for years without intervention.
