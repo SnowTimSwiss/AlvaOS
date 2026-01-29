@@ -25,6 +25,12 @@ Welcome to the AlvaOS documentation. This directory contains all technical docum
   - Technology stack
   - Security model
 
+- **[Design Guidelines](DESIGN.md)** - UI/UX principles and visual style
+  - Design philosophy
+  - Color palette
+  - UI components
+  - UX patterns
+
 - **[Repository Structure](STRUCTURE.md)** - Project organization
   - Directory layout
   - Build process
