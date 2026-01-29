@@ -30,15 +30,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            debootstrap \
-            squashfs-tools \
-            xorriso \
-            isolinux \
-            syslinux-efi \
-            dosfstools \
-            grub-pc-bin \
-            grub-efi-amd64-bin \
-            mtools
+            live-build \
+            syslinux-utils \
+            squashfs-tools
       
       - name: Build installer image
         run: |

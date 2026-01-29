@@ -4,7 +4,7 @@ Summary of the AlvaOS foundation.
 
 ## ✅ Project State
 - **GitHub Workflows**: `build-installer.yml` (ISO) and `build-package.yml` (.deb) both operational for releases.
-- **Installer**: `build.sh` creates <500MB debootstrap-based ISO (BIOS/UEFI support).
+- **Installer**: `build.sh` uses **Debian live-build** to create a standard hybrid ISO (BIOS/UEFI).
 - **Packaging**: `build-deb.sh` handles `.deb` structure, systemd units, and scripts.
 - **Docs**: Comprehensive specs for Architecture, Backup, Updates, and Releases complete.
 

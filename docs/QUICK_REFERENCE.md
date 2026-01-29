@@ -7,7 +7,7 @@
 
 ## 🔄 Update & Build
 - **Update Flow**: Check Release API → Download .deb → Verify SHA256 → `apt install` → Health check → (Success or Auto-rollback).
-- **Build ISO**: `cd installer && sudo ./build.sh`.
+- **Build ISO**: `cd installer && sudo ./build.sh` (Requires `live-build`).
 - **Build Package**: `cd scripts/package && sudo ./build-deb.sh`.
 - **Release**: Tag `vX.X.X` on GitHub; CI handles builds.
 

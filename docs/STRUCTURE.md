@@ -8,7 +8,7 @@ AlvaOS/
 ├── .github/workflows/ (CI: ISO & .deb builders)
 ├── backend/ (REST API - Go/Python)
 ├── frontend/ (Web UI - Svelte/Vue)
-├── installer/ (ISO builder - debootstrap)
+├── installer/ (ISO builder - live-build)
 ├── scripts/package/ (.deb builder)
 └── docs/ (Project specs & guides)
 ```
@@ -16,7 +16,7 @@ AlvaOS/
 ## Directory Details
 - **/backend**: Core API server for system management (Storage, Docker, Backups).
 - **/frontend**: Dark-mode first Web UI. Unraid-inspired, simple, and reactive.
-- **/installer**: debootstrap script to build a minimal Debian bootable ISO.
+- **/installer**: Build scripts using Debian `live-build` to create the installer ISO.
 - **/scripts**: Idempotent shell scripts for system setup and maintenance.
 - **/docs**: Technical documentation in Markdown.
 
