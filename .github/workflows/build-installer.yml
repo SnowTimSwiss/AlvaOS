@@ -41,6 +41,7 @@ jobs:
       - name: Build installer image
         run: |
           cd installer
+          chmod +x build.sh
           sudo ./build.sh
         env:
           ALVAOS_VERSION: ${{ steps.version.outputs.version }}
