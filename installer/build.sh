@@ -140,17 +140,52 @@ fi
 
 echo "installer ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/installer
 chmod 440 /etc/sudoers.d/installer
+
+# Auto-login on tty1
+mkdir -p /etc/systemd/system/getty@tty1.service.d
+cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf << 'AUTOLOGIN_EOF'
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin installer --noclear %I $TERM
+AUTOLOGIN_EOF
 EOF
 chmod +x config/includes.chroot/usr/lib/live/config/0031-installer-user
 
-# Autostart installer
-cat > config/includes.chroot/usr/lib/live/config/9999-autostart-installer << 'EOF'
+# Show welcome message on login
+cat > config/includes.chroot/usr/lib/live/config/9999-welcome-message << 'EOF'
 #!/bin/sh
-if [ -x /opt/alvaos/install.sh ]; then
-  su - installer -c "sudo /opt/alvaos/install.sh"
+# Create a welcome script that shows on login
+cat > /etc/profile.d/alvaos-welcome.sh << 'WELCOME_EOF'
+if [ "$USER" = "installer" ] && [ -t 0 ]; then
+cat << 'BANNER'
+
+╔═══════════════════════════════════════════════════════════╗
+║                                                           ║
+║       █████╗ ██╗    ██╗   ██╗ █████╗  ██████╗ ███████╗   ║
+║      ██╔══██╗██║    ██║   ██║██╔══██╗██╔═══██╗██╔════╝   ║
+║      ███████║██║    ██║   ██║███████║██║   ██║███████╗   ║
+║      ██╔══██║██║    ╚██╗ ██╔╝██╔══██║██║   ██║╚════██║   ║
+║      ██║  ██║███████╗╚████╔╝ ██║  ██║╚██████╔╝███████║   ║
+║      ╚═╝  ╚═╝╚══════╝ ╚═══╝  ╚═╝  ╚═╝ ╚═════╝ ╚══════╝   ║
+║                                                           ║
+║            AlvaOS Server Installer v0.1                   ║
+║                                                           ║
+╚═══════════════════════════════════════════════════════════╝
+
+Welcome to the AlvaOS Installer!
+
+To install AlvaOS to your hard drive, run:
+
+    sudo /opt/alvaos/install.sh
+
+The installation will guide you through the process.
+
+BANNER
 fi
+WELCOME_EOF
+chmod +x /etc/profile.d/alvaos-welcome.sh
 EOF
-chmod +x config/includes.chroot/usr/lib/live/config/9999-autostart-installer
+chmod +x config/includes.chroot/usr/lib/live/config/9999-welcome-message
 
 # ------------------------------------------------------------
 # 5. SSH enable
