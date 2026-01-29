@@ -94,6 +94,7 @@ ca-certificates
 locales
 console-setup
 kbd
+debootstrap
 EOF
 
 # ------------------------------------------------------------
@@ -151,41 +152,21 @@ AUTOLOGIN_EOF
 EOF
 chmod +x config/includes.chroot/usr/lib/live/config/0031-installer-user
 
-# Show welcome message on login
-cat > config/includes.chroot/usr/lib/live/config/9999-welcome-message << 'EOF'
+# Autostart installer via profile
+cat > config/includes.chroot/usr/lib/live/config/9999-autostart-installer << 'EOF'
 #!/bin/sh
-# Create a welcome script that shows on login
-cat > /etc/profile.d/alvaos-welcome.sh << 'WELCOME_EOF'
-if [ "$USER" = "installer" ] && [ -t 0 ]; then
-cat << 'BANNER'
-
-╔═══════════════════════════════════════════════════════════╗
-║                                                           ║
-║       █████╗ ██╗    ██╗   ██╗ █████╗  ██████╗ ███████╗   ║
-║      ██╔══██╗██║    ██║   ██║██╔══██╗██╔═══██╗██╔════╝   ║
-║      ███████║██║    ██║   ██║███████║██║   ██║███████╗   ║
-║      ██╔══██║██║    ╚██╗ ██╔╝██╔══██║██║   ██║╚════██║   ║
-║      ██║  ██║███████╗╚████╔╝ ██║  ██║╚██████╔╝███████║   ║
-║      ╚═╝  ╚═╝╚══════╝ ╚═══╝  ╚═╝  ╚═╝ ╚═════╝ ╚══════╝   ║
-║                                                           ║
-║            AlvaOS Server Installer v0.1                   ║
-║                                                           ║
-╚═══════════════════════════════════════════════════════════╝
-
-Welcome to the AlvaOS Installer!
-
-To install AlvaOS to your hard drive, run:
-
+# Create profile script to start installer on login
+cat > /etc/profile.d/autostart-installer.sh << 'PROFILE_EOF'
+if [ "$USER" = "installer" ] && [ -t 0 ] && [ "$(tty)" = "/dev/tty1" ]; then
+    # Clear screen
+    clear
+    # Run installer
     sudo /opt/alvaos/install.sh
-
-The installation will guide you through the process.
-
-BANNER
 fi
-WELCOME_EOF
-chmod +x /etc/profile.d/alvaos-welcome.sh
+PROFILE_EOF
+chmod +x /etc/profile.d/autostart-installer.sh
 EOF
-chmod +x config/includes.chroot/usr/lib/live/config/9999-welcome-message
+chmod +x config/includes.chroot/usr/lib/live/config/9999-autostart-installer
 
 # ------------------------------------------------------------
 # 5. SSH enable

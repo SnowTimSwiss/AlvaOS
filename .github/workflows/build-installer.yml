@@ -24,7 +24,9 @@ jobs:
           if [ "${{ github.event_name }}" == "release" ]; then
             VERSION="${{ github.event.release.tag_name }}"
           else
-            VERSION="dev-${{ github.sha }}"
+            VERSION="0.0.0-dev${{ github.sha }}"
+            # Shorten SHA for cleaner version
+            VERSION="0.0.0-dev$(echo ${{ github.sha }} | cut -c1-7)"
           fi
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "Building AlvaOS version: ${VERSION}"
