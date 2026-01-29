@@ -1,17 +1,8 @@
 name: Build AlvaOS Installer
 
 on:
-  # Build on new releases
   release:
     types: [created, published]
-  
-  # Also allow manual testing
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
 
 jobs:

@@ -76,8 +76,10 @@ User and developer documentation in Markdown format. See [docs/README.md](README
 
 ### `/.github/workflows`
 GitHub Actions CI/CD pipelines:
-- **`build-installer.yml`** - Builds installer ISO on releases and pushes
-- **`build-package.yml`** - Builds `.deb` system package on releases
+- **`build-installer.yml`** - Builds installer ISO on new releases
+- **`build-package.yml`** - Builds `.deb` system package on new releases
+
+Both workflows also support manual triggering via `workflow_dispatch`.
 
 ## Build & Release Process
 
