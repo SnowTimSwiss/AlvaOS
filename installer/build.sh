@@ -44,6 +44,8 @@ lb config \
     --mirror-bootstrap "http://deb.debian.org/debian/" \
     --mirror-chroot "http://deb.debian.org/debian/" \
     --mirror-binary "http://deb.debian.org/debian/" \
+    --mirror-chroot-security "http://security.debian.org/debian-security/" \
+    --mirror-binary-security "http://security.debian.org/debian-security/" \
     --archive-areas "main non-free-firmware" \
     --architectures amd64 \
     --linux-flavours amd64 \
