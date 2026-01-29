@@ -48,7 +48,7 @@ lb config \
     --mirror-chroot "http://deb.debian.org/debian" \
     --mirror-binary "http://deb.debian.org/debian" \
     --apt-indices true \
-    --security true \
+    --security false \
     --archive-areas "main contrib non-free non-free-firmware" \
     --architectures amd64 \
     --linux-flavours none \
@@ -60,6 +60,11 @@ lb config \
     --iso-publisher "AlvaOS Project" \
     --iso-volume "ALVAOS_SERVER_INSTALLER" \
     --memtest none
+
+# Fix for Debian Bookworm Security Repository (bookworm/updates -> bookworm-security)
+mkdir -p config/archives
+echo "deb http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware" > config/archives/security.list.chroot
+cp config/archives/security.list.chroot config/archives/security.list.binary
 
 # 2. Add Packages
 log "Configuring packages..."
