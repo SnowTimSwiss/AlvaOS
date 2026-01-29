@@ -79,8 +79,9 @@ live-config-systemd
 linux-image-amd64
 
 # Bootloader
-grub-efi-amd64
-grub-pc
+grub-efi-amd64-bin
+grub-efi-amd64-signed
+grub-pc-bin
 grub2-common
 shim-signed
 efibootmgr
