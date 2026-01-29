@@ -41,9 +41,13 @@ log "Initializing live-build configuration..."
 lb config \
     --distribution bookworm \
     --debian-installer live \
+    --mirror-bootstrap "http://deb.debian.org/debian/" \
+    --mirror-chroot "http://deb.debian.org/debian/" \
+    --mirror-binary "http://deb.debian.org/debian/" \
     --archive-areas "main non-free-firmware" \
     --architectures amd64 \
     --linux-flavours amd64 \
+    --source false \
     --binary-images iso-hybrid \
     --bootappend-live "boot=live components hostname=alvaos-installer locales=en_US.UTF-8 keyboard-layouts=us quiet splash" \
     --iso-application "AlvaOS Installer" \
