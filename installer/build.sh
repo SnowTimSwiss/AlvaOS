@@ -49,7 +49,7 @@ log "Creating minimal Debian rootfs with debootstrap..."
 debootstrap \
     --arch=amd64 \
     --variant=minbase \
-    --include=linux-image-amd64,grub-pc,systemd,udev,iproute2,iputils-ping,curl,vim-tiny,openssh-server \
+    --include=linux-image-amd64,grub-efi-amd64,grub-pc,systemd,udev,iproute2,iputils-ping,curl,vim-tiny,openssh-server,parted,dosfstools,e2fsprogs \
     bookworm \
     "${ROOTFS_DIR}" \
     http://deb.debian.org/debian
@@ -63,37 +63,47 @@ echo "alvaos-installer" > "${ROOTFS_DIR}/etc/hostname"
 # Set root password to 'alvaos' (should be changed on first boot)
 chroot "${ROOTFS_DIR}" bash -c "echo 'root:alvaos' | chpasswd"
 
-# Add AlvaOS installer script
-log "Adding installer script..."
+# Add AlvaOS components to installer
+log "Adding AlvaOS components..."
 mkdir -p "${ROOTFS_DIR}/opt/alvaos"
-cat > "${ROOTFS_DIR}/opt/alvaos/install.sh" << 'INSTALLER_EOF'
+mkdir -p "${ROOTFS_DIR}/opt/alvaos/backend"
+mkdir -p "${ROOTFS_DIR}/opt/alvaos/webui"
+
+# Copy installation script
+if [ -f "${SCRIPT_DIR}/install-system.sh" ]; then
+    cp "${SCRIPT_DIR}/install-system.sh" "${ROOTFS_DIR}/opt/alvaos/install.sh"
+    chmod +x "${ROOTFS_DIR}/opt/alvaos/install.sh"
+    log "✓ Installation script added"
+else
+    warn "install-system.sh not found, using placeholder"
+    cat > "${ROOTFS_DIR}/opt/alvaos/install.sh" << 'PLACEHOLDER_EOF'
 #!/bin/bash
-# AlvaOS Installation Script
-# This script installs AlvaOS to the target disk
-
-echo "╔═══════════════════════════════════════╗"
-echo "║      AlvaOS Installer v${VERSION}     ║"
-echo "╔═══════════════════════════════════════╗"
-echo ""
-echo "This will install AlvaOS to your system."
-echo ""
-echo "WARNING: This is a placeholder installer."
-echo "Full installation logic will be implemented soon."
-echo ""
-echo "For now, this performs a minimal Debian installation."
-echo ""
-read -p "Continue? (yes/no): " confirm
-
-if [ "$confirm" != "yes" ]; then
-    echo "Installation cancelled."
-    exit 0
+echo "AlvaOS Installer v0.1"
+echo "Real installer script not found!"
+echo "Please check the build."
+PLACEHOLDER_EOF
+    chmod +x "${ROOTFS_DIR}/opt/alvaos/install.sh"
 fi
 
-echo "Installation would proceed here..."
-echo "Target: Minimal Debian + AlvaOS scripts + Web UI"
-INSTALLER_EOF
+# Copy backend
+BACKEND_SRC="${SCRIPT_DIR}/../backend/alvaos-backend.py"
+if [ -f "$BACKEND_SRC" ]; then
+    cp "$BACKEND_SRC" "${ROOTFS_DIR}/opt/alvaos/backend/"
+    log "✓ Backend added"
+else
+    warn "Backend not found at $BACKEND_SRC"
+fi
 
-chmod +x "${ROOTFS_DIR}/opt/alvaos/install.sh"
+# Copy frontend
+FRONTEND_SRC="${SCRIPT_DIR}/../frontend"
+if [ -d "$FRONTEND_SRC" ]; then
+    cp "$FRONTEND_SRC"/*.html "${ROOTFS_DIR}/opt/alvaos/webui/" 2>/dev/null || true
+    cp "$FRONTEND_SRC"/*.css "${ROOTFS_DIR}/opt/alvaos/webui/" 2>/dev/null || true
+    cp "$FRONTEND_SRC"/*.js "${ROOTFS_DIR}/opt/alvaos/webui/" 2>/dev/null || true
+    log "✓ Frontend added"
+else
+    warn "Frontend not found at $FRONTEND_SRC"
+fi
 
 # Create auto-login for installer
 log "Configuring auto-login..."
