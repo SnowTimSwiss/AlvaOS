@@ -44,9 +44,10 @@ lb config \
     --system false \
     --keyring-packages debian-archive-keyring \
     --debian-installer live \
-    --mirror-bootstrap "http://deb.debian.org/debian/" \
-    --mirror-chroot "http://deb.debian.org/debian/" \
-    --mirror-binary "http://deb.debian.org/debian/" \
+    --mirror-bootstrap "http://deb.debian.org/debian" \
+    --mirror-chroot "http://deb.debian.org/debian" \
+    --mirror-binary "http://deb.debian.org/debian" \
+    --apt-indices false \
     --security false \
     --archive-areas "main non-free-firmware" \
     --architectures amd64 \
