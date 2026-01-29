@@ -1,6 +1,8 @@
 # Build outputs
 build/
 installer/build/
+installer/live-build-work/
+installer/.cache/
 *.iso
 *.img
 *.squashfs

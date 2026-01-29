@@ -106,8 +106,23 @@ function showError(message) {
 }
 
 // Initialize dashboard
-function init() {
+async function init() {
     console.log('AlvaOS Dashboard initializing...');
+
+    // Check if setup is complete
+    try {
+        const response = await fetch(`${API_BASE}/setup/status`);
+        if (response.ok) {
+            const data = await response.json();
+            if (!data.setup_complete) {
+                // Redirect to setup wizard
+                window.location.href = '/setup.html';
+                return;
+            }
+        }
+    } catch (error) {
+        console.error('Failed to check setup status:', error);
+    }
 
     // Start clock
     updateClock();

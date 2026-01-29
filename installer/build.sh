@@ -134,7 +134,8 @@ set -e
 
 if ! id installer >/dev/null 2>&1; then
   useradd -m -s /bin/bash installer
-  echo "installer:alvaos" | chpasswd
+  # Temporary password for installer environment only
+  echo "installer:installer123" | chpasswd
 fi
 
 echo "installer ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/installer

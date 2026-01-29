@@ -11,6 +11,26 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Cleanup function for error recovery
+cleanup() {
+    local exit_code=$?
+    if [ $exit_code -ne 0 ]; then
+        echo -e "${RED}[ERROR]${NC} Installation failed!"
+    fi
+    
+    # Unmount everything
+    log "Cleaning up..."
+    umount /mnt/sys 2>/dev/null || true
+    umount /mnt/proc 2>/dev/null || true
+    umount /mnt/dev/pts 2>/dev/null || true
+    umount /mnt/dev 2>/dev/null || true
+    umount /mnt/boot/efi 2>/dev/null || true
+    umount /mnt 2>/dev/null || true
+}
+
+# Set trap for cleanup
+trap cleanup EXIT ERR INT TERM
+
 # Logo
 cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════╗
@@ -167,10 +187,32 @@ log "Installing bootloader..."
 chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=AlvaOS
 chroot /mnt update-grub
 
-# Set root password
-log "Setting root password..."
-echo "root:alvaos" | chroot /mnt chpasswd
-warn "Default root password is 'alvaos' - PLEASE CHANGE IT AFTER FIRST LOGIN!"
+# Secure root account with random password
+log "Securing root account..."
+# Generate a secure random password that nobody will know
+# This forces users to go through the Web UI setup wizard
+RANDOM_PASS=$(head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 24)
+echo "root:${RANDOM_PASS}" | chroot /mnt chpasswd
+
+# Disable root SSH login until setup is complete
+log "Configuring SSH security..."
+cat > /mnt/etc/ssh/sshd_config.d/00-alvaos-security.conf << 'SSH_EOF'
+# AlvaOS Security Configuration
+# Root login disabled until Web UI setup is completed
+PermitRootLogin no
+PasswordAuthentication yes
+PermitEmptyPasswords no
+SSH_EOF
+
+echo ""
+log "╔════════════════════════════════════════════════════════════╗"
+log "║  Root account secured with random password                ║"
+log "║  SSH root login DISABLED                                  ║"
+log "║                                                           ║"
+log "║  👉 You MUST set password via Web UI on first boot:       ║"
+log "║     http://[SERVER-IP]:8080                               ║"
+log "╚════════════════════════════════════════════════════════════╝"
+echo ""
 
 # Install AlvaOS components
 log "Installing AlvaOS components..."
@@ -200,15 +242,37 @@ After=network.target
 
 [Service]
 Type=simple
-User=root
+User=alvaos
+Group=alvaos
 WorkingDirectory=/opt/alvaos/bin
 ExecStart=/usr/bin/python3 /opt/alvaos/bin/alvaos-backend.py
 Restart=always
 RestartSec=10
+Environment="PYTHONUNBUFFERED=1"
 
 [Install]
 WantedBy=multi-user.target
 SERVICE_EOF
+
+# Create alvaos system user in chroot
+log "Creating AlvaOS service user..."
+chroot /mnt useradd -r -s /bin/bash -d /opt/alvaos -M alvaos || true
+
+# Set up permissions
+chroot /mnt chown -R alvaos:alvaos /opt/alvaos
+chroot /mnt chown -R alvaos:alvaos /var/lib/alvaos
+chroot /mnt chown -R alvaos:alvaos /var/log/alvaos
+chroot /mnt chown -R alvaos:alvaos /etc/alvaos
+
+# Create sudoers rules for specific privileged operations
+cat > /mnt/etc/sudoers.d/alvaos << 'SUDOERS_EOF'
+# AlvaOS backend needs specific privileged commands
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/chpasswd
+alvaos ALL=(ALL) NOPASSWD: /bin/systemctl restart alvaos.service
+alvaos ALL=(ALL) NOPASSWD: /bin/systemctl restart ssh
+alvaos ALL=(ALL) NOPASSWD: /bin/systemctl status docker.service
+SUDOERS_EOF
+chroot /mnt chmod 440 /etc/sudoers.d/alvaos
 
 # Enable service
 chroot /mnt systemctl enable alvaos.service
@@ -246,8 +310,9 @@ log "Next steps:"
 log "1. Remove the installation media"
 log "2. Reboot the system: reboot"
 log "3. Access Web UI at: http://[IP-ADDRESS]:8080"
+log "4. Complete setup wizard to set your password"
 log ""
-warn "Default login: root / alvaos (CHANGE THIS!)"
+warn "⚠️  SSH root login is DISABLED until you complete web setup!"
 echo ""
 read -p "Press Enter to reboot, or Ctrl+C to stay in installer..."
 reboot
