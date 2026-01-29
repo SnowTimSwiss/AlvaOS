@@ -43,45 +43,70 @@ lb config \
     --mode debian \
     --system false \
     --keyring-packages debian-archive-keyring \
-    --debian-installer live \
+    --debian-installer none \
     --mirror-bootstrap "http://deb.debian.org/debian" \
     --mirror-chroot "http://deb.debian.org/debian" \
     --mirror-binary "http://deb.debian.org/debian" \
     --apt-indices false \
-    --security false \
-    --archive-areas "main non-free-firmware" \
+    --apt-indices false \
+    --security true \
+    --security-mirror "http://security.debian.org/debian-security" \
+    --archive-areas "main contrib non-free non-free-firmware" \
     --architectures amd64 \
     --linux-flavours amd64 \
+    --linux-packages linux-image \
     --source false \
     --binary-images iso-hybrid \
-    --bootappend-live "boot=live components hostname=alvaos-installer locales=en_US.UTF-8 keyboard-layouts=us quiet splash" \
-    --iso-application "AlvaOS Installer" \
+    --bootappend-live "boot=live components hostname=alvaos-installer console=ttyS0,115200n8 console=tty0 locales=en_US.UTF-8 keyboard-layouts=us quiet nosplash nomodeset" \
+    --iso-application "AlvaOS Server Installer" \
     --iso-publisher "AlvaOS Project" \
-    --iso-volume "ALVAOS_INSTALLER" \
+    --iso-volume "ALVAOS_SERVER_INSTALLER" \
     --memtest none
 
 # 2. Add Packages
 log "Configuring packages..."
 mkdir -p config/package-lists
 cat > config/package-lists/alvaos.list.chroot << EOF
+# Live System
 live-boot
 live-config
 live-config-systemd
-systemd-sysv
+
+# Kernel
+linux-image-amd64
+
+# Bootloader
 grub-efi-amd64
 grub-pc
+grub2-common
 shim-signed
+efibootmgr
+
+# Partitionierung
 parted
+gdisk
 dosfstools
 btrfs-progs
+xfsprogs
+lvm2
 cryptsetup
+e2fsprogs
+
+# Netzwerk
 curl
 wget
-vim
 openssh-server
 iproute2
 net-tools
-efibootmgr
+
+# Basis-Tools
+vim-tiny
+less
+sudo
+ca-certificates
+locales
+console-setup
+kbd
 EOF
 
 # 3. Add Custom Files (Installer Script & Assets)
@@ -113,12 +138,43 @@ if [ -d "$FRONTEND_SRC" ]; then
     cp "$FRONTEND_SRC"/*.js config/includes.chroot/opt/alvaos/webui/ 2>/dev/null || true
 fi
 
-# Auto-login configuration
+# Create installer user and auto-login
+mkdir -p config/includes.chroot/usr/lib/live/config
+cat > config/includes.chroot/usr/lib/live/config/0031-installer-user << 'EOF'
+#!/bin/sh
+# Create installer user
+useradd -m -s /bin/bash installer
+echo "installer:alvaos" | chpasswd
+echo "installer ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/installer
+chmod 440 /etc/sudoers.d/installer
+EOF
+chmod +x config/includes.chroot/usr/lib/live/config/0031-installer-user
+
+# Auto-login configuration for installer user
 cat > config/includes.chroot/etc/systemd/system/getty@tty1.service.d/autologin.conf << EOF
 [Service]
 ExecStart=
-ExecStart=-/sbin/agetty --autologin root --noclear %I \$TERM
+ExecStart=-/sbin/agetty --autologin installer --noclear %I \$TERM
 EOF
+
+# SSH configuration for remote installation
+mkdir -p config/includes.chroot/etc/ssh/sshd_config.d
+cat > config/includes.chroot/etc/ssh/sshd_config.d/alvaos.conf << EOF
+PermitRootLogin no
+PasswordAuthentication yes
+PermitEmptyPasswords no
+ChallengeResponseAuthentication no
+UsePAM yes
+X11Forwarding no
+PrintMotd no
+AcceptEnv LANG LC_*
+Subsystem sftp /usr/lib/openssh/sftp-server
+EOF
+
+# Auto-start SSH
+mkdir -p config/includes.chroot/etc/systemd/system/multi-user.target.wants
+ln -sf /lib/systemd/system/ssh.service \
+    config/includes.chroot/etc/systemd/system/multi-user.target.wants/ssh.service
 
 # Custom MOTD
 mkdir -p config/includes.chroot/etc
@@ -134,12 +190,28 @@ cat > config/includes.chroot/etc/motd << EOF
 ║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
 
-Welcome to the AlvaOS Installer!
+Welcome to the AlvaOS Server Installer!
 
-Run installation:
-  /opt/alvaos/install.sh
+System is ready for installation.
+
+SSH Access: ssh installer@<ip> (password: alvaos)
+
+Run installation manually:
+  sudo /opt/alvaos/install.sh
 
 EOF
+
+# Add installer user's bashrc to auto-start installation
+mkdir -p config/includes.chroot/home/installer
+cat > config/includes.chroot/home/installer/.bashrc << 'EOF'
+# Auto-start installation on first login
+if [ -f /opt/alvaos/install.sh ] && [ ! -f /tmp/alvaos-install-started ]; then
+    touch /tmp/alvaos-install-started
+    echo "Starting AlvaOS installation..."
+    sudo /opt/alvaos/install.sh
+fi
+EOF
+chown -R 1000:1000 config/includes.chroot/home/installer
 
 # 4. Build ISO
 log "Building ISO..."
@@ -150,6 +222,11 @@ ARTIFACT_NAME="alvaos-installer-${VERSION}.iso"
 if [ -f "live-image-amd64.hybrid.iso" ]; then
     mv "live-image-amd64.hybrid.iso" "${SCRIPT_DIR}/build/${ARTIFACT_NAME}"
     log "✅ Build Success! ISO available at: ${SCRIPT_DIR}/build/${ARTIFACT_NAME}"
+    
+    # Optional cleanup
+    log "Cleaning build cache..."
+    lb clean --cache
+    
 else
     error "Build failed - no ISO generated."
 fi
