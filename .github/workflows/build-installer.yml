@@ -51,7 +51,7 @@ jobs:
       - name: Generate checksums
         run: |
           cd installer/build
-          sudo sha256sum alvaos-installer-*.iso > checksums.txt
+          sudo sha256sum alvaos-installer-*.iso | sudo tee checksums.txt > /dev/null
           sudo chown $USER:$USER checksums.txt
           cat checksums.txt
       
