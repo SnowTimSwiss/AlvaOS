@@ -1,9 +1,11 @@
 # Build outputs
+build/
 installer/build/
 *.iso
 *.img
 *.squashfs
 *.sha256
+*.deb
 
 # Backend
 backend/bin/

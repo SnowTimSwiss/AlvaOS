@@ -1,13 +1,18 @@
 name: Build AlvaOS Installer
 
 on:
+  # Build on new releases
+  release:
+    types: [created, published]
+  
+  # Also allow manual testing
   push:
     branches:
       - main
   pull_request:
     branches:
       - main
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:
 
 jobs:
   build-installer:
@@ -16,6 +21,17 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+      
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "release" ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+          else
+            VERSION="dev-${{ github.sha }}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Building AlvaOS version: ${VERSION}"
       
       - name: Install build dependencies
         run: |
@@ -36,17 +52,40 @@ jobs:
           cd installer
           sudo ./build.sh
         env:
-          ALVAOS_VERSION: ${{ github.sha }}
+          ALVAOS_VERSION: ${{ steps.version.outputs.version }}
       
-      - name: Upload installer artifact
+      - name: Generate checksums
+        run: |
+          cd installer/build
+          sha256sum alvaos-installer-*.iso > checksums.txt
+          cat checksums.txt
+      
+      - name: Upload installer artifact (for non-release builds)
+        if: github.event_name != 'release'
         uses: actions/upload-artifact@v4
         with:
-          name: alvaos-installer-${{ github.sha }}
-          path: installer/build/alvaos-installer-*.iso
+          name: alvaos-installer-${{ steps.version.outputs.version }}
+          path: |
+            installer/build/alvaos-installer-*.iso
+            installer/build/checksums.txt
           retention-days: 30
+      
+      - name: Upload installer to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            installer/build/alvaos-installer-*.iso
+            installer/build/checksums.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Display build info
         run: |
-          echo "Build completed successfully!"
+          echo "✅ Build completed successfully!"
+          echo "Version: ${{ steps.version.outputs.version }}"
+          echo "Event: ${{ github.event_name }}"
           ls -lh installer/build/
-          echo "SHA: ${{ github.sha }}"
+          echo ""
+          echo "Checksums:"
+          cat installer/build/checksums.txt

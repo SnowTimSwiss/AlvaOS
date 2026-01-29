@@ -1,0 +1,92 @@
+name: Build and Release AlvaOS Package
+
+on:
+  release:
+    types: [created, published]
+  workflow_dispatch:
+
+jobs:
+  build-package:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Extract version from tag
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "release" ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+            # Remove 'v' prefix if present
+            VERSION="${VERSION#v}"
+          else
+            VERSION="0.0.0-dev"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Building AlvaOS package version: ${VERSION}"
+      
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            dpkg-dev \
+            build-essential
+      
+      # TODO: Build backend when it exists
+      # - name: Set up Go
+      #   uses: actions/setup-go@v4
+      #   with:
+      #     go-version: '1.21'
+      # 
+      # - name: Build backend
+      #   run: |
+      #     cd backend
+      #     go build -o ../build/alvaos-backend ./cmd/server
+      
+      # TODO: Build frontend when it exists
+      # - name: Set up Node.js
+      #   uses: actions/setup-node@v4
+      #   with:
+      #     node-version: '20'
+      # 
+      # - name: Build frontend
+      #   run: |
+      #     cd frontend
+      #     npm install
+      #     npm run build
+      
+      - name: Build .deb package
+        run: |
+          chmod +x scripts/package/build-deb.sh
+          scripts/package/build-deb.sh
+        env:
+          ALVAOS_VERSION: ${{ steps.version.outputs.version }}
+      
+      - name: Upload package to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            build/package/alvaos-system_*.deb
+            build/package/checksums.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: alvaos-package-${{ steps.version.outputs.version }}
+          path: |
+            build/package/alvaos-system_*.deb
+            build/package/checksums.txt
+          retention-days: 30
+      
+      - name: Display build info
+        run: |
+          echo "✅ Package build complete!"
+          echo "Version: ${{ steps.version.outputs.version }}"
+          ls -lh build/package/
+          echo ""
+          echo "Checksums:"
+          cat build/package/checksums.txt

@@ -8,7 +8,8 @@ This document describes the repository organization.
 AlvaOS/
 ├── .github/
 │   └── workflows/
-│       └── build-installer.yml    # CI/CD: Builds installer image
+│       ├── build-installer.yml    # CI: Builds installer ISO
+│       └── build-package.yml      # CI: Builds .deb package
 │
 ├── backend/                       # REST API server
 │   └── README.md                  # Backend architecture docs
@@ -17,15 +18,23 @@ AlvaOS/
 │   └── README.md                  # Frontend architecture docs
 │
 ├── installer/                     # Installer image builder
-│   ├── build.sh                   # Main build script
+│   ├── build.sh                   # Main build script (debootstrap)
 │   └── README.md                  # Build documentation
 │
-├── scripts/                       # System setup scripts
+├── scripts/                       # System setup and maintenance
+│   ├── package/
+│   │   └── build-deb.sh           # .deb package builder
 │   └── README.md                  # Scripts documentation
 │
 ├── docs/                          # Documentation
-│   └── README.md                  # Docs overview
+│   ├── ARCHITECTURE.md            # System design
+│   ├── BUDDY_BACKUP.md            # Backup specification
+│   ├── CONTRIBUTING.md            # Developer guide
+│   ├── README.md                  # Docs index
+│   ├── STRUCTURE.md               # This file
+│   └── UPDATE_STRATEGY.md         # Update mechanism
 │
+├── .gitignore                     # Ignore build artifacts
 ├── LICENSE                        # Apache License 2.0
 └── README.md                      # Main project README
 ```
@@ -48,28 +57,52 @@ Build system for the AlvaOS installer image. Uses `debootstrap` to create a mini
 **Not a live desktop environment** - just a simple installer that bootstraps the system.
 
 ### `/scripts`
-Post-install setup scripts. These handle:
+Post-install setup scripts and build tools:
+- **Post-install scripts** - System initialization after fresh install
+- **Package scripts** (`scripts/package/`) - Build .deb packages for distribution
+
+Handles:
 - Storage pool initialization (Btrfs)
 - Docker installation
 - Network configuration
 - Buddy Backup setup
 - System maintenance
+- Release packaging
 
 Philosophy: Simple, idempotent, well-logged shell scripts.
 
 ### `/docs`
-User and developer documentation in Markdown format.
+User and developer documentation in Markdown format. See [docs/README.md](README.md) for full index.
 
 ### `/.github/workflows`
-GitHub Actions CI/CD pipelines. Currently includes:
-- `build-installer.yml` - Builds the installer ISO on every push to main
+GitHub Actions CI/CD pipelines:
+- **`build-installer.yml`** - Builds installer ISO on releases and pushes
+- **`build-package.yml`** - Builds `.deb` system package on releases
 
-## Build Process
+## Build & Release Process
 
-1. GitHub Actions triggers on push to `main`
-2. Runs `installer/build.sh` in a Debian container
-3. Outputs `alvaos-installer-<version>.iso`
-4. Artifact is uploaded and available for download
+### Release Workflow
+
+1. **Create GitHub Release** (tag: `v1.0.0`)
+2. **Automated builds trigger:**
+   - `build-installer.yml` → creates `alvaos-installer-1.0.0.iso`
+   - `build-package.yml` → creates `alvaos-system_1.0.0_amd64.deb`
+3. **Artifacts auto-attached to release**
+4. **Users download from GitHub Releases**
+
+### Local Development Builds
+
+**Build installer ISO:**
+```bash
+cd installer
+sudo ./build.sh
+```
+
+**Build system .deb package:**
+```bash
+cd scripts/package
+sudo ./build-deb.sh
+```
 
 ## Philosophy
 

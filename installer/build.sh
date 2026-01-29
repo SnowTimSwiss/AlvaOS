@@ -167,10 +167,6 @@ grub-mkrescue -o "${BUILD_DIR}/${ISO_NAME}" "${ISO_DIR}"
 log "Build complete! ISO created at: ${BUILD_DIR}/${ISO_NAME}"
 log "ISO size: $(du -h "${BUILD_DIR}/${ISO_NAME}" | cut -f1)"
 
-# Checksum
-log "Generating SHA256 checksum..."
-(cd "${BUILD_DIR}" && sha256sum "${ISO_NAME}" > "${ISO_NAME}.sha256")
-
 log "╔═══════════════════════════════════════╗"
 log "║     Build completed successfully!     ║"
 log "╚═══════════════════════════════════════╝"
