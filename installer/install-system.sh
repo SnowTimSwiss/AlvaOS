@@ -146,14 +146,7 @@ source /etc/network/interfaces.d/*
 auto lo
 iface lo inet loopback
 
-# Allow hotplug for any ethernet interface discovered
-allow-hotplug eth0
-iface eth0 inet dhcp
-
-allow-hotplug enp0s3
-iface enp0s3 inet dhcp
-
-# NetworkManager will handle other interfaces automatically
+# We let NetworkManager handle all other interfaces automatically
 NET_EOF
 
 # Better apt sources for the target system
@@ -197,6 +190,9 @@ chroot /mnt apt-get install -y \
     systemd \
     network-manager \
     openssh-server \
+    docker.io \
+    docker-compose \
+    btrfs-progs \
     curl \
     wget \
     vim \
