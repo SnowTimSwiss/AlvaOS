@@ -187,12 +187,12 @@ mount --make-rslave /mnt/dev
 mount --rbind /sys /mnt/sys
 mount --make-rslave /mnt/sys
 mount -t proc proc /mnt/proc
-mount -t sysfs sysfs /mnt/sys
 
 chroot /mnt apt-get update
 chroot /mnt apt-get install -y \
     linux-image-amd64 \
     grub-efi-amd64 \
+    grub-pc- \
     python3 \
     python3-pip \
     python3-flask \
