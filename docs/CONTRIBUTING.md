@@ -8,7 +8,7 @@ Join us in making self-hosting simple, stable, and transparent.
 - **Transparent**: No "magic" or hidden telemetry.
 
 ## Getting Started
-1. **Explore**: Review [STRUCTURE.md](STRUCTURE.md) and the project [README.md](../README.md).
+1. **Explore**: Review [STRUCTURE.md](STRUCTURE.md), the [ROADMAP.md](ROADMAP.md), and the project [README.md](../README.md).
 2. **Setup**: Fork the repo and pick an area: Backend (Go), Frontend (Svelte/Vue), Installer/Scripts, or Docs.
 3. **Workflow**: Branch → Code+Test → Pull Request (PR).
 

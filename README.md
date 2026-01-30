@@ -112,6 +112,7 @@ AlvaOS is in early development.
 APIs, formats, and behavior may change until the first stable release.
 
 📂 **Repository Structure:** See [docs/STRUCTURE.md](docs/STRUCTURE.md) for the project organization and development guide.
+🗺️ **Roadmap:** See [docs/ROADMAP.md](docs/ROADMAP.md) for current progress and future plans.
 
 ---
 

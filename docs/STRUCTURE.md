@@ -31,4 +31,4 @@ AlvaOS/
 - **Reproducibility**: Deterministic, script-based build process.
 
 ## Status
-Repository structure is finalized. Implementation of Core API and Web UI is in progress. 🚀
+Repository structure is finalized. Implementation of Core API and Web UI is in progress. See [ROADMAP.md](ROADMAP.md) for details. 🚀
