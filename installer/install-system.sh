@@ -20,10 +20,9 @@ cleanup() {
     
     # Unmount everything
     log "Cleaning up..."
-    umount /mnt/sys 2>/dev/null || true
-    umount /mnt/proc 2>/dev/null || true
-    umount /mnt/dev/pts 2>/dev/null || true
-    umount /mnt/dev 2>/dev/null || true
+    umount -l /mnt/sys 2>/dev/null || true
+    umount -l /mnt/proc 2>/dev/null || true
+    umount -l /mnt/dev 2>/dev/null || true
     umount /mnt/boot/efi 2>/dev/null || true
     umount /mnt 2>/dev/null || true
 }
@@ -35,14 +34,14 @@ trap cleanup EXIT ERR INT TERM
 cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════╗
 ║                                                           ║
-║       █████╗ ██╗    ██╗   ██╗ █████╗  ██████╗ ███████╗   ║
-║      ██╔══██╗██║    ██║   ██║██╔══██╗██╔═══██╗██╔════╝   ║
-║      ███████║██║    ██║   ██║███████║██║   ██║███████╗   ║
-║      ██╔══██║██║    ╚██╗ ██╔╝██╔══██║██║   ██║╚════██║   ║
-║      ██║  ██║███████╗╚████╔╝ ██║  ██║╚██████╔╝███████║   ║
-║      ╚═╝  ╚═╝╚══════╝ ╚═══╝  ╚═╝  ╚═╝ ╚═════╝ ╚══════╝   ║
+║       █████╗ ██╗    ██╗   ██╗ █████╗  ██████╗ ███████╗    ║
+║      ██╔══██╗██║    ██║   ██║██╔══██╗██╔═══██╗██╔════╝    ║
+║      ███████║██║    ██║   ██║███████║██║   ██║███████╗    ║
+║      ██╔══██║██║    ╚██╗ ██╔╝██╔══██║██║   ██║╚════██║    ║
+║      ██║  ██║███████╗╚████╔╝ ██║  ██║╚██████╔╝███████║    ║
+║      ╚═╝  ╚═╝╚══════╝ ╚═══╝  ╚═╝  ╚═╝ ╚═════╝ ╚══════╝    ║
 ║                                                           ║
-║            Installation Script v0.1                       ║
+║            Your homelab journey starts here!              ║
 ║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
 EOF
@@ -64,6 +63,16 @@ error() {
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then 
     error "Please run as root (use sudo)"
+fi
+
+# Check for EFI boot mode
+if [ ! -d "/sys/firmware/efi" ]; then
+    warn "System is NOT booted in EFI mode!"
+    warn "This installer is designed for UEFI systems."
+    read -p "Continue anyway? (y/N) " EFI_CONFIRM
+    if [[ "$EFI_CONFIRM" != "y" && "$EFI_CONFIRM" != "Y" ]]; then
+        exit 1
+    fi
 fi
 
 # Detect target disk
@@ -99,6 +108,10 @@ parted -s "$TARGET_DISK" mklabel gpt
 parted -s "$TARGET_DISK" mkpart primary fat32 1MiB 512MiB
 parted -s "$TARGET_DISK" set 1 esp on
 parted -s "$TARGET_DISK" mkpart primary ext4 512MiB 100%
+
+# Sync partitions
+partprobe "$TARGET_DISK" || true
+sleep 2
 
 # Format partitions
 log "Formatting partitions..."
@@ -161,15 +174,18 @@ FSTAB_EOF
 log "Installing kernel and packages..."
 
 # Mount virtual filesystems for chroot
-mount --bind /dev /mnt/dev
-mount --bind /dev/pts /mnt/dev/pts
+mount --rbind /dev /mnt/dev
+mount --make-rslave /mnt/dev
+mount --rbind /sys /mnt/sys
+mount --make-rslave /mnt/sys
 mount -t proc proc /mnt/proc
-mount -t sysfs sysfs /mnt/sys
 
 chroot /mnt apt-get update
 chroot /mnt apt-get install -y \
     linux-image-amd64 \
     grub-efi-amd64 \
+    grub-pc- \
+    sudo \
     python3 \
     python3-pip \
     python3-flask \

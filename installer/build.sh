@@ -25,6 +25,14 @@ log "Starting AlvaOS Installer Build - Version: ${VERSION}"
 # Clean build dir
 rm -rf "${BUILD_DIR}"
 mkdir -p "${BUILD_DIR}"
+
+# Check for existing ISO lock
+TARGET_ISO="${SCRIPT_DIR}/build/alvaos-installer-${VERSION}.iso"
+if [ -f "$TARGET_ISO" ]; then
+    log "Removing old ISO..."
+    rm -f "$TARGET_ISO" || error "Could not remove old ISO! Is it mounted in a VM/Windows? Please detach it first."
+fi
+
 cd "${BUILD_DIR}"
 
 # ------------------------------------------------------------
