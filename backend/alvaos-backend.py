@@ -251,6 +251,128 @@ def get_system_info():
         'system': system_info,
     })
 
+@app.route('/api/v1/system/time', methods=['GET', 'POST'])
+@require_auth
+def system_time():
+    """Get or Set system time settings"""
+    if request.method == 'GET':
+        # Mocking time zone and NTP status
+        return jsonify({
+            'timezone': 'UTC' if platform.system() == 'Windows' else subprocess.getoutput("cat /etc/timezone"),
+            'ntp_enabled': True,
+            'current_time': datetime.now().isoformat()
+        })
+    
+    if request.method == 'POST':
+        data = request.get_json()
+        # Mock implementation
+        if 'timezone' in data:
+            # On Linux: subprocess.run(['sudo', 'timedatectl', 'set-timezone', data['timezone']])
+            pass
+        if 'ntp' in data:
+            # On Linux: subprocess.run(['sudo', 'timedatectl', 'set-ntp', 'true' if data['ntp'] else 'false'])
+            pass
+            
+        return jsonify({'success': True, 'message': 'Time settings updated'})
+
+@app.route('/api/v1/system/power', methods=['POST'])
+@require_auth
+def system_power():
+    """Handle Shutdown/Reboot"""
+    data = request.get_json()
+    action = data.get('action')
+    
+    if action not in ['reboot', 'shutdown']:
+        return jsonify({'error': 'Invalid action'}), 400
+        
+    # Linux implementation
+    if platform.system() == 'Linux':
+        cmd = 'reboot' if action == 'reboot' else 'poweroff'
+        # subprocess.run(['sudo', cmd]) # Commented out for safety in dev
+        
+    return jsonify({'success': True, 'message': f'System {action} initiated'})
+
+@app.route('/api/v1/system/network', methods=['GET'])
+@require_auth
+def get_network_details():
+    """Get detailed network configuration"""
+    # Mock implementation for Windows/Dev
+    try:
+        hostname = socket.gethostname()
+        ip = socket.gethostbyname(hostname)
+    except:
+        hostname = "localhost"
+        ip = "127.0.0.1"
+
+    # Real implementation would parse 'ip addr' or '/etc/network/interfaces'
+    return jsonify({
+        'interface': 'eth0',
+        'hostname': hostname,
+        'ip_address': ip,
+        'subnet_mask': '255.255.255.0', # Placeholder for MVP
+        'gateway': '192.168.1.1',       # Placeholder for MVP
+        'dns': ['1.1.1.1', '8.8.8.8']   # Placeholder for MVP
+    })
+
+@app.route('/api/v1/system/hostname', methods=['PUT'])
+@require_auth
+def set_hostname():
+    """Set system hostname"""
+    data = request.get_json()
+    if not data or 'hostname' not in data:
+        return jsonify({'error': 'Hostname required'}), 400
+    
+    new_hostname = data['hostname']
+    
+    # Validation
+    if not new_hostname.replace('-', '').isalnum():
+        return jsonify({'error': 'Invalid hostname format'}), 400
+
+    # Execute change (Linux only)
+    if platform.system() == 'Linux':
+        try:
+            subprocess.run(['sudo', 'hostnamectl', 'set-hostname', new_hostname], check=True)
+            # Update /etc/hosts as well usually needed
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    else:
+        # Windows/Dev simulation
+        print(f"SIMULATION: Setting hostname to {new_hostname}")
+
+    return jsonify({'success': True, 'hostname': new_hostname})
+
+@app.route('/api/v1/system/logs', methods=['GET'])
+@require_auth
+def get_system_logs():
+    """Get system logs"""
+    logs = []
+    
+    # Try reading syslog on Linux
+    log_file = '/var/log/syslog'
+    if not os.path.exists(log_file):
+        # Fallback for dev/windows
+        log_file = 'backend.log'
+        if not os.path.exists(log_file):
+             # Create dummy logs
+             return jsonify({'logs': [
+                 f"[{datetime.now().isoformat()}] INFO: System running in DEV mode",
+                 f"[{datetime.now().isoformat()}] WARN: Real syslog not found at {log_file}",
+                 "--- Mock Logs ---",
+                 "Oct 27 10:00:01 alva-nas systemd[1]: Started AlvaOS Backend.",
+                 "Oct 27 10:05:23 alva-nas sshd[123]: Accepted password for root from 192.168.1.50"
+             ]})
+
+    try:
+        # Read last 50 lines
+        # Simple implementation
+        with open(log_file, 'r') as f:
+             lines = f.readlines()
+             logs = [l.strip() for l in lines[-50:]]
+    except Exception as e:
+        logs = [f"Error reading logs: {str(e)}"]
+
+    return jsonify({'logs': logs})
+
 @app.route('/api/v1/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""

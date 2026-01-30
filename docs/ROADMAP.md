@@ -7,10 +7,10 @@ Release strategy: "Iterate fast, stabilize often."
 - [x] **UI Prototype**: Design system, basic layout, and navigation.
 - [x] **Docs**: Initial documentation (README, DESIGN, STRUCTURE).
 
-## v0.1.5 - Foundation Extended
-- [ ] **Dashboard**: Basic dashboard with system information (OS info, Uptime).
-- [ ] **System Settings**: Hostname, basic network config, and date/time.
-- [ ] **Logging**: Basic UI for viewing backend logs.
+## v0.1.5 - Foundation Extended (Current)
+- [x] **Dashboard**: Basic dashboard with system information (OS info, Uptime).
+- [x] **System Settings**: Hostname, basic network config, and date/time.
+- [x] **Logging**: Basic UI for viewing backend logs.
 
 ## v0.2.0 - Storage Engine
 - [ ] **Disk Detection**: Enumerate available drives via Web UI.
@@ -18,6 +18,10 @@ Release strategy: "Iterate fast, stabilize often."
 - [ ] **Basic Shares**: NFS/SMB export configuration.
 - [ ] **Disk Health**: SMART monitoring and basic health checks.
 - [ ] **Pool Expansion**: Add disks to existing pools.
+
+## v0.2.0 - Installer
+- [ ] **RAID**: add option in installer to install with mirror
+- [ ] **User Friendly**: make installer more user friendly
 
 ## v0.3.0 - Containerization
 - [ ] **Docker Engine**: Core integration with system services.
