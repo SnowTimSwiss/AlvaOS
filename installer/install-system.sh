@@ -20,6 +20,7 @@ cleanup() {
     
     # Unmount everything
     log "Cleaning up..."
+    umount /mnt/sys/firmware/efi/efivars 2>/dev/null || true
     umount /mnt/sys 2>/dev/null || true
     umount /mnt/proc 2>/dev/null || true
     umount /mnt/dev/pts 2>/dev/null || true
@@ -136,17 +137,31 @@ cat > /mnt/etc/hosts << 'HOSTS_EOF'
 ::1         localhost ip6-localhost ip6-loopback
 HOSTS_EOF
 
-# Configure network (DHCP)
+# Configure network (DHCP on all common interfaces)
+# We use a more generic approach to avoid issues with predictable interface names
 cat > /mnt/etc/network/interfaces << 'NET_EOF'
+source /etc/network/interfaces.d/*
+
+# The loopback network interface
 auto lo
 iface lo inet loopback
 
-auto eth0
+# Allow hotplug for any ethernet interface discovered
+allow-hotplug eth0
 iface eth0 inet dhcp
 
-auto enp0s3
+allow-hotplug enp0s3
 iface enp0s3 inet dhcp
+
+# NetworkManager will handle other interfaces automatically
 NET_EOF
+
+# Better apt sources for the target system
+cat > /mnt/etc/apt/sources.list << 'SOURCES_EOF'
+deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
+deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
+deb http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
+SOURCES_EOF
 
 # Configure fstab
 BOOT_UUID=$(blkid -s UUID -o value "$EFI_PART")
@@ -173,6 +188,7 @@ chroot /mnt apt-get update
 chroot /mnt apt-get install -y \
     linux-image-amd64 \
     grub-efi-amd64 \
+    grub-pc \
     python3 \
     python3-pip \
     python3-flask \
@@ -188,7 +204,10 @@ chroot /mnt apt-get install -y \
     firmware-linux-free \
     intel-microcode \
     amd64-microcode \
-    initramfs-tools
+    initramfs-tools \
+    systemd-timesyncd \
+    iputils-ping \
+    net-tools
 
 # Install GRUB
 log "Installing bootloader..."
