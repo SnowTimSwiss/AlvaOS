@@ -14,13 +14,19 @@ import json
 import subprocess
 from datetime import datetime
 from pathlib import Path
+import hashlib
+import hmac
+import secrets
+import functools
 
 app = Flask(__name__, static_folder='/opt/alvaos/webui', static_url_path='')
 CORS(app)
 
 # Configuration
 SETUP_STATUS_FILE = '/var/lib/alvaos/setup_complete.json'
+AUTH_FILE = '/var/lib/alvaos/auth.json'
 CONFIG_DIR = '/etc/alvaos'
+SESSIONS = {} # Token -> Username (In-memory for 0.1)
 
 def ensure_directories():
     """Ensure necessary directories exist"""
@@ -31,9 +37,22 @@ def is_setup_complete():
     """Check if initial setup has been completed"""
     return os.path.exists(SETUP_STATUS_FILE)
 
-def mark_setup_complete():
-    """Mark the initial setup as complete"""
+def mark_setup_complete(password):
+    """Mark the initial setup as complete and store password hash"""
     ensure_directories()
+    
+    # Simple hash for 0.1
+    salt = secrets.token_hex(8)
+    h = hashlib.sha256((password + salt).encode()).hexdigest()
+    
+    auth_data = {
+        'password_hash': h,
+        'salt': salt
+    }
+    
+    with open(AUTH_FILE, 'w') as f:
+        json.dump(auth_data, f)
+
     setup_data = {
         'setup_completed': True,
         'completed_at': datetime.now().isoformat(),
@@ -41,6 +60,20 @@ def mark_setup_complete():
     }
     with open(SETUP_STATUS_FILE, 'w') as f:
         json.dump(setup_data, f, indent=2)
+
+def require_auth(f):
+    """Decorator to require authentication if setup is complete"""
+    @functools.wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not is_setup_complete():
+            return f(*args, **kwargs)
+            
+        token = request.headers.get('Authorization')
+        if not token or token not in SESSIONS:
+            return jsonify({'error': 'Authentication required'}), 401
+            
+        return f(*args, **kwargs)
+    return decorated_function
 
 @app.route('/')
 def index():
@@ -108,17 +141,51 @@ def complete_setup():
             print(f"Warning: Could not update SSH config: {e}")
         
         # Mark setup as complete
-        mark_setup_complete()
+        mark_setup_complete(password)
+        
+        # Auto-login for the setup session
+        token = secrets.token_hex(24)
+        SESSIONS[token] = 'root'
         
         return jsonify({
             'success': True,
-            'message': 'Setup completed successfully'
+            'message': 'Setup completed successfully',
+            'token': token
         })
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/v1/auth/login', methods=['POST'])
+def login():
+    """Login with root password"""
+    if not is_setup_complete():
+        return jsonify({'error': 'Setup not complete'}), 400
+        
+    data = request.get_json()
+    if not data or 'password' not in data:
+        return jsonify({'error': 'Password required'}), 400
+        
+    password = data['password']
+    
+    try:
+        with open(AUTH_FILE, 'r') as f:
+            auth_data = json.load(f)
+            
+        h = hashlib.sha256((password + auth_data['salt']).encode()).hexdigest()
+        
+        if h == auth_data['password_hash']:
+            token = secrets.token_hex(24)
+            SESSIONS[token] = 'root'
+            return jsonify({'token': token, 'success': True})
+        else:
+            return jsonify({'error': 'Invalid password'}), 401
+            
+    except Exception as e:
+        return jsonify({'error': 'Authentication failed'}), 500
+
 @app.route('/api/v1/system/info', methods=['GET'])
+@require_auth
 def get_system_info():
     """Get comprehensive system information"""
     

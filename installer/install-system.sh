@@ -207,11 +207,11 @@ SSH_EOF
 
 echo ""
 log "╔════════════════════════════════════════════════════════════╗"
-log "║  Root account secured with random password                ║"
-log "║  SSH root login DISABLED                                  ║"
-log "║                                                           ║"
-log "║  👉 You MUST set password via Web UI on first boot:       ║"
-log "║     http://[SERVER-IP]:8080                               ║"
+log "║  Root account secured with random password                 ║"
+log "║  SSH root login DISABLED                                   ║"
+log "║                                                            ║"
+log "║  👉 You MUST set password via Web UI on first boot:        ║"
+log "║     http://[SERVER-IP]:8080                                ║"
 log "╚════════════════════════════════════════════════════════════╝"
 echo ""
 

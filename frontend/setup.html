@@ -299,7 +299,8 @@
                     throw new Error(data.error || 'Setup failed');
                 }
 
-                // Success! Show message and redirect
+                // Success! Store token and show message
+                localStorage.setItem('alvaos_token', data.token);
                 document.getElementById('setup-content').innerHTML = `
                     <div class="success-message">
                         <h2 style="margin-bottom: 1rem;">✓ Setup Complete!</h2>
