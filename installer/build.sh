@@ -46,7 +46,7 @@ lb config \
   --linux-flavours amd64 \
   --debian-installer none \
   --binary-images iso-hybrid \
-  --bootappend-live "boot=live components hostname=alvaos-installer locales=en_US.UTF-8 keyboard-layouts=us quiet nomodeset" \
+  --bootappend-live "boot=live components hostname=alvaos-installer username=installer locales=en_US.UTF-8 keyboard-layouts=us quiet nomodeset" \
   --iso-application "AlvaOS Server Installer" \
   --iso-publisher "AlvaOS Project" \
   --iso-volume "ALVAOS_SERVER_INSTALLER" \

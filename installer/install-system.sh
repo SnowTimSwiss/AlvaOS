@@ -180,7 +180,8 @@ chroot /mnt apt-get install -y \
     openssh-server \
     curl \
     wget \
-    vim
+    vim \
+    sudo
 
 # Install GRUB
 log "Installing bootloader..."
@@ -266,6 +267,7 @@ chroot /mnt chown -R alvaos:alvaos /var/log/alvaos
 chroot /mnt chown -R alvaos:alvaos /etc/alvaos
 
 # Create sudoers rules for specific privileged operations
+mkdir -p /mnt/etc/sudoers.d
 cat > /mnt/etc/sudoers.d/alvaos << 'SUDOERS_EOF'
 # AlvaOS backend needs specific privileged commands
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/chpasswd
