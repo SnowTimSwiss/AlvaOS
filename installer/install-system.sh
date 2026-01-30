@@ -20,12 +20,12 @@ cleanup() {
     
     # Unmount everything
     log "Cleaning up..."
-    umount /mnt/sys 2>/dev/null || true
-    umount /mnt/proc 2>/dev/null || true
-    umount /mnt/dev/pts 2>/dev/null || true
-    umount /mnt/dev 2>/dev/null || true
-    umount /mnt/boot/efi 2>/dev/null || true
-    umount /mnt 2>/dev/null || true
+    umount -l /mnt/sys 2>/dev/null || true
+    umount -l /mnt/proc 2>/dev/null || true
+    umount -l /mnt/dev/pts 2>/dev/null || true
+    umount -l /mnt/dev 2>/dev/null || true
+    umount -l /mnt/boot/efi 2>/dev/null || true
+    umount -l /mnt 2>/dev/null || true
 }
 
 # Set trap for cleanup
@@ -338,13 +338,13 @@ chroot /mnt apt-get clean
 
 # Unmount
 log "Unmounting filesystems..."
-umount /mnt/sys/firmware/efi/efivars 2>/dev/null || true
-umount /mnt/sys || true
-umount /mnt/proc || true
-umount /mnt/dev/pts || true
-umount /mnt/dev || true
-umount /mnt/boot/efi
-umount /mnt
+umount -l /mnt/sys/firmware/efi/efivars 2>/dev/null || true
+umount -l /mnt/sys || true
+umount -l /mnt/proc || true
+umount -l /mnt/dev/pts || true
+umount -l /mnt/dev || true
+umount -l /mnt/boot/efi || true
+umount -l /mnt || true
 
 log "╔═══════════════════════════════════════╗"
 log "║  ✅ Installation completed!           ║"
