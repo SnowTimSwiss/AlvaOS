@@ -165,6 +165,9 @@ mount --bind /dev /mnt/dev
 mount --bind /dev/pts /mnt/dev/pts
 mount -t proc proc /mnt/proc
 mount -t sysfs sysfs /mnt/sys
+if [ -d /sys/firmware/efi ]; then
+    mount -t efivarfs efivarfs /mnt/sys/firmware/efi/efivars || true
+fi
 
 chroot /mnt apt-get update
 chroot /mnt apt-get install -y \
@@ -181,11 +184,24 @@ chroot /mnt apt-get install -y \
     curl \
     wget \
     vim \
-    sudo
+    sudo \
+    firmware-linux-free \
+    intel-microcode \
+    amd64-microcode \
+    initramfs-tools
 
 # Install GRUB
 log "Installing bootloader..."
-chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=AlvaOS
+if [ -d /sys/firmware/efi ]; then
+    chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=AlvaOS --recheck --removable
+else
+    # Fallback for Legacy BIOS (if the disk has a BIOS boot partition, but we created GPT)
+    # Note: This is an attempt, GPT without BIOS boot partition might still fail on very old BIOS
+    warn "System is not in UEFI mode, attempting legacy GRUB install..."
+    chroot /mnt grub-install --target=i386-pc "$TARGET_DISK" || true
+fi
+# Add nomodeset to installed system for better hardware compatibility
+sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="quiet"/GRUB_CMDLINE_LINUX_DEFAULT="quiet nomodeset"/' /mnt/etc/default/grub
 chroot /mnt update-grub
 
 # Secure root account with random password
@@ -296,6 +312,7 @@ chroot /mnt apt-get clean
 
 # Unmount
 log "Unmounting filesystems..."
+umount /mnt/sys/firmware/efi/efivars 2>/dev/null || true
 umount /mnt/sys || true
 umount /mnt/proc || true
 umount /mnt/dev/pts || true
