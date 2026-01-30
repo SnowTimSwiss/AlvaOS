@@ -14,7 +14,17 @@ function updateClock() {
 // Fetch system information
 async function fetchSystemInfo() {
     try {
-        const response = await fetch(`${API_BASE}/system/info`);
+        const token = localStorage.getItem('alvaos_token');
+        const response = await fetch(`${API_BASE}/system/info`, {
+            headers: {
+                'Authorization': token || ''
+            }
+        });
+
+        if (response.status === 401) {
+            window.location.href = '/login.html';
+            return;
+        }
 
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -118,6 +128,13 @@ async function init() {
                 // Redirect to setup wizard
                 window.location.href = '/setup.html';
                 return;
+            } else {
+                // Setup complete, check if we have a token
+                const token = localStorage.getItem('alvaos_token');
+                if (!token) {
+                    window.location.href = '/login.html';
+                    return;
+                }
             }
         }
     } catch (error) {

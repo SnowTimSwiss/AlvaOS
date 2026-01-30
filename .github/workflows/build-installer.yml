@@ -39,6 +39,14 @@ jobs:
             git \
             live-build \
             syslinux-utils \
+            xorriso \
+            mtools \
+            dosfstools \
+            isolinux \
+            shim-signed \
+            grub-common \
+            grub-efi-amd64-bin \
+            grub-pc-bin \
             squashfs-tools \
             apt-file
       

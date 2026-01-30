@@ -20,9 +20,10 @@ cleanup() {
     
     # Unmount everything
     log "Cleaning up..."
-    umount -l /mnt/sys 2>/dev/null || true
-    umount -l /mnt/proc 2>/dev/null || true
-    umount -l /mnt/dev 2>/dev/null || true
+    umount /mnt/sys 2>/dev/null || true
+    umount /mnt/proc 2>/dev/null || true
+    umount /mnt/dev/pts 2>/dev/null || true
+    umount /mnt/dev 2>/dev/null || true
     umount /mnt/boot/efi 2>/dev/null || true
     umount /mnt 2>/dev/null || true
 }
@@ -149,17 +150,24 @@ cat > /mnt/etc/hosts << 'HOSTS_EOF'
 ::1         localhost ip6-localhost ip6-loopback
 HOSTS_EOF
 
-# Configure network (DHCP)
+# Configure network (DHCP on all common interfaces)
+# We use a more generic approach to avoid issues with predictable interface names
 cat > /mnt/etc/network/interfaces << 'NET_EOF'
+source /etc/network/interfaces.d/*
+
+# The loopback network interface
 auto lo
 iface lo inet loopback
 
-auto eth0
-iface eth0 inet dhcp
-
-auto enp0s3
-iface enp0s3 inet dhcp
+# We let NetworkManager handle all other interfaces automatically
 NET_EOF
+
+# Better apt sources for the target system
+cat > /mnt/etc/apt/sources.list << 'SOURCES_EOF'
+deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
+deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
+deb http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
+SOURCES_EOF
 
 # Configure fstab
 BOOT_UUID=$(blkid -s UUID -o value "$EFI_PART")
@@ -179,13 +187,12 @@ mount --make-rslave /mnt/dev
 mount --rbind /sys /mnt/sys
 mount --make-rslave /mnt/sys
 mount -t proc proc /mnt/proc
+mount -t sysfs sysfs /mnt/sys
 
 chroot /mnt apt-get update
 chroot /mnt apt-get install -y \
     linux-image-amd64 \
     grub-efi-amd64 \
-    grub-pc- \
-    sudo \
     python3 \
     python3-pip \
     python3-flask \
@@ -194,13 +201,33 @@ chroot /mnt apt-get install -y \
     systemd \
     network-manager \
     openssh-server \
+    docker.io \
+    docker-compose \
+    btrfs-progs \
     curl \
     wget \
-    vim
+    vim \
+    sudo \
+    firmware-linux-free \
+    intel-microcode \
+    amd64-microcode \
+    initramfs-tools \
+    systemd-timesyncd \
+    iputils-ping \
+    net-tools
 
 # Install GRUB
 log "Installing bootloader..."
-chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=AlvaOS
+if [ -d /sys/firmware/efi ]; then
+    chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=AlvaOS --recheck --removable
+else
+    # Fallback for Legacy BIOS (if the disk has a BIOS boot partition, but we created GPT)
+    # Note: This is an attempt, GPT without BIOS boot partition might still fail on very old BIOS
+    warn "System is not in UEFI mode, attempting legacy GRUB install..."
+    chroot /mnt grub-install --target=i386-pc "$TARGET_DISK" || true
+fi
+# Add nomodeset to installed system for better hardware compatibility
+sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="quiet"/GRUB_CMDLINE_LINUX_DEFAULT="quiet nomodeset"/' /mnt/etc/default/grub
 chroot /mnt update-grub
 
 # Secure root account with random password
@@ -222,11 +249,11 @@ SSH_EOF
 
 echo ""
 log "╔════════════════════════════════════════════════════════════╗"
-log "║  Root account secured with random password                ║"
-log "║  SSH root login DISABLED                                  ║"
-log "║                                                           ║"
-log "║  👉 You MUST set password via Web UI on first boot:       ║"
-log "║     http://[SERVER-IP]:8080                               ║"
+log "║  Root account secured with random password                 ║"
+log "║  SSH root login DISABLED                                   ║"
+log "║                                                            ║"
+log "║  👉 You MUST set password via Web UI on first boot:        ║"
+log "║     http://[SERVER-IP]:8080                                ║"
 log "╚════════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -282,6 +309,7 @@ chroot /mnt chown -R alvaos:alvaos /var/log/alvaos
 chroot /mnt chown -R alvaos:alvaos /etc/alvaos
 
 # Create sudoers rules for specific privileged operations
+mkdir -p /mnt/etc/sudoers.d
 cat > /mnt/etc/sudoers.d/alvaos << 'SUDOERS_EOF'
 # AlvaOS backend needs specific privileged commands
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/chpasswd
@@ -310,6 +338,7 @@ chroot /mnt apt-get clean
 
 # Unmount
 log "Unmounting filesystems..."
+umount /mnt/sys/firmware/efi/efivars 2>/dev/null || true
 umount /mnt/sys || true
 umount /mnt/proc || true
 umount /mnt/dev/pts || true

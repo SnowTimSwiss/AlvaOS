@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlvaOS - Login</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-surface: #161b22;
+            --bg-border: #30363d;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --accent-primary: #58a6ff;
+            --accent-success: #238636;
+            --accent-danger: #f85149;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+
+        .login-container {
+            max-width: 400px;
+            width: 100%;
+            background: var(--bg-surface);
+            border: 1px solid var(--bg-border);
+            border-radius: 8px;
+            padding: 2.5rem;
+        }
+
+        .logo {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .logo h1 {
+            font-size: 2rem;
+            color: var(--accent-primary);
+            margin-bottom: 0.5rem;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            font-size: 0.875rem;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 0.75rem;
+            background: var(--bg-primary);
+            border: 1px solid var(--bg-border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 0.9rem;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 0.875rem;
+            background: var(--accent-primary);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .btn:hover {
+            opacity: 0.9;
+        }
+
+        .error-message {
+            background: var(--accent-danger);
+            color: white;
+            padding: 0.875rem;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+            font-size: 0.875rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="login-container">
+        <div class="logo">
+            <h1>AlvaOS</h1>
+            <p>System Login</p>
+        </div>
+
+        <div id="error-container"></div>
+
+        <form id="login-form">
+            <div class="form-group">
+                <label for="password">Root Password</label>
+                <input type="password" id="password" name="password" required autofocus>
+            </div>
+
+            <button type="submit" class="btn" id="login-btn">Login</button>
+        </form>
+    </div>
+
+    <script>
+        const loginForm = document.getElementById('login-form');
+        const passwordInput = document.getElementById('password');
+        const loginBtn = document.getElementById('login-btn');
+        const errorContainer = document.getElementById('error-container');
+
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errorContainer.innerHTML = '';
+            
+            const password = passwordInput.value;
+            loginBtn.disabled = true;
+            loginBtn.textContent = 'Logging in...';
+
+            try {
+                const response = await fetch('/api/v1/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ password })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Login failed');
+                }
+
+                localStorage.setItem('alvaos_token', data.token);
+                window.location.href = '/';
+
+            } catch (error) {
+                errorContainer.innerHTML = `<div class="error-message">${error.message}</div>`;
+                loginBtn.disabled = false;
+                loginBtn.textContent = 'Login';
+            }
+        });
+    </script>
+</body>
+
+</html>
