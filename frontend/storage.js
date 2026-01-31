@@ -629,7 +629,7 @@ async function showCreatePoolDialog() {
                 <option value="raid10">RAID10 (Striping + Mirroring - 4+ disks)</option>
             </select>
             <p style="font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.5rem;" id="raid-description">
-                No data redundancy. Full capacity available.
+                ⚠️ High Risk. No data protection. If the disk dies, data is lost. Full capacity (100%).
             </p>
         </div>
 
@@ -662,10 +662,10 @@ async function showCreatePoolDialog() {
     const raidSelect = wizard.querySelector('#raid-level-select');
     const raidDesc = wizard.querySelector('#raid-description');
     const raidDescriptions = {
-        'single': 'No data redundancy. Full capacity available.',
-        'raid0': 'Data striped across disks. No redundancy. Full capacity.',
-        'raid1': 'Data mirrored across disks. 50% capacity. Survives 1 disk failure.',
-        'raid10': 'Striping + Mirroring. 50% capacity. Best performance and redundancy.'
+        'single': '⚠️ High Risk. No data protection. If the disk dies, data is lost. Full capacity (100%).',
+        'raid0': '⚠️ Very High Risk. High speed, but NO protection. If ONE disk fails, ALL data is lost. Capacity: 100%.',
+        'raid1': '✅ Recommended. Mirrors data for safety. Survives 1 disk failure. Capacity: 50% (requires 2+ disks).',
+        'raid10': '🚀 Best Performance & Safety. Combines speed of RAID0 with safety of RAID1. Requires 4+ disks. Capacity: 50%.'
     };
 
     raidSelect.addEventListener('change', () => {
