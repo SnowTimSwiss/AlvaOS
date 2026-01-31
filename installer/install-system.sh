@@ -214,7 +214,10 @@ chroot /mnt apt-get install -y \
     initramfs-tools \
     systemd-timesyncd \
     iputils-ping \
-    net-tools
+    net-tools \
+    smartmontools \
+    nfs-kernel-server \
+    samba
 
 # Install GRUB
 log "Installing bootloader..."
@@ -312,10 +315,39 @@ chroot /mnt chown -R alvaos:alvaos /etc/alvaos
 mkdir -p /mnt/etc/sudoers.d
 cat > /mnt/etc/sudoers.d/alvaos << 'SUDOERS_EOF'
 # AlvaOS backend needs specific privileged commands
+# User Management
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/chpasswd
+
+# Service Management
 alvaos ALL=(ALL) NOPASSWD: /bin/systemctl restart alvaos.service
 alvaos ALL=(ALL) NOPASSWD: /bin/systemctl restart ssh
 alvaos ALL=(ALL) NOPASSWD: /bin/systemctl status docker.service
+alvaos ALL=(ALL) NOPASSWD: /bin/systemctl restart smbd
+alvaos ALL=(ALL) NOPASSWD: /bin/systemctl reload nfs-kernel-server
+
+# Storage Management (SMART, Btrfs, Partitions)
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/smartctl
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/lsblk
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/btrfs
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/wipefs
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/partprobe
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/umount
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/mount
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/mkfs.btrfs
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/mkfs.ext4
+
+# System Settings (Hostname, Time, Power)
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/hostnamectl
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/timedatectl
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/reboot
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/poweroff
+
+# Network Shares Config (NFS Exports, Samba)
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/exportfs
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/exports
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee -a /etc/exports
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/samba/smb.conf
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee -a /etc/samba/smb.conf
 SUDOERS_EOF
 chroot /mnt chmod 440 /etc/sudoers.d/alvaos
 
