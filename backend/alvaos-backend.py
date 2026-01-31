@@ -923,8 +923,20 @@ def manage_pools():
                 
                 # Save pool state
                 pools_state = load_pools_state()
+                
+                # Get real BTRFS UUID to use as ID (matches get_pools logic)
                 import uuid
-                pool_id = str(uuid.uuid4())
+                pool_id = str(uuid.uuid4()) # Fallback
+                try:
+                    # blkid returns just the UUID value
+                    blkid_res, _ = run_sudo_command(['sudo', 'blkid', '-s', 'UUID', '-o', 'value', devices[0]])
+                    if blkid_res and blkid_res.returncode == 0:
+                         real_uuid = blkid_res.stdout.strip()
+                         if real_uuid:
+                             pool_id = real_uuid
+                except:
+                    pass
+
                 pools_state[pool_id] = {
                     'name': pool_name,
                     'devices': devices,

@@ -13,12 +13,12 @@ Release strategy: "Iterate fast, stabilize often."
 - [x] **Logging**: Basic UI for viewing backend logs.
 
 ## v0.2.0 - Storage Engine
-- [ ] **Disk Detection**: Enumerate available drives via Web UI.
-- [ ] **Btrfs Integration**: Pool creation, subvolume management.
-- [ ] **Basic Shares**: NFS/SMB export configuration.
-- [ ] **Disk Health**: SMART monitoring and basic health checks.
-- [ ] **Pool Expansion**: Add disks to existing pools.
-- [ ] **File Browser**: Simple web-based file manager to browse and manage files.
+- [x] **Disk Detection**: Enumerate available drives via Web UI.
+- [x] **Btrfs Integration**: Pool creation, subvolume management.
+- [x] **Basic Shares**: NFS/SMB export configuration.
+- [x] **Disk Health**: SMART monitoring and basic health checks.
+- [x] **Pool Expansion**: Add disks to existing pools.
+- [will come back later] **File Browser**: Simple web-based file manager to browse and manage files.
 
 ## v0.3.0 - Updates
 - [ ] **Update System**: Be able to update the AlvaOS-packages via Web UI.
