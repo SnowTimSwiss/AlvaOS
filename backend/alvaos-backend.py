@@ -857,7 +857,10 @@ def manage_pools():
                 
                 # Create mount point
                 mount_point = f'/mnt/alvaos/{pool_name}'
-                os.makedirs(mount_point, exist_ok=True)
+                # Use sudo to create directory as we might not have permission in /mnt/alvaos
+                res, err = run_sudo_command(['sudo', 'mkdir', '-p', mount_point])
+                if err:
+                     return jsonify({'error': f'Failed to create mount point: {err}'}), 500
                 
                 # Mount the pool
                 res, err = run_sudo_command(['sudo', 'mount', devices[0], mount_point])

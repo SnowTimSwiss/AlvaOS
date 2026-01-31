@@ -148,8 +148,10 @@ function handleConnectionError() {
                 const controller = new AbortController();
                 const id = setTimeout(() => controller.abort(), 2000);
 
+                const token = localStorage.getItem('alvaos_token');
                 const res = await fetch(`${API_BASE}/system/info`, {
-                    signal: controller.signal
+                    signal: controller.signal,
+                    headers: { 'Authorization': token || '' }
                 });
                 clearTimeout(id);
 

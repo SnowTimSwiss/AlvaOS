@@ -333,6 +333,7 @@ alvaos ALL=(ALL) NOPASSWD: /usr/sbin/wipefs
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/partprobe
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/umount
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/mount
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/mkdir
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/mkfs.btrfs
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/mkfs.ext4
 

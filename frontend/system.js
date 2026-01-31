@@ -130,7 +130,7 @@ async function sendPowerAction(action) {
         });
 
         if (res.ok) {
-            alert(`System ${action} initiated. Web interface will close.`);
+            handleConnectionError();
         }
     } catch (e) {
         alert('Action failed');

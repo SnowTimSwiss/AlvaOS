@@ -1079,23 +1079,20 @@ async function showCreateShareDialog() {
             <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Protocol</label>
             <select id="protocol-select" 
                 style="width: 100%; padding: 0.75rem; background: var(--bg-primary); border: 1px solid var(--bg-border); color: var(--text-primary); border-radius: 4px;">
+                <option value="smb" selected>SMB/Samba (Windows Compatible)</option>
                 <option value="nfs">NFS (Network File System)</option>
-                <option value="smb">SMB/Samba (Windows Compatible)</option>
             </select>
             <p style="font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.5rem;" id="protocol-description">
-                Best for Linux/Unix systems. Lightweight and fast.
+                Best for Windows, macOS and general file sharing.
             </p>
         </div>
 
         <div style="margin-bottom: 1.5rem;">
-            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Share Path</label>
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Share Path (Pool or Subvolume)</label>
             <select id="path-select" 
                 style="width: 100%; padding: 0.75rem; background: var(--bg-primary); border: 1px solid var(--bg-border); color: var(--text-primary); border-radius: 4px;">
                 ${availablePaths.map(p => `<option value="${p.path}">${p.name} (${p.path})</option>`).join('')}
-                <option value="custom">Custom Path...</option>
             </select>
-            <input type="text" id="custom-path-input" placeholder="/custom/path" 
-                style="width: 100%; padding: 0.75rem; background: var(--bg-primary); border: 1px solid var(--bg-border); color: var(--text-primary); border-radius: 4px; margin-top: 0.5rem; display: none;">
         </div>
 
         <div style="margin-bottom: 1.5rem;">
@@ -1108,7 +1105,7 @@ async function showCreateShareDialog() {
             </p>
         </div>
 
-        <div id="nfs-options" style="margin-bottom: 1.5rem;">
+        <div id="nfs-options" style="margin-bottom: 1.5rem; display: none;">
             <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Allowed Hosts (NFS)</label>
             <input type="text" id="allowed-hosts-input" value="*" placeholder="* or 192.168.1.0/24" 
                 style="width: 100%; padding: 0.75rem; background: var(--bg-primary); border: 1px solid var(--bg-border); color: var(--text-primary); border-radius: 4px;">
@@ -1117,7 +1114,8 @@ async function showCreateShareDialog() {
             </p>
         </div>
 
-        <div id="smb-options" style="margin-bottom: 1.5rem; display: none;">
+
+        <div id="smb-options" style="margin-bottom: 1.5rem;">
             <label style="display: flex; align-items: center; cursor: pointer;">
                 <input type="checkbox" id="guest-access-checkbox" style="margin-right: 0.75rem; accent-color: var(--accent-primary);">
                 <span style="font-weight: 600;">Allow Guest Access (SMB)</span>
@@ -1167,16 +1165,8 @@ async function showCreateShareDialog() {
     });
 
     // Path selection handler
+    // Path selection handler (Cleaned up: No custom path logic needed)
     const pathSelect = wizard.querySelector('#path-select');
-    const customPathInput = wizard.querySelector('#custom-path-input');
-
-    pathSelect.addEventListener('change', () => {
-        if (pathSelect.value === 'custom') {
-            customPathInput.style.display = 'block';
-        } else {
-            customPathInput.style.display = 'none';
-        }
-    });
 
     // Cancel button
     wizard.querySelector('#cancel-share-btn').addEventListener('click', () => {
@@ -1187,11 +1177,7 @@ async function showCreateShareDialog() {
     wizard.querySelector('#create-share-confirm-btn').addEventListener('click', async () => {
         const shareName = wizard.querySelector('#share-name-input').value.trim();
         const protocol = protocolSelect.value;
-        let sharePath = pathSelect.value;
-
-        if (sharePath === 'custom') {
-            sharePath = customPathInput.value.trim();
-        }
+        const sharePath = pathSelect.value;
 
         const readOnly = wizard.querySelector('#read-only-checkbox').checked;
         const allowedHosts = wizard.querySelector('#allowed-hosts-input').value.trim();
