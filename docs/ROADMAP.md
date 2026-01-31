@@ -18,18 +18,20 @@ Release strategy: "Iterate fast, stabilize often."
 - [ ] **Basic Shares**: NFS/SMB export configuration.
 - [ ] **Disk Health**: SMART monitoring and basic health checks.
 - [ ] **Pool Expansion**: Add disks to existing pools.
+- [ ] **File Browser**: Simple web-based file manager to browse and manage files.
 
 ## v0.3.0 - Updates
 - [ ] **Update System**: Be able to update the AlvaOS-packages via Web UI.
-- [ ] **Debian Updates** Be able to update the Debian-packages via Web UI.
+- [ ] **Debian Updates**: Be able to update the Debian-packages via Web UI.
 
 ## v0.4.0 - Installer
-- [ ] **RAID**: add option in installer to install with mirror
-- [ ] **User Friendly**: make installer more user friendly
+- [ ] **RAID**: Add option in installer to install with mirror
+- [ ] **User Friendly**: Make installer more user friendly
+- [ ] **Power**: Make the Installer more powerfull
 
 ## v0.5.0 - Containerization
 - [ ] **Docker Engine**: Core integration with system services.
-- [ ] **App Store**
+- [ ] **App Store**: Add App Store to install and update apps.
 - [ ] **Container Management**: Start, stop, logs, and basic config via UI.
 
 ## v0.6.0 - Local Backups
@@ -50,6 +52,7 @@ Release strategy: "Iterate fast, stabilize often."
 ## v0.9.0 - Monitoring & Health
 - [ ] **Disks**: S.M.A.R.T. monitoring and basic health checks.
 - [ ] **Smart Alerts**: Notification system for failures/warnings.
+- [ ] **Integrations**: Webhook support (Discord, Telegram, Email) for alerts.
 
 ## v0.10.0 - Security
 - [ ] **Hardening**: Firewall rules and permission audits.
@@ -62,6 +65,9 @@ Release strategy: "Iterate fast, stabilize often."
 - [ ] **UX Refinement**: Mobile view, animations, and themes.
 - [ ] **Performance**: Optimization of API and Frontend.
 - [ ] **Bug Hunt**: Excessive testing and edge-case fixing.
+- [ ] **AlvaOS Branding**: Update AlvaOS branding in the UI.
+- [ ] **User friendly**: Make the UI more user friendly.
+- [ ] **User feedback**: Add user feedback to the UI.
 
 ## v1.0.0 - Stable Release 🚀
 - [ ] **Feature Complete**: All planned features implemented and stable.
