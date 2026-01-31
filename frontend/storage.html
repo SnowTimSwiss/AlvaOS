@@ -123,47 +123,47 @@
 
             <!-- Disks Tab -->
             <div class="tab-content active" id="tab-disks">
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">Available Disks</div>
-                        <button id="refresh-disks-btn" class="btn-secondary"
-                            style="padding: 4px 10px; font-size: 0.85rem;">🔄 Refresh</button>
-                    </div>
-                    <div id="disks-container">
-                        <div style="padding: 2rem; text-align:center; color: var(--text-secondary);">Loading disks...
-                        </div>
-                    </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h2
+                        style="font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em;">
+                        Available Disks</h2>
+                    <button id="refresh-disks-btn" class="btn-secondary"
+                        style="padding: 4px 10px; font-size: 0.85rem;">🔄 Refresh</button>
+                </div>
+                <div id="disks-container" class="dashboard-grid">
+                    <div style="padding: 2rem; text-align:center; color: var(--text-secondary); grid-column: 1/-1;">
+                        Loading disks...</div>
                 </div>
             </div>
 
             <!-- Pools Tab -->
             <div class="tab-content" id="tab-pools">
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">Storage Pools</div>
-                        <button id="create-pool-btn" class="btn-primary"
-                            style="padding: 4px 10px; font-size: 0.85rem;">➕ Create Pool</button>
-                    </div>
-                    <div id="pools-container">
-                        <div style="padding: 2rem; text-align:center; color: var(--text-secondary);">
-                            No pools found. <br> <span style="font-size:0.85rem;">Create a pool to start.</span>
-                        </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h2
+                        style="font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em;">
+                        Storage Pools</h2>
+                    <button id="create-pool-btn" class="btn-primary" style="padding: 4px 10px; font-size: 0.85rem;">➕
+                        Create Pool</button>
+                </div>
+                <div id="pools-container" class="dashboard-grid">
+                    <div style="padding: 2rem; text-align:center; color: var(--text-secondary); grid-column: 1/-1;">
+                        No pools found. <br> <span style="font-size:0.85rem;">Create a pool to start.</span>
                     </div>
                 </div>
             </div>
 
             <!-- Shares Tab -->
             <div class="tab-content" id="tab-shares">
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">Network Shares</div>
-                        <button id="create-share-btn" class="btn-primary"
-                            style="padding: 4px 10px; font-size: 0.85rem;">➕ Create Share</button>
-                    </div>
-                    <div id="shares-container">
-                        <div style="padding: 2rem; text-align:center; color: var(--text-secondary);">
-                            No shares configured.
-                        </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h2
+                        style="font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em;">
+                        Network Shares</h2>
+                    <button id="create-share-btn" class="btn-primary" style="padding: 4px 10px; font-size: 0.85rem;">➕
+                        Create Share</button>
+                </div>
+                <div id="shares-container" class="dashboard-grid">
+                    <div style="padding: 2rem; text-align:center; color: var(--text-secondary); grid-column: 1/-1;">
+                        No shares configured.
                     </div>
                 </div>
             </div>

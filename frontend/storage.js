@@ -70,7 +70,7 @@ function displayDisks(disks) {
     const container = document.getElementById('disks-container');
 
     if (!disks || disks.length === 0) {
-        container.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">No disks detected.</p>';
+        container.innerHTML = '<p style="text-align: center; color: var(--text-secondary); grid-column: 1/-1;">No disks detected.</p>';
         return;
     }
 
@@ -78,15 +78,10 @@ function displayDisks(disks) {
 
     disks.forEach(disk => {
         const diskCard = document.createElement('div');
-        diskCard.className = 'disk-card';
-        diskCard.style.cssText = `
-            background: var(--bg-surface);
-            border: 1px solid var(--bg-border);
-            border-radius: 6px;
-            padding: 1rem;
-            margin-bottom: 1rem;
-            ${disk.is_system_disk ? 'border-left: 3px solid var(--accent-warning);' : ''}
-        `;
+        diskCard.className = 'card';
+        if (disk.is_system_disk) {
+            diskCard.style.borderLeft = '3px solid var(--accent-warning)';
+        }
 
         // Status indicator
         let statusColor = 'var(--text-secondary)';
@@ -100,65 +95,58 @@ function displayDisks(disks) {
         }
 
         diskCard.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.75rem;">
-                <div>
-                    <h4 style="margin: 0; font-size: 1.125rem; color: var(--text-primary);">
-                        💿 /dev/${disk.name}
-                        ${disk.is_system_disk ? '<span style="background: var(--accent-warning); color: var(--bg-primary); padding: 2px 6px; border-radius: 3px; font-size: 0.75rem; margin-left: 0.5rem;">SYSTEM</span>' : ''}
-                    </h4>
-                    <p style="margin: 0.25rem 0 0 0; color: var(--text-secondary); font-size: 0.875rem;">
-                        ${disk.model} • ${disk.size}
-                    </p>
+            <div class="card-header">
+                <div class="card-title">
+                    ${disk.is_removable ? '🔌' : '💿'} /dev/${disk.name}
                 </div>
-                <div style="text-align: right;">
-                    <span style="color: ${statusColor}; font-weight: 600; font-size: 0.875rem;">● ${statusText}</span>
-                    <div style="margin-top: 0.25rem; font-size: 0.75rem; color: var(--text-secondary);">
-                        ${disk.temp ? `<span>🌡️ ${disk.temp}°C</span>` : ''}
-                        ${disk.power_on_hours ? `<span style="margin-left: 0.5rem;">⏱️ ${Math.round(disk.power_on_hours / 24)}d</span>` : ''}
-                    </div>
+                <div style="font-size: 0.8rem; font-weight: 600; color: ${statusColor}; display: flex; align-items: center; gap: 4px;">
+                    <div style="width: 8px; height: 8px; border-radius: 50%; background: ${statusColor};"></div>
+                    ${statusText}
                 </div>
             </div>
             
-            <div class="info-list" style="margin-top: 0.75rem;">
-                <div class="info-row" style="padding: 0.5rem 0; border-bottom: 1px solid var(--bg-border);">
-                    <span class="metric-label">Serial</span>
-                    <span class="metric-value mono" style="font-size: 0.875rem;">${disk.serial}</span>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
+                <div>
+                    <span class="setting-label">Model</span>
+                    <span class="setting-val">${disk.model}</span>
                 </div>
-                <div class="info-row" style="padding: 0.5rem 0; border-bottom: 1px solid var(--bg-border);">
-                    <span class="metric-label">Filesystem</span>
-                    <span class="metric-value">${disk.fstype || 'none'}</span>
+                <div>
+                    <span class="setting-label">Size</span>
+                    <span class="setting-val">${disk.size}</span>
                 </div>
-                <div class="info-row" style="padding: 0.5rem 0;">
-                    <span class="metric-label">Mount Point</span>
-                    <span class="metric-value mono" style="font-size: 0.875rem;">${disk.mountpoint || 'Not mounted'}</span>
+                <div>
+                    <span class="setting-label">Serial</span>
+                    <span class="setting-val" style="font-size: 0.8rem;">${disk.serial}</span>
+                </div>
+                <div>
+                    <span class="setting-label">Filesystem</span>
+                    <span class="setting-val">${disk.fstype || 'None'}</span>
+                </div>
+                <div style="grid-column: 1 / -1;">
+                    <span class="setting-label">Mount Point</span>
+                    <span class="setting-val">${disk.mountpoint || 'Not mounted'}</span>
                 </div>
             </div>
 
-            ${disk.partitions && disk.partitions.length > 0 ? `
-                <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--bg-border);">
-                    <p style="font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
-                        <strong>Partitions (${disk.partitions.length}):</strong>
-                    </p>
-                    ${disk.partitions.map(p => `
-                        <div style="font-size: 0.875rem; color: var(--text-secondary); margin-left: 1rem; margin-bottom: 0.25rem;">
-                            • ${p.name} - ${p.size} ${p.fstype !== 'none' ? `(${p.fstype})` : ''}
-                        </div>
-                    `).join('')}
-                </div>
-            ` : ''}
-
-            <div style="margin-top: 1rem; display: flex; flex-wrap: wrap; gap: 0.5rem;">
+            <div style="display: flex; gap: 8px; margin-top: auto;">
                 ${!disk.is_system_disk ? `
-                    <button onclick="wipeDisk('${disk.name}')" 
-                        style="flex: 1; min-width: 100px; background: var(--bg-primary); color: var(--accent-danger); border: 1px solid var(--accent-danger); padding: 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.875rem;" title="Completely erase disk to make it available">
-                        Wipe Disk
+                    <button onclick="wipeDisk('${disk.name}')" class="btn-secondary" 
+                        style="flex: 1; border-color: var(--accent-danger); color: var(--accent-danger); font-size: 0.85rem;" 
+                        title="Completely erase disk">
+                        Wipe
                     </button>
                 ` : ''}
-                <button onclick="viewDiskDetails('${disk.name}')" 
-                    style="flex: 1; min-width: 100px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--bg-border); padding: 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.875rem;">
-                    Details
+                <button onclick="viewDiskDetails('${disk.name}')" class="btn-secondary" 
+                    style="flex: 2; font-size: 0.85rem;">
+                    Health Details
                 </button>
             </div>
+            
+            ${disk.is_system_disk ? `
+                <div style="margin-top: 12px; font-size: 0.75rem; color: var(--accent-warning); display: flex; align-items: center; gap: 4px;">
+                    <span>⚠️</span> System Disk - Restricted Actions
+                </div>
+            ` : ''}
         `;
 
         container.appendChild(diskCard);
@@ -194,10 +182,9 @@ function displayPools(pools) {
 
     if (!pools || pools.length === 0) {
         container.innerHTML = `
-            <p style="text-align: center; color: var(--text-secondary);">No storage pools configured yet.</p>
-            <p style="text-align: center; color: var(--text-secondary); font-size: 0.875rem; margin-top: 0.5rem;">
-                Create a pool to start managing your storage.
-            </p>
+            <div style="padding: 2rem; text-align:center; color: var(--text-secondary); grid-column: 1/-1;">
+                No storage pools configured yet. <br> <span style="font-size:0.875rem;">Create a pool to start managing your storage.</span>
+            </div>
         `;
         return;
     }
@@ -206,56 +193,51 @@ function displayPools(pools) {
 
     pools.forEach(pool => {
         const poolCard = document.createElement('div');
-        poolCard.className = 'pool-card';
-        poolCard.style.cssText = `
-            background: var(--bg-surface);
-            border: 1px solid var(--bg-border);
-            border-radius: 6px;
-            padding: 1rem;
-            margin-bottom: 1rem;
-        `;
+        poolCard.className = 'card';
 
         poolCard.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.75rem;">
-                <div>
-                    <h4 style="margin: 0; font-size: 1.125rem; color: var(--text-primary);">
-                        🗄️ ${pool.name}
-                    </h4>
-                    <p style="margin: 0.25rem 0 0 0; color: var(--text-secondary); font-size: 0.875rem;">
-                        ${pool.raid_level} • ${pool.devices.length} device(s)
-                    </p>
-                </div>
-                <div style="text-align: right;">
-                    <span style="color: var(--accent-success); font-weight: 600; font-size: 0.875rem;">● Active</span>
+            <div class="card-header">
+                <div class="card-title">🗄️ ${pool.name}</div>
+                <div style="font-size: 0.8rem; font-weight: 600; color: var(--accent-success); display: flex; align-items: center; gap: 4px;">
+                    <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--accent-success);"></div>
+                    Active
                 </div>
             </div>
             
-            <div class="info-list" style="margin-top: 0.75rem;">
-                <div class="info-row" style="padding: 0.5rem 0; border-bottom: 1px solid var(--bg-border);">
-                    <span class="metric-label">Total Size</span>
-                    <span class="metric-value">${pool.total_size || 'N/A'}</span>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
+                <div>
+                    <span class="setting-label">RAID Level</span>
+                    <span class="setting-val">${pool.raid_level}</span>
                 </div>
-                <div class="info-row" style="padding: 0.5rem 0; border-bottom: 1px solid var(--bg-border);">
-                    <span class="metric-label">Used</span>
-                    <span class="metric-value">${pool.used_size || 'N/A'}</span>
+                <div>
+                    <span class="setting-label">Devices</span>
+                    <span class="setting-val">${pool.devices.length}</span>
                 </div>
-                <div class="info-row" style="padding: 0.5rem 0;">
-                    <span class="metric-label">Devices</span>
-                    <span class="metric-value mono" style="font-size: 0.875rem;">${pool.devices.join(', ')}</span>
+                <div>
+                    <span class="setting-label">Total Size</span>
+                    <span class="setting-val">${pool.total_size || 'N/A'}</span>
+                </div>
+                <div>
+                    <span class="setting-label">Used</span>
+                    <span class="setting-val">${pool.used_size || 'N/A'}</span>
+                </div>
+                <div style="grid-column: 1 / -1;">
+                    <span class="setting-label">Disk Members</span>
+                    <span class="setting-val" style="font-size: 0.8rem;">${pool.devices.join(', ')}</span>
                 </div>
             </div>
 
-            <div style="margin-top: 1rem; display: flex; flex-wrap: wrap; gap: 0.5rem;">
-                <button onclick="manageSubvolumes('${pool.id}')" 
-                    style="flex: 1; min-width: 120px; background: var(--accent-primary); color: white; border: none; padding: 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.875rem;">
+            <div style="display: flex; gap: 8px; margin-top: auto; flex-wrap: wrap;">
+                <button onclick="manageSubvolumes('${pool.id}')" class="btn-primary" 
+                    style="flex: 1; min-width: 100px; font-size: 0.85rem;">
                     Subvolumes
                 </button>
-                <button onclick="showExpandPoolDialog('${pool.id}', '${pool.name}')" 
-                    style="flex: 1; min-width: 120px; background: var(--bg-primary); color: var(--accent-success); border: 1px solid var(--accent-success); padding: 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.875rem;">
-                    Expand Pool
+                <button onclick="showExpandPoolDialog('${pool.id}', '${pool.name}')" class="btn-secondary" 
+                    style="flex: 1; min-width: 100px; font-size: 0.85rem; border-color: var(--accent-success); color: var(--accent-success);">
+                    Expand
                 </button>
-                <button onclick="deletePool('${pool.id}', '${pool.name}')" 
-                    style="flex: 1; min-width: 120px; background: var(--bg-primary); color: var(--accent-danger); border: 1px solid var(--accent-danger); padding: 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.875rem;">
+                <button onclick="deletePool('${pool.id}', '${pool.name}')" class="btn-secondary" 
+                    style="flex: 1; min-width: 100px; font-size: 0.85rem; border-color: var(--accent-danger); color: var(--accent-danger);">
                     Delete
                 </button>
             </div>
@@ -294,10 +276,9 @@ function displayShares(shares) {
 
     if (!shares || shares.length === 0) {
         container.innerHTML = `
-            <p style="text-align: center; color: var(--text-secondary);">No network shares configured yet.</p>
-            <p style="text-align: center; color: var(--text-secondary); font-size: 0.875rem; margin-top: 0.5rem;">
-                Create a share to access your data over the network.
-            </p>
+            <div style="padding: 2rem; text-align:center; color: var(--text-secondary); grid-column: 1/-1;">
+                No network shares configured yet. <br> <span style="font-size:0.875rem;">Create a share to access your data over the network.</span>
+            </div>
         `;
         return;
     }
@@ -306,69 +287,56 @@ function displayShares(shares) {
 
     shares.forEach(share => {
         const shareCard = document.createElement('div');
-        shareCard.className = 'share-card';
-        shareCard.style.cssText = `
-            background: var(--bg-surface);
-            border: 1px solid var(--bg-border);
-            border-radius: 6px;
-            padding: 1rem;
-            margin-bottom: 1rem;
-        `;
+        shareCard.className = 'card';
 
         const protocolIcon = share.protocol === 'nfs' ? '📁' : '🗂️';
         const protocolName = share.protocol.toUpperCase();
         const accessType = share.read_only ? 'Read-Only' : 'Read-Write';
 
         shareCard.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.75rem;">
-                <div>
-                    <h4 style="margin: 0; font-size: 1.125rem; color: var(--text-primary);">
-                        ${protocolIcon} ${share.name}
-                    </h4>
-                    <p style="margin: 0.25rem 0 0 0; color: var(--text-secondary); font-size: 0.875rem;">
-                        ${protocolName} • ${accessType}
-                    </p>
-                </div>
-                <div style="text-align: right;">
-                    <span style="color: var(--accent-success); font-weight: 600; font-size: 0.875rem;">● Active</span>
+            <div class="card-header">
+                <div class="card-title">${protocolIcon} ${share.name}</div>
+                <div style="font-size: 0.8rem; font-weight: 600; color: var(--accent-success); display: flex; align-items: center; gap: 4px;">
+                    <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--accent-success);"></div>
+                    Active
                 </div>
             </div>
             
-            <div class="info-list" style="margin-top: 0.75rem;">
-                <div class="info-row" style="padding: 0.5rem 0; border-bottom: 1px solid var(--bg-border);">
-                    <span class="metric-label">Path</span>
-                    <span class="metric-value mono" style="font-size: 0.875rem;">${share.path}</span>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
+                <div style="grid-column: 1 / -1;">
+                    <span class="setting-label">Export Path</span>
+                    <span class="setting-val">${share.path}</span>
                 </div>
-                <div class="info-row" style="padding: 0.5rem 0; border-bottom: 1px solid var(--bg-border);">
-                    <span class="metric-label">Protocol</span>
-                    <span class="metric-value">${protocolName}</span>
+                <div>
+                    <span class="setting-label">Protocol</span>
+                    <span class="setting-val">${protocolName}</span>
+                </div>
+                <div>
+                    <span class="setting-label">Access</span>
+                    <span class="setting-val">${accessType}</span>
                 </div>
                 ${share.protocol === 'nfs' ? `
-                    <div class="info-row" style="padding: 0.5rem 0; border-bottom: 1px solid var(--bg-border);">
-                        <span class="metric-label">Allowed Hosts</span>
-                        <span class="metric-value mono" style="font-size: 0.875rem;">${share.allowed_hosts}</span>
+                    <div style="grid-column: 1 / -1;">
+                        <span class="setting-label">Allowed Hosts</span>
+                        <span class="setting-val" style="font-size: 0.8rem;">${share.allowed_hosts}</span>
                     </div>
                 ` : ''}
-                ${share.protocol === 'smb' && share.guest_access ? `
-                    <div class="info-row" style="padding: 0.5rem 0; border-bottom: 1px solid var(--bg-border);">
-                        <span class="metric-label">Guest Access</span>
-                        <span class="metric-value" style="color: var(--accent-warning);">Enabled</span>
+                ${share.protocol === 'smb' ? `
+                    <div style="grid-column: 1 / -1;">
+                        <span class="setting-label">Guest Access</span>
+                        <span class="setting-val">${share.guest_access ? 'Enabled' : 'Disabled'}</span>
                     </div>
                 ` : ''}
-                <div class="info-row" style="padding: 0.5rem 0;">
-                    <span class="metric-label">Access</span>
-                    <span class="metric-value">${accessType}</span>
-                </div>
             </div>
 
-            <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
-                <button onclick="showConnectionInfo('${share.id}')" 
-                    style="flex: 1; background: var(--accent-primary); color: white; border: none; padding: 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.875rem;">
+            <div style="display: flex; gap: 8px; margin-top: auto;">
+                <button onclick="showConnectionInfo('${share.id}')" class="btn-primary" 
+                    style="flex: 2; font-size: 0.85rem;">
                     Connection Info
                 </button>
-                <button onclick="deleteShare('${share.id}', '${share.name}')" 
-                    style="flex: 1; background: var(--bg-primary); color: var(--accent-danger); border: 1px solid var(--accent-danger); padding: 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.875rem;">
-                    Delete Share
+                <button onclick="deleteShare('${share.id}', '${share.name}')" class="btn-secondary" 
+                    style="flex: 1; font-size: 0.85rem; border-color: var(--accent-danger); color: var(--accent-danger);">
+                    Delete
                 </button>
             </div>
         `;

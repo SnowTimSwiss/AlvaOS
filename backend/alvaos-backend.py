@@ -587,6 +587,7 @@ def get_disks():
                     'fstype': 'ext4',
                     'mountpoint': '/',
                     'is_system_disk': True,
+                    'is_removable': False,
                     'smart_status': 'healthy',
                     'temp': 32,
                     'power_on_hours': 12450,
@@ -601,9 +602,25 @@ def get_disks():
                     'fstype': 'none',
                     'mountpoint': None,
                     'is_system_disk': False,
+                    'is_removable': False,
                     'smart_status': 'healthy',
                     'temp': 28,
                     'power_on_hours': 450,
+                    'partitions': []
+                },
+                {
+                    'name': 'sdc',
+                    'path': '/dev/sdc',
+                    'size': '64G',
+                    'model': 'SanDisk Ultra',
+                    'serial': 'SD-123456789',
+                    'fstype': 'none',
+                    'mountpoint': None,
+                    'is_system_disk': False,
+                    'is_removable': True,
+                    'smart_status': 'unknown',
+                    'temp': None,
+                    'power_on_hours': None,
                     'partitions': []
                 }
             ]
@@ -728,25 +745,28 @@ def manage_pools():
                         line = line.strip()
                         
                         # New filesystem entry
+                        # Example lines: 
+                        # Label: 'my pool'  uuid: 1234-5678...
+                        # Label: none  uuid: 1234-5678...
                         if line.startswith('Label:'):
                             if current_pool:
                                 pools.append(current_pool)
                             
-                            # Parse label and UUID
-                            parts = line.split()
-                            label = 'none'
-                            uuid = ''
+                            import re
+                            # Match Label: '...' or Label: none
+                            label_match = re.search(r"Label:\s+('(.*?)'|(\S+))", line)
+                            uuid_match = re.search(r"uuid:\s+(\S+)", line)
                             
-                            for i, part in enumerate(parts):
-                                if part == 'Label:':
-                                    label = parts[i+1].strip("'\"") if i+1 < len(parts) else 'none'
-                                elif part == 'uuid:':
-                                    uuid = parts[i+1] if i+1 < len(parts) else ''
+                            label = 'none'
+                            if label_match:
+                                label = label_match.group(2) or label_match.group(3)
+                            
+                            uuid_val = uuid_match.group(1) if uuid_match else ''
                             
                             current_pool = {
-                                'id': uuid,
+                                'id': uuid_val,
                                 'name': label,
-                                'uuid': uuid,
+                                'uuid': uuid_val,
                                 'devices': [],
                                 'total_size': 0,
                                 'used_size': 0,
@@ -757,15 +777,12 @@ def manage_pools():
                         elif line.startswith('devid') and current_pool:
                             # Parse: devid 1 size 100.00GiB used 10.00GiB path /dev/sdb
                             parts = line.split()
-                            device_info = {}
-                            for i, part in enumerate(parts):
-                                if part == 'size':
-                                    device_info['size'] = parts[i+1] if i+1 < len(parts) else '0'
-                                elif part == 'path':
-                                    device_info['path'] = parts[i+1] if i+1 < len(parts) else ''
+                            dev_path = ''
+                            if 'path' in parts:
+                                dev_path = parts[parts.index('path') + 1]
                             
-                            if device_info.get('path'):
-                                current_pool['devices'].append(device_info['path'])
+                            if dev_path:
+                                current_pool['devices'].append(dev_path)
                     
                     # Add last pool
                     if current_pool:
@@ -1340,12 +1357,16 @@ def manage_shares():
             
             if platform.system() == 'Linux':
                 if protocol == 'nfs':
-                    # Remove from /etc/exports
+                    # Remove from /etc/exports using sudo
                     try:
-                        with open('/etc/exports', 'r') as f:
-                            lines = f.readlines()
+                        # Read the file content via sudo
+                        res, err = run_sudo_command(['sudo', 'cat', '/etc/exports'])
+                        if err or not res:
+                            raise Exception(f"Could not read /etc/exports: {err}")
                         
-                        # Filter out the share
+                        lines = res.stdout.splitlines()
+                        
+                        # Filter out the share (comment line and the siguiente line)
                         new_lines = []
                         skip_next = False
                         for line in lines:
@@ -1357,30 +1378,37 @@ def manage_shares():
                                 continue
                             new_lines.append(line)
                         
-                        with open('/etc/exports', 'w') as f:
-                            f.writelines(new_lines)
+                        # Write back using sudo tee
+                        content = '\n'.join(new_lines) + '\n'
+                        process = subprocess.Popen(['sudo', 'tee', '/etc/exports'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                        process.communicate(input=content)
                         
                         # Reload NFS exports
-                        subprocess.run(['sudo', 'exportfs', '-ra'], timeout=5)
+                        run_sudo_command(['sudo', 'exportfs', '-ra'])
                     except Exception as e:
                         print(f"Error removing NFS export: {e}")
                 
                 elif protocol == 'smb':
-                    # Remove from /etc/samba/smb.conf
+                    # Remove from /etc/samba/smb.conf using sudo
                     try:
-                        with open('/etc/samba/smb.conf', 'r') as f:
-                            content = f.read()
+                        # Read the file content via sudo
+                        res, err = run_sudo_command(['sudo', 'cat', '/etc/samba/smb.conf'])
+                        if err or not res:
+                            raise Exception(f"Could not read /etc/samba/smb.conf: {err}")
+                        
+                        content = res.stdout
                         
                         # Find and remove the share section
                         import re
                         pattern = rf'# AlvaOS Share: {share_name}\n\[{share_name}\].*?(?=\n\[|\n# AlvaOS Share:|\Z)'
                         content = re.sub(pattern, '', content, flags=re.DOTALL)
                         
-                        with open('/etc/samba/smb.conf', 'w') as f:
-                            f.write(content)
+                        # Write back using sudo tee
+                        process = subprocess.Popen(['sudo', 'tee', '/etc/samba/smb.conf'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                        process.communicate(input=content)
                         
                         # Restart Samba
-                        subprocess.run(['sudo', 'systemctl', 'restart', 'smbd'], timeout=10)
+                        run_sudo_command(['sudo', 'systemctl', 'restart', 'smbd'])
                     except Exception as e:
                         print(f"Error removing SMB share: {e}")
             

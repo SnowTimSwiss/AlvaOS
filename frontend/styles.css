@@ -316,6 +316,25 @@ select:focus {
     gap: var(--space-sm);
 }
 
+.setting-group {
+    margin-bottom: 12px;
+}
+
+.setting-label {
+    display: block;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+    font-weight: 500;
+}
+
+.setting-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    display: block;
+}
+
 .h-full {
     height: 100%;
 }

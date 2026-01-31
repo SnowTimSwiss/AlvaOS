@@ -334,8 +334,11 @@ alvaos ALL=(ALL) NOPASSWD: /usr/sbin/partprobe
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/umount
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/mount
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/mkdir
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/rmdir
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/mkfs.btrfs
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/mkfs.ext4
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/blkid
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/cat
 
 # System Settings (Hostname, Time, Power)
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/hostnamectl
@@ -345,6 +348,8 @@ alvaos ALL=(ALL) NOPASSWD: /usr/sbin/poweroff
 
 # Network Shares Config (NFS Exports, Samba)
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/exportfs
+alvaos ALL=(ALL) NOPASSWD: /bin/cat /etc/exports
+alvaos ALL=(ALL) NOPASSWD: /bin/cat /etc/samba/smb.conf
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/exports
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee -a /etc/exports
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/samba/smb.conf
