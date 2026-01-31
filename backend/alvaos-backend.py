@@ -28,6 +28,24 @@ AUTH_FILE = '/var/lib/alvaos/auth.json'
 CONFIG_DIR = '/etc/alvaos'
 SESSIONS = {} # Token -> Username (In-memory for 0.1)
 
+def run_sudo_command(cmd, timeout=30):
+    """Helper to run a command with sudo and handle password prompts gracefully"""
+    try:
+        # Use -n (non-interactive) to fail quickly if password is required
+        if cmd[0] == 'sudo':
+            cmd.insert(1, '-n')
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        
+        if result.returncode != 0 and 'password is required' in result.stderr:
+            return None, "System permission error: Passwordless sudo is not configured for this command. Please check the AlvaOS documentation for sudoers setup."
+            
+        return result, None
+    except subprocess.TimeoutExpired:
+        return None, "Command timed out"
+    except Exception as e:
+        return None, str(e)
+
 def ensure_directories():
     """Ensure necessary directories exist"""
     Path('/var/lib/alvaos').mkdir(parents=True, exist_ok=True)
@@ -417,15 +435,12 @@ def set_hostname():
     if not new_hostname.replace('-', '').isalnum():
         return jsonify({'error': 'Invalid hostname format'}), 400
 
-    # Execute change (Linux only)
     if platform.system() == 'Linux':
-        try:
-            subprocess.run(['sudo', 'hostnamectl', 'set-hostname', new_hostname], check=True)
-            # Update /etc/hosts as well usually needed
-        except Exception as e:
-            return jsonify({'error': str(e)}), 500
+        res, err = run_sudo_command(['sudo', 'hostnamectl', 'set-hostname', new_hostname])
+        if err:
+             # Fallback: try setting it via /etc/hostname if direct command fails
+             return jsonify({'error': f'Failed to set hostname: {err}'}), 500
     else:
-        # Windows/Dev simulation
         print(f"SIMULATION: Setting hostname to {new_hostname}")
 
     return jsonify({'success': True, 'hostname': new_hostname})
@@ -504,14 +519,11 @@ def get_disks():
                         power_on_hours = None
                         
                         try:
-                            # Try to get detailed SMART info in JSON format if supported
-                            smart_json_result = subprocess.run(
-                                ['sudo', 'smartctl', '-H', '-A', '-j', f'/dev/{device["name"]}'],
-                                capture_output=True, text=True, timeout=3
-                            )
+                            # Try to get detailed SMART info in JSON format
+                            res, err = run_sudo_command(['sudo', 'smartctl', '-H', '-A', '-j', f'/dev/{device["name"]}'], timeout=5)
                             
-                            if smart_json_result.returncode == 0 or (smart_json_result.returncode & 0x1) == 0:
-                                smart_data = json.loads(smart_json_result.stdout)
+                            if res and (res.returncode == 0 or (res.returncode & 0x1) == 0):
+                                smart_data = json.loads(res.stdout)
                                 
                                 # Status
                                 if smart_data.get('smart_status', {}).get('passed'):
@@ -653,12 +665,12 @@ def wipe_disk(disk_name):
             subprocess.run(f'sudo umount /dev/{disk_name}*', shell=True, check=False)
             
             # 2. Wipe file system signatures
-            result = subprocess.run(['sudo', 'wipefs', '-a', f'/dev/{disk_name}'], capture_output=True, text=True)
-            if result.returncode != 0:
-                return jsonify({'error': f'Wipefs failed: {result.stderr}'}), 500
+            res, err = run_sudo_command(['sudo', 'wipefs', '-a', f'/dev/{disk_name}'])
+            if err:
+                return jsonify({'error': f'Wipe failed: {err}'}), 500
                 
             # 3. Inform kernel of changes
-            subprocess.run(['sudo', 'partprobe', f'/dev/{disk_name}'], check=False)
+            run_sudo_command(['sudo', 'partprobe', f'/dev/{disk_name}'])
             
             return jsonify({'success': True, 'message': f'Disk /dev/{disk_name} wiped successfully and is now ready for use.'})
         else:
@@ -838,23 +850,19 @@ def manage_pools():
                 cmd.extend(devices)
                 
                 # Execute pool creation
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                res, err = run_sudo_command(cmd, timeout=60)
                 
-                if result.returncode != 0:
-                    return jsonify({'error': f'Failed to create pool: {result.stderr}'}), 500
+                if err:
+                    return jsonify({'error': f'Failed to create pool: {err}'}), 500
                 
                 # Create mount point
                 mount_point = f'/mnt/alvaos/{pool_name}'
                 os.makedirs(mount_point, exist_ok=True)
                 
                 # Mount the pool
-                mount_result = subprocess.run(
-                    ['sudo', 'mount', devices[0], mount_point],
-                    capture_output=True, text=True, timeout=5
-                )
-                
-                if mount_result.returncode != 0:
-                    return jsonify({'error': f'Pool created but failed to mount: {mount_result.stderr}'}), 500
+                res, err = run_sudo_command(['sudo', 'mount', devices[0], mount_point])
+                if err:
+                    return jsonify({'error': f'Pool created but failed to mount: {err}'}), 500
                 
                 # Save pool state
                 pools_state = load_pools_state()
@@ -985,13 +993,10 @@ def manage_subvolumes(pool_id):
             if platform.system() == 'Linux' and mount_point:
                 subvol_path = f'{mount_point}/{subvol_name}'
                 
-                result = subprocess.run(
-                    ['sudo', 'btrfs', 'subvolume', 'create', subvol_path],
-                    capture_output=True, text=True, timeout=5
-                )
+                res, err = run_sudo_command(['sudo', 'btrfs', 'subvolume', 'create', subvol_path])
                 
-                if result.returncode != 0:
-                    return jsonify({'error': f'Failed to create subvolume: {result.stderr}'}), 500
+                if err:
+                    return jsonify({'error': f'Failed to create subvolume: {err}'}), 500
                 
                 return jsonify({
                     'success': True,
@@ -1019,13 +1024,10 @@ def manage_subvolumes(pool_id):
             if platform.system() == 'Linux' and mount_point:
                 subvol_path = f'{mount_point}/{subvol_name}'
                 
-                result = subprocess.run(
-                    ['sudo', 'btrfs', 'subvolume', 'delete', subvol_path],
-                    capture_output=True, text=True, timeout=5
-                )
+                res, err = run_sudo_command(['sudo', 'btrfs', 'subvolume', 'delete', subvol_path])
                 
-                if result.returncode != 0:
-                    return jsonify({'error': f'Failed to delete subvolume: {result.stderr}'}), 500
+                if err:
+                    return jsonify({'error': f'Failed to delete subvolume: {err}'}), 500
                 
                 return jsonify({
                     'success': True,
@@ -1065,10 +1067,10 @@ def expand_pool(pool_id):
             # Add devices to pool
             # cmd: sudo btrfs device add /dev/sdX /mnt/alvaos/poolname
             cmd = ['sudo', 'btrfs', 'device', 'add'] + devices + [mount_point]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            res, err = run_sudo_command(cmd, timeout=60)
             
-            if result.returncode != 0:
-                return jsonify({'error': f'Failed to add devices: {result.stderr}'}), 500
+            if err:
+                return jsonify({'error': f'Failed to add devices: {err}'}), 500
                 
             # Optional: Start a balance in background to redistribute data
             # subprocess.Popen(['sudo', 'btrfs', 'balance', 'start', mount_point])
@@ -1117,6 +1119,34 @@ def save_shares_state(state):
     except Exception as e:
         print(f"Error saving shares state: {e}")
 
+@app.route('/api/v1/storage/available-paths', methods=['GET'])
+@require_auth
+def get_available_paths():
+    """Get list of all potential share paths (pools and subvolumes)"""
+    paths = []
+    
+    # Add base mount point
+    paths.append({'name': 'Default Storage Root', 'path': '/mnt/alvaos'})
+    
+    # Add Pools
+    pools = load_pools_state()
+    for pid, pool in pools.items():
+        if 'mount_point' in pool:
+            paths.append({'name': f"Pool: {pool['name']}", 'path': pool['mount_point']})
+            
+            # Add Subvolumes for this pool
+            subvol_file = f'/var/lib/alvaos/subvolumes_{pid}.json'
+            if os.path.exists(subvol_file):
+                try:
+                    with open(subvol_file, 'r') as f:
+                        subvols = json.load(f)
+                        for sv in subvols:
+                            paths.append({'name': f"  ↳ Subvolume: {sv['name']}", 'path': sv['path']})
+                except:
+                    pass
+                    
+    return jsonify({'paths': paths})
+
 @app.route('/api/v1/storage/shares', methods=['GET', 'POST', 'DELETE'])
 @require_auth
 def manage_shares():
@@ -1162,35 +1192,25 @@ def manage_shares():
             if platform.system() == 'Linux':
                 if protocol == 'nfs':
                     # Configure NFS export
-                    export_line = f'{share_path} {allowed_hosts}({"ro" if read_only else "rw"},sync,no_subtree_check)\n'
+                    export_data = f'# AlvaOS Share: {share_name}\n{share_path} {allowed_hosts}({"ro" if read_only else "rw"},sync,no_subtree_check)\n'
                     
-                    # Append to /etc/exports
-                    with open('/etc/exports', 'a') as f:
-                        f.write(f'# AlvaOS Share: {share_name}\n')
-                        f.write(export_line)
+                    # Use tee -a with sudo to append to /etc/exports
+                    subprocess.run(f"echo '{export_data}' | sudo tee -a /etc/exports", shell=True, check=True)
                     
                     # Reload NFS exports
-                    subprocess.run(['sudo', 'exportfs', '-ra'], timeout=5)
+                    res, err = run_sudo_command(['sudo', 'exportfs', '-ra'])
+                    if err: return jsonify({'error': f'Failed to reload NFS: {err}'}), 500
                     
                 elif protocol == 'smb':
                     # Configure Samba share
-                    smb_config = f'''
-[{share_name}]
-    path = {share_path}
-    browseable = yes
-    read only = {"yes" if read_only else "no"}
-    guest ok = {"yes" if guest_access else "no"}
-    create mask = 0644
-    directory mask = 0755
-'''
+                    smb_config = f'\n# AlvaOS Share: {share_name}\n[{share_name}]\n    path = {share_path}\n    browseable = yes\n    read only = {"yes" if read_only else "no"}\n    guest ok = {"yes" if guest_access else "no"}\n    create mask = 0644\n    directory mask = 0755\n'
                     
-                    # Append to /etc/samba/smb.conf
-                    with open('/etc/samba/smb.conf', 'a') as f:
-                        f.write(f'\n# AlvaOS Share: {share_name}\n')
-                        f.write(smb_config)
+                    # Use tee -a with sudo to append to /etc/samba/smb.conf
+                    subprocess.run(f"echo '{smb_config}' | sudo tee -a /etc/samba/smb.conf", shell=True, check=True)
                     
                     # Restart Samba
-                    subprocess.run(['sudo', 'systemctl', 'restart', 'smbd'], timeout=10)
+                    res, err = run_sudo_command(['sudo', 'systemctl', 'restart', 'smbd'])
+                    if err: return jsonify({'error': f'Failed to restart Samba: {err}'}), 500
             
             # Save share state
             shares_state = load_shares_state()

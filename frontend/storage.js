@@ -1018,46 +1018,24 @@ async function deleteSubvolume(poolId, subvolName) {
 
 // Show Create Share Dialog
 async function showCreateShareDialog() {
-    // Fetch available pools to get paths
     const token = localStorage.getItem('alvaos_token');
 
-    // Get pools for path selection
-    const poolsResponse = await fetch(`${API_BASE}/storage/pools`, {
-        headers: { 'Authorization': token || '' }
-    });
-
-    let availablePaths = ['/mnt/alvaos'];
-
-    if (poolsResponse.ok) {
-        const poolsData = await poolsResponse.json();
-        if (poolsData.pools && poolsData.pools.length > 0) {
-            // Get pool mount points
-            poolsData.pools.forEach(pool => {
-                if (pool.devices && pool.devices.length > 0) {
-                    // Assuming pool is mounted at /mnt/alvaos/{pool_name}
-                    availablePaths.push(`/mnt/alvaos/${pool.name}`);
-                }
-            });
-
-            // Also fetch subvolumes for each pool
-            for (const pool of poolsData.pools) {
-                try {
-                    const subvolResponse = await fetch(`${API_BASE}/storage/pools/${pool.id}/subvolumes`, {
-                        headers: { 'Authorization': token || '' }
-                    });
-                    if (subvolResponse.ok) {
-                        const subvolData = await subvolResponse.json();
-                        if (subvolData.subvolumes) {
-                            subvolData.subvolumes.forEach(sv => {
-                                availablePaths.push(sv.path);
-                            });
-                        }
-                    }
-                } catch (e) {
-                    console.error('Error fetching subvolumes:', e);
-                }
-            }
+    // Get available paths from backend
+    let availablePaths = [];
+    try {
+        const pathsRes = await fetch(`${API_BASE}/storage/available-paths`, {
+            headers: { 'Authorization': token || '' }
+        });
+        if (pathsRes.ok) {
+            const pathsData = await pathsRes.json();
+            availablePaths = pathsData.paths;
         }
+    } catch (e) {
+        console.error('Error fetching available paths:', e);
+    }
+
+    if (availablePaths.length === 0) {
+        availablePaths = [{ name: 'Default Root', path: '/mnt/alvaos' }];
     }
 
     // Create modal
@@ -1113,7 +1091,7 @@ async function showCreateShareDialog() {
             <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Share Path</label>
             <select id="path-select" 
                 style="width: 100%; padding: 0.75rem; background: var(--bg-primary); border: 1px solid var(--bg-border); color: var(--text-primary); border-radius: 4px;">
-                ${availablePaths.map(path => `<option value="${path}">${path}</option>`).join('')}
+                ${availablePaths.map(p => `<option value="${p.path}">${p.name} (${p.path})</option>`).join('')}
                 <option value="custom">Custom Path...</option>
             </select>
             <input type="text" id="custom-path-input" placeholder="/custom/path" 
