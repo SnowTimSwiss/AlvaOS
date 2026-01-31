@@ -378,12 +378,12 @@ function displayShares(shares) {
 }
 
 // Initialize Disk
-function initializeDisk(diskName) {
-    if (!confirm(`Are you sure you want to initialize /dev/${diskName}?\n\nThis will erase all data on the disk!`)) {
+async function initializeDisk(diskName) {
+    if (!await showConfirm(`Are you sure you want to initialize /dev/${diskName}?\n\nThis will erase all data on the disk!`)) {
         return;
     }
 
-    alert('Disk initialization will be implemented in the next phase.');
+    if (window.showToast) window.showToast('Disk initialization will be implemented in the next phase.', 'warning');
 }
 
 // Wipe Disk
@@ -1231,7 +1231,7 @@ async function showCreateShareDialog() {
 
 // Delete Share
 async function deleteShare(shareId, shareName) {
-    if (!confirm(`Delete share "${shareName}"?\n\n⚠️ This will remove the share configuration.`)) {
+    if (!await showConfirm(`Delete share "${shareName}"?\n\n⚠️ This will remove the share configuration.`)) {
         return;
     }
 
@@ -1279,50 +1279,56 @@ async function showConnectionInfo(shareId) {
         return;
     }
 
-    // Get server IP (simplified - would need actual IP detection)
+    // Get server IP
     const serverIP = window.location.hostname || 'YOUR_SERVER_IP';
 
-    let connectionInstructions = '';
+    let instructionsHtml = '';
 
     if (share.protocol === 'nfs') {
-        connectionInstructions = `
-<strong>NFS Connection Instructions:</strong>
-
-<strong>Linux/macOS:</strong>
-1. Create mount point:
-   <code>sudo mkdir -p /mnt/${share.name}</code>
-
-2. Mount the share:
-   <code>sudo mount -t nfs ${serverIP}:${share.path} /mnt/${share.name}</code>
-
-3. To mount automatically on boot, add to /etc/fstab:
-   <code>${serverIP}:${share.path} /mnt/${share.name} nfs defaults 0 0</code>
-
-<strong>Unmount:</strong>
-   <code>sudo umount /mnt/${share.name}</code>
+        instructionsHtml = `
+            <h4 style="margin-bottom: 0.5rem; color: var(--accent-primary);">🐧 Linux/macOS (NFS)</h4>
+            <div style="margin-bottom: 1.5rem;">
+                <p style="margin-bottom: 0.5rem; font-size: 0.9rem;">1. Create mount point:</p>
+                <div class="code-block" style="background: #1e1e1e; padding: 0.75rem; border-radius: 4px; font-family: monospace; color: #d4d4d4; margin-bottom: 1rem;">
+                    sudo mkdir -p /mnt/${share.name}
+                </div>
+                
+                <p style="margin-bottom: 0.5rem; font-size: 0.9rem;">2. Mount the share:</p>
+                <div class="code-block" style="background: #1e1e1e; padding: 0.75rem; border-radius: 4px; font-family: monospace; color: #d4d4d4; margin-bottom: 1rem;">
+                    sudo mount -t nfs ${serverIP}:${share.path} /mnt/${share.name}
+                </div>
+                
+                <p style="margin-bottom: 0.5rem; font-size: 0.9rem;">3. Auto-mount (/etc/fstab):</p>
+                <div class="code-block" style="background: #1e1e1e; padding: 0.75rem; border-radius: 4px; font-family: monospace; color: #d4d4d4;">
+                    ${serverIP}:${share.path} /mnt/${share.name} nfs defaults 0 0
+                </div>
+            </div>
         `;
     } else {
-        connectionInstructions = `
-<strong>SMB/Samba Connection Instructions:</strong>
+        instructionsHtml = `
+            <h4 style="margin-bottom: 0.5rem; color: var(--accent-primary);">🪟 Windows (SMB)</h4>
+            <div style="margin-bottom: 1.5rem;">
+                <p style="margin-bottom: 0.5rem; font-size: 0.9rem;">Type in File Explorer address bar:</p>
+                <div class="code-block" style="background: #1e1e1e; padding: 0.75rem; border-radius: 4px; font-family: monospace; color: #d4d4d4; user-select: text;">
+                    \\\\${serverIP}\\${share.name}
+                </div>
+            </div>
 
-<strong>Windows:</strong>
-1. Open File Explorer
-2. In the address bar, type:
-   <code>\\\\${serverIP}\\${share.name}</code>
-3. Press Enter and enter credentials if required
+            <h4 style="margin-bottom: 0.5rem; color: var(--accent-primary);">🍎 macOS</h4>
+            <div style="margin-bottom: 1.5rem;">
+                <p style="margin-bottom: 0.5rem; font-size: 0.9rem;">Finder (Cmd+K):</p>
+                <div class="code-block" style="background: #1e1e1e; padding: 0.75rem; border-radius: 4px; font-family: monospace; color: #d4d4d4; user-select: text;">
+                    smb://${serverIP}/${share.name}
+                </div>
+            </div>
 
-<strong>Linux:</strong>
-1. Create mount point:
-   <code>sudo mkdir -p /mnt/${share.name}</code>
-
-2. Mount the share:
-   <code>sudo mount -t cifs //${serverIP}/${share.name} /mnt/${share.name} -o username=YOUR_USERNAME</code>
-
-<strong>macOS:</strong>
-1. In Finder, press Cmd+K
-2. Enter server address:
-   <code>smb://${serverIP}/${share.name}</code>
-3. Click Connect
+            <h4 style="margin-bottom: 0.5rem; color: var(--accent-primary);">🐧 Linux</h4>
+            <div style="margin-bottom: 1.5rem;">
+                <p style="margin-bottom: 0.5rem; font-size: 0.9rem;">Mount command:</p>
+                <div class="code-block" style="background: #1e1e1e; padding: 0.75rem; border-radius: 4px; font-family: monospace; color: #d4d4d4; user-select: text;">
+                    sudo mount -t cifs //${serverIP}/${share.name} /mnt/${share.name} -o username=YOUR_USER
+                </div>
+            </div>
         `;
     }
 
@@ -1358,8 +1364,8 @@ async function showConnectionInfo(shareId) {
             <button id="close-info-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">✕</button>
         </div>
 
-        <div style="background: var(--bg-primary); border: 1px solid var(--bg-border); border-radius: 6px; padding: 1.5rem; font-family: 'JetBrains Mono', monospace; font-size: 0.875rem; line-height: 1.6; white-space: pre-wrap;">
-${connectionInstructions}
+        <div style="background: var(--bg-primary); border: 1px solid var(--bg-border); border-radius: 6px; padding: 1.5rem;">
+            ${instructionsHtml}
         </div>
 
         <div style="margin-top: 1.5rem; padding: 1rem; background: var(--bg-primary); border-left: 3px solid var(--accent-primary); border-radius: 4px;">

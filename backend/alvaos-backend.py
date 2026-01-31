@@ -776,12 +776,35 @@ def manage_pools():
                                 )
                                 
                                 if usage_result.returncode == 0:
-                                    # Parse usage output
+                                    # Parse usage output with better logical size calculation
+                                    used_bytes = 0
+                                    free_estimated_bytes = 0
+                                    
                                     for line in usage_result.stdout.split('\n'):
-                                        if 'Device size:' in line:
-                                            pool['total_size'] = line.split(':')[1].strip()
-                                        elif 'Used:' in line:
-                                            pool['used_size'] = line.split(':')[1].strip()
+                                        line = line.strip()
+                                        if line.startswith('Used:'):
+                                            # This is logical used data
+                                            try:
+                                                val = line.split(':')[1].strip()
+                                                if 'TiB' in val: used_bytes = float(val.replace('TiB','')) * 1024**4
+                                                elif 'GiB' in val: used_bytes = float(val.replace('GiB','')) * 1024**3
+                                                elif 'MiB' in val: used_bytes = float(val.replace('MiB','')) * 1024**2
+                                                elif 'KiB' in val: used_bytes = float(val.replace('KiB','')) * 1024
+                                                else: used_bytes = float(val.replace('B',''))
+                                            except: pass
+                                            
+                                        elif line.startswith('Free (estimated):'):
+                                            # This is logical free space (considering RAID level)
+                                            try:
+                                                # Format: Free (estimated):     1.80TiB  (Min: 1.80TiB)
+                                                val = line.split(':')[1].split('(')[0].strip()
+                                                if 'TiB' in val: free_estimated_bytes = float(val.replace('TiB','')) * 1024**4
+                                                elif 'GiB' in val: free_estimated_bytes = float(val.replace('GiB','')) * 1024**3
+                                                elif 'MiB' in val: free_estimated_bytes = float(val.replace('MiB','')) * 1024**2
+                                                elif 'KiB' in val: free_estimated_bytes = float(val.replace('KiB','')) * 1024
+                                                else: free_estimated_bytes = float(val.replace('B',''))
+                                            except: pass
+                                            
                                         elif 'Data,' in line:
                                             if 'RAID1' in line:
                                                 pool['raid_level'] = 'RAID1'
@@ -791,8 +814,39 @@ def manage_pools():
                                                 pool['raid_level'] = 'RAID10'
                                             else:
                                                 pool['raid_level'] = 'Single'
+                                    
+                                    # Calculate logical total
+                                    if used_bytes > 0 or free_estimated_bytes > 0:
+                                        total_bytes = used_bytes + free_estimated_bytes
+                                        
+                                        # Convert back to human readable
+                                        def bytes_to_human(n):
+                                            for unit in ['B', 'KiB', 'MiB', 'GiB', 'TiB']:
+                                                if n < 1024: return f"{n:.2f}{unit}"
+                                                n /= 1024
+                                            return f"{n:.2f}PiB"
+                                            
+                                        pool['used_size'] = bytes_to_human(used_bytes)
+                                        pool['total_size'] = bytes_to_human(total_bytes)
+                                    else:
+                                        raise Exception("Parsing yielded zero bytes")
+
                             except:
-                                pass
+                                # Fallback to df if btrfs usage parsing fails
+                                try:
+                                    if 'mount_point' in pool:
+                                        df_res = subprocess.run(['df', '-h', pool['mount_point']], capture_output=True, text=True)
+                                        if df_res.returncode == 0:
+                                            # Filesystem      Size  Used Avail Use% Mounted on
+                                            # /dev/sda1       100G   10G   90G  10% /mnt/pool
+                                            lines = df_res.stdout.strip().split('\n')
+                                            if len(lines) >= 2:
+                                                parts = lines[1].split()
+                                                if len(parts) >= 4:
+                                                    pool['total_size'] = parts[1]
+                                                    pool['used_size'] = parts[2]
+                                except:
+                                    pass
             else:
                 # Mock data for development
                 pools = [
@@ -869,7 +923,8 @@ def manage_pools():
                 
                 # Save pool state
                 pools_state = load_pools_state()
-                pool_id = f'pool-{len(pools_state)}'
+                import uuid
+                pool_id = str(uuid.uuid4())
                 pools_state[pool_id] = {
                     'name': pool_name,
                     'devices': devices,
