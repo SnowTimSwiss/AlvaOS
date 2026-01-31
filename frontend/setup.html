@@ -9,41 +9,24 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono&display=swap"
         rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
     <style>
-        :root {
-            --bg-primary: #0d1117;
-            --bg-surface: #161b22;
-            --bg-border: #30363d;
-            --text-primary: #e6edf3;
-            --text-secondary: #8b949e;
-            --accent-primary: #58a6ff;
-            --accent-success: #238636;
-            --accent-danger: #f85149;
-        }
-
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
         body {
-            font-family: 'Inter', system-ui, sans-serif;
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            min-height: 100vh;
+            /* Center the setup card */
             display: flex;
             align-items: center;
             justify-content: center;
+            min-height: 100vh;
             padding: 1rem;
+            background: var(--bg-body);
         }
 
         .setup-container {
             max-width: 500px;
             width: 100%;
-            background: var(--bg-surface);
-            border: 1px solid var(--bg-border);
-            border-radius: 8px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-lg);
             padding: 2.5rem;
         }
 
@@ -54,18 +37,21 @@
 
         .logo h1 {
             font-size: 2rem;
-            color: var(--accent-primary);
+            font-weight: 700;
+            color: var(--text-primary);
             margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
         }
 
         .logo p {
             color: var(--text-secondary);
-            font-size: 0.9rem;
+            font-size: 0.95rem;
         }
 
         .setup-content h2 {
             font-size: 1.5rem;
             margin-bottom: 0.5rem;
+            color: var(--text-primary);
         }
 
         .setup-content>p {
@@ -83,17 +69,18 @@
             margin-bottom: 0.5rem;
             font-weight: 600;
             font-size: 0.875rem;
+            color: var(--text-secondary);
         }
 
         .form-group input {
             width: 100%;
             padding: 0.75rem;
-            background: var(--bg-primary);
-            border: 1px solid var(--bg-border);
-            border-radius: 6px;
+            background: var(--bg-body);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
             color: var(--text-primary);
-            font-family: inherit;
-            font-size: 0.9rem;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.95rem;
             transition: border-color 0.2s;
         }
 
@@ -105,9 +92,10 @@
         .password-requirements {
             margin-top: 0.5rem;
             padding: 0.75rem;
-            background: rgba(88, 166, 255, 0.1);
-            border-radius: 4px;
-            font-size: 0.8rem;
+            background: var(--bg-hover);
+            border-radius: var(--radius-default);
+            font-size: 0.85rem;
+            color: var(--text-primary);
         }
 
         .password-requirements ul {
@@ -129,9 +117,9 @@
             background: var(--accent-primary);
             color: white;
             border: none;
-            border-radius: 6px;
+            border-radius: var(--radius-btn);
             font-weight: 600;
-            font-size: 1rem;
+            font-size: 0.95rem;
             cursor: pointer;
             transition: opacity 0.2s;
         }
@@ -146,29 +134,25 @@
         }
 
         .error-message {
-            background: var(--accent-danger);
-            color: white;
+            background: rgba(248, 81, 73, 0.15);
+            color: var(--accent-danger);
+            border: 1px solid rgba(248, 81, 73, 0.3);
             padding: 0.875rem;
-            border-radius: 6px;
+            border-radius: var(--radius-default);
             margin-bottom: 1rem;
             font-size: 0.875rem;
         }
 
         .success-message {
-            background: var(--accent-success);
-            color: white;
-            padding: 0.875rem;
-            border-radius: 6px;
-            margin-bottom: 1rem;
-            font-size: 0.875rem;
+            background: rgba(35, 134, 54, 0.15);
+            color: var(--accent-success);
+            border: 1px solid rgba(35, 134, 54, 0.3);
+            padding: 1.5rem;
+            border-radius: var(--radius-lg);
             text-align: center;
         }
 
-        .loading {
-            text-align: center;
-            padding: 2rem;
-        }
-
+        /* Loading Dots */
         .loading::after {
             content: '...';
             animation: dots 1.5s steps(4, end) infinite;

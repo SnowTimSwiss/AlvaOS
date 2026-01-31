@@ -7,51 +7,115 @@
     <title>AlvaOS - Storage</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono&display=swap"
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="notifications.css">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="notifications.css">
+    <style>
+        /* Specific Tab Styles */
+        .tab-nav {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 24px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border-default);
+        }
+
+        .tab-btn {
+            background: transparent;
+            border: none;
+            padding: 8px 16px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 0.95rem;
+            font-weight: 500;
+            border-radius: var(--radius-default);
+            transition: all 0.2s;
+        }
+
+        .tab-btn:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .tab-btn.active {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+            border-bottom: 2px solid var(--accent-primary);
+            border-radius: 4px 4px 0 0;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(5px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
 </head>
 
 <body>
-    <!-- Sidebar Navigation -->
+
+    <!-- Sidebar -->
     <aside class="sidebar">
-        <div class="sidebar-header">
-            <h1>AlvaOS</h1>
+        <div class="logo-area">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round"
+                    stroke-linejoin="round" style="color: var(--accent-primary);" />
+            </svg>
+            <div class="logo-text">AlvaOS</div>
         </div>
-        <nav class="sidebar-nav">
-            <a href="index.html" class="nav-item"><span>🏠</span> Dashboard</a>
-            <a href="storage.html" class="nav-item active"><span>🗄️</span> Storage</a>
-            <a href="#" class="nav-item"><span>🧩</span> Apps</a>
-            <a href="#" class="nav-item"><span>🔁</span> Backup</a>
-            <a href="#" class="nav-item"><span>👥</span> Users</a>
-            <a href="system.html" class="nav-item"><span>⚙️</span> System</a>
+
+        <nav>
+            <a href="index.html" class="nav-link"><span>🏠</span> Dashboard</a>
+            <a href="storage.html" class="nav-link active"><span>🗄️</span> Storage</a>
+            <a href="#" class="nav-link"><span>🧩</span> Apps</a>
+            <a href="#" class="nav-link"><span>🔁</span> Backup</a>
+            <a href="#" class="nav-link"><span>👥</span> Users</a>
+            <div style="flex:1"></div>
+            <a href="system.html" class="nav-link"><span>⚙️</span> System</a>
         </nav>
     </aside>
 
-    <div class="main-layout">
-        <!-- Top Bar -->
-        <header class="top-bar">
+    <!-- Main Content -->
+    <div class="main">
+        <header class="topbar">
             <div class="breadcrumbs">
-                Main / Storage
+                System / <span>Storage</span>
             </div>
-            <div class="top-bar-right">
-                <div class="system-status">
-                    <span class="status-dot online"></span>
-                    <span>System Online</span>
+            <div class="status-badge" style="gap:10px;">
+                <div class="status-badge" style="border:none; background:transparent; padding:0;">
+                    <div class="status-dot"></div>
+                    <span>Online</span>
                 </div>
-                <div class="clock" id="clock">--:--:--</div>
+                <!-- Optional Clock here if needed -->
             </div>
         </header>
 
-        <!-- Main Content -->
-        <main class="content">
-            <section class="welcome-section">
-                <h2>Storage Management</h2>
-                <p>Manage disks, create storage pools, and configure network shares.</p>
-            </section>
+        <div class="content-scroll">
+            <div style="margin-bottom: 24px;">
+                <h1 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 4px;">Storage Management</h1>
+                <p style="color: var(--text-secondary); font-size: 0.95rem;">Manage disks, create pools, and configure
+                    shares.</p>
+            </div>
 
-            <!-- Tab Navigation -->
-            <div class="tab-nav" style="margin-bottom: 1.25rem;">
+            <!-- Tab Navigation (ID preserved for potential logic, usually class based) -->
+            <div class="tab-nav">
                 <button class="tab-btn active" data-tab="disks">💿 Disks</button>
                 <button class="tab-btn" data-tab="pools">🗄️ Pools</button>
                 <button class="tab-btn" data-tab="shares">🌐 Shares</button>
@@ -59,16 +123,15 @@
 
             <!-- Disks Tab -->
             <div class="tab-content active" id="tab-disks">
-                <div class="card" style="margin-bottom: 1.25rem;">
+                <div class="card">
                     <div class="card-header">
-                        <h3>Available Disks</h3>
-                        <button id="refresh-disks-btn"
-                            style="background: var(--accent-primary); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.875rem;">
-                            🔄 Refresh
-                        </button>
+                        <div class="card-title">Available Disks</div>
+                        <button id="refresh-disks-btn" class="btn-secondary"
+                            style="padding: 4px 10px; font-size: 0.85rem;">🔄 Refresh</button>
                     </div>
-                    <div id="disks-container" style="padding: 1rem;">
-                        <p style="text-align: center; color: var(--text-secondary);">Loading disks...</p>
+                    <div id="disks-container">
+                        <div style="padding: 2rem; text-align:center; color: var(--text-secondary);">Loading disks...
+                        </div>
                     </div>
                 </div>
             </div>
@@ -77,19 +140,14 @@
             <div class="tab-content" id="tab-pools">
                 <div class="card">
                     <div class="card-header">
-                        <h3>Storage Pools</h3>
-                        <button id="create-pool-btn"
-                            style="background: var(--accent-success); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.875rem;">
-                            ➕ Create Pool
-                        </button>
+                        <div class="card-title">Storage Pools</div>
+                        <button id="create-pool-btn" class="btn-primary"
+                            style="padding: 4px 10px; font-size: 0.85rem;">➕ Create Pool</button>
                     </div>
-                    <div id="pools-container" style="padding: 1rem;">
-                        <p style="text-align: center; color: var(--text-secondary);">No storage pools configured yet.
-                        </p>
-                        <p
-                            style="text-align: center; color: var(--text-secondary); font-size: 0.875rem; margin-top: 0.5rem;">
-                            Create a pool to start managing your storage.
-                        </p>
+                    <div id="pools-container">
+                        <div style="padding: 2rem; text-align:center; color: var(--text-secondary);">
+                            No pools found. <br> <span style="font-size:0.85rem;">Create a pool to start.</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -98,31 +156,30 @@
             <div class="tab-content" id="tab-shares">
                 <div class="card">
                     <div class="card-header">
-                        <h3>Network Shares</h3>
-                        <button id="create-share-btn"
-                            style="background: var(--accent-success); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.875rem;">
-                            ➕ Create Share
-                        </button>
+                        <div class="card-title">Network Shares</div>
+                        <button id="create-share-btn" class="btn-primary"
+                            style="padding: 4px 10px; font-size: 0.85rem;">➕ Create Share</button>
                     </div>
-                    <div id="shares-container" style="padding: 1rem;">
-                        <p style="text-align: center; color: var(--text-secondary);">No network shares configured yet.
-                        </p>
-                        <p
-                            style="text-align: center; color: var(--text-secondary); font-size: 0.875rem; margin-top: 0.5rem;">
-                            Create a share to access your data over the network.
-                        </p>
+                    <div id="shares-container">
+                        <div style="padding: 2rem; text-align:center; color: var(--text-secondary);">
+                            No shares configured.
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <footer>
-                <p>AlvaOS v0.2.0 - Apache License 2.0 - <a href="https://github.com/SnowTimSwiss/AlvaOS"
-                        target="_blank">GitHub</a></p>
+            <footer
+                style="margin-top:2rem; padding-top:1rem; border-top:1px solid var(--border-subtle); color:var(--text-secondary); font-size:0.8rem;">
+                AlvaOS v0.2.0 &bull; <a href="https://github.com/SnowTimSwiss/AlvaOS" target="_blank"
+                    style="color:var(--text-secondary)">GitHub</a>
             </footer>
-        </main>
+
+        </div>
     </div>
 
-    <script src="notifications.js"></script><script src="app.js"></script>
+    <!-- Scripts -->
+    <script src="notifications.js"></script>
+    <script src="app.js"></script>
     <script src="storage.js"></script>
 </body>
 

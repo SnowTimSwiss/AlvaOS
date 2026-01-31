@@ -73,10 +73,19 @@ Dark mode is the default and primary experience.
 - **Warning:** `#d29922`
 - **Danger:** `#f85149`
 
+### Text Colors (GitHub Dark Dimmed + Fresh)
+- **Primary:** `#e6edf3` (Bright/Blueish White)
+- **Secondary:** `#8b949e` (Grey)
+- **Tertiary:** `#484f58` (Dark Grey)
+
 Color usage rules:
 - Red is reserved for **action-required states only**
 - Yellow indicates attention, not failure
 - Green is informational, not celebratory
+
+### Interaction States
+- **Hover:** Subtle border color change (e.g. to `#8b949e`).
+- **Forbidden:** No glowing borders, no box-shadow spread, no "neon" effects.
 
 ---
 

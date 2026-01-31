@@ -4,183 +4,200 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AlvaOS - System Settings</title>
+    <title>AlvaOS - System</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono&display=swap"
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="notifications.css">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="notifications.css">
+    <style>
+        .setting-group {
+            margin-bottom: 12px;
+        }
+
+        .setting-label {
+            display: block;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+
+        .setting-val {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            color: var(--text-primary);
+        }
+    </style>
 </head>
 
 <body>
-    <!-- Sidebar Navigation -->
+
+    <!-- Sidebar -->
     <aside class="sidebar">
-        <div class="sidebar-header">
-            <h1>AlvaOS</h1>
+        <div class="logo-area">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round"
+                    stroke-linejoin="round" style="color: var(--accent-primary);" />
+            </svg>
+            <div class="logo-text">AlvaOS</div>
         </div>
-        <nav class="sidebar-nav">
-            <a href="index.html" class="nav-item"><span>🏠</span> Dashboard</a>
-            <a href="storage.html" class="nav-item"><span>🗄️</span> Storage</a>
-            <a href="#" class="nav-item"><span>🧩</span> Apps</a>
-            <a href="#" class="nav-item"><span>🔁</span> Backup</a>
-            <a href="#" class="nav-item"><span>👥</span> Users</a>
-            <a href="system.html" class="nav-item active"><span>⚙️</span> System</a>
+
+        <nav>
+            <a href="index.html" class="nav-link"><span>🏠</span> Dashboard</a>
+            <a href="storage.html" class="nav-link"><span>🗄️</span> Storage</a>
+            <a href="#" class="nav-link"><span>🧩</span> Apps</a>
+            <a href="#" class="nav-link"><span>🔁</span> Backup</a>
+            <a href="#" class="nav-link"><span>👥</span> Users</a>
+            <div style="flex:1"></div>
+            <a href="system.html" class="nav-link active"><span>⚙️</span> System</a>
         </nav>
     </aside>
 
-    <div class="main-layout">
-        <!-- Top Bar -->
-        <header class="top-bar">
+    <!-- Main Content -->
+    <div class="main">
+        <header class="topbar">
             <div class="breadcrumbs">
-                Main / System Settings
+                System / <span>Settings</span>
             </div>
-            <div class="top-bar-right">
-                <div class="system-status">
-                    <span class="status-dot online"></span>
-                    <span>System Online</span>
+            <div class="status-badge" style="gap:10px;">
+                <div class="status-badge" style="border:none; background:transparent; padding:0;">
+                    <div class="status-dot"></div>
+                    <span>Online</span>
                 </div>
-                <div class="clock" id="clock">--:--:--</div>
             </div>
         </header>
 
-        <!-- Main Content -->
-        <main class="content">
-            <section class="welcome-section">
-                <h2>System Settings</h2>
-                <p>Configure hostname, network, and view system logs.</p>
-            </section>
+        <div class="content-scroll">
+            <div style="margin-bottom: 24px;">
+                <h1 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 4px;">System Settings</h1>
+                <p style="color: var(--text-secondary); font-size: 0.95rem;">Network configuration, power management,
+                    and logs.</p>
+            </div>
 
-            <div class="info-grid">
+            <div class="dashboard-grid">
+
                 <!-- General Settings -->
                 <div class="card">
                     <div class="card-header">
-                        <h3>General</h3>
-                        <span>⚙️</span>
+                        <div class="card-title">General</div>
+                        <div style="color:var(--text-secondary)">⚙️</div>
                     </div>
-                    <div class="info-list">
-                        <div class="info-row" style="flex-direction: column; gap: 5px;">
-                            <label class="metric-label" for="hostname-input">Hostname</label>
-                            <input type="text" id="hostname-input" class="mono"
-                                style="background: var(--bg-primary); border: 1px solid var(--bg-border); color: var(--text-primary); padding: 5px; border-radius: 4px;"
-                                value="alva-nas">
+
+                    <div class="setting-group">
+                        <label class="setting-label" for="hostname-input">Hostname</label>
+                        <div style="display:flex; gap:8px;">
+                            <input type="text" id="hostname-input" class="mono-text" style="flex:1;" value="loading...">
+                            <button id="save-hostname-btn" class="btn-primary"
+                                style="padding: 6px 12px; font-size: 0.85rem;">Save</button>
                         </div>
-                        <div class="info-row" style="flex-direction: column; gap: 5px;">
-                            <label class="metric-label">System Time</label>
-                            <span class="metric-value" id="system-time-display">-</span>
-                        </div>
-                        <div style="margin-top: 10px; text-align: right;">
-                            <button id="save-hostname-btn"
-                                style="background: var(--accent-primary); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer;">Save
-                                Changes</button>
-                        </div>
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label">System Time</label>
+                        <div class="mono-text" id="system-time-display">-</div>
                     </div>
                 </div>
 
                 <!-- Network Settings -->
                 <div class="card">
                     <div class="card-header">
-                        <h3>Network Interface</h3>
-                        <span>🌐</span>
+                        <div class="card-title">Network Interface</div>
+                        <div style="color:var(--text-secondary)">🌐</div>
                     </div>
-                    <div class="info-list">
-                        <div class="info-row">
-                            <span class="metric-label">Interface</span>
-                            <span class="metric-value" id="net-interface">-</span>
+
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px;">
+                        <div>
+                            <span class="setting-label">Interface</span>
+                            <span class="setting-val" id="net-interface">-</span>
                         </div>
-                        <div class="info-row">
-                            <span class="metric-label">IP Address</span>
-                            <span class="metric-value" id="net-ip">-</span>
+                        <div>
+                            <span class="setting-label">IP Address</span>
+                            <span class="setting-val" id="net-ip">-</span>
                         </div>
-                        <div class="info-row">
-                            <span class="metric-label">Subnet Mask</span>
-                            <span class="metric-value" id="net-mask">-</span>
+                        <div>
+                            <span class="setting-label">Gateway</span>
+                            <span class="setting-val" id="net-gateway">-</span>
                         </div>
-                        <div class="info-row">
-                            <span class="metric-label">Gateway</span>
-                            <span class="metric-value" id="net-gateway">-</span>
-                        </div>
-                        <div class="info-row">
-                            <span class="metric-label">DNS</span>
-                            <span class="metric-value" id="net-dns">-</span>
+                        <div>
+                            <span class="setting-label">DNS</span>
+                            <span class="setting-val" id="net-dns">-</span>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <div class="info-grid">
-                <!-- Time Settings -->
+                <!-- Date & Time -->
                 <div class="card">
                     <div class="card-header">
-                        <h3>Date & Time</h3>
-                        <span>🕒</span>
+                        <div class="card-title">Date & Time</div>
+                        <div style="color:var(--text-secondary)">🕒</div>
                     </div>
-                    <div class="info-list">
-                        <div class="info-row" style="flex-direction: column; gap: 5px;">
-                            <label class="metric-label">Timezone</label>
-                            <select id="timezone-select" class="mono"
-                                style="background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--bg-border); padding: 5px; border-radius: 4px;">
-                                <option value="UTC">UTC</option>
-                                <option value="Europe/Berlin">Europe/Berlin</option>
-                                <option value="America/New_York">America/New_York</option>
-                                <option value="Asia/Tokyo">Asia/Tokyo</option>
-                            </select>
-                        </div>
-                        <div class="info-row">
-                            <span class="metric-label">NTP Sync</span>
-                            <label style="display: flex; align-items: center; cursor: pointer;">
-                                <input type="checkbox" id="ntp-toggle" checked
-                                    style="accent-color: var(--accent-primary);">
-                                <span style="margin-left: 8px; font-size: 0.875rem;">Enabled</span>
-                            </label>
-                        </div>
-                        <div style="margin-top: 10px; text-align: right;">
-                            <button id="save-time-btn"
-                                style="background: var(--accent-primary); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer;">Save</button>
-                        </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label">Timezone</label>
+                        <select id="timezone-select" style="width:100%;">
+                            <option value="UTC">UTC</option>
+                            <option value="Europe/Berlin">Europe/Berlin</option>
+                            <option value="America/New_York">America/New_York</option>
+                            <option value="Asia/Tokyo">Asia/Tokyo</option>
+                        </select>
+                    </div>
+
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px;">
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" id="ntp-toggle" checked style="margin-right:8px;">
+                            <span style="font-size:0.85rem; color:var(--text-secondary);">Enable NTP Sync</span>
+                        </label>
+                        <button id="save-time-btn" class="btn-primary"
+                            style="padding: 6px 12px; font-size: 0.85rem;">Save</button>
                     </div>
                 </div>
 
                 <!-- Power Controls -->
-                <div class="card" style="border-color: var(--accent-danger);">
+                <div class="card">
                     <div class="card-header">
-                        <h3 style="color: var(--accent-danger);">Power Controls</h3>
-                        <span>⚠️</span>
+                        <div class="card-title" style="color: var(--accent-danger);">Power Controls</div>
+                        <div style="color:var(--accent-danger)">⚠️</div>
                     </div>
-                    <div class="info-list">
-                        <div class="info-row">
-                            <span class="metric-label">System State</span>
-                            <span class="metric-value">Running</span>
-                        </div>
-                        <div style="display: flex; gap: 10px; margin-top: 10px;">
-                            <button id="reboot-btn"
-                                style="flex: 1; background: var(--bg-surface); border: 1px solid var(--accent-warning); color: var(--accent-warning); padding: 8px; border-radius: 4px; cursor: pointer;">Reboot</button>
-                            <button id="shutdown-btn"
-                                style="flex: 1; background: var(--accent-danger); border: none; color: white; padding: 8px; border-radius: 4px; cursor: pointer;">Shutdown</button>
-                        </div>
+                    <div class="setting-group">
+                        <span class="setting-label">Current State</span>
+                        <span class="setting-val" style="color:var(--accent-success)">Running</span>
+                    </div>
+                    <div style="display:flex; gap:12px; margin-top:16px;">
+                        <button id="reboot-btn" class="btn-secondary"
+                            style="flex:1; border-color:var(--accent-warning); color:var(--accent-warning);">Reboot</button>
+                        <button id="shutdown-btn" class="btn-primary"
+                            style="flex:1; background:var(--accent-danger);">Shutdown</button>
                     </div>
                 </div>
+
+                <!-- Logs (Full Width) -->
+                <div class="card" style="grid-column: 1 / -1; height: 400px; display:flex; flex-direction:column;">
+                    <div class="card-header">
+                        <div class="card-title">System Logs</div>
+                        <div style="color:var(--text-secondary)">📜</div>
+                    </div>
+                    <div id="log-viewer"
+                        style="flex:1; background: #0d1117; border: 1px solid var(--border-default); border-radius: 4px; padding: 12px; overflow-y: scroll; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--text-secondary); white-space: pre-wrap;">
+                        Loading logs...</div>
+                </div>
+
             </div>
 
-            <!-- Logs Section (Full Width) -->
-            <div class="card" style="margin-top: 1.25rem;">
-                <div class="card-header">
-                    <h3>System Logs</h3>
-                    <span>📜</span>
-                </div>
-                <div class="log-viewer" id="log-viewer"
-                    style="background: #000; color: #ccc; padding: 10px; border-radius: 4px; height: 300px; overflow-y: scroll; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; white-space: pre-wrap;">
-                    Loading logs...
-                </div>
-            </div>
-
-            <footer>
-                <p>AlvaOS v0.2.0 - Apache License 2.0 - <a href="https://github.com/SnowTimSwiss/AlvaOS"
-                        target="_blank">GitHub</a></p>
+            <footer
+                style="margin-top:2rem; padding-top:1rem; border-top:1px solid var(--border-subtle); color:var(--text-secondary); font-size:0.8rem;">
+                AlvaOS v0.2.0 &bull; <a href="https://github.com/SnowTimSwiss/AlvaOS" target="_blank"
+                    style="color:var(--text-secondary)">GitHub</a>
             </footer>
-        </main>
+
+        </div>
     </div>
 
-    <script src="notifications.js"></script><script src="app.js"></script>
+    <!-- Scripts -->
+    <script src="notifications.js"></script>
+    <script src="app.js"></script>
     <script src="system.js"></script>
 </body>
 

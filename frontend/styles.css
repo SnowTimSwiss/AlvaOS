@@ -1,22 +1,47 @@
-/* AlvaOS Web UI Styles - Following DESIGN.md */
-
+/* AlvaOS Global Styles - v0.2.0 (Design Refactor) */
 :root {
-    /* Color Palette */
-    --bg-primary: #0d1117;
+    /* 
+       Palette: GitHub Dark Dimmed 
+       Philosophy: Calm, High Contrast Text, Low Noise Borders
+    */
+
+    /* Backgrounds */
+    --bg-body: #0d1117;
+    --bg-sidebar: #010409;
+    --bg-card: #161b22;
+    --bg-header: rgba(13, 17, 23, 0.85);
+    /* Glassmorphic */
     --bg-surface: #161b22;
-    --bg-border: #30363d;
-    
-    --text-primary: #e6edf3;
-    --text-secondary: #8b949e;
-    --text-muted: #484f58;
-    
+    /* Alias for compatibility */
+    --bg-hover: rgba(177, 186, 196, 0.12);
+
+    /* Borders */
+    --border-default: #30363d;
+    --border-subtle: #30363d;
+    --border-hover: #8b949e;
+
+    /* Accents */
     --accent-primary: #58a6ff;
     --accent-success: #238636;
     --accent-warning: #d29922;
     --accent-danger: #f85149;
-    
-    --sidebar-width: 240px;
-    --topbar-height: 60px;
+
+    /* Text */
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --text-tertiary: #484f58;
+
+    /* Spacing System */
+    --space-xs: 4px;
+    --space-sm: 8px;
+    --space-md: 16px;
+    --space-lg: 24px;
+    --space-xl: 32px;
+
+    /* Radius */
+    --radius-default: 6px;
+    --radius-btn: 6px;
+    --radius-lg: 8px;
 }
 
 * {
@@ -26,280 +51,277 @@
 }
 
 body {
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    background: var(--bg-primary);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background-color: var(--bg-body);
     color: var(--text-primary);
-    line-height: 1.5;
-    min-height: 100vh;
+    height: 100vh;
     display: flex;
+    overflow: hidden;
+    line-height: 1.5;
 }
 
-/* Sidebar */
+/* --- Layout Shell --- */
+
 .sidebar {
-    width: var(--sidebar-width);
-    background: var(--bg-surface);
-    border-right: 1px solid var(--bg-border);
-    height: 100vh;
-    position: fixed;
-    left: 0;
-    top: 0;
+    width: 250px;
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border-default);
     display: flex;
     flex-direction: column;
-    z-index: 1000;
+    padding: var(--space-md);
+    flex-shrink: 0;
 }
 
-.sidebar-header {
-    padding: 1.5rem;
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    border-bottom: 1px solid var(--bg-border);
-}
-
-.sidebar-header h1 {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: var(--accent-primary);
-}
-
-.sidebar-nav {
+.main {
     flex: 1;
-    padding: 1rem 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
-.nav-item {
+.topbar {
+    height: 60px;
     display: flex;
     align-items: center;
-    padding: 0.75rem 1.5rem;
+    justify-content: space-between;
+    padding: 0 var(--space-lg);
+    border-bottom: 1px solid var(--border-default);
+    background: var(--bg-header);
+    backdrop-filter: blur(8px);
+    flex-shrink: 0;
+}
+
+.content-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--space-lg);
+}
+
+/* --- Navigation --- */
+
+.logo-area {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: var(--space-xl);
+    padding: 0 var(--space-xs);
+}
+
+.logo-text {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
+}
+
+.nav-link {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
     color: var(--text-secondary);
     text-decoration: none;
-    transition: all 0.2s ease;
-    border-left: 3px solid transparent;
+    border-radius: var(--radius-default);
+    margin-bottom: 2px;
+    transition: color 0.15s, background 0.15s;
+    font-size: 0.95rem;
+    font-weight: 500;
 }
 
-.nav-item:hover, .nav-item.active {
-    background: rgba(88, 166, 255, 0.1);
+.nav-link:hover {
     color: var(--text-primary);
+    background: var(--bg-hover);
 }
 
-.nav-item.active {
-    border-left-color: var(--accent-primary);
+.nav-link.active {
+    color: var(--text-primary);
+    background: rgba(88, 166, 255, 0.1);
+    border-left: 3px solid var(--accent-primary);
+    border-top-left-radius: 2px;
+    border-bottom-left-radius: 2px;
 }
 
-.nav-item span {
-    margin-right: 10px;
-}
+/* --- Components --- */
 
-/* Main Layout */
-.main-layout {
-    margin-left: var(--sidebar-width);
-    flex: 1;
+/* Badge / Pills */
+.status-badge {
     display: flex;
-    flex-direction: column;
-    min-height: 100vh;
-}
-
-/* Top Bar */
-.top-bar {
-    height: var(--topbar-height);
-    background: var(--bg-surface);
-    border-bottom: 1px solid var(--bg-border);
-    padding: 0 2rem;
-    display: flex;
-    justify-content: space-between;
     align-items: center;
-    position: sticky;
-    top: 0;
-    z-index: 900;
-}
-
-.breadcrumbs {
+    gap: 8px;
+    padding: 4px 10px;
+    border: 1px solid var(--border-default);
+    border-radius: 20px;
+    font-size: 0.8rem;
     color: var(--text-secondary);
-    font-size: 0.875rem;
-}
-
-.top-bar-right {
-    display: flex;
-    align-items: center;
-    gap: 1.5rem;
-}
-
-.system-status {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.875rem;
+    background: var(--bg-card);
 }
 
 .status-dot {
     width: 8px;
     height: 8px;
     border-radius: 50%;
+    background: var(--accent-success);
 }
 
-.status-dot.online { background: var(--accent-success); }
-.status-dot.warning { background: var(--accent-warning); }
-.status-dot.critical { background: var(--accent-danger); }
+.status-dot.warning {
+    background: var(--accent-warning);
+}
 
-.clock {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.875rem;
+.status-dot.danger {
+    background: var(--accent-danger);
+}
+
+/* Breadcrumbs */
+.breadcrumbs {
     color: var(--text-secondary);
+    font-size: 0.9rem;
 }
 
-/* Dashboard Content */
-.content {
-    padding: 2rem;
-    max-width: 1200px;
+.breadcrumbs span {
+    color: var(--text-primary);
+    font-weight: 500;
 }
 
-.welcome-section {
-    margin-bottom: 2.5rem;
-}
-
-.welcome-section h2 {
-    font-size: 1.5rem;
-    margin-bottom: 0.25rem;
-}
-
-.welcome-section p {
-    color: var(--text-secondary);
-}
-
-/* Grid */
-.info-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 1.25rem;
-}
-
-/* Cards */
+/* Cards (Universal) */
 .card {
-    background: var(--bg-surface);
-    border: 1px solid var(--bg-border);
-    border-radius: 6px;
-    padding: 1.25rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-default);
+    padding: var(--space-md);
+    margin-bottom: var(--space-md);
 }
 
 .card-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 1.25rem;
+    margin-bottom: var(--space-md);
 }
 
-.card-header h3 {
-    font-size: 1rem;
-    font-weight: 600;
-}
-
-/* Metrics */
-.metric {
-    margin-bottom: 1rem;
-}
-
-.metric-row {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.875rem;
-    margin-bottom: 0.25rem;
-}
-
-.metric-label { color: var(--text-secondary); }
-.metric-value { 
-    font-family: 'JetBrains Mono', monospace;
-    color: var(--text-primary);
-}
-
-/* Progress Bar */
-.progress-bar {
-    height: 4px;
-    background: var(--bg-primary);
-    border-radius: 2px;
-    overflow: hidden;
-}
-
-.progress-fill {
-    height: 100%;
-    background: var(--accent-primary);
-    transition: width 1s linear;
-}
-
-/* Tables (Simple list for system info) */
-.info-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-}
-
-.info-row {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.875rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--bg-border);
-}
-
-.info-row:last-child { border-bottom: none; }
-
-/* Footer */
-footer {
-    padding: 2rem;
-    text-align: center;
-    color: var(--text-muted);
-    font-size: 0.75rem;
-}
-
-footer a {
-    color: var(--accent-primary);
-    text-decoration: none;
-}
-
-/* Responsive */
-@media (max-width: 768px) {
-    .sidebar { transform: translateX(-100%); }
-    .main-layout { margin-left: 0; }
-    .top-bar { padding: 0 1rem; }
-}
-
-/* Tab Navigation */
-.tab-nav {
-    display: flex;
-    gap: 0.5rem;
-    border-bottom: 2px solid var(--bg-border);
-    padding-bottom: 0;
-}
-
-.tab-btn {
-    background: transparent;
-    border: none;
-    color: var(--text-secondary);
-    padding: 0.75rem 1.25rem;
-    cursor: pointer;
+.card-title {
     font-size: 0.9rem;
     font-weight: 600;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -2px;
-    transition: all 0.2s ease;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
 }
 
-.tab-btn:hover {
+/* Typography Helpers used in JS */
+.metric-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 2rem;
+    font-weight: 500;
     color: var(--text-primary);
-    background: rgba(88, 166, 255, 0.05);
+    line-height: 1.2;
+    margin-bottom: 4px;
 }
 
-.tab-btn.active {
-    color: var(--accent-primary);
-    border-bottom-color: var(--accent-primary);
+.metric-sub {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
-.tab-content {
-    display: none;
+.mono-text {
+    font-family: 'JetBrains Mono', monospace;
 }
 
-.tab-content.active {
-    display: block;
+/* Grids */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: var(--space-md);
+    margin-bottom: var(--space-lg);
 }
 
-/* Utilities */
-.mono { font-family: 'JetBrains Mono', monospace; }
+/* Progress Bars */
+.progress-track {
+    height: 6px;
+    background: var(--bg-body);
+    border-radius: 3px;
+    margin-top: var(--space-md);
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.progress-bar {
+    height: 100%;
+    width: 0%;
+    border-radius: 2px;
+    transition: width 0.5s ease-out;
+}
+
+.bar-cpu {
+    background: var(--accent-primary);
+}
+
+.bar-ram {
+    background: var(--accent-success);
+}
+
+.bar-disk {
+    background: var(--accent-warning);
+}
+
+/* Buttons (Generic Override) */
+button {
+    font-family: 'Inter', sans-serif;
+}
+
+.btn-primary {
+    background: var(--accent-success);
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius-btn);
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.btn-secondary {
+    background: var(--bg-card);
+    border: 1px solid var(--border-default);
+    color: var(--text-primary);
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius-btn);
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+
+/* Inputs */
+input,
+select,
+textarea {
+    background: var(--bg-body);
+    border: 1px solid var(--border-default);
+    color: var(--text-primary);
+    padding: 8px;
+    border-radius: var(--radius-default);
+    font-family: 'Inter', sans-serif;
+}
+
+input:focus,
+select:focus {
+    outline: 1px solid var(--accent-primary);
+    border-color: var(--accent-primary);
+}
+
+/* Utility Classes for Storage Lists */
+.list-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+.h-full {
+    height: 100%;
+}
+
+/* Modal Backdrops (Notifications also uses this style, keeping consistent) */
+.modal-overlay {
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(4px);
+}
