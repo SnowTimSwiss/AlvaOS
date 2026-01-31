@@ -388,7 +388,7 @@ function initializeDisk(diskName) {
 
 // Wipe Disk
 async function wipeDisk(diskName) {
-    if (!confirm(`Are you sure you want to WIPE /dev/${diskName}?\n\n⚠️ ALL DATA, partitions and file systems will be PERMANENTLY ERASED.\nThis cannot be undone.`)) {
+    if (!await showConfirm(`Are you sure you want to WIPE /dev/${diskName}?\n\n⚠️ ALL DATA, partitions and file systems will be PERMANENTLY ERASED.\nThis cannot be undone.`)) {
         return;
     }
 
@@ -703,7 +703,7 @@ async function showCreatePoolDialog() {
             return;
         }
 
-        if (!confirm(`Create pool "${poolName}" with ${selectedDisks.length} disk(s) in ${raidLevel.toUpperCase()} mode?\n\n⚠️ This will ERASE all data on the selected disks!`)) {
+        if (!await showConfirm(`Create pool "${poolName}" with ${selectedDisks.length} disk(s) in ${raidLevel.toUpperCase()} mode?\n\n⚠️ This will ERASE all data on the selected disks!`)) {
             return;
         }
 
@@ -807,7 +807,7 @@ async function showExpandPoolDialog(poolId, poolName) {
             return;
         }
 
-        if (!confirm(`Add ${selectedDisks.length} disk(s) to pool "${poolName}"?\n\n⚠️ DATA ON SELECTED DISKS WILL BE ERASED!`)) {
+        if (!await showConfirm(`Add ${selectedDisks.length} disk(s) to pool "${poolName}"?\n\n⚠️ DATA ON SELECTED DISKS WILL BE ERASED!`)) {
             return;
         }
 
@@ -835,7 +835,7 @@ async function showExpandPoolDialog(poolId, poolName) {
 
 // Delete Pool
 async function deletePool(poolId, poolName) {
-    if (!confirm(`Delete pool "${poolName}"?\n\n⚠️ This will unmount the pool but NOT erase the data.`)) {
+    if (!await showConfirm(`Delete pool "${poolName}"?\n\n⚠️ This will unmount the pool but NOT erase the data.`)) {
         return;
     }
 
@@ -983,7 +983,7 @@ async function manageSubvolumes(poolId) {
 
 // Delete Subvolume
 async function deleteSubvolume(poolId, subvolName) {
-    if (!confirm(`Delete subvolume "${subvolName}"?\n\n⚠️ This will delete all data in the subvolume!`)) {
+    if (!await showConfirm(`Delete subvolume "${subvolName}"?\n\n⚠️ This will delete all data in the subvolume!`)) {
         return;
     }
 
@@ -1207,7 +1207,7 @@ async function showCreateShareDialog() {
             return;
         }
 
-        if (!confirm(`Create ${protocol.toUpperCase()} share "${shareName}"?\n\nPath: ${sharePath}\nAccess: ${readOnly ? 'Read-Only' : 'Read-Write'}`)) {
+        if (!await showConfirm(`Create ${protocol.toUpperCase()} share "${shareName}"?\n\nPath: ${sharePath}\nAccess: ${readOnly ? 'Read-Only' : 'Read-Write'}`)) {
             return;
         }
 

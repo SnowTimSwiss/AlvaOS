@@ -34,7 +34,10 @@ async function fetchSystemInfo() {
         updateDashboard(data);
     } catch (error) {
         console.error('Error fetching system info:', error);
-        showError('System connection interrupted. Check backend status.');
+
+        // Only show full blocking error if we are genuinely disconnected
+        // Wait one cycle? No, if fetch fails, trigger logic immediately.
+        handleConnectionError();
 
         // Update status dot to critical
         const dot = document.querySelector('.status-dot');
@@ -102,17 +105,73 @@ function updateDashboard(data) {
     }
 }
 
-// Show error message
+// Show error message (using Toast or overlay for critical)
 function showError(message) {
-    const existing = document.querySelector('.error-banner');
-    if (existing) return;
+    if (window.showToast) {
+        window.showToast(message, 'error');
+    } else {
+        console.error(message);
+    }
+}
 
-    const errorDiv = document.createElement('div');
-    errorDiv.className = 'error-banner';
-    errorDiv.style.cssText = 'background: #f85149; color: white; padding: 10px; text-align: center; font-size: 0.875rem;';
-    errorDiv.textContent = message;
+// Global Reconnect Logic
+let isReconnecting = false;
 
-    document.body.prepend(errorDiv);
+function handleConnectionError() {
+    if (isReconnecting) return;
+    isReconnecting = true;
+
+    // Show reconnect overlay
+    const overlay = document.createElement('div');
+    overlay.id = 'reconnect-overlay';
+    overlay.style.cssText = `
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.85); z-index: 20000;
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        color: white; backdrop-filter: blur(5px);
+    `;
+    overlay.innerHTML = `
+        <div style="font-size: 3rem; margin-bottom: 1rem; animation: spin 1s linear infinite;">↻</div>
+        <h2 style="margin-bottom: 0.5rem;">Connection Lost</h2>
+        <p style="color: var(--text-secondary);">Waiting for AlvaOS to come back online...</p>
+        <style>@keyframes spin { 100% { transform: rotate(360deg); } }</style>
+    `;
+    document.body.appendChild(overlay);
+
+    // Initial check delay (give it time to actually shut down)
+    setTimeout(startPolling, 3000);
+
+    function startPolling() {
+        const interval = setInterval(async () => {
+            try {
+                const controller = new AbortController();
+                const id = setTimeout(() => controller.abort(), 2000);
+
+                const res = await fetch(`${API_BASE}/system/info`, {
+                    signal: controller.signal
+                });
+                clearTimeout(id);
+
+                if (res.ok || res.status === 401) {
+                    clearInterval(interval);
+                    isReconnecting = false;
+                    document.getElementById('reconnect-overlay').remove();
+
+                    if (res.status === 401) {
+                        window.location.href = '/login.html';
+                    } else {
+                        window.showToast('We are back online!', 'success');
+                        // Refresh data immediately
+                        if (document.getElementById('cpu-usage')) fetchSystemInfo();
+                        // Reload strictly if we were in a "dead" state
+                    }
+                }
+            } catch (e) {
+                // Still down, keep waiting
+            }
+        }, 3000);
+    }
 }
 
 // Initialize dashboard

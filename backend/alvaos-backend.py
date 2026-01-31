@@ -550,7 +550,7 @@ def get_disks():
                             'size': device.get('size', 'Unknown'),
                             'model': device.get('model', 'Unknown').strip() if device.get('model') else 'Unknown',
                             'serial': device.get('serial', 'N/A'),
-                            'fstype': device.get('fstype', 'none'),
+                            'fstype': device.get('fstype') or 'none', # Fix: detection of empty disks
                             'mountpoint': device.get('mountpoint', None),
                             'is_system_disk': is_system_disk,
                             'smart_status': smart_status,
@@ -564,7 +564,7 @@ def get_disks():
                             partition = {
                                 'name': child['name'],
                                 'size': child.get('size', 'Unknown'),
-                                'fstype': child.get('fstype', 'none'),
+                                'fstype': child.get('fstype') or 'none', # Fix here too
                                 'mountpoint': child.get('mountpoint', None)
                             }
                             disk_info['partitions'].append(partition)

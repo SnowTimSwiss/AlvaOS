@@ -116,7 +116,7 @@ async function updateTimeSettings() {
 
 // Power Action
 async function sendPowerAction(action) {
-    if (!confirm(`Are you sure you want to ${action} the system?`)) return;
+    if (!await showConfirm(`Are you sure you want to ${action} the system?`)) return;
 
     try {
         const token = localStorage.getItem('alvaos_token');
