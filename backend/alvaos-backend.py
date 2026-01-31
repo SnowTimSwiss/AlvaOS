@@ -539,32 +539,582 @@ def get_disks():
     
     return jsonify({'disks': disks})
 
-@app.route('/api/v1/storage/pools', methods=['GET'])
-@require_auth
-def get_pools():
-    """Get list of Btrfs pools"""
-    pools = []
-    
+# Pool state file
+POOLS_STATE_FILE = '/var/lib/alvaos/pools.json'
+
+def load_pools_state():
+    """Load pools state from file"""
     try:
-        if platform.system() == 'Linux':
-            # Get list of Btrfs filesystems
-            result = subprocess.run(
-                ['sudo', 'btrfs', 'filesystem', 'show'],
-                capture_output=True, text=True, timeout=5
-            )
-            
-            if result.returncode == 0:
-                # Parse btrfs output (simplified for MVP)
-                # TODO: Implement proper parsing
-                pass
-        
-        # For now, return empty or mock data
-        pools = []
-    
+        if os.path.exists(POOLS_STATE_FILE):
+            with open(POOLS_STATE_FILE, 'r') as f:
+                return json.load(f)
+    except:
+        pass
+    return {}
+
+def save_pools_state(state):
+    """Save pools state to file"""
+    try:
+        ensure_directories()
+        with open(POOLS_STATE_FILE, 'w') as f:
+            json.dump(state, f, indent=2)
     except Exception as e:
-        print(f"Error getting pools: {e}")
+        print(f"Error saving pools state: {e}")
+
+@app.route('/api/v1/storage/pools', methods=['GET', 'POST', 'DELETE'])
+@require_auth
+def manage_pools():
+    """Manage Btrfs pools"""
     
-    return jsonify({'pools': pools})
+    if request.method == 'GET':
+        pools = []
+        
+        try:
+            if platform.system() == 'Linux':
+                # Get list of Btrfs filesystems
+                result = subprocess.run(
+                    ['sudo', 'btrfs', 'filesystem', 'show'],
+                    capture_output=True, text=True, timeout=5
+                )
+                
+                if result.returncode == 0:
+                    # Parse btrfs filesystem show output
+                    current_pool = None
+                    for line in result.stdout.split('\n'):
+                        line = line.strip()
+                        
+                        # New filesystem entry
+                        if line.startswith('Label:'):
+                            if current_pool:
+                                pools.append(current_pool)
+                            
+                            # Parse label and UUID
+                            parts = line.split()
+                            label = 'none'
+                            uuid = ''
+                            
+                            for i, part in enumerate(parts):
+                                if part == 'Label:':
+                                    label = parts[i+1].strip("'\"") if i+1 < len(parts) else 'none'
+                                elif part == 'uuid:':
+                                    uuid = parts[i+1] if i+1 < len(parts) else ''
+                            
+                            current_pool = {
+                                'id': uuid,
+                                'name': label,
+                                'uuid': uuid,
+                                'devices': [],
+                                'total_size': 0,
+                                'used_size': 0,
+                                'raid_level': 'unknown'
+                            }
+                        
+                        # Device entry
+                        elif line.startswith('devid') and current_pool:
+                            # Parse: devid 1 size 100.00GiB used 10.00GiB path /dev/sdb
+                            parts = line.split()
+                            device_info = {}
+                            for i, part in enumerate(parts):
+                                if part == 'size':
+                                    device_info['size'] = parts[i+1] if i+1 < len(parts) else '0'
+                                elif part == 'path':
+                                    device_info['path'] = parts[i+1] if i+1 < len(parts) else ''
+                            
+                            if device_info.get('path'):
+                                current_pool['devices'].append(device_info['path'])
+                    
+                    # Add last pool
+                    if current_pool:
+                        pools.append(current_pool)
+                    
+                    # Get usage information for each pool
+                    for pool in pools:
+                        if pool['devices']:
+                            try:
+                                usage_result = subprocess.run(
+                                    ['sudo', 'btrfs', 'filesystem', 'usage', pool['devices'][0]],
+                                    capture_output=True, text=True, timeout=3
+                                )
+                                
+                                if usage_result.returncode == 0:
+                                    # Parse usage output
+                                    for line in usage_result.stdout.split('\n'):
+                                        if 'Device size:' in line:
+                                            pool['total_size'] = line.split(':')[1].strip()
+                                        elif 'Used:' in line:
+                                            pool['used_size'] = line.split(':')[1].strip()
+                                        elif 'Data,' in line:
+                                            if 'RAID1' in line:
+                                                pool['raid_level'] = 'RAID1'
+                                            elif 'RAID0' in line:
+                                                pool['raid_level'] = 'RAID0'
+                                            elif 'RAID10' in line:
+                                                pool['raid_level'] = 'RAID10'
+                                            else:
+                                                pool['raid_level'] = 'Single'
+                            except:
+                                pass
+            else:
+                # Mock data for development
+                pools = [
+                    {
+                        'id': 'mock-pool-1',
+                        'name': 'storage-pool',
+                        'uuid': 'abc123-def456-ghi789',
+                        'devices': ['/dev/sdb', '/dev/sdc'],
+                        'total_size': '4.0 TiB',
+                        'used_size': '1.2 TiB',
+                        'raid_level': 'RAID1'
+                    }
+                ]
+        
+        except Exception as e:
+            print(f"Error getting pools: {e}")
+        
+        return jsonify({'pools': pools})
+    
+    elif request.method == 'POST':
+        # Create new pool
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        pool_name = data.get('name', '').strip()
+        devices = data.get('devices', [])
+        raid_level = data.get('raid_level', 'single')
+        
+        # Validation
+        if not pool_name:
+            return jsonify({'error': 'Pool name is required'}), 400
+        
+        if not devices or len(devices) == 0:
+            return jsonify({'error': 'At least one device is required'}), 400
+        
+        # Validate RAID level requirements
+        if raid_level == 'raid1' and len(devices) < 2:
+            return jsonify({'error': 'RAID1 requires at least 2 devices'}), 400
+        
+        if raid_level == 'raid10' and len(devices) < 4:
+            return jsonify({'error': 'RAID10 requires at least 4 devices'}), 400
+        
+        try:
+            if platform.system() == 'Linux':
+                # Build mkfs.btrfs command
+                cmd = ['sudo', 'mkfs.btrfs', '-f', '-L', pool_name]
+                
+                # Add RAID level
+                if raid_level != 'single':
+                    cmd.extend(['-d', raid_level, '-m', raid_level])
+                
+                # Add devices
+                cmd.extend(devices)
+                
+                # Execute pool creation
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                
+                if result.returncode != 0:
+                    return jsonify({'error': f'Failed to create pool: {result.stderr}'}), 500
+                
+                # Create mount point
+                mount_point = f'/mnt/alvaos/{pool_name}'
+                os.makedirs(mount_point, exist_ok=True)
+                
+                # Mount the pool
+                mount_result = subprocess.run(
+                    ['sudo', 'mount', devices[0], mount_point],
+                    capture_output=True, text=True, timeout=5
+                )
+                
+                if mount_result.returncode != 0:
+                    return jsonify({'error': f'Pool created but failed to mount: {mount_result.stderr}'}), 500
+                
+                # Save pool state
+                pools_state = load_pools_state()
+                pool_id = f'pool-{len(pools_state)}'
+                pools_state[pool_id] = {
+                    'name': pool_name,
+                    'devices': devices,
+                    'raid_level': raid_level,
+                    'mount_point': mount_point,
+                    'created_at': datetime.now().isoformat()
+                }
+                save_pools_state(pools_state)
+                
+                return jsonify({
+                    'success': True,
+                    'message': f'Pool "{pool_name}" created successfully',
+                    'pool_id': pool_id,
+                    'mount_point': mount_point
+                })
+            else:
+                # Mock response for development
+                return jsonify({
+                    'success': True,
+                    'message': f'Mock: Pool "{pool_name}" would be created with {len(devices)} devices in {raid_level} mode',
+                    'pool_id': 'mock-pool-new'
+                })
+        
+        except subprocess.TimeoutExpired:
+            return jsonify({'error': 'Pool creation timed out'}), 500
+        except Exception as e:
+            return jsonify({'error': f'Pool creation failed: {str(e)}'}), 500
+    
+    elif request.method == 'DELETE':
+        # Delete pool
+        data = request.get_json()
+        pool_id = data.get('pool_id')
+        
+        if not pool_id:
+            return jsonify({'error': 'Pool ID is required'}), 400
+        
+        try:
+            pools_state = load_pools_state()
+            
+            if pool_id not in pools_state:
+                return jsonify({'error': 'Pool not found'}), 404
+            
+            pool_info = pools_state[pool_id]
+            mount_point = pool_info.get('mount_point')
+            
+            if platform.system() == 'Linux':
+                # Unmount the pool
+                if mount_point:
+                    subprocess.run(['sudo', 'umount', mount_point], timeout=5)
+                    
+                    # Remove mount point
+                    try:
+                        os.rmdir(mount_point)
+                    except:
+                        pass
+            
+            # Remove from state
+            del pools_state[pool_id]
+            save_pools_state(pools_state)
+            
+            return jsonify({'success': True, 'message': 'Pool deleted successfully'})
+        
+        except Exception as e:
+            return jsonify({'error': f'Failed to delete pool: {str(e)}'}), 500
+
+@app.route('/api/v1/storage/pools/<pool_id>/subvolumes', methods=['GET', 'POST', 'DELETE'])
+@require_auth
+def manage_subvolumes(pool_id):
+    """Manage subvolumes in a pool"""
+    
+    pools_state = load_pools_state()
+    
+    if pool_id not in pools_state:
+        return jsonify({'error': 'Pool not found'}), 404
+    
+    pool_info = pools_state[pool_id]
+    mount_point = pool_info.get('mount_point')
+    
+    if request.method == 'GET':
+        # List subvolumes
+        subvolumes = []
+        
+        try:
+            if platform.system() == 'Linux' and mount_point:
+                result = subprocess.run(
+                    ['sudo', 'btrfs', 'subvolume', 'list', mount_point],
+                    capture_output=True, text=True, timeout=5
+                )
+                
+                if result.returncode == 0:
+                    for line in result.stdout.split('\n'):
+                        if line.strip():
+                            # Parse: ID 256 gen 7 top level 5 path subvol1
+                            parts = line.split()
+                            if 'path' in parts:
+                                path_idx = parts.index('path')
+                                if path_idx + 1 < len(parts):
+                                    subvol_name = parts[path_idx + 1]
+                                    subvolumes.append({
+                                        'name': subvol_name,
+                                        'path': f'{mount_point}/{subvol_name}'
+                                    })
+            else:
+                # Mock data
+                subvolumes = [
+                    {'name': 'data', 'path': f'{mount_point}/data'},
+                    {'name': 'backups', 'path': f'{mount_point}/backups'}
+                ]
+        
+        except Exception as e:
+            print(f"Error listing subvolumes: {e}")
+        
+        return jsonify({'subvolumes': subvolumes})
+    
+    elif request.method == 'POST':
+        # Create subvolume
+        data = request.get_json()
+        subvol_name = data.get('name', '').strip()
+        
+        if not subvol_name:
+            return jsonify({'error': 'Subvolume name is required'}), 400
+        
+        try:
+            if platform.system() == 'Linux' and mount_point:
+                subvol_path = f'{mount_point}/{subvol_name}'
+                
+                result = subprocess.run(
+                    ['sudo', 'btrfs', 'subvolume', 'create', subvol_path],
+                    capture_output=True, text=True, timeout=5
+                )
+                
+                if result.returncode != 0:
+                    return jsonify({'error': f'Failed to create subvolume: {result.stderr}'}), 500
+                
+                return jsonify({
+                    'success': True,
+                    'message': f'Subvolume "{subvol_name}" created',
+                    'path': subvol_path
+                })
+            else:
+                return jsonify({
+                    'success': True,
+                    'message': f'Mock: Subvolume "{subvol_name}" would be created'
+                })
+        
+        except Exception as e:
+            return jsonify({'error': f'Failed to create subvolume: {str(e)}'}), 500
+    
+    elif request.method == 'DELETE':
+        # Delete subvolume
+        data = request.get_json()
+        subvol_name = data.get('name', '').strip()
+        
+        if not subvol_name:
+            return jsonify({'error': 'Subvolume name is required'}), 400
+        
+        try:
+            if platform.system() == 'Linux' and mount_point:
+                subvol_path = f'{mount_point}/{subvol_name}'
+                
+                result = subprocess.run(
+                    ['sudo', 'btrfs', 'subvolume', 'delete', subvol_path],
+                    capture_output=True, text=True, timeout=5
+                )
+                
+                if result.returncode != 0:
+                    return jsonify({'error': f'Failed to delete subvolume: {result.stderr}'}), 500
+                
+                return jsonify({
+                    'success': True,
+                    'message': f'Subvolume "{subvol_name}" deleted'
+                })
+            else:
+                return jsonify({
+                    'success': True,
+                    'message': f'Mock: Subvolume "{subvol_name}" would be deleted'
+                })
+        
+        except Exception as e:
+            return jsonify({'error': f'Failed to delete subvolume: {str(e)}'}), 500
+
+# ============================================================================
+# NETWORK SHARES ENDPOINTS (v0.2.0 Phase 3)
+# ============================================================================
+
+# Shares state file
+SHARES_STATE_FILE = '/var/lib/alvaos/shares.json'
+
+def load_shares_state():
+    """Load shares state from file"""
+    try:
+        if os.path.exists(SHARES_STATE_FILE):
+            with open(SHARES_STATE_FILE, 'r') as f:
+                return json.load(f)
+    except:
+        pass
+    return {}
+
+def save_shares_state(state):
+    """Save shares state to file"""
+    try:
+        ensure_directories()
+        with open(SHARES_STATE_FILE, 'w') as f:
+            json.dump(state, f, indent=2)
+    except Exception as e:
+        print(f"Error saving shares state: {e}")
+
+@app.route('/api/v1/storage/shares', methods=['GET', 'POST', 'DELETE'])
+@require_auth
+def manage_shares():
+    """Manage network shares (NFS and SMB)"""
+    
+    if request.method == 'GET':
+        # Load shares from state file
+        shares_state = load_shares_state()
+        shares = list(shares_state.values())
+        return jsonify({'shares': shares})
+    
+    elif request.method == 'POST':
+        # Create new share
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        share_name = data.get('name', '').strip()
+        share_path = data.get('path', '').strip()
+        protocol = data.get('protocol', 'nfs').lower()
+        read_only = data.get('read_only', False)
+        guest_access = data.get('guest_access', False)
+        allowed_hosts = data.get('allowed_hosts', '*')
+        
+        # Validation
+        if not share_name:
+            return jsonify({'error': 'Share name is required'}), 400
+        
+        if not share_path:
+            return jsonify({'error': 'Share path is required'}), 400
+        
+        if protocol not in ['nfs', 'smb']:
+            return jsonify({'error': 'Protocol must be "nfs" or "smb"'}), 400
+        
+        # Check if path exists
+        if platform.system() == 'Linux' and not os.path.exists(share_path):
+            return jsonify({'error': f'Path does not exist: {share_path}'}), 400
+        
+        try:
+            share_id = f'share-{len(load_shares_state())}'
+            
+            if platform.system() == 'Linux':
+                if protocol == 'nfs':
+                    # Configure NFS export
+                    export_line = f'{share_path} {allowed_hosts}({"ro" if read_only else "rw"},sync,no_subtree_check)\n'
+                    
+                    # Append to /etc/exports
+                    with open('/etc/exports', 'a') as f:
+                        f.write(f'# AlvaOS Share: {share_name}\n')
+                        f.write(export_line)
+                    
+                    # Reload NFS exports
+                    subprocess.run(['sudo', 'exportfs', '-ra'], timeout=5)
+                    
+                elif protocol == 'smb':
+                    # Configure Samba share
+                    smb_config = f'''
+[{share_name}]
+    path = {share_path}
+    browseable = yes
+    read only = {"yes" if read_only else "no"}
+    guest ok = {"yes" if guest_access else "no"}
+    create mask = 0644
+    directory mask = 0755
+'''
+                    
+                    # Append to /etc/samba/smb.conf
+                    with open('/etc/samba/smb.conf', 'a') as f:
+                        f.write(f'\n# AlvaOS Share: {share_name}\n')
+                        f.write(smb_config)
+                    
+                    # Restart Samba
+                    subprocess.run(['sudo', 'systemctl', 'restart', 'smbd'], timeout=10)
+            
+            # Save share state
+            shares_state = load_shares_state()
+            shares_state[share_id] = {
+                'id': share_id,
+                'name': share_name,
+                'path': share_path,
+                'protocol': protocol,
+                'read_only': read_only,
+                'guest_access': guest_access,
+                'allowed_hosts': allowed_hosts,
+                'created_at': datetime.now().isoformat(),
+                'status': 'active'
+            }
+            save_shares_state(shares_state)
+            
+            return jsonify({
+                'success': True,
+                'message': f'{protocol.upper()} share "{share_name}" created successfully',
+                'share_id': share_id
+            })
+        
+        except subprocess.TimeoutExpired:
+            return jsonify({'error': 'Share creation timed out'}), 500
+        except PermissionError:
+            return jsonify({'error': 'Permission denied. Backend needs sudo access.'}), 500
+        except Exception as e:
+            return jsonify({'error': f'Failed to create share: {str(e)}'}), 500
+    
+    elif request.method == 'DELETE':
+        # Delete share
+        data = request.get_json()
+        share_id = data.get('share_id')
+        
+        if not share_id:
+            return jsonify({'error': 'Share ID is required'}), 400
+        
+        try:
+            shares_state = load_shares_state()
+            
+            if share_id not in shares_state:
+                return jsonify({'error': 'Share not found'}), 404
+            
+            share_info = shares_state[share_id]
+            protocol = share_info['protocol']
+            share_name = share_info['name']
+            share_path = share_info['path']
+            
+            if platform.system() == 'Linux':
+                if protocol == 'nfs':
+                    # Remove from /etc/exports
+                    try:
+                        with open('/etc/exports', 'r') as f:
+                            lines = f.readlines()
+                        
+                        # Filter out the share
+                        new_lines = []
+                        skip_next = False
+                        for line in lines:
+                            if f'# AlvaOS Share: {share_name}' in line:
+                                skip_next = True
+                                continue
+                            if skip_next and share_path in line:
+                                skip_next = False
+                                continue
+                            new_lines.append(line)
+                        
+                        with open('/etc/exports', 'w') as f:
+                            f.writelines(new_lines)
+                        
+                        # Reload NFS exports
+                        subprocess.run(['sudo', 'exportfs', '-ra'], timeout=5)
+                    except Exception as e:
+                        print(f"Error removing NFS export: {e}")
+                
+                elif protocol == 'smb':
+                    # Remove from /etc/samba/smb.conf
+                    try:
+                        with open('/etc/samba/smb.conf', 'r') as f:
+                            content = f.read()
+                        
+                        # Find and remove the share section
+                        import re
+                        pattern = rf'# AlvaOS Share: {share_name}\n\[{share_name}\].*?(?=\n\[|\n# AlvaOS Share:|\Z)'
+                        content = re.sub(pattern, '', content, flags=re.DOTALL)
+                        
+                        with open('/etc/samba/smb.conf', 'w') as f:
+                            f.write(content)
+                        
+                        # Restart Samba
+                        subprocess.run(['sudo', 'systemctl', 'restart', 'smbd'], timeout=10)
+                    except Exception as e:
+                        print(f"Error removing SMB share: {e}")
+            
+            # Remove from state
+            del shares_state[share_id]
+            save_shares_state(shares_state)
+            
+            return jsonify({'success': True, 'message': f'Share "{share_name}" deleted successfully'})
+        
+        except Exception as e:
+            return jsonify({'error': f'Failed to delete share: {str(e)}'}), 500
 
 @app.route('/api/v1/health', methods=['GET'])
 def health_check():
