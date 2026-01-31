@@ -112,6 +112,10 @@ function displayDisks(disks) {
                 </div>
                 <div style="text-align: right;">
                     <span style="color: ${statusColor}; font-weight: 600; font-size: 0.875rem;">● ${statusText}</span>
+                    <div style="margin-top: 0.25rem; font-size: 0.75rem; color: var(--text-secondary);">
+                        ${disk.temp ? `<span>🌡️ ${disk.temp}°C</span>` : ''}
+                        ${disk.power_on_hours ? `<span style="margin-left: 0.5rem;">⏱️ ${Math.round(disk.power_on_hours / 24)}d</span>` : ''}
+                    </div>
                 </div>
             </div>
             
@@ -241,14 +245,18 @@ function displayPools(pools) {
                 </div>
             </div>
 
-            <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+            <div style="margin-top: 1rem; display: flex; flex-wrap: wrap; gap: 0.5rem;">
                 <button onclick="manageSubvolumes('${pool.id}')" 
-                    style="flex: 1; background: var(--accent-primary); color: white; border: none; padding: 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.875rem;">
-                    Manage Subvolumes
+                    style="flex: 1; min-width: 120px; background: var(--accent-primary); color: white; border: none; padding: 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.875rem;">
+                    Subvolumes
+                </button>
+                <button onclick="showExpandPoolDialog('${pool.id}', '${pool.name}')" 
+                    style="flex: 1; min-width: 120px; background: var(--bg-primary); color: var(--accent-success); border: 1px solid var(--accent-success); padding: 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.875rem;">
+                    Expand Pool
                 </button>
                 <button onclick="deletePool('${pool.id}', '${pool.name}')" 
-                    style="flex: 1; background: var(--bg-primary); color: var(--accent-danger); border: 1px solid var(--accent-danger); padding: 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.875rem;">
-                    Delete Pool
+                    style="flex: 1; min-width: 120px; background: var(--bg-primary); color: var(--accent-danger); border: 1px solid var(--accent-danger); padding: 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.875rem;">
+                    Delete
                 </button>
             </div>
         `;
@@ -378,9 +386,100 @@ function initializeDisk(diskName) {
     alert('Disk initialization will be implemented in the next phase.');
 }
 
-// View Disk Details
-function viewDiskDetails(diskName) {
-    alert(`Detailed SMART information for /dev/${diskName} will be shown here.\n\nComing soon!`);
+// View Disk Details (SMART)
+async function viewDiskDetails(diskName) {
+    const token = localStorage.getItem('alvaos_token');
+
+    // Create modal immediately for loading state
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0, 0, 0, 0.85); display: flex;
+        align-items: center; justify-content: center; z-index: 10000;
+    `;
+
+    const panel = document.createElement('div');
+    panel.style.cssText = `
+        background: var(--bg-surface); border: 1px solid var(--bg-border);
+        border-radius: 8px; padding: 2rem; max-width: 800px; width: 90%;
+        max-height: 90vh; overflow-y: auto;
+    `;
+
+    panel.innerHTML = `<h2 style="color: var(--text-secondary); text-align: center;">Loading SMART data for ${diskName}...</h2>`;
+    modal.appendChild(panel);
+    document.body.appendChild(modal);
+
+    try {
+        const response = await fetch(`${API_BASE}/storage/disks/${diskName}/smart`, {
+            headers: { 'Authorization': token || '' }
+        });
+
+        if (!response.ok) throw new Error('Failed to fetch SMART data');
+        const data = await response.json();
+
+        const status = data.smart_status?.passed ? 'Healthy' : 'Warning/Failed';
+        const color = data.smart_status?.passed ? 'var(--accent-success)' : 'var(--accent-danger)';
+        const temp = data.temperature?.current || 'N/A';
+        const hours = data.power_on_time?.hours || 'N/A';
+
+        panel.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h2 style="margin: 0; color: var(--text-primary);">Disk Health: /dev/${diskName}</h2>
+                <button id="close-modal-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">✕</button>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+                <div style="background: var(--bg-primary); padding: 1rem; border-radius: 6px; text-align: center; border-bottom: 3px solid ${color};">
+                    <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase;">Status</div>
+                    <div style="font-size: 1.25rem; font-weight: 700; color: ${color};">${status}</div>
+                </div>
+                <div style="background: var(--bg-primary); padding: 1rem; border-radius: 6px; text-align: center;">
+                    <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase;">Temperature</div>
+                    <div style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary);">${temp}°C</div>
+                </div>
+                <div style="background: var(--bg-primary); padding: 1rem; border-radius: 6px; text-align: center;">
+                    <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase;">Power On</div>
+                    <div style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary);">${hours} hrs</div>
+                </div>
+            </div>
+
+            <h3 style="font-size: 1rem; margin-bottom: 1rem; color: var(--text-primary);">Detailed Attributes</h3>
+            <div style="overflow-x: auto;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.875rem;">
+                    <thead>
+                        <tr style="text-align: left; border-bottom: 1px solid var(--bg-border);">
+                            <th style="padding: 0.75rem 0.5rem; color: var(--text-secondary);">ID</th>
+                            <th style="padding: 0.75rem 0.5rem; color: var(--text-secondary);">Attribute</th>
+                            <th style="padding: 0.75rem 0.5rem; color: var(--text-secondary); text-align: right;">Raw Value</th>
+                            <th style="padding: 0.75rem 0.5rem; color: var(--text-secondary); text-align: right;">Normalized</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${(data.ata_smart_attributes?.table || []).map(attr => `
+                            <tr style="border-bottom: 1px solid var(--bg-border);">
+                                <td style="padding: 0.75rem 0.5rem; font-family: monospace;">${attr.id}</td>
+                                <td style="padding: 0.75rem 0.5rem;">${attr.name}</td>
+                                <td style="padding: 0.75rem 0.5rem; text-align: right; font-family: monospace;">${attr.raw?.value}</td>
+                                <td style="padding: 0.75rem 0.5rem; text-align: right; font-family: monospace;">${attr.value}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+
+            <button id="close-btn" style="width: 100%; margin-top: 2rem; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--bg-border); padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600;">
+                Close
+            </button>
+        `;
+
+        const close = () => modal.remove();
+        panel.querySelector('#close-modal-btn').onclick = close;
+        panel.querySelector('#close-btn').onclick = close;
+
+    } catch (error) {
+        panel.innerHTML = `<h2 style="color: var(--accent-danger);">Error</h2><p>${error.message}</p><button id="err-close" style="padding: 0.5rem 1rem;">Close</button>`;
+        panel.querySelector('#err-close').onclick = () => modal.remove();
+    }
 }
 
 // Show Create Pool Dialog
@@ -575,6 +674,103 @@ async function showCreatePoolDialog() {
             alert(`Error: ${error.message}`);
         }
     });
+}
+
+// Show Expand Pool Dialog
+async function showExpandPoolDialog(poolId, poolName) {
+    const token = localStorage.getItem('alvaos_token');
+
+    // Fetch available disks
+    const disksResponse = await fetch(`${API_BASE}/storage/disks`, {
+        headers: { 'Authorization': token || '' }
+    });
+
+    if (!disksResponse.ok) {
+        alert('Failed to load disks');
+        return;
+    }
+
+    const disksData = await disksResponse.json();
+    const availableDisks = disksData.disks.filter(d => !d.is_system_disk && d.fstype === 'none');
+
+    if (availableDisks.length === 0) {
+        alert('No available disks found to expand the pool.');
+        return;
+    }
+
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0, 0, 0, 0.8); display: flex;
+        align-items: center; justify-content: center; z-index: 10000;
+    `;
+
+    const dialog = document.createElement('div');
+    dialog.style.cssText = `
+        background: var(--bg-surface); border: 1px solid var(--bg-border);
+        border-radius: 8px; padding: 2rem; max-width: 500px; width: 90%;
+    `;
+
+    dialog.innerHTML = `
+        <h2 style="margin-top: 0; color: var(--text-primary);">Expand Pool: ${poolName}</h2>
+        <p style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 1.5rem;">
+            Select one or more disks to add to this pool. Btrfs will immediately increase the total capacity.
+        </p>
+        
+        <div style="max-height: 200px; overflow-y: auto; border: 1px solid var(--bg-border); border-radius: 4px; padding: 0.5rem; margin-bottom: 1.5rem;">
+            ${availableDisks.map(disk => `
+                <label style="display: flex; align-items: center; padding: 0.5rem; cursor: pointer;">
+                    <input type="checkbox" value="${disk.path}" class="expand-disk-checkbox" style="margin-right: 0.75rem;">
+                    <div>
+                        <div style="font-weight: 600; color: var(--text-primary);">${disk.name} - ${disk.size}</div>
+                        <div style="font-size: 0.75rem; color: var(--text-secondary);">${disk.model}</div>
+                    </div>
+                </label>
+            `).join('')}
+        </div>
+        
+        <div style="display: flex; gap: 0.75rem;">
+            <button id="cancel-expand-btn" style="flex: 1; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--bg-border); padding: 0.75rem; border-radius: 4px; cursor: pointer;">Cancel</button>
+            <button id="confirm-expand-btn" style="flex: 1; background: var(--accent-success); color: white; border: none; padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600;">Add Disks</button>
+        </div>
+    `;
+
+    modal.appendChild(dialog);
+    document.body.appendChild(modal);
+
+    dialog.querySelector('#cancel-expand-btn').onclick = () => modal.remove();
+    dialog.querySelector('#confirm-expand-btn').onclick = async () => {
+        const selectedDisks = Array.from(dialog.querySelectorAll('.expand-disk-checkbox:checked')).map(cb => cb.value);
+
+        if (selectedDisks.length === 0) {
+            alert('Please select at least one disk');
+            return;
+        }
+
+        if (!confirm(`Add ${selectedDisks.length} disk(s) to pool "${poolName}"?\n\n⚠️ DATA ON SELECTED DISKS WILL BE ERASED!`)) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`${API_BASE}/storage/pools/${poolId}/expand`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': token || '',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ devices: selectedDisks })
+            });
+
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Failed to expand pool');
+
+            alert(result.message);
+            modal.remove();
+            loadPools();
+        } catch (error) {
+            alert(`Error: ${error.message}`);
+        }
+    };
 }
 
 // Delete Pool
@@ -1168,4 +1364,3 @@ ${connectionInstructions}
     });
 }
 
-}

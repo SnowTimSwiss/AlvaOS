@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-AlvaOS Backend v0.1
-Simple REST API for system information and setup
+AlvaOS Backend v0.2.0
+Comprehensive Storage Management Engine
 """
 
 from flask import Flask, jsonify, send_from_directory, request
@@ -218,10 +218,20 @@ def get_system_info():
     
     # Network Information
     hostname = socket.gethostname()
+    ip_address = '127.0.0.1'
+    
     try:
-        ip_address = socket.gethostbyname(hostname)
-    except socket.error:
-        ip_address = '127.0.0.1'
+        # Better IP detection: find first non-loopback IPv4
+        addrs = psutil.net_if_addrs()
+        for iface, iface_addrs in addrs.items():
+            if iface.startswith('lo'): continue
+            for addr in iface_addrs:
+                if addr.family == socket.AF_INET:
+                    ip_address = addr.address
+                    break
+            if ip_address != '127.0.0.1': break
+    except:
+        pass
     
     network_info = {
         'hostname': hostname,
@@ -466,18 +476,38 @@ def get_disks():
                                 is_system_disk = True
                                 break
                         
-                        # Get SMART status if available
+                        # Get SMART data
                         smart_status = 'unknown'
+                        temp = None
+                        power_on_hours = None
+                        
                         try:
-                            smart_result = subprocess.run(
-                                ['sudo', 'smartctl', '-H', f'/dev/{device["name"]}'],
+                            # Try to get detailed SMART info in JSON format if supported
+                            smart_json_result = subprocess.run(
+                                ['sudo', 'smartctl', '-H', '-A', '-j', f'/dev/{device["name"]}'],
                                 capture_output=True, text=True, timeout=3
                             )
-                            if 'PASSED' in smart_result.stdout:
-                                smart_status = 'healthy'
-                            elif 'FAILED' in smart_result.stdout:
-                                smart_status = 'failed'
+                            
+                            if smart_json_result.returncode == 0 or (smart_json_result.returncode & 0x1) == 0:
+                                smart_data = json.loads(smart_json_result.stdout)
+                                
+                                # Status
+                                if smart_data.get('smart_status', {}).get('passed'):
+                                    smart_status = 'healthy'
+                                else:
+                                    smart_status = 'failed'
+                                
+                                # Extract temp and hours from attributes
+                                attributes = smart_data.get('ata_smart_attributes', {}).get('table', [])
+                                for attr in attributes:
+                                    # Temperature (standard ID 194 or 190)
+                                    if attr.get('id') in [194, 190]:
+                                        temp = attr.get('raw', {}).get('value')
+                                    # Power On Hours (standard ID 9)
+                                    elif attr.get('id') == 9:
+                                        power_on_hours = attr.get('raw', {}).get('value')
                         except:
+                            # Fallback if JSON fails or smartctl not found
                             pass
                         
                         disk_info = {
@@ -490,6 +520,8 @@ def get_disks():
                             'mountpoint': device.get('mountpoint', None),
                             'is_system_disk': is_system_disk,
                             'smart_status': smart_status,
+                            'temp': temp,
+                            'power_on_hours': power_on_hours,
                             'partitions': []
                         }
                         
@@ -517,6 +549,8 @@ def get_disks():
                     'mountpoint': '/',
                     'is_system_disk': True,
                     'smart_status': 'healthy',
+                    'temp': 32,
+                    'power_on_hours': 12450,
                     'partitions': []
                 },
                 {
@@ -529,6 +563,8 @@ def get_disks():
                     'mountpoint': None,
                     'is_system_disk': False,
                     'smart_status': 'healthy',
+                    'temp': 28,
+                    'power_on_hours': 450,
                     'partitions': []
                 }
             ]
@@ -538,6 +574,41 @@ def get_disks():
         return jsonify({'error': str(e)}), 500
     
     return jsonify({'disks': disks})
+
+@app.route('/api/v1/storage/disks/<disk_name>/smart', methods=['GET'])
+@require_auth
+def get_disk_smart(disk_name):
+    """Get detailed SMART health attributes for a specific disk"""
+    # Security: validate disk name
+    if not disk_name.isalnum() and not all(c in '._-' for c in disk_name if not c.isalnum()):
+        return jsonify({'error': 'Invalid disk name'}), 400
+        
+    try:
+        if platform.system() == 'Linux':
+            result = subprocess.run(
+                ['sudo', 'smartctl', '-a', '-j', f'/dev/{disk_name}'],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.stdout:
+                return jsonify(json.loads(result.stdout))
+            else:
+                return jsonify({'error': 'No SMART data', 'details': result.stderr}), 404
+        else:
+            return jsonify({
+                'json_format_version': [1, 0],
+                'smart_status': {'passed': True},
+                'temperature': {'current': 30},
+                'ata_smart_attributes': {
+                    'table': [
+                        {'id': 1, 'name': 'Raw_Read_Error_Rate', 'value': 100, 'raw': {'value': 0}},
+                        {'id': 5, 'name': 'Reallocated_Sector_Ct', 'value': 100, 'raw': {'value': 0}},
+                        {'id': 9, 'name': 'Power_On_Hours', 'value': 98, 'raw': {'value': 1234}},
+                        {'id': 194, 'name': 'Temperature_Celsius', 'value': 70, 'raw': {'value': 30}}
+                    ]
+                }
+            })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # Pool state file
 POOLS_STATE_FILE = '/var/lib/alvaos/pools.json'
@@ -912,6 +983,57 @@ def manage_subvolumes(pool_id):
         
         except Exception as e:
             return jsonify({'error': f'Failed to delete subvolume: {str(e)}'}), 500
+
+@app.route('/api/v1/storage/pools/<pool_id>/expand', methods=['POST'])
+@require_auth
+def expand_pool(pool_id):
+    """Add new devices to an existing pool"""
+    data = request.get_json()
+    devices = data.get('devices', [])
+    
+    if not devices:
+        return jsonify({'error': 'No devices provided'}), 400
+        
+    pools_state = load_pools_state()
+    if pool_id not in pools_state:
+        return jsonify({'error': 'Pool not found'}), 404
+        
+    pool_info = pools_state[pool_id]
+    mount_point = pool_info.get('mount_point')
+    
+    try:
+        if platform.system() == 'Linux':
+            if not mount_point:
+                return jsonify({'error': 'Pool not mounted'}), 400
+                
+            # Add devices to pool
+            # cmd: sudo btrfs device add /dev/sdX /mnt/alvaos/poolname
+            cmd = ['sudo', 'btrfs', 'device', 'add'] + devices + [mount_point]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            
+            if result.returncode != 0:
+                return jsonify({'error': f'Failed to add devices: {result.stderr}'}), 500
+                
+            # Optional: Start a balance in background to redistribute data
+            # subprocess.Popen(['sudo', 'btrfs', 'balance', 'start', mount_point])
+            
+            # Update state
+            pool_info['devices'].extend(devices)
+            pools_state[pool_id] = pool_info
+            save_pools_state(pools_state)
+            
+            return jsonify({
+                'success': True, 
+                'message': f'Added {len(devices)} device(s) to pool "{pool_info["name"]}"'
+            })
+        else:
+            # Mock
+            return jsonify({
+                'success': True, 
+                'message': f'Mock: Added {len(devices)} device(s) to pool "{pool_info["name"]}"'
+            })
+    except Exception as e:
+        return jsonify({'error': f'Failed to expand pool: {str(e)}'}), 500
 
 # ============================================================================
 # NETWORK SHARES ENDPOINTS (v0.2.0 Phase 3)
