@@ -53,6 +53,7 @@ Release strategy: "Iterate fast, stabilize often."
 - [ ] **Disks**: S.M.A.R.T. monitoring and basic health checks.
 - [ ] **Smart Alerts**: Notification system for failures/warnings.
 - [ ] **Integrations**: Webhook support (Discord, Telegram, Email) for alerts.
+- [ ] **Usage and Temperature history**: Show usage and temperature history.
 
 ## v0.10.0 - Security
 - [ ] **Hardening**: Firewall rules and permission audits.
