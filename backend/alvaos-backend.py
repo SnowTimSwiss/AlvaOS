@@ -266,24 +266,46 @@ def get_system_info():
 def system_time():
     """Get or Set system time settings"""
     if request.method == 'GET':
-        # Mocking time zone and NTP status
+        timezone = 'UTC'
+        ntp_enabled = True
+        
+        if platform.system() == 'Linux':
+            try:
+                # Get current timezone
+                tz_result = subprocess.run(['timedatectl', 'show', '--property=Timezone', '--value'], 
+                                         capture_output=True, text=True)
+                if tz_result.returncode == 0:
+                    timezone = tz_result.stdout.strip()
+                
+                # Get NTP status
+                ntp_result = subprocess.run(['timedatectl', 'show', '--property=NTP', '--value'], 
+                                          capture_output=True, text=True)
+                if ntp_result.returncode == 0:
+                    ntp_enabled = ntp_result.stdout.strip() == 'yes'
+            except:
+                pass
+                
         return jsonify({
-            'timezone': 'UTC' if platform.system() == 'Windows' else subprocess.getoutput("cat /etc/timezone"),
-            'ntp_enabled': True,
+            'timezone': timezone,
+            'ntp_enabled': ntp_enabled,
             'current_time': datetime.now().isoformat()
         })
     
     if request.method == 'POST':
         data = request.get_json()
-        # Mock implementation
-        if 'timezone' in data:
-            # On Linux: subprocess.run(['sudo', 'timedatectl', 'set-timezone', data['timezone']])
-            pass
-        if 'ntp' in data:
-            # On Linux: subprocess.run(['sudo', 'timedatectl', 'set-ntp', 'true' if data['ntp'] else 'false'])
-            pass
-            
-        return jsonify({'success': True, 'message': 'Time settings updated'})
+        if platform.system() == 'Linux':
+            try:
+                if 'timezone' in data:
+                    subprocess.run(['sudo', 'timedatectl', 'set-timezone', data['timezone']], check=True)
+                if 'ntp' in data:
+                    ntp_val = 'true' if data['ntp'] else 'false'
+                    subprocess.run(['sudo', 'timedatectl', 'set-ntp', ntp_val], check=True)
+                
+                return jsonify({'success': True, 'message': 'Time settings updated'})
+            except Exception as e:
+                return jsonify({'error': str(e)}), 500
+        else:
+            return jsonify({'success': True, 'message': 'Mock: Time settings updated'})
 
 @app.route('/api/v1/system/power', methods=['POST'])
 @require_auth
@@ -579,21 +601,29 @@ def get_disks():
 @require_auth
 def get_disk_smart(disk_name):
     """Get detailed SMART health attributes for a specific disk"""
-    # Security: validate disk name
     if not disk_name.isalnum() and not all(c in '._-' for c in disk_name if not c.isalnum()):
         return jsonify({'error': 'Invalid disk name'}), 400
         
     try:
         if platform.system() == 'Linux':
-            result = subprocess.run(
-                ['sudo', 'smartctl', '-a', '-j', f'/dev/{disk_name}'],
-                capture_output=True, text=True, timeout=5
-            )
+            # Try to determine if it's NVMe
+            is_nvme = disk_name.startswith('nvme')
+            
+            # Get detailed SMART info in JSON format
+            # For NVMe, smartctl -a is standard, for others we might need specific types
+            cmd = ['sudo', 'smartctl', '-a', '-j', f'/dev/{disk_name}']
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            
             if result.stdout:
-                return jsonify(json.loads(result.stdout))
+                data = json.loads(result.stdout)
+                # Check if SMART is actually supported/enabled
+                if not data.get('smart_support', {}).get('available', True):
+                    return jsonify({'error': 'SMART not supported on this device (common for USB sticks)'}), 200
+                return jsonify(data)
             else:
-                return jsonify({'error': 'No SMART data', 'details': result.stderr}), 404
+                return jsonify({'error': 'Device did not return any SMART data', 'details': result.stderr}), 404
         else:
+            # Mock data (unchanged)
             return jsonify({
                 'json_format_version': [1, 0],
                 'smart_status': {'passed': True},
@@ -607,6 +637,32 @@ def get_disk_smart(disk_name):
                     ]
                 }
             })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/v1/storage/disks/<disk_name>/wipe', methods=['POST'])
+@require_auth
+def wipe_disk(disk_name):
+    """Wipe disk signatures and partition table to make it available for pools"""
+    if not disk_name.isalnum() and not all(c in '._-' for c in disk_name if not c.isalnum()):
+        return jsonify({'error': 'Invalid disk name'}), 400
+        
+    try:
+        if platform.system() == 'Linux':
+            # 1. Unmount any Partitions
+            subprocess.run(f'sudo umount /dev/{disk_name}*', shell=True, check=False)
+            
+            # 2. Wipe file system signatures
+            result = subprocess.run(['sudo', 'wipefs', '-a', f'/dev/{disk_name}'], capture_output=True, text=True)
+            if result.returncode != 0:
+                return jsonify({'error': f'Wipefs failed: {result.stderr}'}), 500
+                
+            # 3. Inform kernel of changes
+            subprocess.run(['sudo', 'partprobe', f'/dev/{disk_name}'], check=False)
+            
+            return jsonify({'success': True, 'message': f'Disk /dev/{disk_name} wiped successfully and is now ready for use.'})
+        else:
+            return jsonify({'success': True, 'message': f'Mock: Disk /dev/{disk_name} wiped.'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

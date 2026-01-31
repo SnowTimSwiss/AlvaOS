@@ -147,16 +147,16 @@ function displayDisks(disks) {
                 </div>
             ` : ''}
 
-            <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
-                ${!disk.is_system_disk && disk.fstype === 'none' ? `
-                    <button onclick="initializeDisk('${disk.name}')" 
-                        style="flex: 1; background: var(--accent-primary); color: white; border: none; padding: 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.875rem;">
-                        Initialize for Storage
+            <div style="margin-top: 1rem; display: flex; flex-wrap: wrap; gap: 0.5rem;">
+                ${!disk.is_system_disk ? `
+                    <button onclick="wipeDisk('${disk.name}')" 
+                        style="flex: 1; min-width: 100px; background: var(--bg-primary); color: var(--accent-danger); border: 1px solid var(--accent-danger); padding: 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.875rem;" title="Completely erase disk to make it available">
+                        Wipe Disk
                     </button>
                 ` : ''}
                 <button onclick="viewDiskDetails('${disk.name}')" 
-                    style="flex: 1; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--bg-border); padding: 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.875rem;">
-                    View Details
+                    style="flex: 1; min-width: 100px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--bg-border); padding: 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.875rem;">
+                    Details
                 </button>
             </div>
         `;
@@ -386,6 +386,29 @@ function initializeDisk(diskName) {
     alert('Disk initialization will be implemented in the next phase.');
 }
 
+// Wipe Disk
+async function wipeDisk(diskName) {
+    if (!confirm(`Are you sure you want to WIPE /dev/${diskName}?\n\n⚠️ ALL DATA, partitions and file systems will be PERMANENTLY ERASED.\nThis cannot be undone.`)) {
+        return;
+    }
+
+    const token = localStorage.getItem('alvaos_token');
+    try {
+        const response = await fetch(`${API_BASE}/storage/disks/${diskName}/wipe`, {
+            method: 'POST',
+            headers: { 'Authorization': token || '' }
+        });
+
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Failed to wipe disk');
+
+        alert(result.message);
+        loadDisks();
+    } catch (error) {
+        alert(`Error: ${error.message}`);
+    }
+}
+
 // View Disk Details (SMART)
 async function viewDiskDetails(diskName) {
     const token = localStorage.getItem('alvaos_token');
@@ -414,13 +437,41 @@ async function viewDiskDetails(diskName) {
             headers: { 'Authorization': token || '' }
         });
 
-        if (!response.ok) throw new Error('Failed to fetch SMART data');
         const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to fetch SMART data');
+
+        // Handle case where SMART is not supported but returned 200 (common for USB)
+        if (data.error) {
+            panel.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                    <h2 style="margin: 0; color: var(--text-primary);">Disk Health: /dev/${diskName}</h2>
+                    <button id="close-modal-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">✕</button>
+                </div>
+                <div style="padding: 2rem; text-align: center; background: var(--bg-primary); border-radius: 8px; border-left: 4px solid var(--accent-warning);">
+                    <div style="font-size: 3rem; margin-bottom: 1rem;">ℹ️</div>
+                    <h3 style="margin-bottom: 0.5rem;">SMART Monitoring Unavailable</h3>
+                    <p style="color: var(--text-secondary);">${data.error}</p>
+                </div>
+                <button id="close-btn" style="width: 100%; margin-top: 2rem; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--bg-border); padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600;">Close</button>
+             `;
+            const close = () => modal.remove();
+            panel.querySelector('#close-modal-btn').onclick = close;
+            panel.querySelector('#close-btn').onclick = close;
+            return;
+        }
 
         const status = data.smart_status?.passed ? 'Healthy' : 'Warning/Failed';
         const color = data.smart_status?.passed ? 'var(--accent-success)' : 'var(--accent-danger)';
-        const temp = data.temperature?.current || 'N/A';
-        const hours = data.power_on_time?.hours || 'N/A';
+
+        // Handle NVMe vs ATA structures
+        const temp = data.temperature?.current ||
+            data.nvme_smart_health_information_log?.temperature ||
+            'N/A';
+        const hours = data.power_on_time?.hours ||
+            data.nvme_smart_health_information_log?.power_on_hours ||
+            'N/A';
+
+        const attributes = data.ata_smart_attributes?.table || [];
 
         panel.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
@@ -443,29 +494,35 @@ async function viewDiskDetails(diskName) {
                 </div>
             </div>
 
-            <h3 style="font-size: 1rem; margin-bottom: 1rem; color: var(--text-primary);">Detailed Attributes</h3>
-            <div style="overflow-x: auto;">
-                <table style="width: 100%; border-collapse: collapse; font-size: 0.875rem;">
-                    <thead>
-                        <tr style="text-align: left; border-bottom: 1px solid var(--bg-border);">
-                            <th style="padding: 0.75rem 0.5rem; color: var(--text-secondary);">ID</th>
-                            <th style="padding: 0.75rem 0.5rem; color: var(--text-secondary);">Attribute</th>
-                            <th style="padding: 0.75rem 0.5rem; color: var(--text-secondary); text-align: right;">Raw Value</th>
-                            <th style="padding: 0.75rem 0.5rem; color: var(--text-secondary); text-align: right;">Normalized</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${(data.ata_smart_attributes?.table || []).map(attr => `
-                            <tr style="border-bottom: 1px solid var(--bg-border);">
-                                <td style="padding: 0.75rem 0.5rem; font-family: monospace;">${attr.id}</td>
-                                <td style="padding: 0.75rem 0.5rem;">${attr.name}</td>
-                                <td style="padding: 0.75rem 0.5rem; text-align: right; font-family: monospace;">${attr.raw?.value}</td>
-                                <td style="padding: 0.75rem 0.5rem; text-align: right; font-family: monospace;">${attr.value}</td>
+            ${attributes.length > 0 ? `
+                <h3 style="font-size: 1rem; margin-bottom: 1rem; color: var(--text-primary);">Detailed Attributes</h3>
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 0.875rem;">
+                        <thead>
+                            <tr style="text-align: left; border-bottom: 1px solid var(--bg-border);">
+                                <th style="padding: 0.75rem 0.5rem; color: var(--text-secondary);">ID</th>
+                                <th style="padding: 0.75rem 0.5rem; color: var(--text-secondary);">Attribute</th>
+                                <th style="padding: 0.75rem 0.5rem; color: var(--text-secondary); text-align: right;">Raw Value</th>
+                                <th style="padding: 0.75rem 0.5rem; color: var(--text-secondary); text-align: right;">Normalized</th>
                             </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            </div>
+                        </thead>
+                        <tbody>
+                            ${attributes.map(attr => `
+                                <tr style="border-bottom: 1px solid var(--bg-border);">
+                                    <td style="padding: 0.75rem 0.5rem; font-family: monospace;">${attr.id}</td>
+                                    <td style="padding: 0.75rem 0.5rem;">${attr.name}</td>
+                                    <td style="padding: 0.75rem 0.5rem; text-align: right; font-family: monospace;">${attr.raw?.value}</td>
+                                    <td style="padding: 0.75rem 0.5rem; text-align: right; font-family: monospace;">${attr.value}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            ` : `
+                <div style="padding: 1.5rem; background: var(--bg-primary); border-radius: 6px; text-align: center; color: var(--text-secondary);">
+                    No extended attribute table available for this device type.
+                </div>
+            `}
 
             <button id="close-btn" style="width: 100%; margin-top: 2rem; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--bg-border); padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600;">
                 Close
@@ -477,7 +534,10 @@ async function viewDiskDetails(diskName) {
         panel.querySelector('#close-btn').onclick = close;
 
     } catch (error) {
-        panel.innerHTML = `<h2 style="color: var(--accent-danger);">Error</h2><p>${error.message}</p><button id="err-close" style="padding: 0.5rem 1rem;">Close</button>`;
+        panel.innerHTML = `<div style="text-align:center; padding: 2rem;">
+            <h2 style="color: var(--accent-danger);">Error</h2><p>${error.message}</p>
+            <button id="err-close" style="margin-top: 1rem; padding: 0.5rem 1rem; background: var(--accent-danger); color: white; border:none; border-radius:4px; cursor:pointer;">Close</button>
+        </div>`;
         panel.querySelector('#err-close').onclick = () => modal.remove();
     }
 }

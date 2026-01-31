@@ -26,22 +26,32 @@ async function fetchSettings() {
             const netData = await netRes.json();
 
             // Populate Network Card
-            els.netInterface.textContent = netData.interface;
-            els.netIp.textContent = netData.ip_address;
-            els.netMask.textContent = netData.subnet_mask;
-            els.netGateway.textContent = netData.gateway;
-            els.netDns.textContent = netData.dns.join(', ');
+            els.netInterface.textContent = netData.interface || 'N/A';
+            els.netIp.textContent = netData.ip_address || 'N/A';
+            els.netMask.textContent = netData.subnet_mask || 'N/A';
+            els.netGateway.textContent = netData.gateway || 'N/A';
+            els.netDns.textContent = (netData.dns && netData.dns.length > 0) ? netData.dns.join(', ') : 'N/A';
 
             // Populate Hostname Input
-            els.hostnameInput.value = netData.hostname;
+            if (els.hostnameInput) els.hostnameInput.value = netData.hostname || '';
         }
 
-        // 2. Fetch Logs
+        // 2. Fetch Time Settings
+        const timeRes = await fetch(`${API_BASE}/system/time`, { headers });
+        if (timeRes.ok) {
+            const timeData = await timeRes.json();
+            const tzSelect = document.getElementById('timezone-select');
+            const ntpToggle = document.getElementById('ntp-toggle');
+
+            if (tzSelect) tzSelect.value = timeData.timezone || 'UTC';
+            if (ntpToggle) ntpToggle.checked = timeData.ntp_enabled;
+        }
+
+        // 3. Fetch Logs
         const logRes = await fetch(`${API_BASE}/system/logs`, { headers });
         if (logRes.ok) {
             const logData = await logRes.json();
             els.logViewer.textContent = logData.logs.join('\n');
-            // Scroll to bottom
             els.logViewer.scrollTop = els.logViewer.scrollHeight;
         }
 
