@@ -56,7 +56,7 @@ def mark_setup_complete(password):
     setup_data = {
         'setup_completed': True,
         'completed_at': datetime.now().isoformat(),
-        'version': '0.1.5'
+        'version': '0.2.0'
     }
     with open(SETUP_STATUS_FILE, 'w') as f:
         json.dump(setup_data, f, indent=2)
@@ -85,7 +85,7 @@ def get_setup_status():
     """Check if initial setup is required"""
     return jsonify({
         'setup_complete': is_setup_complete(),
-        'version': '0.1.5'
+        'version': '0.2.0'
     })
 
 @app.route('/api/v1/setup/complete', methods=['POST'])
@@ -242,7 +242,7 @@ def get_system_info():
     }
     
     return jsonify({
-        'version': '0.1.5',
+        'version': '0.2.0',
         'timestamp': datetime.now().isoformat(),
         'cpu': cpu_info,
         'memory': memory_info,
@@ -430,17 +430,153 @@ def get_system_logs():
 
     return jsonify({'logs': logs})
 
+# ============================================================================
+# STORAGE MANAGEMENT ENDPOINTS (v0.2.0)
+# ============================================================================
+
+@app.route('/api/v1/storage/disks', methods=['GET'])
+@require_auth
+def get_disks():
+    """Get list of all available disks"""
+    disks = []
+    
+    try:
+        if platform.system() == 'Linux':
+            # Use lsblk to get disk information
+            result = subprocess.run(
+                ['lsblk', '-J', '-o', 'NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,MODEL,SERIAL'],
+                capture_output=True, text=True, timeout=5
+            )
+            
+            if result.returncode == 0:
+                lsblk_data = json.loads(result.stdout)
+                
+                # Filter for disk devices (not partitions or loops)
+                for device in lsblk_data.get('blockdevices', []):
+                    if device.get('type') == 'disk':
+                        # Skip loop devices and CD-ROMs
+                        if device['name'].startswith('loop') or device['name'].startswith('sr'):
+                            continue
+                        
+                        # Check if disk is system disk (has root partition)
+                        is_system_disk = False
+                        children = device.get('children', [])
+                        for child in children:
+                            if child.get('mountpoint') == '/':
+                                is_system_disk = True
+                                break
+                        
+                        # Get SMART status if available
+                        smart_status = 'unknown'
+                        try:
+                            smart_result = subprocess.run(
+                                ['sudo', 'smartctl', '-H', f'/dev/{device["name"]}'],
+                                capture_output=True, text=True, timeout=3
+                            )
+                            if 'PASSED' in smart_result.stdout:
+                                smart_status = 'healthy'
+                            elif 'FAILED' in smart_result.stdout:
+                                smart_status = 'failed'
+                        except:
+                            pass
+                        
+                        disk_info = {
+                            'name': device['name'],
+                            'path': f'/dev/{device["name"]}',
+                            'size': device.get('size', 'Unknown'),
+                            'model': device.get('model', 'Unknown').strip() if device.get('model') else 'Unknown',
+                            'serial': device.get('serial', 'N/A'),
+                            'fstype': device.get('fstype', 'none'),
+                            'mountpoint': device.get('mountpoint', None),
+                            'is_system_disk': is_system_disk,
+                            'smart_status': smart_status,
+                            'partitions': []
+                        }
+                        
+                        # Add partition information
+                        for child in children:
+                            partition = {
+                                'name': child['name'],
+                                'size': child.get('size', 'Unknown'),
+                                'fstype': child.get('fstype', 'none'),
+                                'mountpoint': child.get('mountpoint', None)
+                            }
+                            disk_info['partitions'].append(partition)
+                        
+                        disks.append(disk_info)
+        else:
+            # Mock data for development on non-Linux systems
+            disks = [
+                {
+                    'name': 'sda',
+                    'path': '/dev/sda',
+                    'size': '500G',
+                    'model': 'Samsung SSD 860',
+                    'serial': 'S3Z9NB0K123456',
+                    'fstype': 'ext4',
+                    'mountpoint': '/',
+                    'is_system_disk': True,
+                    'smart_status': 'healthy',
+                    'partitions': []
+                },
+                {
+                    'name': 'sdb',
+                    'path': '/dev/sdb',
+                    'size': '2T',
+                    'model': 'WDC WD20EFRX',
+                    'serial': 'WD-WCC4M123456',
+                    'fstype': 'none',
+                    'mountpoint': None,
+                    'is_system_disk': False,
+                    'smart_status': 'healthy',
+                    'partitions': []
+                }
+            ]
+    
+    except Exception as e:
+        print(f"Error getting disk info: {e}")
+        return jsonify({'error': str(e)}), 500
+    
+    return jsonify({'disks': disks})
+
+@app.route('/api/v1/storage/pools', methods=['GET'])
+@require_auth
+def get_pools():
+    """Get list of Btrfs pools"""
+    pools = []
+    
+    try:
+        if platform.system() == 'Linux':
+            # Get list of Btrfs filesystems
+            result = subprocess.run(
+                ['sudo', 'btrfs', 'filesystem', 'show'],
+                capture_output=True, text=True, timeout=5
+            )
+            
+            if result.returncode == 0:
+                # Parse btrfs output (simplified for MVP)
+                # TODO: Implement proper parsing
+                pass
+        
+        # For now, return empty or mock data
+        pools = []
+    
+    except Exception as e:
+        print(f"Error getting pools: {e}")
+    
+    return jsonify({'pools': pools})
+
 @app.route('/api/v1/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
     return jsonify({
         'status': 'healthy',
-        'version': '0.1.5',
+        'version': '0.2.0',
         'setup_complete': is_setup_complete()
     })
 
 if __name__ == '__main__':
-    print("Starting AlvaOS Backend v0.1.5...")
+    print("Starting AlvaOS Backend v0.2.0...")
     print("Web UI: http://0.0.0.0:8080")
     print("API:    http://0.0.0.0:8080/api/v1/system/info")
     

@@ -5,6 +5,38 @@ All notable changes to AlvaOS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-01-31
+
+### Added
+- **Storage Management Page**: New dedicated page for managing disks, pools, and network shares
+- **Disk Detection**: Automatic detection and listing of all available block devices
+  - Shows disk model, size, serial number, and filesystem type
+  - Displays partition information
+  - SMART health status monitoring
+  - System disk identification and protection
+- **Storage API Endpoints**: 
+  - `/api/v1/storage/disks` - List all available disks with detailed information
+  - `/api/v1/storage/pools` - List Btrfs storage pools (foundation for future features)
+- **Tabbed Interface**: Clean tab navigation for Disks, Pools, and Shares sections
+- **Mock Data Support**: Development mode with sample disk data for testing on non-Linux systems
+
+### Changed
+- Updated navigation across all pages to include Storage link
+- Enhanced CSS with tab navigation styles
+- Version bumped to 0.2.0 across all components
+
+### Technical Details
+- Backend uses `lsblk` with JSON output for disk enumeration
+- SMART status checked via `smartctl` for each disk
+- System disk detection by checking for root partition mounts
+- Responsive disk cards with status indicators
+- Placeholder functions for pool creation and share management (coming in next phases)
+
+### Notes
+- This is Phase 1 of the Storage Engine implementation
+- Pool creation, Btrfs integration, and network shares are planned for upcoming phases
+- File browser functionality will be added in later iterations
+
 ## [0.1.5] - 2026-01-31
 
 ### Fixed
