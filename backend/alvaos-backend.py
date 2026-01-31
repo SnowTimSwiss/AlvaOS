@@ -56,7 +56,7 @@ def mark_setup_complete(password):
     setup_data = {
         'setup_completed': True,
         'completed_at': datetime.now().isoformat(),
-        'version': '0.1.0'
+        'version': '0.1.5'
     }
     with open(SETUP_STATUS_FILE, 'w') as f:
         json.dump(setup_data, f, indent=2)
@@ -85,7 +85,7 @@ def get_setup_status():
     """Check if initial setup is required"""
     return jsonify({
         'setup_complete': is_setup_complete(),
-        'version': '0.1.0'
+        'version': '0.1.5'
     })
 
 @app.route('/api/v1/setup/complete', methods=['POST'])
@@ -242,7 +242,7 @@ def get_system_info():
     }
     
     return jsonify({
-        'version': '0.1.0',
+        'version': '0.1.5',
         'timestamp': datetime.now().isoformat(),
         'cpu': cpu_info,
         'memory': memory_info,
@@ -287,31 +287,88 @@ def system_power():
         
     # Linux implementation
     if platform.system() == 'Linux':
-        cmd = 'reboot' if action == 'reboot' else 'poweroff'
-        # subprocess.run(['sudo', cmd]) # Commented out for safety in dev
-        
-    return jsonify({'success': True, 'message': f'System {action} initiated'})
+        try:
+            cmd = 'reboot' if action == 'reboot' else 'poweroff'
+            # Execute the command in background to allow response to be sent
+            subprocess.Popen(['sudo', cmd])
+            return jsonify({'success': True, 'message': f'System {action} initiated'})
+        except Exception as e:
+            return jsonify({'error': f'Failed to {action}: {str(e)}'}), 500
+    else:
+        # For non-Linux systems (dev/testing)
+        return jsonify({'success': False, 'message': f'System {action} not supported on {platform.system()}'}), 400
 
 @app.route('/api/v1/system/network', methods=['GET'])
 @require_auth
 def get_network_details():
     """Get detailed network configuration"""
-    # Mock implementation for Windows/Dev
+    hostname = socket.gethostname()
+    ip_address = "127.0.0.1"
+    interface = "lo"
+    subnet_mask = "255.255.255.0"
+    gateway = "N/A"
+    dns_servers = []
+    
+    # Try to get real network information
     try:
-        hostname = socket.gethostname()
-        ip = socket.gethostbyname(hostname)
-    except:
-        hostname = "localhost"
-        ip = "127.0.0.1"
+        # Get all network interfaces
+        net_if_addrs = psutil.net_if_addrs()
+        
+        # Find the first non-loopback interface with an IPv4 address
+        for iface_name, iface_addresses in net_if_addrs.items():
+            if iface_name.startswith('lo'):
+                continue
+            
+            for addr in iface_addresses:
+                if addr.family == socket.AF_INET:  # IPv4
+                    ip_address = addr.address
+                    interface = iface_name
+                    if addr.netmask:
+                        subnet_mask = addr.netmask
+                    break
+            
+            if ip_address != "127.0.0.1":
+                break
+        
+        # Try to get gateway on Linux
+        if platform.system() == 'Linux':
+            try:
+                result = subprocess.run(['ip', 'route', 'show', 'default'], 
+                                      capture_output=True, text=True, timeout=2)
+                if result.returncode == 0:
+                    parts = result.stdout.split()
+                    if len(parts) >= 3 and parts[0] == 'default':
+                        gateway = parts[2]
+            except:
+                pass
+            
+            # Try to get DNS servers
+            try:
+                if os.path.exists('/etc/resolv.conf'):
+                    with open('/etc/resolv.conf', 'r') as f:
+                        for line in f:
+                            if line.strip().startswith('nameserver'):
+                                dns = line.split()[1]
+                                dns_servers.append(dns)
+            except:
+                pass
+        
+        # Fallback DNS if none found
+        if not dns_servers:
+            dns_servers = ['1.1.1.1', '8.8.8.8']
+            
+    except Exception as e:
+        print(f"Error getting network details: {e}")
+        # Use fallback values
+        pass
 
-    # Real implementation would parse 'ip addr' or '/etc/network/interfaces'
     return jsonify({
-        'interface': 'eth0',
+        'interface': interface,
         'hostname': hostname,
-        'ip_address': ip,
-        'subnet_mask': '255.255.255.0', # Placeholder for MVP
-        'gateway': '192.168.1.1',       # Placeholder for MVP
-        'dns': ['1.1.1.1', '8.8.8.8']   # Placeholder for MVP
+        'ip_address': ip_address,
+        'subnet_mask': subnet_mask,
+        'gateway': gateway,
+        'dns': dns_servers
     })
 
 @app.route('/api/v1/system/hostname', methods=['PUT'])
@@ -378,12 +435,12 @@ def health_check():
     """Health check endpoint"""
     return jsonify({
         'status': 'healthy',
-        'version': '0.1.0',
+        'version': '0.1.5',
         'setup_complete': is_setup_complete()
     })
 
 if __name__ == '__main__':
-    print("Starting AlvaOS Backend v0.1...")
+    print("Starting AlvaOS Backend v0.1.5...")
     print("Web UI: http://0.0.0.0:8080")
     print("API:    http://0.0.0.0:8080/api/v1/system/info")
     
