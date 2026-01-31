@@ -2,10 +2,7 @@
 
 All notable changes to AlvaOS will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [0.2.0] - 2026-01-31
+## [0.2.0] - 31.1.26
 
 ### Added - Phase 1: Disk Detection
 - **Storage Management Page**: New dedicated page for managing disks, pools, and network shares
@@ -104,7 +101,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Phase 3 (Network Shares - NFS/SMB) ✅ Complete
 - Phase 4 (SMART Monitoring, File Browser) - Planned
 
-## [0.1.5] - 2026-01-31
+## [0.1.5] - 31.1.26
 
 ### Fixed
 - **Network IP Address Display**: Fixed IP address showing as "127.0.0.1" in settings. Now correctly detects and displays the actual network interface IP address using psutil.
@@ -122,7 +119,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Gateway detection uses `ip route show default` command on Linux.
 - DNS servers are read from `/etc/resolv.conf` on Linux systems.
 
-## [0.1.0] - 2026-01-29
+## [0.1.0] - 30.1.26
 
 ### Added
 - Initial release with basic dashboard functionality
