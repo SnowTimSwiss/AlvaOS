@@ -146,10 +146,13 @@ async function init() {
     setInterval(updateClock, 1000);
 
     // Initial fetch
-    fetchSystemInfo();
-
-    // Update every 5 seconds
-    updateInterval = setInterval(fetchSystemInfo, 5000);
+    if (document.getElementById('cpu-usage')) {
+        fetchSystemInfo();
+        // Update every 5 seconds
+        updateInterval = setInterval(fetchSystemInfo, 5000);
+    } else {
+        console.log('Not on dashboard, skipping system info polling.');
+    }
 
     console.log('Dashboard initialized.');
 }

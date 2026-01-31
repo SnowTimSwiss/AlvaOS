@@ -1,5 +1,5 @@
 // AlvaOS System Settings Logic
-const API_BASE = '/api/v1';
+// API_BASE is defined in app.js
 
 // DOM Elements
 const els = {
