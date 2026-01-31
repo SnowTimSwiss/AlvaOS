@@ -491,7 +491,7 @@ def get_disks():
         if platform.system() == 'Linux':
             # Use lsblk to get disk information
             result = subprocess.run(
-                ['lsblk', '-J', '-o', 'NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,MODEL,SERIAL'],
+                ['lsblk', '-J', '-o', 'NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,MODEL,SERIAL,TRAN,RM'],
                 capture_output=True, text=True, timeout=5
             )
             
@@ -544,6 +544,9 @@ def get_disks():
                             # Fallback if JSON fails or smartctl not found
                             pass
                         
+                        # Determine if removable (USB/SD)
+                        is_removable = bool(device.get('rm')) or device.get('tran') == 'usb'
+
                         disk_info = {
                             'name': device['name'],
                             'path': f'/dev/{device["name"]}',
@@ -556,6 +559,8 @@ def get_disks():
                             'smart_status': smart_status,
                             'temp': temp,
                             'power_on_hours': power_on_hours,
+                            'is_removable': is_removable,
+                            'transport': device.get('tran', 'unknown'),
                             'partitions': []
                         }
                         
@@ -983,17 +988,21 @@ def manage_pools():
             mount_point = pool_info.get('mount_point')
             
             if platform.system() == 'Linux':
-                # Unmount the pool
                 if mount_point:
                     subprocess.run(['sudo', 'umount', mount_point], timeout=5)
                     
-                    # Remove mount point
                     try:
-                        os.rmdir(mount_point)
+                        run_sudo_command(['sudo', 'rmdir', mount_point])
                     except:
                         pass
+                
+                devices = pool_info.get('devices', [])
+                for device in devices:
+                    try:
+                        run_sudo_command(['sudo', 'wipefs', '-a', device])
+                    except Exception as e:
+                         print(f"Warning: Failed to wipe device {device}: {e}")
             
-            # Remove from state
             del pools_state[pool_id]
             save_pools_state(pools_state)
             
@@ -1142,8 +1151,8 @@ def expand_pool(pool_id):
             if err:
                 return jsonify({'error': f'Failed to add devices: {err}'}), 500
                 
-            # Optional: Start a balance in background to redistribute data
-            # subprocess.Popen(['sudo', 'btrfs', 'balance', 'start', mount_point])
+            # Start a balance in background to redistribute data
+            subprocess.Popen(['sudo', 'btrfs', 'balance', 'start', mount_point])
             
             # Update state
             pool_info['devices'].extend(devices)
@@ -1390,8 +1399,47 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'version': '0.2.0',
-        'setup_complete': is_setup_complete()
     })
+
+def mount_existing_pools():
+    """Mount all known pools on startup"""
+    if platform.system() != 'Linux':
+        return
+
+    print("Checking and mounting storage pools...")
+    pools = load_pools_state()
+    
+    for pool_id, pool_info in pools.items():
+        name = pool_info.get('name')
+        mount_point = pool_info.get('mount_point')
+        devices = pool_info.get('devices', [])
+        
+        if not name or not mount_point or not devices:
+            continue
+            
+        try:
+            # 1. Ensure mount point exists
+            if not os.path.exists(mount_point):
+                print(f"Creating mount point for {name}: {mount_point}")
+                run_sudo_command(['sudo', 'mkdir', '-p', mount_point])
+            
+            # 2. Check if already mounted
+            is_mounted = subprocess.run(['mountpoint', '-q', mount_point], check=False).returncode == 0
+            
+            if not is_mounted:
+                print(f"Mounting pool {name}...")
+                # Try mounting with the first device (Btrfs handles the rest)
+                dev = devices[0]
+                res, err = run_sudo_command(['sudo', 'mount', dev, mount_point])
+                if err:
+                    print(f"Error mounting {name}: {err}")
+                else:
+                    print(f"Successfully mounted {name}")
+            else:
+                print(f"Pool {name} is already mounted.")
+                
+        except Exception as e:
+            print(f"Failed to process pool {name}: {e}")
 
 if __name__ == '__main__':
     print("Starting AlvaOS Backend v0.2.0...")
@@ -1400,6 +1448,9 @@ if __name__ == '__main__':
     
     # Ensure directories exist
     ensure_directories()
+    
+    # Mount existing pools on startup (persistence)
+    mount_existing_pools()
     
     if not is_setup_complete():
         print("\n⚠️  SETUP REQUIRED: Access the Web UI to complete initial setup")
