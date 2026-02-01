@@ -550,7 +550,7 @@ async function showCreatePoolDialog() {
     const wizard = document.createElement('div');
     wizard.style.cssText = `
         background: var(--bg-surface);
-        border: 1px solid var(--bg-border);
+        border: 1px solid var(--border-hover);
         border-radius: 8px;
         padding: 2rem;
         max-width: 600px;
@@ -565,7 +565,7 @@ async function showCreatePoolDialog() {
         <div style="margin-bottom: 1.5rem;">
             <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Pool Name</label>
             <input type="text" id="pool-name-input" placeholder="e.g., storage-pool" 
-                style="width: 100%; padding: 0.75rem; background: var(--bg-primary); border: 1px solid var(--bg-border); color: var(--text-primary); border-radius: 4px;">
+                style="width: 100%; padding: 0.75rem;">
         </div>
 
         <div style="margin-bottom: 1.5rem;">
@@ -590,7 +590,7 @@ async function showCreatePoolDialog() {
         <div style="margin-bottom: 1.5rem;">
             <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">RAID Level</label>
             <select id="raid-level-select" 
-                style="width: 100%; padding: 0.75rem; background: var(--bg-primary); border: 1px solid var(--bg-border); color: var(--text-primary); border-radius: 4px;">
+                style="width: 100%; padding: 0.75rem;">
                 <option value="single">Single (No Redundancy)</option>
                 <option value="raid0">RAID0 (Striping)</option>
                 <option value="raid1">RAID1 (Mirroring - 2+ disks)</option>
@@ -864,7 +864,7 @@ async function manageSubvolumes(poolId) {
     const panel = document.createElement('div');
     panel.style.cssText = `
         background: var(--bg-surface);
-        border: 1px solid var(--bg-border);
+        border: 1px solid var(--border-hover);
         border-radius: 8px;
         padding: 2rem;
         max-width: 600px;
@@ -882,7 +882,7 @@ async function manageSubvolumes(poolId) {
         <div style="margin-bottom: 1.5rem;">
             <div style="display: flex; gap: 0.5rem;">
                 <input type="text" id="new-subvol-name" placeholder="Subvolume name" 
-                    style="flex: 1; padding: 0.75rem; background: var(--bg-primary); border: 1px solid var(--bg-border); color: var(--text-primary); border-radius: 4px;">
+                    style="flex: 1; padding: 0.75rem;">
                 <button id="create-subvol-btn" 
                     style="background: var(--accent-success); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; cursor: pointer; font-weight: 600;">
                     Create
@@ -1025,7 +1025,7 @@ async function showCreateShareDialog() {
     const wizard = document.createElement('div');
     wizard.style.cssText = `
         background: var(--bg-surface);
-        border: 1px solid var(--bg-border);
+        border: 1px solid var(--border-hover);
         border-radius: 8px;
         padding: 2rem;
         max-width: 600px;
@@ -1040,13 +1040,13 @@ async function showCreateShareDialog() {
         <div style="margin-bottom: 1.5rem;">
             <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Share Name</label>
             <input type="text" id="share-name-input" placeholder="e.g., documents" 
-                style="width: 100%; padding: 0.75rem; background: var(--bg-primary); border: 1px solid var(--bg-border); color: var(--text-primary); border-radius: 4px;">
+                style="width: 100%; padding: 0.75rem;">
         </div>
 
         <div style="margin-bottom: 1.5rem;">
             <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Protocol</label>
             <select id="protocol-select" 
-                style="width: 100%; padding: 0.75rem; background: var(--bg-primary); border: 1px solid var(--bg-border); color: var(--text-primary); border-radius: 4px;">
+                style="width: 100%; padding: 0.75rem;">
                 <option value="smb" selected>SMB/Samba (Windows Compatible)</option>
                 <option value="nfs">NFS (Network File System)</option>
             </select>
@@ -1058,7 +1058,7 @@ async function showCreateShareDialog() {
         <div style="margin-bottom: 1.5rem;">
             <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Share Path (Pool or Subvolume)</label>
             <select id="path-select" 
-                style="width: 100%; padding: 0.75rem; background: var(--bg-primary); border: 1px solid var(--bg-border); color: var(--text-primary); border-radius: 4px;">
+                style="width: 100%; padding: 0.75rem;">
                 ${availablePaths.map(p => `<option value="${p.path}">${p.name} (${p.path})</option>`).join('')}
             </select>
         </div>
@@ -1076,7 +1076,7 @@ async function showCreateShareDialog() {
         <div id="nfs-options" style="margin-bottom: 1.5rem; display: none;">
             <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Allowed Hosts (NFS)</label>
             <input type="text" id="allowed-hosts-input" value="*" placeholder="* or 192.168.1.0/24" 
-                style="width: 100%; padding: 0.75rem; background: var(--bg-primary); border: 1px solid var(--bg-border); color: var(--text-primary); border-radius: 4px;">
+                style="width: 100%; padding: 0.75rem;">
             <p style="font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.25rem;">
                 Use * for all hosts, or specify IP/network (e.g., 192.168.1.0/24)
             </p>
@@ -1317,7 +1317,7 @@ async function showConnectionInfo(shareId) {
     const panel = document.createElement('div');
     panel.style.cssText = `
         background: var(--bg-surface);
-        border: 1px solid var(--bg-border);
+        border: 1px solid var(--border-hover);
         border-radius: 8px;
         padding: 2rem;
         max-width: 700px;

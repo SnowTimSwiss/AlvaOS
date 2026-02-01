@@ -7,6 +7,8 @@
 
     /* Backgrounds */
     --bg-body: #0d1117;
+    --bg-primary: #0d1117;
+    /* Alias for body */
     --bg-sidebar: #010409;
     --bg-card: #161b22;
     --bg-header: rgba(13, 17, 23, 0.85);
@@ -19,6 +21,8 @@
     --border-default: #30363d;
     --border-subtle: #30363d;
     --border-hover: #8b949e;
+    --bg-border: #30363d;
+    /* Used in some components */
 
     /* Accents */
     --accent-primary: #58a6ff;
@@ -296,17 +300,32 @@ input,
 select,
 textarea {
     background: var(--bg-body);
-    border: 1px solid var(--border-default);
+    border: 1px solid var(--border-hover);
+    /* Increased visibility */
     color: var(--text-primary);
-    padding: 8px;
+    padding: 8px 12px;
     border-radius: var(--radius-default);
     font-family: 'Inter', sans-serif;
+    transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 input:focus,
 select:focus {
-    outline: 1px solid var(--accent-primary);
+    outline: none;
     border-color: var(--accent-primary);
+    box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.2);
+}
+
+/* Ensure placeholder visibility */
+::placeholder {
+    color: var(--text-secondary);
+    opacity: 0.7;
+}
+
+/* Special fix for dropdown options in some browsers */
+option {
+    background: var(--bg-card);
+    color: var(--text-primary);
 }
 
 /* Utility Classes for Storage Lists */
