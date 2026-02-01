@@ -837,21 +837,33 @@ def manage_pools():
                                             else:
                                                 pool['raid_level'] = 'Single'
                                     
-                                    # Calculate logical total
-                                    if used_bytes > 0 or free_estimated_bytes > 0:
-                                        total_bytes = used_bytes + free_estimated_bytes
+                                    pool['raid_level'] = 'Single'
+                                    
+                                    # Fallback to df if no valid bytes parsed
+                                    if used_bytes == 0 and free_estimated_bytes == 0:
+                                        try:
+                                            df_res = subprocess.run(['df', '-B1', pool.get('mount_point', '')], capture_output=True, text=True)
+                                            if df_res.returncode == 0:
+                                                # /dev/sda1 1000 500 500 50% /mnt
+                                                parts = df_res.stdout.splitlines()[1].split()
+                                                if len(parts) >= 3:
+                                                    total_bytes = float(parts[1])
+                                                    used_bytes = float(parts[2])
+                                        except:
+                                            pass
+
+                                    # Calculate logic total
+                                    total_bytes = used_bytes + free_estimated_bytes
                                         
-                                        # Convert back to human readable
-                                        def bytes_to_human(n):
-                                            for unit in ['B', 'KiB', 'MiB', 'GiB', 'TiB']:
-                                                if n < 1024: return f"{n:.2f}{unit}"
-                                                n /= 1024
-                                            return f"{n:.2f}PiB"
+                                    # Convert back to human readable
+                                    def bytes_to_human(n):
+                                        for unit in ['B', 'KiB', 'MiB', 'GiB', 'TiB']:
+                                            if n < 1024: return f"{n:.2f}{unit}"
+                                            n /= 1024
+                                        return f"{n:.2f}PiB"
                                             
-                                        pool['used_size'] = bytes_to_human(used_bytes)
-                                        pool['total_size'] = bytes_to_human(total_bytes)
-                                    else:
-                                        raise Exception("Parsing yielded zero bytes")
+                                    pool['used_size'] = bytes_to_human(used_bytes)
+                                    pool['total_size'] = bytes_to_human(total_bytes)
 
                             except:
                                 # Fallback to df if btrfs usage parsing fails
@@ -1230,16 +1242,36 @@ def get_available_paths():
         if 'mount_point' in pool:
             paths.append({'name': f"Pool: {pool['name']}", 'path': pool['mount_point']})
             
-            # Add Subvolumes for this pool
-            subvol_file = f'/var/lib/alvaos/subvolumes_{pid}.json'
-            if os.path.exists(subvol_file):
+            # Dynamic Subvolume Lookup
+            # Instead of looking for a non-existent cache file, we list subvolumes directly
+            if platform.system() == 'Linux':
                 try:
-                    with open(subvol_file, 'r') as f:
-                        subvols = json.load(f)
-                        for sv in subvols:
-                            paths.append({'name': f"  ↳ Subvolume: {sv['name']}", 'path': sv['path']})
-                except:
-                    pass
+                    result = subprocess.run(
+                        ['sudo', 'btrfs', 'subvolume', 'list', pool['mount_point']],
+                        capture_output=True, text=True, timeout=3
+                    )
+                    if result.returncode == 0:
+                        for line in result.stdout.split('\n'):
+                             if not line.strip(): continue
+                             # ID 256 gen 7 top level 5 path subvol1
+                             parts = line.split()
+                             path_idx = -1
+                             try:
+                                 path_idx = parts.index('path')
+                             except ValueError:
+                                 continue
+                                 
+                             if path_idx + 1 < len(parts):
+                                 subvol_name = parts[path_idx + 1]
+                                 paths.append({
+                                     'name': f"  ↳ Subvolume: {subvol_name}", 
+                                     'path': f"{pool['mount_point']}/{subvol_name}"
+                                 })
+                except Exception as e:
+                    print(f"Error listing subvolumes for path: {e}")
+            else:
+                 # Mock subvolumes for dev
+                 paths.append({'name': f"  ↳ Subvolume: mock-subvol", 'path': f"{pool['mount_point']}/mock-subvol"})
                     
     return jsonify({'paths': paths})
 
@@ -1300,6 +1332,18 @@ def manage_shares():
                 elif protocol == 'smb':
                     # Configure Samba share
                     smb_config = f'\n# AlvaOS Share: {share_name}\n[{share_name}]\n    path = {share_path}\n    browseable = yes\n    read only = {"yes" if read_only else "no"}\n    guest ok = {"yes" if guest_access else "no"}\n    create mask = 0644\n    directory mask = 0755\n'
+                    
+                    # Ensure global guest mapping exists if guest access is requested
+                    if guest_access:
+                         try:
+                             with open('/etc/samba/smb.conf', 'r') as f:
+                                 conf_content = f.read()
+                             if 'map to guest = Bad User' not in conf_content:
+                                 # Inject into [global]
+                                 # Simple sed replacement or via python
+                                 subprocess.run(["sudo", "sed", "-i", "/\\[global\\]/a \\   map to guest = Bad User", "/etc/samba/smb.conf"])
+                         except:
+                             pass
                     
                     # Use tee -a with sudo to append to /etc/samba/smb.conf
                     subprocess.run(f"echo '{smb_config}' | sudo tee -a /etc/samba/smb.conf", shell=True, check=True)
