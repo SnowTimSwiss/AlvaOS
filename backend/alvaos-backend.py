@@ -436,10 +436,28 @@ def set_hostname():
         return jsonify({'error': 'Invalid hostname format'}), 400
 
     if platform.system() == 'Linux':
+        # 1. Update hostname via hostnamectl
         res, err = run_sudo_command(['sudo', 'hostnamectl', 'set-hostname', new_hostname])
         if err:
-             # Fallback: try setting it via /etc/hostname if direct command fails
              return jsonify({'error': f'Failed to set hostname: {err}'}), 500
+             
+        # 2. Update /etc/hosts to prevent "unable to resolve host" errors
+        try:
+            # Simple strategy: replace occurrences of the old hostname with the new one
+            old_hostname = socket.gethostname()
+            hosts_file = '/etc/hosts'
+            
+            # Read current hosts file
+            res, err = run_sudo_command(['sudo', 'cat', hosts_file])
+            if res and res.returncode == 0:
+                content = res.stdout
+                new_content = content.replace(old_hostname, new_hostname)
+                
+                # Write back with tee
+                process = subprocess.Popen(['sudo', 'tee', hosts_file], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                process.communicate(input=new_content)
+        except Exception as e:
+            print(f"Warning: Failed to update /etc/hosts: {e}")
     else:
         print(f"SIMULATION: Setting hostname to {new_hostname}")
 
@@ -466,7 +484,7 @@ def get_system_logs():
                 
         # Strategy 2: Use journalctl (systemd systems)
         try:
-            cmd = ['sudo', 'journalctl', '-n', '50', '--no-pager', '--output=short']
+            cmd = ['sudo', '/usr/bin/journalctl', '-n', '50', '--no-pager', '--output=short']
             res, err = run_sudo_command(cmd)
             if res and res.returncode == 0:
                 logs = res.stdout.splitlines()

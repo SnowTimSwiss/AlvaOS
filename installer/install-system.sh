@@ -343,6 +343,8 @@ alvaos ALL=(ALL) NOPASSWD: /usr/bin/cat
 # System Settings (Hostname, Time, Power)
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/hostnamectl
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/timedatectl
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/journalctl
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/tail
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/reboot
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/poweroff
 

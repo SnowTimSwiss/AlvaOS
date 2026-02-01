@@ -14,6 +14,13 @@ const els = {
     timeDisplay: document.getElementById('system-time-display')
 };
 
+// Headers helper
+const token = localStorage.getItem('alvaos_token');
+const headers = {
+    'Authorization': token || '',
+    'Content-Type': 'application/json'
+};
+
 // Fetch System Settings
 async function fetchSettings() {
     // 1. Fetch Network & Hostname
@@ -58,11 +65,11 @@ async function fetchSettings() {
             els.logViewer.textContent = logData.logs.join('\n');
             els.logViewer.scrollTop = els.logViewer.scrollHeight;
         } else {
-             els.logViewer.textContent = 'Failed to load logs.';
+            els.logViewer.textContent = 'Failed to load logs.';
         }
     } catch (e) {
-         console.warn('Log fetch error', e);
-         els.logViewer.textContent = 'Connection error loading logs.';
+        console.warn('Log fetch error', e);
+        els.logViewer.textContent = 'Connection error loading logs.';
     }
 }
 
@@ -75,10 +82,7 @@ async function updateHostname() {
         const token = localStorage.getItem('alvaos_token');
         const res = await fetch(`${API_BASE}/system/hostname`, {
             method: 'PUT',
-            headers: {
-                'Authorization': token || '',
-                'Content-Type': 'application/json'
-            },
+            headers,
             body: JSON.stringify({ hostname: newHostname })
         });
 
@@ -102,10 +106,7 @@ async function updateTimeSettings() {
         const token = localStorage.getItem('alvaos_token');
         const res = await fetch(`${API_BASE}/system/time`, {
             method: 'POST',
-            headers: {
-                'Authorization': token || '',
-                'Content-Type': 'application/json'
-            },
+            headers,
             body: JSON.stringify({ timezone, ntp })
         });
 
@@ -128,10 +129,7 @@ async function sendPowerAction(action) {
         const token = localStorage.getItem('alvaos_token');
         const res = await fetch(`${API_BASE}/system/power`, {
             method: 'POST',
-            headers: {
-                'Authorization': token || '',
-                'Content-Type': 'application/json'
-            },
+            headers,
             body: JSON.stringify({ action })
         });
 
