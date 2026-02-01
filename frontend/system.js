@@ -16,47 +16,53 @@ const els = {
 
 // Fetch System Settings
 async function fetchSettings() {
+    // 1. Fetch Network & Hostname
     try {
-        const token = localStorage.getItem('alvaos_token');
-        const headers = { 'Authorization': token || '' };
-
-        // 1. Fetch Network & Hostname (Enhanced Info)
         const netRes = await fetch(`${API_BASE}/system/network`, { headers });
         if (netRes.ok) {
             const netData = await netRes.json();
-
-            // Populate Network Card
             els.netInterface.textContent = netData.interface || 'N/A';
             els.netIp.textContent = netData.ip_address || 'N/A';
             els.netMask.textContent = netData.subnet_mask || 'N/A';
             els.netGateway.textContent = netData.gateway || 'N/A';
             els.netDns.textContent = (netData.dns && netData.dns.length > 0) ? netData.dns.join(', ') : 'N/A';
-
-            // Populate Hostname Input
             if (els.hostnameInput) els.hostnameInput.value = netData.hostname || '';
+        } else {
+            console.warn('Network fetch failed');
+            if (els.hostnameInput) els.hostnameInput.value = 'Error';
         }
+    } catch (e) {
+        console.warn('Network fetch error', e);
+        if (els.hostnameInput) els.hostnameInput.value = 'Error';
+    }
 
-        // 2. Fetch Time Settings
+    // 2. Fetch Time Settings
+    try {
         const timeRes = await fetch(`${API_BASE}/system/time`, { headers });
         if (timeRes.ok) {
             const timeData = await timeRes.json();
             const tzSelect = document.getElementById('timezone-select');
             const ntpToggle = document.getElementById('ntp-toggle');
-
             if (tzSelect) tzSelect.value = timeData.timezone || 'UTC';
             if (ntpToggle) ntpToggle.checked = timeData.ntp_enabled;
         }
+    } catch (e) {
+        console.warn('Time fetch error', e);
+    }
 
-        // 3. Fetch Logs
+    // 3. Fetch Logs
+    try {
         const logRes = await fetch(`${API_BASE}/system/logs`, { headers });
         if (logRes.ok) {
             const logData = await logRes.json();
             els.logViewer.textContent = logData.logs.join('\n');
             els.logViewer.scrollTop = els.logViewer.scrollHeight;
+        } else {
+             els.logViewer.textContent = 'Failed to load logs.';
         }
-
-    } catch (error) {
-        console.error('Error fetching settings:', error);
+    } catch (e) {
+         console.warn('Log fetch error', e);
+         els.logViewer.textContent = 'Connection error loading logs.';
     }
 }
 

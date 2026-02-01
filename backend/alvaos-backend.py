@@ -451,29 +451,39 @@ def get_system_logs():
     """Get system logs"""
     logs = []
     
-    # Try reading syslog on Linux
-    log_file = '/var/log/syslog'
-    if not os.path.exists(log_file):
-        # Fallback for dev/windows
-        log_file = 'backend.log'
-        if not os.path.exists(log_file):
-             # Create dummy logs
-             return jsonify({'logs': [
-                 f"[{datetime.now().isoformat()}] INFO: System running in DEV mode",
-                 f"[{datetime.now().isoformat()}] WARN: Real syslog not found at {log_file}",
-                 "--- Mock Logs ---",
-                 "Oct 27 10:00:01 alva-nas systemd[1]: Started AlvaOS Backend.",
-                 "Oct 27 10:05:23 alva-nas sshd[123]: Accepted password for root from 192.168.1.50"
-             ]})
-
     try:
-        # Read last 50 lines
-        # Simple implementation
-        with open(log_file, 'r') as f:
-             lines = f.readlines()
-             logs = [l.strip() for l in lines[-50:]]
+        # Strategy 1: Read syslog file (traditional Linux)
+        log_file = '/var/log/syslog'
+        if os.path.exists(log_file):
+            try:
+                cmd = ['sudo', 'tail', '-n', '50', log_file]
+                res, err = run_sudo_command(cmd)
+                if res and res.returncode == 0:
+                    logs = res.stdout.splitlines()
+                    return jsonify({'logs': logs})
+            except Exception as e:
+                print(f"Reading syslog failed: {e}")
+                
+        # Strategy 2: Use journalctl (systemd systems)
+        try:
+            cmd = ['sudo', 'journalctl', '-n', '50', '--no-pager', '--output=short']
+            res, err = run_sudo_command(cmd)
+            if res and res.returncode == 0:
+                logs = res.stdout.splitlines()
+                return jsonify({'logs': logs})
+        except Exception:
+            pass
+            
+        # Strategy 3: Mock/Dev
+        logs = [
+             f"[{datetime.now().isoformat()}] INFO: Could not read system logs",
+             "--- Mock Logs (Dev Mode) ---",
+             "Oct 27 10:00:01 alva-nas systemd[1]: Started AlvaOS Backend.",
+             "Oct 27 10:05:23 alva-nas sshd[123]: Accepted password for root from 192.168.1.50"
+        ]
+
     except Exception as e:
-        logs = [f"Error reading logs: {str(e)}"]
+        logs = [f"Error fetching logs: {str(e)}"]
 
     return jsonify({'logs': logs})
 
