@@ -1442,7 +1442,7 @@ def mount_existing_pools():
         mount_point = pool_info.get('mount_point')
         devices = pool_info.get('devices', [])
         
-        if not name or not mount_point or not devices:
+        if not name or not mount_point:
             continue
             
         try:
@@ -1456,13 +1456,24 @@ def mount_existing_pools():
             
             if not is_mounted:
                 print(f"Mounting pool {name}...")
-                # Try mounting with the first device (Btrfs handles the rest)
-                dev = devices[0]
-                res, err = run_sudo_command(['sudo', 'mount', dev, mount_point])
-                if err:
-                    print(f"Error mounting {name}: {err}")
-                else:
-                    print(f"Successfully mounted {name}")
+                mounted = False
+                
+                # STRATEGY 1: Mount by UUID (Robust against device changes)
+                # The pool_id key is stored as the UUID during creation
+                if pool_id and len(pool_id) > 20:
+                    res, err = run_sudo_command(['sudo', 'mount', '-U', pool_id, mount_point])
+                    if res and res.returncode == 0:
+                        print(f"Successfully mounted {name} using UUID: {pool_id}")
+                        mounted = True
+                
+                # STRATEGY 2: Fallback to device path
+                if not mounted and devices:
+                    print(f"UUID mount not possible/failed for {name}, trying device path: {devices[0]}")
+                    res, err = run_sudo_command(['sudo', 'mount', devices[0], mount_point])
+                    if err:
+                        print(f"Error mounting {name}: {err}")
+                    else:
+                        print(f"Successfully mounted {name} using device path")
             else:
                 print(f"Pool {name} is already mounted.")
                 

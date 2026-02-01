@@ -9,12 +9,6 @@ The AlvaOS Web UI.
 - Dark mode first
 - API-driven (consumes backend REST API)
 
-## Technology
-
-Recommendation: **Svelte** or **Vue** (lightweight, easy to learn)
-
-Alternative: Plain HTML/JS for extreme simplicity
-
 ## Features
 
 - Dashboard (system status, storage, containers)
