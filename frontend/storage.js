@@ -195,14 +195,30 @@ function displayPools(pools) {
         const poolCard = document.createElement('div');
         poolCard.className = 'card';
 
+        const isDegraded = pool.status === 'degraded';
+        const statusColor = isDegraded ? 'var(--accent-danger)' : 'var(--accent-success)';
+        const statusText = isDegraded ? 'DEGRADED' : 'Active';
+        const pulseClass = isDegraded ? 'pulse-danger' : '';
+
         poolCard.innerHTML = `
             <div class="card-header">
                 <div class="card-title">🗄️ ${pool.name}</div>
-                <div style="font-size: 0.8rem; font-weight: 600; color: var(--accent-success); display: flex; align-items: center; gap: 4px;">
-                    <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--accent-success);"></div>
-                    Active
+                <div style="font-size: 0.8rem; font-weight: 600; color: ${statusColor}; display: flex; align-items: center; gap: 4px;">
+                    <div class="status-dot ${isDegraded ? 'danger pulse-danger' : ''}" style="background: ${statusColor};"></div>
+                    ${statusText}
                 </div>
             </div>
+            
+            ${isDegraded ? `
+                <div class="degraded-banner">
+                    <span style="font-size: 1.5rem;">⚠️</span>
+                    <div>
+                        <strong style="display: block; margin-bottom: 2px;">RAID DEGRADED</strong>
+                        One or more disks in this pool have failed or are missing. Your data is at risk if another disk fails.
+                        <br><strong>Action required:</strong> Please add a replacement disk immediately.
+                    </div>
+                </div>
+            ` : ''}
             
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
                 <div>
@@ -233,8 +249,8 @@ function displayPools(pools) {
                     Subvolumes
                 </button>
                 <button onclick="showExpandPoolDialog('${pool.id}', '${pool.name}')" class="btn-secondary" 
-                    style="flex: 1; min-width: 100px; font-size: 0.85rem; border-color: var(--accent-success); color: var(--accent-success);">
-                    Expand
+                    style="flex: 1; min-width: 100px; font-size: 0.85rem; border-color: ${isDegraded ? 'var(--accent-danger)' : 'var(--accent-success)'}; color: ${isDegraded ? 'var(--accent-danger)' : 'var(--accent-success)'}; ${isDegraded ? 'background: rgba(248, 81, 73, 0.1); font-weight: 700;' : ''}">
+                    ${isDegraded ? 'Replace / Expand' : 'Expand'}
                 </button>
                 <button onclick="deletePool('${pool.id}', '${pool.name}')" class="btn-secondary" 
                     style="flex: 1; min-width: 100px; font-size: 0.85rem; border-color: var(--accent-danger); color: var(--accent-danger);">

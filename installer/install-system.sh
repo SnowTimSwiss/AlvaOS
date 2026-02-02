@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# AlvaOS Installation Script v0.1
+# AlvaOS Installation Script {{VERSION}}
 # This script installs AlvaOS to the target system
 
 # Colors
@@ -281,6 +281,11 @@ if [ -d "/opt/alvaos/webui" ]; then
     cp -r /opt/alvaos/webui/* /mnt/opt/alvaos/webui/
 fi
 
+# Copy VERSION
+if [ -f "/opt/alvaos/VERSION" ]; then
+    cp /opt/alvaos/VERSION /mnt/etc/alvaos/VERSION
+fi
+
 # Create systemd service
 cat > /mnt/etc/systemd/system/alvaos.service << 'SERVICE_EOF'
 [Unit]
@@ -366,9 +371,9 @@ chroot /mnt systemctl enable NetworkManager
 # Create version file
 cat > /mnt/etc/alvaos/version.json << 'VERSION_EOF'
 {
-  "alvaos_version": "0.1.0",
+  "alvaos_version": "{{VERSION}}",
   "build_date": "2026-01-29",
-  "installer_version": "0.1.0"
+  "installer_version": "{{VERSION}}"
 }
 VERSION_EOF
 

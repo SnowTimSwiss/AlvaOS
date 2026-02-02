@@ -1,4 +1,4 @@
-/* AlvaOS Global Styles - v0.2.0 (Design Refactor) */
+/* AlvaOS Global Styles - {{VERSION}} */
 :root {
     /* 
        Palette: GitHub Dark Dimmed 
@@ -173,6 +173,37 @@ body {
 
 .status-dot.danger {
     background: var(--accent-danger);
+}
+
+.pulse-danger {
+    box-shadow: 0 0 0 0 rgba(248, 81, 73, 0.7);
+    animation: pulse-red 2s infinite;
+}
+
+@keyframes pulse-red {
+    0% {
+        box-shadow: 0 0 0 0 rgba(248, 81, 73, 0.7);
+    }
+    70% {
+        box-shadow: 0 0 0 10px rgba(248, 81, 73, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(248, 81, 73, 0);
+    }
+}
+
+.degraded-banner {
+    background: rgba(248, 81, 73, 0.1);
+    border: 1px solid var(--accent-danger);
+    color: var(--accent-danger);
+    padding: 12px;
+    border-radius: var(--radius-default);
+    margin-bottom: 20px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 12px;
 }
 
 /* Breadcrumbs */
