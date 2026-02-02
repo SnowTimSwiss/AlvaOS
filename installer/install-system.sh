@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# AlvaOS Installation Script v0.1
+# AlvaOS Installation Script {{VERSION}}
 # This script installs AlvaOS to the target system
 
 # Colors
@@ -366,9 +366,9 @@ chroot /mnt systemctl enable NetworkManager
 # Create version file
 cat > /mnt/etc/alvaos/version.json << 'VERSION_EOF'
 {
-  "alvaos_version": "0.1.0",
+  "alvaos_version": "{{VERSION}}",
   "build_date": "2026-01-29",
-  "installer_version": "0.1.0"
+  "installer_version": "{{VERSION}}"
 }
 VERSION_EOF
 

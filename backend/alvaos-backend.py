@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AlvaOS Backend v0.2.0
+AlvaOS Backend {{VERSION}}
 Comprehensive Storage Management Engine
 """
 
@@ -74,7 +74,7 @@ def mark_setup_complete(password):
     setup_data = {
         'setup_completed': True,
         'completed_at': datetime.now().isoformat(),
-        'version': '0.2.0'
+        'version': '{{VERSION}}'
     }
     with open(SETUP_STATUS_FILE, 'w') as f:
         json.dump(setup_data, f, indent=2)
@@ -103,7 +103,7 @@ def get_setup_status():
     """Check if initial setup is required"""
     return jsonify({
         'setup_complete': is_setup_complete(),
-        'version': '0.2.0'
+        'version': '{{VERSION}}'
     })
 
 @app.route('/api/v1/setup/complete', methods=['POST'])
@@ -270,7 +270,7 @@ def get_system_info():
     }
     
     return jsonify({
-        'version': '0.2.0',
+        'version': '{{VERSION}}',
         'timestamp': datetime.now().isoformat(),
         'cpu': cpu_info,
         'memory': memory_info,
