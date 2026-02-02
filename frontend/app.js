@@ -54,6 +54,16 @@ function updateDashboard(data) {
         `${data.cpu.usage_percent.toFixed(1)}%`;
     document.getElementById('cpu-freq').textContent =
         `${data.cpu.frequency_mhz} MHz`;
+    const cpuModelEl = document.getElementById('cpu-model');
+    if (cpuModelEl) {
+        cpuModelEl.textContent = data.cpu.model || 'Unknown CPU';
+    }
+    const cpuTempEl = document.getElementById('cpu-temp');
+    if (cpuTempEl) {
+        cpuTempEl.textContent = (data.cpu.temperature_c || data.cpu.temperature_c === 0)
+            ? `${data.cpu.temperature_c}°C`
+            : 'N/A';
+    }
     document.getElementById('cpu-progress').style.width =
         `${data.cpu.usage_percent}%`;
 

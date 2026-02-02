@@ -293,11 +293,39 @@ def get_system_info():
     
     # CPU Information
     cpu_freq = psutil.cpu_freq()
+    cpu_model = platform.processor() or "Unknown"
+    cpu_temp = None
+    try:
+        if platform.system() == 'Linux' and os.path.exists('/proc/cpuinfo'):
+            with open('/proc/cpuinfo', 'r') as f:
+                for line in f:
+                    if line.lower().startswith('model name'):
+                        cpu_model = line.split(':', 1)[1].strip()
+                        break
+    except Exception:
+        pass
+    try:
+        temps = psutil.sensors_temperatures() if hasattr(psutil, 'sensors_temperatures') else {}
+        # Prefer common sensor keys when available
+        for key in ('coretemp', 'k10temp', 'cpu-thermal', 'soc_thermal'):
+            if key in temps and temps[key]:
+                cpu_temp = temps[key][0].current
+                break
+        if cpu_temp is None:
+            # Fallback to first available temperature
+            for entries in temps.values():
+                if entries:
+                    cpu_temp = entries[0].current
+                    break
+    except Exception:
+        pass
     cpu_info = {
         'cores': psutil.cpu_count(logical=False),
         'threads': psutil.cpu_count(logical=True),
         'usage_percent': psutil.cpu_percent(interval=1),
         'frequency_mhz': round(cpu_freq.current, 2) if cpu_freq else 0,
+        'model': cpu_model,
+        'temperature_c': round(cpu_temp, 1) if isinstance(cpu_temp, (int, float)) else None,
     }
     
     # Memory Information
@@ -1310,7 +1338,18 @@ def get_available_paths():
     paths = []
     
     # Add base mount point
-    paths.append({'name': 'Default Storage Root', 'path': '/mnt/alvaos'})
+    base_path = '/mnt/alvaos'
+    if platform.system() == 'Linux':
+        try:
+            if not os.path.exists(base_path):
+                res, err = run_sudo_command(['sudo', 'mkdir', '-p', base_path])
+                if err:
+                    raise Exception(err)
+        except Exception:
+            # Don't include a non-existent path to avoid share creation failures
+            base_path = None
+    if base_path:
+        paths.append({'name': 'Default Storage Root', 'path': base_path})
     
     # Add Pools
     pools = load_pools_state()

@@ -38,7 +38,7 @@ async function fetchSettings() {
             const netData = await netRes.json();
             els.netInterface.textContent = netData.interface || 'N/A';
             els.netIp.textContent = netData.ip_address || 'N/A';
-            els.netMask.textContent = netData.subnet_mask || 'N/A';
+            if (els.netMask) els.netMask.textContent = netData.subnet_mask || 'N/A';
             els.netGateway.textContent = netData.gateway || 'N/A';
             els.netDns.textContent = (netData.dns && netData.dns.length > 0) ? netData.dns.join(', ') : 'N/A';
             if (els.hostnameInput) {
@@ -62,7 +62,17 @@ async function fetchSettings() {
             const timeData = await timeRes.json();
             const tzSelect = document.getElementById('timezone-select');
             const ntpToggle = document.getElementById('ntp-toggle');
-            if (tzSelect) tzSelect.value = timeData.timezone || 'UTC';
+            if (tzSelect) {
+                const tzValue = timeData.timezone || 'UTC';
+                const hasOption = Array.from(tzSelect.options).some(opt => opt.value === tzValue);
+                if (!hasOption) {
+                    const opt = document.createElement('option');
+                    opt.value = tzValue;
+                    opt.textContent = tzValue;
+                    tzSelect.appendChild(opt);
+                }
+                tzSelect.value = tzValue;
+            }
             if (ntpToggle) ntpToggle.checked = timeData.ntp_enabled;
         }
     } catch (e) {
