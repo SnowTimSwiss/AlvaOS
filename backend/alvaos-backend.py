@@ -19,7 +19,8 @@ import hmac
 import secrets
 import functools
 
-app = Flask(__name__, static_folder='/opt/alvaos/webui', static_url_path='')
+app = Flask(__name__, static_folder=None) # Disable default static serving to force version replacement
+app.static_folder = '/opt/alvaos/webui' # Manually set for send_from_directory
 CORS(app)
 
 # Version Management
@@ -53,11 +54,16 @@ SESSIONS = {} # Token -> Username (In-memory for 0.1)
 def run_sudo_command(cmd, timeout=30):
     """Helper to run a command with sudo and handle password prompts gracefully"""
     try:
-        # Use -n (non-interactive) to fail quickly if password is required
-        if cmd[0] == 'sudo':
-            cmd.insert(1, '-n')
+        # Prepare the command with LC_ALL=C to ensure English output
+        final_cmd = []
         
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        # If running with sudo, put env before the command but after sudo
+        if cmd[0] == 'sudo':
+            final_cmd = ['sudo', '-n', 'env', 'LC_ALL=C'] + cmd[1:]
+        else:
+            final_cmd = ['env', 'LC_ALL=C'] + cmd
+        
+        result = subprocess.run(final_cmd, capture_output=True, text=True, timeout=timeout)
         
         if result.returncode != 0 and 'password is required' in result.stderr:
             return None, "System permission error: Passwordless sudo is not configured for this command. Please check the AlvaOS documentation for sudoers setup."
@@ -145,6 +151,11 @@ def serve_frontend(filename):
         print(f"Error serving {filename}: {e}")
         
     return send_from_directory(app.static_folder, filename)
+
+@app.route('/<path:filename>')
+def serve_static_files(filename):
+    """Catch-all for static files to ensure version replacement"""
+    return serve_frontend(filename)
 
 @app.route('/<path:path>')
 def serve_static(path):
@@ -580,8 +591,9 @@ def get_disks():
     try:
         if platform.system() == 'Linux':
             # Use lsblk to get disk information
+            # LC_ALL=C for consistent parsing
             result = subprocess.run(
-                ['lsblk', '-J', '-o', 'NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,MODEL,SERIAL,TRAN,RM'],
+                ['env', 'LC_ALL=C', 'lsblk', '-J', '-o', 'NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,MODEL,SERIAL,TRAN,RM'],
                 capture_output=True, text=True, timeout=5
             )
             
@@ -735,7 +747,8 @@ def get_disk_smart(disk_name):
             
             # Get detailed SMART info in JSON format
             # For NVMe, smartctl -a is standard, for others we might need specific types
-            cmd = ['sudo', 'smartctl', '-a', '-j', f'/dev/{disk_name}']
+            # Fix: Ensure LC_ALL=C and non-interactive sudo
+            cmd = ['sudo', '-n', 'env', 'LC_ALL=C', 'smartctl', '-a', '-j', f'/dev/{disk_name}']
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
             
             if result.stdout:
@@ -823,8 +836,9 @@ def manage_pools():
         try:
             if platform.system() == 'Linux':
                 # Get list of Btrfs filesystems
+                # Fix: Ensure LC_ALL=C and non-interactive sudo
                 result = subprocess.run(
-                    ['sudo', 'btrfs', 'filesystem', 'show'],
+                    ['sudo', '-n', 'env', 'LC_ALL=C', 'btrfs', 'filesystem', 'show'],
                     capture_output=True, text=True, timeout=5
                 )
                 
@@ -896,8 +910,9 @@ def manage_pools():
                         
                         if pool['devices']:
                             try:
+                                # Fix: Ensure LC_ALL=C and non-interactive sudo
                                 usage_result = subprocess.run(
-                                    ['sudo', 'btrfs', 'filesystem', 'usage', pool['devices'][0]],
+                                    ['sudo', '-n', 'env', 'LC_ALL=C', 'btrfs', 'filesystem', 'usage', pool['devices'][0]],
                                     capture_output=True, text=True, timeout=3
                                 )
                                 
@@ -945,7 +960,8 @@ def manage_pools():
                                     # Fallback to df if no valid bytes parsed and we have a mount point
                                     if used_bytes == 0 and free_estimated_bytes == 0 and mount_point:
                                         try:
-                                            df_res = subprocess.run(['df', '-B1', mount_point], capture_output=True, text=True, timeout=2)
+                                            # Fix: LC_ALL=C for df
+                                            df_res = subprocess.run(['env', 'LC_ALL=C', 'df', '-B1', mount_point], capture_output=True, text=True, timeout=2)
                                             if df_res.returncode == 0 and len(df_res.stdout.splitlines()) > 1:
                                                 # /dev/sda1 1000 500 500 50% /mnt
                                                 parts = df_res.stdout.splitlines()[1].split()
@@ -976,7 +992,8 @@ def manage_pools():
                                 # Fallback to df if btrfs usage parsing fails
                                 try:
                                     if mount_point:
-                                        df_res = subprocess.run(['df', '-h', mount_point], capture_output=True, text=True, timeout=2)
+                                        # Fix: LC_ALL=C for df
+                                        df_res = subprocess.run(['env', 'LC_ALL=C', 'df', '-h', mount_point], capture_output=True, text=True, timeout=2)
                                         if df_res.returncode == 0:
                                             # Filesystem      Size  Used Avail Use% Mounted on
                                             # /dev/sda1       100G   10G   90G  10% /mnt/pool
@@ -1168,8 +1185,9 @@ def manage_subvolumes(pool_id):
         
         try:
             if platform.system() == 'Linux' and mount_point:
+                # Fix: Ensure LC_ALL=C and non-interactive sudo
                 result = subprocess.run(
-                    ['sudo', 'btrfs', 'subvolume', 'list', mount_point],
+                    ['sudo', '-n', 'env', 'LC_ALL=C', 'btrfs', 'subvolume', 'list', mount_point],
                     capture_output=True, text=True, timeout=5
                 )
                 
@@ -1290,7 +1308,8 @@ def expand_pool(pool_id):
                 return jsonify({'error': f'Failed to add devices: {err}'}), 500
                 
             # Start a balance in background to redistribute data
-            subprocess.Popen(['sudo', 'btrfs', 'balance', 'start', mount_point])
+            # Fix: Ensure LC_ALL=C and non-interactive sudo
+            subprocess.Popen(['sudo', '-n', 'env', 'LC_ALL=C', 'btrfs', 'balance', 'start', mount_point])
             
             # Update state
             pool_info['devices'].extend(devices)
@@ -1355,8 +1374,9 @@ def get_available_paths():
             # Instead of looking for a non-existent cache file, we list subvolumes directly
             if platform.system() == 'Linux':
                 try:
+                    # Fix: Ensure LC_ALL=C and non-interactive sudo
                     result = subprocess.run(
-                        ['sudo', 'btrfs', 'subvolume', 'list', pool['mount_point']],
+                        ['sudo', '-n', 'env', 'LC_ALL=C', 'btrfs', 'subvolume', 'list', pool['mount_point']],
                         capture_output=True, text=True, timeout=3
                     )
                     if result.returncode == 0:
