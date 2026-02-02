@@ -41,7 +41,13 @@ async function fetchSettings() {
             els.netMask.textContent = netData.subnet_mask || 'N/A';
             els.netGateway.textContent = netData.gateway || 'N/A';
             els.netDns.textContent = (netData.dns && netData.dns.length > 0) ? netData.dns.join(', ') : 'N/A';
-            if (els.hostnameInput) els.hostnameInput.value = netData.hostname || '';
+            if (els.hostnameInput) {
+                const hostnameVal = netData.hostname || '';
+                els.hostnameInput.value = hostnameVal;
+                // Update display if it exists in another element
+                const displayElem = document.getElementById('current-hostname-display');
+                if (displayElem) displayElem.textContent = hostnameVal;
+            }
         } else {
             console.warn('Network fetch failed with status:', netRes.status);
         }

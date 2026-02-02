@@ -45,7 +45,10 @@ document.addEventListener('DOMContentLoaded', () => {
 // Load Disks
 async function loadDisks() {
     const container = document.getElementById('disks-container');
-    container.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">Loading disks...</p>';
+    const refreshBtn = document.getElementById('refresh-disks-btn');
+
+    container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 2rem;"><div class="spinner"></div><p style="color: var(--text-secondary); margin-top: 1rem;">Loading disks...</p></div>';
+    if (refreshBtn) refreshBtn.disabled = true;
 
     try {
         const token = localStorage.getItem('alvaos_token');
@@ -61,7 +64,9 @@ async function loadDisks() {
         displayDisks(data.disks);
     } catch (error) {
         console.error('Error loading disks:', error);
-        container.innerHTML = '<p style="text-align: center; color: var(--accent-danger);">Failed to load disks. Check backend connection.</p>';
+        container.innerHTML = '<p style="text-align: center; color: var(--accent-danger); grid-column: 1/-1; padding: 2rem;">Failed to load disks. Check backend connection.</p>';
+    } finally {
+        if (refreshBtn) refreshBtn.disabled = false;
     }
 }
 
@@ -156,7 +161,7 @@ function displayDisks(disks) {
 // Load Pools
 async function loadPools() {
     const container = document.getElementById('pools-container');
-    container.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">Loading pools...</p>';
+    container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 2rem;"><div class="spinner"></div><p style="color: var(--text-secondary); margin-top: 1rem;">Scanning Btrfs pools...</p></div>';
 
     try {
         const token = localStorage.getItem('alvaos_token');
@@ -172,7 +177,7 @@ async function loadPools() {
         displayPools(data.pools);
     } catch (error) {
         console.error('Error loading pools:', error);
-        container.innerHTML = '<p style="text-align: center; color: var(--accent-danger);">Failed to load pools.</p>';
+        container.innerHTML = '<p style="text-align: center; color: var(--accent-danger); grid-column: 1/-1; padding: 2rem;">Failed to load pools. The storage service might be restarting.</p>';
     }
 }
 

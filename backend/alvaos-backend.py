@@ -18,10 +18,24 @@ import hashlib
 import hmac
 import secrets
 import functools
+import re
+import time
+import subprocess
 
 app = Flask(__name__, static_folder=None) # Disable default static serving to force version replacement
-app.static_folder = '/opt/alvaos/webui' # Manually set for send_from_directory
+# Fallback to current directory for dev if /opt doesn't exist
+WEBUI_ROOT = '/opt/alvaos/webui'
+if not os.path.exists(WEBUI_ROOT):
+    WEBUI_ROOT = os.path.join(os.path.dirname(__file__), '..', 'frontend')
+app.static_folder = WEBUI_ROOT
 CORS(app)
+
+# Cache for storage information (TTL in seconds)
+STORAGE_CACHE = {
+    'disks': {'data': None, 'expires': 0},
+    'pools': {'data': None, 'expires': 0}
+}
+CACHE_TTL = 5
 
 # Version Management
 def get_version():
@@ -136,7 +150,8 @@ def serve_frontend(filename):
                 content = f.read()
             
             # Replace placeholder
-            content = content.replace('{{VERSION}}', VERSION)
+            clean_version = VERSION.strip('() ')
+            content = content.replace('{{VERSION}}', clean_version)
             
             # Create a response with correct mimetype
             from flask import Response
@@ -147,8 +162,11 @@ def serve_frontend(filename):
             else:  # .js
                 mimetype = 'application/javascript'
             return Response(content, mimetype=mimetype)
+        
+        return send_from_directory(app.static_folder, filename)
     except Exception as e:
         print(f"Error serving {filename}: {e}")
+        return f"File not found: {filename}", 404
         
     return send_from_directory(app.static_folder, filename)
 
@@ -301,7 +319,19 @@ def get_system_info():
     }
     
     # Network Information
-    hostname = socket.gethostname()
+    hostname = 'unknown'
+    try:
+        if platform.system() == 'Linux':
+            res = subprocess.run(['hostnamectl', 'hostname'], capture_output=True, text=True, timeout=2)
+            if res.returncode == 0:
+                hostname = res.stdout.strip()
+            else:
+                hostname = socket.gethostname() or 'unknown'
+        else:
+            hostname = socket.gethostname() or 'unknown'
+    except:
+        hostname = 'unknown'
+        
     ip_address = '127.0.0.1'
     
     try:
@@ -420,7 +450,14 @@ def get_network_details():
     """Get detailed network configuration"""
     hostname = "unknown"
     try:
-        hostname = socket.gethostname()
+        if platform.system() == 'Linux':
+            res = subprocess.run(['hostnamectl', 'hostname'], capture_output=True, text=True, timeout=2)
+            if res.returncode == 0:
+                hostname = res.stdout.strip()
+            else:
+                hostname = socket.gethostname() or "unknown"
+        else:
+            hostname = socket.gethostname() or "unknown"
     except:
         pass
         
@@ -831,71 +868,56 @@ def manage_pools():
     """Manage Btrfs pools"""
     
     if request.method == 'GET':
+        # Check cache
+        current_time = time.time()
+        if STORAGE_CACHE['pools']['expires'] > current_time:
+            return jsonify({'pools': STORAGE_CACHE['pools']['data']})
+
         pools = []
         
         try:
             if platform.system() == 'Linux':
                 # Get list of Btrfs filesystems
-                # Fix: Ensure LC_ALL=C and non-interactive sudo
-                result = subprocess.run(
-                    ['sudo', '-n', 'env', 'LC_ALL=C', 'btrfs', 'filesystem', 'show'],
-                    capture_output=True, text=True, timeout=5
-                )
+                result, err = run_sudo_command(['sudo', 'btrfs', 'filesystem', 'show'])
                 
-                if result.returncode == 0:
-                    # Parse btrfs filesystem show output
-                    current_pool = None
-                    for line in result.stdout.split('\n'):
-                        line = line.strip()
-                        
-                        # New filesystem entry
-                        # Example lines: 
-                        # Label: 'my pool'  uuid: 1234-5678...
-                        # Label: none  uuid: 1234-5678...
-                        if line.startswith('Label:'):
-                            if current_pool:
-                                pools.append(current_pool)
-                            
-                            import re
-                            # Match Label: '...' or Label: none
-                            label_match = re.search(r"Label:\s+('(.*?)'|(\S+))", line)
-                            uuid_match = re.search(r"uuid:\s+(\S+)", line)
-                            
-                            label = 'none'
-                            if label_match:
-                                label = label_match.group(2) or label_match.group(3)
-                            
-                            uuid_val = uuid_match.group(1) if uuid_match else ''
-                            
-                            current_pool = {
-                                'id': uuid_val,
-                                'name': label,
-                                'uuid': uuid_val,
-                                'devices': [],
-                                'total_size': 0,
-                                'used_size': 0,
-                                'raid_level': 'unknown',
-                                'status': 'healthy'
-                            }
-                        
-                        # Device entry
-                        elif line.startswith('devid') and current_pool:
-                            # Parse: devid 1 size 100.00GiB used 10.00GiB path /dev/sdb
-                            parts = line.split()
-                            dev_path = ''
-                            if 'path' in parts:
-                                dev_path = parts[parts.index('path') + 1]
-                            
-                            if dev_path:
-                                current_pool['devices'].append(dev_path)
-                        
-                        # Detect missing devices
-                        elif 'DEVICE' in line.upper() and 'MISSING' in line.upper() and current_pool:
-                            current_pool['status'] = 'degraded'
+                if result and result.returncode == 0:
+                    output = result.stdout
+                    # Split into filesystem blocks
+                    fs_blocks = re.split(r'Label:', output)
                     
-                    # Add last pool
-                    if current_pool:
-                        pools.append(current_pool)
+                    for block in fs_blocks:
+                        if not block.strip(): continue
+                        
+                        uuid_match = re.search(r"uuid:\s+([a-f0-9-]+)", block)
+                        if not uuid_match: continue
+                        
+                        uuid_val = uuid_match.group(1)
+                        # Extract label
+                        label_match = re.match(r"\s*('(.*?)'|\S+)", block)
+                        label = 'none'
+                        if label_match:
+                            label = (label_match.group(2) or label_match.group(1)).strip("'")
+                            if label == 'none': label = 'Unlabeled'
+                        
+                        pool = {
+                            'id': uuid_val,
+                            'name': label,
+                            'uuid': uuid_val,
+                            'devices': [],
+                            'total_size': 'Unknown',
+                            'used_size': 'Unknown',
+                            'raid_level': 'Single',
+                            'status': 'healthy'
+                        }
+                        
+                        # Extract paths
+                        dev_lines = re.findall(r"path\s+(\S+)", block)
+                        pool['devices'] = [d.strip() for d in dev_lines]
+                        
+                        if 'missing' in block.lower():
+                            pool['status'] = 'degraded'
+                        
+                        pools.append(pool)
                     
                     # Load pools state to get mount points
                     pools_state = load_pools_state()
@@ -910,120 +932,46 @@ def manage_pools():
                         
                         if pool['devices']:
                             try:
-                                # Fix: Ensure LC_ALL=C and non-interactive sudo
-                                usage_result = subprocess.run(
-                                    ['sudo', '-n', 'env', 'LC_ALL=C', 'btrfs', 'filesystem', 'usage', pool['devices'][0]],
-                                    capture_output=True, text=True, timeout=3
-                                )
-                                
-                                if usage_result.returncode == 0:
-                                    # Parse usage output with better logical size calculation
-                                    used_bytes = 0
-                                    free_estimated_bytes = 0
+                                usage_res, _ = run_sudo_command(['sudo', 'btrfs', 'filesystem', 'usage', pool['devices'][0]], timeout=5)
+                                if usage_res and usage_res.returncode == 0:
+                                    u_out = usage_res.stdout
+                                    if 'RAID1' in u_out: pool['raid_level'] = 'RAID1'
+                                    elif 'RAID10' in u_out: pool['raid_level'] = 'RAID10'
+                                    elif 'RAID0' in u_out: pool['raid_level'] = 'RAID0'
                                     
-                                    for line in usage_result.stdout.split('\n'):
-                                        line = line.strip()
-                                        if line.startswith('Used:'):
-                                            # This is logical used data
-                                            try:
-                                                val = line.split(':')[1].strip()
-                                                if 'TiB' in val: used_bytes = float(val.replace('TiB','')) * 1024**4
-                                                elif 'GiB' in val: used_bytes = float(val.replace('GiB','')) * 1024**3
-                                                elif 'MiB' in val: used_bytes = float(val.replace('MiB','')) * 1024**2
-                                                elif 'KiB' in val: used_bytes = float(val.replace('KiB','')) * 1024
-                                                else: used_bytes = float(val.replace('B',''))
-                                            except: pass
-                                            
-                                        elif line.startswith('Free (estimated):'):
-                                            # This is logical free space (considering RAID level)
-                                            try:
-                                                # Format: Free (estimated):     1.80TiB  (Min: 1.80TiB)
-                                                val = line.split(':')[1].split('(')[0].strip()
-                                                if 'TiB' in val: free_estimated_bytes = float(val.replace('TiB','')) * 1024**4
-                                                elif 'GiB' in val: free_estimated_bytes = float(val.replace('GiB','')) * 1024**3
-                                                elif 'MiB' in val: free_estimated_bytes = float(val.replace('MiB','')) * 1024**2
-                                                elif 'KiB' in val: free_estimated_bytes = float(val.replace('KiB','')) * 1024
-                                                else: free_estimated_bytes = float(val.replace('B',''))
-                                            except: pass
-                                            
-                                        elif 'Data,' in line:
-                                            if 'RAID1' in line:
-                                                pool['raid_level'] = 'RAID1'
-                                            elif 'RAID0' in line:
-                                                pool['raid_level'] = 'RAID0'
-                                            elif 'RAID10' in line:
-                                                pool['raid_level'] = 'RAID10'
-                                            else:
-                                                if pool['raid_level'] == 'unknown':
-                                                    pool['raid_level'] = 'Single'
+                                    u_match = re.search(r"Used:\s+(\d+\.?\d*[TiGkMBP]i?B)", u_out)
+                                    f_match = re.search(r"Free \(estimated\):\s+(\d+\.?\d*[TiGkMBP]i?B)", u_out)
                                     
-                                    # Fallback to df if no valid bytes parsed and we have a mount point
-                                    if used_bytes == 0 and free_estimated_bytes == 0 and mount_point:
-                                        try:
-                                            # Fix: LC_ALL=C for df
-                                            df_res = subprocess.run(['env', 'LC_ALL=C', 'df', '-B1', mount_point], capture_output=True, text=True, timeout=2)
-                                            if df_res.returncode == 0 and len(df_res.stdout.splitlines()) > 1:
-                                                # /dev/sda1 1000 500 500 50% /mnt
-                                                parts = df_res.stdout.splitlines()[1].split()
-                                                if len(parts) >= 3:
-                                                    total_bytes = float(parts[1])
-                                                    used_bytes = float(parts[2])
-                                                    free_estimated_bytes = total_bytes - used_bytes
-                                        except:
-                                            pass
-
-                                    # Calculate logic total
-                                    total_bytes = used_bytes + free_estimated_bytes
-                                        
-                                    # Convert back to human readable
-                                    def bytes_to_human(n):
-                                        if n == 0:
-                                            return "0B"
-                                        for unit in ['B', 'KiB', 'MiB', 'GiB', 'TiB']:
-                                            if n < 1024: return f"{n:.2f}{unit}"
-                                            n /= 1024
-                                        return f"{n:.2f}PiB"
-                                            
-                                    pool['used_size'] = bytes_to_human(used_bytes)
-                                    pool['total_size'] = bytes_to_human(total_bytes)
-
+                                    if u_match and f_match:
+                                        pool['used_size'] = u_match.group(1)
+                                        pool['total_size'] = f"Estimated {f_match.group(1)} free"
                             except Exception as e:
                                 print(f"Error getting pool usage: {e}")
-                                # Fallback to df if btrfs usage parsing fails
+
+                            # Fallback to df if usage failed or didn't provide good info
+                            if (pool['used_size'] == 'Unknown' or 'Estimated' not in pool['total_size']) and mount_point:
                                 try:
-                                    if mount_point:
-                                        # Fix: LC_ALL=C for df
-                                        df_res = subprocess.run(['env', 'LC_ALL=C', 'df', '-h', mount_point], capture_output=True, text=True, timeout=2)
-                                        if df_res.returncode == 0:
-                                            # Filesystem      Size  Used Avail Use% Mounted on
-                                            # /dev/sda1       100G   10G   90G  10% /mnt/pool
-                                            lines = df_res.stdout.strip().split('\n')
-                                            if len(lines) >= 2:
-                                                parts = lines[1].split()
-                                                if len(parts) >= 4:
-                                                    pool['total_size'] = parts[1]
-                                                    pool['used_size'] = parts[2]
-                                except Exception as e2:
-                                    print(f"Error in df fallback: {e2}")
-                                    pass
+                                    df_res = subprocess.run(['df', '-h', mount_point], capture_output=True, text=True, timeout=2)
+                                    if df_res.returncode == 0:
+                                        p_lines = df_res.stdout.strip().split('\n')
+                                        if len(p_lines) >= 2:
+                                            p_parts = p_lines[1].split()
+                                            if len(p_parts) >= 4:
+                                                pool['total_size'] = p_parts[1]
+                                                pool['used_size'] = p_parts[2]
+                                except: pass
             else:
-                # Mock data for development
                 pools = [
                     {
-                        'id': 'mock-pool-1',
-                        'name': 'storage-pool',
-                        'uuid': 'abc123-def456-ghi789',
-                        'devices': ['/dev/sdb', '/dev/sdc'],
-                        'total_size': '4.0 TiB',
-                        'used_size': '1.2 TiB',
-                        'raid_level': 'RAID1',
-                        'status': 'healthy'
+                        'id': 'mock-pool-1', 'name': 'storage-pool', 'uuid': 'abc-123',
+                        'devices': ['/dev/sdb'], 'total_size': '4.0TiB', 'used_size': '1.2TiB',
+                        'raid_level': 'RAID1', 'status': 'healthy'
                     }
                 ]
-        
         except Exception as e:
-            print(f"Error getting pools: {e}")
-        
+            print(f"Error in manage_pools GET: {e}")
+            
+        STORAGE_CACHE['pools'] = {'data': pools, 'expires': current_time + CACHE_TTL}
         return jsonify({'pools': pools})
     
     elif request.method == 'POST':
