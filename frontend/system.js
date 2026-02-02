@@ -14,18 +14,26 @@ const els = {
     timeDisplay: document.getElementById('system-time-display')
 };
 
-// Headers helper
-const token = localStorage.getItem('alvaos_token');
-const headers = {
-    'Authorization': token || '',
-    'Content-Type': 'application/json'
-};
+// Helper: Get Request Headers with fresh token
+function getHeaders() {
+    const token = localStorage.getItem('alvaos_token');
+    return {
+        'Authorization': token || '',
+        'Content-Type': 'application/json'
+    };
+}
 
 // Fetch System Settings
 async function fetchSettings() {
     // 1. Fetch Network & Hostname
     try {
-        const netRes = await fetch(`${API_BASE}/system/network`, { headers });
+        const netRes = await fetch(`${API_BASE}/system/network`, { headers: getHeaders() });
+
+        if (netRes.status === 401) {
+            window.location.href = '/login.html';
+            return;
+        }
+
         if (netRes.ok) {
             const netData = await netRes.json();
             els.netInterface.textContent = netData.interface || 'N/A';
@@ -35,17 +43,15 @@ async function fetchSettings() {
             els.netDns.textContent = (netData.dns && netData.dns.length > 0) ? netData.dns.join(', ') : 'N/A';
             if (els.hostnameInput) els.hostnameInput.value = netData.hostname || '';
         } else {
-            console.warn('Network fetch failed');
-            if (els.hostnameInput) els.hostnameInput.value = 'Error';
+            console.warn('Network fetch failed with status:', netRes.status);
         }
     } catch (e) {
-        console.warn('Network fetch error', e);
-        if (els.hostnameInput) els.hostnameInput.value = 'Error';
+        console.error('Network fetch error:', e);
     }
 
     // 2. Fetch Time Settings
     try {
-        const timeRes = await fetch(`${API_BASE}/system/time`, { headers });
+        const timeRes = await fetch(`${API_BASE}/system/time`, { headers: getHeaders() });
         if (timeRes.ok) {
             const timeData = await timeRes.json();
             const tzSelect = document.getElementById('timezone-select');
@@ -59,7 +65,7 @@ async function fetchSettings() {
 
     // 3. Fetch Logs
     try {
-        const logRes = await fetch(`${API_BASE}/system/logs`, { headers });
+        const logRes = await fetch(`${API_BASE}/system/logs`, { headers: getHeaders() });
         if (logRes.ok) {
             const logData = await logRes.json();
             els.logViewer.textContent = logData.logs.join('\n');
@@ -79,15 +85,15 @@ async function updateHostname() {
     if (!newHostname) return;
 
     try {
-        const token = localStorage.getItem('alvaos_token');
         const res = await fetch(`${API_BASE}/system/hostname`, {
             method: 'PUT',
-            headers,
+            headers: getHeaders(),
             body: JSON.stringify({ hostname: newHostname })
         });
 
         if (res.ok) {
             alert('Hostname updated! System may need a reboot.');
+            fetchSettings(); // Refresh
         } else {
             const err = await res.json();
             alert('Failed to update: ' + err.error);
@@ -103,10 +109,9 @@ async function updateTimeSettings() {
     const ntp = document.getElementById('ntp-toggle').checked;
 
     try {
-        const token = localStorage.getItem('alvaos_token');
         const res = await fetch(`${API_BASE}/system/time`, {
             method: 'POST',
-            headers,
+            headers: getHeaders(),
             body: JSON.stringify({ timezone, ntp })
         });
 
@@ -126,15 +131,14 @@ async function sendPowerAction(action) {
     if (!await showConfirm(`Are you sure you want to ${action} the system?`)) return;
 
     try {
-        const token = localStorage.getItem('alvaos_token');
         const res = await fetch(`${API_BASE}/system/power`, {
             method: 'POST',
-            headers,
+            headers: getHeaders(),
             body: JSON.stringify({ action })
         });
 
         if (res.ok) {
-            handleConnectionError();
+            if (window.handleConnectionError) window.handleConnectionError();
         }
     } catch (e) {
         alert('Action failed');

@@ -692,6 +692,13 @@ async function showCreatePoolDialog() {
         }
 
         try {
+            // Show loading state
+            const createBtn = wizard.querySelector('#create-pool-confirm-btn');
+            const originalText = createBtn.textContent;
+            createBtn.disabled = true;
+            createBtn.textContent = 'Creating Pool...';
+            createBtn.style.opacity = '0.7';
+
             const response = await fetch(`${API_BASE}/storage/pools`, {
                 method: 'POST',
                 headers: {
@@ -716,6 +723,13 @@ async function showCreatePoolDialog() {
             loadPools();
         } catch (error) {
             alert(`Error: ${error.message}`);
+            // Reset button state on error
+            const createBtn = wizard.querySelector('#create-pool-confirm-btn');
+            if (createBtn) {
+                createBtn.disabled = false;
+                createBtn.textContent = 'Create Pool';
+                createBtn.style.opacity = '1';
+            }
         }
     });
 }

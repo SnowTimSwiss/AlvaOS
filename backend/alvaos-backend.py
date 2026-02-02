@@ -123,8 +123,8 @@ def index():
 def serve_frontend(filename):
     """Helper to serve frontend files with version replacement"""
     try:
-        # Check if it's an HTML or CSS file that might need replacement
-        if filename.endswith(('.html', '.css')):
+        # Check if it's an HTML, CSS, or JS file that might need replacement
+        if filename.endswith(('.html', '.css', '.js')):
             content = ""
             with open(os.path.join(app.static_folder, filename), 'r') as f:
                 content = f.read()
@@ -134,7 +134,12 @@ def serve_frontend(filename):
             
             # Create a response with correct mimetype
             from flask import Response
-            mimetype = 'text/html' if filename.endswith('.html') else 'text/css'
+            if filename.endswith('.html'):
+                mimetype = 'text/html'
+            elif filename.endswith('.css'):
+                mimetype = 'text/css'
+            else:  # .js
+                mimetype = 'application/javascript'
             return Response(content, mimetype=mimetype)
     except Exception as e:
         print(f"Error serving {filename}: {e}")
@@ -402,7 +407,12 @@ def system_power():
 @require_auth
 def get_network_details():
     """Get detailed network configuration"""
-    hostname = socket.gethostname()
+    hostname = "unknown"
+    try:
+        hostname = socket.gethostname()
+    except:
+        pass
+        
     ip_address = "127.0.0.1"
     interface = "lo"
     subnet_mask = "255.255.255.0"
@@ -412,11 +422,12 @@ def get_network_details():
     # Try to get real network information
     try:
         # Get all network interfaces
+        import psutil
         net_if_addrs = psutil.net_if_addrs()
         
         # Find the first non-loopback interface with an IPv4 address
         for iface_name, iface_addresses in net_if_addrs.items():
-            if iface_name.startswith('lo'):
+            if iface_name.startswith(('lo', 'docker', 'veth', 'br-')):
                 continue
             
             for addr in iface_addresses:
@@ -435,7 +446,7 @@ def get_network_details():
             try:
                 result = subprocess.run(['ip', 'route', 'show', 'default'], 
                                       capture_output=True, text=True, timeout=2)
-                if result.returncode == 0:
+                if result.returncode == 0 and result.stdout:
                     parts = result.stdout.split()
                     if len(parts) >= 3 and parts[0] == 'default':
                         gateway = parts[2]
@@ -449,7 +460,8 @@ def get_network_details():
                         for line in f:
                             if line.strip().startswith('nameserver'):
                                 dns = line.split()[1]
-                                dns_servers.append(dns)
+                                if dns not in dns_servers:
+                                    dns_servers.append(dns)
             except:
                 pass
         
@@ -871,8 +883,17 @@ def manage_pools():
                     if current_pool:
                         pools.append(current_pool)
                     
+                    # Load pools state to get mount points
+                    pools_state = load_pools_state()
+                    
                     # Get usage information for each pool
                     for pool in pools:
+                        # Get mount point from state
+                        pool_state = pools_state.get(pool['id'], {})
+                        mount_point = pool_state.get('mount_point', '')
+                        if mount_point:
+                            pool['mount_point'] = mount_point
+                        
                         if pool['devices']:
                             try:
                                 usage_result = subprocess.run(
@@ -921,16 +942,17 @@ def manage_pools():
                                                 if pool['raid_level'] == 'unknown':
                                                     pool['raid_level'] = 'Single'
                                     
-                                    # Fallback to df if no valid bytes parsed
-                                    if used_bytes == 0 and free_estimated_bytes == 0:
+                                    # Fallback to df if no valid bytes parsed and we have a mount point
+                                    if used_bytes == 0 and free_estimated_bytes == 0 and mount_point:
                                         try:
-                                            df_res = subprocess.run(['df', '-B1', pool.get('mount_point', '')], capture_output=True, text=True)
-                                            if df_res.returncode == 0:
+                                            df_res = subprocess.run(['df', '-B1', mount_point], capture_output=True, text=True, timeout=2)
+                                            if df_res.returncode == 0 and len(df_res.stdout.splitlines()) > 1:
                                                 # /dev/sda1 1000 500 500 50% /mnt
                                                 parts = df_res.stdout.splitlines()[1].split()
                                                 if len(parts) >= 3:
                                                     total_bytes = float(parts[1])
                                                     used_bytes = float(parts[2])
+                                                    free_estimated_bytes = total_bytes - used_bytes
                                         except:
                                             pass
 
@@ -939,6 +961,8 @@ def manage_pools():
                                         
                                     # Convert back to human readable
                                     def bytes_to_human(n):
+                                        if n == 0:
+                                            return "0B"
                                         for unit in ['B', 'KiB', 'MiB', 'GiB', 'TiB']:
                                             if n < 1024: return f"{n:.2f}{unit}"
                                             n /= 1024
@@ -947,11 +971,12 @@ def manage_pools():
                                     pool['used_size'] = bytes_to_human(used_bytes)
                                     pool['total_size'] = bytes_to_human(total_bytes)
 
-                            except:
+                            except Exception as e:
+                                print(f"Error getting pool usage: {e}")
                                 # Fallback to df if btrfs usage parsing fails
                                 try:
-                                    if 'mount_point' in pool:
-                                        df_res = subprocess.run(['df', '-h', pool['mount_point']], capture_output=True, text=True)
+                                    if mount_point:
+                                        df_res = subprocess.run(['df', '-h', mount_point], capture_output=True, text=True, timeout=2)
                                         if df_res.returncode == 0:
                                             # Filesystem      Size  Used Avail Use% Mounted on
                                             # /dev/sda1       100G   10G   90G  10% /mnt/pool
@@ -961,7 +986,8 @@ def manage_pools():
                                                 if len(parts) >= 4:
                                                     pool['total_size'] = parts[1]
                                                     pool['used_size'] = parts[2]
-                                except:
+                                except Exception as e2:
+                                    print(f"Error in df fallback: {e2}")
                                     pass
             else:
                 # Mock data for development
