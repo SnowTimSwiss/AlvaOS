@@ -5,7 +5,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/live-build-work"
-VERSION=$(cat "${SCRIPT_DIR}/../VERSION")
+VERSION=${ALVAOS_VERSION:-$(cat "${SCRIPT_DIR}/../VERSION")}
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -27,7 +27,7 @@ rm -rf "${BUILD_DIR}"
 mkdir -p "${BUILD_DIR}"
 
 # Check for existing ISO lock
-TARGET_ISO="${SCRIPT_DIR}/build/alvaos-${VERSION}.iso"
+TARGET_ISO="${SCRIPT_DIR}/build/alvaos-installer-${VERSION}.iso"
 if [ -f "$TARGET_ISO" ]; then
     log "Removing old ISO..."
     rm -f "$TARGET_ISO" || error "Could not remove old ISO! Is it mounted in a VM/Windows? Please detach it first."
@@ -227,7 +227,7 @@ mkdir -p "${SCRIPT_DIR}/build"
 
 if [ -f live-image-amd64.hybrid.iso ]; then
   mv live-image-amd64.hybrid.iso \
-     "${SCRIPT_DIR}/build/alvaos-${VERSION}.iso"
+     "${SCRIPT_DIR}/build/alvaos-installer-${VERSION}.iso"
   log "Build successful"
 else
   error "ISO not generated"
