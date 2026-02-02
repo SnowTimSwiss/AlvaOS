@@ -966,13 +966,21 @@ def manage_pools():
                                     if 'RAID1' in u_out: pool['raid_level'] = 'RAID1'
                                     elif 'RAID10' in u_out: pool['raid_level'] = 'RAID10'
                                     elif 'RAID0' in u_out: pool['raid_level'] = 'RAID0'
-                                    
-                                    u_match = re.search(r"Used:\s+(\d+\.?\d*[TiGkMBP]i?B)", u_out)
-                                    f_match = re.search(r"Free \(estimated\):\s+(\d+\.?\d*[TiGkMBP]i?B)", u_out)
-                                    
-                                    if u_match and f_match:
-                                        pool['used_size'] = u_match.group(1)
-                                        pool['total_size'] = f"Estimated {f_match.group(1)} free"
+
+                                    # Prefer explicit sizes when present
+                                    used_match = re.search(r"Used:\s+(\d+\.?\d*[TiGkMBP]i?B)", u_out)
+                                    dev_match = re.search(r"Device size:\s+(\d+\.?\d*[TiGkMBP]i?B)", u_out)
+                                    fs_match = re.search(r"Filesystem size:\s+(\d+\.?\d*[TiGkMBP]i?B)", u_out)
+                                    free_match = re.search(r"Free \(estimated\):\s+(\d+\.?\d*[TiGkMBP]i?B)", u_out)
+
+                                    if used_match:
+                                        pool['used_size'] = used_match.group(1)
+                                    if dev_match:
+                                        pool['total_size'] = dev_match.group(1)
+                                    elif fs_match:
+                                        pool['total_size'] = fs_match.group(1)
+                                    if free_match:
+                                        pool['free_size'] = free_match.group(1)
                             except Exception as e:
                                 print(f"Error getting pool usage: {e}")
 
