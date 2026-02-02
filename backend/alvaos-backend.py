@@ -22,6 +22,28 @@ import functools
 app = Flask(__name__, static_folder='/opt/alvaos/webui', static_url_path='')
 CORS(app)
 
+# Version Management
+def get_version():
+    """Read version from VERSION file"""
+    # Production path
+    prod_path = '/etc/alvaos/VERSION'
+    # Development path (relative to backend script)
+    dev_path = os.path.join(os.path.dirname(__file__), '..', 'VERSION')
+    
+    try:
+        if os.path.exists(prod_path):
+            with open(prod_path, 'r') as f:
+                return f.read().strip()
+        elif os.path.exists(dev_path):
+            with open(dev_path, 'r') as f:
+                return f.read().strip()
+    except Exception as e:
+        print(f"Error reading version file: {e}")
+    
+    return "unknown"
+
+VERSION = get_version()
+
 # Configuration
 SETUP_STATUS_FILE = '/var/lib/alvaos/setup_complete.json'
 AUTH_FILE = '/var/lib/alvaos/auth.json'
@@ -74,7 +96,7 @@ def mark_setup_complete(password):
     setup_data = {
         'setup_completed': True,
         'completed_at': datetime.now().isoformat(),
-        'version': '{{VERSION}}'
+        'version': VERSION
     }
     with open(SETUP_STATUS_FILE, 'w') as f:
         json.dump(setup_data, f, indent=2)
@@ -95,15 +117,43 @@ def require_auth(f):
 
 @app.route('/')
 def index():
-    """Serve the Web UI"""
-    return send_from_directory('/opt/alvaos/webui', 'index.html')
+    """Serve the Web UI with version replacement"""
+    return serve_frontend('index.html')
+
+def serve_frontend(filename):
+    """Helper to serve frontend files with version replacement"""
+    try:
+        # Check if it's an HTML or CSS file that might need replacement
+        if filename.endswith(('.html', '.css')):
+            content = ""
+            with open(os.path.join(app.static_folder, filename), 'r') as f:
+                content = f.read()
+            
+            # Replace placeholder
+            content = content.replace('{{VERSION}}', VERSION)
+            
+            # Create a response with correct mimetype
+            from flask import Response
+            mimetype = 'text/html' if filename.endswith('.html') else 'text/css'
+            return Response(content, mimetype=mimetype)
+    except Exception as e:
+        print(f"Error serving {filename}: {e}")
+        
+    return send_from_directory(app.static_folder, filename)
+
+@app.route('/<path:path>')
+def serve_static(path):
+    """Serve static files"""
+    if path.endswith(('.html', '.css')):
+        return serve_frontend(path)
+    return send_from_directory(app.static_folder, path)
 
 @app.route('/api/v1/setup/status', methods=['GET'])
 def get_setup_status():
     """Check if initial setup is required"""
     return jsonify({
         'setup_complete': is_setup_complete(),
-        'version': '{{VERSION}}'
+        'version': VERSION
     })
 
 @app.route('/api/v1/setup/complete', methods=['POST'])
@@ -270,7 +320,7 @@ def get_system_info():
     }
     
     return jsonify({
-        'version': '{{VERSION}}',
+        'version': VERSION,
         'timestamp': datetime.now().isoformat(),
         'cpu': cpu_info,
         'memory': memory_info,
@@ -1493,12 +1543,9 @@ def manage_shares():
         except Exception as e:
             return jsonify({'error': f'Failed to delete share: {str(e)}'}), 500
 
-@app.route('/api/v1/health', methods=['GET'])
-def health_check():
-    """Health check endpoint"""
     return jsonify({
         'status': 'healthy',
-        'version': '0.2.0',
+        'version': VERSION,
     })
 
 def mount_existing_pools():
@@ -1553,7 +1600,7 @@ def mount_existing_pools():
             print(f"Failed to process pool {name}: {e}")
 
 if __name__ == '__main__':
-    print("Starting AlvaOS Backend v0.2.0...")
+    print(f"Starting AlvaOS Backend v{VERSION}...")
     print("Web UI: http://0.0.0.0:8080")
     print("API:    http://0.0.0.0:8080/api/v1/system/info")
     

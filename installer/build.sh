@@ -116,6 +116,9 @@ mkdir -p config/includes.chroot/opt/alvaos
 cp "${SCRIPT_DIR}/install-system.sh" config/includes.chroot/opt/alvaos/install.sh
 chmod +x config/includes.chroot/opt/alvaos/install.sh
 
+# VERSION file
+cp "${SCRIPT_DIR}/../VERSION" config/includes.chroot/opt/alvaos/VERSION
+
 # Backend (optional)
 if [ -f "${SCRIPT_DIR}/../backend/alvaos-backend.py" ]; then
   mkdir -p config/includes.chroot/opt/alvaos/backend

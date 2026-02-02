@@ -281,6 +281,11 @@ if [ -d "/opt/alvaos/webui" ]; then
     cp -r /opt/alvaos/webui/* /mnt/opt/alvaos/webui/
 fi
 
+# Copy VERSION
+if [ -f "/opt/alvaos/VERSION" ]; then
+    cp /opt/alvaos/VERSION /mnt/etc/alvaos/VERSION
+fi
+
 # Create systemd service
 cat > /mnt/etc/systemd/system/alvaos.service << 'SERVICE_EOF'
 [Unit]
