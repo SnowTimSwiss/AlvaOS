@@ -848,7 +848,8 @@ def manage_pools():
                                 'devices': [],
                                 'total_size': 0,
                                 'used_size': 0,
-                                'raid_level': 'unknown'
+                                'raid_level': 'unknown',
+                                'status': 'healthy'
                             }
                         
                         # Device entry
@@ -861,6 +862,10 @@ def manage_pools():
                             
                             if dev_path:
                                 current_pool['devices'].append(dev_path)
+                        
+                        # Detect missing devices
+                        elif 'DEVICE' in line.upper() and 'MISSING' in line.upper() and current_pool:
+                            current_pool['status'] = 'degraded'
                     
                     # Add last pool
                     if current_pool:
@@ -913,9 +918,8 @@ def manage_pools():
                                             elif 'RAID10' in line:
                                                 pool['raid_level'] = 'RAID10'
                                             else:
-                                                pool['raid_level'] = 'Single'
-                                    
-                                    pool['raid_level'] = 'Single'
+                                                if pool['raid_level'] == 'unknown':
+                                                    pool['raid_level'] = 'Single'
                                     
                                     # Fallback to df if no valid bytes parsed
                                     if used_bytes == 0 and free_estimated_bytes == 0:
@@ -969,7 +973,8 @@ def manage_pools():
                         'devices': ['/dev/sdb', '/dev/sdc'],
                         'total_size': '4.0 TiB',
                         'used_size': '1.2 TiB',
-                        'raid_level': 'RAID1'
+                        'raid_level': 'RAID1',
+                        'status': 'healthy'
                     }
                 ]
         
