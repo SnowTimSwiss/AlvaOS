@@ -75,3 +75,4 @@ Release strategy: "Iterate fast, stabilize often."
 - [ ] **Feature Complete**: All planned features implemented and stable.
 - [ ] **Production Ready**: No critical bugs, complete documentation.
 - [ ] **Launch**: Public release.
+- [ ] **Debian 13**: Update to Debian 13 from Debian 12.

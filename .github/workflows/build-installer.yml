@@ -61,6 +61,8 @@ jobs:
       - name: Generate checksums
         run: |
           cd installer/build
+          # Ensure ISO and checksums are owned by the current user
+          sudo chown $USER:$USER *.iso checksums.txt 2>/dev/null || true
           sudo sha256sum alvaos-installer-*.iso | sudo tee checksums.txt > /dev/null
           sudo chown $USER:$USER checksums.txt
           cat checksums.txt
@@ -71,7 +73,7 @@ jobs:
         with:
           name: alvaos-installer-${{ steps.version.outputs.version }}
           path: |
-            installer/build/alvaos-installer-*.iso
+            installer/build/[Aa][Ll][Vv][Aa][Oo][Ss]-installer-*.iso
             installer/build/checksums.txt
           retention-days: 30
       
@@ -80,7 +82,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            installer/build/alvaos-installer-*.iso
+            installer/build/[Aa][Ll][Vv][Aa][Oo][Ss]-installer-*.iso
             installer/build/checksums.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
