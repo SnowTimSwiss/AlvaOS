@@ -475,17 +475,14 @@ def system_power():
     if action not in ['reboot', 'shutdown']:
         return jsonify({'error': 'Invalid action'}), 400
         
-            # Linux implementation
-            if platform.system() == 'Linux':
-                try:
-                    cmd = 'reboot' if action == 'reboot' else 'poweroff'
-                    # Execute the command in background to allow response to be sent
-                    subprocess.Popen(build_privileged_cmd([cmd], add_env=False))
-                    return jsonify({'success': True, 'message': f'System {action} initiated'})
-                except Exception as e:
-                    return jsonify({'error': f'Failed to {action}: {str(e)}'}), 500
+    if platform.system() == 'Linux':
+        try:
+            cmd = 'reboot' if action == 'reboot' else 'poweroff'
+            subprocess.Popen(build_privileged_cmd([cmd], add_env=False))
+            return jsonify({'success': True, 'message': f'System {action} initiated'})
+        except Exception as e:
+            return jsonify({'error': f'Failed to {action}: {str(e)}'}), 500
     else:
-        # For non-Linux systems (dev/testing)
         return jsonify({'success': False, 'message': f'System {action} not supported on {platform.system()}'}), 400
 
 @app.route('/api/v1/system/network', methods=['GET'])
