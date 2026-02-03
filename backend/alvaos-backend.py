@@ -101,6 +101,28 @@ def run_sudo_command(cmd, timeout=30):
     except Exception as e:
         return None, str(e)
 
+def sync_samba_password(username, password):
+    """Synchronize a system user's password with the Samba database"""
+    try:
+        process = subprocess.Popen(
+            build_privileged_cmd(['smbpasswd', '-a', '-s', username]),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env={'LC_ALL': 'C'}
+        )
+        stdout, stderr = process.communicate(input=f"{password}\n{password}\n", timeout=5)
+        
+        if process.returncode != 0:
+            print(f"Samba sync warning: {stderr}")
+            return False, stderr
+            
+        return True, None
+    except Exception as e:
+        print(f"Samba sync error: {e}")
+        return False, str(e)
+
 def ensure_directories():
     """Ensure necessary directories exist"""
     Path('/var/lib/alvaos').mkdir(parents=True, exist_ok=True)
@@ -255,6 +277,9 @@ def complete_setup():
         except Exception as e:
             # Don't fail setup if SSH config update fails
             print(f"Warning: Could not update SSH config: {e}")
+        
+        # Sync to Samba
+        sync_samba_password('root', password)
         
         # Mark setup as complete
         mark_setup_complete(password)
@@ -1378,19 +1403,19 @@ def get_available_paths():
     """Get list of all potential share paths (pools and subvolumes)"""
     paths = []
     
-    # Add base mount point
-    base_path = '/mnt/alvaos'
-    if platform.system() == 'Linux':
-        try:
-            if not os.path.exists(base_path):
-                res, err = run_sudo_command(['sudo', 'mkdir', '-p', base_path])
-                if err:
-                    raise Exception(err)
-        except Exception:
-            # Don't include a non-existent path to avoid share creation failures
-            base_path = None
-    if base_path:
-        paths.append({'name': 'Default Storage Root', 'path': base_path})
+    # Add base mount point (Removed as per user request to only allow pools/subvolumes)
+    # base_path = '/mnt/alvaos'
+    # if platform.system() == 'Linux':
+    #     try:
+    #         if not os.path.exists(base_path):
+    #             res, err = run_sudo_command(['sudo', 'mkdir', '-p', base_path])
+    #             if err:
+    #                 raise Exception(err)
+    #     except Exception:
+    #         # Don't include a non-existent path to avoid share creation failures
+    #         base_path = None
+    # if base_path:
+    #     paths.append({'name': 'Default Storage Root', 'path': base_path})
     
     # Add Pools
     pools = load_pools_state()
@@ -1470,7 +1495,8 @@ def manage_shares():
             return jsonify({'error': f'Path does not exist: {share_path}'}), 400
         
         try:
-            share_id = f'share-{len(load_shares_state())}'
+            # Generate a unique share ID using hex token
+            share_id = f'share-{secrets.token_hex(4)}'
             
             if platform.system() == 'Linux':
                 if protocol == 'nfs':
@@ -1508,6 +1534,10 @@ def manage_shares():
                     # Restart Samba
                     res, err = run_sudo_command(['sudo', 'systemctl', 'restart', 'smbd'])
                     if err: return jsonify({'error': f'Failed to restart Samba: {err}'}), 500
+                    
+                    # Ensure root is in Samba database (for non-guest access)
+                    # We look up the current password from AUTH_FILE or just wait for next setup/login
+                    # For now, we expect the user to have gone through setup which already synced it.
             
             # Save share state
             shares_state = load_shares_state()
