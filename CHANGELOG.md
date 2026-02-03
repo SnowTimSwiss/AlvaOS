@@ -2,7 +2,7 @@
 
 All notable changes to AlvaOS will be documented in this file.
 
-## [0.2.0] - 31.1.26
+## [0.2.0] - 3.2.26
 
 ### Added - Phase 1: Disk Detection
 - **Storage Management Page**: New dedicated page for managing disks, pools, and network shares
