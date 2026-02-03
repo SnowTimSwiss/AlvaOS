@@ -71,25 +71,26 @@ def is_root_user():
     except Exception:
         return False
 
-def build_privileged_cmd(cmd, add_env=True):
+def build_privileged_cmd(cmd):
     """Build a command that runs as root when needed, without requiring sudo if already root."""
-    env_prefix = ['env', 'LC_ALL=C'] if add_env else []
     if is_root_user():
-        return env_prefix + cmd
-    return ['sudo', '-n'] + env_prefix + cmd
+        return cmd
+    return ['sudo', '-n'] + cmd
 
 def run_sudo_command(cmd, timeout=30):
     """Helper to run a command with sudo and handle password prompts gracefully"""
     try:
-        # Prepare the command with LC_ALL=C to ensure English output
+        # Prepare the env with LC_ALL=C to ensure English output
+        custom_env = os.environ.copy()
+        custom_env['LC_ALL'] = 'C'
+        
         final_cmd = []
-
         if cmd and cmd[0] == 'sudo':
             final_cmd = build_privileged_cmd(cmd[1:])
         else:
-            final_cmd = ['env', 'LC_ALL=C'] + cmd
+            final_cmd = cmd
         
-        result = subprocess.run(final_cmd, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(final_cmd, capture_output=True, text=True, timeout=timeout, env=custom_env)
         
         if result.returncode != 0 and 'password is required' in result.stderr:
             return None, "System permission error: Passwordless sudo is not configured for this command. Please check the AlvaOS documentation for sudoers setup."
@@ -220,11 +221,12 @@ def complete_setup():
         # Change root password using subprocess with sudo
         try:
             process = subprocess.Popen(
-                build_privileged_cmd(['chpasswd'], add_env=False),
+                build_privileged_cmd(['chpasswd']),
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
+                env={'LC_ALL': 'C'}
             )
             stdout, stderr = process.communicate(input=f'root:{password}\n', timeout=5)
             
@@ -605,7 +607,14 @@ def set_hostname():
                 new_content = content.replace(old_hostname, new_hostname)
                 
                 # Write back with tee
-                process = subprocess.Popen(build_privileged_cmd(['tee', hosts_file], add_env=False), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                process = subprocess.Popen(
+                    build_privileged_cmd(['tee', hosts_file]), 
+                    stdin=subprocess.PIPE, 
+                    stdout=subprocess.PIPE, 
+                    stderr=subprocess.PIPE, 
+                    text=True,
+                    env={'LC_ALL': 'C'}
+                )
                 process.communicate(input=new_content)
         except Exception as e:
             print(f"Warning: Failed to update /etc/hosts: {e}")
@@ -1306,8 +1315,10 @@ def expand_pool(pool_id):
                 return jsonify({'error': f'Failed to add devices: {err}'}), 500
                 
             # Start a balance in background to redistribute data
-            # Fix: Ensure LC_ALL=C and non-interactive sudo
-            subprocess.Popen(build_privileged_cmd(['btrfs', 'balance', 'start', mount_point]))
+            subprocess.Popen(
+                build_privileged_cmd(['btrfs', 'balance', 'start', mount_point]),
+                env={'LC_ALL': 'C'}
+            )
             
             # Update state
             pool_info['devices'].extend(devices)
@@ -1483,8 +1494,8 @@ def manage_shares():
                             pass
                     
                     # Append to /etc/samba/smb.conf
-                    cmd = build_privileged_cmd(['/bin/sh', '-c', f"echo '{smb_config}' | tee -a /etc/samba/smb.conf"], add_env=False)
-                    subprocess.run(cmd, check=True)
+                    cmd = build_privileged_cmd(['/bin/sh', '-c', f"echo '{smb_config}' | tee -a /etc/samba/smb.conf"])
+                    subprocess.run(cmd, check=True, env={'LC_ALL': 'C'})
                     
                     # Restart Samba
                     res, err = run_sudo_command(['sudo', 'systemctl', 'restart', 'smbd'])

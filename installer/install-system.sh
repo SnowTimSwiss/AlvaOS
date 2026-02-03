@@ -352,6 +352,8 @@ alvaos ALL=(ALL) NOPASSWD: /usr/bin/journalctl
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/tail
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/reboot
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/poweroff
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/hosts
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/sed
 
 # Network Shares Config (NFS Exports, Samba)
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/exportfs
