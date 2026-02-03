@@ -40,7 +40,7 @@ async function fetchSettings() {
             els.netIp.textContent = netData.ip_address || 'N/A';
             if (els.netMask) els.netMask.textContent = netData.subnet_mask || 'N/A';
             els.netGateway.textContent = netData.gateway || 'N/A';
-            els.netDns.textContent = (netData.dns && netData.dns.length > 0) ? netData.dns.join(', ') : 'N/A';
+            els.netDns.textContent = (netData.dns && netData.dns.length > 0) ? netData.dns.join('\n') : 'N/A';
             if (els.hostnameInput) {
                 const hostnameVal = netData.hostname || '';
                 els.hostnameInput.value = hostnameVal;
