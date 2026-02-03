@@ -479,8 +479,8 @@ def system_power():
         
     if platform.system() == 'Linux':
         try:
-            cmd = 'reboot' if action == 'reboot' else 'poweroff'
-            subprocess.Popen(build_privileged_cmd([cmd], add_env=False))
+            cmd = '/usr/sbin/reboot' if action == 'reboot' else '/usr/sbin/poweroff'
+            subprocess.Popen(build_privileged_cmd([cmd]))
             return jsonify({'success': True, 'message': f'System {action} initiated'})
         except Exception as e:
             return jsonify({'error': f'Failed to {action}: {str(e)}'}), 500

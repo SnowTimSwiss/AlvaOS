@@ -155,9 +155,13 @@ async function sendPowerAction(action) {
 
         if (res.ok) {
             if (window.handleConnectionError) window.handleConnectionError();
+        } else {
+            const err = await res.json();
+            alert('Power action failed: ' + (err.error || 'Unknown error'));
         }
     } catch (e) {
-        alert('Action failed');
+        console.error('Power action error:', e);
+        alert('Connection failed');
     }
 }
 

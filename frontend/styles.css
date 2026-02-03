@@ -383,6 +383,7 @@ option {
     font-size: 0.9rem;
     color: var(--text-primary);
     display: block;
+    overflow-wrap: anywhere;
 }
 
 .h-full {
