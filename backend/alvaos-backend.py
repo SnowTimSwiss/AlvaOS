@@ -875,7 +875,15 @@ def wipe_disk(disk_name):
     try:
         if platform.system() == 'Linux':
             # 1. Unmount any Partitions
-            run_sudo_command(['sudo', '/bin/sh', '-c', f'umount /dev/{disk_name}*'])
+            # Get list of partitions for the disk
+            try:
+                lsblk_res = subprocess.run(['lsblk', '-nr', '-o', 'NAME', f'/dev/{disk_name}'], capture_output=True, text=True)
+                if lsblk_res.returncode == 0:
+                    for line in lsblk_res.stdout.splitlines():
+                        dev_path = f'/dev/{line.split()[0]}'
+                        run_sudo_command(['sudo', 'umount', '-l', dev_path])
+            except:
+                pass
             
             # 2. Wipe file system signatures
             res, err = run_sudo_command(['sudo', 'wipefs', '-a', f'/dev/{disk_name}'])
@@ -1470,8 +1478,8 @@ def manage_shares():
                     export_data = f'# AlvaOS Share: {share_name}\n{share_path} {allowed_hosts}({"ro" if read_only else "rw"},sync,no_subtree_check)\n'
                     
                     # Append to /etc/exports
-                    cmd = build_privileged_cmd(['/bin/sh', '-c', f"echo '{export_data}' | tee -a /etc/exports"], add_env=False)
-                    subprocess.run(cmd, check=True)
+                    cmd = build_privileged_cmd(['tee', '-a', '/etc/exports'])
+                    subprocess.run(cmd, input=export_data, text=True, check=True, env={'LC_ALL': 'C'})
                     
                     # Reload NFS exports
                     res, err = run_sudo_command(['sudo', 'exportfs', '-ra'])
@@ -1494,8 +1502,8 @@ def manage_shares():
                             pass
                     
                     # Append to /etc/samba/smb.conf
-                    cmd = build_privileged_cmd(['/bin/sh', '-c', f"echo '{smb_config}' | tee -a /etc/samba/smb.conf"])
-                    subprocess.run(cmd, check=True, env={'LC_ALL': 'C'})
+                    cmd = build_privileged_cmd(['tee', '-a', '/etc/samba/smb.conf'])
+                    subprocess.run(cmd, input=smb_config, text=True, check=True, env={'LC_ALL': 'C'})
                     
                     # Restart Samba
                     res, err = run_sudo_command(['sudo', 'systemctl', 'restart', 'smbd'])
@@ -1573,7 +1581,7 @@ def manage_shares():
                         
                         # Write back using sudo tee
                         content = '\n'.join(new_lines) + '\n'
-                        process = subprocess.Popen(build_privileged_cmd(['tee', '/etc/exports'], add_env=False), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                        process = subprocess.Popen(build_privileged_cmd(['tee', '/etc/exports']), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env={'LC_ALL': 'C'})
                         process.communicate(input=content)
                         
                         # Reload NFS exports
@@ -1597,7 +1605,7 @@ def manage_shares():
                         content = re.sub(pattern, '', content, flags=re.DOTALL)
                         
                         # Write back using sudo tee
-                        process = subprocess.Popen(build_privileged_cmd(['tee', '/etc/samba/smb.conf'], add_env=False), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                        process = subprocess.Popen(build_privileged_cmd(['tee', '/etc/samba/smb.conf']), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env={'LC_ALL': 'C'})
                         process.communicate(input=content)
                         
                         # Restart Samba
