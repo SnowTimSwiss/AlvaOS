@@ -65,19 +65,32 @@ AUTH_FILE = '/var/lib/alvaos/auth.json'
 CONFIG_DIR = '/etc/alvaos'
 SESSIONS = {} # Token -> Username (In-memory for 0.1)
 
+def is_root_user():
+    try:
+        return hasattr(os, 'geteuid') and os.geteuid() == 0
+    except Exception:
+        return False
+
+def build_privileged_cmd(cmd):
+    """Build a command that runs as root when needed, without requiring sudo if already root."""
+    if is_root_user():
+        return cmd
+    return ['sudo', '-n'] + cmd
+
 def run_sudo_command(cmd, timeout=30):
     """Helper to run a command with sudo and handle password prompts gracefully"""
     try:
-        # Prepare the command with LC_ALL=C to ensure English output
+        # Prepare the env with LC_ALL=C to ensure English output
+        custom_env = os.environ.copy()
+        custom_env['LC_ALL'] = 'C'
+        
         final_cmd = []
-        
-        # If running with sudo, put env before the command but after sudo
-        if cmd[0] == 'sudo':
-            final_cmd = ['sudo', '-n', 'env', 'LC_ALL=C'] + cmd[1:]
+        if cmd and cmd[0] == 'sudo':
+            final_cmd = build_privileged_cmd(cmd[1:])
         else:
-            final_cmd = ['env', 'LC_ALL=C'] + cmd
+            final_cmd = cmd
         
-        result = subprocess.run(final_cmd, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(final_cmd, capture_output=True, text=True, timeout=timeout, env=custom_env)
         
         if result.returncode != 0 and 'password is required' in result.stderr:
             return None, "System permission error: Passwordless sudo is not configured for this command. Please check the AlvaOS documentation for sudoers setup."
@@ -87,6 +100,28 @@ def run_sudo_command(cmd, timeout=30):
         return None, "Command timed out"
     except Exception as e:
         return None, str(e)
+
+def sync_samba_password(username, password):
+    """Synchronize a system user's password with the Samba database"""
+    try:
+        process = subprocess.Popen(
+            build_privileged_cmd(['smbpasswd', '-a', '-s', username]),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env={'LC_ALL': 'C'}
+        )
+        stdout, stderr = process.communicate(input=f"{password}\n{password}\n", timeout=5)
+        
+        if process.returncode != 0:
+            print(f"Samba sync warning: {stderr}")
+            return False, stderr
+            
+        return True, None
+    except Exception as e:
+        print(f"Samba sync error: {e}")
+        return False, str(e)
 
 def ensure_directories():
     """Ensure necessary directories exist"""
@@ -208,11 +243,12 @@ def complete_setup():
         # Change root password using subprocess with sudo
         try:
             process = subprocess.Popen(
-                ['sudo', 'chpasswd'],
+                build_privileged_cmd(['chpasswd']),
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
+                env={'LC_ALL': 'C'}
             )
             stdout, stderr = process.communicate(input=f'root:{password}\n', timeout=5)
             
@@ -237,10 +273,13 @@ def complete_setup():
                     f.write('PermitEmptyPasswords no\n')
                 
                 # Restart SSH service
-                subprocess.run(['sudo', 'systemctl', 'restart', 'ssh'], check=False)
+                run_sudo_command(['sudo', 'systemctl', 'restart', 'ssh'])
         except Exception as e:
             # Don't fail setup if SSH config update fails
             print(f"Warning: Could not update SSH config: {e}")
+        
+        # Sync to Samba
+        sync_samba_password('root', password)
         
         # Mark setup as complete
         mark_setup_complete(password)
@@ -391,6 +430,8 @@ def get_system_info():
         'python_version': platform.python_version(),
         'uptime_hours': round(uptime_seconds / 3600, 1),
         'boot_time': boot_time.strftime('%Y-%m-%d %H:%M:%S'),
+        'effective_user': os.getenv('USER') or os.getenv('USERNAME') or 'unknown',
+        'is_root': is_root_user(),
     }
     
     return jsonify({
@@ -438,10 +479,12 @@ def system_time():
         if platform.system() == 'Linux':
             try:
                 if 'timezone' in data:
-                    subprocess.run(['sudo', 'timedatectl', 'set-timezone', data['timezone']], check=True)
+                    res, err = run_sudo_command(['sudo', 'timedatectl', 'set-timezone', data['timezone']])
+                    if err: raise Exception(err)
                 if 'ntp' in data:
                     ntp_val = 'true' if data['ntp'] else 'false'
-                    subprocess.run(['sudo', 'timedatectl', 'set-ntp', ntp_val], check=True)
+                    res, err = run_sudo_command(['sudo', 'timedatectl', 'set-ntp', ntp_val])
+                    if err: raise Exception(err)
                 
                 return jsonify({'success': True, 'message': 'Time settings updated'})
             except Exception as e:
@@ -459,17 +502,14 @@ def system_power():
     if action not in ['reboot', 'shutdown']:
         return jsonify({'error': 'Invalid action'}), 400
         
-    # Linux implementation
     if platform.system() == 'Linux':
         try:
-            cmd = 'reboot' if action == 'reboot' else 'poweroff'
-            # Execute the command in background to allow response to be sent
-            subprocess.Popen(['sudo', cmd])
+            cmd = '/usr/sbin/reboot' if action == 'reboot' else '/usr/sbin/poweroff'
+            subprocess.Popen(build_privileged_cmd([cmd]))
             return jsonify({'success': True, 'message': f'System {action} initiated'})
         except Exception as e:
             return jsonify({'error': f'Failed to {action}: {str(e)}'}), 500
     else:
-        # For non-Linux systems (dev/testing)
         return jsonify({'success': False, 'message': f'System {action} not supported on {platform.system()}'}), 400
 
 @app.route('/api/v1/system/network', methods=['GET'])
@@ -592,7 +632,14 @@ def set_hostname():
                 new_content = content.replace(old_hostname, new_hostname)
                 
                 # Write back with tee
-                process = subprocess.Popen(['sudo', 'tee', hosts_file], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                process = subprocess.Popen(
+                    build_privileged_cmd(['tee', hosts_file]), 
+                    stdin=subprocess.PIPE, 
+                    stdout=subprocess.PIPE, 
+                    stderr=subprocess.PIPE, 
+                    text=True,
+                    env={'LC_ALL': 'C'}
+                )
                 process.communicate(input=new_content)
         except Exception as e:
             print(f"Warning: Failed to update /etc/hosts: {e}")
@@ -812,18 +859,19 @@ def get_disk_smart(disk_name):
             
             # Get detailed SMART info in JSON format
             # For NVMe, smartctl -a is standard, for others we might need specific types
-            # Fix: Ensure LC_ALL=C and non-interactive sudo
-            cmd = ['sudo', '-n', 'env', 'LC_ALL=C', 'smartctl', '-a', '-j', f'/dev/{disk_name}']
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-            
-            if result.stdout:
+            cmd = ['sudo', 'smartctl', '-a', '-j', f'/dev/{disk_name}']
+            result, err = run_sudo_command(cmd, timeout=5)
+            if err:
+                return jsonify({'error': err}), 500
+            if result and result.stdout:
                 data = json.loads(result.stdout)
                 # Check if SMART is actually supported/enabled
                 if not data.get('smart_support', {}).get('available', True):
                     return jsonify({'error': 'SMART not supported on this device (common for USB sticks)'}), 200
                 return jsonify(data)
-            else:
-                return jsonify({'error': 'Device did not return any SMART data', 'details': result.stderr}), 404
+            if result and result.stderr:
+                return jsonify({'error': 'SMART returned no data', 'details': result.stderr}), 500
+            return jsonify({'error': 'Device did not return any SMART data'}), 404
         else:
             # Mock data (unchanged)
             return jsonify({
@@ -852,7 +900,15 @@ def wipe_disk(disk_name):
     try:
         if platform.system() == 'Linux':
             # 1. Unmount any Partitions
-            subprocess.run(f'sudo umount /dev/{disk_name}*', shell=True, check=False)
+            # Get list of partitions for the disk
+            try:
+                lsblk_res = subprocess.run(['lsblk', '-nr', '-o', 'NAME', f'/dev/{disk_name}'], capture_output=True, text=True)
+                if lsblk_res.returncode == 0:
+                    for line in lsblk_res.stdout.splitlines():
+                        dev_path = f'/dev/{line.split()[0]}'
+                        run_sudo_command(['sudo', 'umount', '-l', dev_path])
+            except:
+                pass
             
             # 2. Wipe file system signatures
             res, err = run_sudo_command(['sudo', 'wipefs', '-a', f'/dev/{disk_name}'])
@@ -1128,7 +1184,7 @@ def manage_pools():
             
             if platform.system() == 'Linux':
                 if mount_point:
-                    subprocess.run(['sudo', 'umount', mount_point], timeout=5)
+                    run_sudo_command(['sudo', 'umount', mount_point], timeout=5)
                     
                     try:
                         run_sudo_command(['sudo', 'rmdir', mount_point])
@@ -1292,8 +1348,10 @@ def expand_pool(pool_id):
                 return jsonify({'error': f'Failed to add devices: {err}'}), 500
                 
             # Start a balance in background to redistribute data
-            # Fix: Ensure LC_ALL=C and non-interactive sudo
-            subprocess.Popen(['sudo', '-n', 'env', 'LC_ALL=C', 'btrfs', 'balance', 'start', mount_point])
+            subprocess.Popen(
+                build_privileged_cmd(['btrfs', 'balance', 'start', mount_point]),
+                env={'LC_ALL': 'C'}
+            )
             
             # Update state
             pool_info['devices'].extend(devices)
@@ -1345,19 +1403,19 @@ def get_available_paths():
     """Get list of all potential share paths (pools and subvolumes)"""
     paths = []
     
-    # Add base mount point
-    base_path = '/mnt/alvaos'
-    if platform.system() == 'Linux':
-        try:
-            if not os.path.exists(base_path):
-                res, err = run_sudo_command(['sudo', 'mkdir', '-p', base_path])
-                if err:
-                    raise Exception(err)
-        except Exception:
-            # Don't include a non-existent path to avoid share creation failures
-            base_path = None
-    if base_path:
-        paths.append({'name': 'Default Storage Root', 'path': base_path})
+    # Add base mount point (Removed as per user request to only allow pools/subvolumes)
+    # base_path = '/mnt/alvaos'
+    # if platform.system() == 'Linux':
+    #     try:
+    #         if not os.path.exists(base_path):
+    #             res, err = run_sudo_command(['sudo', 'mkdir', '-p', base_path])
+    #             if err:
+    #                 raise Exception(err)
+    #     except Exception:
+    #         # Don't include a non-existent path to avoid share creation failures
+    #         base_path = None
+    # if base_path:
+    #     paths.append({'name': 'Default Storage Root', 'path': base_path})
     
     # Add Pools
     pools = load_pools_state()
@@ -1369,12 +1427,10 @@ def get_available_paths():
             # Instead of looking for a non-existent cache file, we list subvolumes directly
             if platform.system() == 'Linux':
                 try:
-                    # Fix: Ensure LC_ALL=C and non-interactive sudo
-                    result = subprocess.run(
-                        ['sudo', '-n', 'env', 'LC_ALL=C', 'btrfs', 'subvolume', 'list', pool['mount_point']],
-                        capture_output=True, text=True, timeout=3
+                    result, err = run_sudo_command(
+                        ['sudo', 'btrfs', 'subvolume', 'list', pool['mount_point']], timeout=3
                     )
-                    if result.returncode == 0:
+                    if result and result.returncode == 0:
                         for line in result.stdout.split('\n'):
                              if not line.strip(): continue
                              # ID 256 gen 7 top level 5 path subvol1
@@ -1439,15 +1495,17 @@ def manage_shares():
             return jsonify({'error': f'Path does not exist: {share_path}'}), 400
         
         try:
-            share_id = f'share-{len(load_shares_state())}'
+            # Generate a unique share ID using hex token
+            share_id = f'share-{secrets.token_hex(4)}'
             
             if platform.system() == 'Linux':
                 if protocol == 'nfs':
                     # Configure NFS export
                     export_data = f'# AlvaOS Share: {share_name}\n{share_path} {allowed_hosts}({"ro" if read_only else "rw"},sync,no_subtree_check)\n'
                     
-                    # Use tee -a with sudo to append to /etc/exports
-                    subprocess.run(f"echo '{export_data}' | sudo tee -a /etc/exports", shell=True, check=True)
+                    # Append to /etc/exports
+                    cmd = build_privileged_cmd(['tee', '-a', '/etc/exports'])
+                    subprocess.run(cmd, input=export_data, text=True, check=True, env={'LC_ALL': 'C'})
                     
                     # Reload NFS exports
                     res, err = run_sudo_command(['sudo', 'exportfs', '-ra'])
@@ -1459,22 +1517,27 @@ def manage_shares():
                     
                     # Ensure global guest mapping exists if guest access is requested
                     if guest_access:
-                         try:
-                             with open('/etc/samba/smb.conf', 'r') as f:
-                                 conf_content = f.read()
-                             if 'map to guest = Bad User' not in conf_content:
-                                 # Inject into [global]
-                                 # Simple sed replacement or via python
-                                 subprocess.run(["sudo", "sed", "-i", "/\\[global\\]/a \\   map to guest = Bad User", "/etc/samba/smb.conf"])
-                         except:
-                             pass
+                        try:
+                            with open('/etc/samba/smb.conf', 'r') as f:
+                                conf_content = f.read()
+                            if 'map to guest = Bad User' not in conf_content:
+                                # Inject into [global]
+                                # Simple sed replacement or via python
+                                run_sudo_command(["sudo", "sed", "-i", "/\\[global\\]/a \\   map to guest = Bad User", "/etc/samba/smb.conf"])
+                        except:
+                            pass
                     
-                    # Use tee -a with sudo to append to /etc/samba/smb.conf
-                    subprocess.run(f"echo '{smb_config}' | sudo tee -a /etc/samba/smb.conf", shell=True, check=True)
+                    # Append to /etc/samba/smb.conf
+                    cmd = build_privileged_cmd(['tee', '-a', '/etc/samba/smb.conf'])
+                    subprocess.run(cmd, input=smb_config, text=True, check=True, env={'LC_ALL': 'C'})
                     
                     # Restart Samba
                     res, err = run_sudo_command(['sudo', 'systemctl', 'restart', 'smbd'])
                     if err: return jsonify({'error': f'Failed to restart Samba: {err}'}), 500
+                    
+                    # Ensure root is in Samba database (for non-guest access)
+                    # We look up the current password from AUTH_FILE or just wait for next setup/login
+                    # For now, we expect the user to have gone through setup which already synced it.
             
             # Save share state
             shares_state = load_shares_state()
@@ -1548,7 +1611,7 @@ def manage_shares():
                         
                         # Write back using sudo tee
                         content = '\n'.join(new_lines) + '\n'
-                        process = subprocess.Popen(['sudo', 'tee', '/etc/exports'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                        process = subprocess.Popen(build_privileged_cmd(['tee', '/etc/exports']), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env={'LC_ALL': 'C'})
                         process.communicate(input=content)
                         
                         # Reload NFS exports
@@ -1572,7 +1635,7 @@ def manage_shares():
                         content = re.sub(pattern, '', content, flags=re.DOTALL)
                         
                         # Write back using sudo tee
-                        process = subprocess.Popen(['sudo', 'tee', '/etc/samba/smb.conf'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                        process = subprocess.Popen(build_privileged_cmd(['tee', '/etc/samba/smb.conf']), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env={'LC_ALL': 'C'})
                         process.communicate(input=content)
                         
                         # Restart Samba

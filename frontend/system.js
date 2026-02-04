@@ -40,7 +40,7 @@ async function fetchSettings() {
             els.netIp.textContent = netData.ip_address || 'N/A';
             if (els.netMask) els.netMask.textContent = netData.subnet_mask || 'N/A';
             els.netGateway.textContent = netData.gateway || 'N/A';
-            els.netDns.textContent = (netData.dns && netData.dns.length > 0) ? netData.dns.join(', ') : 'N/A';
+            els.netDns.textContent = (netData.dns && netData.dns.length > 0) ? netData.dns.join('\n') : 'N/A';
             if (els.hostnameInput) {
                 const hostnameVal = netData.hostname || '';
                 els.hostnameInput.value = hostnameVal;
@@ -155,9 +155,13 @@ async function sendPowerAction(action) {
 
         if (res.ok) {
             if (window.handleConnectionError) window.handleConnectionError();
+        } else {
+            const err = await res.json();
+            alert('Power action failed: ' + (err.error || 'Unknown error'));
         }
     } catch (e) {
-        alert('Action failed');
+        console.error('Power action error:', e);
+        alert('Connection failed');
     }
 }
 

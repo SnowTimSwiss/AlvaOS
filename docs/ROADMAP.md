@@ -23,6 +23,7 @@ Release strategy: "Iterate fast, stabilize often."
 ## v0.3.0 - Updates
 - [ ] **Update System**: Be able to update the AlvaOS-package via Web UI.
 - [ ] **Debian Updates**: Be able to update the Debian-packages via Web UI.
+- [ ] **Update Checker**: Check for updates on startup and notify user.
 
 ## v0.4.0 - Installer
 - [ ] **RAID**: Add option in installer to install with mirror
