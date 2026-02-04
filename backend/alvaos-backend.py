@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AlvaOS Backend {{VERSION}}
+AlvaOS Backend 0.2.0
 Comprehensive Storage Management Engine
 """
 
