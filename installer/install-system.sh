@@ -191,8 +191,6 @@ mount -t proc proc /mnt/proc
 chroot /mnt apt-get update
 chroot /mnt apt-get install -y \
     linux-image-amd64 \
-    grub-efi-amd64 \
-    grub-pc- \
     python3 \
     python3-pip \
     python3-flask \
@@ -219,14 +217,23 @@ chroot /mnt apt-get install -y \
     nfs-kernel-server \
     samba
 
+# Install GRUB based on boot mode
+log "Installing bootloader packages..."
+if [ -d /sys/firmware/efi ]; then
+    log "UEFI mode detected, installing grub-efi-amd64..."
+    DEBIAN_FRONTEND=noninteractive chroot /mnt apt-get install -y grub-efi-amd64
+else
+    log "Legacy BIOS mode detected, installing grub-pc..."
+    DEBIAN_FRONTEND=noninteractive chroot /mnt apt-get install -y grub-pc
+fi
+
 # Install GRUB
-log "Installing bootloader..."
+log "Configuring bootloader..."
 if [ -d /sys/firmware/efi ]; then
     chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=AlvaOS --recheck --removable
 else
-    # Fallback for Legacy BIOS (if the disk has a BIOS boot partition, but we created GPT)
-    # Note: This is an attempt, GPT without BIOS boot partition might still fail on very old BIOS
-    warn "System is not in UEFI mode, attempting legacy GRUB install..."
+    # Fallback for Legacy BIOS
+    warn "System is not in UEFI mode, attempting legacy GRUB install on $TARGET_DISK..."
     chroot /mnt grub-install --target=i386-pc "$TARGET_DISK" || true
 fi
 # Add nomodeset to installed system for better hardware compatibility
