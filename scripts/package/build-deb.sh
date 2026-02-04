@@ -48,58 +48,18 @@ mkdir -p "${PKG_DIR}/etc/alvaos"
 mkdir -p "${PKG_DIR}/etc/systemd/system"
 mkdir -p "${PKG_DIR}/var/lib/alvaos"
 
-log "Building backend binary..."
-# TODO: Compile Go backend when it exists
-# For now, create a placeholder
-cat > "${PKG_DIR}/opt/alvaos/bin/alvaos-backend" << 'EOF'
-#!/bin/bash
-echo "AlvaOS Backend v${VERSION}"
-echo "API server placeholder - to be implemented"
-EOF
-chmod +x "${PKG_DIR}/opt/alvaos/bin/alvaos-backend"
+log "Copying backend and frontend..."
+# Copy backend
+cp "${REPO_ROOT}/backend/alvaos-backend.py" "${PKG_DIR}/opt/alvaos/bin/"
+chmod +x "${PKG_DIR}/opt/alvaos/bin/alvaos-backend.py"
 
-log "Building frontend..."
-# TODO: Build frontend when it exists
-# For now, create a placeholder
-mkdir -p "${PKG_DIR}/opt/alvaos/webui"
-cat > "${PKG_DIR}/opt/alvaos/webui/index.html" << 'EOF'
-<!DOCTYPE html>
-<html>
-<head>
-    <title>AlvaOS</title>
-    <meta charset="UTF-8">
-</head>
-<body>
-    <h1>AlvaOS Web UI</h1>
-    <p>Placeholder - to be implemented</p>
-</body>
-</html>
-EOF
+# Copy frontend
+cp -r "${REPO_ROOT}/frontend/"* "${PKG_DIR}/opt/alvaos/webui/"
 
-log "Copying scripts..."
-# Copy post-install scripts (when they exist)
-# For now, create placeholders
-cat > "${PKG_DIR}/opt/alvaos/scripts/setup.sh" << 'EOF'
-#!/bin/bash
-# AlvaOS post-install setup script
-echo "Setting up AlvaOS..."
-EOF
-chmod +x "${PKG_DIR}/opt/alvaos/scripts/setup.sh"
+# Copy VERSION
+cp "${REPO_ROOT}/VERSION" "${PKG_DIR}/etc/alvaos/VERSION"
 
 log "Creating configuration files..."
-cat > "${PKG_DIR}/etc/alvaos/config.yaml" << 'EOF'
-# AlvaOS Configuration
-version: "${VERSION}"
-api:
-  host: 0.0.0.0
-  port: 8080
-storage:
-  base_path: /srv
-logging:
-  level: info
-  path: /var/log/alvaos
-EOF
-
 # Create version file
 cat > "${PKG_DIR}/etc/alvaos/version.json" << EOF
 {
@@ -109,40 +69,72 @@ cat > "${PKG_DIR}/etc/alvaos/version.json" << EOF
 }
 EOF
 
-log "Creating systemd unit files..."
-cat > "${PKG_DIR}/etc/systemd/system/alvaos-backend.service" << 'EOF'
+log "Creating systemd unit file..."
+cat > "${PKG_DIR}/etc/systemd/system/alvaos.service" << 'EOF'
 [Unit]
-Description=AlvaOS Backend API Server
-After=network.target docker.service
-Wants=docker.service
+Description=AlvaOS Web Interface
+After=network.target network-manager.service
 
 [Service]
 Type=simple
-ExecStart=/opt/alvaos/bin/alvaos-backend
+User=alvaos
+Group=alvaos
+WorkingDirectory=/opt/alvaos/bin
+ExecStart=/usr/bin/python3 /opt/alvaos/bin/alvaos-backend.py
 Restart=always
 RestartSec=10
-User=root
-Environment="ALVAOS_CONFIG=/etc/alvaos/config.yaml"
+Environment="PYTHONUNBUFFERED=1"
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-cat > "${PKG_DIR}/etc/systemd/system/alvaos-ui.service" << 'EOF'
-[Unit]
-Description=AlvaOS Web UI
-After=network.target alvaos-backend.service
-Requires=alvaos-backend.service
+log "Creating sudoers rules..."
+mkdir -p "${PKG_DIR}/etc/sudoers.d"
+cat > "${PKG_DIR}/etc/sudoers.d/alvaos" << 'SUDOERS_EOF'
+# AlvaOS backend needs specific privileged commands
+# User Management
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/chpasswd
 
-[Service]
-Type=simple
-ExecStart=/usr/bin/python3 -m http.server 80 --directory /opt/alvaos/webui
-Restart=always
-RestartSec=10
+# Service Management
+alvaos ALL=(ALL) NOPASSWD: /bin/systemctl restart alvaos.service
+alvaos ALL=(ALL) NOPASSWD: /bin/systemctl restart ssh
+alvaos ALL=(ALL) NOPASSWD: /bin/systemctl status docker.service
+alvaos ALL=(ALL) NOPASSWD: /bin/systemctl restart smbd
+alvaos ALL=(ALL) NOPASSWD: /bin/systemctl reload nfs-kernel-server
 
-[Install]
-WantedBy=multi-user.target
-EOF
+# Storage Management (SMART, Btrfs, Partitions)
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/smartctl
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/lsblk
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/btrfs
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/wipefs
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/partprobe
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/umount
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/mount
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/mkdir
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/rmdir
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/mkfs.btrfs
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/mkfs.ext4
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/blkid
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/cat
+
+# System Settings (Hostname, Time, Power)
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/hostnamectl
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/timedatectl
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/journalctl
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/tail
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/reboot
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/poweroff
+
+# Network Shares Config (NFS Exports, Samba)
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/exportfs
+alvaos ALL=(ALL) NOPASSWD: /bin/cat /etc/exports
+alvaos ALL=(ALL) NOPASSWD: /bin/cat /etc/samba/smb.conf
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/exports
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee -a /etc/exports
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/samba/smb.conf
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee -a /etc/samba/smb.conf
+SUDOERS_EOF
 
 log "Creating package control file..."
 cat > "${PKG_DIR}/DEBIAN/control" << EOF
@@ -150,20 +142,17 @@ Package: alvaos-system
 Version: ${VERSION}
 Architecture: amd64
 Maintainer: AlvaOS Team <dev@alvaos.org>
-Depends: docker.io, docker-compose, btrfs-progs, systemd, python3
-Recommends: wireguard, smartmontools
+Depends: python3, python3-flask, python3-flask-cors, python3-psutil, docker.io, docker-compose, btrfs-progs, systemd, smartmontools, nfs-kernel-server, samba, network-manager
 Section: admin
 Priority: optional
 Homepage: https://github.com/SnowTimSwiss/AlvaOS
 Description: AlvaOS NAS operating system
- Ultra-stable, lightweight NAS operating system based on Debian Stable.
- .
  Features:
   - Btrfs storage pools with easy expansion
+  - RAID status monitoring and warnings
+  - Network shares (NFS/SMB)
   - Docker container management
-  - Buddy Backup (NAS-to-NAS encrypted backups)
   - Clean web-based management UI
-  - API-first design
 EOF
 
 log "Creating post-install script..."
@@ -173,25 +162,32 @@ set -e
 
 echo "Configuring AlvaOS..."
 
-# Reload systemd
-systemctl daemon-reload
-
-# Enable services (but don't start yet on first install)
-systemctl enable alvaos-backend.service
-systemctl enable alvaos-ui.service
+# Create alvaos system user if it doesn't exist
+if ! id alvaos >/dev/null 2>&1; then
+    useradd -r -s /bin/bash -d /opt/alvaos -M alvaos
+fi
 
 # Create necessary directories
 mkdir -p /var/log/alvaos
-mkdir -p /srv/storage
-mkdir -p /var/lib/alvaos/db
+mkdir -p /var/lib/alvaos
+mkdir -p /etc/alvaos
+mkdir -p /mnt/alvaos
 
 # Set permissions
-chown -R root:root /opt/alvaos
-chmod 755 /opt/alvaos/bin/alvaos-backend
-chmod 755 /opt/alvaos/scripts/*.sh
+chown -R alvaos:alvaos /opt/alvaos
+chown -R alvaos:alvaos /var/lib/alvaos
+chown -R alvaos:alvaos /var/log/alvaos
+chown -R alvaos:alvaos /etc/alvaos
+chmod 440 /etc/sudoers.d/alvaos
+
+# Reload systemd
+systemctl daemon-reload
+
+# Enable services
+systemctl enable alvaos.service
 
 echo "AlvaOS system package installed successfully!"
-echo "To start services: sudo systemctl start alvaos-backend alvaos-ui"
+echo "To start services: sudo systemctl start alvaos"
 
 exit 0
 EOF

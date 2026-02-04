@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# AlvaOS Installation Script {{VERSION}}
+# AlvaOS Installation Script 0.2.0
 # This script installs AlvaOS to the target system
 
 # Colors
@@ -191,6 +191,8 @@ mount -t proc proc /mnt/proc
 chroot /mnt apt-get update
 chroot /mnt apt-get install -y \
     linux-image-amd64 \
+    grub-efi-amd64 \
+    grub-pc- \
     python3 \
     python3-pip \
     python3-flask \
@@ -380,9 +382,9 @@ chroot /mnt systemctl enable NetworkManager
 # Create version file
 cat > /mnt/etc/alvaos/version.json << 'VERSION_EOF'
 {
-  "alvaos_version": "{{VERSION}}",
-  "build_date": "2026-01-29",
-  "installer_version": "{{VERSION}}"
+  "alvaos_version": "0.2.0",
+  "build_date": "2026-02-04",
+  "installer_version": "0.2.0"
 }
 VERSION_EOF
 
