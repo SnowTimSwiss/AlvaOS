@@ -211,6 +211,90 @@ def normalize_smb_permissions(permissions):
         normalized[user] = role_val
     return normalized
 
+def get_group_members(group_name):
+    try:
+        result = subprocess.run(['getent', 'group', group_name], capture_output=True, text=True)
+        if result.returncode != 0:
+            return []
+        parts = result.stdout.strip().split(':')
+        if len(parts) < 4:
+            return []
+        members = parts[3].strip()
+        if not members:
+            return []
+        return [m for m in members.split(',') if m]
+    except Exception:
+        return []
+
+def ensure_group_exists(group_name):
+    try:
+        run_sudo_command(['sudo', 'groupadd', '-f', group_name])
+    except Exception as e:
+        print(f"Error ensuring group exists: {e}")
+
+def apply_smb_permissions_to_fs(share_path, group_name, smb_permissions, guest_access):
+    """Apply filesystem permissions for SMB share."""
+    if platform.system() != 'Linux':
+        return
+    try:
+        ensure_group_exists(group_name)
+        allowed_users = [u for u, r in smb_permissions.items() if r in ('read', 'write')]
+        write_users = [u for u, r in smb_permissions.items() if r == 'write']
+
+        # Include guest account if enabled
+        if guest_access:
+            allowed_users.append('nobody')
+
+        # Add allowed users to group
+        for user in sorted(set(allowed_users)):
+            if not user:
+                continue
+            run_sudo_command(['sudo', 'gpasswd', '-a', user, group_name])
+
+        # Remove users that are no longer allowed
+        current_members = get_group_members(group_name)
+        for user in current_members:
+            if user not in allowed_users:
+                run_sudo_command(['sudo', 'gpasswd', '-d', user, group_name])
+
+        # Set group ownership and permissions on path
+        run_sudo_command(['sudo', 'chgrp', '-R', group_name, share_path])
+
+        # Determine permission mode
+        if guest_access and not smb_permissions:
+            # Guest-only: open permissions
+            mode = '0777'
+        else:
+            # Setgid for group inheritance, grant write if any write users
+            mode = '2770' if write_users else '2750'
+        run_sudo_command(['sudo', 'chmod', '-R', mode, share_path])
+    except Exception as e:
+        print(f"Error applying SMB permissions to filesystem: {e}")
+
+def disable_samba_homes_share():
+    """Remove the default [homes] share if present to avoid user-named shares."""
+    if platform.system() != 'Linux':
+        return
+    try:
+        res, err = run_sudo_command(['sudo', 'cat', '/etc/samba/smb.conf'])
+        if err or not res:
+            return
+        content = res.stdout
+        pattern = r'\[homes\].*?(?=\n\[|\Z)'
+        new_content = re.sub(pattern, '', content, flags=re.DOTALL)
+        if new_content != content:
+            process = subprocess.Popen(
+                build_privileged_cmd(['tee', '/etc/samba/smb.conf']),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env={'LC_ALL': 'C'}
+            )
+            process.communicate(input=new_content)
+    except Exception as e:
+        print(f"Error disabling Samba homes share: {e}")
+
 def render_smb_share_config(share_name, share_path, read_only, guest_access, permissions):
     """Render Samba share config with optional per-user permissions."""
     permissions = normalize_smb_permissions(permissions)
@@ -566,6 +650,12 @@ def manage_users():
                             perms
                         )
                         update_samba_share_section(share.get('name'), new_config)
+                        apply_smb_permissions_to_fs(
+                            share.get('path'),
+                            share.get('smb_group', f'alvaos_{share_id}'),
+                            perms,
+                            share.get('guest_access', False)
+                        )
                     updated = True
             if updated:
                 save_shares_state(shares_state)
@@ -1819,6 +1909,7 @@ def manage_shares():
                     # Configure Samba share
                     ensure_samba_conf_exists()
                     ensure_samba_global_settings(guest_access)
+                    disable_samba_homes_share()
                     smb_config = render_smb_share_config(
                         share_name,
                         share_path,
@@ -1850,10 +1941,19 @@ def manage_shares():
                 'guest_access': guest_access,
                 'allowed_hosts': allowed_hosts,
                 'smb_permissions': smb_permissions,
+                'smb_group': f'alvaos_{share_id}',
                 'created_at': datetime.now().isoformat(),
                 'status': 'active'
             }
             save_shares_state(shares_state)
+
+            if platform.system() == 'Linux' and protocol == 'smb':
+                apply_smb_permissions_to_fs(
+                    share_path,
+                    f'alvaos_{share_id}',
+                    smb_permissions,
+                    guest_access
+                )
             
             return jsonify({
                 'success': True,
@@ -1943,6 +2043,13 @@ def manage_shares():
                         run_sudo_command(['sudo', 'systemctl', 'restart', 'smbd'])
                     except Exception as e:
                         print(f"Error removing SMB share: {e}")
+                    # Remove share group
+                    try:
+                        group_name = share_info.get('smb_group')
+                        if group_name:
+                            run_sudo_command(['sudo', 'groupdel', group_name])
+                    except Exception as e:
+                        print(f"Error removing SMB group: {e}")
             
             # Remove from state
             del shares_state[share_id]
@@ -1983,12 +2090,15 @@ def update_share_permissions():
             return jsonify({'error': 'At least one user must have read or write access'}), 400
 
     share_info['smb_permissions'] = smb_permissions
+    if not share_info.get('smb_group'):
+        share_info['smb_group'] = f'alvaos_{share_id}'
     shares_state[share_id] = share_info
     save_shares_state(shares_state)
 
     if platform.system() == 'Linux':
         ensure_samba_conf_exists()
         ensure_samba_global_settings(share_info.get('guest_access', False))
+        disable_samba_homes_share()
         new_config = render_smb_share_config(
             share_info.get('name'),
             share_info.get('path'),
@@ -1997,6 +2107,12 @@ def update_share_permissions():
             smb_permissions
         )
         update_samba_share_section(share_info.get('name'), new_config)
+        apply_smb_permissions_to_fs(
+            share_info.get('path'),
+            share_info.get('smb_group'),
+            smb_permissions,
+            share_info.get('guest_access', False)
+        )
         run_sudo_command(['sudo', 'systemctl', 'restart', 'smbd'])
 
     return jsonify({'success': True, 'message': 'SMB permissions updated'})

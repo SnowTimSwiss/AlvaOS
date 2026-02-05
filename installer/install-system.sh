@@ -332,6 +332,11 @@ alvaos ALL=(ALL) NOPASSWD: /usr/sbin/chpasswd
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/useradd
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/userdel
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/smbpasswd
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/groupadd
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/groupdel
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/gpasswd
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/chgrp
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/chmod
 
 # Service Management
 alvaos ALL=(ALL) NOPASSWD: /bin/systemctl restart alvaos.service
