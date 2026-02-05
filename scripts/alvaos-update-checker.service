@@ -1,0 +1,11 @@
+[Unit]
+Description=AlvaOS Update Checker
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/alvaos/scripts/update_checker.sh
+User=root
+
+[Install]
+WantedBy=multi-user.target

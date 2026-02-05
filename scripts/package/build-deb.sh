@@ -52,12 +52,21 @@ log "Copying backend and frontend..."
 # Copy backend
 cp "${REPO_ROOT}/backend/alvaos-backend.py" "${PKG_DIR}/opt/alvaos/bin/"
 chmod +x "${PKG_DIR}/opt/alvaos/bin/alvaos-backend.py"
+cp "${REPO_ROOT}/backend/update_manager.py" "${PKG_DIR}/opt/alvaos/bin/"
 
 # Copy frontend
 cp -r "${REPO_ROOT}/frontend/"* "${PKG_DIR}/opt/alvaos/webui/"
 
 # Copy VERSION
 cp "${REPO_ROOT}/VERSION" "${PKG_DIR}/etc/alvaos/VERSION"
+
+# Copy update scripts
+cp "${REPO_ROOT}/scripts/update_checker.sh" "${PKG_DIR}/opt/alvaos/scripts/"
+cp "${REPO_ROOT}/scripts/apply_update.sh" "${PKG_DIR}/opt/alvaos/scripts/"
+chmod +x "${PKG_DIR}/opt/alvaos/scripts/update_checker.sh" "${PKG_DIR}/opt/alvaos/scripts/apply_update.sh"
+
+# Copy update checker unit
+cp "${REPO_ROOT}/scripts/alvaos-update-checker.service" "${PKG_DIR}/etc/systemd/system/"
 
 log "Creating configuration files..."
 # Create version file
@@ -106,10 +115,18 @@ alvaos ALL=(ALL) NOPASSWD: /usr/bin/chmod
 
 # Service Management
 alvaos ALL=(ALL) NOPASSWD: /bin/systemctl restart alvaos.service
+alvaos ALL=(ALL) NOPASSWD: /bin/systemctl start alvaos.service
+alvaos ALL=(ALL) NOPASSWD: /bin/systemctl stop alvaos.service
 alvaos ALL=(ALL) NOPASSWD: /bin/systemctl restart ssh
 alvaos ALL=(ALL) NOPASSWD: /bin/systemctl status docker.service
 alvaos ALL=(ALL) NOPASSWD: /bin/systemctl restart smbd
 alvaos ALL=(ALL) NOPASSWD: /bin/systemctl reload nfs-kernel-server
+
+# Update Management
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/apt
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/apt-get
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/dpkg
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/dpkg-deb
 
 # Storage Management (SMART, Btrfs, Partitions)
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/smartctl
@@ -150,7 +167,7 @@ Package: alvaos-system
 Version: ${VERSION}
 Architecture: amd64
 Maintainer: AlvaOS Team <dev@alvaos.org>
-Depends: python3, python3-flask, python3-flask-cors, python3-psutil, docker.io, docker-compose, btrfs-progs, systemd, smartmontools, nfs-kernel-server, samba, network-manager
+Depends: python3, python3-flask, python3-flask-cors, python3-psutil, python3-requests, python3-packaging, docker.io, docker-compose, btrfs-progs, systemd, smartmontools, nfs-kernel-server, samba, network-manager
 Section: admin
 Priority: optional
 Homepage: https://github.com/SnowTimSwiss/AlvaOS
@@ -193,6 +210,7 @@ systemctl daemon-reload
 
 # Enable services
 systemctl enable alvaos.service
+systemctl enable alvaos-update-checker.service
 
 echo "AlvaOS system package installed successfully!"
 echo "To start services: sudo systemctl start alvaos"

@@ -123,6 +123,9 @@ cp "${SCRIPT_DIR}/../VERSION" config/includes.chroot/opt/alvaos/VERSION
 if [ -f "${SCRIPT_DIR}/../backend/alvaos-backend.py" ]; then
   mkdir -p config/includes.chroot/opt/alvaos/backend
   cp "${SCRIPT_DIR}/../backend/alvaos-backend.py" config/includes.chroot/opt/alvaos/backend/
+  if [ -f "${SCRIPT_DIR}/../backend/update_manager.py" ]; then
+    cp "${SCRIPT_DIR}/../backend/update_manager.py" config/includes.chroot/opt/alvaos/backend/
+  fi
 fi
 
 # Frontend (optional)
@@ -130,6 +133,20 @@ if [ -d "${SCRIPT_DIR}/../frontend" ]; then
   mkdir -p config/includes.chroot/opt/alvaos/webui
   cp "${SCRIPT_DIR}/../frontend"/*.{html,css,js} \
      config/includes.chroot/opt/alvaos/webui/ 2>/dev/null || true
+fi
+
+# Update scripts (optional)
+if [ -f "${SCRIPT_DIR}/../scripts/update_checker.sh" ]; then
+  mkdir -p config/includes.chroot/opt/alvaos/scripts
+  cp "${SCRIPT_DIR}/../scripts/update_checker.sh" config/includes.chroot/opt/alvaos/scripts/
+  cp "${SCRIPT_DIR}/../scripts/apply_update.sh" config/includes.chroot/opt/alvaos/scripts/
+  chmod +x config/includes.chroot/opt/alvaos/scripts/update_checker.sh
+  chmod +x config/includes.chroot/opt/alvaos/scripts/apply_update.sh
+fi
+
+if [ -f "${SCRIPT_DIR}/../scripts/alvaos-update-checker.service" ]; then
+  mkdir -p config/includes.chroot/etc/systemd/system
+  cp "${SCRIPT_DIR}/../scripts/alvaos-update-checker.service" config/includes.chroot/etc/systemd/system/
 fi
 
 # ------------------------------------------------------------

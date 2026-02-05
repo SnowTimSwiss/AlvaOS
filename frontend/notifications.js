@@ -99,3 +99,87 @@ window.confirmModal = function (message, onConfirm, onCancel) {
 // We must update the calling code to use await confirmModal() or handle async.)
 // For now, we provide showConfirm as a utility and I will update usages.
 window.showConfirm = window.confirmModal;
+
+// Update Banner & Badge
+function triggerUpdateCheck() {
+    if (window.__updateCheckRunning) return;
+    window.__updateCheckRunning = true;
+    const path = window.location.pathname;
+    if (path.includes('login.html') || path.includes('setup.html')) return;
+    const token = localStorage.getItem('alvaos_token');
+    if (!token) return;
+
+    const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+    const lastCheck = Number(localStorage.getItem('alvaos_update_last_check') || 0);
+    const cachedAvailable = localStorage.getItem('alvaos_update_available') === 'true';
+    const cachedVersion = localStorage.getItem('alvaos_update_version') || '';
+
+    const shouldReuseCache = Date.now() - lastCheck < CHECK_INTERVAL_MS;
+    if (shouldReuseCache && cachedAvailable) {
+        renderUpdateBanner(cachedVersion);
+        setUpdateBadge(true);
+        return;
+    }
+
+    fetch('/api/v1/updates/settings', {
+        headers: { 'Authorization': token }
+    })
+        .then(res => res.ok ? res.json() : null)
+        .then(settings => {
+            if (!settings || !settings.auto_check) return null;
+            const channel = settings.channel || 'stable';
+            return fetch(`/api/v1/updates/alvaos/check?channel=${encodeURIComponent(channel)}`, {
+                headers: { 'Authorization': token }
+            });
+        })
+        .then(res => res ? res.json() : null)
+        .then(data => {
+            if (!data) return;
+            localStorage.setItem('alvaos_update_last_check', String(Date.now()));
+            localStorage.setItem('alvaos_update_available', String(!!data.update_available));
+            localStorage.setItem('alvaos_update_version', data.latest_version || '');
+            if (data.update_available) {
+                renderUpdateBanner(data.latest_version || 'Update');
+                setUpdateBadge(true);
+            } else {
+                setUpdateBadge(false);
+            }
+        })
+        .catch(() => { });
+
+    function setUpdateBadge(show) {
+        const badge = document.getElementById('updates-nav-badge');
+        if (badge) badge.style.display = show ? 'inline-flex' : 'none';
+    }
+
+    function renderUpdateBanner(version) {
+        const existing = document.getElementById('update-banner');
+        if (existing) return;
+
+        const banner = document.createElement('div');
+        banner.id = 'update-banner';
+        banner.className = 'update-banner';
+        banner.innerHTML = `
+            <div>
+                <div class="banner-title">Update available</div>
+                <div class="banner-sub">AlvaOS ${version} is ready to install.</div>
+            </div>
+            <div class="banner-actions">
+                <a class="btn-secondary" href="updates.html">View updates</a>
+                <button class="btn-primary" id="update-banner-dismiss">Dismiss</button>
+            </div>
+        `;
+
+        const slot = document.getElementById('update-banner-slot') || document.querySelector('.content-scroll');
+        if (slot) {
+            slot.prepend(banner);
+            banner.querySelector('#update-banner-dismiss').addEventListener('click', () => {
+                banner.remove();
+            });
+        }
+    }
+}
+
+window.triggerUpdateCheck = triggerUpdateCheck;
+triggerUpdateCheck();

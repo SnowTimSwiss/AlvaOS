@@ -283,6 +283,24 @@ if [ -f "/opt/alvaos/backend/alvaos-backend.py" ]; then
     chmod +x /mnt/opt/alvaos/bin/alvaos-backend.py
 fi
 
+# Copy update manager
+if [ -f "/opt/alvaos/backend/update_manager.py" ]; then
+    cp /opt/alvaos/backend/update_manager.py /mnt/opt/alvaos/bin/
+fi
+
+# Copy update scripts
+if [ -f "/opt/alvaos/scripts/update_checker.sh" ]; then
+    mkdir -p /mnt/opt/alvaos/scripts
+    cp /opt/alvaos/scripts/update_checker.sh /mnt/opt/alvaos/scripts/
+    cp /opt/alvaos/scripts/apply_update.sh /mnt/opt/alvaos/scripts/
+    chmod +x /mnt/opt/alvaos/scripts/update_checker.sh /mnt/opt/alvaos/scripts/apply_update.sh
+fi
+
+# Copy update checker service
+if [ -f "/opt/alvaos/scripts/alvaos-update-checker.service" ]; then
+    cp /opt/alvaos/scripts/alvaos-update-checker.service /mnt/etc/systemd/system/
+fi
+
 # Copy frontend
 if [ -d "/opt/alvaos/webui" ]; then
     cp -r /opt/alvaos/webui/* /mnt/opt/alvaos/webui/
@@ -340,10 +358,18 @@ alvaos ALL=(ALL) NOPASSWD: /usr/bin/chmod
 
 # Service Management
 alvaos ALL=(ALL) NOPASSWD: /bin/systemctl restart alvaos.service
+alvaos ALL=(ALL) NOPASSWD: /bin/systemctl start alvaos.service
+alvaos ALL=(ALL) NOPASSWD: /bin/systemctl stop alvaos.service
 alvaos ALL=(ALL) NOPASSWD: /bin/systemctl restart ssh
 alvaos ALL=(ALL) NOPASSWD: /bin/systemctl status docker.service
 alvaos ALL=(ALL) NOPASSWD: /bin/systemctl restart smbd
 alvaos ALL=(ALL) NOPASSWD: /bin/systemctl reload nfs-kernel-server
+
+# Update Management
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/apt
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/apt-get
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/dpkg
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/dpkg-deb
 
 # Storage Management (SMART, Btrfs, Partitions)
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/smartctl
@@ -383,6 +409,9 @@ chroot /mnt chmod 440 /etc/sudoers.d/alvaos
 
 # Enable service
 chroot /mnt systemctl enable alvaos.service
+if [ -f "/mnt/etc/systemd/system/alvaos-update-checker.service" ]; then
+    chroot /mnt systemctl enable alvaos-update-checker.service
+fi
 chroot /mnt systemctl enable NetworkManager
 
 # Create version file

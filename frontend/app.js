@@ -216,6 +216,10 @@ async function init() {
     updateClock();
     setInterval(updateClock, 1000);
 
+    if (window.triggerUpdateCheck) {
+        window.triggerUpdateCheck();
+    }
+
     // Initial fetch
     if (document.getElementById('cpu-usage')) {
         fetchSystemInfo();
