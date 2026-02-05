@@ -145,8 +145,9 @@ if [ -f "${SCRIPT_DIR}/../scripts/update_checker.sh" ]; then
 fi
 
 if [ -f "${SCRIPT_DIR}/../scripts/alvaos-update-checker.service" ]; then
-  mkdir -p config/includes.chroot/etc/systemd/system
-  cp "${SCRIPT_DIR}/../scripts/alvaos-update-checker.service" config/includes.chroot/etc/systemd/system/
+  # Copy to /opt/alvaos/scripts/ so install-system.sh can find and copy it
+  mkdir -p config/includes.chroot/opt/alvaos/scripts
+  cp "${SCRIPT_DIR}/../scripts/alvaos-update-checker.service" config/includes.chroot/opt/alvaos/scripts/
 fi
 
 # ------------------------------------------------------------

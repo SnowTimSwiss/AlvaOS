@@ -196,6 +196,8 @@ chroot /mnt apt-get install -y \
     python3-flask \
     python3-flask-cors \
     python3-psutil \
+    python3-requests \
+    python3-packaging \
     systemd \
     network-manager \
     openssh-server \
