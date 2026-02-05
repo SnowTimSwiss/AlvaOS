@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlvaOS - Users</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="notifications.css">
+</head>
+
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="logo-area">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round"
+                    stroke-linejoin="round" style="color: var(--accent-primary);" />
+            </svg>
+            <div class="logo-text">AlvaOS</div>
+        </div>
+
+        <nav>
+            <a href="index.html" class="nav-link"><span>🏠</span> Dashboard</a>
+            <a href="storage.html" class="nav-link"><span>🗄️</span> Storage</a>
+            <a href="#" class="nav-link"><span>🧩</span> Apps</a>
+            <a href="#" class="nav-link"><span>🔁</span> Backup</a>
+            <a href="users.html" class="nav-link active"><span>👥</span> Users</a>
+            <div style="flex:1"></div>
+            <a href="system.html" class="nav-link"><span>⚙️</span> System</a>
+        </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="main">
+        <header class="topbar">
+            <div class="breadcrumbs">
+                Users / <span>Management</span>
+            </div>
+            <div class="status-badge" style="gap:10px;">
+                <div class="status-badge" style="border:none; background:transparent; padding:0;">
+                    <div class="status-dot"></div>
+                    <span>Online</span>
+                </div>
+            </div>
+        </header>
+
+        <div class="content-scroll">
+            <div style="margin-bottom: 24px;">
+                <h1 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 4px;">User Management</h1>
+                <p style="color: var(--text-secondary); font-size: 0.95rem;">Create users, assign roles, and manage SMB access.</p>
+            </div>
+
+            <div class="dashboard-grid">
+                <!-- Create User -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Create User</div>
+                        <div style="color:var(--text-secondary)">👤</div>
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label" for="user-name-input">Username</label>
+                        <input type="text" id="user-name-input" placeholder="e.g., alex" />
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label" for="user-pass-input">Password</label>
+                        <input type="password" id="user-pass-input" placeholder="Minimum 8 characters" />
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label" for="user-role-select">Role</label>
+                        <select id="user-role-select">
+                            <option value="user" selected>User</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
+
+                    <button id="create-user-btn" class="btn-primary" style="width:100%;">Create User</button>
+                </div>
+
+                <!-- Users List -->
+                <div class="card" style="grid-column: 1 / -1;">
+                    <div class="card-header">
+                        <div class="card-title">Existing Users</div>
+                        <div style="color:var(--text-secondary)">📋</div>
+                    </div>
+                    <div id="users-container" class="list-group">
+                        Loading users...
+                    </div>
+                </div>
+            </div>
+
+            <footer
+                style="margin-top:2rem; padding-top:1rem; border-top:1px solid var(--border-subtle); color:var(--text-secondary); font-size:0.8rem;">
+                AlvaOS {{VERSION}} &bull; <a href="https://github.com/SnowTimSwiss/AlvaOS" target="_blank"
+                    style="color:var(--text-secondary)">GitHub</a>
+            </footer>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="notifications.js"></script>
+    <script src="app.js"></script>
+    <script src="users.js"></script>
+</body>
+
+</html>

@@ -313,6 +313,7 @@ function displayShares(shares) {
         const protocolIcon = share.protocol === 'nfs' ? '📁' : '🗂️';
         const protocolName = share.protocol.toUpperCase();
         const accessType = share.read_only ? 'Read-Only' : 'Read-Write';
+        const smbPermissionsText = share.protocol === 'smb' ? formatSmbPermissions(share) : '';
 
         shareCard.innerHTML = `
             <div class="card-header">
@@ -347,6 +348,10 @@ function displayShares(shares) {
                         <span class="setting-label">Guest Access</span>
                         <span class="setting-val">${share.guest_access ? 'Enabled' : 'Disabled'}</span>
                     </div>
+                    <div style="grid-column: 1 / -1;">
+                        <span class="setting-label">SMB Permissions</span>
+                        <span class="setting-val" style="font-size: 0.85rem;">${smbPermissionsText}</span>
+                    </div>
                 ` : ''}
             </div>
 
@@ -355,6 +360,12 @@ function displayShares(shares) {
                     style="flex: 2; font-size: 0.85rem;">
                     Connection Info
                 </button>
+                ${share.protocol === 'smb' ? `
+                <button onclick="showSmbPermissions('${share.id}')" class="btn-secondary" 
+                    style="flex: 1; font-size: 0.85rem;">
+                    Permissions
+                </button>
+                ` : ''}
                 <button onclick="deleteShare('${share.id}', '${share.name}')" class="btn-secondary" 
                     style="flex: 1; font-size: 0.85rem; border-color: var(--accent-danger); color: var(--accent-danger);">
                     Delete
@@ -364,6 +375,13 @@ function displayShares(shares) {
 
         container.appendChild(shareCard);
     });
+}
+
+function formatSmbPermissions(share) {
+    const perms = share.smb_permissions || {};
+    const entries = Object.entries(perms);
+    if (!entries.length) return 'All users';
+    return entries.map(([user, role]) => `${user} (${role})`).join(', ');
 }
 
 // Initialize Disk
@@ -1260,6 +1278,121 @@ async function deleteShare(shareId, shareName) {
     } catch (error) {
         alert(`Error: ${error.message}`);
     }
+}
+
+// Manage SMB Permissions
+async function showSmbPermissions(shareId) {
+    const token = localStorage.getItem('alvaos_token');
+
+    const shareResponse = await fetch(`${API_BASE}/storage/shares`, {
+        headers: { 'Authorization': token || '' }
+    });
+    if (!shareResponse.ok) {
+        alert('Failed to load share information');
+        return;
+    }
+    const shareData = await shareResponse.json();
+    const share = shareData.shares.find(s => s.id === shareId);
+    if (!share) {
+        alert('Share not found');
+        return;
+    }
+
+    const usersResponse = await fetch(`${API_BASE}/users`, {
+        headers: { 'Authorization': token || '' }
+    });
+    if (!usersResponse.ok) {
+        alert('Failed to load users');
+        return;
+    }
+    const usersData = await usersResponse.json();
+    const users = usersData.users || [];
+
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0, 0, 0, 0.85); display: flex;
+        align-items: center; justify-content: center; z-index: 10000;
+    `;
+
+    const panel = document.createElement('div');
+    panel.style.cssText = `
+        background: var(--bg-surface); border: 1px solid var(--bg-border);
+        border-radius: 8px; padding: 2rem; max-width: 700px; width: 90%;
+        max-height: 80vh; overflow-y: auto;
+    `;
+
+    const permissions = share.smb_permissions || {};
+    let rowsHtml = '';
+    if (!users.length) {
+        rowsHtml = '<p style="color: var(--text-secondary);">No users found. Create users first.</p>';
+    } else {
+        rowsHtml = users.map(u => {
+            const role = permissions[u.username] || 'deny';
+            return `
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding: 8px 0; border-bottom: 1px solid var(--border-subtle);">
+                    <div style="font-weight:600;">${u.username}</div>
+                    <select data-user="${u.username}" class="perm-select">
+                        <option value="deny" ${role === 'deny' ? 'selected' : ''}>No Access</option>
+                        <option value="read" ${role === 'read' ? 'selected' : ''}>Read Only</option>
+                        <option value="write" ${role === 'write' ? 'selected' : ''}>Read/Write</option>
+                    </select>
+                </div>
+            `;
+        }).join('');
+    }
+
+    panel.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1rem;">
+            <h2 style="margin: 0;">SMB Permissions: ${share.name}</h2>
+            <button id="close-perm-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">✕</button>
+        </div>
+        <div style="margin-bottom: 1rem; color: var(--text-secondary); font-size: 0.9rem;">
+            Set per-user access for this SMB share.
+        </div>
+        <div>${rowsHtml}</div>
+        <div style="display:flex; gap:10px; margin-top: 1.5rem;">
+            <button id="cancel-perm-btn" class="btn-secondary" style="flex:1;">Cancel</button>
+            <button id="save-perm-btn" class="btn-primary" style="flex:1;">Save</button>
+        </div>
+    `;
+
+    modal.appendChild(panel);
+    document.body.appendChild(modal);
+
+    const closeModal = () => modal.remove();
+    panel.querySelector('#close-perm-btn').addEventListener('click', closeModal);
+    panel.querySelector('#cancel-perm-btn').addEventListener('click', closeModal);
+
+    panel.querySelector('#save-perm-btn').addEventListener('click', async () => {
+        const selections = panel.querySelectorAll('.perm-select');
+        const smb_permissions = {};
+        selections.forEach(sel => {
+            const user = sel.dataset.user;
+            const role = sel.value;
+            if (role !== 'deny') {
+                smb_permissions[user] = role;
+            }
+        });
+
+        try {
+            const response = await fetch(`${API_BASE}/storage/shares/permissions`, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': token || '',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ share_id: shareId, smb_permissions })
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Failed to update permissions');
+            if (window.showToast) window.showToast(result.message || 'Permissions updated', 'success');
+            closeModal();
+            loadShares();
+        } catch (error) {
+            if (window.showToast) window.showToast(error.message || 'Failed to update permissions', 'error');
+        }
+    });
 }
 
 // Show Connection Info

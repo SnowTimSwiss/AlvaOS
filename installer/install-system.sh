@@ -329,6 +329,9 @@ cat > /mnt/etc/sudoers.d/alvaos << 'SUDOERS_EOF'
 # AlvaOS backend needs specific privileged commands
 # User Management
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/chpasswd
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/useradd
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/userdel
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/smbpasswd
 
 # Service Management
 alvaos ALL=(ALL) NOPASSWD: /bin/systemctl restart alvaos.service

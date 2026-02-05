@@ -62,6 +62,7 @@ VERSION = get_version()
 # Configuration
 SETUP_STATUS_FILE = '/var/lib/alvaos/setup_complete.json'
 AUTH_FILE = '/var/lib/alvaos/auth.json'
+USERS_STATE_FILE = '/var/lib/alvaos/users.json'
 CONFIG_DIR = '/etc/alvaos'
 SESSIONS = {} # Token -> Username (In-memory for 0.1)
 
@@ -127,6 +128,149 @@ def ensure_directories():
     """Ensure necessary directories exist"""
     Path('/var/lib/alvaos').mkdir(parents=True, exist_ok=True)
     Path('/var/log/alvaos').mkdir(parents=True, exist_ok=True)
+
+def load_users_state():
+    """Load users state from file"""
+    try:
+        if os.path.exists(USERS_STATE_FILE):
+            with open(USERS_STATE_FILE, 'r') as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"Error loading users state: {e}")
+    return {}
+
+def save_users_state(state):
+    """Save users state to file"""
+    try:
+        ensure_directories()
+        with open(USERS_STATE_FILE, 'w') as f:
+            json.dump(state, f, indent=2)
+    except Exception as e:
+        print(f"Error saving users state: {e}")
+
+def is_valid_username(username):
+    return bool(re.match(r'^[a-z_][a-z0-9_-]{1,31}$', username))
+
+def system_user_exists(username):
+    try:
+        result = subprocess.run(['id', '-u', username], capture_output=True, text=True)
+        return result.returncode == 0
+    except Exception:
+        return False
+
+def ensure_samba_conf_exists():
+    """Ensure /etc/samba/smb.conf exists with a basic [global] section."""
+    if platform.system() != 'Linux':
+        return
+    try:
+        if not os.path.exists('/etc/samba/smb.conf'):
+            base_conf = "[global]\n   workgroup = WORKGROUP\n   server string = AlvaOS\n   security = user\n"
+            cmd = build_privileged_cmd(['tee', '/etc/samba/smb.conf'])
+            subprocess.run(cmd, input=base_conf, text=True, check=True, env={'LC_ALL': 'C'})
+    except Exception as e:
+        print(f"Error ensuring smb.conf exists: {e}")
+
+def ensure_samba_global_settings(guest_access):
+    """Ensure global Samba settings needed for guest access."""
+    if platform.system() != 'Linux' or not guest_access:
+        return
+    try:
+        res, err = run_sudo_command(['sudo', 'cat', '/etc/samba/smb.conf'])
+        if err or not res:
+            return
+        content = res.stdout
+        if '[global]' not in content:
+            content = "[global]\n   workgroup = WORKGROUP\n   server string = AlvaOS\n   security = user\n\n" + content
+        if 'map to guest = Bad User' not in content:
+            content = re.sub(r'\[global\]\n', '[global]\n   map to guest = Bad User\n', content, count=1)
+        if 'guest account = nobody' not in content:
+            content = re.sub(r'\[global\]\n', '[global]\n   guest account = nobody\n', content, count=1)
+        process = subprocess.Popen(
+            build_privileged_cmd(['tee', '/etc/samba/smb.conf']),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env={'LC_ALL': 'C'}
+        )
+        process.communicate(input=content)
+    except Exception as e:
+        print(f"Error ensuring global Samba settings: {e}")
+
+def normalize_smb_permissions(permissions):
+    """Normalize SMB permissions dict -> {user: role} with role in read/write/deny."""
+    if not isinstance(permissions, dict):
+        return {}
+    normalized = {}
+    for user, role in permissions.items():
+        if not isinstance(user, str) or not user:
+            continue
+        role_val = str(role).lower().strip()
+        if role_val not in ('read', 'write', 'deny'):
+            continue
+        normalized[user] = role_val
+    return normalized
+
+def render_smb_share_config(share_name, share_path, read_only, guest_access, permissions):
+    """Render Samba share config with optional per-user permissions."""
+    permissions = normalize_smb_permissions(permissions)
+    allowed_users = [u for u, r in permissions.items() if r in ('read', 'write')]
+    write_users = [u for u, r in permissions.items() if r == 'write']
+    has_read_only = any(r == 'read' for r in permissions.values())
+
+    # If permissions are provided, enforce them via valid users/write list
+    use_permissions = len(permissions) > 0
+
+    # Determine read only behavior
+    if use_permissions:
+        read_only = True if (read_only or has_read_only) else False
+
+    lines = [
+        f'# AlvaOS Share: {share_name}',
+        f'[{share_name}]',
+        f'    path = {share_path}',
+        '    browseable = yes',
+        f'    read only = {"yes" if read_only else "no"}',
+        f'    guest ok = {"yes" if guest_access else "no"}',
+        '    create mask = 0644',
+        '    directory mask = 0755'
+    ]
+
+    if use_permissions:
+        # Add guest account when enabled
+        if guest_access:
+            allowed_users.append('nobody')
+        if allowed_users:
+            lines.append(f'    valid users = {" ".join(sorted(set(allowed_users)))}')
+        if read_only and write_users:
+            lines.append(f'    write list = {" ".join(sorted(set(write_users)))}')
+
+    return "\n" + "\n".join(lines) + "\n"
+
+def update_samba_share_section(share_name, new_config):
+    """Replace an existing share section with new config."""
+    if platform.system() != 'Linux':
+        return
+    ensure_samba_conf_exists()
+    try:
+        res, err = run_sudo_command(['sudo', 'cat', '/etc/samba/smb.conf'])
+        if err or not res:
+            raise Exception(err or "Could not read smb.conf")
+        content = res.stdout
+        pattern = rf'# AlvaOS Share: {re.escape(share_name)}\n\[{re.escape(share_name)}\].*?(?=\n\[|\n# AlvaOS Share:|\Z)'
+        content = re.sub(pattern, '', content, flags=re.DOTALL)
+        content = content.rstrip() + "\n" + new_config
+        process = subprocess.Popen(
+            build_privileged_cmd(['tee', '/etc/samba/smb.conf']),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env={'LC_ALL': 'C'}
+        )
+        process.communicate(input=content)
+    except Exception as e:
+        print(f"Error updating SMB share section: {e}")
 
 def is_setup_complete():
     """Check if initial setup has been completed"""
@@ -324,6 +468,160 @@ def login():
             
     except Exception as e:
         return jsonify({'error': 'Authentication failed'}), 500
+
+@app.route('/api/v1/users', methods=['GET', 'POST', 'DELETE'])
+@require_auth
+def manage_users():
+    """Manage system users and Samba users"""
+    if request.method == 'GET':
+        users_state = load_users_state()
+        users = []
+        for username, info in users_state.items():
+            users.append({
+                'username': username,
+                'role': info.get('role', 'user'),
+                'created_at': info.get('created_at'),
+                'system_exists': system_user_exists(username)
+            })
+        users.sort(key=lambda u: u['username'])
+        return jsonify({'users': users})
+
+    data = request.get_json() or {}
+    username = data.get('username', '').strip()
+    if not username:
+        return jsonify({'error': 'Username is required'}), 400
+    if not is_valid_username(username):
+        return jsonify({'error': 'Invalid username. Use lowercase letters, numbers, _ or -.'}), 400
+    if username in ('root', 'alvaos'):
+        return jsonify({'error': 'Reserved username'}), 400
+
+    users_state = load_users_state()
+
+    if request.method == 'POST':
+        password = data.get('password', '')
+        role = data.get('role', 'user').strip().lower()
+        if role not in ('admin', 'user'):
+            role = 'user'
+        if len(password) < 8:
+            return jsonify({'error': 'Password must be at least 8 characters'}), 400
+        if username in users_state or system_user_exists(username):
+            return jsonify({'error': 'User already exists'}), 400
+
+        try:
+            # Create system user
+            res, err = run_sudo_command(['sudo', 'useradd', '-m', '-s', '/bin/bash', username])
+            if err:
+                return jsonify({'error': f'Failed to create user: {err}'}), 500
+
+            # Set password
+            process = subprocess.Popen(
+                build_privileged_cmd(['chpasswd']),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env={'LC_ALL': 'C'}
+            )
+            stdout, stderr = process.communicate(input=f'{username}:{password}\n', timeout=5)
+            if process.returncode != 0:
+                return jsonify({'error': f'Failed to set password: {stderr}'}), 500
+
+            # Add/Update Samba password
+            sync_samba_password(username, password)
+
+            users_state[username] = {
+                'username': username,
+                'role': role,
+                'created_at': datetime.now().isoformat()
+            }
+            save_users_state(users_state)
+
+            return jsonify({'success': True, 'message': f'User "{username}" created'})
+        except Exception as e:
+            return jsonify({'error': f'Failed to create user: {str(e)}'}), 500
+
+    if request.method == 'DELETE':
+        if username not in users_state and not system_user_exists(username):
+            return jsonify({'error': 'User not found'}), 404
+        try:
+            # Remove SMB user
+            run_sudo_command(['sudo', 'smbpasswd', '-x', username])
+            # Delete system user (keep home to avoid data loss)
+            run_sudo_command(['sudo', 'userdel', username])
+
+            # Remove user from share permissions
+            shares_state = load_shares_state()
+            updated = False
+            for share_id, share in shares_state.items():
+                perms = share.get('smb_permissions', {})
+                if isinstance(perms, dict) and username in perms:
+                    del perms[username]
+                    share['smb_permissions'] = perms
+                    if share.get('protocol') == 'smb' and platform.system() == 'Linux':
+                        new_config = render_smb_share_config(
+                            share.get('name'),
+                            share.get('path'),
+                            share.get('read_only', False),
+                            share.get('guest_access', False),
+                            perms
+                        )
+                        update_samba_share_section(share.get('name'), new_config)
+                    updated = True
+            if updated:
+                save_shares_state(shares_state)
+
+            if username in users_state:
+                del users_state[username]
+                save_users_state(users_state)
+
+            return jsonify({'success': True, 'message': f'User "{username}" deleted'})
+        except Exception as e:
+            return jsonify({'error': f'Failed to delete user: {str(e)}'}), 500
+
+@app.route('/api/v1/users/<username>', methods=['PATCH'])
+@require_auth
+def update_user(username):
+    """Update user password or role"""
+    username = username.strip()
+    if not username or not is_valid_username(username):
+        return jsonify({'error': 'Invalid username'}), 400
+    if username in ('root', 'alvaos'):
+        return jsonify({'error': 'Reserved username'}), 400
+
+    data = request.get_json() or {}
+    users_state = load_users_state()
+    if username not in users_state and not system_user_exists(username):
+        return jsonify({'error': 'User not found'}), 404
+
+    if 'role' in data:
+        role = str(data.get('role', 'user')).lower()
+        if role not in ('admin', 'user'):
+            role = 'user'
+        if username in users_state:
+            users_state[username]['role'] = role
+            save_users_state(users_state)
+
+    if 'password' in data:
+        password = data.get('password', '')
+        if len(password) < 8:
+            return jsonify({'error': 'Password must be at least 8 characters'}), 400
+        try:
+            process = subprocess.Popen(
+                build_privileged_cmd(['chpasswd']),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env={'LC_ALL': 'C'}
+            )
+            stdout, stderr = process.communicate(input=f'{username}:{password}\n', timeout=5)
+            if process.returncode != 0:
+                return jsonify({'error': f'Failed to set password: {stderr}'}), 500
+            sync_samba_password(username, password)
+        except Exception as e:
+            return jsonify({'error': f'Failed to update password: {str(e)}'}), 500
+
+    return jsonify({'success': True, 'message': f'User "{username}" updated'})
 
 @app.route('/api/v1/system/info', methods=['GET'])
 @require_auth
@@ -1479,6 +1777,7 @@ def manage_shares():
         read_only = data.get('read_only', False)
         guest_access = data.get('guest_access', False)
         allowed_hosts = data.get('allowed_hosts', '*')
+        smb_permissions = normalize_smb_permissions(data.get('smb_permissions', {}))
         
         # Validation
         if not share_name:
@@ -1493,6 +1792,11 @@ def manage_shares():
         # Check if path exists
         if platform.system() == 'Linux' and not os.path.exists(share_path):
             return jsonify({'error': f'Path does not exist: {share_path}'}), 400
+
+        if protocol == 'smb' and isinstance(data.get('smb_permissions', {}), dict) and len(data.get('smb_permissions', {})) > 0:
+            allowed_users = [u for u, r in smb_permissions.items() if r in ('read', 'write')]
+            if not allowed_users and not guest_access:
+                return jsonify({'error': 'At least one user must have read or write access'}), 400
         
         try:
             # Generate a unique share ID using hex token
@@ -1513,19 +1817,15 @@ def manage_shares():
                     
                 elif protocol == 'smb':
                     # Configure Samba share
-                    smb_config = f'\n# AlvaOS Share: {share_name}\n[{share_name}]\n    path = {share_path}\n    browseable = yes\n    read only = {"yes" if read_only else "no"}\n    guest ok = {"yes" if guest_access else "no"}\n    create mask = 0644\n    directory mask = 0755\n'
-                    
-                    # Ensure global guest mapping exists if guest access is requested
-                    if guest_access:
-                        try:
-                            with open('/etc/samba/smb.conf', 'r') as f:
-                                conf_content = f.read()
-                            if 'map to guest = Bad User' not in conf_content:
-                                # Inject into [global]
-                                # Simple sed replacement or via python
-                                run_sudo_command(["sudo", "sed", "-i", "/\\[global\\]/a \\   map to guest = Bad User", "/etc/samba/smb.conf"])
-                        except:
-                            pass
+                    ensure_samba_conf_exists()
+                    ensure_samba_global_settings(guest_access)
+                    smb_config = render_smb_share_config(
+                        share_name,
+                        share_path,
+                        read_only,
+                        guest_access,
+                        smb_permissions
+                    )
                     
                     # Append to /etc/samba/smb.conf
                     cmd = build_privileged_cmd(['tee', '-a', '/etc/samba/smb.conf'])
@@ -1549,6 +1849,7 @@ def manage_shares():
                 'read_only': read_only,
                 'guest_access': guest_access,
                 'allowed_hosts': allowed_hosts,
+                'smb_permissions': smb_permissions,
                 'created_at': datetime.now().isoformat(),
                 'status': 'active'
             }
@@ -1656,6 +1957,49 @@ def manage_shares():
         'status': 'healthy',
         'version': VERSION,
     })
+
+@app.route('/api/v1/storage/shares/permissions', methods=['PUT'])
+@require_auth
+def update_share_permissions():
+    """Update SMB permissions for a share"""
+    data = request.get_json() or {}
+    share_id = data.get('share_id', '').strip()
+    if not share_id:
+        return jsonify({'error': 'Share ID is required'}), 400
+
+    smb_permissions = normalize_smb_permissions(data.get('smb_permissions', {}))
+    shares_state = load_shares_state()
+    if share_id not in shares_state:
+        return jsonify({'error': 'Share not found'}), 404
+
+    share_info = shares_state[share_id]
+    if share_info.get('protocol') != 'smb':
+        return jsonify({'error': 'Permissions apply to SMB shares only'}), 400
+
+    # If permissions provided but empty, allow clearing to default (no restrictions)
+    if isinstance(data.get('smb_permissions', {}), dict) and len(data.get('smb_permissions', {})) > 0:
+        allowed_users = [u for u, r in smb_permissions.items() if r in ('read', 'write')]
+        if not allowed_users and not share_info.get('guest_access', False):
+            return jsonify({'error': 'At least one user must have read or write access'}), 400
+
+    share_info['smb_permissions'] = smb_permissions
+    shares_state[share_id] = share_info
+    save_shares_state(shares_state)
+
+    if platform.system() == 'Linux':
+        ensure_samba_conf_exists()
+        ensure_samba_global_settings(share_info.get('guest_access', False))
+        new_config = render_smb_share_config(
+            share_info.get('name'),
+            share_info.get('path'),
+            share_info.get('read_only', False),
+            share_info.get('guest_access', False),
+            smb_permissions
+        )
+        update_samba_share_section(share_info.get('name'), new_config)
+        run_sudo_command(['sudo', 'systemctl', 'restart', 'smbd'])
+
+    return jsonify({'success': True, 'message': 'SMB permissions updated'})
 
 def mount_existing_pools():
     """Mount all known pools on startup"""
