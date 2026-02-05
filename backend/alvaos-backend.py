@@ -129,6 +129,30 @@ def ensure_directories():
     Path('/var/lib/alvaos').mkdir(parents=True, exist_ok=True)
     Path('/var/log/alvaos').mkdir(parents=True, exist_ok=True)
 
+def parse_size_to_bytes(size_str):
+    """Parse size strings like '8.00GiB' into bytes."""
+    try:
+        s = size_str.strip()
+        m = re.match(r'^([\d\.]+)\s*([KMGTP]i?B)$', s)
+        if not m:
+            return None
+        value = float(m.group(1))
+        unit = m.group(2)
+        multipliers = {
+            'KB': 1000, 'MB': 1000**2, 'GB': 1000**3, 'TB': 1000**4, 'PB': 1000**5,
+            'KiB': 1024, 'MiB': 1024**2, 'GiB': 1024**3, 'TiB': 1024**4, 'PiB': 1024**5
+        }
+        return int(value * multipliers.get(unit, 1))
+    except Exception:
+        return None
+
+def format_bytes_gib(byte_val):
+    try:
+        gib = byte_val / (1024**3)
+        return f"{gib:.2f}GiB"
+    except Exception:
+        return "Unknown"
+
 def load_users_state():
     """Load users state from file"""
     try:
@@ -196,6 +220,42 @@ def ensure_samba_global_settings(guest_access):
         process.communicate(input=content)
     except Exception as e:
         print(f"Error ensuring global Samba settings: {e}")
+
+def reconcile_samba_guest_settings(shares_state):
+    """Ensure global guest settings are present only when needed."""
+    if platform.system() != 'Linux':
+        return
+    try:
+        guest_needed = any(
+            s.get('protocol') == 'smb' and s.get('guest_access', False)
+            for s in shares_state.values()
+        )
+        res, err = run_sudo_command(['sudo', 'cat', '/etc/samba/smb.conf'])
+        if err or not res:
+            return
+        content = res.stdout
+        if '[global]' not in content:
+            content = "[global]\n   workgroup = WORKGROUP\n   server string = AlvaOS\n   security = user\n\n" + content
+        if guest_needed:
+            if 'map to guest = Bad User' not in content:
+                content = re.sub(r'\[global\]\n', '[global]\n   map to guest = Bad User\n', content, count=1)
+            if 'guest account = nobody' not in content:
+                content = re.sub(r'\[global\]\n', '[global]\n   guest account = nobody\n', content, count=1)
+        else:
+            content = re.sub(r'^\s*map to guest\s*=.*$\n?', '', content, flags=re.MULTILINE)
+            content = re.sub(r'^\s*guest account\s*=.*$\n?', '', content, flags=re.MULTILINE)
+
+        process = subprocess.Popen(
+            build_privileged_cmd(['tee', '/etc/samba/smb.conf']),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env={'LC_ALL': 'C'}
+        )
+        process.communicate(input=content)
+    except Exception as e:
+        print(f"Error reconciling Samba guest settings: {e}")
 
 def normalize_smb_permissions(permissions):
     """Normalize SMB permissions dict -> {user: role} with role in read/write/deny."""
@@ -659,6 +719,8 @@ def manage_users():
                     updated = True
             if updated:
                 save_shares_state(shares_state)
+                if platform.system() == 'Linux':
+                    reconcile_samba_guest_settings(shares_state)
 
             if username in users_state:
                 del users_state[username]
@@ -1376,6 +1438,7 @@ def manage_pools():
                             'name': label,
                             'uuid': uuid_val,
                             'devices': [],
+                            'device_sizes_bytes': [],
                             'total_size': 'Unknown',
                             'used_size': 'Unknown',
                             'raid_level': 'Single',
@@ -1385,6 +1448,13 @@ def manage_pools():
                         # Extract paths
                         dev_lines = re.findall(r"path\s+(\S+)", block)
                         pool['devices'] = [d.strip() for d in dev_lines]
+
+                        # Extract device sizes
+                        size_matches = re.findall(r"devid\s+\d+\s+size\s+(\d+\.?\d*[TiGkMBP]i?B)", block)
+                        for sm in size_matches:
+                            b = parse_size_to_bytes(sm)
+                            if b:
+                                pool['device_sizes_bytes'].append(b)
                         
                         if 'missing' in block.lower():
                             pool['status'] = 'degraded'
@@ -1427,6 +1497,22 @@ def manage_pools():
                                         pool['free_size'] = free_match.group(1)
                             except Exception as e:
                                 print(f"Error getting pool usage: {e}")
+
+                            # Adjust usable size for mirror-like RAID
+                            try:
+                                if pool['raid_level'] == 'RAID1' and pool['device_sizes_bytes']:
+                                    total_bytes = sum(pool['device_sizes_bytes'])
+                                    max_bytes = max(pool['device_sizes_bytes'])
+                                    usable_bytes = max(0, total_bytes - max_bytes)
+                                    if usable_bytes > 0:
+                                        pool['total_size'] = format_bytes_gib(usable_bytes)
+                                elif pool['raid_level'] == 'RAID10' and pool['device_sizes_bytes']:
+                                    total_bytes = sum(pool['device_sizes_bytes'])
+                                    usable_bytes = total_bytes // 2
+                                    if usable_bytes > 0:
+                                        pool['total_size'] = format_bytes_gib(usable_bytes)
+                            except Exception as e:
+                                print(f"Error adjusting usable size: {e}")
 
                             # Fallback to df if usage failed or didn't provide good info
                             if (pool['used_size'] == 'Unknown' or 'Estimated' not in pool['total_size']) and mount_point:
@@ -1954,6 +2040,7 @@ def manage_shares():
                     smb_permissions,
                     guest_access
                 )
+                reconcile_samba_guest_settings(shares_state)
             
             return jsonify({
                 'success': True,
@@ -2054,6 +2141,8 @@ def manage_shares():
             # Remove from state
             del shares_state[share_id]
             save_shares_state(shares_state)
+            if platform.system() == 'Linux':
+                reconcile_samba_guest_settings(shares_state)
             
             return jsonify({'success': True, 'message': f'Share "{share_name}" deleted successfully'})
         
@@ -2113,6 +2202,7 @@ def update_share_permissions():
             smb_permissions,
             share_info.get('guest_access', False)
         )
+        reconcile_samba_guest_settings(shares_state)
         run_sudo_command(['sudo', 'systemctl', 'restart', 'smbd'])
 
     return jsonify({'success': True, 'message': 'SMB permissions updated'})
