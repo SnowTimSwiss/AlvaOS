@@ -20,10 +20,13 @@ Release strategy: "Iterate fast, stabilize often."
 - [x] **Pool Expansion**: Add disks to existing pools.
 - [will come back later] **File Browser**: Simple web-based file manager to browse and manage files.
 
-## v0.3.0 - Updates
+## v0.3.0 - Updates and users
 - [ ] **Update System**: Be able to update the AlvaOS-package via Web UI.
 - [ ] **Debian Updates**: Be able to update the Debian-packages via Web UI.
 - [ ] **Update Checker**: Check for updates on startup and notify user.
+- [ ] **User Management**: Usermanagement via Web UI.
+- [ ] **SMB Management**: Be able to give SMB permissions to different users.
+
 
 ## v0.4.0 - Installer
 - [ ] **RAID**: Add option in installer to install with mirror
