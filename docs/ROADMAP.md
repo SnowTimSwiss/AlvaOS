@@ -24,7 +24,7 @@ Release strategy: "Iterate fast, stabilize often."
 - [ ] **Update System**: Be able to update the AlvaOS-package via Web UI.
 - [ ] **Debian Updates**: Be able to update the Debian-packages via Web UI.
 - [ ] **Update Checker**: Check for updates on startup and notify user.
-- [ ] **User Management**: Usermanagement via Web UI.
+- [X] **User Management**: Usermanagement via Web UI.
 - [ ] **SMB Management**: Be able to give SMB permissions to different users.
 
 

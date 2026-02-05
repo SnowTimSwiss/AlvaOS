@@ -1059,6 +1059,20 @@ async function showCreateShareDialog() {
         availablePaths = [{ name: 'Default Root', path: '/mnt/alvaos' }];
     }
 
+    // Get users for SMB permissions
+    let users = [];
+    try {
+        const usersRes = await fetch(`${API_BASE}/users`, {
+            headers: { 'Authorization': token || '' }
+        });
+        if (usersRes.ok) {
+            const usersData = await usersRes.json();
+            users = usersData.users || [];
+        }
+    } catch (e) {
+        console.error('Error fetching users:', e);
+    }
+
     // Create modal
     const modal = document.createElement('div');
     modal.id = 'share-wizard-modal';
@@ -1144,6 +1158,21 @@ async function showCreateShareDialog() {
             <p style="font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.25rem; margin-left: 1.75rem;">
                 Allow access without authentication (not recommended for sensitive data).
             </p>
+            <div style="margin-top: 1rem;">
+                <div style="font-weight: 600; margin-bottom: 0.5rem;">SMB User Permissions</div>
+                <div id="smb-permissions-list" style="display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border-subtle); border-radius: 6px; padding: 10px;">
+                    ${users.length ? users.map(u => `
+                        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+                            <div style="font-weight:600;">${u.username}</div>
+                            <select data-user="${u.username}" class="perm-select">
+                                <option value="deny" selected>No Access</option>
+                                <option value="read">Read Only</option>
+                                <option value="write">Read/Write</option>
+                            </select>
+                        </div>
+                    `).join('') : `<div style="color: var(--text-secondary);">No users found. Create users first.</div>`}
+                </div>
+            </div>
         </div>
 
         <div style="display: flex; gap: 0.75rem; margin-top: 2rem;">
@@ -1203,6 +1232,22 @@ async function showCreateShareDialog() {
         const readOnly = wizard.querySelector('#read-only-checkbox').checked;
         const allowedHosts = wizard.querySelector('#allowed-hosts-input').value.trim();
         const guestAccess = wizard.querySelector('#guest-access-checkbox').checked;
+        let smbPermissions = {};
+
+        if (protocol === 'smb') {
+            const selections = wizard.querySelectorAll('.perm-select');
+            selections.forEach(sel => {
+                const user = sel.dataset.user;
+                const role = sel.value;
+                if (role !== 'deny') {
+                    smbPermissions[user] = role;
+                }
+            });
+            if (!Object.keys(smbPermissions).length && !guestAccess) {
+                alert('Please allow at least one user or enable guest access for SMB.');
+                return;
+            }
+        }
 
         if (!shareName) {
             alert('Please enter a share name');
@@ -1231,7 +1276,8 @@ async function showCreateShareDialog() {
                     protocol: protocol,
                     read_only: readOnly,
                     guest_access: guestAccess,
-                    allowed_hosts: allowedHosts
+                    allowed_hosts: allowedHosts,
+                    smb_permissions: smbPermissions
                 })
             });
 
