@@ -23,9 +23,10 @@ Release strategy: "Iterate fast, stabilize often."
 ## v0.3.0 - Updates and users
 - [ ] **Update System**: Be able to update the AlvaOS-package via Web UI.
 - [ ] **Debian Updates**: Be able to update the Debian-packages via Web UI.
+- [ ] **Offline Update**: Offline Updates via usb stick via webUI
 - [ ] **Update Checker**: Check for updates on startup and notify user.
-- [X] **User Management**: Usermanagement via Web UI.
-- [ ] **SMB Management**: Be able to give SMB permissions to different users.
+- [x] **User Management**: Usermanagement via Web UI.
+- [x] **SMB Management**: Be able to give SMB permissions to different users.
 
 
 ## v0.4.0 - Installer
