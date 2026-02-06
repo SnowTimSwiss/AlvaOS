@@ -85,6 +85,13 @@ async function checkAlvaosUpdates() {
             window.showToast(data?.error || 'Update check failed', 'error');
             return;
         }
+        if (window.setUpdateIndicators) {
+            window.setUpdateIndicators({
+                available: !!data.update_available,
+                version: data.latest_version || '',
+                checkedAt: Date.now()
+            });
+        }
         renderRelease(data.release, data.update_available, data.latest_version);
         lastRelease = data.release;
         setStatus(data.update_available ? 'Update available' : 'Up to date');

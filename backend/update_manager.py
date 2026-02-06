@@ -490,7 +490,14 @@ class UpdateManager:
             if res.returncode == 0:
                 try:
                     scan_res = self._scan_path(mount_point)
-                    packages = scan_res.get("packages", [])
+                    for pkg in scan_res.get("packages", []):
+                        cached_path = self._cache_offline_package(pkg.get("path"))
+                        if not cached_path:
+                            continue
+                        cached_pkg = dict(pkg)
+                        cached_pkg["source_path"] = pkg.get("path")
+                        cached_pkg["path"] = cached_path
+                        packages.append(cached_pkg)
                 finally:
                     subprocess.run(['sudo', 'umount', mount_point], timeout=10)
             
@@ -501,6 +508,26 @@ class UpdateManager:
             print(f"Failed to temp mount {dev_path}: {e}")
             
         return packages
+
+    def _cache_offline_package(self, src_path):
+        if not src_path or not os.path.exists(src_path):
+            return None
+        self.ensure_dirs()
+        offline_dir = os.path.join(self.cache_dir, "offline")
+        os.makedirs(offline_dir, exist_ok=True)
+        base = os.path.basename(src_path)
+        dest = os.path.join(offline_dir, base)
+        try:
+            if os.path.exists(dest):
+                if os.path.getsize(dest) == os.path.getsize(src_path):
+                    return dest
+                name, ext = os.path.splitext(base)
+                dest = os.path.join(offline_dir, f"{name}-{secrets.token_hex(4)}{ext}")
+            shutil.copy2(src_path, dest)
+            return dest
+        except Exception as e:
+            print(f"Failed to cache offline package {src_path}: {e}")
+            return None
 
     def validate_offline_package(self, usb_path):
         return self.validate_deb(usb_path)

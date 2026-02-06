@@ -101,6 +101,98 @@ window.confirmModal = function (message, onConfirm, onCancel) {
 window.showConfirm = window.confirmModal;
 
 // Update Banner & Badge
+const UPDATE_CACHE_KEYS = {
+    lastCheck: 'alvaos_update_last_check',
+    available: 'alvaos_update_available',
+    version: 'alvaos_update_version',
+    dismissed: 'alvaos_update_dismissed_version'
+};
+
+function setUpdateBadge(show) {
+    const badge = document.getElementById('updates-nav-badge');
+    if (badge) badge.style.display = show ? 'inline-flex' : 'none';
+}
+
+function removeUpdateBanner() {
+    const existing = document.getElementById('update-banner');
+    if (existing) existing.remove();
+}
+
+function renderUpdateBanner(versionLabel, versionKey) {
+    const existing = document.getElementById('update-banner');
+    if (existing) {
+        const sub = existing.querySelector('.banner-sub');
+        if (sub) sub.textContent = `AlvaOS ${versionLabel} is ready to install.`;
+        existing.dataset.version = versionKey;
+        return;
+    }
+
+    const banner = document.createElement('div');
+    banner.id = 'update-banner';
+    banner.className = 'update-banner';
+    banner.dataset.version = versionKey;
+    banner.innerHTML = `
+        <div>
+            <div class="banner-title">Update available</div>
+            <div class="banner-sub">AlvaOS ${versionLabel} is ready to install.</div>
+        </div>
+        <div class="banner-actions">
+            <a class="btn-secondary" href="updates.html">View updates</a>
+            <button class="btn-primary" id="update-banner-dismiss">Dismiss</button>
+        </div>
+    `;
+
+    const slot = document.getElementById('update-banner-slot') || document.querySelector('.content-scroll');
+    if (slot) {
+        slot.prepend(banner);
+        banner.querySelector('#update-banner-dismiss').addEventListener('click', () => {
+            const dismissedVersion = banner.dataset.version || 'unknown';
+            localStorage.setItem(UPDATE_CACHE_KEYS.dismissed, dismissedVersion);
+            removeUpdateBanner();
+            setUpdateBadge(false);
+        });
+    }
+}
+
+function setUpdateIndicators({ available, version, checkedAt } = {}) {
+    if (typeof checkedAt === 'number') {
+        localStorage.setItem(UPDATE_CACHE_KEYS.lastCheck, String(checkedAt));
+    }
+    if (typeof available === 'boolean') {
+        localStorage.setItem(UPDATE_CACHE_KEYS.available, String(available));
+    }
+    if (typeof version === 'string') {
+        localStorage.setItem(UPDATE_CACHE_KEYS.version, version);
+    }
+
+    const storedAvailable = (typeof available === 'boolean')
+        ? available
+        : (localStorage.getItem(UPDATE_CACHE_KEYS.available) === 'true');
+    const storedVersion = (typeof version === 'string')
+        ? version
+        : (localStorage.getItem(UPDATE_CACHE_KEYS.version) || '');
+
+    if (!storedAvailable) {
+        localStorage.removeItem(UPDATE_CACHE_KEYS.dismissed);
+        removeUpdateBanner();
+        setUpdateBadge(false);
+        return;
+    }
+
+    const versionLabel = storedVersion || 'Update';
+    const versionKey = storedVersion || 'unknown';
+    const dismissedVersion = localStorage.getItem(UPDATE_CACHE_KEYS.dismissed) || '';
+    const show = versionKey !== dismissedVersion;
+    if (show) {
+        renderUpdateBanner(versionLabel, versionKey);
+    } else {
+        removeUpdateBanner();
+    }
+    setUpdateBadge(show);
+}
+
+window.setUpdateIndicators = setUpdateIndicators;
+
 function triggerUpdateCheck() {
     if (window.__updateCheckRunning) return;
     window.__updateCheckRunning = true;
@@ -111,15 +203,14 @@ function triggerUpdateCheck() {
 
     const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
-    const lastCheck = Number(localStorage.getItem('alvaos_update_last_check') || 0);
-    const cachedAvailable = localStorage.getItem('alvaos_update_available') === 'true';
-    const cachedVersion = localStorage.getItem('alvaos_update_version') || '';
+    const lastCheck = Number(localStorage.getItem(UPDATE_CACHE_KEYS.lastCheck) || 0);
+    const cachedAvailable = localStorage.getItem(UPDATE_CACHE_KEYS.available) === 'true';
+    const cachedVersion = localStorage.getItem(UPDATE_CACHE_KEYS.version) || '';
 
     const shouldReuseCache = Date.now() - lastCheck < CHECK_INTERVAL_MS;
-    if (shouldReuseCache && cachedAvailable) {
-        renderUpdateBanner(cachedVersion);
-        setUpdateBadge(true);
-        return;
+    if (shouldReuseCache) {
+        setUpdateIndicators({ available: cachedAvailable, version: cachedVersion });
+        if (cachedAvailable) return;
     }
 
     fetch('/api/v1/updates/settings', {
@@ -135,51 +226,14 @@ function triggerUpdateCheck() {
         })
         .then(res => res ? res.json() : null)
         .then(data => {
-            if (!data) return;
-            if (data.error) return;
-            localStorage.setItem('alvaos_update_last_check', String(Date.now()));
-            localStorage.setItem('alvaos_update_available', String(!!data.update_available));
-            localStorage.setItem('alvaos_update_version', data.latest_version || '');
-            if (data.update_available) {
-                renderUpdateBanner(data.latest_version || 'Update');
-                setUpdateBadge(true);
-            } else {
-                setUpdateBadge(false);
-            }
+            if (!data || data.error) return;
+            setUpdateIndicators({
+                available: !!data.update_available,
+                version: data.latest_version || '',
+                checkedAt: Date.now()
+            });
         })
         .catch(() => { });
-
-    function setUpdateBadge(show) {
-        const badge = document.getElementById('updates-nav-badge');
-        if (badge) badge.style.display = show ? 'inline-flex' : 'none';
-    }
-
-    function renderUpdateBanner(version) {
-        const existing = document.getElementById('update-banner');
-        if (existing) return;
-
-        const banner = document.createElement('div');
-        banner.id = 'update-banner';
-        banner.className = 'update-banner';
-        banner.innerHTML = `
-            <div>
-                <div class="banner-title">Update available</div>
-                <div class="banner-sub">AlvaOS ${version} is ready to install.</div>
-            </div>
-            <div class="banner-actions">
-                <a class="btn-secondary" href="updates.html">View updates</a>
-                <button class="btn-primary" id="update-banner-dismiss">Dismiss</button>
-            </div>
-        `;
-
-        const slot = document.getElementById('update-banner-slot') || document.querySelector('.content-scroll');
-        if (slot) {
-            slot.prepend(banner);
-            banner.querySelector('#update-banner-dismiss').addEventListener('click', () => {
-                banner.remove();
-            });
-        }
-    }
 }
 
 window.triggerUpdateCheck = triggerUpdateCheck;
