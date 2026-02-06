@@ -89,5 +89,30 @@ if [ "$install_failed" -ne 0 ]; then
   exit 1
 fi
 
+python3 - <<PY
+import json
+from datetime import datetime, timezone
+
+history_path = "/var/lib/alvaos/update_history.json"
+entry = {
+    "type": "alvaos",
+    "package": "${PACKAGE_PATH}",
+    "timestamp": datetime.now(timezone.utc).isoformat()
+}
+
+try:
+    with open(history_path, "r") as f:
+        data = json.load(f)
+    if not isinstance(data, list):
+        data = []
+except Exception:
+    data = []
+
+data.append(entry)
+
+with open(history_path, "w") as f:
+    json.dump(data, f, indent=2)
+PY
+
 update_state "idle" "Install complete" 100
 log "Update completed successfully"

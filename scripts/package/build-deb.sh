@@ -117,6 +117,7 @@ alvaos ALL=(ALL) NOPASSWD: /usr/bin/chmod
 alvaos ALL=(ALL) NOPASSWD: /bin/systemctl restart alvaos.service
 alvaos ALL=(ALL) NOPASSWD: /bin/systemctl start alvaos.service
 alvaos ALL=(ALL) NOPASSWD: /bin/systemctl stop alvaos.service
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemd-run
 alvaos ALL=(ALL) NOPASSWD: /bin/systemctl restart ssh
 alvaos ALL=(ALL) NOPASSWD: /bin/systemctl status docker.service
 alvaos ALL=(ALL) NOPASSWD: /bin/systemctl restart smbd

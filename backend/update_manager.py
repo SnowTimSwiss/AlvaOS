@@ -5,6 +5,7 @@ import platform
 import re
 import subprocess
 import secrets
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -299,9 +300,7 @@ class UpdateManager:
         # Use systemd-run to detach the update process if possible
         use_systemd_run = False
         if os.path.exists(script_path):
-            res, _ = self.run_command(["which", "systemd-run"], timeout=5)
-            if res and res.returncode == 0:
-                 use_systemd_run = True
+            use_systemd_run = shutil.which("systemd-run") is not None
 
         if use_systemd_run and os.path.exists(script_path):
             self.update_progress("installing", "Starting update service", 10, {"package": package_path})
