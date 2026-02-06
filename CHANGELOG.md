@@ -2,6 +2,32 @@
 
 All notable changes to AlvaOS will be documented in this file.
 
+## [0.3.0] - 06.02.26
+
+### Added - Update System
+- **Comprehensive Update Manager**:
+  - **Online Updates**: direct updates from GitHub releases for AlvaOS
+  - **Debian Updates**: integrated `apt` package manager interface
+  - **Offline Updates**: support for installing .deb packages from USB drives
+  - **Update Channels**: switch between Stable and Unstable release channels
+- **Update UI**:
+  - Dedicated Updates page with tabs for AlvaOS, Debian, and Offline updates
+  - Release notes display
+  - Update history log
+  - Auto-check configuration settings
+
+### Added - User Management
+- **User Administration**:
+  - Create, edit, and delete system users via Web UI
+  - Password management with complexity requirements
+  - Role-based permissions (Admin/User)
+- **Samba Integration**:
+  - Automatic synchronization of system users to Samba user database
+  - Management of per-user SMB share permissions
+
+### Fixed
+- **Update Permissions**: Resolved issue where update checker ran as root, causing permission errors for the backend service (fixed in `alvaos-update-checker.service`)
+
 ## [0.2.0] - 3.2.26
 
 ### Added - Phase 1: Disk Detection
