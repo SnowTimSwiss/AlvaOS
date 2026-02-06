@@ -45,6 +45,15 @@ function setCurrentVersion(version) {
     if (el) el.textContent = version || '-';
 }
 
+async function readJson(res) {
+    if (!res) return null;
+    try {
+        return await res.json();
+    } catch (err) {
+        return null;
+    }
+}
+
 function renderRelease(release, updateAvailable, latestVersion) {
     const card = document.getElementById('update-available-card');
     if (!card) return;
@@ -61,19 +70,29 @@ function renderRelease(release, updateAvailable, latestVersion) {
 
 async function checkAlvaosUpdates() {
     const channel = document.getElementById('update-channel-select')?.value || 'stable';
+    lastRelease = null;
     setStatus(`Checking ${channel} channel...`);
-    const res = await apiFetch(`/updates/alvaos/check?channel=${encodeURIComponent(channel)}`);
-    if (!res) return;
-    if (!res.ok) {
+    try {
+        const res = await apiFetch(`/updates/alvaos/check?channel=${encodeURIComponent(channel)}`);
+        if (!res) return;
+        const data = await readJson(res);
+        if (data && data.current_version) {
+            setCurrentVersion(data.current_version);
+        }
+        if (!res.ok || !data || data.error) {
+            renderRelease(null, false, null);
+            setStatus('Update check failed');
+            window.showToast(data?.error || 'Update check failed', 'error');
+            return;
+        }
+        renderRelease(data.release, data.update_available, data.latest_version);
+        lastRelease = data.release;
+        setStatus(data.update_available ? 'Update available' : 'Up to date');
+    } catch (err) {
+        renderRelease(null, false, null);
         setStatus('Update check failed');
         window.showToast('Update check failed', 'error');
-        return;
     }
-    const data = await res.json();
-    setCurrentVersion(data.current_version);
-    renderRelease(data.release, data.update_available, data.latest_version);
-    lastRelease = data.release;
-    setStatus(data.update_available ? 'Update available' : 'Up to date');
 }
 
 function getDebAssetUrl(release) {
@@ -97,52 +116,62 @@ async function applyAlvaosUpdate() {
 
     setStatus('Installing update...');
     setProgress(true, 10);
-    const res = await apiFetch('/updates/alvaos/apply', {
-        method: 'POST',
-        json: { url, version: lastRelease.tag_name || '' }
-    });
-    if (!res) return;
-    const data = await res.json();
-    if (!res.ok || !data.success) {
-        window.showToast(data.error || 'Update failed', 'error');
+    try {
+        const res = await apiFetch('/updates/alvaos/apply', {
+            method: 'POST',
+            json: { url, version: lastRelease.tag_name || '' }
+        });
+        if (!res) return;
+        const data = (await readJson(res)) || {};
+        if (!res.ok || !data.success) {
+            window.showToast(data.error || 'Update failed', 'error');
+            setStatus('Install failed');
+            return;
+        }
+        window.showToast('Update started', 'success');
+        setProgress(true, 25);
+        pollUpdateStatus();
+    } catch (err) {
+        window.showToast('Update failed', 'error');
         setStatus('Install failed');
-        return;
     }
-    window.showToast('Update started', 'success');
-    setProgress(true, 25);
-    pollUpdateStatus();
 }
 
 async function checkDebianUpdates() {
     const list = document.getElementById('debian-updates-list');
     if (list) list.innerHTML = '<div class="metric-sub">Checking...</div>';
-    const res = await apiFetch('/updates/debian/check');
-    if (!res) return;
-    const data = await res.json();
-    if (!res.ok || data.error) {
-        if (list) list.innerHTML = '<div class="metric-sub">Failed to check updates.</div>';
-        window.showToast(data.error || 'Debian check failed', 'error');
-        return;
-    }
+    try {
+        const res = await apiFetch('/updates/debian/check');
+        if (!res) return;
+        const data = await readJson(res);
+        if (!res.ok || !data || data.error) {
+            if (list) list.innerHTML = '<div class="metric-sub">Failed to check updates.</div>';
+            window.showToast(data?.error || 'Debian check failed', 'error');
+            return;
+        }
 
-    const updates = data.updates || [];
-    if (!updates.length) {
-        if (list) list.innerHTML = '<div class="metric-sub">No updates available.</div>';
-        return;
+        const updates = data.updates || [];
+        if (!updates.length) {
+            if (list) list.innerHTML = '<div class="metric-sub">No updates available.</div>';
+            return;
+        }
+        list.innerHTML = '';
+        updates.forEach(pkg => {
+            const row = document.createElement('div');
+            row.className = 'list-item';
+            row.innerHTML = `
+                <label style="display:flex; gap:8px; align-items:center;">
+                    <input type="checkbox" class="debian-package" value="${pkg.package}">
+                    <span>${pkg.package}</span>
+                </label>
+                <span class="mono-text">${pkg.version}</span>
+            `;
+            list.appendChild(row);
+        });
+    } catch (err) {
+        if (list) list.innerHTML = '<div class="metric-sub">Failed to check updates.</div>';
+        window.showToast('Debian check failed', 'error');
     }
-    list.innerHTML = '';
-    updates.forEach(pkg => {
-        const row = document.createElement('div');
-        row.className = 'list-item';
-        row.innerHTML = `
-            <label style="display:flex; gap:8px; align-items:center;">
-                <input type="checkbox" class="debian-package" value="${pkg.package}">
-                <span>${pkg.package}</span>
-            </label>
-            <span class="mono-text">${pkg.version}</span>
-        `;
-        list.appendChild(row);
-    });
 }
 
 async function applyDebianUpdates() {
@@ -155,65 +184,83 @@ async function applyDebianUpdates() {
     const ok = await window.showConfirm('Apply Debian updates?\nSelected packages will be installed.');
     if (!ok) return;
 
-    const res = await apiFetch('/updates/debian/apply', {
-        method: 'POST',
-        json: { packages }
-    });
-    if (!res) return;
-    const data = await res.json();
-    if (!res.ok || !data.success) {
-        window.showToast(data.error || 'Debian updates failed', 'error');
-        return;
+    try {
+        const res = await apiFetch('/updates/debian/apply', {
+            method: 'POST',
+            json: { packages }
+        });
+        if (!res) return;
+        const data = (await readJson(res)) || {};
+        if (!res.ok || !data.success) {
+            window.showToast(data.error || 'Debian updates failed', 'error');
+            return;
+        }
+        window.showToast('Debian updates started', 'success');
+        pollUpdateStatus();
+    } catch (err) {
+        window.showToast('Debian updates failed', 'error');
     }
-    window.showToast('Debian updates started', 'success');
-    pollUpdateStatus();
 }
 
 async function scanOfflineUpdates() {
     const list = document.getElementById('offline-list');
     if (list) list.innerHTML = '<div class="metric-sub">Scanning...</div>';
-    const res = await apiFetch('/updates/offline/scan', { method: 'POST', json: {} });
-    if (!res) return;
-    const data = await res.json();
-    const packages = data.packages || [];
-    if (!packages.length) {
-        if (list) list.innerHTML = '<div class="metric-sub">No offline packages found.</div>';
-        return;
-    }
-    list.innerHTML = '';
-    packages.forEach(pkg => {
-        const row = document.createElement('div');
-        row.className = 'list-item';
-        row.innerHTML = `
-            <div style="display:flex; flex-direction:column;">
-                <span>${pkg.name}</span>
-                <span class="metric-sub">${pkg.path}</span>
-            </div>
-            <button class="btn-secondary" data-offline-path="${pkg.path}">Install</button>
-        `;
-        list.appendChild(row);
-    });
+    try {
+        const res = await apiFetch('/updates/offline/scan', { method: 'POST', json: {} });
+        if (!res) return;
+        const data = await readJson(res);
+        if (!res.ok || !data) {
+            if (list) list.innerHTML = '<div class="metric-sub">Failed to scan offline updates.</div>';
+            window.showToast('Offline scan failed', 'error');
+            return;
+        }
+        const packages = data.packages || [];
+        if (!packages.length) {
+            if (list) list.innerHTML = '<div class="metric-sub">No offline packages found.</div>';
+            return;
+        }
+        list.innerHTML = '';
+        packages.forEach(pkg => {
+            const row = document.createElement('div');
+            row.className = 'list-item';
+            row.innerHTML = `
+                <div style="display:flex; flex-direction:column;">
+                    <span>${pkg.name}</span>
+                    <span class="metric-sub">${pkg.path}</span>
+                </div>
+                <button class="btn-secondary" data-offline-path="${pkg.path}">Install</button>
+            `;
+            list.appendChild(row);
+        });
 
-    list.querySelectorAll('button[data-offline-path]').forEach(btn => {
-        btn.addEventListener('click', () => applyOfflineUpdate(btn.dataset.offlinePath));
-    });
+        list.querySelectorAll('button[data-offline-path]').forEach(btn => {
+            btn.addEventListener('click', () => applyOfflineUpdate(btn.dataset.offlinePath));
+        });
+    } catch (err) {
+        if (list) list.innerHTML = '<div class="metric-sub">Failed to scan offline updates.</div>';
+        window.showToast('Offline scan failed', 'error');
+    }
 }
 
 async function applyOfflineUpdate(path) {
     const ok = await window.showConfirm('Install offline update?\nThis will install the selected package.');
     if (!ok) return;
-    const res = await apiFetch('/updates/offline/apply', {
-        method: 'POST',
-        json: { path }
-    });
-    if (!res) return;
-    const data = await res.json();
-    if (!res.ok || !data.success) {
-        window.showToast(data.error || 'Offline update failed', 'error');
-        return;
+    try {
+        const res = await apiFetch('/updates/offline/apply', {
+            method: 'POST',
+            json: { path }
+        });
+        if (!res) return;
+        const data = (await readJson(res)) || {};
+        if (!res.ok || !data.success) {
+            window.showToast(data.error || 'Offline update failed', 'error');
+            return;
+        }
+        window.showToast('Offline update started', 'success');
+        pollUpdateStatus();
+    } catch (err) {
+        window.showToast('Offline update failed', 'error');
     }
-    window.showToast('Offline update started', 'success');
-    pollUpdateStatus();
 }
 
 async function loadUpdateHistory() {
@@ -221,7 +268,11 @@ async function loadUpdateHistory() {
     if (list) list.innerHTML = '<div class="metric-sub">Loading...</div>';
     const res = await apiFetch('/updates/history');
     if (!res) return;
-    const data = await res.json();
+    const data = await readJson(res);
+    if (!res.ok || !data) {
+        if (list) list.innerHTML = '<div class="metric-sub">No update history.</div>';
+        return;
+    }
     const history = data.history || [];
     if (!history.length) {
         if (list) list.innerHTML = '<div class="metric-sub">No update history.</div>';
@@ -245,10 +296,13 @@ async function loadUpdateHistory() {
 async function loadSettings() {
     const res = await apiFetch('/updates/settings');
     if (!res) return;
-    const data = await res.json();
+    const data = await readJson(res);
+    if (!res.ok || !data) return;
     const auto = document.getElementById('settings-auto-check');
+    const autoApply = document.getElementById('settings-auto-apply');
     const channel = document.getElementById('settings-channel');
     if (auto) auto.checked = !!data.auto_check;
+    if (autoApply) autoApply.checked = !!data.auto_apply;
     if (channel) channel.value = data.channel || 'stable';
     const channelSelect = document.getElementById('update-channel-select');
     if (channelSelect) channelSelect.value = data.channel || 'stable';
@@ -256,10 +310,11 @@ async function loadSettings() {
 
 async function saveSettings() {
     const auto = document.getElementById('settings-auto-check')?.checked || false;
+    const autoApply = document.getElementById('settings-auto-apply')?.checked || false;
     const channel = document.getElementById('settings-channel')?.value || 'stable';
     const res = await apiFetch('/updates/settings', {
         method: 'POST',
-        json: { auto_check: auto, channel }
+        json: { auto_check: auto, auto_apply: autoApply, channel }
     });
     if (!res) return;
     if (!res.ok) {
@@ -274,7 +329,8 @@ async function pollUpdateStatus() {
     statusPoll = setInterval(async () => {
         const res = await apiFetch('/updates/status');
         if (!res) return;
-        const data = await res.json();
+        const data = await readJson(res);
+        if (!res.ok || !data) return;
         if (data.status && data.status !== 'idle') {
             setStatus(data.message || data.status);
             const percent = data.progress && typeof data.progress.percent === 'number'

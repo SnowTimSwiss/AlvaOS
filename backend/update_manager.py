@@ -14,6 +14,7 @@ from packaging.version import Version, InvalidVersion
 
 DEFAULT_SETTINGS = {
     "auto_check": True,
+    "auto_apply": False,
     "channel": "stable"
 }
 
@@ -46,7 +47,7 @@ class UpdateManager:
 
     def get_settings(self):
         settings = self.load_json(self.settings_file, DEFAULT_SETTINGS.copy())
-        if "auto_check" not in settings or "channel" not in settings:
+        if "auto_check" not in settings or "auto_apply" not in settings or "channel" not in settings:
             merged = DEFAULT_SETTINGS.copy()
             merged.update(settings or {})
             settings = merged
@@ -58,6 +59,8 @@ class UpdateManager:
         merged.update(settings or {})
         if merged.get("channel") not in ("stable", "unstable"):
             merged["channel"] = "stable"
+        merged["auto_check"] = bool(merged.get("auto_check", True))
+        merged["auto_apply"] = bool(merged.get("auto_apply", False))
         self.save_json(self.settings_file, merged)
         return merged
 
@@ -154,12 +157,18 @@ class UpdateManager:
         channel = channel if channel in ("stable", "unstable") else "stable"
         self.set_update_state("checking", f"Checking {channel} channel")
         base_url = f"https://api.github.com/repos/{self.repo}"
+        current_version = self.get_current_version()
+        release = None
+        error = None
         try:
             if channel == "stable":
                 url = f"{base_url}/releases/latest"
                 resp = requests.get(url, headers=self.github_headers(), timeout=15)
-                resp.raise_for_status()
-                release = resp.json()
+                if resp.status_code == 404:
+                    release = None
+                else:
+                    resp.raise_for_status()
+                    release = resp.json()
             else:
                 url = f"{base_url}/releases?per_page=20"
                 resp = requests.get(url, headers=self.github_headers(), timeout=15)
@@ -168,11 +177,10 @@ class UpdateManager:
                 releases.sort(key=lambda r: r.get("published_at") or "", reverse=True)
                 release = releases[0] if releases else {}
         except Exception as e:
-            self.set_update_state("error", "Update check failed", {"error": str(e)})
-            return {"error": str(e)}
+            error = str(e)
+            self.set_update_state("error", "Update check failed", {"error": error})
 
-        current_version = self.get_current_version()
-        latest_version = self.normalize_version(release.get("tag_name", ""))
+        latest_version = self.normalize_version(release.get("tag_name", "")) if release else ""
         update_available = False
         if latest_version and current_version != "unknown":
             update_available = self.is_newer(current_version, latest_version)
@@ -184,10 +192,13 @@ class UpdateManager:
             "channel": channel,
             "release": self.format_release(release) if release else None
         }
-        self.set_update_state("idle", "Check complete", {
-            "update_available": update_available,
-            "latest_version": latest_version
-        })
+        if error:
+            result["error"] = error
+        else:
+            self.set_update_state("idle", "Check complete", {
+                "update_available": update_available,
+                "latest_version": latest_version
+            })
         return result
 
     def download_update(self, version, url):

@@ -1151,8 +1151,7 @@ def get_system_logs():
 def check_alvaos_updates():
     channel = request.args.get('channel', 'stable')
     result = update_manager.check_alvaos_updates(channel)
-    status = 200 if 'error' not in result else 500
-    return jsonify(result), status
+    return jsonify(result), 200
 
 @app.route('/api/v1/updates/alvaos/apply', methods=['POST'])
 @require_auth
@@ -1238,6 +1237,7 @@ def save_update_settings():
     data = request.get_json() or {}
     settings = {
         "auto_check": bool(data.get("auto_check", True)),
+        "auto_apply": bool(data.get("auto_apply", False)),
         "channel": data.get("channel", "stable")
     }
     saved = update_manager.save_settings(settings)

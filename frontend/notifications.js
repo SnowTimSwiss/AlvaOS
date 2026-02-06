@@ -136,6 +136,7 @@ function triggerUpdateCheck() {
         .then(res => res ? res.json() : null)
         .then(data => {
             if (!data) return;
+            if (data.error) return;
             localStorage.setItem('alvaos_update_last_check', String(Date.now()));
             localStorage.setItem('alvaos_update_available', String(!!data.update_available));
             localStorage.setItem('alvaos_update_version', data.latest_version || '');
