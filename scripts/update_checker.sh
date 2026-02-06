@@ -33,6 +33,7 @@ from update_manager import UpdateManager
 um = UpdateManager()
 settings = um.get_settings()
 auto_check = bool(settings.get("auto_check", True))
+auto_apply = bool(settings.get("auto_apply", False))
 channel = settings.get("channel", "stable")
 
 if not auto_check:
@@ -49,6 +50,29 @@ details = {
     "channel": channel,
     "last_check": datetime.now(timezone.utc).isoformat()
 }
+
+# Auto-apply logic
+if auto_apply and alvaos.get("update_available"):
+    release = alvaos.get("release")
+    assets = release.get("assets", [])
+    # Find .deb asset
+    deb_url = next((a["browser_download_url"] for a in assets if a["browser_download_url"].endswith(".deb")), None)
+    
+    if deb_url:
+        print(f"Auto-applying update: {release.get('tag_name')}")
+        try:
+            # Download
+            dl_res = um.download_update(release.get("tag_name"), deb_url)
+            pkg_path = dl_res.get("path")
+            
+            # Apply
+            if pkg_path:
+                um.apply_alvaos_update(pkg_path)
+                details["auto_applied"] = pkg_path
+        except Exception as e:
+            print(f"Auto-apply failed: {e}")
+            details["auto_apply_error"] = str(e)
+
 um.set_update_state("idle", "Auto-check complete", details)
 PY
 

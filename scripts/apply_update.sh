@@ -45,6 +45,12 @@ if ! dpkg-deb --info "$PACKAGE_PATH" >/dev/null 2>&1; then
   exit 1
 fi
 
+update_state "installing" "Backing up user data" 50
+if [ -d "/var/lib/alvaos" ]; then
+    log "Backing up /var/lib/alvaos to /var/lib/alvaos.bak"
+    cp -r /var/lib/alvaos /var/lib/alvaos.bak || log "WARNING: Backup failed"
+fi
+
 update_state "installing" "Stopping services" 60
 log "Stopping service: $SERVICE_NAME"
 systemctl stop "$SERVICE_NAME" || true

@@ -673,7 +673,11 @@ def manage_users():
                 return jsonify({'error': f'Failed to set password: {stderr}'}), 500
 
             # Add/Update Samba password
-            sync_samba_password(username, password)
+            ok, smb_err = sync_samba_password(username, password)
+            if not ok:
+                # Rollback system user creation
+                run_sudo_command(['sudo', 'userdel', username])
+                return jsonify({'error': f'Failed to sync Samba password: {smb_err}'}), 500
 
             users_state[username] = {
                 'username': username,
@@ -771,7 +775,9 @@ def update_user(username):
             stdout, stderr = process.communicate(input=f'{username}:{password}\n', timeout=5)
             if process.returncode != 0:
                 return jsonify({'error': f'Failed to set password: {stderr}'}), 500
-            sync_samba_password(username, password)
+            ok, smb_err = sync_samba_password(username, password)
+            if not ok:
+                 return jsonify({'error': f'Failed to update Samba password: {smb_err}'}), 500
         except Exception as e:
             return jsonify({'error': f'Failed to update password: {str(e)}'}), 500
 

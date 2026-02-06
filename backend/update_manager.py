@@ -4,6 +4,7 @@ import os
 import platform
 import re
 import subprocess
+import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -117,13 +118,21 @@ class UpdateManager:
     def normalize_version(self, version_str):
         if not version_str:
             return ""
-        return version_str.strip().lstrip("v")
+        # Handle "candidate" by replacing with "rc" for PEP440 compatibility
+        v = version_str.strip().lstrip("v").lower()
+        v = v.replace("candidate", "rc")
+        return v
 
     def is_newer(self, current, latest):
+        if not current or not latest:
+            return False
         try:
             return Version(self.normalize_version(latest)) > Version(self.normalize_version(current))
         except InvalidVersion:
-            return self.normalize_version(latest) != self.normalize_version(current)
+            # If parsing fails, do NOT assume it's an update. 
+            # Only return True if we are sure.
+            print(f"Version check warning: Could not parse versions '{current}' or '{latest}'")
+            return False
 
     def github_headers(self):
         headers = {
@@ -187,7 +196,7 @@ class UpdateManager:
 
         result = {
             "current_version": current_version,
-            "latest_version": latest_version,
+            "latest_version": release.get("tag_name", "") if release else "", # Return original tag name for display
             "update_available": update_available,
             "channel": channel,
             "release": self.format_release(release) if release else None
@@ -214,24 +223,28 @@ class UpdateManager:
         dest_path = os.path.join(self.cache_dir, filename)
 
         sha256 = hashlib.sha256()
-        with requests.get(url, stream=True, timeout=60) as resp:
-            resp.raise_for_status()
-            total = int(resp.headers.get("Content-Length", "0") or 0)
-            downloaded = 0
-            with open(dest_path, "wb") as f:
-                for chunk in resp.iter_content(chunk_size=1024 * 1024):
-                    if chunk:
-                        f.write(chunk)
-                        sha256.update(chunk)
-                        if total > 0:
-                            downloaded += len(chunk)
-                            percent = int((downloaded / total) * 100)
-                            self.update_progress(
-                                "downloading",
-                                f"Downloading {version}",
-                                percent,
-                                {"version": version, "downloaded": downloaded, "total": total}
-                            )
+        try:
+            with requests.get(url, stream=True, timeout=60) as resp:
+                resp.raise_for_status()
+                total = int(resp.headers.get("Content-Length", "0") or 0)
+                downloaded = 0
+                with open(dest_path, "wb") as f:
+                    for chunk in resp.iter_content(chunk_size=1024 * 1024):
+                        if chunk:
+                            f.write(chunk)
+                            sha256.update(chunk)
+                            if total > 0:
+                                downloaded += len(chunk)
+                                percent = int((downloaded / total) * 100)
+                                self.update_progress(
+                                    "downloading",
+                                    f"Downloading {version}",
+                                    percent,
+                                    {"version": version, "downloaded": downloaded, "total": total}
+                                )
+        except Exception as e:
+            self.set_update_state("error", "Download failed", {"error": str(e)})
+            raise
 
         checksum = sha256.hexdigest()
         self.set_update_state("idle", "Download complete", {
@@ -282,16 +295,49 @@ class UpdateManager:
 
         self.set_update_state("installing", "Installing AlvaOS update", {"package": package_path})
         script_path = "/opt/alvaos/scripts/apply_update.sh"
+        
+        # Use systemd-run to detach the update process if possible
+        use_systemd_run = False
         if os.path.exists(script_path):
-            self.update_progress("installing", "Preparing installation", 55, {"package": package_path})
-            res, run_err = self.run_command([script_path, package_path], timeout=1200)
-        else:
-            res, run_err = self.run_command(["dpkg", "-i", package_path], timeout=600)
-        if run_err or not res or res.returncode != 0:
-            error_msg = run_err or (res.stderr if res else "dpkg failed")
-            self.set_update_state("error", "Install failed", {"error": error_msg})
-            return {"success": False, "error": error_msg}
+            res, _ = self.run_command(["which", "systemd-run"], timeout=5)
+            if res and res.returncode == 0:
+                 use_systemd_run = True
 
+        if use_systemd_run and os.path.exists(script_path):
+            self.update_progress("installing", "Starting update service", 10, {"package": package_path})
+            # Run using systemd-run to decouple from the backend process
+            # We construct the command manually to avoid run_command waiting
+            try:
+                # sudo -n systemd-run --unit=alvaos-updater...
+                # We need to run inside a separate scope or service to survive backend restart
+                final_cmd = [
+                    "sudo", "-n", "systemd-run", 
+                    "--unit=alvaos-updater-" + secrets.token_hex(4),
+                    "--description=AlvaOS Updater",
+                    "--no-block", # Critical: don't wait for it
+                    "/bin/bash", script_path, package_path
+                ]
+                subprocess.Popen(final_cmd)
+                
+                # Return success immediately because the script will handle the rest
+                return {"success": True, "message": "Update process started in background"}
+            except Exception as e:
+                 # Fallback to direct Popen if systemd-run implies errors (though unlikely on Linux with systemd)
+                 try:
+                    subprocess.Popen(["sudo", "-n", "nohup", "/bin/bash", script_path, package_path], start_new_session=True)
+                    return {"success": True, "message": "Update process started in background (nohup)"}
+                 except Exception as e2:
+                    return {"success": False, "error": f"Failed to launch update script: {e} / {e2}"}
+
+        else:
+            # Fallback for systems without script or systemd
+            res, run_err = self.run_command(["dpkg", "-i", package_path], timeout=600)
+            if run_err or not res or res.returncode != 0:
+                error_msg = run_err or (res.stderr if res else "dpkg failed")
+                self.set_update_state("error", "Install failed", {"error": error_msg})
+                return {"success": False, "error": error_msg}
+
+        # If we fell back to dpkg -i (synchronous), record history
         entry = {
             "type": "alvaos",
             "package": package_path,
@@ -379,14 +425,20 @@ class UpdateManager:
                         # We look for partitions on removable disks
                         if device.get('rm'):
                             children = device.get('children', [])
+                            if not children:
+                                # Sometimes USB sticks have no partition table, just /dev/sdb
+                                children = [device]
+                                
                             for part in children:
-                                if part.get('type') == 'part' and not part.get('mountpoint'):
+                                # Accept 'part' or 'disk' if it has no mountpoint
+                                if not part.get('mountpoint'):
                                     # Candidate for temporary mount
                                     part_name = part.get('name')
-                                    fstype = part.get('fstype')
-                                    if fstype in ['vfat', 'ntfs', 'ext4', 'exfat']:
-                                        pkgs = self._temp_mount_and_scan(part_name)
-                                        packages.extend(pkgs)
+                                    # Relax fstype check completely -> let mount auto-detect or fail
+                                    # But filter out linux_raid_member etc if needed. 
+                                    # For now, just try to mount.
+                                    pkgs = self._temp_mount_and_scan(part_name)
+                                    packages.extend(pkgs)
             except Exception as e:
                 print(f"Error during USB scan: {e}")
 
