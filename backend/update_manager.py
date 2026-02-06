@@ -352,22 +352,104 @@ class UpdateManager:
         return {"success": True}
 
     def scan_offline_packages(self, root_path=None):
-        if not root_path:
-            root_path = "/media"
-        if not os.path.exists(root_path):
-            return {"packages": []}
 
+      
         packages = []
-        for dirpath, dirnames, filenames in os.walk(root_path):
+        
+        # 1. Scan explicit path if provided
+        if root_path:
+            return self._scan_path(root_path)
+
+        # 2. Scan standard mount points
+        for base in ["/media", "/mnt"]:
+            if os.path.exists(base):
+                packages.extend(self._scan_path(base).get("packages", []))
+
+        # 3. Detect and temporarily mount removable devices
+        if platform.system() == "Linux":
+            try:
+                # Get removable devices from lsblk
+                result = subprocess.run(
+                    ['lsblk', '-J', '-o', 'NAME,MOUNTPOINT,RM,TYPE,FSTYPE'],
+                    capture_output=True, text=True, timeout=5
+                )
+                if result.returncode == 0:
+                    data = json.loads(result.stdout)
+                    for device in data.get('blockdevices', []):
+                        # We look for partitions on removable disks
+                        if device.get('rm'):
+                            children = device.get('children', [])
+                            for part in children:
+                                if part.get('type') == 'part' and not part.get('mountpoint'):
+                                    # Candidate for temporary mount
+                                    part_name = part.get('name')
+                                    fstype = part.get('fstype')
+                                    if fstype in ['vfat', 'ntfs', 'ext4', 'exfat']:
+                                        pkgs = self._temp_mount_and_scan(part_name)
+                                        packages.extend(pkgs)
+            except Exception as e:
+                print(f"Error during USB scan: {e}")
+
+        # Remove duplicates by full path
+        unique_packages = []
+        seen_paths = set()
+        for p in packages:
+            if p["path"] not in seen_paths:
+                unique_packages.append(p)
+                seen_paths.add(p["path"])
+
+        return {"packages": unique_packages}
+
+    def _scan_path(self, path):
+        packages = []
+        if not os.path.exists(path):
+            return {"packages": []}
+            
+        for dirpath, dirnames, filenames in os.walk(path):
+            # Limit depth to avoid scanning entire OS if someone points to /
+            depth = dirpath.count(os.sep) - path.count(os.sep)
+            if depth > 3:
+                del dirnames[:] # Don't go deeper
+                continue
+                
             for name in filenames:
                 if name.endswith(".deb"):
                     full_path = os.path.join(dirpath, name)
-                    packages.append({
-                        "path": full_path,
-                        "name": name,
-                        "size": os.path.getsize(full_path)
-                    })
+                    try:
+                        packages.append({
+                            "path": full_path,
+                            "name": name,
+                            "size": os.path.getsize(full_path)
+                        })
+                    except OSError:
+                        pass
         return {"packages": packages}
+
+    def _temp_mount_and_scan(self, dev_name):
+        """Temporarily mount a device and scan it for packages."""
+        dev_path = f"/dev/{dev_name}"
+        mount_point = f"/tmp/alvaos_scan_{dev_name}"
+        packages = []
+        
+        try:
+            os.makedirs(mount_point, exist_ok=True)
+            # Try mounting read-only
+            res = subprocess.run(['sudo', 'mount', '-o', 'ro', dev_path, mount_point], 
+                               capture_output=True, text=True, timeout=10)
+            if res.returncode == 0:
+                try:
+                    scan_res = self._scan_path(mount_point)
+                    packages = scan_res.get("packages", [])
+                finally:
+                    subprocess.run(['sudo', 'umount', mount_point], timeout=10)
+            
+            # Cleanup mount point
+            if os.path.exists(mount_point):
+                os.rmdir(mount_point)
+        except Exception as e:
+            print(f"Failed to temp mount {dev_path}: {e}")
+            
+        return packages
 
     def validate_offline_package(self, usb_path):
         return self.validate_deb(usb_path)

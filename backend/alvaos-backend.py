@@ -1198,11 +1198,7 @@ def scan_offline_updates():
     data = request.get_json() or {}
     path = data.get('path')
     packages = []
-    if path:
-        packages = update_manager.scan_offline_packages(path).get('packages', [])
-    else:
-        for root in ('/media', '/mnt'):
-            packages.extend(update_manager.scan_offline_packages(root).get('packages', []))
+    packages = update_manager.scan_offline_packages(path).get('packages', [])
     return jsonify({'packages': packages})
 
 @app.route('/api/v1/updates/offline/apply', methods=['POST'])

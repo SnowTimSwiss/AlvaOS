@@ -216,7 +216,12 @@ async function scanOfflineUpdates() {
         }
         const packages = data.packages || [];
         if (!packages.length) {
-            if (list) list.innerHTML = '<div class="metric-sub">No offline packages found.</div>';
+            if (list) list.innerHTML = `
+                <div class="metric-sub">
+                    No offline packages found.<br>
+                    <small style="opacity:0.8;">Make sure your USB stick uses a supported filesystem (FAT32, NTFS, EXT4, exFAT) and the .deb package is in a top-level directory.</small>
+                </div>
+            `;
             return;
         }
         list.innerHTML = '';
