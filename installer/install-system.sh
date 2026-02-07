@@ -1,25 +1,62 @@
 #!/bin/bash
 set -e
 
-# AlvaOS Installation Script 0.2.1
-# This script installs AlvaOS to the target system
+# AlvaOS Installation Script 0.4.0
+# This script installs AlvaOS to the target system with whiptail TUI and Mirror support
 
-# Colors
+# Colors for terminal output (still useful for logs)
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+NC='\033[0m'
+
+# Progress tracking
+PROGRESS=0
+TOTAL_STEPS=15
+
+# GUI Helpers
+msg() {
+    whiptail --title "AlvaOS Installer" --msgbox "$1" 10 60
+}
+
+confirm() {
+    whiptail --title "AlvaOS Installer" --yesno "$1" 10 60
+}
+
+input() {
+    whiptail --title "AlvaOS Installer" --inputbox "$1" 10 60 "$2" 3>&1 1>&2 2>&3
+}
+
+menu() {
+    title=$1
+    shift
+    whiptail --title "AlvaOS Installer" --menu "$title" 15 60 5 "$@" 3>&1 1>&2 2>&3
+}
+
+checklist() {
+    title=$1
+    shift
+    whiptail --title "AlvaOS Installer" --checklist "$title" 15 60 5 "$@" 3>&1 1>&2 2>&3
+}
+
+update_progress() {
+    step_msg=$1
+    PROGRESS=$((PROGRESS + 1))
+    PERCENT=$((PROGRESS * 100 / TOTAL_STEPS))
+    echo "XXX"
+    echo "$PERCENT"
+    echo "$step_msg"
+    echo "XXX"
+}
 
 # Cleanup function for error recovery
 cleanup() {
     local exit_code=$?
     if [ $exit_code -ne 0 ]; then
-        echo -e "${RED}[ERROR]${NC} Installation failed!"
+        msg "Installation failed! Check the terminal logs for details."
     fi
     
     # Unmount everything
-    log "Cleaning up..."
     umount -l /mnt/sys 2>/dev/null || true
     umount -l /mnt/proc 2>/dev/null || true
     umount -l /mnt/dev/pts 2>/dev/null || true
@@ -28,11 +65,10 @@ cleanup() {
     umount -l /mnt 2>/dev/null || true
 }
 
-# Set trap for cleanup
 trap cleanup EXIT ERR INT TERM
 
 # Logo
-cat << 'EOF'
+LOGO="
 ╔═══════════════════════════════════════════════════════════╗
 ║                                                           ║
 ║       █████╗ ██╗    ██╗   ██╗ █████╗  ██████╗ ███████╗    ║
@@ -44,277 +80,195 @@ cat << 'EOF'
 ║                                                           ║
 ║            Your homelab journey starts here!              ║
 ║                                                           ║
-╚═══════════════════════════════════════════════════════════╝
-EOF
-echo ""
+╚═══════════════════════════════════════════════════════════╝"
 
-log() {
-    echo -e "${GREEN}[AlvaOS]${NC} $1"
-}
-
-warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
-
-error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-    exit 1
-}
+whiptail --title "Welcome to AlvaOS" --msgbox "$LOGO" 20 70
 
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then 
-    error "Please run as root (use sudo)"
+    msg "Please run as root (use sudo)"
+    exit 1
 fi
 
-# Check for EFI boot mode
-if [ ! -d "/sys/firmware/efi" ]; then
-    warn "System is NOT booted in EFI mode!"
-    warn "This installer is designed for UEFI systems."
-    read -p "Continue anyway? (y/N) " EFI_CONFIRM
-    if [[ "$EFI_CONFIRM" != "y" && "$EFI_CONFIRM" != "Y" ]]; then
+# Mode Selection
+INSTALL_MODE=$(menu "Select Installation Mode" \
+    "SINGLE" "Install on a single disk" \
+    "MIRROR" "Mirror (RAID1) on two disks")
+
+AVAILABLE_DISKS=$(lsblk -d -o NAME,SIZE,TYPE | grep disk | awk '{print $1 " (" $2 ") off"}')
+if [ "$INSTALL_MODE" == "SINGLE" ]; then
+    TARGET_DISKS=$(checklist "Select target disk" $AVAILABLE_DISKS)
+    TOTAL_DISKS=$(echo $TARGET_DISKS | wc -w)
+    if [ "$TOTAL_DISKS" -ne 1 ]; then
+        msg "Please select exactly ONE disk for Single mode."
+        exit 1
+    fi
+else
+    TARGET_DISKS=$(checklist "Select TWO target disks for Mirror" $AVAILABLE_DISKS)
+    TOTAL_DISKS=$(echo $TARGET_DISKS | wc -w)
+    if [ "$TOTAL_DISKS" -ne 2 ]; then
+        msg "Please select exactly TWO disks for Mirror mode."
         exit 1
     fi
 fi
 
-# Detect target disk
-log "Detecting available disks..."
-echo ""
-lsblk -d -o NAME,SIZE,TYPE | grep disk
-echo ""
+# Remove quotes from disks
+TARGET_DISKS=$(echo $TARGET_DISKS | tr -d '"')
 
-read -p "Enter target disk (e.g., sda, vda, nvme0n1): " TARGET_DISK
-TARGET_DISK="/dev/${TARGET_DISK}"
-
-if [ ! -b "$TARGET_DISK" ]; then
-    error "Disk $TARGET_DISK not found!"
-fi
-
-# Confirm installation
-echo ""
-warn "⚠️  WARNING: This will ERASE ALL DATA on $TARGET_DISK"
-echo ""
-read -p "Type 'yes' to continue: " CONFIRM
-
-if [ "$CONFIRM" != "yes" ]; then
-    echo "Installation cancelled."
+if ! confirm "WARNING: This will ERASE ALL DATA on: $TARGET_DISKS\n\nAre you sure you want to continue?"; then
     exit 0
 fi
 
-log "Starting installation to $TARGET_DISK..."
-sleep 2
+# Main Installation Logic wrapped in progress bar
+{
+    update_progress "Preparing disks..."
+    for disk in $TARGET_DISKS; do
+        disk_path="/dev/$disk"
+        parted -s "$disk_path" mklabel gpt
+        parted -s "$disk_path" mkpart primary fat32 1MiB 512MiB
+        parted -s "$disk_path" set 1 esp on
+        parted -s "$disk_path" mkpart primary btrfs 512MiB 100%
+        partprobe "$disk_path" || true
+    done
+    sleep 2
 
-# Partition the disk
-log "Creating partitions..."
-parted -s "$TARGET_DISK" mklabel gpt
-parted -s "$TARGET_DISK" mkpart primary fat32 1MiB 512MiB
-parted -s "$TARGET_DISK" set 1 esp on
-parted -s "$TARGET_DISK" mkpart primary ext4 512MiB 100%
+    update_progress "Formatting partitions..."
+    DISK_ARRAY=($TARGET_DISKS)
+    if [ "$INSTALL_MODE" == "SINGLE" ]; then
+        disk=${DISK_ARRAY[0]}
+        if [[ "$disk" == *"nvme"* ]]; then
+            EFI_PART="/dev/${disk}p1"
+            ROOT_PART="/dev/${disk}p2"
+        else
+            EFI_PART="/dev/${disk}1"
+            ROOT_PART="/dev/${disk}2"
+        fi
+        mkfs.fat -F32 "$EFI_PART"
+        mkfs.btrfs -f "$ROOT_PART"
+        mount "$ROOT_PART" /mnt
+    else
+        # Mirror mode
+        EFI_PARTS=()
+        ROOT_PARTS=()
+        for disk in "${DISK_ARRAY[@]}"; do
+            if [[ "$disk" == *"nvme"* ]]; then
+                EFI_PARTS+=("/dev/${disk}p1")
+                ROOT_PARTS+=("/dev/${disk}p2")
+            else
+                EFI_PARTS+=("/dev/${disk}1")
+                ROOT_PARTS+=("/dev/${disk}2")
+            fi
+        done
+        
+        for efi in "${EFI_PARTS[@]}"; do
+            mkfs.fat -F32 "$efi"
+        done
+        
+        # Create Btrfs RAID1
+        mkfs.btrfs -f -d raid1 -m raid1 "${ROOT_PARTS[@]}"
+        mount "${ROOT_PARTS[0]}" /mnt
+        EFI_PART=${EFI_PARTS[0]} # Use first EFI partition for initial mount
+    fi
 
-# Sync partitions
-partprobe "$TARGET_DISK" || true
-sleep 2
+    mkdir -p /mnt/boot/efi
+    mount "$EFI_PART" /mnt/boot/efi
 
-# Format partitions
-log "Formatting partitions..."
-if [[ "$TARGET_DISK" == *"nvme"* ]]; then
-    EFI_PART="${TARGET_DISK}p1"
-    ROOT_PART="${TARGET_DISK}p2"
-else
-    EFI_PART="${TARGET_DISK}1"
-    ROOT_PART="${TARGET_DISK}2"
-fi
+    update_progress "Installing base system (debootstrap)..."
+    debootstrap --arch=amd64 bookworm /mnt http://deb.debian.org/debian >/dev/null
 
-mkfs.fat -F32 "$EFI_PART"
-mkfs.ext4 -F "$ROOT_PART"
-
-# Mount filesystems
-log "Mounting filesystems..."
-mount "$ROOT_PART" /mnt
-mkdir -p /mnt/boot/efi
-mount "$EFI_PART" /mnt/boot/efi
-
-# Install base system
-log "Installing Debian base system (this may take a while)..."
-debootstrap --arch=amd64 bookworm /mnt http://deb.debian.org/debian
-
-# Configure the new system
-log "Configuring system..."
-
-# Set hostname
-echo "alvaos" > /mnt/etc/hostname
-
-# Configure hosts
-cat > /mnt/etc/hosts << 'HOSTS_EOF'
+    update_progress "Configuring system..."
+    echo "alvaos" > /mnt/etc/hostname
+    cat > /mnt/etc/hosts << HOSTS_EOF
 127.0.0.1   localhost
 127.0.1.1   alvaos
 ::1         localhost ip6-localhost ip6-loopback
 HOSTS_EOF
 
-# Configure network (DHCP on all common interfaces)
-# We use a more generic approach to avoid issues with predictable interface names
-cat > /mnt/etc/network/interfaces << 'NET_EOF'
+    update_progress "Configuring networking..."
+    cat > /mnt/etc/network/interfaces << NET_EOF
 source /etc/network/interfaces.d/*
-
-# The loopback network interface
 auto lo
 iface lo inet loopback
-
-# We let NetworkManager handle all other interfaces automatically
 NET_EOF
 
-# Better apt sources for the target system
-cat > /mnt/etc/apt/sources.list << 'SOURCES_EOF'
+    update_progress "Configuring apt sources..."
+    cat > /mnt/etc/apt/sources.list << SOURCES_EOF
 deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
 deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
 deb http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
 SOURCES_EOF
 
-# Configure fstab
-BOOT_UUID=$(blkid -s UUID -o value "$EFI_PART")
-ROOT_UUID=$(blkid -s UUID -o value "$ROOT_PART")
-
-cat > /mnt/etc/fstab << FSTAB_EOF
-UUID=$ROOT_UUID  /          ext4  defaults  0  1
-UUID=$BOOT_UUID  /boot/efi  vfat  defaults  0  2
+    update_progress "Configuring fstab..."
+    ROOT_UUID=$(blkid -s UUID -o value $(findmnt -n -o SOURCE /mnt))
+    cat > /mnt/etc/fstab << FSTAB_EOF
+UUID=$ROOT_UUID  /          btrfs  defaults  0  1
 FSTAB_EOF
+    
+    # EFI partitions in fstab
+    if [ "$INSTALL_MODE" == "SINGLE" ]; then
+        BOOT_UUID=$(blkid -s UUID -o value "$EFI_PART")
+        echo "UUID=$BOOT_UUID  /boot/efi  vfat  defaults  0  2" >> /mnt/etc/fstab
+    else
+        # Mirror: For simplicity, pick first EFI for /boot/efi auto-mount
+        BOOT_UUID=$(blkid -s UUID -o value "${EFI_PARTS[0]}")
+        echo "UUID=$BOOT_UUID  /boot/efi  vfat  defaults  0  2" >> /mnt/etc/fstab
+    fi
 
-# Install kernel and essential packages
-log "Installing kernel and packages..."
+    update_progress "Mounting virtual filesystems..."
+    mount --rbind /dev /mnt/dev
+    mount --make-rslave /mnt/dev
+    mount --rbind /sys /mnt/sys
+    mount --make-rslave /mnt/sys
+    mount -t proc proc /mnt/proc
 
-# Mount virtual filesystems for chroot
-mount --rbind /dev /mnt/dev
-mount --make-rslave /mnt/dev
-mount --rbind /sys /mnt/sys
-mount --make-rslave /mnt/sys
-mount -t proc proc /mnt/proc
+    update_progress "Installing kernel and essential packages..."
+    chroot /mnt apt-get update >/dev/null
+    chroot /mnt apt-get install -y \
+        linux-image-amd64 python3 python3-flask python3-psutil python3-requests \
+        systemd network-manager openssh-server docker.io docker-compose btrfs-progs \
+        curl wget vim sudo smartmontools nfs-kernel-server samba >/dev/null
 
-chroot /mnt apt-get update
-chroot /mnt apt-get install -y \
-    linux-image-amd64 \
-    python3 \
-    python3-pip \
-    python3-flask \
-    python3-flask-cors \
-    python3-psutil \
-    python3-requests \
-    python3-packaging \
-    systemd \
-    network-manager \
-    openssh-server \
-    docker.io \
-    docker-compose \
-    btrfs-progs \
-    curl \
-    wget \
-    vim \
-    sudo \
-    firmware-linux-free \
-    intel-microcode \
-    amd64-microcode \
-    initramfs-tools \
-    systemd-timesyncd \
-    iputils-ping \
-    net-tools \
-    smartmontools \
-    nfs-kernel-server \
-    samba
+    update_progress "Installing bootloader..."
+    if [ -d /sys/firmware/efi ]; then
+        chroot /mnt apt-get install -y grub-efi-amd64 >/dev/null
+        for disk in $TARGET_DISKS; do
+            chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=AlvaOS --recheck --removable >/dev/null
+        done
+    else
+        chroot /mnt apt-get install -y grub-pc >/dev/null
+        for disk in $TARGET_DISKS; do
+            chroot /mnt grub-install --target=i386-pc "/dev/$disk" >/dev/null
+        done
+    fi
+    chroot /mnt update-grub >/dev/null
+    chroot /mnt update-initramfs -u >/dev/null
 
-# Install GRUB based on boot mode
-log "Installing bootloader packages..."
-if [ -d /sys/firmware/efi ]; then
-    log "UEFI mode detected, installing grub-efi-amd64..."
-    DEBIAN_FRONTEND=noninteractive chroot /mnt apt-get install -y grub-efi-amd64
-else
-    log "Legacy BIOS mode detected, installing grub-pc..."
-    DEBIAN_FRONTEND=noninteractive chroot /mnt apt-get install -y grub-pc
-fi
+    update_progress "Securing root account..."
+    RANDOM_PASS=$(head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 24)
+    echo "root:${RANDOM_PASS}" | chroot /mnt chpasswd
 
-# Install GRUB
-log "Configuring bootloader..."
-if [ -d /sys/firmware/efi ]; then
-    chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=AlvaOS --recheck --removable
-else
-    # Fallback for Legacy BIOS
-    warn "System is not in UEFI mode, attempting legacy GRUB install on $TARGET_DISK..."
-    chroot /mnt grub-install --target=i386-pc "$TARGET_DISK" || true
-fi
-# Add nomodeset to installed system for better hardware compatibility
-sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="quiet"/GRUB_CMDLINE_LINUX_DEFAULT="quiet nomodeset"/' /mnt/etc/default/grub
-chroot /mnt update-grub
+    update_progress "Setting up AlvaOS components..."
+    mkdir -p /mnt/opt/alvaos/{bin,webui} /mnt/etc/alvaos /mnt/var/lib/alvaos /mnt/var/log/alvaos /mnt/opt/alvaos/scripts
 
-# Secure root account with random password
-log "Securing root account..."
-# Generate a secure random password that nobody will know
-# This forces users to go through the Web UI setup wizard
-RANDOM_PASS=$(head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 24)
-echo "root:${RANDOM_PASS}" | chroot /mnt chpasswd
+    # Copy backend
+    [ -f "/opt/alvaos/backend/alvaos-backend.py" ] && cp /opt/alvaos/backend/alvaos-backend.py /mnt/opt/alvaos/bin/
+    [ -f "/opt/alvaos/backend/update_manager.py" ] && cp /opt/alvaos/backend/update_manager.py /mnt/opt/alvaos/bin/
+    chmod +x /mnt/opt/alvaos/bin/alvaos-backend.py 2>/dev/null || true
 
-# Disable root SSH login until setup is complete
-log "Configuring SSH security..."
-cat > /mnt/etc/ssh/sshd_config.d/00-alvaos-security.conf << 'SSH_EOF'
-# AlvaOS Security Configuration
-# Root login disabled until Web UI setup is completed
-PermitRootLogin no
-PasswordAuthentication yes
-PermitEmptyPasswords no
-SSH_EOF
+    # Copy scripts
+    if [ -d "/opt/alvaos/scripts" ]; then
+        cp /opt/alvaos/scripts/update_checker.sh /mnt/opt/alvaos/scripts/ 2>/dev/null || true
+        cp /opt/alvaos/scripts/apply_update.sh /mnt/opt/alvaos/scripts/ 2>/dev/null || true
+        chmod +x /mnt/opt/alvaos/scripts/*.sh 2>/dev/null || true
+        [ -f "/opt/alvaos/scripts/alvaos-update-checker.service" ] && cp /opt/alvaos/scripts/alvaos-update-checker.service /mnt/etc/systemd/system/
+    fi
 
-echo ""
-log "╔════════════════════════════════════════════════════════════╗"
-log "║  Root account secured with random password                 ║"
-log "║  SSH root login DISABLED                                   ║"
-log "║                                                            ║"
-log "║  👉 You MUST set password via Web UI on first boot:        ║"
-log "║     http://[SERVER-IP]:8080                                ║"
-log "╚════════════════════════════════════════════════════════════╝"
-echo ""
+    # Copy frontend
+    [ -d "/opt/alvaos/webui" ] && cp -r /opt/alvaos/webui/* /mnt/opt/alvaos/webui/
+    [ -f "/opt/alvaos/VERSION" ] && cp /opt/alvaos/VERSION /mnt/etc/alvaos/VERSION
 
-# Install AlvaOS components
-log "Installing AlvaOS components..."
-
-# Create directories
-mkdir -p /mnt/opt/alvaos/bin
-mkdir -p /mnt/opt/alvaos/webui
-mkdir -p /mnt/etc/alvaos
-mkdir -p /mnt/var/lib/alvaos
-mkdir -p /mnt/var/log/alvaos
-
-# Copy backend
-if [ -f "/opt/alvaos/backend/alvaos-backend.py" ]; then
-    cp /opt/alvaos/backend/alvaos-backend.py /mnt/opt/alvaos/bin/
-    chmod +x /mnt/opt/alvaos/bin/alvaos-backend.py
-fi
-
-# Copy update manager
-if [ -f "/opt/alvaos/backend/update_manager.py" ]; then
-    cp /opt/alvaos/backend/update_manager.py /mnt/opt/alvaos/bin/
-fi
-
-# Copy update scripts
-if [ -f "/opt/alvaos/scripts/update_checker.sh" ]; then
-    mkdir -p /mnt/opt/alvaos/scripts
-    cp /opt/alvaos/scripts/update_checker.sh /mnt/opt/alvaos/scripts/
-    cp /opt/alvaos/scripts/apply_update.sh /mnt/opt/alvaos/scripts/
-    chmod +x /mnt/opt/alvaos/scripts/update_checker.sh /mnt/opt/alvaos/scripts/apply_update.sh
-fi
-
-# Copy update checker service
-if [ -f "/opt/alvaos/scripts/alvaos-update-checker.service" ]; then
-    cp /opt/alvaos/scripts/alvaos-update-checker.service /mnt/etc/systemd/system/
-fi
-
-# Copy frontend
-if [ -d "/opt/alvaos/webui" ]; then
-    cp -r /opt/alvaos/webui/* /mnt/opt/alvaos/webui/
-fi
-
-# Copy VERSION
-if [ -f "/opt/alvaos/VERSION" ]; then
-    cp /opt/alvaos/VERSION /mnt/etc/alvaos/VERSION
-fi
-
-# Create systemd service
-cat > /mnt/etc/systemd/system/alvaos.service << 'SERVICE_EOF'
+    update_progress "Configuring services..."
+    cat > /mnt/etc/systemd/system/alvaos.service << SERVICE_EOF
 [Unit]
 Description=AlvaOS Web Interface
 After=network.target
@@ -333,126 +287,50 @@ Environment="PYTHONUNBUFFERED=1"
 WantedBy=multi-user.target
 SERVICE_EOF
 
-# Create alvaos system user in chroot
-log "Creating AlvaOS service user..."
-chroot /mnt useradd -r -s /bin/bash -d /opt/alvaos -M alvaos || true
-
-# Set up permissions
-chroot /mnt chown -R alvaos:alvaos /opt/alvaos
-chroot /mnt chown -R alvaos:alvaos /var/lib/alvaos
-chroot /mnt chown -R alvaos:alvaos /var/log/alvaos
-chroot /mnt chown -R alvaos:alvaos /etc/alvaos
-
-# Create sudoers rules for specific privileged operations
-mkdir -p /mnt/etc/sudoers.d
-cat > /mnt/etc/sudoers.d/alvaos << 'SUDOERS_EOF'
-# AlvaOS backend needs specific privileged commands
-# User Management
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/chpasswd
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/useradd
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/userdel
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/smbpasswd
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/groupadd
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/groupdel
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/gpasswd
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/chgrp
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/chmod
-
-# Service Management
-alvaos ALL=(ALL) NOPASSWD: /bin/systemctl restart alvaos.service
-alvaos ALL=(ALL) NOPASSWD: /bin/systemctl start alvaos.service
-alvaos ALL=(ALL) NOPASSWD: /bin/systemctl stop alvaos.service
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemd-run
-alvaos ALL=(ALL) NOPASSWD: /bin/systemctl restart ssh
-alvaos ALL=(ALL) NOPASSWD: /bin/systemctl status docker.service
-alvaos ALL=(ALL) NOPASSWD: /bin/systemctl restart smbd
-alvaos ALL=(ALL) NOPASSWD: /bin/systemctl reload nfs-kernel-server
-
-# Update Management
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/apt
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/apt-get
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/dpkg
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/dpkg-deb
-
-# Storage Management (SMART, Btrfs, Partitions)
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/smartctl
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/lsblk
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/btrfs
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/wipefs
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/partprobe
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/umount
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/mount
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/mkdir
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/rmdir
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/mkfs.btrfs
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/mkfs.ext4
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/blkid
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/cat
-
-# System Settings (Hostname, Time, Power)
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/hostnamectl
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/timedatectl
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/journalctl
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/tail
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/reboot
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/poweroff
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/hosts
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/sed
-
-# Network Shares Config (NFS Exports, Samba)
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/exportfs
-alvaos ALL=(ALL) NOPASSWD: /bin/cat /etc/exports
-alvaos ALL=(ALL) NOPASSWD: /bin/cat /etc/samba/smb.conf
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/exports
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee -a /etc/exports
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/samba/smb.conf
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee -a /etc/samba/smb.conf
+    # Sudoers
+    mkdir -p /mnt/etc/sudoers.d
+    cat > /mnt/etc/sudoers.d/alvaos << 'SUDOERS_EOF'
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/chpasswd, /usr/sbin/useradd, /usr/sbin/userdel, /usr/bin/smbpasswd, /usr/sbin/groupadd, /usr/sbin/groupdel, /usr/bin/gpasswd, /usr/bin/chgrp, /usr/bin/chmod
+alvaos ALL=(ALL) NOPASSWD: /bin/systemctl restart alvaos.service, /bin/systemctl start alvaos.service, /bin/systemctl stop alvaos.service, /usr/bin/systemd-run, /bin/systemctl restart ssh, /bin/systemctl status docker.service, /bin/systemctl restart smbd, /bin/systemctl reload nfs-kernel-server
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/apt, /usr/bin/apt-get, /usr/bin/dpkg, /usr/bin/dpkg-deb
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/smartctl, /usr/bin/lsblk, /usr/bin/btrfs, /usr/sbin/wipefs, /usr/sbin/partprobe, /usr/bin/umount, /usr/bin/mount, /usr/bin/mkdir, /usr/bin/rmdir, /usr/sbin/mkfs.btrfs, /usr/sbin/mkfs.ext4, /usr/sbin/blkid, /usr/bin/cat
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/hostnamectl, /usr/bin/timedatectl, /usr/bin/journalctl, /usr/bin/tail, /usr/sbin/reboot, /usr/sbin/poweroff, /usr/bin/tee /etc/hosts, /usr/bin/sed
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/exportfs, /bin/cat /etc/exports, /bin/cat /etc/samba/smb.conf, /usr/bin/tee /etc/exports, /usr/bin/tee -a /etc/exports, /usr/bin/tee /etc/samba/smb.conf, /usr/bin/tee -a /etc/samba/smb.conf
 SUDOERS_EOF
-chroot /mnt chmod 440 /etc/sudoers.d/alvaos
+    chmod 440 /mnt/etc/sudoers.d/alvaos
 
-# Enable service
-chroot /mnt systemctl enable alvaos.service
-if [ -f "/mnt/etc/systemd/system/alvaos-update-checker.service" ]; then
-    chroot /mnt systemctl enable alvaos-update-checker.service
-fi
-chroot /mnt systemctl enable NetworkManager
+    # SSH Security
+    mkdir -p /mnt/etc/ssh/sshd_config.d
+    cat > /mnt/etc/ssh/sshd_config.d/00-alvaos-security.conf << 'SSH_EOF'
+PermitRootLogin no
+PasswordAuthentication yes
+PermitEmptyPasswords no
+SSH_EOF
 
-# Create version file
-cat > /mnt/etc/alvaos/version.json << 'VERSION_EOF'
+    update_progress "Finalizing configuration..."
+    chroot /mnt useradd -r -s /bin/bash -d /opt/alvaos -M alvaos || true
+    chroot /mnt chown -R alvaos:alvaos /opt/alvaos /var/lib/alvaos /var/log/alvaos /etc/alvaos
+    
+    # Version file
+    cat > /mnt/etc/alvaos/version.json << VERSION_EOF
 {
-  "alvaos_version": "0.2.1",
-  "build_date": "2026-02-04",
-  "installer_version": "0.2.1"
+  "alvaos_version": "0.4.0",
+  "build_date": "$(date +%Y-%m-%d)",
+  "installer_version": "0.4.0"
 }
 VERSION_EOF
 
-# Cleanup
-log "Cleaning up..."
-chroot /mnt apt-get clean
+    # Enable services
+    chroot /mnt systemctl enable alvaos.service >/dev/null 2>&1 || true
+    [ -f "/mnt/etc/systemd/system/alvaos-update-checker.service" ] && chroot /mnt systemctl enable alvaos-update-checker.service >/dev/null 2>&1 || true
+    chroot /mnt systemctl enable NetworkManager >/dev/null 2>&1 || true
 
-# Unmount
-log "Unmounting filesystems..."
-umount -l /mnt/sys/firmware/efi/efivars 2>/dev/null || true
-umount -l /mnt/sys || true
-umount -l /mnt/proc || true
-umount -l /mnt/dev/pts || true
-umount -l /mnt/dev || true
-umount -l /mnt/boot/efi || true
-umount -l /mnt || true
+    update_progress "Cleanup..."
+    chroot /mnt apt-get clean
+    umount -l /mnt/sys /mnt/proc /mnt/dev/pts /mnt/dev /mnt/boot/efi /mnt 2>/dev/null || true
 
-log "╔═══════════════════════════════════════╗"
-log "║  ✅ Installation completed!           ║"
-log "╚═══════════════════════════════════════╝"
-echo ""
-log "AlvaOS has been installed to $TARGET_DISK"
-log ""
-log "Next steps:"
-log "1. Remove the installation media"
-log "2. Reboot the system: reboot"
-log "3. Access Web UI at: http://[IP-ADDRESS]:8080"
-log "4. Complete setup wizard to set your password"
-log ""
-warn "⚠️  SSH root login is DISABLED until you complete web setup!"
-echo ""
-read -p "Press Enter to reboot, or Ctrl+C to stay in installer..."
+    echo "100"
+} | whiptail --title "Installing AlvaOS" --gauge "Please wait..." 10 60 0
+
+msg "Installation completed successfully!\n\nRoot password is random. SSH root login is DISABLED.\n\nSet your password via Web UI at: http://[SERVER-IP]:8080\n\nPlease remove installation media and reboot."
 reboot
