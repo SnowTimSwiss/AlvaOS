@@ -113,9 +113,9 @@ class AppStore:
         """Create a Btrfs subvolume"""
         try:
             if os.geteuid() != 0:
-                cmd = ['sudo', '-n', 'btrfs', 'subvolume', 'create', path]
+                cmd = ['sudo', '-n', '/usr/bin/btrfs', 'subvolume', 'create', path]
             else:
-                cmd = ['btrfs', 'subvolume', 'create', path]
+                cmd = ['/usr/bin/btrfs', 'subvolume', 'create', path]
             
             result = subprocess.run(
                 cmd,
@@ -136,9 +136,9 @@ class AppStore:
         """Delete a Btrfs subvolume"""
         try:
             if os.geteuid() != 0:
-                cmd = ['sudo', '-n', 'btrfs', 'subvolume', 'delete', path]
+                cmd = ['sudo', '-n', '/usr/bin/btrfs', 'subvolume', 'delete', path]
             else:
-                cmd = ['btrfs', 'subvolume', 'delete', path]
+                cmd = ['/usr/bin/btrfs', 'subvolume', 'delete', path]
             
             result = subprocess.run(
                 cmd,

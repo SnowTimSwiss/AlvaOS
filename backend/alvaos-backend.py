@@ -25,6 +25,45 @@ from update_manager import UpdateManager
 from docker_manager import DockerManager
 from app_store import AppStore
 
+# System Commands Paths for Sudo (must match sudoers configuration in install-system.sh)
+CMD = {
+    'CHPASSWD': '/usr/sbin/chpasswd',
+    'USERADD': '/usr/sbin/useradd',
+    'USERDEL': '/usr/sbin/userdel',
+    'SMBPASSWD': '/usr/bin/smbpasswd',
+    'GROUPADD': '/usr/sbin/groupadd',
+    'GROUPDEL': '/usr/sbin/groupdel',
+    'GPASSWD': '/usr/bin/gpasswd',
+    'CHGRP': '/usr/bin/chgrp',
+    'CHMOD': '/usr/bin/chmod',
+    'SYSTEMCTL': '/bin/systemctl',
+    'SYSTEMD_RUN': '/usr/bin/systemd-run',
+    'REBOOT': '/usr/sbin/reboot',
+    'POWEROFF': '/usr/sbin/poweroff',
+    'TIMEDATECTL': '/usr/bin/timedatectl',
+    'HOSTNAMECTL': '/usr/bin/hostnamectl',
+    'APT_GET': '/usr/bin/apt-get',
+    'APT': '/usr/bin/apt',
+    'DPKG': '/usr/bin/dpkg',
+    'TAIL': '/usr/bin/tail',
+    'JOURNALCTL': '/usr/bin/journalctl',
+    'SMARTCTL': '/usr/sbin/smartctl',
+    'LSBLK': '/usr/bin/lsblk',
+    'WIPEFS': '/usr/sbin/wipefs',
+    'PARTPROBE': '/usr/sbin/partprobe',
+    'BTRFS': '/usr/bin/btrfs',
+    'MKFS_BTRFS': '/usr/sbin/mkfs.btrfs',
+    'MKDIR': '/usr/bin/mkdir',
+    'MOUNT': '/usr/bin/mount',
+    'UMOUNT': '/usr/bin/umount',
+    'RMDIR': '/usr/bin/rmdir',
+    'BLKID': '/usr/sbin/blkid',
+    'EXPORTFS': '/usr/sbin/exportfs',
+    'TEE': '/usr/bin/tee',
+    'CAT': '/usr/bin/cat',
+    'IP': '/usr/sbin/ip'
+}
+
 app = Flask(__name__, static_folder=None) # Disable default static serving to force version replacement
 # Fallback to current directory for dev if /opt doesn't exist
 WEBUI_ROOT = '/opt/alvaos/webui'
@@ -112,7 +151,7 @@ def sync_samba_password(username, password):
     """Synchronize a system user's password with the Samba database"""
     try:
         process = subprocess.Popen(
-            build_privileged_cmd(['smbpasswd', '-a', '-s', username]),
+            build_privileged_cmd([CMD['SMBPASSWD'], '-a', '-s', username]),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -948,11 +987,11 @@ def system_time():
         if platform.system() == 'Linux':
             try:
                 if 'timezone' in data:
-                    res, err = run_sudo_command(['sudo', 'timedatectl', 'set-timezone', data['timezone']])
+                    res, err = run_sudo_command(['sudo', CMD['TIMEDATECTL'], 'set-timezone', data['timezone']])
                     if err: raise Exception(err)
                 if 'ntp' in data:
                     ntp_val = 'true' if data['ntp'] else 'false'
-                    res, err = run_sudo_command(['sudo', 'timedatectl', 'set-ntp', ntp_val])
+                    res, err = run_sudo_command(['sudo', CMD['TIMEDATECTL'], 'set-ntp', ntp_val])
                     if err: raise Exception(err)
                 
                 return jsonify({'success': True, 'message': 'Time settings updated'})
@@ -1084,7 +1123,7 @@ def set_hostname():
 
     if platform.system() == 'Linux':
         # 1. Update hostname via hostnamectl
-        res, err = run_sudo_command(['sudo', 'hostnamectl', 'set-hostname', new_hostname])
+        res, err = run_sudo_command(['sudo', CMD['HOSTNAMECTL'], 'set-hostname', new_hostname])
         if err:
              return jsonify({'error': f'Failed to set hostname: {err}'}), 500
              
@@ -1095,14 +1134,14 @@ def set_hostname():
             hosts_file = '/etc/hosts'
             
             # Read current hosts file
-            res, err = run_sudo_command(['sudo', 'cat', hosts_file])
+            res, err = run_sudo_command(['sudo', CMD['CAT'], hosts_file])
             if res and res.returncode == 0:
                 content = res.stdout
                 new_content = content.replace(old_hostname, new_hostname)
                 
                 # Write back with tee
                 process = subprocess.Popen(
-                    build_privileged_cmd(['tee', hosts_file]), 
+                    build_privileged_cmd([CMD['TEE'], hosts_file]), 
                     stdin=subprocess.PIPE, 
                     stdout=subprocess.PIPE, 
                     stderr=subprocess.PIPE, 
@@ -1128,7 +1167,7 @@ def get_system_logs():
         log_file = '/var/log/syslog'
         if os.path.exists(log_file):
             try:
-                cmd = ['sudo', 'tail', '-n', '50', log_file]
+                cmd = ['sudo', CMD['TAIL'], '-n', '50', log_file]
                 res, err = run_sudo_command(cmd)
                 if res and res.returncode == 0:
                     logs = res.stdout.splitlines()
@@ -1138,7 +1177,7 @@ def get_system_logs():
                 
         # Strategy 2: Use journalctl (systemd systems)
         try:
-            cmd = ['sudo', '/usr/bin/journalctl', '-n', '50', '--no-pager', '--output=short']
+            cmd = ['sudo', CMD['JOURNALCTL'], '-n', '50', '--no-pager', '--output=short']
             res, err = run_sudo_command(cmd)
             if res and res.returncode == 0:
                 logs = res.stdout.splitlines()
@@ -1271,7 +1310,7 @@ def get_disks():
             # Use lsblk to get disk information
             # LC_ALL=C for consistent parsing
             result = subprocess.run(
-                ['env', 'LC_ALL=C', 'lsblk', '-J', '-o', 'NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,MODEL,SERIAL,TRAN,RM'],
+                ['env', 'LC_ALL=C', CMD['LSBLK'], '-J', '-o', 'NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,MODEL,SERIAL,TRAN,RM'],
                 capture_output=True, text=True, timeout=5
             )
             
@@ -1300,7 +1339,7 @@ def get_disks():
                         
                         try:
                             # Try to get detailed SMART info in JSON format
-                            res, err = run_sudo_command(['sudo', 'smartctl', '-H', '-A', '-j', f'/dev/{device["name"]}'], timeout=5)
+                            res, err = run_sudo_command(['sudo', CMD['SMARTCTL'], '-H', '-A', '-j', f'/dev/{device["name"]}'], timeout=5)
                             
                             if res and (res.returncode == 0 or (res.returncode & 0x1) == 0):
                                 smart_data = json.loads(res.stdout)
@@ -1425,7 +1464,7 @@ def get_disk_smart(disk_name):
             
             # Get detailed SMART info in JSON format
             # For NVMe, smartctl -a is standard, for others we might need specific types
-            cmd = ['sudo', 'smartctl', '-a', '-j', f'/dev/{disk_name}']
+            cmd = ['sudo', CMD['SMARTCTL'], '-a', '-j', f'/dev/{disk_name}']
             result, err = run_sudo_command(cmd, timeout=5)
             if err:
                 return jsonify({'error': err}), 500
@@ -1468,21 +1507,21 @@ def wipe_disk(disk_name):
             # 1. Unmount any Partitions
             # Get list of partitions for the disk
             try:
-                lsblk_res = subprocess.run(['lsblk', '-nr', '-o', 'NAME', f'/dev/{disk_name}'], capture_output=True, text=True)
+                lsblk_res = subprocess.run([CMD['LSBLK'], '-nr', '-o', 'NAME', f'/dev/{disk_name}'], capture_output=True, text=True)
                 if lsblk_res.returncode == 0:
                     for line in lsblk_res.stdout.splitlines():
                         dev_path = f'/dev/{line.split()[0]}'
-                        run_sudo_command(['sudo', 'umount', '-l', dev_path])
+                        run_sudo_command(['sudo', CMD['UMOUNT'], '-l', dev_path])
             except:
                 pass
             
             # 2. Wipe file system signatures
-            res, err = run_sudo_command(['sudo', 'wipefs', '-a', f'/dev/{disk_name}'])
+            res, err = run_sudo_command(['sudo', CMD['WIPEFS'], '-a', f'/dev/{disk_name}'])
             if err:
                 return jsonify({'error': f'Wipe failed: {err}'}), 500
                 
             # 3. Inform kernel of changes
-            run_sudo_command(['sudo', 'partprobe', f'/dev/{disk_name}'])
+            run_sudo_command(['sudo', CMD['PARTPROBE'], f'/dev/{disk_name}'])
             
             return jsonify({'success': True, 'message': f'Disk /dev/{disk_name} wiped successfully and is now ready for use.'})
         else:
@@ -1528,7 +1567,7 @@ def manage_pools():
         try:
             if platform.system() == 'Linux':
                 # Get list of Btrfs filesystems
-                result, err = run_sudo_command(['sudo', 'btrfs', 'filesystem', 'show'])
+                result, err = run_sudo_command(['sudo', CMD['BTRFS'], 'filesystem', 'show'])
                 
                 if result and result.returncode == 0:
                     output = result.stdout
@@ -1590,7 +1629,7 @@ def manage_pools():
                         
                         if pool['devices']:
                             try:
-                                usage_res, _ = run_sudo_command(['sudo', 'btrfs', 'filesystem', 'usage', pool['devices'][0]], timeout=5)
+                                usage_res, _ = run_sudo_command(['sudo', CMD['BTRFS'], 'filesystem', 'usage', pool['devices'][0]], timeout=5)
                                 if usage_res and usage_res.returncode == 0:
                                     u_out = usage_res.stdout
                                     if 'RAID1' in u_out: pool['raid_level'] = 'RAID1'
@@ -1684,7 +1723,7 @@ def manage_pools():
         try:
             if platform.system() == 'Linux':
                 # Build mkfs.btrfs command
-                cmd = ['sudo', 'mkfs.btrfs', '-f', '-L', pool_name]
+                cmd = ['sudo', CMD['MKFS_BTRFS'], '-f', '-L', pool_name]
                 
                 # Add RAID level
                 if raid_level != 'single':
@@ -1702,12 +1741,12 @@ def manage_pools():
                 # Create mount point
                 mount_point = f'/mnt/alvaos/{pool_name}'
                 # Use sudo to create directory as we might not have permission in /mnt/alvaos
-                res, err = run_sudo_command(['sudo', 'mkdir', '-p', mount_point])
+                res, err = run_sudo_command(['sudo', CMD['MKDIR'], '-p', mount_point])
                 if err:
                      return jsonify({'error': f'Failed to create mount point: {err}'}), 500
                 
                 # Mount the pool
-                res, err = run_sudo_command(['sudo', 'mount', devices[0], mount_point])
+                res, err = run_sudo_command(['sudo', CMD['MOUNT'], devices[0], mount_point])
                 if err:
                     return jsonify({'error': f'Pool created but failed to mount: {err}'}), 500
                 
@@ -1719,7 +1758,7 @@ def manage_pools():
                 pool_id = str(uuid.uuid4()) # Fallback
                 try:
                     # blkid returns just the UUID value
-                    blkid_res, _ = run_sudo_command(['sudo', 'blkid', '-s', 'UUID', '-o', 'value', devices[0]])
+                    blkid_res, _ = run_sudo_command(['sudo', CMD['BLKID'], '-s', 'UUID', '-o', 'value', devices[0]])
                     if blkid_res and blkid_res.returncode == 0:
                          real_uuid = blkid_res.stdout.strip()
                          if real_uuid:
@@ -1774,17 +1813,17 @@ def manage_pools():
             
             if platform.system() == 'Linux':
                 if mount_point:
-                    run_sudo_command(['sudo', 'umount', mount_point], timeout=5)
+                    run_sudo_command(['sudo', CMD['UMOUNT'], mount_point], timeout=5)
                     
                     try:
-                        run_sudo_command(['sudo', 'rmdir', mount_point])
+                        run_sudo_command(['sudo', CMD['RMDIR'], mount_point])
                     except:
                         pass
                 
                 devices = pool_info.get('devices', [])
                 for device in devices:
                     try:
-                        run_sudo_command(['sudo', 'wipefs', '-a', device])
+                        run_sudo_command(['sudo', CMD['WIPEFS'], '-a', device])
                     except Exception as e:
                          print(f"Warning: Failed to wipe device {device}: {e}")
             
@@ -1817,7 +1856,7 @@ def manage_subvolumes(pool_id):
             if platform.system() == 'Linux' and mount_point:
                 # Fix: Ensure LC_ALL=C and non-interactive sudo
                 result = subprocess.run(
-                    ['sudo', '-n', 'env', 'LC_ALL=C', 'btrfs', 'subvolume', 'list', mount_point],
+                    ['sudo', '-n', 'env', 'LC_ALL=C', CMD['BTRFS'], 'subvolume', 'list', mount_point],
                     capture_output=True, text=True, timeout=5
                 )
                 
@@ -1858,7 +1897,7 @@ def manage_subvolumes(pool_id):
             if platform.system() == 'Linux' and mount_point:
                 subvol_path = f'{mount_point}/{subvol_name}'
                 
-                res, err = run_sudo_command(['sudo', 'btrfs', 'subvolume', 'create', subvol_path])
+                res, err = run_sudo_command(['sudo', CMD['BTRFS'], 'subvolume', 'create', subvol_path])
                 
                 if err:
                     return jsonify({'error': f'Failed to create subvolume: {err}'}), 500
@@ -1889,7 +1928,7 @@ def manage_subvolumes(pool_id):
             if platform.system() == 'Linux' and mount_point:
                 subvol_path = f'{mount_point}/{subvol_name}'
                 
-                res, err = run_sudo_command(['sudo', 'btrfs', 'subvolume', 'delete', subvol_path])
+                res, err = run_sudo_command(['sudo', CMD['BTRFS'], 'subvolume', 'delete', subvol_path])
                 
                 if err:
                     return jsonify({'error': f'Failed to delete subvolume: {err}'}), 500
@@ -1931,7 +1970,7 @@ def expand_pool(pool_id):
                 
             # Add devices to pool
             # cmd: sudo btrfs device add /dev/sdX /mnt/alvaos/poolname
-            cmd = ['sudo', 'btrfs', 'device', 'add'] + devices + [mount_point]
+            cmd = ['sudo', CMD['BTRFS'], 'device', 'add'] + devices + [mount_point]
             res, err = run_sudo_command(cmd, timeout=60)
             
             if err:
@@ -1939,7 +1978,7 @@ def expand_pool(pool_id):
                 
             # Start a balance in background to redistribute data
             subprocess.Popen(
-                build_privileged_cmd(['btrfs', 'balance', 'start', mount_point]),
+                build_privileged_cmd([CMD['BTRFS'], 'balance', 'start', mount_point]),
                 env={'LC_ALL': 'C'}
             )
             
@@ -2018,7 +2057,7 @@ def get_available_paths():
             if platform.system() == 'Linux':
                 try:
                     result, err = run_sudo_command(
-                        ['sudo', 'btrfs', 'subvolume', 'list', pool['mount_point']], timeout=3
+                        ['sudo', CMD['BTRFS'], 'subvolume', 'list', pool['mount_point']], timeout=3
                     )
                     if result and result.returncode == 0:
                         for line in result.stdout.split('\n'):
@@ -2100,11 +2139,11 @@ def manage_shares():
                     export_data = f'# AlvaOS Share: {share_name}\n{share_path} {allowed_hosts}({"ro" if read_only else "rw"},sync,no_subtree_check)\n'
                     
                     # Append to /etc/exports
-                    cmd = build_privileged_cmd(['tee', '-a', '/etc/exports'])
+                    cmd = build_privileged_cmd([CMD['TEE'], '-a', '/etc/exports'])
                     subprocess.run(cmd, input=export_data, text=True, check=True, env={'LC_ALL': 'C'})
                     
                     # Reload NFS exports
-                    res, err = run_sudo_command(['sudo', 'exportfs', '-ra'])
+                    res, err = run_sudo_command(['sudo', CMD['EXPORTFS'], '-ra'])
                     if err: return jsonify({'error': f'Failed to reload NFS: {err}'}), 500
                     
                 elif protocol == 'smb':
@@ -2121,11 +2160,11 @@ def manage_shares():
                     )
                     
                     # Append to /etc/samba/smb.conf
-                    cmd = build_privileged_cmd(['tee', '-a', '/etc/samba/smb.conf'])
+                    cmd = build_privileged_cmd([CMD['TEE'], '-a', '/etc/samba/smb.conf'])
                     subprocess.run(cmd, input=smb_config, text=True, check=True, env={'LC_ALL': 'C'})
                     
                     # Restart Samba
-                    res, err = run_sudo_command(['sudo', 'systemctl', 'restart', 'smbd'])
+                    res, err = run_sudo_command(['sudo', CMD['SYSTEMCTL'], 'restart', 'smbd'])
                     if err: return jsonify({'error': f'Failed to restart Samba: {err}'}), 500
                     
                     # Ensure root is in Samba database (for non-guest access)
@@ -2195,7 +2234,7 @@ def manage_shares():
                     # Remove from /etc/exports using sudo
                     try:
                         # Read the file content via sudo
-                        res, err = run_sudo_command(['sudo', 'cat', '/etc/exports'])
+                        res, err = run_sudo_command(['sudo', CMD['CAT'], '/etc/exports'])
                         if err or not res:
                             raise Exception(f"Could not read /etc/exports: {err}")
                         
@@ -2215,11 +2254,11 @@ def manage_shares():
                         
                         # Write back using sudo tee
                         content = '\n'.join(new_lines) + '\n'
-                        process = subprocess.Popen(build_privileged_cmd(['tee', '/etc/exports']), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env={'LC_ALL': 'C'})
+                        process = subprocess.Popen(build_privileged_cmd([CMD['TEE'], '/etc/exports']), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env={'LC_ALL': 'C'})
                         process.communicate(input=content)
                         
                         # Reload NFS exports
-                        run_sudo_command(['sudo', 'exportfs', '-ra'])
+                        run_sudo_command(['sudo', CMD['EXPORTFS'], '-ra'])
                     except Exception as e:
                         print(f"Error removing NFS export: {e}")
                 
@@ -2227,7 +2266,7 @@ def manage_shares():
                     # Remove from /etc/samba/smb.conf using sudo
                     try:
                         # Read the file content via sudo
-                        res, err = run_sudo_command(['sudo', 'cat', '/etc/samba/smb.conf'])
+                        res, err = run_sudo_command(['sudo', CMD['CAT'], '/etc/samba/smb.conf'])
                         if err or not res:
                             raise Exception(f"Could not read /etc/samba/smb.conf: {err}")
                         
@@ -2243,14 +2282,14 @@ def manage_shares():
                         process.communicate(input=content)
                         
                         # Restart Samba
-                        run_sudo_command(['sudo', 'systemctl', 'restart', 'smbd'])
+                        run_sudo_command(['sudo', CMD['SYSTEMCTL'], 'restart', 'smbd'])
                     except Exception as e:
                         print(f"Error removing SMB share: {e}")
                     # Remove share group
                     try:
                         group_name = share_info.get('smb_group')
                         if group_name:
-                            run_sudo_command(['sudo', 'groupdel', group_name])
+                            run_sudo_command(['sudo', CMD['GROUPDEL'], group_name])
                     except Exception as e:
                         print(f"Error removing SMB group: {e}")
             
@@ -2319,7 +2358,7 @@ def update_share_permissions():
             share_info.get('guest_access', False)
         )
         reconcile_samba_guest_settings(shares_state)
-        run_sudo_command(['sudo', 'systemctl', 'restart', 'smbd'])
+        run_sudo_command(['sudo', CMD['SYSTEMCTL'], 'restart', 'smbd'])
 
     return jsonify({'success': True, 'message': 'SMB permissions updated'})
 
@@ -2343,7 +2382,7 @@ def mount_existing_pools():
             # 1. Ensure mount point exists
             if not os.path.exists(mount_point):
                 print(f"Creating mount point for {name}: {mount_point}")
-                run_sudo_command(['sudo', 'mkdir', '-p', mount_point])
+                run_sudo_command(['sudo', CMD['MKDIR'], '-p', mount_point])
             
             # 2. Check if already mounted
             is_mounted = subprocess.run(['mountpoint', '-q', mount_point], check=False).returncode == 0
@@ -2355,7 +2394,7 @@ def mount_existing_pools():
                 # STRATEGY 1: Mount by UUID (Robust against device changes)
                 # The pool_id key is stored as the UUID during creation
                 if pool_id and len(pool_id) > 20:
-                    res, err = run_sudo_command(['sudo', 'mount', '-U', pool_id, mount_point])
+                    res, err = run_sudo_command(['sudo', CMD['MOUNT'], '-U', pool_id, mount_point])
                     if res and res.returncode == 0:
                         print(f"Successfully mounted {name} using UUID: {pool_id}")
                         mounted = True
@@ -2363,7 +2402,7 @@ def mount_existing_pools():
                 # STRATEGY 2: Fallback to device path
                 if not mounted and devices:
                     print(f"UUID mount not possible/failed for {name}, trying device path: {devices[0]}")
-                    res, err = run_sudo_command(['sudo', 'mount', devices[0], mount_point])
+                    res, err = run_sudo_command(['sudo', CMD['MOUNT'], devices[0], mount_point])
                     if err:
                         print(f"Error mounting {name}: {err}")
                     else:

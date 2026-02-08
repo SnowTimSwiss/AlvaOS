@@ -241,51 +241,124 @@ function getAppEmoji(category) {
     return emojis[category] || '📦';
 }
 
+// Show installation wizard instead of prompt
+async function showInstallWizard(appId) {
+    const modal = document.getElementById('install-modal');
+    const poolSelect = document.getElementById('install-pool-select');
+    const confirmBtn = document.getElementById('confirm-install-btn');
+    const closeBtns = document.querySelectorAll('.close-modal-btn');
+
+    // Reset modal
+    modal.style.display = 'flex';
+    poolSelect.innerHTML = '<option value="">Loading pools...</option>';
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Install Application';
+
+    // Close modal handlers
+    closeBtns.forEach(btn => {
+        btn.onclick = () => {
+            modal.style.display = 'none';
+        };
+    });
+
+    try {
+        // Fetch app details
+        const appRes = await fetch(`${API_BASE}/apps/available/${appId}`, {
+            headers: { 'Authorization': authToken }
+        });
+        if (!appRes.ok) throw new Error('Failed to load app details');
+        const app = await appRes.json();
+
+        // Populate info
+        document.getElementById('install-app-name').textContent = app.name || appId;
+        document.getElementById('install-app-version').textContent = `Version: ${app.version || 'latest'}`;
+        document.getElementById('install-app-desc').textContent = app.description || '';
+        document.getElementById('install-app-icon').textContent = getAppEmoji(app.category);
+
+        // Fetch pools
+        const poolsRes = await fetch(`${API_BASE}/storage/pools`, {
+            headers: { 'Authorization': authToken }
+        });
+        if (!poolsRes.ok) throw new Error('Failed to load storage pools');
+        const poolsData = await poolsRes.json();
+        const pools = poolsData.pools || [];
+
+        if (pools.length === 0) {
+            poolSelect.innerHTML = '<option value="">No pools available - create one first!</option>';
+        } else {
+            poolSelect.innerHTML = pools.map(p => `
+                <option value="${p.mount_point}">${p.name} (${p.total_size} total, ${p.mount_point})</option>
+            `).join('');
+            confirmBtn.disabled = false;
+        }
+
+        // Handle confirm
+        confirmBtn.onclick = async () => {
+            const poolPath = poolSelect.value;
+            const parentSubvol = document.getElementById('install-subvolume-input').value.trim();
+
+            if (!poolPath) {
+                showNotification('Please select a storage pool', 'error');
+                return;
+            }
+
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = 'Installing...';
+
+            try {
+                const installRes = await fetch(`${API_BASE}/apps/install`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': authToken,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        app_id: appId,
+                        pool_path: poolPath,
+                        parent_subvolume: parentSubvol || undefined
+                    })
+                });
+
+                if (!installRes.ok) {
+                    const err = await installRes.json();
+                    throw new Error(err.error || 'Installation failed');
+                }
+
+                showNotification(`App "${app.name || appId}" installed successfully!`, 'success');
+                modal.style.display = 'none';
+                loadInstalledApps();
+                // Switch to installed tab automatically
+                document.querySelector('.tab-btn[data-tab="installed"]').click();
+
+            } catch (err) {
+                showNotification(err.message, 'error');
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = 'Install Application';
+            }
+        };
+
+    } catch (err) {
+        showNotification(err.message, 'error');
+        modal.style.display = 'none';
+    }
+}
+
 // Show app details (placeholder for future modal)
 function showAppDetails(appId) {
     console.log('Show details for:', appId);
     // TODO: Implement app details modal
 }
 
-// Install app (simplified - will need wizard in future)
+// Install app
 async function installApp(appId) {
-    // For now, show a simple prompt
-    // TODO: Implement proper installation wizard
-    const poolPath = prompt('Enter pool path (e.g., /mnt/alvaos/main-pool):');
-    if (!poolPath) return;
-
-    try {
-        const response = await fetch(`${API_BASE}/apps/install`, {
-            method: 'POST',
-            headers: {
-                'Authorization': authToken,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                app_id: appId,
-                pool_path: poolPath
-            })
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Installation failed');
-        }
-
-        showNotification('App installed successfully!', 'success');
-        loadInstalledApps();
-
-    } catch (error) {
-        console.error('Installation error:', error);
-        showNotification(`Installation failed: ${error.message}`, 'error');
-    }
+    showInstallWizard(appId);
 }
 
 // Uninstall app
 async function uninstallApp(appId) {
-    if (!confirm(`Are you sure you want to uninstall ${appId}?`)) return;
+    if (!await showConfirm(`Are you sure you want to uninstall ${appId}?\nThis will stop and remove all associated containers.`)) return;
 
-    const keepData = confirm('Keep app data? (Click OK to keep, Cancel to delete)');
+    const keepData = await showConfirm(`Keep app data for ${appId}?\nClick Confirm to keep storage subvolumes, Cancel to PERMANENTLY delete them.`);
 
     try {
         const response = await fetch(`${API_BASE}/apps/${appId}`, {

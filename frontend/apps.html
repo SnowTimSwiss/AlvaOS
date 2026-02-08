@@ -304,6 +304,46 @@
         </div>
     </div>
 
+    <!-- App Install Modal -->
+    <div id="install-modal" class="modal" style="display:none; position: fixed; top: 10; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(4px); z-index: 1000; align-items: center; justify-content: center;">
+        <div class="modal-content" style="background: var(--bg-card); border: 1px solid var(--border-default); border-radius: var(--radius-default); padding: 24px; max-width: 550px; width: 90%; max-height: 90vh; overflow-y: auto;">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="font-size: 1.25rem; font-weight: 600; margin: 0;">Install Application</h2>
+                <button class="close-modal-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">&times;</button>
+            </div>
+            
+            <div id="install-app-info" style="display: flex; gap: 16px; margin-bottom: 24px; padding: 16px; background: var(--bg-body); border-radius: var(--radius-default); border: 1px solid var(--border-subtle);">
+                <div id="install-app-icon" style="font-size: 2.5rem; width: 64px; height: 64px; display: flex; align-items: center; justify-content: center; background: var(--bg-card); border-radius: var(--radius-default); border: 1px solid var(--border-default);">📦</div>
+                <div style="flex: 1;">
+                    <h3 id="install-app-name" style="margin: 0 0 4px 0; font-size: 1.1rem;">App Name</h3>
+                    <p id="install-app-version" style="margin: 0 0 8px 0; font-size: 0.8rem; color: var(--text-secondary);">Version: latest</p>
+                    <p id="install-app-desc" style="margin: 0; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4;">App description goes here...</p>
+                </div>
+            </div>
+
+            <div class="setting-group">
+                <label class="setting-label">Storage Pool</label>
+                <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 8px;">Select a pool to host app data and containers.</p>
+                <select id="install-pool-select" style="width: 100%; padding: 10px;"></select>
+            </div>
+
+            <div class="setting-group" style="margin-top: 16px;">
+                <label class="setting-label">Parent Subvolume (Optional)</label>
+                <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 8px;">Group this app under a subvolume (e.g., "data", "media").</p>
+                <input type="text" id="install-subvolume-input" placeholder="e.g. data" style="width: 100%; padding: 10px;">
+            </div>
+
+            <div id="install-port-warning" style="margin-top: 16px; padding: 12px; background: rgba(248, 81, 73, 0.1); border: 1px solid var(--accent-danger); border-radius: var(--radius-default); display: none;">
+                <p style="font-size: 0.85rem; color: var(--accent-danger); margin: 0;">⚠️ Some default ports are already in use. You may need to remap them after installation.</p>
+            </div>
+
+            <div style="display: flex; gap: 12px; margin-top: 32px;">
+                <button class="btn-secondary close-modal-btn" style="flex: 1;">Cancel</button>
+                <button id="confirm-install-btn" class="btn-primary" style="flex: 2;">Install Application</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts -->
     <script src="notifications.js"></script>
     <script src="app.js"></script>

@@ -286,7 +286,7 @@ class DockerManager:
         """
         try:
             result = subprocess.run(
-                ['systemctl', 'is-active', 'docker'],
+                ['/bin/systemctl', 'is-active', 'docker'],
                 capture_output=True,
                 text=True,
                 timeout=5

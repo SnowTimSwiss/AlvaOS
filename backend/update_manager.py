@@ -13,6 +13,18 @@ from urllib.parse import urlparse
 import requests
 from packaging.version import Version, InvalidVersion
 
+CMD = {
+    'DPKG_DEB': '/usr/bin/dpkg-deb',
+    'DPKG': '/usr/bin/dpkg',
+    'SYSTEMD_RUN': '/usr/bin/systemd-run',
+    'BASH': '/bin/bash',
+    'APT': '/usr/bin/apt',
+    'APT_GET': '/usr/bin/apt-get',
+    'LSBLK': '/usr/bin/lsblk',
+    'MOUNT': '/usr/bin/mount',
+    'UMOUNT': '/usr/bin/umount'
+}
+
 
 DEFAULT_SETTINGS = {
     "auto_check": True,
@@ -281,7 +293,7 @@ class UpdateManager:
             return False, "Invalid package path"
         if not os.path.exists(package_path):
             return False, "Package not found"
-        res, err = self.run_command(["dpkg-deb", "--info", package_path], timeout=30)
+        res, err = self.run_command([CMD['DPKG_DEB'], "--info", package_path], timeout=30)
         if err or not res or res.returncode != 0:
             return False, err or (res.stderr if res else "dpkg-deb failed")
         return True, None
@@ -300,7 +312,7 @@ class UpdateManager:
         # Use systemd-run to detach the update process if possible
         use_systemd_run = False
         if os.path.exists(script_path):
-            use_systemd_run = shutil.which("systemd-run") is not None
+            use_systemd_run = shutil.which(CMD['SYSTEMD_RUN']) is not None
 
         if use_systemd_run and os.path.exists(script_path):
             self.update_progress("installing", "Starting update service", 10, {"package": package_path})
@@ -310,11 +322,11 @@ class UpdateManager:
                 # sudo -n systemd-run --unit=alvaos-updater...
                 # We need to run inside a separate scope or service to survive backend restart
                 final_cmd = [
-                    "sudo", "-n", "systemd-run", 
+                    "sudo", "-n", CMD['SYSTEMD_RUN'], 
                     "--unit=alvaos-updater-" + secrets.token_hex(4),
                     "--description=AlvaOS Updater",
                     "--no-block", # Critical: don't wait for it
-                    "/bin/bash", script_path, package_path
+                    CMD['BASH'], script_path, package_path
                 ]
                 subprocess.Popen(final_cmd)
                 
@@ -323,14 +335,14 @@ class UpdateManager:
             except Exception as e:
                  # Fallback to direct Popen if systemd-run implies errors (though unlikely on Linux with systemd)
                  try:
-                    subprocess.Popen(["sudo", "-n", "nohup", "/bin/bash", script_path, package_path], start_new_session=True)
+                    subprocess.Popen(["sudo", "-n", "nohup", CMD['BASH'], script_path, package_path], start_new_session=True)
                     return {"success": True, "message": "Update process started in background (nohup)"}
                  except Exception as e2:
                     return {"success": False, "error": f"Failed to launch update script: {e} / {e2}"}
 
         else:
             # Fallback for systems without script or systemd
-            res, run_err = self.run_command(["dpkg", "-i", package_path], timeout=600)
+            res, run_err = self.run_command([CMD['DPKG'], "-i", package_path], timeout=600)
             if run_err or not res or res.returncode != 0:
                 error_msg = run_err or (res.stderr if res else "dpkg failed")
                 self.set_update_state("error", "Install failed", {"error": error_msg})
@@ -351,7 +363,7 @@ class UpdateManager:
         if platform.system() != "Linux":
             return {"error": "Debian updates are only supported on Linux"}
         self.set_update_state("checking", "Checking Debian updates")
-        res, err = self.run_command(["apt", "list", "--upgradable"], timeout=60)
+        res, err = self.run_command([CMD['APT'], "list", "--upgradable"], timeout=60)
         if err or not res or res.returncode != 0:
             self.set_update_state("error", "Debian update check failed", {"error": err or res.stderr})
             return {"error": err or (res.stderr if res else "apt failed")}
@@ -374,11 +386,11 @@ class UpdateManager:
         if platform.system() != "Linux":
             return {"success": False, "error": "Debian updates are only supported on Linux"}
         self.set_update_state("installing", "Applying Debian updates")
-        self.run_command(["apt-get", "update"], timeout=120)
+        self.run_command([CMD['APT_GET'], "update"], timeout=120)
 
-        cmd = ["apt-get", "upgrade", "-y"]
+        cmd = [CMD['APT_GET'], "upgrade", "-y"]
         if packages:
-            cmd = ["apt-get", "install", "-y"] + list(packages)
+            cmd = [CMD['APT_GET'], "install", "-y"] + list(packages)
 
         res, err = self.run_command(cmd, timeout=1200)
         if err or not res or res.returncode != 0:
@@ -415,7 +427,7 @@ class UpdateManager:
             try:
                 # Get removable devices from lsblk
                 result = subprocess.run(
-                    ['lsblk', '-J', '-o', 'NAME,MOUNTPOINT,RM,TYPE,FSTYPE'],
+                    [CMD['LSBLK'], '-J', '-o', 'NAME,MOUNTPOINT,RM,TYPE,FSTYPE'],
                     capture_output=True, text=True, timeout=5
                 )
                 if result.returncode == 0:
@@ -485,7 +497,7 @@ class UpdateManager:
         try:
             os.makedirs(mount_point, exist_ok=True)
             # Try mounting read-only
-            res = subprocess.run(['sudo', 'mount', '-o', 'ro', dev_path, mount_point], 
+            res = subprocess.run(['sudo', CMD['MOUNT'], '-o', 'ro', dev_path, mount_point], 
                                capture_output=True, text=True, timeout=10)
             if res.returncode == 0:
                 try:
@@ -499,7 +511,7 @@ class UpdateManager:
                         cached_pkg["path"] = cached_path
                         packages.append(cached_pkg)
                 finally:
-                    subprocess.run(['sudo', 'umount', mount_point], timeout=10)
+                    subprocess.run(['sudo', CMD['UMOUNT'], mount_point], timeout=10)
             
             # Cleanup mount point
             if os.path.exists(mount_point):
