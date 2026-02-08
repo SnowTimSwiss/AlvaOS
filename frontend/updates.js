@@ -1,4 +1,4 @@
-const API_BASE = '/api/v1';
+// API_BASE is defined in app.js or global scope
 
 let lastRelease = null;
 let statusPoll = null;

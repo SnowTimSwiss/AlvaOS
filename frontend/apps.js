@@ -1,5 +1,5 @@
 // AlvaOS Apps Management
-const API_BASE = window.location.origin;
+// API_BASE is defined in app.js
 let authToken = localStorage.getItem('alvaos_token');
 
 // Tab switching
@@ -12,8 +12,9 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.classList.add('active');
 
         // Update content
-        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-        document.getElementById(`tab-${tabName}`).classList.add('active');
+        document.querySelectorAll('.tab-panel').forEach(content => content.classList.remove('active'));
+        const targetTab = document.getElementById(`tab-${tabName}`);
+        if (targetTab) targetTab.classList.add('active');
 
         // Load data for the active tab
         if (tabName === 'store') {
@@ -31,7 +32,7 @@ async function loadAvailableApps() {
     const container = document.getElementById('apps-container');
 
     try {
-        const response = await fetch(`${API_BASE}/api/v1/apps/available`, {
+        const response = await fetch(`${API_BASE}/apps/available`, {
             headers: { 'Authorization': authToken }
         });
 
@@ -82,7 +83,7 @@ async function loadInstalledApps() {
     const container = document.getElementById('installed-container');
 
     try {
-        const response = await fetch(`${API_BASE}/api/v1/apps/installed`, {
+        const response = await fetch(`${API_BASE}/apps/installed`, {
             headers: { 'Authorization': authToken }
         });
 
@@ -148,7 +149,7 @@ async function loadContainers() {
     const wrapper = document.getElementById('containers-table-wrapper');
 
     try {
-        const response = await fetch(`${API_BASE}/api/v1/containers`, {
+        const response = await fetch(`${API_BASE}/containers`, {
             headers: { 'Authorization': authToken }
         });
 
@@ -254,7 +255,7 @@ async function installApp(appId) {
     if (!poolPath) return;
 
     try {
-        const response = await fetch(`${API_BASE}/api/v1/apps/install`, {
+        const response = await fetch(`${API_BASE}/apps/install`, {
             method: 'POST',
             headers: {
                 'Authorization': authToken,
@@ -287,7 +288,7 @@ async function uninstallApp(appId) {
     const keepData = confirm('Keep app data? (Click OK to keep, Cancel to delete)');
 
     try {
-        const response = await fetch(`${API_BASE}/api/v1/apps/${appId}`, {
+        const response = await fetch(`${API_BASE}/apps/${appId}`, {
             method: 'DELETE',
             headers: {
                 'Authorization': authToken,
@@ -314,7 +315,7 @@ async function uninstallApp(appId) {
 // Container actions
 async function startContainer(containerId) {
     try {
-        const response = await fetch(`${API_BASE}/api/v1/containers/${containerId}/start`, {
+        const response = await fetch(`${API_BASE}/containers/${containerId}/start`, {
             method: 'POST',
             headers: { 'Authorization': authToken }
         });
@@ -332,7 +333,7 @@ async function startContainer(containerId) {
 
 async function stopContainer(containerId) {
     try {
-        const response = await fetch(`${API_BASE}/api/v1/containers/${containerId}/stop`, {
+        const response = await fetch(`${API_BASE}/containers/${containerId}/stop`, {
             method: 'POST',
             headers: { 'Authorization': authToken }
         });
@@ -352,7 +353,7 @@ async function deleteContainer(containerId) {
     if (!confirm('Are you sure you want to delete this container?')) return;
 
     try {
-        const response = await fetch(`${API_BASE}/api/v1/containers/${containerId}?force=true`, {
+        const response = await fetch(`${API_BASE}/containers/${containerId}?force=true`, {
             method: 'DELETE',
             headers: { 'Authorization': authToken }
         });
@@ -370,7 +371,7 @@ async function deleteContainer(containerId) {
 
 async function viewLogs(containerId) {
     try {
-        const response = await fetch(`${API_BASE}/api/v1/containers/${containerId}/logs?lines=100`, {
+        const response = await fetch(`${API_BASE}/containers/${containerId}/logs?lines=100`, {
             headers: { 'Authorization': authToken }
         });
 
