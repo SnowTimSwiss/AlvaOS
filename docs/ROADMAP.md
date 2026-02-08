@@ -35,12 +35,12 @@ Release strategy: "Iterate fast, stabilize often."
 - [x] **Power**: Make the Installer more powerfull
 - [x] **Welcome Wizzard**: Add welcome wizzard to the OS for new users and new installs
 
-## v0.5.0 - Containerization
-- [ ] **Docker Engine**: Core integration with system services.
-- [ ] **App Store**: Add App Store to install and update apps.
-- [ ] **Container Management**: Start, stop, logs, and basic config via UI.
-- [ ] **Docker Compose**: Be able to install custom Apps with docker compose.
-- [ ] **Custom App store**: Be able to add custom app stores.
+## v0.5.0 - Containerization ✅
+- [x] **Docker Engine**: Core integration with system services.
+- [x] **App Store**: Add App Store to install and update apps.
+- [x] **Container Management**: Start, stop, logs, and basic config via UI.
+- [x] **Docker Compose**: Be able to install custom Apps with docker compose.
+- [will come back later] **Custom App store**: Be able to add custom app stores.
 
 ## v0.6.0 - Local Backups
 - [ ] **Backup Engine**: Create Snapshots.

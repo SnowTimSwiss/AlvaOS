@@ -2,6 +2,67 @@
 
 All notable changes to AlvaOS will be documented in this file.
 
+## [0.5.0] - TBD
+
+### Added - App Store & Container Management
+- **Docker Integration**: Full Docker container management with lifecycle controls (start, stop, restart, delete).
+- **App Store**: Curated catalog of 6 self-hosted applications:
+  - **Nextcloud**: Self-hosted cloud storage with MariaDB database
+  - **Jellyfin**: Free media server for movies, music, and TV shows
+  - **Home Assistant**: Open source home automation platform
+  - **Pi-hole**: Network-wide ad blocker and DNS server
+  - **Vaultwarden**: Self-hosted password manager (Bitwarden compatible)
+  - **Immich**: High-performance photo and video backup solution with PostgreSQL
+- **Apps Management UI**: New `/apps` page with 3 tabs:
+  - **App Store**: Browse and install apps with category badges and descriptions
+  - **Installed**: Manage installed apps with storage paths and uninstall options
+  - **Containers**: View and control all Docker containers with status indicators
+- **Pool-Based Installation**: Apps installed on Btrfs pools with automatic nested subvolume creation (`pool/parent/apps/app-name`)
+- **Container Logs**: View container logs directly from the UI
+- **Installation Wizard**: Simple app installation with pool selection and configuration
+
+### Added - Backend Modules
+- **`docker_manager.py`**: Complete Docker container lifecycle management
+  - List containers with status and details
+  - Start, stop, restart, and remove containers
+  - Retrieve container logs and stats
+  - Create containers from Docker Compose configurations
+  - Pull Docker images and check daemon status
+- **`app_store.py`**: App catalog and installation management
+  - Browse available apps from catalog
+  - Install apps with custom ports, volumes, and environment variables
+  - Uninstall apps with optional data retention
+  - Automatic nested Btrfs subvolume creation for app storage
+  - Track installed apps with metadata
+
+### Added - API Endpoints
+- **App Store APIs**:
+  - `GET /api/v1/apps/available` - List available apps
+  - `GET /api/v1/apps/available/<app_id>` - Get app details
+  - `POST /api/v1/apps/install` - Install an app
+  - `DELETE /api/v1/apps/<app_id>` - Uninstall an app
+  - `GET /api/v1/apps/installed` - List installed apps
+- **Container Management APIs**:
+  - `GET /api/v1/containers` - List all containers
+  - `GET /api/v1/containers/<id>` - Get container details
+  - `POST /api/v1/containers/<id>/start` - Start container
+  - `POST /api/v1/containers/<id>/stop` - Stop container
+  - `POST /api/v1/containers/<id>/restart` - Restart container
+  - `GET /api/v1/containers/<id>/logs` - Get container logs
+  - `DELETE /api/v1/containers/<id>` - Delete container
+  - `GET /api/v1/docker/status` - Check Docker daemon status
+
+### Changed
+- **Dependencies**: Added `python3-yaml` for Docker Compose YAML parsing
+- **Sudoers**: Added Docker and Btrfs subvolume management permissions for `alvaos` user
+- **Package Build**: Added `docker_manager.py`, `app_store.py`, and app catalog to system package
+- **Navigation**: Added "Apps" link to all pages in the web UI
+
+### Technical Details
+- **Nested Subvolumes**: Apps use structure `pool/parent/apps/app-name` for isolated storage
+- **Docker Compose Support**: Full support for multi-container apps with variable substitution
+- **Automatic Cleanup**: Uninstalling apps removes containers and optionally deletes data subvolumes
+
 ## [0.4.0] - 08.02.26
 
 ### Added - Professional Installer

@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlvaOS - Apps</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="notifications.css">
+    <style>
+        .apps-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: var(--space-md);
+            margin-bottom: var(--space-lg);
+        }
+
+        .app-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            padding: var(--space-md);
+            transition: border-color 0.2s, transform 0.2s;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .app-card:hover {
+            border-color: var(--accent-primary);
+            transform: translateY(-2px);
+        }
+
+        .app-icon {
+            width: 64px;
+            height: 64px;
+            border-radius: var(--radius-default);
+            margin-bottom: var(--space-md);
+            background: var(--bg-body);
+            border: 1px solid var(--border-default);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+        }
+
+        .app-name {
+            font-size: 1.05rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+
+        .app-description {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: var(--space-md);
+            flex: 1;
+            line-height: 1.4;
+        }
+
+        .app-category {
+            display: inline-block;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            background: var(--bg-body);
+            padding: 4px 8px;
+            border-radius: 4px;
+            margin-bottom: var(--space-sm);
+        }
+
+        .app-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .containers-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--bg-card);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            overflow: hidden;
+        }
+
+        .containers-table th {
+            background: var(--bg-body);
+            padding: 12px;
+            text-align: left;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            border-bottom: 1px solid var(--border-default);
+        }
+
+        .containers-table td {
+            padding: 12px;
+            border-bottom: 1px solid var(--border-default);
+            color: var(--text-primary);
+            font-size: 0.9rem;
+        }
+
+        .containers-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .containers-table tr:hover {
+            background: var(--bg-hover);
+        }
+
+        .container-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .container-status.running {
+            background: rgba(35, 134, 54, 0.15);
+            color: var(--accent-success);
+        }
+
+        .container-status.stopped {
+            background: rgba(139, 148, 158, 0.15);
+            color: var(--text-secondary);
+        }
+
+        .container-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .btn-icon {
+            background: var(--bg-body);
+            border: 1px solid var(--border-default);
+            color: var(--text-primary);
+            padding: 6px 10px;
+            border-radius: var(--radius-btn);
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+
+        .btn-icon:hover {
+            border-color: var(--accent-primary);
+            background: var(--bg-hover);
+        }
+
+        .btn-danger {
+            border-color: var(--accent-danger);
+            color: var(--accent-danger);
+        }
+
+        .btn-danger:hover {
+            background: rgba(248, 81, 73, 0.1);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: var(--text-secondary);
+        }
+
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        .port-badge {
+            display: inline-block;
+            background: var(--bg-body);
+            border: 1px solid var(--border-default);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-secondary);
+            margin-right: 4px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="logo-area">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round"
+                    stroke-linejoin="round" style="color: var(--accent-primary);" />
+            </svg>
+            <div class="logo-text">AlvaOS</div>
+        </div>
+
+        <nav>
+            <a href="index.html" class="nav-link"><span>🏠</span> Dashboard</a>
+            <a href="storage.html" class="nav-link"><span>🗄️</span> Storage</a>
+            <a href="apps.html" class="nav-link active"><span>🧩</span> Apps</a>
+            <a href="#" class="nav-link"><span>🔁</span> Backup</a>
+            <a href="users.html" class="nav-link"><span>👥</span> Users</a>
+            <a href="updates.html" class="nav-link"><span>&#x1F504;</span> Updates <span class="nav-badge" id="updates-nav-badge" style="display:none;">!</span></a>
+            <div style="flex:1"></div>
+            <a href="system.html" class="nav-link"><span>⚙️</span> System</a>
+        </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="main">
+        <header class="topbar">
+            <div class="breadcrumbs">
+                System / <span>Apps</span>
+            </div>
+            <div class="status-badge" style="gap:10px;">
+                <div class="status-badge" style="border:none; background:transparent; padding:0;">
+                    <div class="status-dot"></div>
+                    <span>Online</span>
+                </div>
+            </div>
+        </header>
+
+        <div class="content-scroll">
+            <div id="update-banner-slot"></div>
+            <div style="margin-bottom: 24px;">
+                <h1 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 4px;">App Store</h1>
+                <p style="color: var(--text-secondary); font-size: 0.95rem;">Install and manage containerized applications.</p>
+            </div>
+
+            <!-- Tab Navigation -->
+            <div class="tab-nav">
+                <button class="tab-btn active" data-tab="store">🛒 App Store</button>
+                <button class="tab-btn" data-tab="installed">📦 Installed</button>
+                <button class="tab-btn" data-tab="containers">🐳 Containers</button>
+            </div>
+
+            <!-- App Store Tab -->
+            <div class="tab-content active" id="tab-store">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h2
+                        style="font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em;">
+                        Available Apps</h2>
+                    <button id="refresh-apps-btn" class="btn-secondary"
+                        style="padding: 4px 10px; font-size: 0.85rem;">🔄 Refresh</button>
+                </div>
+                <div id="apps-container" class="apps-grid">
+                    <div class="empty-state" style="grid-column: 1/-1;">
+                        <div class="empty-state-icon">📦</div>
+                        <div>Loading apps...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Installed Tab -->
+            <div class="tab-content" id="tab-installed">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h2
+                        style="font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em;">
+                        Installed Apps</h2>
+                </div>
+                <div id="installed-container">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <div>No apps installed yet</div>
+                        <p style="font-size: 0.85rem; margin-top: 8px;">Install apps from the App Store tab</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Containers Tab -->
+            <div class="tab-content" id="tab-containers">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h2
+                        style="font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em;">
+                        Docker Containers</h2>
+                    <button id="refresh-containers-btn" class="btn-secondary"
+                        style="padding: 4px 10px; font-size: 0.85rem;">🔄 Refresh</button>
+                </div>
+                <div id="containers-table-wrapper">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🐳</div>
+                        <div>Loading containers...</div>
+                    </div>
+                </div>
+            </div>
+
+            <footer
+                style="margin-top:2rem; padding-top:1rem; border-top:1px solid var(--border-subtle); color:var(--text-secondary); font-size:0.8rem;">
+                AlvaOS {{VERSION}} &bull; <a href="https://github.com/SnowTimSwiss/AlvaOS" target="_blank"
+                    style="color:var(--text-secondary)">GitHub</a>
+            </footer>
+
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="notifications.js"></script>
+    <script src="app.js"></script>
+    <script src="apps.js"></script>
+</body>
+
+</html>

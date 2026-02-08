@@ -53,9 +53,15 @@ log "Copying backend and frontend..."
 cp "${REPO_ROOT}/backend/alvaos-backend.py" "${PKG_DIR}/opt/alvaos/bin/"
 chmod +x "${PKG_DIR}/opt/alvaos/bin/alvaos-backend.py"
 cp "${REPO_ROOT}/backend/update_manager.py" "${PKG_DIR}/opt/alvaos/bin/"
+cp "${REPO_ROOT}/backend/docker_manager.py" "${PKG_DIR}/opt/alvaos/bin/"
+cp "${REPO_ROOT}/backend/app_store.py" "${PKG_DIR}/opt/alvaos/bin/"
 
 # Copy frontend
 cp -r "${REPO_ROOT}/frontend/"* "${PKG_DIR}/opt/alvaos/webui/"
+
+# Copy app catalog
+mkdir -p "${PKG_DIR}/opt/alvaos/apps/icons"
+cp "${REPO_ROOT}/apps/catalog.json" "${PKG_DIR}/opt/alvaos/apps/"
 
 # Copy VERSION
 cp "${REPO_ROOT}/VERSION" "${PKG_DIR}/etc/alvaos/VERSION"
@@ -152,6 +158,14 @@ alvaos ALL=(ALL) NOPASSWD: /usr/bin/tail
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/reboot
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/poweroff
 
+# Docker Management
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/docker
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/docker-compose
+
+# Btrfs Subvolume Management (for app storage)
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/btrfs subvolume create *
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/btrfs subvolume delete *
+
 # Network Shares Config (NFS Exports, Samba)
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/exportfs
 alvaos ALL=(ALL) NOPASSWD: /bin/cat /etc/exports
@@ -168,7 +182,7 @@ Package: alvaos-system
 Version: ${VERSION}
 Architecture: amd64
 Maintainer: AlvaOS Team <dev@alvaos.org>
-Depends: python3, python3-flask, python3-flask-cors, python3-psutil, python3-requests, python3-packaging, docker.io, docker-compose, btrfs-progs, systemd, smartmontools, nfs-kernel-server, samba, network-manager
+Depends: python3, python3-flask, python3-flask-cors, python3-psutil, python3-requests, python3-packaging, python3-yaml, docker.io, docker-compose, btrfs-progs, systemd, smartmontools, nfs-kernel-server, samba, network-manager
 Section: admin
 Priority: optional
 Homepage: https://github.com/SnowTimSwiss/AlvaOS
