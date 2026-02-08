@@ -14,8 +14,13 @@ class DockerManager:
     """Manages Docker container lifecycle and operations"""
     
     def __init__(self):
-        self.docker_cmd = '/usr/bin/docker'
-        self.compose_cmd = '/usr/bin/docker-compose'
+        self.CMD = {
+            'DOCKER': '/usr/bin/docker',
+            'COMPOSE': '/usr/bin/docker-compose',
+            'SYSTEMCTL': '/usr/bin/systemctl'
+        }
+        self.docker_cmd = self.CMD['DOCKER']
+        self.compose_cmd = self.CMD['COMPOSE']
     
     def _run_docker_command(self, args: List[str], timeout: int = 30) -> Tuple[Optional[subprocess.CompletedProcess], Optional[str]]:
         """Run a docker command with sudo if needed"""
@@ -319,7 +324,7 @@ class DockerManager:
         """
         try:
             result = subprocess.run(
-                ['/usr/bin/systemctl', 'is-active', 'docker'],
+                [self.CMD['SYSTEMCTL'], 'is-active', 'docker'],
                 capture_output=True,
                 text=True,
                 timeout=5

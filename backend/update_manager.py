@@ -22,7 +22,8 @@ CMD = {
     'APT_GET': '/usr/bin/apt-get',
     'LSBLK': '/usr/bin/lsblk',
     'MOUNT': '/usr/bin/mount',
-    'UMOUNT': '/usr/bin/umount'
+    'UMOUNT': '/usr/bin/umount',
+    'NOHUP': '/usr/bin/nohup'
 }
 
 
@@ -398,7 +399,7 @@ class UpdateManager:
             except Exception as e:
                  # Fallback to direct Popen if systemd-run implies errors (though unlikely on Linux with systemd)
                  try:
-                    subprocess.Popen(["sudo", "-n", "nohup", CMD['BASH'], script_path, package_path], start_new_session=True)
+                    subprocess.Popen(["sudo", "-n", CMD['NOHUP'], CMD['BASH'], script_path, package_path], start_new_session=True)
                     return {"success": True, "message": "Update process started in background (nohup)"}
                  except Exception as e2:
                     return {"success": False, "error": f"Failed to launch update script: {e} / {e2}"}
