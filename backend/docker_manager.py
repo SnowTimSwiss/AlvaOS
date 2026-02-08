@@ -58,7 +58,7 @@ class DockerManager:
         Returns:
             Tuple of (list of containers, error message)
         """
-        args = ['ps', '--format', 'json']
+        args = ['ps', '--format', '{{json .}}']
         if all_containers:
             args.append('-a')
         
@@ -67,7 +67,7 @@ class DockerManager:
             return None, error
         
         try:
-            # Docker ps --format json returns one JSON object per line
+            # Docker ps --format '{{json .}}' returns one JSON object per line
             containers = []
             for line in result.stdout.strip().split('\n'):
                 if line:
@@ -197,7 +197,7 @@ class DockerManager:
         Returns:
             Tuple of (stats dict, error message)
         """
-        result, error = self._run_docker_command(['stats', '--no-stream', '--format', 'json', container_id])
+        result, error = self._run_docker_command(['stats', '--no-stream', '--format', '{{json .}}', container_id])
         if error:
             return None, error
         
