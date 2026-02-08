@@ -14,23 +14,6 @@ NC='\033[0m'
 PROGRESS=0
 TOTAL_STEPS=15
 
-# Whiptail Color Theme (AlvaOS Style)
-export NEWT_COLORS='
-  root=white,black
-  window=white,black
-  border=blue,black
-  shadow=black,black
-  button=white,green
-  actbutton=white,blue
-  title=blue,black
-  entry=white,blue
-  label=white,black
-  listbox=white,black
-  actlistbox=white,blue
-  checkbox=white,black
-  actcheckbox=white,blue
-'
-
 # Log file for output redirection
 INSTALL_LOG="/tmp/alvaos-install.log"
 touch "$INSTALL_LOG"
@@ -69,6 +52,28 @@ update_progress() {
     echo "$step_msg"
     echo "XXX"
     echo "[$(date +%T)] Step $PROGRESS/$TOTAL_STEPS: $step_msg" >> "$INSTALL_LOG"
+}
+
+netmask_to_prefix() {
+    local mask="$1"
+    local IFS=.
+    local octets=($mask)
+    local prefix=0
+    for o in "${octets[@]}"; do
+        case "$o" in
+            255) prefix=$((prefix + 8)) ;;
+            254) prefix=$((prefix + 7)) ;;
+            252) prefix=$((prefix + 6)) ;;
+            248) prefix=$((prefix + 5)) ;;
+            240) prefix=$((prefix + 4)) ;;
+            224) prefix=$((prefix + 3)) ;;
+            192) prefix=$((prefix + 2)) ;;
+            128) prefix=$((prefix + 1)) ;;
+            0) ;;
+            *) echo ""; return ;;
+        esac
+    done
+    echo "$prefix"
 }
 
 # Cleanup function for error recovery
@@ -221,28 +226,64 @@ HOSTS_EOF
     update_progress "Configuring networking..."
     INTERFACE=$(ip -o link show | awk -F': ' '{print $2}' | grep -v lo | head -n1)
     [ -z "$INTERFACE" ] && INTERFACE="eth0"
-    
+
+    mkdir -p /mnt/etc/NetworkManager
+    cat > /mnt/etc/NetworkManager/NetworkManager.conf << 'NMCONF_EOF'
+[main]
+plugins=ifupdown,keyfile
+
+[ifupdown]
+managed=true
+NMCONF_EOF
+
     cat > /mnt/etc/network/interfaces << NET_EOF
-source /etc/network/interfaces.d/*
 auto lo
 iface lo inet loopback
-
-auto $INTERFACE
 NET_EOF
+
+    NM_CONN_DIR=/mnt/etc/NetworkManager/system-connections
+    mkdir -p "$NM_CONN_DIR"
+    chmod 700 "$NM_CONN_DIR"
+    CONN_UUID=$(cat /proc/sys/kernel/random/uuid)
 
     if [ "$NET_MODE" == "STATIC" ]; then
-        cat >> /mnt/etc/network/interfaces << NET_EOF
-iface $INTERFACE inet static
-    address $STATIC_IP
-    netmask $STATIC_NETMASK
-    gateway $STATIC_GW
-    dns-nameservers $STATIC_DNS
-NET_EOF
+        PREFIX=$(netmask_to_prefix "$STATIC_NETMASK")
+        [ -z "$PREFIX" ] && PREFIX="24"
+        cat > "$NM_CONN_DIR/alvaos.nmconnection" << NM_EOF
+[connection]
+id=alvaos
+uuid=$CONN_UUID
+type=ethernet
+interface-name=$INTERFACE
+autoconnect=true
+
+[ipv4]
+method=manual
+addresses1=$STATIC_IP/$PREFIX,$STATIC_GW
+dns=$STATIC_DNS;
+dns-search=
+
+[ipv6]
+method=ignore
+NM_EOF
     else
-        cat >> /mnt/etc/network/interfaces << NET_EOF
-iface $INTERFACE inet dhcp
-NET_EOF
+        cat > "$NM_CONN_DIR/alvaos.nmconnection" << NM_EOF
+[connection]
+id=alvaos
+uuid=$CONN_UUID
+type=ethernet
+interface-name=$INTERFACE
+autoconnect=true
+
+[ipv4]
+method=auto
+dhcp-hostname=alvaos
+
+[ipv6]
+method=ignore
+NM_EOF
     fi
+    chmod 600 "$NM_CONN_DIR/alvaos.nmconnection"
 
     update_progress "Configuring apt sources..."
     cat > /mnt/etc/apt/sources.list << SOURCES_EOF
@@ -277,7 +318,7 @@ FSTAB_EOF
     update_progress "Installing kernel and essential packages..."
     chroot /mnt apt-get update >> "$INSTALL_LOG" 2>&1
     chroot /mnt apt-get install -y \
-        linux-image-amd64 python3 python3-flask python3-psutil python3-requests \
+        linux-image-amd64 python3 python3-flask python3-flask-cors python3-psutil python3-requests python3-packaging python3-yaml \
         systemd network-manager openssh-server docker.io docker-compose btrfs-progs \
         curl wget vim sudo smartmontools nfs-kernel-server samba >> "$INSTALL_LOG" 2>&1
 
@@ -304,9 +345,10 @@ FSTAB_EOF
     mkdir -p /mnt/opt/alvaos/{bin,webui} /mnt/etc/alvaos /mnt/var/lib/alvaos /mnt/var/log/alvaos /mnt/opt/alvaos/scripts
 
     # Copy backend
-    [ -f "/opt/alvaos/backend/alvaos-backend.py" ] && cp /opt/alvaos/backend/alvaos-backend.py /mnt/opt/alvaos/bin/
-    [ -f "/opt/alvaos/backend/update_manager.py" ] && cp /opt/alvaos/backend/update_manager.py /mnt/opt/alvaos/bin/
-    chmod +x /mnt/opt/alvaos/bin/alvaos-backend.py 2>/dev/null || true
+    if [ -d "/opt/alvaos/backend" ]; then
+        cp /opt/alvaos/backend/*.py /mnt/opt/alvaos/bin/ 2>/dev/null || true
+        chmod +x /mnt/opt/alvaos/bin/*.py 2>/dev/null || true
+    fi
 
     # Copy scripts
     if [ -d "/opt/alvaos/scripts" ]; then
@@ -319,6 +361,10 @@ FSTAB_EOF
     # Copy frontend
     [ -d "/opt/alvaos/webui" ] && cp -r /opt/alvaos/webui/* /mnt/opt/alvaos/webui/
     [ -f "/opt/alvaos/VERSION" ] && cp /opt/alvaos/VERSION /mnt/etc/alvaos/VERSION
+    if [ -d "/opt/alvaos/apps" ]; then
+        mkdir -p /mnt/opt/alvaos/apps
+        cp -r /opt/alvaos/apps/* /mnt/opt/alvaos/apps/ 2>/dev/null || true
+    fi
 
     update_progress "Configuring services..."
     cat > /mnt/etc/systemd/system/alvaos.service << SERVICE_EOF
@@ -387,11 +433,8 @@ VERSION_EOF
 
 # Final Message
 if [ "$NET_MODE" == "STATIC" ]; then
-    IP_ADDR=$STATIC_IP
+    msg "Installation Successful!\n\nPlease remove installation media and press Enter to reboot.\n\nAfter reboot, visit http://$STATIC_IP:8080 to complete setup."
 else
-    IP_ADDR=$(hostname -I | awk '{print $1}')
+    msg "Installation Successful!\n\nPlease remove installation media and press Enter to reboot.\n\nAfter reboot, find the server IP in your router (DHCP) or run 'ip a' on the server.\nThen visit http://<ip>:8080 to complete setup."
 fi
-[ -z "$IP_ADDR" ] && IP_ADDR="[SERVER-IP]"
-
-msg "✅ Installation Successful!\n\nPlease remove installation media and press Enter to reboot.\n\nAfter reboot, visit http://$IP_ADDR:8080 to complete setup."
 reboot

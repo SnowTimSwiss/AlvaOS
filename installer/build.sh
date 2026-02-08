@@ -122,10 +122,13 @@ cp "${SCRIPT_DIR}/../VERSION" config/includes.chroot/opt/alvaos/VERSION
 # Backend (optional)
 if [ -f "${SCRIPT_DIR}/../backend/alvaos-backend.py" ]; then
   mkdir -p config/includes.chroot/opt/alvaos/backend
-  cp "${SCRIPT_DIR}/../backend/alvaos-backend.py" config/includes.chroot/opt/alvaos/backend/
-  if [ -f "${SCRIPT_DIR}/../backend/update_manager.py" ]; then
-    cp "${SCRIPT_DIR}/../backend/update_manager.py" config/includes.chroot/opt/alvaos/backend/
-  fi
+  cp "${SCRIPT_DIR}/../backend/"*.py config/includes.chroot/opt/alvaos/backend/
+fi
+
+# Apps catalog (optional)
+if [ -d "${SCRIPT_DIR}/../apps" ]; then
+  mkdir -p config/includes.chroot/opt/alvaos/apps
+  cp -r "${SCRIPT_DIR}/../apps/"* config/includes.chroot/opt/alvaos/apps/ 2>/dev/null || true
 fi
 
 # Frontend (optional)
