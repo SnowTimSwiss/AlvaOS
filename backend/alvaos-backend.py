@@ -61,7 +61,10 @@ CMD = {
     'EXPORTFS': '/usr/sbin/exportfs',
     'TEE': '/usr/bin/tee',
     'CAT': '/usr/bin/cat',
-    'IP': '/usr/sbin/ip'
+    'IP': '/usr/sbin/ip',
+    'ID': '/usr/bin/id',
+    'DF': '/usr/bin/df',
+    'MOUNTPOINT': '/bin/mountpoint'
 }
 
 app = Flask(__name__, static_folder=None) # Disable default static serving to force version replacement
@@ -222,7 +225,7 @@ def is_valid_username(username):
 
 def system_user_exists(username):
     try:
-        result = subprocess.run(['id', '-u', username], capture_output=True, text=True)
+        result = subprocess.run([CMD['ID'], '-u', username], capture_output=True, text=True)
         return result.returncode == 0
     except Exception:
         return False
@@ -606,7 +609,7 @@ def complete_setup():
                     f.write('PermitEmptyPasswords no\n')
                 
                 # Restart SSH service
-                run_sudo_command(['sudo', 'systemctl', 'restart', 'ssh'])
+                run_sudo_command(['sudo', CMD['SYSTEMCTL'], 'restart', 'ssh'])
         except Exception as e:
             # Don't fail setup if SSH config update fails
             print(f"Warning: Could not update SSH config: {e}")
@@ -617,7 +620,7 @@ def complete_setup():
         # Set Timezone if provided
         if 'timezone' in data and platform.system() == 'Linux':
             try:
-                run_sudo_command(['sudo', 'timedatectl', 'set-timezone', data['timezone']])
+                run_sudo_command(['sudo', CMD['TIMEDATECTL'], 'set-timezone', data['timezone']])
             except Exception as e:
                 print(f"Warning: Could not set timezone during setup: {e}")
         
@@ -705,7 +708,7 @@ def manage_users():
 
         try:
             # Create system user
-            res, err = run_sudo_command(['sudo', 'useradd', '-m', '-s', '/bin/bash', username])
+            res, err = run_sudo_command(['sudo', CMD['USERADD'], '-m', '-s', '/bin/bash', username])
             if err:
                 return jsonify({'error': f'Failed to create user: {err}'}), 500
 
@@ -745,9 +748,9 @@ def manage_users():
             return jsonify({'error': 'User not found'}), 404
         try:
             # Remove SMB user
-            run_sudo_command(['sudo', 'smbpasswd', '-x', username])
+            run_sudo_command(['sudo', CMD['SMBPASSWD'], '-x', username])
             # Delete system user (keep home to avoid data loss)
-            run_sudo_command(['sudo', 'userdel', username])
+            run_sudo_command(['sudo', CMD['USERDEL'], username])
 
             # Remove user from share permissions
             shares_state = load_shares_state()
@@ -897,7 +900,7 @@ def get_system_info():
     hostname = 'unknown'
     try:
         if platform.system() == 'Linux':
-            res = subprocess.run(['hostnamectl', 'hostname'], capture_output=True, text=True, timeout=2)
+            res = subprocess.run([CMD['HOSTNAMECTL'], 'hostname'], capture_output=True, text=True, timeout=2)
             if res.returncode == 0:
                 hostname = res.stdout.strip()
             else:
@@ -963,13 +966,13 @@ def system_time():
         if platform.system() == 'Linux':
             try:
                 # Get current timezone
-                tz_result = subprocess.run(['timedatectl', 'show', '--property=Timezone', '--value'], 
+                tz_result = subprocess.run([CMD['TIMEDATECTL'], 'show', '--property=Timezone', '--value'], 
                                          capture_output=True, text=True)
                 if tz_result.returncode == 0:
                     timezone = tz_result.stdout.strip()
                 
                 # Get NTP status
-                ntp_result = subprocess.run(['timedatectl', 'show', '--property=NTP', '--value'], 
+                ntp_result = subprocess.run([CMD['TIMEDATECTL'], 'show', '--property=NTP', '--value'], 
                                           capture_output=True, text=True)
                 if ntp_result.returncode == 0:
                     ntp_enabled = ntp_result.stdout.strip() == 'yes'
@@ -1012,8 +1015,8 @@ def system_power():
         
     if platform.system() == 'Linux':
         try:
-            cmd = '/usr/sbin/reboot' if action == 'reboot' else '/usr/sbin/poweroff'
-            subprocess.Popen(build_privileged_cmd([cmd]))
+            cmd_path = CMD['REBOOT'] if action == 'reboot' else CMD['POWEROFF']
+            subprocess.Popen(build_privileged_cmd([cmd_path]))
             return jsonify({'success': True, 'message': f'System {action} initiated'})
         except Exception as e:
             return jsonify({'error': f'Failed to {action}: {str(e)}'}), 500
@@ -1027,7 +1030,7 @@ def get_network_details():
     hostname = "unknown"
     try:
         if platform.system() == 'Linux':
-            res = subprocess.run(['hostnamectl', 'hostname'], capture_output=True, text=True, timeout=2)
+            res = subprocess.run([CMD['HOSTNAMECTL'], 'hostname'], capture_output=True, text=True, timeout=2)
             if res.returncode == 0:
                 hostname = res.stdout.strip()
             else:
@@ -1068,7 +1071,7 @@ def get_network_details():
         # Try to get gateway on Linux
         if platform.system() == 'Linux':
             try:
-                result = subprocess.run(['ip', 'route', 'show', 'default'], 
+                result = subprocess.run([CMD['IP'], 'route', 'show', 'default'], 
                                       capture_output=True, text=True, timeout=2)
                 if result.returncode == 0 and result.stdout:
                     parts = result.stdout.split()
@@ -1669,10 +1672,9 @@ def manage_pools():
                             except Exception as e:
                                 print(f"Error adjusting usable size: {e}")
 
-                            # Fallback to df if usage failed or didn't provide good info
                             if (pool['used_size'] == 'Unknown' or 'Estimated' not in pool['total_size']) and mount_point:
                                 try:
-                                    df_res = subprocess.run(['df', '-h', mount_point], capture_output=True, text=True, timeout=2)
+                                    df_res = subprocess.run([CMD['DF'], '-h', mount_point], capture_output=True, text=True, timeout=2)
                                     if df_res.returncode == 0:
                                         p_lines = df_res.stdout.strip().split('\n')
                                         if len(p_lines) >= 2:
@@ -2385,7 +2387,7 @@ def mount_existing_pools():
                 run_sudo_command(['sudo', CMD['MKDIR'], '-p', mount_point])
             
             # 2. Check if already mounted
-            is_mounted = subprocess.run(['mountpoint', '-q', mount_point], check=False).returncode == 0
+            is_mounted = subprocess.run([CMD['MOUNTPOINT'], '-q', mount_point], check=False).returncode == 0
             
             if not is_mounted:
                 print(f"Mounting pool {name}...")

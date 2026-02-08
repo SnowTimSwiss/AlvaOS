@@ -40,6 +40,7 @@ class UpdateManager:
         self.history_file = "/var/lib/alvaos/update_history.json"
         self.settings_file = "/var/lib/alvaos/update_settings.json"
         self.cache_dir = "/var/lib/alvaos/updates"
+        self.github_cache_file = "/var/lib/alvaos/github_cache.json"
 
     def ensure_dirs(self):
         Path("/var/lib/alvaos").mkdir(parents=True, exist_ok=True)
@@ -180,28 +181,78 @@ class UpdateManager:
         self.set_update_state("checking", f"Checking {channel} channel")
         base_url = f"https://api.github.com/repos/{self.repo}"
         current_version = self.get_current_version()
+        
+        # 1. Check local cache first
+        cache = self.load_json(self.github_cache_file, {})
+        cache_key = f"{self.repo}/{channel}"
+        cached_entry = cache.get(cache_key)
+        
+        now = datetime.now(timezone.utc)
+        # Cache for 1 hour to stay safe with rate limits
+        if cached_entry:
+            cached_at = datetime.fromisoformat(cached_entry.get("cached_at"))
+            if (now - cached_at).total_seconds() < 3600:
+                print(f"Using cached GitHub release for {cache_key}")
+                release = cached_entry.get("release")
+                return self._build_check_result(current_version, release, channel)
+
         release = None
         error = None
+        rate_limit_hit = False
+        
         try:
             if channel == "stable":
                 url = f"{base_url}/releases/latest"
                 resp = requests.get(url, headers=self.github_headers(), timeout=15)
                 if resp.status_code == 404:
                     release = None
+                elif resp.status_code == 403:
+                    rate_limit_hit = True
+                    error = "GitHub Rate Limit Exceeded"
                 else:
                     resp.raise_for_status()
                     release = resp.json()
             else:
                 url = f"{base_url}/releases?per_page=20"
                 resp = requests.get(url, headers=self.github_headers(), timeout=15)
-                resp.raise_for_status()
-                releases = [r for r in resp.json() if r.get("prerelease")]
-                releases.sort(key=lambda r: r.get("published_at") or "", reverse=True)
-                release = releases[0] if releases else {}
+                if resp.status_code == 403:
+                    rate_limit_hit = True
+                    error = "GitHub Rate Limit Exceeded"
+                else:
+                    resp.raise_for_status()
+                    releases = [r for r in resp.json() if r.get("prerelease")]
+                    releases.sort(key=lambda r: r.get("published_at") or "", reverse=True)
+                    release = releases[0] if releases else {}
         except Exception as e:
             error = str(e)
-            self.set_update_state("error", "Update check failed", {"error": error})
+            print(f"Update check error: {error}")
 
+        # 2. If rate limit hit or error, try to fallback to old cache even if expired
+        if (rate_limit_hit or error) and cached_entry:
+            print(f"Falling back to expired cache due to {error}")
+            release = cached_entry.get("release")
+            result = self._build_check_result(current_version, release, channel)
+            result["warning"] = f"Using cached data: {error}"
+            self.set_update_state("idle", "Check complete (cached fallback)", {
+                "update_available": result["update_available"],
+                "latest_version": result["latest_version"]
+            })
+            return result
+
+        if error and not rate_limit_hit:
+            self.set_update_state("error", "Update check failed", {"error": error})
+        
+        # 3. Save to cache if successful
+        if release is not None:
+            cache[cache_key] = {
+                "cached_at": now.isoformat(),
+                "release": release
+            }
+            self.save_json(self.github_cache_file, cache)
+
+        return self._build_check_result(current_version, release, channel, error)
+
+    def _build_check_result(self, current_version, release, channel, error=None):
         latest_version = self.normalize_version(release.get("tag_name", "")) if release else ""
         update_available = False
         if latest_version and current_version != "unknown":
@@ -209,7 +260,7 @@ class UpdateManager:
 
         result = {
             "current_version": current_version,
-            "latest_version": release.get("tag_name", "") if release else "", # Return original tag name for display
+            "latest_version": release.get("tag_name", "") if release else "",
             "update_available": update_available,
             "channel": channel,
             "release": self.format_release(release) if release else None
