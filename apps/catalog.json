@@ -1,0 +1,381 @@
+{
+    "nextcloud": {
+        "name": "Nextcloud",
+        "description": "Self-hosted cloud storage and collaboration platform",
+        "icon": "/apps/icons/nextcloud.png",
+        "category": "Productivity",
+        "version": "latest",
+        "docker_compose": {
+            "version": "3",
+            "services": {
+                "nextcloud": {
+                    "image": "nextcloud:latest",
+                    "restart": "unless-stopped",
+                    "ports": [
+                        "8080:80"
+                    ],
+                    "volumes": [
+                        "${POOL_PATH}/data:/var/www/html"
+                    ],
+                    "environment": {
+                        "MYSQL_HOST": "db",
+                        "MYSQL_DATABASE": "nextcloud",
+                        "MYSQL_USER": "nextcloud",
+                        "MYSQL_PASSWORD": "nextcloud"
+                    }
+                },
+                "db": {
+                    "image": "mariadb:10",
+                    "restart": "unless-stopped",
+                    "volumes": [
+                        "${POOL_PATH}/database:/var/lib/mysql"
+                    ],
+                    "environment": {
+                        "MYSQL_ROOT_PASSWORD": "nextcloud",
+                        "MYSQL_DATABASE": "nextcloud",
+                        "MYSQL_USER": "nextcloud",
+                        "MYSQL_PASSWORD": "nextcloud"
+                    }
+                }
+            }
+        },
+        "config_schema": {
+            "ports": [
+                {
+                    "internal": 80,
+                    "external": 8080,
+                    "protocol": "tcp",
+                    "description": "Web UI"
+                }
+            ],
+            "volumes": [
+                {
+                    "container_path": "/var/www/html",
+                    "description": "Nextcloud data and config",
+                    "required": true
+                },
+                {
+                    "container_path": "/var/lib/mysql",
+                    "description": "Database storage",
+                    "required": true
+                }
+            ],
+            "environment": [
+                {
+                    "key": "MYSQL_PASSWORD",
+                    "default": "nextcloud",
+                    "description": "Database password"
+                }
+            ]
+        }
+    },
+    "jellyfin": {
+        "name": "Jellyfin",
+        "description": "Free media server for your movies, music, and TV shows",
+        "icon": "/apps/icons/jellyfin.png",
+        "category": "Media",
+        "version": "latest",
+        "docker_compose": {
+            "version": "3",
+            "services": {
+                "jellyfin": {
+                    "image": "jellyfin/jellyfin:latest",
+                    "restart": "unless-stopped",
+                    "ports": [
+                        "8096:8096"
+                    ],
+                    "volumes": [
+                        "${POOL_PATH}/config:/config",
+                        "${POOL_PATH}/cache:/cache",
+                        "${POOL_PATH}/media:/media"
+                    ],
+                    "environment": {
+                        "TZ": "Europe/Berlin"
+                    }
+                }
+            }
+        },
+        "config_schema": {
+            "ports": [
+                {
+                    "internal": 8096,
+                    "external": 8096,
+                    "protocol": "tcp",
+                    "description": "Web UI"
+                }
+            ],
+            "volumes": [
+                {
+                    "container_path": "/config",
+                    "description": "Configuration files",
+                    "required": true
+                },
+                {
+                    "container_path": "/cache",
+                    "description": "Cache directory",
+                    "required": true
+                },
+                {
+                    "container_path": "/media",
+                    "description": "Media files location",
+                    "required": true
+                }
+            ],
+            "environment": [
+                {
+                    "key": "TZ",
+                    "default": "Europe/Berlin",
+                    "description": "Timezone"
+                }
+            ]
+        }
+    },
+    "homeassistant": {
+        "name": "Home Assistant",
+        "description": "Open source home automation platform",
+        "icon": "/apps/icons/homeassistant.png",
+        "category": "Smart Home",
+        "version": "latest",
+        "docker_compose": {
+            "version": "3",
+            "services": {
+                "homeassistant": {
+                    "image": "ghcr.io/home-assistant/home-assistant:stable",
+                    "restart": "unless-stopped",
+                    "network_mode": "host",
+                    "volumes": [
+                        "${POOL_PATH}/config:/config"
+                    ],
+                    "environment": {
+                        "TZ": "Europe/Berlin"
+                    }
+                }
+            }
+        },
+        "config_schema": {
+            "ports": [],
+            "volumes": [
+                {
+                    "container_path": "/config",
+                    "description": "Configuration directory",
+                    "required": true
+                }
+            ],
+            "environment": [
+                {
+                    "key": "TZ",
+                    "default": "Europe/Berlin",
+                    "description": "Timezone"
+                }
+            ]
+        }
+    },
+    "pihole": {
+        "name": "Pi-hole",
+        "description": "Network-wide ad blocker and DNS server",
+        "icon": "/apps/icons/pihole.png",
+        "category": "Network",
+        "version": "latest",
+        "docker_compose": {
+            "version": "3",
+            "services": {
+                "pihole": {
+                    "image": "pihole/pihole:latest",
+                    "restart": "unless-stopped",
+                    "ports": [
+                        "53:53/tcp",
+                        "53:53/udp",
+                        "8053:80/tcp"
+                    ],
+                    "volumes": [
+                        "${POOL_PATH}/etc-pihole:/etc/pihole",
+                        "${POOL_PATH}/etc-dnsmasq.d:/etc/dnsmasq.d"
+                    ],
+                    "environment": {
+                        "TZ": "Europe/Berlin",
+                        "WEBPASSWORD": "admin"
+                    }
+                }
+            }
+        },
+        "config_schema": {
+            "ports": [
+                {
+                    "internal": 80,
+                    "external": 8053,
+                    "protocol": "tcp",
+                    "description": "Web UI"
+                },
+                {
+                    "internal": 53,
+                    "external": 53,
+                    "protocol": "tcp",
+                    "description": "DNS (TCP)"
+                },
+                {
+                    "internal": 53,
+                    "external": 53,
+                    "protocol": "udp",
+                    "description": "DNS (UDP)"
+                }
+            ],
+            "volumes": [
+                {
+                    "container_path": "/etc/pihole",
+                    "description": "Pi-hole configuration",
+                    "required": true
+                },
+                {
+                    "container_path": "/etc/dnsmasq.d",
+                    "description": "DNS configuration",
+                    "required": true
+                }
+            ],
+            "environment": [
+                {
+                    "key": "WEBPASSWORD",
+                    "default": "admin",
+                    "description": "Web UI password"
+                },
+                {
+                    "key": "TZ",
+                    "default": "Europe/Berlin",
+                    "description": "Timezone"
+                }
+            ]
+        }
+    },
+    "vaultwarden": {
+        "name": "Vaultwarden",
+        "description": "Self-hosted password manager (Bitwarden compatible)",
+        "icon": "/apps/icons/vaultwarden.png",
+        "category": "Security",
+        "version": "latest",
+        "docker_compose": {
+            "version": "3",
+            "services": {
+                "vaultwarden": {
+                    "image": "vaultwarden/server:latest",
+                    "restart": "unless-stopped",
+                    "ports": [
+                        "8090:80"
+                    ],
+                    "volumes": [
+                        "${POOL_PATH}/data:/data"
+                    ],
+                    "environment": {
+                        "WEBSOCKET_ENABLED": "true"
+                    }
+                }
+            }
+        },
+        "config_schema": {
+            "ports": [
+                {
+                    "internal": 80,
+                    "external": 8090,
+                    "protocol": "tcp",
+                    "description": "Web UI"
+                }
+            ],
+            "volumes": [
+                {
+                    "container_path": "/data",
+                    "description": "Vault data",
+                    "required": true
+                }
+            ],
+            "environment": [
+                {
+                    "key": "WEBSOCKET_ENABLED",
+                    "default": "true",
+                    "description": "Enable WebSocket notifications"
+                }
+            ]
+        }
+    },
+    "immich": {
+        "name": "Immich",
+        "description": "High-performance self-hosted photo and video backup solution",
+        "icon": "/apps/icons/immich.png",
+        "category": "Media",
+        "version": "latest",
+        "docker_compose": {
+            "version": "3",
+            "services": {
+                "immich-server": {
+                    "image": "ghcr.io/immich-app/immich-server:release",
+                    "restart": "unless-stopped",
+                    "ports": [
+                        "2283:3001"
+                    ],
+                    "volumes": [
+                        "${POOL_PATH}/upload:/usr/src/app/upload"
+                    ],
+                    "environment": {
+                        "DB_HOSTNAME": "immich-postgres",
+                        "DB_USERNAME": "postgres",
+                        "DB_PASSWORD": "postgres",
+                        "DB_DATABASE_NAME": "immich",
+                        "REDIS_HOSTNAME": "immich-redis",
+                        "TZ": "Europe/Berlin"
+                    },
+                    "depends_on": [
+                        "immich-redis",
+                        "immich-postgres"
+                    ]
+                },
+                "immich-redis": {
+                    "image": "redis:7-alpine",
+                    "restart": "unless-stopped"
+                },
+                "immich-postgres": {
+                    "image": "tensorchord/pgvecto-rs:pg14-v0.2.0",
+                    "restart": "unless-stopped",
+                    "volumes": [
+                        "${POOL_PATH}/postgres:/var/lib/postgresql/data"
+                    ],
+                    "environment": {
+                        "POSTGRES_PASSWORD": "postgres",
+                        "POSTGRES_USER": "postgres",
+                        "POSTGRES_DB": "immich"
+                    }
+                }
+            }
+        },
+        "config_schema": {
+            "ports": [
+                {
+                    "internal": 3001,
+                    "external": 2283,
+                    "protocol": "tcp",
+                    "description": "Web UI"
+                }
+            ],
+            "volumes": [
+                {
+                    "container_path": "/usr/src/app/upload",
+                    "description": "Uploaded photos and videos",
+                    "required": true
+                },
+                {
+                    "container_path": "/var/lib/postgresql/data",
+                    "description": "Database storage",
+                    "required": true
+                }
+            ],
+            "environment": [
+                {
+                    "key": "DB_PASSWORD",
+                    "default": "postgres",
+                    "description": "Database password"
+                },
+                {
+                    "key": "TZ",
+                    "default": "Europe/Berlin",
+                    "description": "Timezone"
+                }
+            ]
+        }
+    }
+}

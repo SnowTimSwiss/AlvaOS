@@ -39,6 +39,8 @@ Release strategy: "Iterate fast, stabilize often."
 - [ ] **Docker Engine**: Core integration with system services.
 - [ ] **App Store**: Add App Store to install and update apps.
 - [ ] **Container Management**: Start, stop, logs, and basic config via UI.
+- [ ] **Docker Compose**: Be able to install custom Apps with docker compose.
+- [ ] **Custom App store**: Be able to add custom app stores.
 
 ## v0.6.0 - Local Backups
 - [ ] **Backup Engine**: Create Snapshots.

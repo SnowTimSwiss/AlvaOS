@@ -22,6 +22,8 @@ import re
 import time
 import subprocess
 from update_manager import UpdateManager
+from docker_manager import DockerManager
+from app_store import AppStore
 
 app = Flask(__name__, static_folder=None) # Disable default static serving to force version replacement
 # Fallback to current directory for dev if /opt doesn't exist
@@ -31,6 +33,8 @@ if not os.path.exists(WEBUI_ROOT):
 app.static_folder = WEBUI_ROOT
 CORS(app)
 update_manager = UpdateManager()
+docker_manager = DockerManager()
+app_store = AppStore()
 
 # Cache for storage information (TTL in seconds)
 STORAGE_CACHE = {
@@ -2369,6 +2373,160 @@ def mount_existing_pools():
                 
         except Exception as e:
             print(f"Failed to process pool {name}: {e}")
+
+# ============================================================================
+# APP STORE & CONTAINER MANAGEMENT API
+# ============================================================================
+
+@app.route('/api/v1/apps/available', methods=['GET'])
+@require_auth
+def get_available_apps():
+    """Get list of available apps from catalog"""
+    apps, error = app_store.get_available_apps()
+    if error:
+        return jsonify({'error': error}), 500
+    return jsonify({'apps': apps})
+
+@app.route('/api/v1/apps/available/<app_id>', methods=['GET'])
+@require_auth
+def get_app_details_endpoint(app_id):
+    """Get details for a specific app"""
+    details, error = app_store.get_app_details(app_id)
+    if error:
+        return jsonify({'error': error}), 404
+    return jsonify(details)
+
+@app.route('/api/v1/apps/install', methods=['POST'])
+@require_auth
+def install_app():
+    """Install an app"""
+    data = request.get_json() or {}
+    
+    app_id = data.get('app_id')
+    pool_path = data.get('pool_path')
+    parent_subvolume = data.get('parent_subvolume')
+    port_mappings = data.get('port_mappings', {})
+    volume_mappings = data.get('volume_mappings', {})
+    environment_vars = data.get('environment_vars', {})
+    
+    if not app_id:
+        return jsonify({'error': 'app_id is required'}), 400
+    if not pool_path:
+        return jsonify({'error': 'pool_path is required'}), 400
+    
+    # Convert port mappings to int keys
+    if port_mappings:
+        port_mappings = {int(k): int(v) for k, v in port_mappings.items()}
+    
+    success, error = app_store.install_app(
+        app_id=app_id,
+        pool_path=pool_path,
+        parent_subvolume=parent_subvolume,
+        port_mappings=port_mappings,
+        volume_mappings=volume_mappings,
+        environment_vars=environment_vars
+    )
+    
+    if not success:
+        return jsonify({'error': error}), 500
+    
+    return jsonify({'success': True, 'message': f'App "{app_id}" installed successfully'})
+
+@app.route('/api/v1/apps/<app_id>', methods=['DELETE'])
+@require_auth
+def uninstall_app(app_id):
+    """Uninstall an app"""
+    data = request.get_json() or {}
+    keep_data = data.get('keep_data', False)
+    
+    success, error = app_store.uninstall_app(app_id, keep_data=keep_data)
+    if not success:
+        return jsonify({'error': error}), 500
+    
+    return jsonify({'success': True, 'message': f'App "{app_id}" uninstalled successfully'})
+
+@app.route('/api/v1/apps/installed', methods=['GET'])
+@require_auth
+def get_installed_apps():
+    """Get list of installed apps"""
+    apps = app_store.get_installed_apps()
+    return jsonify({'apps': apps})
+
+# Container Management
+@app.route('/api/v1/containers', methods=['GET'])
+@require_auth
+def list_containers():
+    """List all Docker containers"""
+    containers, error = docker_manager.list_containers(all_containers=True)
+    if error:
+        return jsonify({'error': error}), 500
+    return jsonify({'containers': containers})
+
+@app.route('/api/v1/containers/<container_id>', methods=['GET'])
+@require_auth
+def get_container_details_endpoint(container_id):
+    """Get details for a specific container"""
+    details, error = docker_manager.get_container_details(container_id)
+    if error:
+        return jsonify({'error': error}), 404
+    return jsonify(details)
+
+@app.route('/api/v1/containers/<container_id>/start', methods=['POST'])
+@require_auth
+def start_container(container_id):
+    """Start a container"""
+    success, error = docker_manager.start_container(container_id)
+    if not success:
+        return jsonify({'error': error}), 500
+    return jsonify({'success': True, 'message': 'Container started'})
+
+@app.route('/api/v1/containers/<container_id>/stop', methods=['POST'])
+@require_auth
+def stop_container(container_id):
+    """Stop a container"""
+    success, error = docker_manager.stop_container(container_id)
+    if not success:
+        return jsonify({'error': error}), 500
+    return jsonify({'success': True, 'message': 'Container stopped'})
+
+@app.route('/api/v1/containers/<container_id>/restart', methods=['POST'])
+@require_auth
+def restart_container(container_id):
+    """Restart a container"""
+    success, error = docker_manager.restart_container(container_id)
+    if not success:
+        return jsonify({'error': error}), 500
+    return jsonify({'success': True, 'message': 'Container restarted'})
+
+@app.route('/api/v1/containers/<container_id>/logs', methods=['GET'])
+@require_auth
+def get_container_logs(container_id):
+    """Get container logs"""
+    lines = request.args.get('lines', 100, type=int)
+    logs, error = docker_manager.get_container_logs(container_id, lines=lines)
+    if error:
+        return jsonify({'error': error}), 500
+    return jsonify({'logs': logs})
+
+@app.route('/api/v1/containers/<container_id>', methods=['DELETE'])
+@require_auth
+def delete_container(container_id):
+    """Delete a container"""
+    force = request.args.get('force', 'false').lower() == 'true'
+    success, error = docker_manager.remove_container(container_id, force=force)
+    if not success:
+        return jsonify({'error': error}), 500
+    return jsonify({'success': True, 'message': 'Container deleted'})
+
+@app.route('/api/v1/docker/status', methods=['GET'])
+@require_auth
+def get_docker_status():
+    """Check if Docker is running"""
+    is_running, error = docker_manager.check_docker_running()
+    return jsonify({
+        'running': is_running,
+        'error': error
+    })
 
 if __name__ == '__main__':
     print(f"Starting AlvaOS Backend v{VERSION}...")
