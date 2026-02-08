@@ -317,19 +317,24 @@ FSTAB_EOF
 
     update_progress "Installing kernel and essential packages..."
     chroot /mnt apt-get update >> "$INSTALL_LOG" 2>&1
-    chroot /mnt apt-get install -y \
+    chroot /mnt env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" \
         linux-image-amd64 python3 python3-flask python3-flask-cors python3-psutil python3-requests python3-packaging python3-yaml \
         systemd network-manager openssh-server docker.io docker-compose btrfs-progs \
         curl wget vim sudo smartmontools nfs-kernel-server samba >> "$INSTALL_LOG" 2>&1
 
     update_progress "Installing bootloader..."
     if [ -d /sys/firmware/efi ]; then
-        chroot /mnt apt-get install -y grub-efi-amd64 >> "$INSTALL_LOG" 2>&1
+        chroot /mnt env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" \
+            grub-efi-amd64 >> "$INSTALL_LOG" 2>&1
         for disk in $TARGET_DISKS; do
             chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=AlvaOS --recheck --removable >> "$INSTALL_LOG" 2>&1
         done
     else
-        chroot /mnt apt-get install -y grub-pc >> "$INSTALL_LOG" 2>&1
+        chroot /mnt env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" \
+            grub-pc >> "$INSTALL_LOG" 2>&1
         for disk in $TARGET_DISKS; do
             chroot /mnt grub-install --target=i386-pc "/dev/$disk" >> "$INSTALL_LOG" 2>&1
         done
