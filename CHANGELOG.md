@@ -2,6 +2,38 @@
 
 All notable changes to AlvaOS will be documented in this file.
 
+## [0.4.0] - 08.02.26
+
+### Added - Professional Installer
+- **Custom UI Theme**: New dark-themed Whiptail UI matching the AlvaOS design system (Blue accents on Gray/Black).
+- **Network Setup**: 
+  - Choice between **Automatic (DHCP)** and **Manual (Static IP)** during installation.
+  - Interactive dialogs for IP, Netmask, Gateway, and DNS servers.
+  - Automatic persistence of network settings to the target system.
+- **Enhanced Progress UI**:
+  - Silenced console output for `apt`, `debootstrap`, and storage commands to prevent UI flickering.
+  - Real-time progress bar with descriptive status updates.
+- **Mirror Support Verification**: Reliable Btrfs mirror detection with automatic `initramfs` updates.
+- **Dynamic Success Message**: Automatically detects and displays the server's IP address for immediate Web UI access.
+
+### Added - Welcome Wizard
+- **Universal Welcome Wizard**:
+  - Replaced basic password setup with a professional multi-step onboarding process.
+  - **Step 1: Welcome**: Visual greeting with environment detection and IP confirmation.
+  - **Step 2: Security**: Secure root password setup with real-time requirement validation.
+  - **Step 3: Regional**: Simplified Timezone selection (e.g., Europe/Berlin) integrated into the setup flow.
+  - **Step 4: Finish**: Animated completion screen with automatic redirect to the dashboard.
+
+### Changed
+- **Backend API**: Enhanced `/api/v1/setup/complete` to support `timezone` configuration via `timedatectl`.
+- **Frontend Refactor**: Overhauled `setup.html` with a modern, responsive card design and animated transitions.
+- **Installer Cleanup**: Massive cleanup of `install-system.sh` for better readability and logging.
+
+### Technical Details
+- **Cleanup**: All installer logs are now redirected to `/tmp/alvaos-install.log` for debugging.
+- **Validation**: Added client-side password strength and match validation to the setup wizard.
+- **Persistence**: Network interfaces are dynamically detected using `ip link show` for accurate config generation.
+
 ## [0.3.0] - 06.02.26
 
 ### Added - Update System
