@@ -570,6 +570,13 @@ def complete_setup():
         
         # Sync to Samba
         sync_samba_password('root', password)
+
+        # Set Timezone if provided
+        if 'timezone' in data and platform.system() == 'Linux':
+            try:
+                run_sudo_command(['sudo', 'timedatectl', 'set-timezone', data['timezone']])
+            except Exception as e:
+                print(f"Warning: Could not set timezone during setup: {e}")
         
         # Mark setup as complete
         mark_setup_complete(password)

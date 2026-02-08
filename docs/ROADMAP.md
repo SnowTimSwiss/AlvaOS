@@ -33,7 +33,7 @@ Release strategy: "Iterate fast, stabilize often."
 - [x] **RAID**: Add option in installer to install with mirror
 - [x] **User Friendly**: Make installer more user friendly
 - [x] **Power**: Make the Installer more powerfull
-- [ ] **Welcome Wizzard**: Add welcome wizzard to the OS for new users and new installs
+- [x] **Welcome Wizzard**: Add welcome wizzard to the OS for new users and new installs
 
 ## v0.5.0 - Containerization
 - [ ] **Docker Engine**: Core integration with system services.
