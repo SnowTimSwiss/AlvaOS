@@ -92,8 +92,10 @@ alvaos ALL=(ALL) NOPASSWD: /usr/bin/df
 alvaos ALL=(ALL) NOPASSWD: /bin/df
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/getent
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/nohup
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/bash
 SUDOERS_EOF
 
+chown root:root "$SUDOERS_FILE"
 chmod 440 "$SUDOERS_FILE"
 
 echo "Success! Sudo permissions configured."

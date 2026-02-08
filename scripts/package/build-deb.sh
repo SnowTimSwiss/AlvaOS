@@ -183,6 +183,8 @@ alvaos ALL=(ALL) NOPASSWD: /usr/bin/id
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/df
 alvaos ALL=(ALL) NOPASSWD: /bin/df
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/getent
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/nohup
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/bash
 SUDOERS_EOF
 
 log "Creating package control file..."
@@ -227,6 +229,7 @@ chown -R alvaos:alvaos /opt/alvaos
 chown -R alvaos:alvaos /var/lib/alvaos
 chown -R alvaos:alvaos /var/log/alvaos
 chown -R alvaos:alvaos /etc/alvaos
+chown root:root /etc/sudoers.d/alvaos
 chmod 440 /etc/sudoers.d/alvaos
 
 # Reload systemd
