@@ -23,6 +23,12 @@ class AppStore:
         self.apps_state_file = '/var/lib/alvaos/apps_state.json'
         self.install_status_file = '/var/lib/alvaos/app_install_status.json'
         
+        # Status tracking
+        import threading
+        self._status_lock = threading.Lock()
+        self._active_install_status = None
+        self._last_status_write = 0
+        
         # Ensure directories exist
         Path('/var/lib/alvaos').mkdir(parents=True, exist_ok=True)
     
@@ -68,7 +74,11 @@ class AppStore:
             print(f"Error saving apps state: {e}")
 
     def get_install_status(self) -> Dict:
-        """Get the current installation status"""
+        """Get the current installation status (from memory if active, else from disk)"""
+        with self._status_lock:
+            if self._active_install_status:
+                return self._active_install_status.copy()
+            
         try:
             if os.path.exists(self.install_status_file):
                 with open(self.install_status_file, 'r') as f:
@@ -77,12 +87,19 @@ class AppStore:
             print(f"Error loading install status: {e}")
         return {"status": "idle"}
 
-    def _update_install_status(self, app_id: str, status: str, progress: int = 0, message: str = "", logs: List[str] = None):
-        """Update the installation status file"""
-        try:
-            current = self.get_install_status()
+    def _update_install_status(self, app_id: str, status: str, progress: int = 0, message: str = "", logs: List[str] = None, force_write: bool = False):
+        """Update the installation status with in-memory tracking and throttled disk writes"""
+        import time
+        from datetime import datetime
+        
+        with self._status_lock:
             if logs is None:
-                logs = current.get('logs', [])
+                if self._active_install_status:
+                    logs = self._active_install_status.get('logs', [])
+                else:
+                    # Try to get from last known status if we just started
+                    current = self.get_install_status()
+                    logs = current.get('logs', [])
             
             # Keep only last 100 log lines
             if len(logs) > 100:
@@ -94,12 +111,26 @@ class AppStore:
                 "progress": progress,
                 "message": message,
                 "logs": logs,
-                "updated_at": __import__('datetime').datetime.now().isoformat()
+                "updated_at": datetime.now().isoformat()
             }
-            with open(self.install_status_file, 'w') as f:
-                json.dump(payload, f, indent=2)
-        except Exception as e:
-            print(f"Error saving install status: {e}")
+            
+            self._active_install_status = payload
+            
+            # Determine if we should write to disk
+            now = time.time()
+            should_write = force_write or (now - self._last_status_write > 1.5) or status in ('success', 'error', 'idle')
+            
+            if should_write:
+                try:
+                    with open(self.install_status_file, 'w') as f:
+                        json.dump(payload, f, indent=2)
+                    self._last_status_write = now
+                except Exception as e:
+                    print(f"Error saving install status: {e}")
+            
+            # If finished, we can eventually clear the active status, 
+            # but maybe keep it for a while so polling can pick up the final state.
+            # For now, we keep it in memory until the next install starts.
     
     def get_available_apps(self) -> Tuple[Optional[List[Dict]], Optional[str]]:
         """
@@ -276,6 +307,18 @@ class AppStore:
             args=(app_id, pool_path, parent_subvolume, port_mappings, volume_mappings, environment_vars)
         )
         thread.daemon = True
+        
+        # Reset memory status for new install
+        with self._status_lock:
+            self._active_install_status = {
+                "app_id": app_id,
+                "status": "starting",
+                "progress": 0,
+                "message": "Initializing...",
+                "logs": [],
+                "updated_at": __import__('datetime').datetime.now().isoformat()
+            }
+        
         thread.start()
         
         return True, None
@@ -359,11 +402,26 @@ class AppStore:
             # Callback for docker output
             logs = []
             def docker_callback(line):
+                # Smarter progress messaging based on docker output
+                msg = "Running Docker Compose..."
+                progress = 50
+                
+                lower_line = line.lower()
+                if "pulling" in lower_line or "downloading" in lower_line:
+                    msg = f"Pulling images: {line}"
+                    progress = 40
+                elif "extracting" in lower_line:
+                    msg = f"Extracting layers: {line}"
+                    progress = 45
+                elif "creating" in lower_line or "started" in lower_line:
+                    msg = f"Creating containers: {line}"
+                    progress = 70
+                
                 logs.append(line)
-                self._update_install_status(app_id, "installing", 50, "Running Docker Compose...", logs)
+                self._update_install_status(app_id, "installing", progress, msg, logs)
 
             # Create containers from compose
-            self._update_install_status(app_id, "installing", 30, "Creating containers...", logs)
+            self._update_install_status(app_id, "installing", 30, "Invoking Docker Compose...", logs)
             success, error = self.docker_manager.create_container_from_compose(
                 compose_config,
                 app_id,
@@ -391,10 +449,10 @@ class AppStore:
             }
             self._save_apps_state(apps_state)
             
-            self._update_install_status(app_id, "success", 100, "Installation completed successfully")
+            self._update_install_status(app_id, "success", 100, "Installation completed successfully", force_write=True)
             
         except Exception as e:
-            self._update_install_status(app_id, "error", 0, f"Unexpected error during installation: {str(e)}")
+            self._update_install_status(app_id, "error", 0, f"Unexpected error during installation: {str(e)}", force_write=True)
     
     def uninstall_app(self, app_id: str, keep_data: bool = False) -> Tuple[bool, Optional[str]]:
         """
