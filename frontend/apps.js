@@ -303,7 +303,7 @@ async function showInstallWizard(appId) {
             }
 
             confirmBtn.disabled = true;
-            confirmBtn.textContent = 'Installing...';
+            confirmBtn.textContent = 'Starting...';
 
             try {
                 const installRes = await fetch(`${API_BASE}/apps/install`, {
@@ -320,18 +320,20 @@ async function showInstallWizard(appId) {
                 });
 
                 if (!installRes.ok) {
-                    const err = await installRes.json();
-                    throw new Error(err.error || 'Installation failed');
+                    const errorData = await installRes.json();
+                    throw new Error(errorData.error || 'Failed to initiate installation');
                 }
 
-                showNotification(`App "${app.name || appId}" installed successfully!`, 'success');
-                modal.style.display = 'none';
-                loadInstalledApps();
-                // Switch to installed tab automatically
-                document.querySelector('.tab-btn[data-tab="installed"]').click();
+                // Show progress container
+                document.getElementById('install-progress-container').style.display = 'block';
+                document.getElementById('install-log-content').textContent = ''; // Clear logs
 
-            } catch (err) {
-                showNotification(err.message, 'error');
+                // Start polling
+                pollInstallStatus(appId);
+
+            } catch (error) {
+                console.error('Install error:', error);
+                showNotification(`Installation failed: ${error.message}`, 'error');
                 confirmBtn.disabled = false;
                 confirmBtn.textContent = 'Install Application';
             }
@@ -471,3 +473,71 @@ document.getElementById('refresh-containers-btn')?.addEventListener('click', loa
 
 // Initial load
 loadAvailableApps();
+
+async function pollInstallStatus(appId) {
+    const statusEl = document.getElementById('install-progress-status');
+    const percentEl = document.getElementById('install-progress-percent');
+    const barEl = document.getElementById('install-progress-bar');
+    const logEl = document.getElementById('install-log-content');
+    const logContainer = document.getElementById('install-log-container');
+    const confirmBtn = document.getElementById('confirm-install-btn');
+
+    const poll = async () => {
+        try {
+            const res = await fetch(`${API_BASE}/apps/install/status`, {
+                headers: { 'Authorization': authToken }
+            });
+            if (!res.ok) {
+                setTimeout(poll, 2000);
+                return;
+            }
+
+            const data = await res.json();
+
+            if (data.status === 'idle') {
+                setTimeout(poll, 1000);
+                return;
+            }
+
+            // Update UI
+            statusEl.textContent = data.message || 'Installing...';
+            percentEl.textContent = `${data.progress}%`;
+            barEl.style.width = `${data.progress}%`;
+
+            if (data.logs && data.logs.length > 0) {
+                logEl.textContent = data.logs.join('\n');
+                logContainer.scrollTop = logContainer.scrollHeight;
+            }
+
+            if (data.status === 'success') {
+                showNotification(`App "${appId}" installed successfully!`, 'success');
+                confirmBtn.textContent = 'Done';
+                setTimeout(() => {
+                    document.getElementById('install-modal').style.display = 'none';
+                    loadInstalledApps();
+                    // Reset modal for next time
+                    document.getElementById('install-progress-container').style.display = 'none';
+                }, 2000);
+                return;
+            }
+
+            if (data.status === 'error') {
+                showNotification(`Installation failed: ${data.message}`, 'error');
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = 'Retry Installation';
+                statusEl.textContent = 'Installation failed';
+                statusEl.style.color = 'var(--accent-danger)';
+                return;
+            }
+
+            // Continue polling
+            setTimeout(poll, 1000);
+
+        } catch (error) {
+            console.error('Polling error:', error);
+            setTimeout(poll, 2000);
+        }
+    };
+
+    poll();
+}

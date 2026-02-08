@@ -2471,7 +2471,13 @@ def install_app():
     if not success:
         return jsonify({'error': error}), 500
     
-    return jsonify({'success': True, 'message': f'App "{app_id}" installed successfully'})
+    return jsonify({'success': True, 'message': f'Installation of "{app_id}" started'})
+
+@app.route('/api/v1/apps/install/status', methods=['GET'])
+@require_auth
+def get_app_install_status():
+    """Get the current app installation status"""
+    return jsonify(app_store.get_install_status())
 
 @app.route('/api/v1/apps/<app_id>', methods=['DELETE'])
 @require_auth

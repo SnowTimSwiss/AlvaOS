@@ -207,7 +207,8 @@ class DockerManager:
         compose_dict: Dict,
         app_name: str,
         pool_path: str,
-        project_name: Optional[str] = None
+        project_name: Optional[str] = None,
+        callback: Optional[callable] = None
     ) -> Tuple[bool, Optional[str]]:
         """
         Create and start containers from a Docker Compose configuration
@@ -217,6 +218,7 @@ class DockerManager:
             app_name: Name of the app
             pool_path: Path to the pool where app data will be stored
             project_name: Optional project name (defaults to app_name)
+            callback: Optional function(line: str) to receive real-time output
         
         Returns:
             Tuple of (success bool, error message)
@@ -243,21 +245,52 @@ class DockerManager:
             else:
                 cmd = [self.compose_cmd, '-f', compose_file, '-p', project_name, 'up', '-d']
             
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=120,  # Longer timeout for pulling images
-                env={'LC_ALL': 'C'}
-            )
-            
-            # Clean up temp file
-            os.unlink(compose_file)
-            
-            if result.returncode != 0:
-                return False, result.stderr
-            
-            return True, None
+            if callback:
+                # Use Popen for real-time output
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    env={'LC_ALL': 'C'}
+                )
+                
+                output = []
+                while True:
+                    line = process.stdout.readline()
+                    if not line and process.poll() is not None:
+                        break
+                    if line:
+                        line_stripped = line.strip()
+                        output.append(line_stripped)
+                        callback(line_stripped)
+                
+                returncode = process.poll()
+                full_output = "\n".join(output)
+                
+                # Clean up temp file
+                os.unlink(compose_file)
+                
+                if returncode != 0:
+                    return False, full_output
+                return True, None
+            else:
+                # Original blocking behavior
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=600,  # Longer timeout for pulling images
+                    env={'LC_ALL': 'C'}
+                )
+                
+                # Clean up temp file
+                os.unlink(compose_file)
+                
+                if result.returncode != 0:
+                    return False, result.stderr
+                
+                return True, None
             
         except Exception as e:
             return False, str(e)

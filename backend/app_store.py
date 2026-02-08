@@ -21,6 +21,7 @@ class AppStore:
         # Paths
         self.catalog_file = self._get_catalog_path()
         self.apps_state_file = '/var/lib/alvaos/apps_state.json'
+        self.install_status_file = '/var/lib/alvaos/app_install_status.json'
         
         # Ensure directories exist
         Path('/var/lib/alvaos').mkdir(parents=True, exist_ok=True)
@@ -65,6 +66,40 @@ class AppStore:
                 json.dump(state, f, indent=2)
         except Exception as e:
             print(f"Error saving apps state: {e}")
+
+    def get_install_status(self) -> Dict:
+        """Get the current installation status"""
+        try:
+            if os.path.exists(self.install_status_file):
+                with open(self.install_status_file, 'r') as f:
+                    return json.load(f)
+        except Exception as e:
+            print(f"Error loading install status: {e}")
+        return {"status": "idle"}
+
+    def _update_install_status(self, app_id: str, status: str, progress: int = 0, message: str = "", logs: List[str] = None):
+        """Update the installation status file"""
+        try:
+            current = self.get_install_status()
+            if logs is None:
+                logs = current.get('logs', [])
+            
+            # Keep only last 100 log lines
+            if len(logs) > 100:
+                logs = logs[-100:]
+
+            payload = {
+                "app_id": app_id,
+                "status": status,
+                "progress": progress,
+                "message": message,
+                "logs": logs,
+                "updated_at": __import__('datetime').datetime.now().isoformat()
+            }
+            with open(self.install_status_file, 'w') as f:
+                json.dump(payload, f, indent=2)
+        except Exception as e:
+            print(f"Error saving install status: {e}")
     
     def get_available_apps(self) -> Tuple[Optional[List[Dict]], Optional[str]]:
         """
@@ -214,15 +249,7 @@ class AppStore:
         environment_vars: Optional[Dict[str, str]] = None
     ) -> Tuple[bool, Optional[str]]:
         """
-        Install an app
-        
-        Args:
-            app_id: App identifier
-            pool_path: Base pool path
-            parent_subvolume: Optional parent subvolume name
-            port_mappings: Dict of internal_port -> external_port
-            volume_mappings: Dict of container_path -> host_path
-            environment_vars: Dict of env var key -> value
+        Start app installation in the background
         
         Returns:
             Tuple of (success bool, error message)
@@ -236,96 +263,138 @@ class AppStore:
         apps_state = self._load_apps_state()
         if app_id in apps_state:
             return False, f"App '{app_id}' is already installed"
-        
-        # Prepare storage
-        app_storage_path, error = self._prepare_app_storage(pool_path, parent_subvolume, app_id)
-        if error:
-            return False, error
-        
-        # Get docker compose config
-        compose_config = app_details.get('docker_compose', {})
-        if not compose_config:
-            return False, "App has no Docker Compose configuration"
-        
-        # Apply port mappings
-        if port_mappings:
-            for service_name, service_config in compose_config.get('services', {}).items():
-                if 'ports' in service_config:
-                    new_ports = []
-                    for port_spec in service_config['ports']:
-                        # Parse port spec (e.g., "8080:80")
-                        if ':' in str(port_spec):
-                            parts = str(port_spec).split(':')
-                            internal_port = int(parts[-1])
-                            if internal_port in port_mappings:
-                                new_ports.append(f"{port_mappings[internal_port]}:{internal_port}")
-                            else:
-                                new_ports.append(port_spec)
-                        else:
-                            new_ports.append(port_spec)
-                    service_config['ports'] = new_ports
-        
-        # Apply volume mappings
-        if volume_mappings:
-            for service_name, service_config in compose_config.get('services', {}).items():
-                if 'volumes' in service_config:
-                    new_volumes = []
-                    for volume_spec in service_config['volumes']:
-                        # Parse volume spec (e.g., "/host/path:/container/path")
-                        if ':' in str(volume_spec):
-                            parts = str(volume_spec).split(':')
-                            container_path = parts[-1]
-                            if container_path in volume_mappings:
-                                new_volumes.append(f"{volume_mappings[container_path]}:{container_path}")
-                            else:
-                                new_volumes.append(volume_spec)
-                        else:
-                            new_volumes.append(volume_spec)
-                    service_config['volumes'] = new_volumes
-        
-        # Apply environment variables
-        if environment_vars:
-            for service_name, service_config in compose_config.get('services', {}).items():
-                if 'environment' not in service_config:
-                    service_config['environment'] = []
-                
-                # Convert environment to dict if it's a list
-                if isinstance(service_config['environment'], list):
-                    env_dict = {}
-                    for env_item in service_config['environment']:
-                        if '=' in env_item:
-                            key, value = env_item.split('=', 1)
-                            env_dict[key] = value
-                    service_config['environment'] = env_dict
-                
-                # Update with user-provided values
-                service_config['environment'].update(environment_vars)
-        
-        # Create containers from compose
-        success, error = self.docker_manager.create_container_from_compose(
-            compose_config,
-            app_id,
-            app_storage_path,
-            project_name=f"alvaos-{app_id}"
+
+        # Check if an installation is already in progress
+        current_status = self.get_install_status()
+        if current_status.get('status') == 'installing' and current_status.get('app_id') == app_id:
+            return False, f"Installation of '{app_id}' is already in progress"
+
+        # Start installation in a thread
+        import threading
+        thread = threading.Thread(
+            target=self._install_app_worker,
+            args=(app_id, pool_path, parent_subvolume, port_mappings, volume_mappings, environment_vars)
         )
-        
-        if not success:
-            # Cleanup: remove subvolume
-            self._delete_subvolume(app_storage_path)
-            return False, f"Failed to create containers: {error}"
-        
-        # Save app state
-        apps_state[app_id] = {
-            'app_id': app_id,
-            'name': app_details.get('name', app_id),
-            'storage_path': app_storage_path,
-            'pool_path': pool_path,
-            'parent_subvolume': parent_subvolume,
-            'installed_at': __import__('datetime').datetime.now().isoformat()
-        }
-        self._save_apps_state(apps_state)
+        thread.daemon = True
+        thread.start()
         
         return True, None
+
+    def _install_app_worker(
+        self,
+        app_id: str,
+        pool_path: str,
+        parent_subvolume: Optional[str],
+        port_mappings: Optional[Dict[int, int]],
+        volume_mappings: Optional[Dict[str, str]],
+        environment_vars: Optional[Dict[str, str]]
+    ):
+        """Worker thread for app installation"""
+        try:
+            self._update_install_status(app_id, "installing", 5, f"Starting installation of {app_id}...", [])
+            
+            app_details, _ = self.get_app_details(app_id)
+            
+            # Prepare storage
+            self._update_install_status(app_id, "installing", 10, "Preparing storage...")
+            app_storage_path, error = self._prepare_app_storage(pool_path, parent_subvolume, app_id)
+            if error:
+                self._update_install_status(app_id, "error", 0, f"Storage preparation failed: {error}")
+                return
+            
+            # Get docker compose config
+            compose_config = app_details.get('docker_compose', {})
+            
+            # Apply mappings (Ports, Volumes, Env) - same as before
+            # [Re-using the logic from the original install_app]
+            
+            # Apply port mappings
+            if port_mappings:
+                for service_name, service_config in compose_config.get('services', {}).items():
+                    if 'ports' in service_config:
+                        new_ports = []
+                        for port_spec in service_config['ports']:
+                            if ':' in str(port_spec):
+                                parts = str(port_spec).split(':')
+                                internal_port = int(parts[-1])
+                                if internal_port in port_mappings:
+                                    new_ports.append(f"{port_mappings[internal_port]}:{internal_port}")
+                                else:
+                                    new_ports.append(port_spec)
+                            else:
+                                new_ports.append(port_spec)
+                        service_config['ports'] = new_ports
+            
+            # Apply volume mappings
+            if volume_mappings:
+                for service_name, service_config in compose_config.get('services', {}).items():
+                    if 'volumes' in service_config:
+                        new_volumes = []
+                        for volume_spec in service_config['volumes']:
+                            if ':' in str(volume_spec):
+                                parts = str(volume_spec).split(':')
+                                container_path = parts[-1]
+                                if container_path in volume_mappings:
+                                    new_volumes.append(f"{volume_mappings[container_path]}:{container_path}")
+                                else:
+                                    new_volumes.append(volume_spec)
+                            else:
+                                new_volumes.append(volume_spec)
+                        service_config['volumes'] = new_volumes
+            
+            # Apply environment variables
+            if environment_vars:
+                for service_name, service_config in compose_config.get('services', {}).items():
+                    if 'environment' not in service_config:
+                        service_config['environment'] = []
+                    if isinstance(service_config['environment'], list):
+                        env_dict = {}
+                        for env_item in service_config['environment']:
+                            if '=' in env_item:
+                                key, value = env_item.split('=', 1)
+                                env_dict[key] = value
+                        service_config['environment'] = env_dict
+                    service_config['environment'].update(environment_vars)
+
+            # Callback for docker output
+            logs = []
+            def docker_callback(line):
+                logs.append(line)
+                self._update_install_status(app_id, "installing", 50, "Running Docker Compose...", logs)
+
+            # Create containers from compose
+            self._update_install_status(app_id, "installing", 30, "Creating containers...", logs)
+            success, error = self.docker_manager.create_container_from_compose(
+                compose_config,
+                app_id,
+                app_storage_path,
+                project_name=f"alvaos-{app_id}",
+                callback=docker_callback
+            )
+            
+            if not success:
+                # Cleanup: remove subvolume
+                self._delete_subvolume(app_storage_path)
+                self._update_install_status(app_id, "error", 0, f"Failed to create containers: {error}", logs)
+                return
+            
+            # Save app state
+            self._update_install_status(app_id, "installing", 95, "Finalizing installation...")
+            apps_state = self._load_apps_state()
+            apps_state[app_id] = {
+                'app_id': app_id,
+                'name': app_details.get('name', app_id),
+                'storage_path': app_storage_path,
+                'pool_path': pool_path,
+                'parent_subvolume': parent_subvolume,
+                'installed_at': __import__('datetime').datetime.now().isoformat()
+            }
+            self._save_apps_state(apps_state)
+            
+            self._update_install_status(app_id, "success", 100, "Installation completed successfully")
+            
+        except Exception as e:
+            self._update_install_status(app_id, "error", 0, f"Unexpected error during installation: {str(e)}")
     
     def uninstall_app(self, app_id: str, keep_data: bool = False) -> Tuple[bool, Optional[str]]:
         """
