@@ -2,6 +2,19 @@
 // API_BASE is defined in app.js
 let authToken = localStorage.getItem('alvaos_token');
 
+function showNotification(message, type = 'info') {
+    if (window.showToast) {
+        window.showToast(message, type);
+        return;
+    }
+    if (type === 'error') {
+        console.error(message);
+    } else {
+        console.log(message);
+    }
+    if (window.alert) window.alert(message);
+}
+
 // Tab switching
 document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -356,11 +369,44 @@ async function installApp(appId) {
     showInstallWizard(appId);
 }
 
+async function showUninstallDialog(appId) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = `
+            <div class="modal-content">
+                <div class="modal-title">Uninstall ${appId}?</div>
+                <div class="modal-body">This will stop and remove all associated containers.</div>
+                <label style="display:flex; align-items:center; gap:10px; cursor:pointer; margin-bottom: 8px;">
+                    <input type="checkbox" class="uninstall-keep-data" checked>
+                    <span>Keep app data (storage subvolumes)</span>
+                </label>
+                <div style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 16px;">
+                    Uncheck to permanently delete all app data.
+                </div>
+                <div class="modal-actions">
+                    <button class="btn-secondary" data-action="cancel">Cancel</button>
+                    <button class="btn-primary" data-action="confirm" style="background: var(--accent-danger); border: none; color: white;">Uninstall</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        const keepDataToggle = overlay.querySelector('.uninstall-keep-data');
+        const close = (value) => {
+            overlay.remove();
+            resolve(value);
+        };
+
+        overlay.querySelector('[data-action="cancel"]').onclick = () => close(null);
+        overlay.querySelector('[data-action="confirm"]').onclick = () => close(!!keepDataToggle?.checked);
+    });
+}
+
 // Uninstall app
 async function uninstallApp(appId) {
-    if (!await showConfirm(`Are you sure you want to uninstall ${appId}?\nThis will stop and remove all associated containers.`)) return;
-
-    const keepData = await showConfirm(`Keep app data for ${appId}?\nClick Confirm to keep storage subvolumes, Cancel to PERMANENTLY delete them.`);
+    const keepData = await showUninstallDialog(appId);
+    if (keepData === null) return;
 
     try {
         const response = await fetch(`${API_BASE}/apps/${appId}`, {

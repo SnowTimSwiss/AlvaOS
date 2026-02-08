@@ -320,6 +320,7 @@ class AppStore:
                 "logs": [],
                 "updated_at": __import__('datetime').datetime.now().isoformat()
             }
+        self._update_install_status(app_id, "starting", 0, "Initializing...", [], force_write=True)
         
         thread.start()
         
