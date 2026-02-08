@@ -27,6 +27,7 @@ from app_store import AppStore
 
 # System Commands Paths for Sudo (must match sudoers configuration in install-system.sh)
 CMD = {
+    'GETENT': '/usr/bin/getent',
     'CHPASSWD': '/usr/sbin/chpasswd',
     'USERADD': '/usr/sbin/useradd',
     'USERDEL': '/usr/sbin/userdel',
@@ -252,7 +253,7 @@ def ensure_samba_global_settings(guest_access):
     if platform.system() != 'Linux' or not guest_access:
         return
     try:
-        res, err = run_sudo_command(['sudo', 'cat', '/etc/samba/smb.conf'])
+        res, err = run_sudo_command(['sudo', CMD['CAT'], '/etc/samba/smb.conf'])
         if err or not res:
             return
         content = res.stdout
@@ -283,7 +284,7 @@ def reconcile_samba_guest_settings(shares_state):
             s.get('protocol') == 'smb' and s.get('guest_access', False)
             for s in shares_state.values()
         )
-        res, err = run_sudo_command(['sudo', 'cat', '/etc/samba/smb.conf'])
+        res, err = run_sudo_command(['sudo', CMD['CAT'], '/etc/samba/smb.conf'])
         if err or not res:
             return
         content = res.stdout
@@ -326,7 +327,7 @@ def normalize_smb_permissions(permissions):
 
 def get_group_members(group_name):
     try:
-        result = subprocess.run(['getent', 'group', group_name], capture_output=True, text=True)
+        result = subprocess.run([CMD['GETENT'], 'group', group_name], capture_output=True, text=True)
         if result.returncode != 0:
             return []
         parts = result.stdout.strip().split(':')
@@ -341,7 +342,7 @@ def get_group_members(group_name):
 
 def ensure_group_exists(group_name):
     try:
-        run_sudo_command(['sudo', 'groupadd', '-f', group_name])
+        run_sudo_command(['sudo', CMD['GROUPADD'], '-f', group_name])
     except Exception as e:
         print(f"Error ensuring group exists: {e}")
 
@@ -362,16 +363,16 @@ def apply_smb_permissions_to_fs(share_path, group_name, smb_permissions, guest_a
         for user in sorted(set(allowed_users)):
             if not user:
                 continue
-            run_sudo_command(['sudo', 'gpasswd', '-a', user, group_name])
+            run_sudo_command(['sudo', CMD['GPASSWD'], '-a', user, group_name])
 
         # Remove users that are no longer allowed
         current_members = get_group_members(group_name)
         for user in current_members:
             if user not in allowed_users:
-                run_sudo_command(['sudo', 'gpasswd', '-d', user, group_name])
+                run_sudo_command(['sudo', CMD['GPASSWD'], '-d', user, group_name])
 
         # Set group ownership and permissions on path
-        run_sudo_command(['sudo', 'chgrp', '-R', group_name, share_path])
+        run_sudo_command(['sudo', CMD['CHGRP'], '-R', group_name, share_path])
 
         # Determine permission mode
         if guest_access and not smb_permissions:
@@ -380,7 +381,7 @@ def apply_smb_permissions_to_fs(share_path, group_name, smb_permissions, guest_a
         else:
             # Setgid for group inheritance, grant write if any write users
             mode = '2770' if write_users else '2750'
-        run_sudo_command(['sudo', 'chmod', '-R', mode, share_path])
+        run_sudo_command(['sudo', CMD['CHMOD'], '-R', mode, share_path])
     except Exception as e:
         print(f"Error applying SMB permissions to filesystem: {e}")
 
@@ -389,7 +390,7 @@ def disable_samba_homes_share():
     if platform.system() != 'Linux':
         return
     try:
-        res, err = run_sudo_command(['sudo', 'cat', '/etc/samba/smb.conf'])
+        res, err = run_sudo_command(['sudo', CMD['CAT'], '/etc/samba/smb.conf'])
         if err or not res:
             return
         content = res.stdout
@@ -450,7 +451,7 @@ def update_samba_share_section(share_name, new_config):
         return
     ensure_samba_conf_exists()
     try:
-        res, err = run_sudo_command(['sudo', 'cat', '/etc/samba/smb.conf'])
+        res, err = run_sudo_command(['sudo', CMD['CAT'], '/etc/samba/smb.conf'])
         if err or not res:
             raise Exception(err or "Could not read smb.conf")
         content = res.stdout
@@ -734,7 +735,7 @@ def manage_users():
             ok, smb_err = sync_samba_password(username, password)
             if not ok:
                 # Rollback system user creation
-                run_sudo_command(['sudo', 'userdel', username])
+                run_sudo_command(['sudo', CMD['USERDEL'], username])
                 return jsonify({'error': f'Failed to sync Samba password: {smb_err}'}), 500
 
             users_state[username] = {
@@ -2238,7 +2239,7 @@ def manage_shares():
                     # Remove from /etc/exports using sudo
                     try:
                         # Read the file content via sudo
-                        res, err = run_sudo_command(['sudo', CMD['CAT'], '/etc/exports'])
+                        res, err = run_sudo_command([CMD['CAT'], '/etc/exports'])
                         if err or not res:
                             raise Exception(f"Could not read /etc/exports: {err}")
                         
@@ -2257,12 +2258,11 @@ def manage_shares():
                             new_lines.append(line)
                         
                         # Write back using sudo tee
-                        content = '\n'.join(new_lines) + '\n'
                         process = subprocess.Popen(build_privileged_cmd([CMD['TEE'], '/etc/exports']), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env={'LC_ALL': 'C'})
                         process.communicate(input=content)
                         
                         # Reload NFS exports
-                        run_sudo_command(['sudo', CMD['EXPORTFS'], '-ra'])
+                        run_sudo_command([CMD['EXPORTFS'], '-ra'])
                     except Exception as e:
                         print(f"Error removing NFS export: {e}")
                 
@@ -2270,7 +2270,7 @@ def manage_shares():
                     # Remove from /etc/samba/smb.conf using sudo
                     try:
                         # Read the file content via sudo
-                        res, err = run_sudo_command(['sudo', CMD['CAT'], '/etc/samba/smb.conf'])
+                        res, err = run_sudo_command([CMD['CAT'], '/etc/samba/smb.conf'])
                         if err or not res:
                             raise Exception(f"Could not read /etc/samba/smb.conf: {err}")
                         
