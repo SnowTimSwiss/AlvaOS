@@ -107,8 +107,7 @@ EOF
 log "Creating sudoers rules..."
 mkdir -p "${PKG_DIR}/etc/sudoers.d"
 cat > "${PKG_DIR}/etc/sudoers.d/alvaos" << 'SUDOERS_EOF'
-# AlvaOS backend needs specific privileged commands
-# User Management
+# AlvaOS Permissions - Comprehensive List
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/chpasswd
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/useradd
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/userdel
@@ -118,24 +117,19 @@ alvaos ALL=(ALL) NOPASSWD: /usr/sbin/groupdel
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/gpasswd
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/chgrp
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/chmod
-
-# Service Management
-alvaos ALL=(ALL) NOPASSWD: /bin/systemctl restart alvaos.service
-alvaos ALL=(ALL) NOPASSWD: /bin/systemctl start alvaos.service
-alvaos ALL=(ALL) NOPASSWD: /bin/systemctl stop alvaos.service
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart alvaos.service
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemctl start alvaos.service
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop alvaos.service
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemctl status alvaos.service
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemd-run
-alvaos ALL=(ALL) NOPASSWD: /bin/systemctl restart ssh
-alvaos ALL=(ALL) NOPASSWD: /bin/systemctl status docker.service
-alvaos ALL=(ALL) NOPASSWD: /bin/systemctl restart smbd
-alvaos ALL=(ALL) NOPASSWD: /bin/systemctl reload nfs-kernel-server
-
-# Update Management
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart ssh
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemctl status docker.service
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart smbd
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload nfs-kernel-server
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/apt
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/apt-get
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/dpkg
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/dpkg-deb
-
-# Storage Management (SMART, Btrfs, Partitions)
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/smartctl
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/lsblk
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/btrfs
@@ -149,31 +143,24 @@ alvaos ALL=(ALL) NOPASSWD: /usr/sbin/mkfs.btrfs
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/mkfs.ext4
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/blkid
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/cat
-
-# System Settings (Hostname, Time, Power)
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/hostnamectl
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/timedatectl
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/journalctl
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/tail
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/reboot
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/poweroff
-
-# Docker Management
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/docker
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/docker-compose
-
-# Btrfs Subvolume Management (for app storage)
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/btrfs subvolume create *
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/btrfs subvolume delete *
-
-# Network Shares Config (NFS Exports, Samba)
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/hosts
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/sed
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/exportfs
-alvaos ALL=(ALL) NOPASSWD: /bin/cat /etc/exports
-alvaos ALL=(ALL) NOPASSWD: /bin/cat /etc/samba/smb.conf
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/cat /etc/exports
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/cat /etc/samba/smb.conf
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/exports
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee -a /etc/exports
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/samba/smb.conf
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee -a /etc/samba/smb.conf
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/mountpoint
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/docker
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/docker-compose
 SUDOERS_EOF
 
 log "Creating package control file..."

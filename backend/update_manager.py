@@ -17,7 +17,7 @@ CMD = {
     'DPKG_DEB': '/usr/bin/dpkg-deb',
     'DPKG': '/usr/bin/dpkg',
     'SYSTEMD_RUN': '/usr/bin/systemd-run',
-    'BASH': '/bin/bash',
+    'BASH': '/usr/bin/bash',
     'APT': '/usr/bin/apt',
     'APT_GET': '/usr/bin/apt-get',
     'LSBLK': '/usr/bin/lsblk',
@@ -320,13 +320,25 @@ class UpdateManager:
     def run_command(self, cmd, timeout=60):
         if not cmd:
             return None, "Empty command"
-        final_cmd = cmd
-        if platform.system() == "Linux" and not self.is_root_user():
+        
+        # Prepare final command using sudo if not root
+        final_cmd = []
+        if cmd[0] == 'sudo':
+             # Use absolute path for sudo -n if we're doing it manually or trust build_privileged style
+             # But here we stick to the simpler logic of this module for now, just adding -n
+             final_cmd = ['sudo', '-n'] + cmd[1:]
+        elif platform.system() == "Linux" and not self.is_root_user():
             final_cmd = ["sudo", "-n"] + cmd
+        else:
+            final_cmd = cmd
+            
         try:
             result = subprocess.run(final_cmd, capture_output=True, text=True, timeout=timeout, env={"LC_ALL": "C"})
-            if result.returncode != 0 and "password is required" in (result.stderr or ""):
-                return None, "System permission error: passwordless sudo not configured."
+            if result.returncode != 0:
+                stderr_low = (result.stderr or "").lower()
+                if "password is required" in stderr_low or "a password is required" in stderr_low:
+                    cmd_str = " ".join(final_cmd)
+                    return None, f"System permission error: Passwordless sudo is not configured for command: {cmd_str}"
             return result, None
         except subprocess.TimeoutExpired:
             return None, "Command timed out"
@@ -547,10 +559,9 @@ class UpdateManager:
         
         try:
             os.makedirs(mount_point, exist_ok=True)
-            # Try mounting read-only
-            res = subprocess.run(['sudo', CMD['MOUNT'], '-o', 'ro', dev_path, mount_point], 
-                               capture_output=True, text=True, timeout=10)
-            if res.returncode == 0:
+            # Use run_command to handle sudo correctly
+            res, err = self.run_command([CMD['MOUNT'], '-o', 'ro', dev_path, mount_point], timeout=10)
+            if res and res.returncode == 0:
                 try:
                     scan_res = self._scan_path(mount_point)
                     for pkg in scan_res.get("packages", []):
@@ -562,7 +573,7 @@ class UpdateManager:
                         cached_pkg["path"] = cached_path
                         packages.append(cached_pkg)
                 finally:
-                    subprocess.run(['sudo', CMD['UMOUNT'], mount_point], timeout=10)
+                    self.run_command([CMD['UMOUNT'], mount_point], timeout=10)
             
             # Cleanup mount point
             if os.path.exists(mount_point):

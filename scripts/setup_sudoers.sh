@@ -14,10 +14,62 @@ SUDOERS_FILE="/etc/sudoers.d/alvaos"
 echo "Configuring passwordless sudo for 'alvaos' user..."
 
 # Create sudoers file
-cat > "$SUDOERS_FILE" <<EOF
-# AlvaOS Permissions
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/apt-get, /usr/bin/apt, /usr/bin/dpkg, /usr/bin/mount, /usr/bin/umount, /usr/bin/lsblk, /usr/bin/systemctl, /usr/sbin/service, /usr/bin/cp, /usr/bin/mv, /usr/bin/rm, /usr/bin/mkdir, /usr/bin/chown, /usr/bin/chmod, /usr/sbin/useradd, /usr/sbin/userdel, /usr/sbin/usermod, /usr/sbin/chpasswd, /usr/bin/smbpasswd, /usr/bin/systemd-run
-EOF
+cat > "$SUDOERS_FILE" <<'SUDOERS_EOF'
+# AlvaOS Permissions - Comprehensive List
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/chpasswd
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/useradd
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/userdel
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/smbpasswd
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/groupadd
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/groupdel
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/gpasswd
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/chgrp
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/chmod
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart alvaos.service
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemctl start alvaos.service
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop alvaos.service
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemctl status alvaos.service
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemd-run
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart ssh
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemctl status docker.service
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart smbd
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload nfs-kernel-server
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/apt
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/apt-get
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/dpkg
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/dpkg-deb
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/smartctl
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/lsblk
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/btrfs
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/wipefs
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/partprobe
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/umount
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/mount
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/mkdir
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/rmdir
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/mkfs.btrfs
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/mkfs.ext4
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/blkid
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/cat
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/hostnamectl
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/timedatectl
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/journalctl
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/tail
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/reboot
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/poweroff
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/hosts
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/sed
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/exportfs
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/cat /etc/exports
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/cat /etc/samba/smb.conf
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/exports
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee -a /etc/exports
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/samba/smb.conf
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee -a /etc/samba/smb.conf
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/mountpoint
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/docker
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/docker-compose
+SUDOERS_EOF
 
 chmod 440 "$SUDOERS_FILE"
 

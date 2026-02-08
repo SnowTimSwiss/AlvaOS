@@ -178,7 +178,8 @@ class AppStore:
     def _create_subvolume(self, path: str) -> Tuple[bool, Optional[str]]:
         """Create a Btrfs subvolume"""
         try:
-            if os.geteuid() != 0:
+            # Use absolute paths matching sudoers
+            if os.getuid() != 0:
                 cmd = ['sudo', '-n', '/usr/bin/btrfs', 'subvolume', 'create', path]
             else:
                 cmd = ['/usr/bin/btrfs', 'subvolume', 'create', path]
@@ -201,7 +202,8 @@ class AppStore:
     def _delete_subvolume(self, path: str) -> Tuple[bool, Optional[str]]:
         """Delete a Btrfs subvolume"""
         try:
-            if os.geteuid() != 0:
+            # Use absolute paths matching sudoers
+            if os.getuid() != 0:
                 cmd = ['sudo', '-n', '/usr/bin/btrfs', 'subvolume', 'delete', path]
             else:
                 cmd = ['/usr/bin/btrfs', 'subvolume', 'delete', path]
@@ -357,15 +359,36 @@ class AppStore:
                     if 'ports' in service_config:
                         new_ports = []
                         for port_spec in service_config['ports']:
-                            if ':' in str(port_spec):
-                                parts = str(port_spec).split(':')
-                                internal_port = int(parts[-1])
+                            port_str = str(port_spec)
+                            if ':' in port_str:
+                                parts = port_str.split(':')
+                                host_part = parts[0]
+                                container_part = parts[1]
+                                
+                                # container_part might be "80" or "53/udp"
+                                internal_port_raw = container_part.split('/')[0]
+                                internal_port = int(internal_port_raw)
+                                
                                 if internal_port in port_mappings:
-                                    new_ports.append(f"{port_mappings[internal_port]}:{internal_port}")
+                                    # Preserve protocol if present
+                                    protocol = ""
+                                    if '/' in container_part:
+                                        protocol = "/" + container_part.split('/')[1]
+                                    
+                                    new_ports.append(f"{port_mappings[internal_port]}:{internal_port}{protocol}")
                                 else:
                                     new_ports.append(port_spec)
                             else:
-                                new_ports.append(port_spec)
+                                # Single port spec like "80" (meaning 80:80)
+                                internal_port_raw = port_str.split('/')[0]
+                                internal_port = int(internal_port_raw)
+                                if internal_port in port_mappings:
+                                    protocol = ""
+                                    if '/' in port_str:
+                                        protocol = "/" + port_str.split('/')[1]
+                                    new_ports.append(f"{port_mappings[internal_port]}:{internal_port}{protocol}")
+                                else:
+                                    new_ports.append(port_spec)
                         service_config['ports'] = new_ports
             
             # Apply volume mappings

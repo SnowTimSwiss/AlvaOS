@@ -36,7 +36,7 @@ CMD = {
     'GPASSWD': '/usr/bin/gpasswd',
     'CHGRP': '/usr/bin/chgrp',
     'CHMOD': '/usr/bin/chmod',
-    'SYSTEMCTL': '/bin/systemctl',
+    'SYSTEMCTL': '/usr/bin/systemctl',
     'SYSTEMD_RUN': '/usr/bin/systemd-run',
     'REBOOT': '/usr/sbin/reboot',
     'POWEROFF': '/usr/sbin/poweroff',
@@ -64,7 +64,7 @@ CMD = {
     'IP': '/usr/sbin/ip',
     'ID': '/usr/bin/id',
     'DF': '/usr/bin/df',
-    'MOUNTPOINT': '/bin/mountpoint'
+    'MOUNTPOINT': '/usr/bin/mountpoint'
 }
 
 app = Flask(__name__, static_folder=None) # Disable default static serving to force version replacement
@@ -135,14 +135,19 @@ def run_sudo_command(cmd, timeout=30):
         
         final_cmd = []
         if cmd and cmd[0] == 'sudo':
+            # Remove redundant 'sudo' if present in the cmd list passed to us
+            # build_privileged_cmd will add 'sudo -n' if needed
             final_cmd = build_privileged_cmd(cmd[1:])
         else:
-            final_cmd = cmd
+            final_cmd = build_privileged_cmd(cmd)
         
         result = subprocess.run(final_cmd, capture_output=True, text=True, timeout=timeout, env=custom_env)
         
-        if result.returncode != 0 and 'password is required' in result.stderr:
-            return None, "System permission error: Passwordless sudo is not configured for this command. Please check the AlvaOS documentation for sudoers setup."
+        if result.returncode != 0:
+            stderr_low = result.stderr.lower()
+            if 'password is required' in stderr_low or 'a password is required' in stderr_low:
+                cmd_str = " ".join(final_cmd)
+                return None, f"System permission error: Passwordless sudo is not configured for command: {cmd_str}. Please check the AlvaOS documentation for sudoers setup."
             
         return result, None
     except subprocess.TimeoutExpired:
@@ -1856,14 +1861,11 @@ def manage_subvolumes(pool_id):
         
         try:
             if platform.system() == 'Linux' and mount_point:
-                # Fix: Ensure LC_ALL=C and non-interactive sudo
-                result = subprocess.run(
-                    ['sudo', '-n', 'env', 'LC_ALL=C', CMD['BTRFS'], 'subvolume', 'list', mount_point],
-                    capture_output=True, text=True, timeout=5
-                )
+                # Use run_sudo_command instead of direct subprocess.run with 'sudo -n' string
+                res, err = run_sudo_command([CMD['BTRFS'], 'subvolume', 'list', mount_point], timeout=5)
                 
-                if result.returncode == 0:
-                    for line in result.stdout.split('\n'):
+                if res and res.returncode == 0:
+                    for line in res.stdout.split('\n'):
                         if line.strip():
                             # Parse: ID 256 gen 7 top level 5 path subvol1
                             parts = line.split()
