@@ -30,9 +30,9 @@ Release strategy: "Iterate fast, stabilize often."
 
 
 ## v0.4.0 - Installer
-- [ ] **RAID**: Add option in installer to install with mirror
-- [ ] **User Friendly**: Make installer more user friendly
-- [ ] **Power**: Make the Installer more powerfull
+- [x] **RAID**: Add option in installer to install with mirror
+- [x] **User Friendly**: Make installer more user friendly
+- [x] **Power**: Make the Installer more powerfull
 - [ ] **Welcome Wizzard**: Add welcome wizzard to the OS for new users and new installs
 
 ## v0.5.0 - Containerization

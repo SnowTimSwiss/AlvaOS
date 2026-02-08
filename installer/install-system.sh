@@ -14,29 +14,50 @@ NC='\033[0m'
 PROGRESS=0
 TOTAL_STEPS=15
 
+# Whiptail Color Theme (AlvaOS Style)
+export NEWT_COLORS='
+  root=white,black
+  window=white,black
+  border=blue,black
+  shadow=black,black
+  button=white,green
+  actbutton=white,blue
+  title=blue,black
+  entry=white,blue
+  label=white,black
+  listbox=white,black
+  actlistbox=white,blue
+  checkbox=white,black
+  actcheckbox=white,blue
+'
+
+# Log file for output redirection
+INSTALL_LOG="/tmp/alvaos-install.log"
+touch "$INSTALL_LOG"
+
 # GUI Helpers
 msg() {
-    whiptail --title "AlvaOS Installer" --msgbox "$1" 10 60
+    whiptail --title "AlvaOS Installer" --msgbox "$1" 12 70
 }
 
 confirm() {
-    whiptail --title "AlvaOS Installer" --yesno "$1" 10 60
+    whiptail --title "AlvaOS Installer" --yesno "$1" 12 70
 }
 
 input() {
-    whiptail --title "AlvaOS Installer" --inputbox "$1" 10 60 "$2" 3>&1 1>&2 2>&3
+    whiptail --title "AlvaOS Installer" --inputbox "$1" 12 70 "$2" 3>&1 1>&2 2>&3
 }
 
 menu() {
     title=$1
     shift
-    whiptail --title "AlvaOS Installer" --menu "$title" 15 60 5 "$@" 3>&1 1>&2 2>&3
+    whiptail --title "AlvaOS Installer" --menu "$title" 16 70 5 "$@" 3>&1 1>&2 2>&3
 }
 
 checklist() {
     title=$1
     shift
-    whiptail --title "AlvaOS Installer" --checklist "$title" 15 60 5 "$@" 3>&1 1>&2 2>&3
+    whiptail --title "AlvaOS Installer" --checklist "$title" 16 70 5 "$@" 3>&1 1>&2 2>&3
 }
 
 update_progress() {
@@ -47,13 +68,14 @@ update_progress() {
     echo "$PERCENT"
     echo "$step_msg"
     echo "XXX"
+    echo "[$(date +%T)] Step $PROGRESS/$TOTAL_STEPS: $step_msg" >> "$INSTALL_LOG"
 }
 
 # Cleanup function for error recovery
 cleanup() {
     local exit_code=$?
     if [ $exit_code -ne 0 ]; then
-        msg "Installation failed! Check the terminal logs for details."
+        msg "Installation failed! \n\nPlease check the logs at $INSTALL_LOG"
     fi
     
     # Unmount everything
@@ -119,16 +141,28 @@ if ! confirm "WARNING: This will ERASE ALL DATA on: $TARGET_DISKS\n\nAre you sur
     exit 0
 fi
 
+# Network Selection
+NET_MODE=$(menu "Network Configuration" \
+    "DHCP" "Automatic (default, DHCP)" \
+    "STATIC" "Manual (Static IP)")
+
+if [ "$NET_MODE" == "STATIC" ]; then
+    STATIC_IP=$(input "Enter Static IP address (e.g., 192.168.1.50)" "192.168.1.50")
+    STATIC_NETMASK=$(input "Enter Netmask (e.g., 255.255.255.0)" "255.255.255.0")
+    STATIC_GW=$(input "Enter Gateway (e.g., 192.168.1.1)" "192.168.1.1")
+    STATIC_DNS=$(input "Enter DNS Server (e.g., 1.1.1.1)" "1.1.1.1")
+fi
+
 # Main Installation Logic wrapped in progress bar
 {
     update_progress "Preparing disks..."
     for disk in $TARGET_DISKS; do
         disk_path="/dev/$disk"
-        parted -s "$disk_path" mklabel gpt
-        parted -s "$disk_path" mkpart primary fat32 1MiB 512MiB
-        parted -s "$disk_path" set 1 esp on
-        parted -s "$disk_path" mkpart primary btrfs 512MiB 100%
-        partprobe "$disk_path" || true
+        parted -s "$disk_path" mklabel gpt >> "$INSTALL_LOG" 2>&1
+        parted -s "$disk_path" mkpart primary fat32 1MiB 512MiB >> "$INSTALL_LOG" 2>&1
+        parted -s "$disk_path" set 1 esp on >> "$INSTALL_LOG" 2>&1
+        parted -s "$disk_path" mkpart primary btrfs 512MiB 100% >> "$INSTALL_LOG" 2>&1
+        partprobe "$disk_path" >> "$INSTALL_LOG" 2>&1 || true
     done
     sleep 2
 
@@ -143,9 +177,9 @@ fi
             EFI_PART="/dev/${disk}1"
             ROOT_PART="/dev/${disk}2"
         fi
-        mkfs.fat -F32 "$EFI_PART"
-        mkfs.btrfs -f "$ROOT_PART"
-        mount "$ROOT_PART" /mnt
+        mkfs.fat -F32 "$EFI_PART" >> "$INSTALL_LOG" 2>&1
+        mkfs.btrfs -f "$ROOT_PART" >> "$INSTALL_LOG" 2>&1
+        mount "$ROOT_PART" /mnt >> "$INSTALL_LOG" 2>&1
     else
         # Mirror mode
         EFI_PARTS=()
@@ -161,20 +195,20 @@ fi
         done
         
         for efi in "${EFI_PARTS[@]}"; do
-            mkfs.fat -F32 "$efi"
+            mkfs.fat -F32 "$efi" >> "$INSTALL_LOG" 2>&1
         done
         
         # Create Btrfs RAID1
-        mkfs.btrfs -f -d raid1 -m raid1 "${ROOT_PARTS[@]}"
-        mount "${ROOT_PARTS[0]}" /mnt
+        mkfs.btrfs -f -d raid1 -m raid1 "${ROOT_PARTS[@]}" >> "$INSTALL_LOG" 2>&1
+        mount "${ROOT_PARTS[0]}" /mnt >> "$INSTALL_LOG" 2>&1
         EFI_PART=${EFI_PARTS[0]} # Use first EFI partition for initial mount
     fi
 
     mkdir -p /mnt/boot/efi
-    mount "$EFI_PART" /mnt/boot/efi
+    mount "$EFI_PART" /mnt/boot/efi >> "$INSTALL_LOG" 2>&1
 
     update_progress "Installing base system (debootstrap)..."
-    debootstrap --arch=amd64 bookworm /mnt http://deb.debian.org/debian >/dev/null
+    debootstrap --arch=amd64 bookworm /mnt http://deb.debian.org/debian >> "$INSTALL_LOG" 2>&1
 
     update_progress "Configuring system..."
     echo "alvaos" > /mnt/etc/hostname
@@ -185,11 +219,30 @@ fi
 HOSTS_EOF
 
     update_progress "Configuring networking..."
+    INTERFACE=$(ip -o link show | awk -F': ' '{print $2}' | grep -v lo | head -n1)
+    [ -z "$INTERFACE" ] && INTERFACE="eth0"
+    
     cat > /mnt/etc/network/interfaces << NET_EOF
 source /etc/network/interfaces.d/*
 auto lo
 iface lo inet loopback
+
+auto $INTERFACE
 NET_EOF
+
+    if [ "$NET_MODE" == "STATIC" ]; then
+        cat >> /mnt/etc/network/interfaces << NET_EOF
+iface $INTERFACE inet static
+    address $STATIC_IP
+    netmask $STATIC_NETMASK
+    gateway $STATIC_GW
+    dns-nameservers $STATIC_DNS
+NET_EOF
+    else
+        cat >> /mnt/etc/network/interfaces << NET_EOF
+iface $INTERFACE inet dhcp
+NET_EOF
+    fi
 
     update_progress "Configuring apt sources..."
     cat > /mnt/etc/apt/sources.list << SOURCES_EOF
@@ -215,37 +268,37 @@ FSTAB_EOF
     fi
 
     update_progress "Mounting virtual filesystems..."
-    mount --rbind /dev /mnt/dev
-    mount --make-rslave /mnt/dev
-    mount --rbind /sys /mnt/sys
-    mount --make-rslave /mnt/sys
-    mount -t proc proc /mnt/proc
+    mount --rbind /dev /mnt/dev >> "$INSTALL_LOG" 2>&1
+    mount --make-rslave /mnt/dev >> "$INSTALL_LOG" 2>&1
+    mount --rbind /sys /mnt/sys >> "$INSTALL_LOG" 2>&1
+    mount --make-rslave /mnt/sys >> "$INSTALL_LOG" 2>&1
+    mount -t proc proc /mnt/proc >> "$INSTALL_LOG" 2>&1
 
     update_progress "Installing kernel and essential packages..."
-    chroot /mnt apt-get update >/dev/null
+    chroot /mnt apt-get update >> "$INSTALL_LOG" 2>&1
     chroot /mnt apt-get install -y \
         linux-image-amd64 python3 python3-flask python3-psutil python3-requests \
         systemd network-manager openssh-server docker.io docker-compose btrfs-progs \
-        curl wget vim sudo smartmontools nfs-kernel-server samba >/dev/null
+        curl wget vim sudo smartmontools nfs-kernel-server samba >> "$INSTALL_LOG" 2>&1
 
     update_progress "Installing bootloader..."
     if [ -d /sys/firmware/efi ]; then
-        chroot /mnt apt-get install -y grub-efi-amd64 >/dev/null
+        chroot /mnt apt-get install -y grub-efi-amd64 >> "$INSTALL_LOG" 2>&1
         for disk in $TARGET_DISKS; do
-            chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=AlvaOS --recheck --removable >/dev/null
+            chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=AlvaOS --recheck --removable >> "$INSTALL_LOG" 2>&1
         done
     else
-        chroot /mnt apt-get install -y grub-pc >/dev/null
+        chroot /mnt apt-get install -y grub-pc >> "$INSTALL_LOG" 2>&1
         for disk in $TARGET_DISKS; do
-            chroot /mnt grub-install --target=i386-pc "/dev/$disk" >/dev/null
+            chroot /mnt grub-install --target=i386-pc "/dev/$disk" >> "$INSTALL_LOG" 2>&1
         done
     fi
-    chroot /mnt update-grub >/dev/null
-    chroot /mnt update-initramfs -u >/dev/null
+    chroot /mnt update-grub >> "$INSTALL_LOG" 2>&1
+    chroot /mnt update-initramfs -u >> "$INSTALL_LOG" 2>&1
 
     update_progress "Securing root account..."
     RANDOM_PASS=$(head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 24)
-    echo "root:${RANDOM_PASS}" | chroot /mnt chpasswd
+    echo "root:${RANDOM_PASS}" | chroot /mnt chpasswd >> "$INSTALL_LOG" 2>&1
 
     update_progress "Setting up AlvaOS components..."
     mkdir -p /mnt/opt/alvaos/{bin,webui} /mnt/etc/alvaos /mnt/var/lib/alvaos /mnt/var/log/alvaos /mnt/opt/alvaos/scripts
@@ -308,8 +361,8 @@ PermitEmptyPasswords no
 SSH_EOF
 
     update_progress "Finalizing configuration..."
-    chroot /mnt useradd -r -s /bin/bash -d /opt/alvaos -M alvaos || true
-    chroot /mnt chown -R alvaos:alvaos /opt/alvaos /var/lib/alvaos /var/log/alvaos /etc/alvaos
+    chroot /mnt useradd -r -s /bin/bash -d /opt/alvaos -M alvaos >> "$INSTALL_LOG" 2>&1 || true
+    chroot /mnt chown -R alvaos:alvaos /opt/alvaos /var/lib/alvaos /var/log/alvaos /etc/alvaos >> "$INSTALL_LOG" 2>&1
     
     # Version file
     cat > /mnt/etc/alvaos/version.json << VERSION_EOF
@@ -321,16 +374,24 @@ SSH_EOF
 VERSION_EOF
 
     # Enable services
-    chroot /mnt systemctl enable alvaos.service >/dev/null 2>&1 || true
-    [ -f "/mnt/etc/systemd/system/alvaos-update-checker.service" ] && chroot /mnt systemctl enable alvaos-update-checker.service >/dev/null 2>&1 || true
-    chroot /mnt systemctl enable NetworkManager >/dev/null 2>&1 || true
+    chroot /mnt systemctl enable alvaos.service >> "$INSTALL_LOG" 2>&1 || true
+    [ -f "/mnt/etc/systemd/system/alvaos-update-checker.service" ] && chroot /mnt systemctl enable alvaos-update-checker.service >> "$INSTALL_LOG" 2>&1 || true
+    chroot /mnt systemctl enable NetworkManager >> "$INSTALL_LOG" 2>&1 || true
 
     update_progress "Cleanup..."
-    chroot /mnt apt-get clean
-    umount -l /mnt/sys /mnt/proc /mnt/dev/pts /mnt/dev /mnt/boot/efi /mnt 2>/dev/null || true
+    chroot /mnt apt-get clean >> "$INSTALL_LOG" 2>&1
+    umount -l /mnt/sys /mnt/proc /mnt/dev/pts /mnt/dev /mnt/boot/efi /mnt >> "$INSTALL_LOG" 2>&1 || true
 
     echo "100"
-} | whiptail --title "Installing AlvaOS" --gauge "Please wait..." 10 60 0
+} | whiptail --title "Installing AlvaOS" --gauge "Please wait..." 10 70 0
 
-msg "Installation completed successfully!\n\nRoot password is random. SSH root login is DISABLED.\n\nSet your password via Web UI at: http://[SERVER-IP]:8080\n\nPlease remove installation media and reboot."
+# Final Message
+if [ "$NET_MODE" == "STATIC" ]; then
+    IP_ADDR=$STATIC_IP
+else
+    IP_ADDR=$(hostname -I | awk '{print $1}')
+fi
+[ -z "$IP_ADDR" ] && IP_ADDR="[SERVER-IP]"
+
+msg "✅ Installation Successful!\n\nPlease remove installation media and press Enter to reboot.\n\nAfter reboot, visit http://$IP_ADDR:8080 to complete setup."
 reboot
