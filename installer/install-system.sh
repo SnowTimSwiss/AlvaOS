@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+set -o pipefail
 
 # AlvaOS Installation Script 0.4.0
 # This script installs AlvaOS to the target system with whiptail TUI and Mirror support
