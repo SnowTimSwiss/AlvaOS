@@ -7,7 +7,38 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 BUILD_DIR="${REPO_ROOT}/build/package"
-VERSION=$(cat "${REPO_ROOT}/VERSION")
+VERSION="${ALVAOS_VERSION:-$(cat "${REPO_ROOT}/VERSION")}"
+
+to_debian_version() {
+    local raw="$1"
+    local deb_version
+
+    # Remove optional tag prefix.
+    raw="${raw#v}"
+
+    # Convert common prerelease wording to Debian-friendly form.
+    deb_version="$(printf '%s' "${raw}" | sed -E \
+        -e 's/[Rr]elease[._-]*[Cc]andidate[._-]*([0-9]+)/~rc\1/g' \
+        -e 's/[Aa]lpha[._-]*([0-9]*)/~alpha\1/g' \
+        -e 's/[Bb]eta[._-]*([0-9]*)/~beta\1/g' \
+        -e 's/[Pp]re[._-]*([0-9]*)/~pre\1/g')"
+
+    # Debian versions do not allow '_' and treat '-' specially.
+    deb_version="${deb_version//_/.}"
+    deb_version="${deb_version//-/~}"
+    deb_version="$(printf '%s' "${deb_version}" | sed -E 's/[^0-9A-Za-z.+:~]/./g')"
+    deb_version="$(printf '%s' "${deb_version}" | sed -E 's/\.+/./g; s/~+/~/g; s/^\.//; s/\.$//')"
+
+    if [[ -z "${deb_version}" ]]; then
+        error "Could not derive a Debian version from '${raw}'"
+    fi
+
+    if command -v dpkg >/dev/null 2>&1 && ! dpkg --validate-version "${deb_version}" >/dev/null 2>&1; then
+        error "Derived Debian version '${deb_version}' is invalid (from '${raw}')"
+    fi
+
+    printf '%s\n' "${deb_version}"
+}
 
 # Colors
 GREEN='\033[0;32m'
@@ -28,7 +59,12 @@ warn() {
     echo -e "${YELLOW}[WARN]${NC} $1"
 }
 
+DEB_VERSION="$(to_debian_version "${VERSION}")"
+
 log "Building AlvaOS system package v${VERSION}"
+if [ "${DEB_VERSION}" != "${VERSION}" ]; then
+    warn "Using Debian package version '${DEB_VERSION}' (source version: '${VERSION}')"
+fi
 
 # Clean previous build
 if [ -d "${BUILD_DIR}" ]; then
@@ -39,7 +75,7 @@ fi
 mkdir -p "${BUILD_DIR}"
 
 # Create package directory structure
-PKG_DIR="${BUILD_DIR}/alvaos-system_${VERSION}_amd64"
+PKG_DIR="${BUILD_DIR}/alvaos-system_${DEB_VERSION}_amd64"
 mkdir -p "${PKG_DIR}/DEBIAN"
 mkdir -p "${PKG_DIR}/opt/alvaos/bin"
 mkdir -p "${PKG_DIR}/opt/alvaos/webui"
@@ -190,7 +226,7 @@ SUDOERS_EOF
 log "Creating package control file..."
 cat > "${PKG_DIR}/DEBIAN/control" << EOF
 Package: alvaos-system
-Version: ${VERSION}
+Version: ${DEB_VERSION}
 Architecture: amd64
 Maintainer: AlvaOS Team <dev@alvaos.org>
 Depends: python3, python3-flask, python3-flask-cors, python3-psutil, python3-requests, python3-packaging, python3-yaml, docker.io, docker-compose, btrfs-progs, systemd, smartmontools, nfs-kernel-server, samba, network-manager
@@ -262,12 +298,12 @@ chmod +x "${PKG_DIR}/DEBIAN/prerm"
 log "Building .deb package..."
 dpkg-deb --build "${PKG_DIR}"
 
-DEB_FILE="${BUILD_DIR}/alvaos-system_${VERSION}_amd64.deb"
+DEB_FILE="${BUILD_DIR}/alvaos-system_${DEB_VERSION}_amd64.deb"
 log "Package created: ${DEB_FILE}"
 log "Package size: $(du -h "${DEB_FILE}" | cut -f1)"
 
 log "Generating SHA256 checksum..."
-(cd "${BUILD_DIR}" && sha256sum "alvaos-system_${VERSION}_amd64.deb" > checksums.txt)
+(cd "${BUILD_DIR}" && sha256sum "alvaos-system_${DEB_VERSION}_amd64.deb" > checksums.txt)
 
 log "╔═══════════════════════════════════════╗"
 log "║   Package build complete!             ║"
