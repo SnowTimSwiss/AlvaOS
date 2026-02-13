@@ -476,12 +476,12 @@
                 <select id="install-pool-select" style="width: 100%; padding: 10px;"></select>
             </div>
 
-            <div class="setting-group" style="margin-top: 16px;">
-                <label class="setting-label">Parent Subvolume (Optional)</label>
-                <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 8px;">Group this app under a
-                    subvolume (e.g., "data", "media").</p>
-                <input type="text" id="install-subvolume-input" placeholder="e.g. data"
-                    style="width: 100%; padding: 10px;">
+            <div id="install-env-fields-group" class="setting-group" style="margin-top: 16px; display: none;">
+                <label class="setting-label">App Settings</label>
+                <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 8px;">
+                    Set credentials and optional environment values for this app.
+                </p>
+                <div id="install-env-fields" style="display: flex; flex-direction: column; gap: 10px;"></div>
             </div>
 
             <div id="install-port-warning"

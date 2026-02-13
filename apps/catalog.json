@@ -43,7 +43,7 @@
             "ports": [
                 {
                     "internal": 80,
-                    "external": 8080,
+                    "external": 8081,
                     "protocol": "tcp",
                     "description": "Web UI"
                 }
@@ -153,7 +153,14 @@
             }
         },
         "config_schema": {
-            "ports": [],
+            "ports": [
+                {
+                    "internal": 8123,
+                    "external": 8123,
+                    "protocol": "tcp",
+                    "description": "Web UI"
+                }
+            ],
             "volumes": [
                 {
                     "container_path": "/config",
@@ -219,6 +226,7 @@
                     "description": "DNS (UDP)"
                 }
             ],
+            "webui_path": "/admin/login",
             "volumes": [
                 {
                     "container_path": "/etc/pihole",

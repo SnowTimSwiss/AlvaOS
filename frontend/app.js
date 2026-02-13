@@ -2,6 +2,15 @@
 const API_BASE = '/api/v1';
 let updateInterval;
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 // Update Clock
 function updateClock() {
     const clockElement = document.getElementById('clock');
@@ -79,17 +88,81 @@ function updateDashboard(data) {
     document.getElementById('mem-progress').style.width =
         `${data.memory.percent}%`;
 
-    // Disk Information
-    document.getElementById('disk-total').textContent =
-        `${data.disk.total_gb} GB`;
-    document.getElementById('disk-used').textContent =
-        `${data.disk.used_gb} GB`;
-    document.getElementById('disk-free').textContent =
-        `${data.disk.free_gb} GB`;
-    document.getElementById('disk-usage-percent').textContent =
-        `${data.disk.percent.toFixed(1)}%`;
-    document.getElementById('disk-progress').style.width =
-        `${data.disk.percent}%`;
+    // Disk/Pool Information
+    const allPools = Array.isArray(data.storage_pools) ? data.storage_pools : [];
+    const mountedPools = allPools.filter((pool) =>
+        pool?.mounted
+        && typeof pool.total_gb === 'number'
+        && typeof pool.used_gb === 'number'
+        && typeof pool.free_gb === 'number'
+    );
+
+    if (mountedPools.length > 0) {
+        const poolTotal = mountedPools.reduce((sum, pool) => sum + pool.total_gb, 0);
+        const poolUsed = mountedPools.reduce((sum, pool) => sum + pool.used_gb, 0);
+        const poolFree = mountedPools.reduce((sum, pool) => sum + pool.free_gb, 0);
+        const poolPercent = poolTotal > 0 ? (poolUsed / poolTotal) * 100 : 0;
+
+        document.getElementById('disk-total').textContent = `${poolTotal.toFixed(2)} GB`;
+        document.getElementById('disk-used').textContent = `${poolUsed.toFixed(2)} GB`;
+        document.getElementById('disk-free').textContent = `${poolFree.toFixed(2)} GB`;
+        document.getElementById('disk-usage-percent').textContent = `${poolPercent.toFixed(1)}%`;
+        document.getElementById('disk-progress').style.width = `${poolPercent}%`;
+    } else {
+        document.getElementById('disk-total').textContent =
+            `${data.disk.total_gb} GB`;
+        document.getElementById('disk-used').textContent =
+            `${data.disk.used_gb} GB`;
+        document.getElementById('disk-free').textContent =
+            `${data.disk.free_gb} GB`;
+        document.getElementById('disk-usage-percent').textContent =
+            `${data.disk.percent.toFixed(1)}%`;
+        document.getElementById('disk-progress').style.width =
+            `${data.disk.percent}%`;
+    }
+
+    const poolStorageListEl = document.getElementById('pool-storage-list');
+    if (poolStorageListEl) {
+        const pools = allPools;
+        if (pools.length === 0) {
+            poolStorageListEl.innerHTML = `
+                <div style="background:var(--bg-body); padding:8px; border-radius:4px; border:1px solid var(--border-default); font-size:0.8rem; color:var(--text-secondary);">
+                    No pools configured
+                </div>
+            `;
+        } else {
+            poolStorageListEl.innerHTML = pools.map((pool) => {
+                if (!pool.mounted || typeof pool.percent !== 'number') {
+                    return `
+                        <div style="background:var(--bg-body); padding:8px; border-radius:4px; border:1px solid var(--border-default);">
+                            <div style="display:flex; justify-content:space-between; font-size:0.8rem;">
+                                <span>${escapeHtml(pool.name)}</span>
+                                <span style="color:var(--text-secondary);">Not mounted</span>
+                            </div>
+                            <div class="mono-text" style="font-size:0.75rem; color:var(--text-secondary); margin-top:4px;">
+                                ${escapeHtml(pool.mount_point || '')}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                return `
+                    <div style="background:var(--bg-body); padding:8px; border-radius:4px; border:1px solid var(--border-default);">
+                        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                            <span style="font-size:0.8rem;">${escapeHtml(pool.name)}</span>
+                            <span class="mono-text" style="font-size:0.8rem;">${pool.percent.toFixed(1)}%</span>
+                        </div>
+                        <div class="progress-track" style="margin-top:8px; height:5px;">
+                            <div class="progress-bar bar-disk" style="width:${pool.percent}%"></div>
+                        </div>
+                        <div class="mono-text" style="font-size:0.75rem; color:var(--text-secondary); margin-top:6px;">
+                            ${pool.used_gb} GB / ${pool.total_gb} GB
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+    }
 
     // System Information
     document.getElementById('hostname').textContent = data.network.hostname;

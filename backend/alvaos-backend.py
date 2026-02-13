@@ -913,6 +913,40 @@ def get_system_info():
         'free_gb': round(disk.free / (1024**3), 2),
         'percent': disk.percent,
     }
+
+    # Pool-based storage information (for dashboard breakdown)
+    pool_storage_info = []
+    try:
+        pools_state = load_pools_state()
+        for pool_id, pool_data in pools_state.items():
+            mount_point = pool_data.get('mount_point')
+            if not mount_point:
+                continue
+
+            pool_entry = {
+                'id': pool_id,
+                'name': pool_data.get('name', pool_id),
+                'mount_point': mount_point,
+                'mounted': bool(os.path.ismount(mount_point)),
+            }
+
+            if pool_entry['mounted']:
+                try:
+                    pool_usage = psutil.disk_usage(mount_point)
+                    pool_entry.update({
+                        'total_gb': round(pool_usage.total / (1024**3), 2),
+                        'used_gb': round(pool_usage.used / (1024**3), 2),
+                        'free_gb': round(pool_usage.free / (1024**3), 2),
+                        'percent': pool_usage.percent,
+                    })
+                except Exception as pool_usage_error:
+                    pool_entry['error'] = str(pool_usage_error)
+            else:
+                pool_entry['error'] = 'Pool is not mounted'
+
+            pool_storage_info.append(pool_entry)
+    except Exception:
+        pass
     
     # Network Information
     hostname = 'unknown'
@@ -969,6 +1003,7 @@ def get_system_info():
         'cpu': cpu_info,
         'memory': memory_info,
         'disk': disk_info,
+        'storage_pools': pool_storage_info,
         'network': network_info,
         'system': system_info,
     })

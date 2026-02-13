@@ -8,6 +8,9 @@ let selectedAppId = null;
 const appDetailsCache = {};
 let activeLogsContainerId = null;
 let activeLogsRequestId = 0;
+let containersLoaded = false;
+let containersLoading = false;
+let installedLoadRequestId = 0;
 
 function showNotification(message, type = 'info') {
     if (window.showToast) {
@@ -40,15 +43,15 @@ function formatDate(value) {
 
 function getAppEmoji(category) {
     const emojis = {
-        'Productivity': '📝',
-        'Media': '🎬',
-        'Development': '💻',
-        'Smart Home': '🏠',
-        'Network': '🌐',
-        'Security': '🔒',
-        'Other': '📦'
+        'Productivity': '\uD83D\uDCDD',
+        'Media': '\uD83C\uDFAC',
+        'Development': '\uD83D\uDCBB',
+        'Smart Home': '\uD83C\uDFE0',
+        'Network': '\uD83C\uDF10',
+        'Security': '\uD83D\uDD12',
+        'Other': '\uD83D\uDCE6'
     };
-    return emojis[category] || '📦';
+    return emojis[category] || '\uD83D\uDCE6';
 }
 
 function setActiveTab(tabName) {
@@ -146,6 +149,10 @@ async function getAppDetails(appId) {
 
 function buildWebUiUrl(appDetails, appContainers) {
     const host = window.location.hostname || 'localhost';
+    const configuredPath = String(
+        appDetails?.config_schema?.webui_path || appDetails?.webui_path || '/'
+    );
+    const webUiPath = configuredPath.startsWith('/') ? configuredPath : `/${configuredPath}`;
 
     const schemaPorts = appDetails?.config_schema?.ports;
     if (Array.isArray(schemaPorts) && schemaPorts.length > 0) {
@@ -155,8 +162,8 @@ function buildWebUiUrl(appDetails, appContainers) {
 
         const externalPort = Number(preferred?.external);
         if (!Number.isNaN(externalPort) && externalPort > 0) {
-            if (externalPort === 80) return `http://${host}`;
-            return `http://${host}:${externalPort}`;
+            if (externalPort === 80) return `http://${host}${webUiPath}`;
+            return `http://${host}:${externalPort}${webUiPath}`;
         }
     }
 
@@ -164,8 +171,8 @@ function buildWebUiUrl(appDetails, appContainers) {
         const hostPorts = parseHostPorts(container?.Ports);
         if (hostPorts.length > 0) {
             const port = hostPorts[0];
-            if (port === 80) return `http://${host}`;
-            return `http://${host}:${port}`;
+            if (port === 80) return `http://${host}${webUiPath}`;
+            return `http://${host}:${port}${webUiPath}`;
         }
     }
 
@@ -180,11 +187,14 @@ function renderInstalledList() {
         const appContainers = getContainersForApp(app.app_id);
         const running = appContainers.filter((c) => c.State === 'running').length;
         const total = appContainers.length;
+        const statusText = containersLoaded
+            ? `${running}/${total} containers running`
+            : (containersLoading ? 'Loading containers...' : 'Container status unavailable');
 
         return `
             <button class="app-list-item ${selectedAppId === app.app_id ? 'active' : ''}" onclick="selectInstalledApp('${escapeHtml(app.app_id)}')">
                 <div style="font-weight: 600;">${escapeHtml(app.name || app.app_id)}</div>
-                <div class="app-count">${running}/${total} containers running</div>
+                <div class="app-count">${statusText}</div>
             </button>
         `;
     }).join('');
@@ -208,7 +218,7 @@ async function renderInspector() {
     }
 
     const selectedAtRender = selected.app_id;
-    const appContainers = getContainersForApp(selected.app_id);
+    const appContainers = containersLoaded ? getContainersForApp(selected.app_id) : [];
     const runningCount = appContainers.filter((c) => c.State === 'running').length;
     const appDetails = await getAppDetails(selected.app_id);
 
@@ -252,8 +262,12 @@ async function renderInspector() {
                 </div>
             </div>
 
-            <div style="font-size: 0.95rem; font-weight:600; margin: 16px 0 10px;">Containers (${appContainers.length})</div>
-            ${renderContainerTable(appContainers)}
+            <div style="font-size: 0.95rem; font-weight:600; margin: 16px 0 10px;">Containers${containersLoaded ? ` (${appContainers.length})` : ''}</div>
+            ${containersLoaded ? renderContainerTable(appContainers) : `
+                <div class="empty-state" style="padding: 1.5rem 1rem;">
+                    <div>Loading container data...</div>
+                </div>
+            `}
         </div>
     `;
 }
@@ -328,6 +342,7 @@ function renderInstalledWorkspace() {
 async function loadInstalledWorkspace(preserveSelection = true) {
     const container = document.getElementById('installed-container');
     if (!container) return;
+    const requestId = ++installedLoadRequestId;
 
     container.innerHTML = `
         <div class="empty-state">
@@ -337,19 +352,18 @@ async function loadInstalledWorkspace(preserveSelection = true) {
     `;
 
     try {
-        const [apps, containers] = await Promise.all([
-            fetchInstalledAppsData(),
-            fetchContainersData()
-        ]);
-
+        const apps = await fetchInstalledAppsData();
+        if (requestId !== installedLoadRequestId) return;
         installedAppsCache = apps;
-        containersCache = containers;
 
         if (installedAppsCache.length === 0) {
             selectedAppId = null;
+            containersLoaded = false;
+            containersLoading = false;
+            containersCache = [];
             container.innerHTML = `
                 <div class="empty-state">
-                    <div class="empty-state-icon">📭</div>
+                    <div class="empty-state-icon">...</div>
                     <div>No apps installed yet</div>
                     <p style="font-size: 0.9rem; margin-top: 8px;">Install your first app from the store.</p>
                     <button id="open-store-btn" class="btn-link" style="margin-top: 12px;">Open App Store</button>
@@ -367,9 +381,31 @@ async function loadInstalledWorkspace(preserveSelection = true) {
             selectedAppId = installedAppsCache[0].app_id;
         }
 
+        containersLoading = true;
+        containersLoaded = false;
         renderInstalledWorkspace();
+
+        try {
+            const containers = await fetchContainersData();
+            if (requestId !== installedLoadRequestId) return;
+            containersCache = containers;
+            containersLoaded = true;
+        } catch (containersError) {
+            if (requestId !== installedLoadRequestId) return;
+            console.error('Error loading containers:', containersError);
+            containersCache = [];
+            containersLoaded = false;
+        } finally {
+            if (requestId !== installedLoadRequestId) return;
+            containersLoading = false;
+            renderInstalledList();
+            renderInspector();
+        }
     } catch (error) {
         console.error('Error loading installed workspace:', error);
+        containersLoaded = false;
+        containersLoading = false;
+        containersCache = [];
         container.innerHTML = `
             <div class="empty-state">
                 <div class="empty-state-icon">!</div>
@@ -379,7 +415,6 @@ async function loadInstalledWorkspace(preserveSelection = true) {
         `;
     }
 }
-
 function selectInstalledApp(appId) {
     selectedAppId = appId;
     renderInstalledList();
@@ -451,12 +486,16 @@ async function loadContainers() {
 async function showInstallWizard(appId) {
     const modal = document.getElementById('install-modal');
     const poolSelect = document.getElementById('install-pool-select');
+    const envFieldsGroup = document.getElementById('install-env-fields-group');
+    const envFields = document.getElementById('install-env-fields');
     const confirmBtn = document.getElementById('confirm-install-btn');
     const closeBtns = document.querySelectorAll('.close-modal-btn');
 
     // Reset modal
     modal.style.display = 'flex';
     poolSelect.innerHTML = '<option value="">Loading pools...</option>';
+    if (envFields) envFields.innerHTML = '';
+    if (envFieldsGroup) envFieldsGroup.style.display = 'none';
     confirmBtn.disabled = true;
     confirmBtn.textContent = 'Install Application';
 
@@ -481,6 +520,34 @@ async function showInstallWizard(appId) {
         document.getElementById('install-app-desc').textContent = app.description || '';
         document.getElementById('install-app-icon').textContent = getAppEmoji(app.category);
 
+        const environmentSchema = Array.isArray(app?.config_schema?.environment)
+            ? app.config_schema.environment
+            : [];
+        if (envFields && envFieldsGroup && environmentSchema.length > 0) {
+            envFieldsGroup.style.display = 'block';
+            envFields.innerHTML = environmentSchema.map((entry, idx) => {
+                const key = String(entry?.key || '').trim();
+                if (!key) return '';
+                const description = String(entry?.description || '');
+                const defaultValue = String(entry?.default ?? '');
+                const isSecretField = /(password|token|secret|key)/i.test(key);
+
+                return `
+                    <div class="setting-group" style="margin-bottom: 0;">
+                        <label class="setting-label">${escapeHtml(key)}</label>
+                        ${description ? `<p style="font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 6px;">${escapeHtml(description)}</p>` : ''}
+                        <input
+                            id="install-env-${idx}"
+                            data-env-key="${escapeHtml(key)}"
+                            type="${isSecretField ? 'password' : 'text'}"
+                            value="${escapeHtml(defaultValue)}"
+                            placeholder="${escapeHtml(defaultValue || key)}"
+                            style="width: 100%; padding: 10px;">
+                    </div>
+                `;
+            }).join('');
+        }
+
         // Fetch pools
         const poolsRes = await fetch(`${API_BASE}/storage/pools`, {
             headers: { 'Authorization': authToken }
@@ -501,7 +568,15 @@ async function showInstallWizard(appId) {
         // Handle confirm
         confirmBtn.onclick = async () => {
             const poolPath = poolSelect.value;
-            const parentSubvol = document.getElementById('install-subvolume-input').value.trim();
+            const environmentVars = {};
+            document.querySelectorAll('#install-env-fields [data-env-key]').forEach((inputEl) => {
+                const key = inputEl.getAttribute('data-env-key');
+                if (!key) return;
+                const value = inputEl.value;
+                if (value !== null && value !== undefined && value !== '') {
+                    environmentVars[key] = value;
+                }
+            });
 
             if (!poolPath) {
                 showNotification('Please select a storage pool', 'error');
@@ -521,7 +596,7 @@ async function showInstallWizard(appId) {
                     body: JSON.stringify({
                         app_id: appId,
                         pool_path: poolPath,
-                        parent_subvolume: parentSubvol || undefined
+                        environment_vars: Object.keys(environmentVars).length ? environmentVars : undefined
                     })
                 });
 
@@ -846,3 +921,4 @@ async function pollInstallStatus(appId) {
 
 // Default view: installed apps + containers
 setActiveTab('installed');
+
