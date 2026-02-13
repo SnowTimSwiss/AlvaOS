@@ -56,3 +56,6 @@ logs/
 tmp/
 temp/
 *.tmp
+
+# Local runtime state (dev fallback)
+.alvaos_state/

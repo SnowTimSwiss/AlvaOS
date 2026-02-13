@@ -43,9 +43,9 @@ Release strategy: "Iterate fast, stabilize often."
 - [will come back later] **Custom App store**: Be able to add custom app stores.
 
 ## v0.6.0 - Local Backups
-- [ ] **Backup Engine**: Create Snapshots.
-- [ ] **Restore**: Rollback to previous snapshot.
-- [ ] **Schedule**: Automatic snapshot creation.
+- [x] **Backup Engine**: Create Snapshots.
+- [x] **Restore**: Rollback to previous snapshot.
+- [x] **Schedule**: Automatic snapshot creation.
 
 ## v0.7.0 - Buddy Backup (Part I: Connection)
 - [ ] **Identity**: Key generation and peering logic.

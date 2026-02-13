@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlvaOS - Backup</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="notifications.css">
+    <style>
+        .sources-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 10px;
+        }
+
+        .source-item {
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+            padding: 10px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: var(--bg-body);
+        }
+
+        .source-meta {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            gap: 4px;
+        }
+
+        .source-name {
+            font-size: 0.9rem;
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .source-path {
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            font-family: 'JetBrains Mono', monospace;
+            overflow-wrap: anywhere;
+        }
+
+        .snapshots-table {
+            width: 100%;
+            border-collapse: collapse;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            overflow: hidden;
+            background: var(--bg-card);
+        }
+
+        .snapshots-table th,
+        .snapshots-table td {
+            text-align: left;
+            padding: 10px;
+            border-bottom: 1px solid var(--border-default);
+            vertical-align: top;
+        }
+
+        .snapshots-table th {
+            background: var(--bg-body);
+            color: var(--text-secondary);
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .snapshots-table tr:last-child td {
+            border-bottom: none;
+        }
+    </style>
+</head>
+
+<body>
+    <aside class="sidebar">
+        <div class="logo-area">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round"
+                    stroke-linejoin="round" style="color: var(--accent-primary);" />
+            </svg>
+            <div class="logo-text">AlvaOS</div>
+        </div>
+
+        <nav>
+            <a href="index.html" class="nav-link"><span>&#x1F3E0;</span> Dashboard</a>
+            <a href="storage.html" class="nav-link"><span>&#x1F5C4;&#xFE0F;</span> Storage</a>
+            <a href="apps.html" class="nav-link"><span>&#x1F9E9;</span> Apps</a>
+            <a href="backup.html" class="nav-link active"><span>&#x1F501;</span> Backup</a>
+            <a href="users.html" class="nav-link"><span>&#x1F465;</span> Users</a>
+            <a href="updates.html" class="nav-link"><span>&#x1F504;</span> Updates <span class="nav-badge"
+                    id="updates-nav-badge" style="display:none;">!</span></a>
+            <div style="flex:1"></div>
+            <a href="system.html" class="nav-link"><span>&#x2699;&#xFE0F;</span> System</a>
+        </nav>
+    </aside>
+
+    <div class="main">
+        <header class="topbar">
+            <div class="breadcrumbs">System / <span>Backup</span></div>
+            <div class="status-badge" style="gap:10px;">
+                <div class="status-badge" style="border:none; background:transparent; padding:0;">
+                    <div class="status-dot"></div>
+                    <span>Online</span>
+                </div>
+            </div>
+        </header>
+
+        <div class="content-scroll">
+            <div id="update-banner-slot"></div>
+            <div style="margin-bottom: 24px;">
+                <h1 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 4px;">Local Backup</h1>
+                <p style="color: var(--text-secondary); font-size: 0.95rem;">
+                    Create and restore local Btrfs snapshots with automatic scheduling.
+                </p>
+            </div>
+
+            <div class="tab-bar">
+                <button class="tab-btn active" data-tab="snapshots">Snapshots</button>
+                <button class="tab-btn" data-tab="schedule">Schedule</button>
+            </div>
+
+            <div class="tab-panel active" id="tab-snapshots">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Snapshot Sources</div>
+                        <button id="backup-sources-refresh-btn" class="btn-secondary">Refresh Sources</button>
+                    </div>
+                    <div id="backup-sources" class="sources-grid">
+                        <div class="metric-sub">Loading sources...</div>
+                    </div>
+                    <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
+                        <button id="backup-run-btn" class="btn-primary">Create Snapshot Now</button>
+                        <button id="backup-snapshots-refresh-btn" class="btn-secondary">Refresh Snapshot List</button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Snapshots</div>
+                        <div class="mono-text" id="backup-last-run">Last run: -</div>
+                    </div>
+                    <div id="backup-snapshots-list">
+                        <div class="metric-sub">Loading snapshots...</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Full System Snapshots</div>
+                        <div class="mono-text" id="backup-system-state">Checking system support...</div>
+                    </div>
+                    <p class="metric-sub" style="margin-bottom: 10px;">
+                        Full system rollback is prepared by switching the default Btrfs subvolume. Reboot is required.
+                    </p>
+                    <div style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap;">
+                        <button id="backup-system-create-btn" class="btn-primary">Create Full System Snapshot</button>
+                        <button id="backup-system-refresh-btn" class="btn-secondary">Refresh System Snapshots</button>
+                    </div>
+                    <div class="mono-text" id="backup-system-last-snapshot">Last system snapshot: -</div>
+                    <div class="mono-text" id="backup-system-pending" style="margin-top: 6px;">Pending rollback: none</div>
+                    <div id="backup-system-snapshots-list" style="margin-top: 12px;">
+                        <div class="metric-sub">Loading system snapshots...</div>
+                    </div>
+                    <p class="metric-sub" style="margin-top:10px;">
+                        Installer rollback: Boot installer and choose "Rollback from Snapshot" if the running system cannot boot.
+                    </p>
+                </div>
+            </div>
+
+            <div class="tab-panel" id="tab-schedule">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Automatic Snapshot Schedule</div>
+                        <div class="mono-text" id="backup-next-run">Next run: -</div>
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label">Enable Automatic Snapshots</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="backup-auto-enabled">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label" for="backup-interval">Interval</label>
+                        <select id="backup-interval" class="select-input">
+                            <option value="60">Every hour</option>
+                            <option value="360">Every 6 hours</option>
+                            <option value="1440">Daily</option>
+                            <option value="10080">Weekly</option>
+                        </select>
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label" for="backup-keep-last">Retention (Keep last snapshots per source)</label>
+                        <input id="backup-keep-last" type="number" min="1" max="200" value="30" class="select-input">
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label" for="backup-keep-system-last">System Retention (Keep full system snapshots)</label>
+                        <input id="backup-keep-system-last" type="number" min="1" max="100" value="10" class="select-input">
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label" for="backup-target-path">Snapshot Target (Data)</label>
+                        <select id="backup-target-path" class="select-input"></select>
+                        <p class="metric-sub">Where app/data snapshots are stored.</p>
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label" for="backup-system-target-path">Snapshot Target (System)</label>
+                        <select id="backup-system-target-path" class="select-input"></select>
+                        <p class="metric-sub">Must be on root Btrfs to allow one-click rollback.</p>
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label">Include Full System Snapshot in Schedule</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="backup-include-system-schedule">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-group">
+                        <button id="backup-save-settings-btn" class="btn-primary">Save Backup Settings</button>
+                    </div>
+                </div>
+            </div>
+
+            <footer
+                style="margin-top:2rem; padding-top:1rem; border-top:1px solid var(--border-subtle); color:var(--text-secondary); font-size:0.8rem;">
+                AlvaOS {{VERSION}} &bull; <a href="https://github.com/SnowTimSwiss/AlvaOS" target="_blank"
+                    style="color:var(--text-secondary)">GitHub</a>
+            </footer>
+        </div>
+    </div>
+
+    <script src="notifications.js"></script>
+    <script src="app.js"></script>
+    <script src="backup.js"></script>
+</body>
+
+</html>

@@ -24,6 +24,7 @@ import subprocess
 from update_manager import UpdateManager
 from docker_manager import DockerManager
 from app_store import AppStore
+from backup_manager import BackupManager
 
 # System Commands Paths for Sudo (must match sudoers configuration in install-system.sh)
 CMD = {
@@ -78,6 +79,7 @@ CORS(app)
 update_manager = UpdateManager()
 docker_manager = DockerManager()
 app_store = AppStore()
+backup_manager = None
 
 # Cache for storage information (TTL in seconds)
 STORAGE_CACHE = {
@@ -1608,6 +1610,10 @@ def save_pools_state(state):
     except Exception as e:
         print(f"Error saving pools state: {e}")
 
+# Initialize backup manager after pool helpers are available
+if backup_manager is None:
+    backup_manager = BackupManager(run_sudo_command, load_pools_state)
+
 @app.route('/api/v1/storage/pools', methods=['GET', 'POST', 'DELETE'])
 @require_auth
 def manage_pools():
@@ -2474,6 +2480,172 @@ def mount_existing_pools():
                 
         except Exception as e:
             print(f"Failed to process pool {name}: {e}")
+
+# ============================================================================
+# LOCAL BACKUP API (v0.6.0)
+# ============================================================================
+
+@app.route('/api/v1/backup/sources', methods=['GET'])
+@require_auth
+def get_backup_sources():
+    """Get available backup sources from known Btrfs pools/subvolumes."""
+    if backup_manager is None:
+        return jsonify({'error': 'Backup manager not initialized'}), 500
+    return jsonify({'sources': backup_manager.get_sources()})
+
+@app.route('/api/v1/backup/targets', methods=['GET'])
+@require_auth
+def get_backup_targets():
+    """Get available pool/subvolume target locations for snapshot storage."""
+    if backup_manager is None:
+        return jsonify({'error': 'Backup manager not initialized'}), 500
+    return jsonify({'targets': backup_manager.get_target_locations()})
+
+@app.route('/api/v1/backup/snapshots', methods=['GET', 'POST'])
+@require_auth
+def backup_snapshots():
+    """List snapshots or create a new snapshot."""
+    if backup_manager is None:
+        return jsonify({'error': 'Backup manager not initialized'}), 500
+
+    if request.method == 'GET':
+        source_path = (request.args.get('source_path') or '').strip() or None
+        snapshots = backup_manager.list_snapshots(source_path=source_path)
+        return jsonify({'snapshots': snapshots})
+
+    data = request.get_json() or {}
+    source_path = (data.get('source_path') or '').strip()
+    label = (data.get('label') or '').strip() or None
+    target_path = (data.get('target_path') or '').strip() or None
+    if not source_path:
+        return jsonify({'error': 'source_path is required'}), 400
+
+    success, payload = backup_manager.create_snapshot(
+        source_path=source_path,
+        label=label,
+        trigger='manual',
+        target_path=target_path
+    )
+    if not success:
+        return jsonify({'error': payload.get('error', 'Failed to create snapshot')}), 500
+
+    return jsonify({'success': True, 'snapshot': payload})
+
+@app.route('/api/v1/backup/system/snapshots', methods=['GET'])
+@require_auth
+def backup_system_snapshots():
+    """List full system snapshots."""
+    if backup_manager is None:
+        return jsonify({'error': 'Backup manager not initialized'}), 500
+    return jsonify({'snapshots': backup_manager.list_system_snapshots()})
+
+@app.route('/api/v1/backup/system/snapshot', methods=['POST'])
+@require_auth
+def backup_system_snapshot():
+    """Create full system snapshot."""
+    if backup_manager is None:
+        return jsonify({'error': 'Backup manager not initialized'}), 500
+
+    data = request.get_json() or {}
+    label = (data.get('label') or '').strip() or None
+    target_path = (data.get('target_path') or '').strip() or None
+
+    success, payload = backup_manager.create_system_snapshot(
+        label=label,
+        trigger='manual',
+        target_path=target_path
+    )
+    if not success:
+        return jsonify({'error': payload.get('error', 'Failed to create system snapshot')}), 500
+    return jsonify({'success': True, 'snapshot': payload})
+
+@app.route('/api/v1/backup/system/rollback', methods=['POST'])
+@require_auth
+def backup_system_rollback():
+    """Prepare full system rollback by switching Btrfs default subvolume."""
+    if backup_manager is None:
+        return jsonify({'error': 'Backup manager not initialized'}), 500
+
+    data = request.get_json() or {}
+    snapshot_path = (data.get('snapshot_path') or '').strip()
+    if not snapshot_path:
+        return jsonify({'error': 'snapshot_path is required'}), 400
+
+    success, payload = backup_manager.rollback_system_snapshot(snapshot_path=snapshot_path)
+    if not success:
+        return jsonify({'error': payload.get('error', 'Failed to prepare system rollback')}), 500
+    return jsonify({'success': True, 'result': payload})
+
+@app.route('/api/v1/backup/restore', methods=['POST'])
+@require_auth
+def backup_restore():
+    """Restore (rollback) a source from a selected snapshot."""
+    if backup_manager is None:
+        return jsonify({'error': 'Backup manager not initialized'}), 500
+
+    data = request.get_json() or {}
+    snapshot_path = (data.get('snapshot_path') or '').strip()
+    source_path = (data.get('source_path') or '').strip() or None
+    if not snapshot_path:
+        return jsonify({'error': 'snapshot_path is required'}), 400
+
+    success, payload = backup_manager.restore_snapshot(snapshot_path=snapshot_path, source_path=source_path)
+    if not success:
+        return jsonify({'error': payload.get('error', 'Restore failed')}), 500
+    return jsonify({'success': True, 'result': payload})
+
+@app.route('/api/v1/backup/settings', methods=['GET', 'POST'])
+@require_auth
+def backup_settings():
+    """Get or save backup schedule settings."""
+    if backup_manager is None:
+        return jsonify({'error': 'Backup manager not initialized'}), 500
+
+    if request.method == 'GET':
+        return jsonify({
+            'settings': backup_manager.get_settings(),
+            'status': backup_manager.get_status()
+        })
+
+    data = request.get_json() or {}
+    settings = backup_manager.save_settings(data)
+    return jsonify({
+        'success': True,
+        'settings': settings,
+        'status': backup_manager.get_status()
+    })
+
+@app.route('/api/v1/backup/run', methods=['POST'])
+@require_auth
+def backup_run_now():
+    """Trigger immediate snapshot run for configured or provided sources."""
+    if backup_manager is None:
+        return jsonify({'error': 'Backup manager not initialized'}), 500
+
+    data = request.get_json() or {}
+    sources = data.get('sources')
+    include_system = bool(data.get('include_system', False))
+    target_path = (data.get('target_path') or '').strip() or None
+    result = backup_manager.run_backup_now(
+        sources=sources,
+        trigger='manual',
+        include_system=include_system,
+        target_path=target_path
+    )
+    if not result.get('success') and not result.get('created'):
+        return jsonify({'error': result.get('error', 'Backup run failed'), 'result': result}), 500
+    return jsonify(result)
+
+@app.route('/api/v1/backup/status', methods=['GET'])
+@require_auth
+def backup_status():
+    """Get last run / next run backup status."""
+    if backup_manager is None:
+        return jsonify({'error': 'Backup manager not initialized'}), 500
+    return jsonify({
+        'status': backup_manager.get_status(),
+        'system': backup_manager.get_system_state()
+    })
 
 # ============================================================================
 # APP STORE & CONTAINER MANAGEMENT API

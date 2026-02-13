@@ -95,6 +95,70 @@ cleanup() {
 
 trap cleanup EXIT ERR INT TERM
 
+rollback_from_snapshot() {
+    local btrfs_entries=()
+    while IFS='|' read -r dev size; do
+        [ -z "$dev" ] && continue
+        btrfs_entries+=("$dev" "$size")
+    done < <(lsblk -ln -o NAME,SIZE,FSTYPE,TYPE | awk '$3=="btrfs" && $4=="part" {print "/dev/"$1 "|" $2}')
+
+    if [ "${#btrfs_entries[@]}" -eq 0 ]; then
+        msg "No Btrfs partitions found for rollback."
+        return 1
+    fi
+
+    local root_part
+    root_part=$(menu "Select Btrfs root partition for rollback" "${btrfs_entries[@]}")
+    [ -z "$root_part" ] && return 1
+
+    mkdir -p /mnt
+    if ! mount -o subvolid=5 "$root_part" /mnt >> "$INSTALL_LOG" 2>&1; then
+        msg "Failed to mount $root_part (subvolid=5)."
+        return 1
+    fi
+
+    local snapshot_base="/mnt/var/lib/alvaos/system-snapshots"
+    if [ ! -d "$snapshot_base" ]; then
+        snapshot_base="/mnt/system-snapshots"
+    fi
+    if [ ! -d "$snapshot_base" ]; then
+        msg "No system snapshot directory found.\n\nExpected:\n- /var/lib/alvaos/system-snapshots\n- /system-snapshots"
+        return 1
+    fi
+
+    mapfile -t snapshot_names < <(find "$snapshot_base" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -r)
+    if [ "${#snapshot_names[@]}" -eq 0 ]; then
+        msg "No snapshots found in $snapshot_base"
+        return 1
+    fi
+
+    local snapshot_menu=()
+    local snap
+    for snap in "${snapshot_names[@]}"; do
+        snapshot_menu+=("$snap" "System snapshot")
+    done
+
+    local selected
+    selected=$(menu "Select snapshot to rollback to" "${snapshot_menu[@]}")
+    [ -z "$selected" ] && return 1
+
+    local snapshot_path="$snapshot_base/$selected"
+    local subvol_id
+    subvol_id=$(btrfs subvolume show "$snapshot_path" | awk -F': *' '/Subvolume ID:/ {print $2; exit}')
+    if [ -z "$subvol_id" ]; then
+        msg "Failed to read subvolume ID for snapshot:\n$snapshot_path"
+        return 1
+    fi
+
+    if ! btrfs subvolume set-default "$subvol_id" /mnt >> "$INSTALL_LOG" 2>&1; then
+        msg "Failed to set default subvolume to snapshot ID $subvol_id."
+        return 1
+    fi
+
+    msg "Rollback prepared successfully.\n\nSnapshot: $selected\nSubvolume ID: $subvol_id\n\nReboot now to boot into this snapshot."
+    reboot
+}
+
 # Logo
 LOGO="
 ╔═══════════════════════════════════════════════════════════╗
@@ -116,6 +180,16 @@ whiptail --title "Welcome to AlvaOS" --msgbox "$LOGO" 20 70
 if [ "$EUID" -ne 0 ]; then 
     msg "Please run as root (use sudo)"
     exit 1
+fi
+
+# Action Selection
+ACTION_MODE=$(menu "Select Action" \
+    "INSTALL" "Install AlvaOS" \
+    "ROLLBACK" "Rollback system from snapshot")
+
+if [ "$ACTION_MODE" == "ROLLBACK" ]; then
+    rollback_from_snapshot
+    exit $?
 fi
 
 # Mode Selection
@@ -186,6 +260,10 @@ fi
         mkfs.fat -F32 "$EFI_PART" >> "$INSTALL_LOG" 2>&1
         mkfs.btrfs -f "$ROOT_PART" >> "$INSTALL_LOG" 2>&1
         mount "$ROOT_PART" /mnt >> "$INSTALL_LOG" 2>&1
+        btrfs subvolume create /mnt/@ >> "$INSTALL_LOG" 2>&1
+        btrfs subvolume create /mnt/system-snapshots >> "$INSTALL_LOG" 2>&1
+        umount /mnt >> "$INSTALL_LOG" 2>&1
+        mount -o subvol=@ "$ROOT_PART" /mnt >> "$INSTALL_LOG" 2>&1
     else
         # Mirror mode
         EFI_PARTS=()
@@ -207,6 +285,10 @@ fi
         # Create Btrfs RAID1
         mkfs.btrfs -f -d raid1 -m raid1 "${ROOT_PARTS[@]}" >> "$INSTALL_LOG" 2>&1
         mount "${ROOT_PARTS[0]}" /mnt >> "$INSTALL_LOG" 2>&1
+        btrfs subvolume create /mnt/@ >> "$INSTALL_LOG" 2>&1
+        btrfs subvolume create /mnt/system-snapshots >> "$INSTALL_LOG" 2>&1
+        umount /mnt >> "$INSTALL_LOG" 2>&1
+        mount -o subvol=@ "${ROOT_PARTS[0]}" /mnt >> "$INSTALL_LOG" 2>&1
         EFI_PART=${EFI_PARTS[0]} # Use first EFI partition for initial mount
     fi
 
@@ -296,7 +378,8 @@ SOURCES_EOF
     update_progress "Configuring fstab..."
     ROOT_UUID=$(blkid -s UUID -o value $(findmnt -n -o SOURCE /mnt))
     cat > /mnt/etc/fstab << FSTAB_EOF
-UUID=$ROOT_UUID  /          btrfs  defaults  0  1
+UUID=$ROOT_UUID  /          btrfs  defaults,subvol=@  0  1
+UUID=$ROOT_UUID  /var/lib/alvaos/system-snapshots  btrfs  defaults,subvol=system-snapshots  0  2
 FSTAB_EOF
     
     # EFI partitions in fstab
@@ -348,7 +431,7 @@ FSTAB_EOF
     echo "root:${RANDOM_PASS}" | chroot /mnt chpasswd >> "$INSTALL_LOG" 2>&1
 
     update_progress "Setting up AlvaOS components..."
-    mkdir -p /mnt/opt/alvaos/{bin,webui} /mnt/etc/alvaos /mnt/var/lib/alvaos /mnt/var/log/alvaos /mnt/opt/alvaos/scripts
+    mkdir -p /mnt/opt/alvaos/{bin,webui} /mnt/etc/alvaos /mnt/var/lib/alvaos /mnt/var/lib/alvaos/system-snapshots /mnt/var/log/alvaos /mnt/opt/alvaos/scripts
 
     # Copy backend
     if [ -d "/opt/alvaos/backend" ]; then
@@ -432,6 +515,8 @@ alvaos ALL=(ALL) NOPASSWD: /usr/bin/mount
 alvaos ALL=(ALL) NOPASSWD: /bin/mount
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/mkdir
 alvaos ALL=(ALL) NOPASSWD: /bin/mkdir
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/mv
+alvaos ALL=(ALL) NOPASSWD: /bin/mv
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/rmdir
 alvaos ALL=(ALL) NOPASSWD: /bin/rmdir
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/mkfs.btrfs
