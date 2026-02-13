@@ -147,12 +147,20 @@ async function getAppDetails(appId) {
     }
 }
 
-function buildWebUiUrl(appDetails, appContainers) {
+function buildWebUiUrl(appId, appDetails, appContainers) {
     const host = window.location.hostname || 'localhost';
-    const configuredPath = String(
+    let configuredPath = String(
         appDetails?.config_schema?.webui_path || appDetails?.webui_path || '/'
     );
-    const webUiPath = configuredPath.startsWith('/') ? configuredPath : `/${configuredPath}`;
+    let webUiPath = configuredPath.startsWith('/') ? configuredPath : `/${configuredPath}`;
+    let scheme = 'http';
+
+    if (appId === 'vaultwarden' && window.location.protocol === 'https:') {
+        scheme = 'https';
+    } else if (appId === 'vaultwarden' && webUiPath === '/') {
+        // Vaultwarden web vault needs HTTPS; use admin panel path for HTTP setups.
+        webUiPath = '/admin';
+    }
 
     const schemaPorts = appDetails?.config_schema?.ports;
     if (Array.isArray(schemaPorts) && schemaPorts.length > 0) {
@@ -162,8 +170,8 @@ function buildWebUiUrl(appDetails, appContainers) {
 
         const externalPort = Number(preferred?.external);
         if (!Number.isNaN(externalPort) && externalPort > 0) {
-            if (externalPort === 80) return `http://${host}${webUiPath}`;
-            return `http://${host}:${externalPort}${webUiPath}`;
+            if (externalPort === 80) return `${scheme}://${host}${webUiPath}`;
+            return `${scheme}://${host}:${externalPort}${webUiPath}`;
         }
     }
 
@@ -171,8 +179,8 @@ function buildWebUiUrl(appDetails, appContainers) {
         const hostPorts = parseHostPorts(container?.Ports);
         if (hostPorts.length > 0) {
             const port = hostPorts[0];
-            if (port === 80) return `http://${host}${webUiPath}`;
-            return `http://${host}:${port}${webUiPath}`;
+            if (port === 80) return `${scheme}://${host}${webUiPath}`;
+            return `${scheme}://${host}:${port}${webUiPath}`;
         }
     }
 
@@ -226,7 +234,7 @@ async function renderInspector() {
         return;
     }
 
-    const webUiUrl = buildWebUiUrl(appDetails, appContainers);
+    const webUiUrl = buildWebUiUrl(selected.app_id, appDetails, appContainers);
 
     inspector.innerHTML = `
         <div class="inspector-card">
