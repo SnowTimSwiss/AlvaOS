@@ -471,6 +471,7 @@ alvaos ALL=(ALL) NOPASSWD: /usr/bin/df
 alvaos ALL=(ALL) NOPASSWD: /bin/df
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/getent
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/nohup
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/bash
 SUDOERS_EOF
     chmod 440 /mnt/etc/sudoers.d/alvaos
 

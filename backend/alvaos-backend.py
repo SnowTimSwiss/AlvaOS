@@ -86,6 +86,13 @@ STORAGE_CACHE = {
 }
 CACHE_TTL = 5
 
+def invalidate_storage_cache(*sections):
+    """Invalidate selected storage cache sections."""
+    target_sections = sections or ('disks', 'pools')
+    for section in target_sections:
+        if section in STORAGE_CACHE:
+            STORAGE_CACHE[section]['expires'] = 0
+
 # Version Management
 def get_version():
     """Read version from VERSION file"""
@@ -145,10 +152,15 @@ def run_sudo_command(cmd, timeout=30):
         result = subprocess.run(final_cmd, capture_output=True, text=True, timeout=timeout, env=custom_env)
         
         if result.returncode != 0:
-            stderr_low = result.stderr.lower()
+            stderr_text = (result.stderr or '').strip()
+            stdout_text = (result.stdout or '').strip()
+            stderr_low = stderr_text.lower()
             if 'password is required' in stderr_low or 'a password is required' in stderr_low:
                 cmd_str = " ".join(final_cmd)
                 return None, f"System permission error: Passwordless sudo is not configured for command: {cmd_str}. Please check the AlvaOS documentation for sudoers setup."
+            cmd_str = " ".join(final_cmd)
+            detail = stderr_text or stdout_text or f"exit code {result.returncode}"
+            return result, f"Command failed ({result.returncode}): {cmd_str}: {detail}"
             
         return result, None
     except subprocess.TimeoutExpired:
@@ -1531,6 +1543,7 @@ def wipe_disk(disk_name):
                 
             # 3. Inform kernel of changes
             run_sudo_command([CMD['PARTPROBE'], f'/dev/{disk_name}'])
+            invalidate_storage_cache('disks', 'pools')
             
             return jsonify({'success': True, 'message': f'Disk /dev/{disk_name} wiped successfully and is now ready for use.'})
         else:
@@ -1782,6 +1795,7 @@ def manage_pools():
                     'created_at': datetime.now().isoformat()
                 }
                 save_pools_state(pools_state)
+                invalidate_storage_cache('pools', 'disks')
                 
                 return jsonify({
                     'success': True,
@@ -1837,6 +1851,7 @@ def manage_pools():
             
             del pools_state[pool_id]
             save_pools_state(pools_state)
+            invalidate_storage_cache('pools', 'disks')
             
             return jsonify({'success': True, 'message': 'Pool deleted successfully'})
         
@@ -1991,6 +2006,7 @@ def expand_pool(pool_id):
             pool_info['devices'].extend(devices)
             pools_state[pool_id] = pool_info
             save_pools_state(pools_state)
+            invalidate_storage_cache('pools', 'disks')
             
             return jsonify({
                 'success': True, 
@@ -2256,10 +2272,15 @@ def manage_shares():
                                 skip_next = False
                                 continue
                             new_lines.append(line)
+                        content = "\n".join(new_lines)
+                        if content and not content.endswith('\n'):
+                            content += '\n'
                         
                         # Write back using sudo tee
                         process = subprocess.Popen(build_privileged_cmd([CMD['TEE'], '/etc/exports']), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env={'LC_ALL': 'C'})
-                        process.communicate(input=content)
+                        _, tee_err = process.communicate(input=content)
+                        if process.returncode != 0:
+                            raise Exception(f"Could not write /etc/exports: {tee_err}")
                         
                         # Reload NFS exports
                         run_sudo_command([CMD['EXPORTFS'], '-ra'])
@@ -2283,7 +2304,9 @@ def manage_shares():
                         
                         # Write back using sudo tee
                         process = subprocess.Popen(build_privileged_cmd([CMD['TEE'], '/etc/samba/smb.conf']), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env={'LC_ALL': 'C'})
-                        process.communicate(input=content)
+                        _, tee_err = process.communicate(input=content)
+                        if process.returncode != 0:
+                            raise Exception(f"Could not write /etc/samba/smb.conf: {tee_err}")
                         
                         # Restart Samba
                         run_sudo_command([CMD['SYSTEMCTL'], 'restart', 'smbd'])

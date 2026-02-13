@@ -191,8 +191,12 @@ class UpdateManager:
         now = datetime.now(timezone.utc)
         # Cache for 1 hour to stay safe with rate limits
         if cached_entry:
-            cached_at = datetime.fromisoformat(cached_entry.get("cached_at"))
-            if (now - cached_at).total_seconds() < 3600:
+            try:
+                cached_at_str = cached_entry.get("cached_at")
+                cached_at = datetime.fromisoformat(cached_at_str) if cached_at_str else None
+            except Exception:
+                cached_at = None
+            if cached_at and (now - cached_at).total_seconds() < 3600:
                 print(f"Using cached GitHub release for {cache_key}")
                 release = cached_entry.get("release")
                 return self._build_check_result(current_version, release, channel)
@@ -336,10 +340,15 @@ class UpdateManager:
         try:
             result = subprocess.run(final_cmd, capture_output=True, text=True, timeout=timeout, env={"LC_ALL": "C"})
             if result.returncode != 0:
-                stderr_low = (result.stderr or "").lower()
+                stderr_text = (result.stderr or "").strip()
+                stdout_text = (result.stdout or "").strip()
+                stderr_low = stderr_text.lower()
                 if "password is required" in stderr_low or "a password is required" in stderr_low:
                     cmd_str = " ".join(final_cmd)
                     return None, f"System permission error: Passwordless sudo is not configured for command: {cmd_str}"
+                cmd_str = " ".join(final_cmd)
+                detail = stderr_text or stdout_text or f"exit code {result.returncode}"
+                return result, f"Command failed ({result.returncode}): {cmd_str}: {detail}"
             return result, None
         except subprocess.TimeoutExpired:
             return None, "Command timed out"
@@ -383,23 +392,44 @@ class UpdateManager:
             # Run using systemd-run to decouple from the backend process
             # We construct the command manually to avoid run_command waiting
             try:
-                # sudo -n systemd-run --unit=alvaos-updater...
-                # We need to run inside a separate scope or service to survive backend restart
-                final_cmd = [
-                    "sudo", "-n", CMD['SYSTEMD_RUN'], 
+                # systemd-run --no-block returns immediately; validate return code first.
+                run_prefix = [] if self.is_root_user() else ["sudo", "-n"]
+                final_cmd = run_prefix + [
+                    CMD['SYSTEMD_RUN'],
                     "--unit=alvaos-updater-" + secrets.token_hex(4),
                     "--description=AlvaOS Updater",
                     "--no-block", # Critical: don't wait for it
                     CMD['BASH'], script_path, package_path
                 ]
-                subprocess.Popen(final_cmd)
+                start_res = subprocess.run(
+                    final_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                    env={"LC_ALL": "C"}
+                )
+                if start_res.returncode != 0:
+                    detail = (start_res.stderr or start_res.stdout or "").strip() or f"exit code {start_res.returncode}"
+                    raise RuntimeError(detail)
                 
                 # Return success immediately because the script will handle the rest
                 return {"success": True, "message": "Update process started in background"}
             except Exception as e:
                  # Fallback to direct Popen if systemd-run implies errors (though unlikely on Linux with systemd)
                  try:
-                    subprocess.Popen(["sudo", "-n", CMD['NOHUP'], CMD['BASH'], script_path, package_path], start_new_session=True)
+                    run_prefix = [] if self.is_root_user() else ["sudo", "-n"]
+                    fallback_cmd = run_prefix + [CMD['NOHUP'], CMD['BASH'], script_path, package_path]
+                    fallback_res = subprocess.run(
+                        fallback_cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=20,
+                        start_new_session=True,
+                        env={"LC_ALL": "C"}
+                    )
+                    if fallback_res.returncode != 0:
+                        detail = (fallback_res.stderr or fallback_res.stdout or "").strip() or f"exit code {fallback_res.returncode}"
+                        raise RuntimeError(detail)
                     return {"success": True, "message": "Update process started in background (nohup)"}
                  except Exception as e2:
                     return {"success": False, "error": f"Failed to launch update script: {e} / {e2}"}
@@ -450,7 +480,11 @@ class UpdateManager:
         if platform.system() != "Linux":
             return {"success": False, "error": "Debian updates are only supported on Linux"}
         self.set_update_state("installing", "Applying Debian updates")
-        self.run_command([CMD['APT_GET'], "update"], timeout=120)
+        update_res, update_err = self.run_command([CMD['APT_GET'], "update"], timeout=120)
+        if update_err or not update_res or update_res.returncode != 0:
+            error_msg = update_err or (update_res.stderr if update_res else "apt-get update failed")
+            self.set_update_state("error", "Debian updates failed", {"error": error_msg})
+            return {"success": False, "error": error_msg}
 
         cmd = [CMD['APT_GET'], "upgrade", "-y"]
         if packages:

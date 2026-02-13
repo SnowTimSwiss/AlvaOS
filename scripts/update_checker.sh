@@ -73,7 +73,12 @@ if auto_apply and alvaos.get("update_available"):
             print(f"Auto-apply failed: {e}")
             details["auto_apply_error"] = str(e)
 
-um.set_update_state("idle", "Auto-check complete", details)
+current_state = um.get_update_state()
+if current_state.get("status") in ("installing", "downloading"):
+    # Keep active install/download state; avoid overwriting progress with "idle".
+    pass
+else:
+    um.set_update_state("idle", "Auto-check complete", details)
 PY
 
   echo "update_checker: completed"
