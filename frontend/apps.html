@@ -190,6 +190,158 @@
             color: var(--text-secondary);
             margin-right: 4px;
         }
+
+        .apps-workspace {
+            display: grid;
+            grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+            gap: var(--space-md);
+        }
+
+        .apps-list {
+            background: var(--bg-card);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+
+        .app-list-item {
+            border: 1px solid var(--border-default);
+            background: var(--bg-body);
+            border-radius: var(--radius-default);
+            padding: 10px;
+            text-align: left;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+        }
+
+        .app-list-item:hover {
+            border-color: var(--accent-primary);
+            background: var(--bg-hover);
+        }
+
+        .app-list-item.active {
+            border-color: var(--accent-primary);
+            background: rgba(88, 166, 255, 0.1);
+        }
+
+        .inspector-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            padding: var(--space-md);
+        }
+
+        .inspector-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 8px 16px;
+            margin: 12px 0 14px;
+        }
+
+        .inspector-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .inspector-value {
+            font-size: 0.9rem;
+            color: var(--text-primary);
+            overflow-wrap: anywhere;
+        }
+
+        .inspector-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+
+        .btn-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            font-weight: 600;
+            padding: 0.5rem 1rem;
+            border-radius: var(--radius-btn);
+            border: none;
+            color: #fff;
+            background: var(--accent-success);
+            font-size: 0.9rem;
+        }
+
+        .app-count {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        @media (max-width: 980px) {
+            .apps-workspace {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .logs-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(4px);
+            z-index: 1200;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+
+        .logs-modal-card {
+            width: min(1100px, 96vw);
+            max-height: 90vh;
+            background: var(--bg-card);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .logs-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 16px;
+            padding: 16px;
+            border-bottom: 1px solid var(--border-default);
+            background: var(--bg-body);
+        }
+
+        .logs-meta {
+            margin-top: 4px;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .logs-output {
+            margin: 0;
+            padding: 16px;
+            overflow: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            line-height: 1.45;
+            white-space: pre-wrap;
+            background: #05090f;
+            color: #78f5a5;
+            flex: 1;
+        }
     </style>
 </head>
 
@@ -206,15 +358,15 @@
         </div>
 
         <nav>
-            <a href="index.html" class="nav-link"><span>🏠</span> Dashboard</a>
-            <a href="storage.html" class="nav-link"><span>🗄️</span> Storage</a>
-            <a href="apps.html" class="nav-link active"><span>🧩</span> Apps</a>
-            <a href="#" class="nav-link"><span>🔁</span> Backup</a>
-            <a href="users.html" class="nav-link"><span>👥</span> Users</a>
+            <a href="index.html" class="nav-link"><span>&#x1F3E0;</span> Dashboard</a>
+            <a href="storage.html" class="nav-link"><span>&#x1F5C4;</span> Storage</a>
+            <a href="apps.html" class="nav-link active"><span>&#x1F9E9;</span> Apps</a>
+            <a href="#" class="nav-link"><span>&#x1F501;</span> Backup</a>
+            <a href="users.html" class="nav-link"><span>&#x1F465;</span> Users</a>
             <a href="updates.html" class="nav-link"><span>&#x1F504;</span> Updates <span class="nav-badge"
                     id="updates-nav-badge" style="display:none;">!</span></a>
             <div style="flex:1"></div>
-            <a href="system.html" class="nav-link"><span>⚙️</span> System</a>
+            <a href="system.html" class="nav-link"><span>&#x2699;</span> System</a>
         </nav>
     </aside>
 
@@ -235,67 +387,51 @@
         <div class="content-scroll">
             <div id="update-banner-slot"></div>
             <div style="margin-bottom: 24px;">
-                <h1 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 4px;">App Store</h1>
+                <h1 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 4px;">Apps</h1>
                 <p style="color: var(--text-secondary); font-size: 0.95rem;">Install and manage containerized
                     applications.</p>
             </div>
 
             <!-- Tab Navigation -->
-            <div class="tab-nav">
-                <button class="tab-btn active" data-tab="store">🛒 App Store</button>
-                <button class="tab-btn" data-tab="installed">📦 Installed</button>
-                <button class="tab-btn" data-tab="containers">🐳 Containers</button>
+            <div class="tab-bar">
+                <button class="tab-btn active" data-tab="installed">Installed</button>
+                <button class="tab-btn" data-tab="store">App Store</button>
+            </div>
+
+            <!-- Installed Tab -->
+            <div class="tab-panel active" id="tab-installed">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h2
+                        style="font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em;">
+                        Installed Apps and Containers</h2>
+                    <button id="refresh-installed-btn" class="btn-secondary"
+                        style="padding: 4px 10px; font-size: 0.85rem;">Refresh</button>
+                </div>
+                <div id="installed-container">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">...</div>
+                        <div>Loading installed apps...</div>
+                    </div>
+                </div>
             </div>
 
             <!-- App Store Tab -->
-            <div class="tab-panel active" id="tab-store">
+            <div class="tab-panel" id="tab-store">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
                     <h2
                         style="font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em;">
                         Available Apps</h2>
                     <button id="refresh-apps-btn" class="btn-secondary"
-                        style="padding: 4px 10px; font-size: 0.85rem;">🔄 Refresh</button>
+                        style="padding: 4px 10px; font-size: 0.85rem;">Refresh</button>
                 </div>
                 <div id="apps-container" class="apps-grid">
                     <div class="empty-state" style="grid-column: 1/-1;">
-                        <div class="empty-state-icon">📦</div>
+                        <div class="empty-state-icon">...</div>
                         <div>Loading apps...</div>
                     </div>
                 </div>
             </div>
 
-            <!-- Installed Tab -->
-            <div class="tab-panel" id="tab-installed">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                    <h2
-                        style="font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em;">
-                        Installed Apps</h2>
-                </div>
-                <div id="installed-container">
-                    <div class="empty-state">
-                        <div class="empty-state-icon">📭</div>
-                        <div>No apps installed yet</div>
-                        <p style="font-size: 0.85rem; margin-top: 8px;">Install apps from the App Store tab</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Containers Tab -->
-            <div class="tab-panel" id="tab-containers">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                    <h2
-                        style="font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em;">
-                        Docker Containers</h2>
-                    <button id="refresh-containers-btn" class="btn-secondary"
-                        style="padding: 4px 10px; font-size: 0.85rem;">🔄 Refresh</button>
-                </div>
-                <div id="containers-table-wrapper">
-                    <div class="empty-state">
-                        <div class="empty-state-icon">🐳</div>
-                        <div>Loading containers...</div>
-                    </div>
-                </div>
-            </div>
 
             <footer
                 style="margin-top:2rem; padding-top:1rem; border-top:1px solid var(--border-subtle); color:var(--text-secondary); font-size:0.8rem;">
@@ -322,7 +458,7 @@
                 style="display: flex; gap: 16px; margin-bottom: 24px; padding: 16px; background: var(--bg-body); border-radius: var(--radius-default); border: 1px solid var(--border-subtle);">
                 <div id="install-app-icon"
                     style="font-size: 2.5rem; width: 64px; height: 64px; display: flex; align-items: center; justify-content: center; background: var(--bg-card); border-radius: var(--radius-default); border: 1px solid var(--border-default);">
-                    📦</div>
+                    &#x1F4E6;</div>
                 <div style="flex: 1;">
                     <h3 id="install-app-name" style="margin: 0 0 4px 0; font-size: 1.1rem;">App Name</h3>
                     <p id="install-app-version"
@@ -350,7 +486,7 @@
 
             <div id="install-port-warning"
                 style="margin-top: 16px; padding: 12px; background: rgba(248, 81, 73, 0.1); border: 1px solid var(--accent-danger); border-radius: var(--radius-default); display: none;">
-                <p style="font-size: 0.85rem; color: var(--accent-danger); margin: 0;">⚠️ Some default ports are already
+                <p style="font-size: 0.85rem; color: var(--accent-danger); margin: 0;">&#x26A0; Some default ports are already
                     in use. You may need to remap them after installation.</p>
             </div>
 
@@ -379,6 +515,23 @@
         </div>
     </div>
 
+    <!-- Container Logs Modal -->
+    <div id="container-logs-modal" class="logs-modal" aria-hidden="true">
+        <div class="logs-modal-card">
+            <div class="logs-modal-header">
+                <div>
+                    <h2 id="container-logs-title" style="font-size: 1.1rem; margin: 0;">Container Logs</h2>
+                    <div id="container-logs-meta" class="logs-meta">Loading...</div>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <button id="container-logs-refresh-btn" class="btn-secondary">Refresh</button>
+                    <button id="container-logs-close-btn" class="btn-secondary">Close</button>
+                </div>
+            </div>
+            <pre id="container-logs-content" class="logs-output">Loading logs...</pre>
+        </div>
+    </div>
+
     <!-- Scripts -->
     <script src="notifications.js"></script>
     <script src="app.js"></script>
@@ -386,3 +539,4 @@
 </body>
 
 </html>
+

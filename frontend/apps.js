@@ -2,6 +2,13 @@
 // API_BASE is defined in app.js
 let authToken = localStorage.getItem('alvaos_token');
 
+let installedAppsCache = [];
+let containersCache = [];
+let selectedAppId = null;
+const appDetailsCache = {};
+let activeLogsContainerId = null;
+let activeLogsRequestId = 0;
+
 function showNotification(message, type = 'info') {
     if (window.showToast) {
         window.showToast(message, type);
@@ -15,34 +22,374 @@ function showNotification(message, type = 'info') {
     if (window.alert) window.alert(message);
 }
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function formatDate(value) {
+    if (!value) return 'Unknown';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Unknown';
+    return date.toLocaleString();
+}
+
+function getAppEmoji(category) {
+    const emojis = {
+        'Productivity': '📝',
+        'Media': '🎬',
+        'Development': '💻',
+        'Smart Home': '🏠',
+        'Network': '🌐',
+        'Security': '🔒',
+        'Other': '📦'
+    };
+    return emojis[category] || '📦';
+}
+
+function setActiveTab(tabName) {
+    document.querySelectorAll('.tab-btn').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.tab === tabName);
+    });
+
+    document.querySelectorAll('.tab-panel').forEach((panel) => {
+        panel.classList.remove('active');
+    });
+
+    const targetPanel = document.getElementById(`tab-${tabName}`);
+    if (targetPanel) targetPanel.classList.add('active');
+
+    if (tabName === 'store') {
+        loadAvailableApps();
+    } else {
+        loadInstalledWorkspace(true);
+    }
+}
+
 // Tab switching
-document.querySelectorAll('.tab-btn').forEach(btn => {
+document.querySelectorAll('.tab-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-        const tabName = btn.dataset.tab;
-
-        // Update buttons
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-
-        // Update content
-        document.querySelectorAll('.tab-panel').forEach(content => content.classList.remove('active'));
-        const targetTab = document.getElementById(`tab-${tabName}`);
-        if (targetTab) targetTab.classList.add('active');
-
-        // Load data for the active tab
-        if (tabName === 'store') {
-            loadAvailableApps();
-        } else if (tabName === 'installed') {
-            loadInstalledApps();
-        } else if (tabName === 'containers') {
-            loadContainers();
-        }
+        setActiveTab(btn.dataset.tab);
     });
 });
+
+async function fetchInstalledAppsData() {
+    const response = await fetch(`${API_BASE}/apps/installed`, {
+        headers: { 'Authorization': authToken }
+    });
+
+    if (!response.ok) throw new Error('Failed to load installed apps');
+
+    const data = await response.json();
+    return data.apps || [];
+}
+
+async function fetchContainersData() {
+    const response = await fetch(`${API_BASE}/containers`, {
+        headers: { 'Authorization': authToken }
+    });
+
+    if (!response.ok) throw new Error('Failed to load containers');
+
+    const data = await response.json();
+    return data.containers || [];
+}
+
+function isContainerForApp(container, appId) {
+    const labels = String(container?.Labels || '');
+    const expectedProjectLabel = `com.docker.compose.project=alvaos-${appId}`;
+    if (labels.includes(expectedProjectLabel)) return true;
+
+    const namesRaw = String(container?.Names || '');
+    const names = namesRaw.split(',').map((v) => v.trim());
+    return names.some((name) => name.includes(`alvaos-${appId}`));
+}
+
+function getContainersForApp(appId) {
+    return containersCache.filter((container) => isContainerForApp(container, appId));
+}
+
+function parseHostPorts(portsRaw) {
+    const ports = [];
+    const value = String(portsRaw || '');
+    const matches = value.matchAll(/:(\d+)->\d+\/tcp/g);
+
+    for (const match of matches) {
+        const port = Number(match[1]);
+        if (!Number.isNaN(port)) ports.push(port);
+    }
+
+    return ports;
+}
+
+async function getAppDetails(appId) {
+    if (appDetailsCache[appId]) return appDetailsCache[appId];
+
+    try {
+        const response = await fetch(`${API_BASE}/apps/available/${appId}`, {
+            headers: { 'Authorization': authToken }
+        });
+
+        if (!response.ok) return null;
+
+        const data = await response.json();
+        appDetailsCache[appId] = data;
+        return data;
+    } catch {
+        return null;
+    }
+}
+
+function buildWebUiUrl(appDetails, appContainers) {
+    const host = window.location.hostname || 'localhost';
+
+    const schemaPorts = appDetails?.config_schema?.ports;
+    if (Array.isArray(schemaPorts) && schemaPorts.length > 0) {
+        const preferred = schemaPorts.find((item) =>
+            String(item?.description || '').toLowerCase().includes('web')
+        ) || schemaPorts[0];
+
+        const externalPort = Number(preferred?.external);
+        if (!Number.isNaN(externalPort) && externalPort > 0) {
+            if (externalPort === 80) return `http://${host}`;
+            return `http://${host}:${externalPort}`;
+        }
+    }
+
+    for (const container of appContainers) {
+        const hostPorts = parseHostPorts(container?.Ports);
+        if (hostPorts.length > 0) {
+            const port = hostPorts[0];
+            if (port === 80) return `http://${host}`;
+            return `http://${host}:${port}`;
+        }
+    }
+
+    return null;
+}
+
+function renderInstalledList() {
+    const list = document.getElementById('apps-list');
+    if (!list) return;
+
+    list.innerHTML = installedAppsCache.map((app) => {
+        const appContainers = getContainersForApp(app.app_id);
+        const running = appContainers.filter((c) => c.State === 'running').length;
+        const total = appContainers.length;
+
+        return `
+            <button class="app-list-item ${selectedAppId === app.app_id ? 'active' : ''}" onclick="selectInstalledApp('${escapeHtml(app.app_id)}')">
+                <div style="font-weight: 600;">${escapeHtml(app.name || app.app_id)}</div>
+                <div class="app-count">${running}/${total} containers running</div>
+            </button>
+        `;
+    }).join('');
+}
+
+async function renderInspector() {
+    const inspector = document.getElementById('app-inspector');
+    if (!inspector) return;
+
+    const selected = installedAppsCache.find((app) => app.app_id === selectedAppId);
+    if (!selected) {
+        inspector.innerHTML = `
+            <div class="inspector-card">
+                <div class="empty-state">
+                    <div class="empty-state-icon">...</div>
+                    <div>Select an app to see details.</div>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    const selectedAtRender = selected.app_id;
+    const appContainers = getContainersForApp(selected.app_id);
+    const runningCount = appContainers.filter((c) => c.State === 'running').length;
+    const appDetails = await getAppDetails(selected.app_id);
+
+    if (selectedAppId !== selectedAtRender) {
+        return;
+    }
+
+    const webUiUrl = buildWebUiUrl(appDetails, appContainers);
+
+    inspector.innerHTML = `
+        <div class="inspector-card">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:8px;">
+                <div>
+                    <div style="font-size:1.2rem; font-weight:600;">${escapeHtml(selected.name || selected.app_id)}</div>
+                    <div class="inspector-value" style="color: var(--text-secondary);">${escapeHtml(selected.app_id)}</div>
+                </div>
+                <span class="container-status ${runningCount > 0 ? 'running' : 'stopped'}">${runningCount > 0 ? 'Running' : 'Stopped'}</span>
+            </div>
+
+            <div class="inspector-actions">
+                ${webUiUrl ? `<a class="btn-link" href="${escapeHtml(webUiUrl)}" target="_blank" rel="noopener noreferrer">Open Web UI</a>` : '<button class="btn-secondary" disabled style="opacity:0.6; cursor:not-allowed;">No Web UI detected</button>'}
+                <button class="btn-icon btn-danger" onclick="uninstallApp('${escapeHtml(selected.app_id)}')">Uninstall</button>
+            </div>
+
+            <div class="inspector-grid">
+                <div>
+                    <div class="inspector-label">Installed</div>
+                    <div class="inspector-value">${escapeHtml(formatDate(selected.installed_at))}</div>
+                </div>
+                <div>
+                    <div class="inspector-label">Storage Path</div>
+                    <div class="inspector-value mono-text">${escapeHtml(selected.storage_path || '-')}</div>
+                </div>
+                <div>
+                    <div class="inspector-label">Pool</div>
+                    <div class="inspector-value mono-text">${escapeHtml(selected.pool_path || '-')}</div>
+                </div>
+                <div>
+                    <div class="inspector-label">Parent Subvolume</div>
+                    <div class="inspector-value mono-text">${escapeHtml(selected.parent_subvolume || '-')}</div>
+                </div>
+            </div>
+
+            <div style="font-size: 0.95rem; font-weight:600; margin: 16px 0 10px;">Containers (${appContainers.length})</div>
+            ${renderContainerTable(appContainers)}
+        </div>
+    `;
+}
+
+function renderContainerTable(containers) {
+    if (containers.length === 0) {
+        return `
+            <div class="empty-state" style="padding: 1.5rem 1rem;">
+                <div>No containers found for this app.</div>
+            </div>
+        `;
+    }
+
+    return `
+        <table class="containers-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Status</th>
+                    <th>Image</th>
+                    <th>Ports</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${containers.map((container) => {
+                    const isRunning = container.State === 'running';
+                    const name = container.Names || (container.ID || '').substring(0, 12);
+                    const image = container.Image || 'unknown';
+                    const ports = container.Ports || 'none';
+
+                    return `
+                        <tr>
+                            <td><span class="mono-text" style="font-size: 0.85rem;">${escapeHtml(name)}</span></td>
+                            <td>
+                                <span class="container-status ${isRunning ? 'running' : 'stopped'}">${escapeHtml(container.State || 'unknown')}</span>
+                            </td>
+                            <td style="font-size: 0.85rem;">${escapeHtml(image)}</td>
+                            <td style="font-size: 0.85rem;">${escapeHtml(ports)}</td>
+                            <td>
+                                <div class="container-actions">
+                                    ${isRunning
+                                        ? `<button class="btn-icon" onclick="stopContainer('${escapeHtml(container.ID)}')">Stop</button>`
+                                        : `<button class="btn-icon" onclick="startContainer('${escapeHtml(container.ID)}')">Start</button>`}
+                                    <button class="btn-icon" onclick="viewLogs('${escapeHtml(container.ID)}')">Logs</button>
+                                    <button class="btn-icon btn-danger" onclick="deleteContainer('${escapeHtml(container.ID)}')">Delete</button>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                }).join('')}
+            </tbody>
+        </table>
+    `;
+}
+
+function renderInstalledWorkspace() {
+    const container = document.getElementById('installed-container');
+    if (!container) return;
+
+    container.innerHTML = `
+        <div class="apps-workspace">
+            <div id="apps-list" class="apps-list"></div>
+            <div id="app-inspector"></div>
+        </div>
+    `;
+
+    renderInstalledList();
+    renderInspector();
+}
+
+async function loadInstalledWorkspace(preserveSelection = true) {
+    const container = document.getElementById('installed-container');
+    if (!container) return;
+
+    container.innerHTML = `
+        <div class="empty-state">
+            <div class="empty-state-icon">...</div>
+            <div>Loading installed apps...</div>
+        </div>
+    `;
+
+    try {
+        const [apps, containers] = await Promise.all([
+            fetchInstalledAppsData(),
+            fetchContainersData()
+        ]);
+
+        installedAppsCache = apps;
+        containersCache = containers;
+
+        if (installedAppsCache.length === 0) {
+            selectedAppId = null;
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">📭</div>
+                    <div>No apps installed yet</div>
+                    <p style="font-size: 0.9rem; margin-top: 8px;">Install your first app from the store.</p>
+                    <button id="open-store-btn" class="btn-link" style="margin-top: 12px;">Open App Store</button>
+                </div>
+            `;
+
+            const openStoreBtn = document.getElementById('open-store-btn');
+            if (openStoreBtn) {
+                openStoreBtn.addEventListener('click', () => setActiveTab('store'));
+            }
+            return;
+        }
+
+        if (!preserveSelection || !installedAppsCache.some((app) => app.app_id === selectedAppId)) {
+            selectedAppId = installedAppsCache[0].app_id;
+        }
+
+        renderInstalledWorkspace();
+    } catch (error) {
+        console.error('Error loading installed workspace:', error);
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">!</div>
+                <div>Failed to load installed apps</div>
+                <p style="font-size: 0.85rem; margin-top: 8px; color: var(--accent-danger);">${escapeHtml(error.message)}</p>
+            </div>
+        `;
+    }
+}
+
+function selectInstalledApp(appId) {
+    selectedAppId = appId;
+    renderInstalledList();
+    renderInspector();
+}
 
 // Load available apps from catalog
 async function loadAvailableApps() {
     const container = document.getElementById('apps-container');
+    if (!container) return;
 
     try {
         const response = await fetch(`${API_BASE}/apps/available`, {
@@ -57,22 +404,22 @@ async function loadAvailableApps() {
         if (apps.length === 0) {
             container.innerHTML = `
                 <div class="empty-state" style="grid-column: 1/-1;">
-                    <div class="empty-state-icon">📦</div>
+                    <div class="empty-state-icon">...</div>
                     <div>No apps available</div>
                 </div>
             `;
             return;
         }
 
-        container.innerHTML = apps.map(app => `
-            <div class="app-card" onclick="showAppDetails('${app.id}')">
+        container.innerHTML = apps.map((app) => `
+            <div class="app-card" onclick="showAppDetails('${escapeHtml(app.id)}')">
                 <div class="app-icon">${getAppEmoji(app.category)}</div>
-                <div class="app-name">${app.name}</div>
-                <div class="app-description">${app.description}</div>
-                <div class="app-category">${app.category}</div>
+                <div class="app-name">${escapeHtml(app.name)}</div>
+                <div class="app-description">${escapeHtml(app.description)}</div>
+                <div class="app-category">${escapeHtml(app.category)}</div>
                 <div class="app-footer">
-                    <span style="font-size: 0.8rem; color: var(--text-secondary);">v${app.version}</span>
-                    <button class="btn-primary" style="padding: 6px 12px; font-size: 0.85rem;" onclick="event.stopPropagation(); installApp('${app.id}')">
+                    <span style="font-size: 0.8rem; color: var(--text-secondary);">v${escapeHtml(app.version)}</span>
+                    <button class="btn-primary" style="padding: 6px 12px; font-size: 0.85rem;" onclick="event.stopPropagation(); installApp('${escapeHtml(app.id)}')">
                         Install
                     </button>
                 </div>
@@ -83,175 +430,21 @@ async function loadAvailableApps() {
         console.error('Error loading apps:', error);
         container.innerHTML = `
             <div class="empty-state" style="grid-column: 1/-1;">
-                <div class="empty-state-icon">⚠️</div>
+                <div class="empty-state-icon">!</div>
                 <div>Failed to load apps</div>
-                <p style="font-size: 0.85rem; margin-top: 8px; color: var(--accent-danger);">${error.message}</p>
+                <p style="font-size: 0.85rem; margin-top: 8px; color: var(--accent-danger);">${escapeHtml(error.message)}</p>
             </div>
         `;
     }
 }
 
-// Load installed apps
+// Keep compatibility for existing calls
 async function loadInstalledApps() {
-    const container = document.getElementById('installed-container');
-
-    try {
-        const response = await fetch(`${API_BASE}/apps/installed`, {
-            headers: { 'Authorization': authToken }
-        });
-
-        if (!response.ok) throw new Error('Failed to load installed apps');
-
-        const data = await response.json();
-        const apps = data.apps || [];
-
-        if (apps.length === 0) {
-            container.innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-state-icon">📭</div>
-                    <div>No apps installed yet</div>
-                    <p style="font-size: 0.85rem; margin-top: 8px;">Install apps from the App Store tab</p>
-                </div>
-            `;
-            return;
-        }
-
-        container.innerHTML = `
-            <div class="dashboard-grid">
-                ${apps.map(app => `
-                    <div class="card">
-                        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
-                            <div>
-                                <div style="font-size: 1.05rem; font-weight: 600; margin-bottom: 4px;">${app.name}</div>
-                                <div style="font-size: 0.8rem; color: var(--text-secondary);">
-                                    Installed: ${new Date(app.installed_at).toLocaleDateString()}
-                                </div>
-                            </div>
-                        </div>
-                        <div class="setting-group">
-                            <div class="setting-label">Storage Path</div>
-                            <div class="setting-val" style="font-size: 0.8rem;">${app.storage_path}</div>
-                        </div>
-                        <div style="display: flex; gap: 8px; margin-top: 12px;">
-                            <button class="btn-secondary" style="flex: 1; padding: 6px 12px; font-size: 0.85rem;" onclick="manageApp('${app.app_id}')">
-                                Manage
-                            </button>
-                            <button class="btn-icon btn-danger" onclick="uninstallApp('${app.app_id}')">
-                                🗑️ Uninstall
-                            </button>
-                        </div>
-                    </div>
-                `).join('')}
-            </div>
-        `;
-
-    } catch (error) {
-        console.error('Error loading installed apps:', error);
-        container.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-state-icon">⚠️</div>
-                <div>Failed to load installed apps</div>
-                <p style="font-size: 0.85rem; margin-top: 8px; color: var(--accent-danger);">${error.message}</p>
-            </div>
-        `;
-    }
+    await loadInstalledWorkspace(true);
 }
 
-// Load Docker containers
 async function loadContainers() {
-    const wrapper = document.getElementById('containers-table-wrapper');
-
-    try {
-        const response = await fetch(`${API_BASE}/containers`, {
-            headers: { 'Authorization': authToken }
-        });
-
-        if (!response.ok) throw new Error('Failed to load containers');
-
-        const data = await response.json();
-        const containers = data.containers || [];
-
-        if (containers.length === 0) {
-            wrapper.innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-state-icon">🐳</div>
-                    <div>No containers running</div>
-                    <p style="font-size: 0.85rem; margin-top: 8px;">Install an app to create containers</p>
-                </div>
-            `;
-            return;
-        }
-
-        wrapper.innerHTML = `
-            <table class="containers-table">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Status</th>
-                        <th>Image</th>
-                        <th>Ports</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${containers.map(container => {
-            const isRunning = container.State === 'running';
-            const name = container.Names || container.ID.substring(0, 12);
-            const image = container.Image || 'unknown';
-            const ports = container.Ports || 'none';
-
-            return `
-                            <tr>
-                                <td><span class="mono-text" style="font-size: 0.85rem;">${name}</span></td>
-                                <td>
-                                    <span class="container-status ${isRunning ? 'running' : 'stopped'}">
-                                        <span class="status-dot ${isRunning ? '' : 'warning'}"></span>
-                                        ${container.State}
-                                    </span>
-                                </td>
-                                <td style="font-size: 0.85rem;">${image}</td>
-                                <td style="font-size: 0.85rem;">${ports}</td>
-                                <td>
-                                    <div class="container-actions">
-                                        ${isRunning ?
-                    `<button class="btn-icon" onclick="stopContainer('${container.ID}')">⏸️ Stop</button>` :
-                    `<button class="btn-icon" onclick="startContainer('${container.ID}')">▶️ Start</button>`
-                }
-                                        <button class="btn-icon" onclick="viewLogs('${container.ID}')">📄 Logs</button>
-                                        <button class="btn-icon btn-danger" onclick="deleteContainer('${container.ID}')">🗑️</button>
-                                    </div>
-                                </td>
-                            </tr>
-                        `;
-        }).join('')}
-                </tbody>
-            </table>
-        `;
-
-    } catch (error) {
-        console.error('Error loading containers:', error);
-        wrapper.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-state-icon">⚠️</div>
-                <div>Failed to load containers</div>
-                <p style="font-size: 0.85rem; margin-top: 8px; color: var(--accent-danger);">${error.message}</p>
-            </div>
-        `;
-    }
-}
-
-// Helper: Get emoji for app category
-function getAppEmoji(category) {
-    const emojis = {
-        'Productivity': '📝',
-        'Media': '🎬',
-        'Development': '💻',
-        'Smart Home': '🏠',
-        'Network': '🌐',
-        'Security': '🔒',
-        'Other': '📦'
-    };
-    return emojis[category] || '📦';
+    await loadInstalledWorkspace(true);
 }
 
 // Show installation wizard instead of prompt
@@ -300,7 +493,7 @@ async function showInstallWizard(appId) {
             poolSelect.innerHTML = '<option value="">No pools available - create one first!</option>';
         } else {
             poolSelect.innerHTML = pools.map(p => `
-                <option value="${p.mount_point}">${p.name} (${p.total_size} total, ${p.mount_point})</option>
+                <option value="${escapeHtml(p.mount_point)}">${escapeHtml(p.name)} (${escapeHtml(p.total_size)} total, ${escapeHtml(p.mount_point)})</option>
             `).join('');
             confirmBtn.disabled = false;
         }
@@ -339,7 +532,7 @@ async function showInstallWizard(appId) {
 
                 // Show progress container
                 document.getElementById('install-progress-container').style.display = 'block';
-                document.getElementById('install-log-content').textContent = ''; // Clear logs
+                document.getElementById('install-log-content').textContent = '';
 
                 // Start polling
                 pollInstallStatus(appId);
@@ -358,13 +551,10 @@ async function showInstallWizard(appId) {
     }
 }
 
-// Show app details (placeholder for future modal)
 function showAppDetails(appId) {
     console.log('Show details for:', appId);
-    // TODO: Implement app details modal
 }
 
-// Install app
 async function installApp(appId) {
     showInstallWizard(appId);
 }
@@ -375,7 +565,7 @@ async function showUninstallDialog(appId) {
         overlay.className = 'modal-overlay';
         overlay.innerHTML = `
             <div class="modal-content">
-                <div class="modal-title">Uninstall ${appId}?</div>
+                <div class="modal-title">Uninstall ${escapeHtml(appId)}?</div>
                 <div class="modal-body">This will stop and remove all associated containers.</div>
                 <label style="display:flex; align-items:center; gap:10px; cursor:pointer; margin-bottom: 8px;">
                     <input type="checkbox" class="uninstall-keep-data" checked>
@@ -403,7 +593,6 @@ async function showUninstallDialog(appId) {
     });
 }
 
-// Uninstall app
 async function uninstallApp(appId) {
     const keepData = await showUninstallDialog(appId);
     if (keepData === null) return;
@@ -424,8 +613,7 @@ async function uninstallApp(appId) {
         }
 
         showNotification('App uninstalled successfully!', 'success');
-        loadInstalledApps();
-        loadContainers();
+        await loadInstalledWorkspace(false);
 
     } catch (error) {
         console.error('Uninstallation error:', error);
@@ -433,7 +621,6 @@ async function uninstallApp(appId) {
     }
 }
 
-// Container actions
 async function startContainer(containerId) {
     try {
         const response = await fetch(`${API_BASE}/containers/${containerId}/start`, {
@@ -444,7 +631,7 @@ async function startContainer(containerId) {
         if (!response.ok) throw new Error('Failed to start container');
 
         showNotification('Container started', 'success');
-        loadContainers();
+        await loadInstalledWorkspace(true);
 
     } catch (error) {
         console.error('Start error:', error);
@@ -462,7 +649,7 @@ async function stopContainer(containerId) {
         if (!response.ok) throw new Error('Failed to stop container');
 
         showNotification('Container stopped', 'success');
-        loadContainers();
+        await loadInstalledWorkspace(true);
 
     } catch (error) {
         console.error('Stop error:', error);
@@ -482,7 +669,7 @@ async function deleteContainer(containerId) {
         if (!response.ok) throw new Error('Failed to delete container');
 
         showNotification('Container deleted', 'success');
-        loadContainers();
+        await loadInstalledWorkspace(true);
 
     } catch (error) {
         console.error('Delete error:', error);
@@ -490,35 +677,107 @@ async function deleteContainer(containerId) {
     }
 }
 
-async function viewLogs(containerId) {
+function findContainerById(containerId) {
+    return containersCache.find((container) => container.ID === containerId)
+        || containersCache.find((container) => String(container.ID || '').startsWith(containerId));
+}
+
+function openLogsModal(containerId) {
+    const modal = document.getElementById('container-logs-modal');
+    const titleEl = document.getElementById('container-logs-title');
+    const metaEl = document.getElementById('container-logs-meta');
+    const contentEl = document.getElementById('container-logs-content');
+
+    if (!modal || !titleEl || !metaEl || !contentEl) {
+        showNotification('Logs modal not available', 'error');
+        return;
+    }
+
+    activeLogsContainerId = containerId;
+
+    const container = findContainerById(containerId);
+    const displayName = container?.Names || containerId;
+
+    titleEl.textContent = `Container Logs: ${displayName}`;
+    metaEl.textContent = `Container ID: ${containerId}`;
+    contentEl.textContent = 'Loading logs...';
+
+    modal.style.display = 'flex';
+    modal.setAttribute('aria-hidden', 'false');
+
+    loadContainerLogs(containerId, true);
+}
+
+function closeLogsModal() {
+    const modal = document.getElementById('container-logs-modal');
+    if (!modal) return;
+
+    modal.style.display = 'none';
+    modal.setAttribute('aria-hidden', 'true');
+    activeLogsContainerId = null;
+}
+
+async function loadContainerLogs(containerId, scrollToBottom = false) {
+    const metaEl = document.getElementById('container-logs-meta');
+    const contentEl = document.getElementById('container-logs-content');
+    if (!metaEl || !contentEl) return;
+
+    const requestId = ++activeLogsRequestId;
+
     try {
-        const response = await fetch(`${API_BASE}/containers/${containerId}/logs?lines=100`, {
+        const response = await fetch(`${API_BASE}/containers/${containerId}/logs?lines=400`, {
             headers: { 'Authorization': authToken }
         });
 
         if (!response.ok) throw new Error('Failed to fetch logs');
 
         const data = await response.json();
-        alert(`Container Logs:\n\n${data.logs}`);
-        // TODO: Implement proper logs modal
+        if (requestId !== activeLogsRequestId || activeLogsContainerId !== containerId) return;
+
+        contentEl.textContent = data.logs || '(no log output)';
+        metaEl.textContent = `Container ID: ${containerId} | Updated: ${new Date().toLocaleTimeString()}`;
+
+        if (scrollToBottom) {
+            contentEl.scrollTop = contentEl.scrollHeight;
+        }
 
     } catch (error) {
+        if (requestId !== activeLogsRequestId || activeLogsContainerId !== containerId) return;
         console.error('Logs error:', error);
-        showNotification(`Failed to fetch logs: ${error.message}`, 'error');
+        contentEl.textContent = `Failed to fetch logs:\n${error.message}`;
+        metaEl.textContent = `Container ID: ${containerId} | Error`;
     }
 }
 
-function manageApp(appId) {
-    // Switch to containers tab
-    document.querySelector('.tab-btn[data-tab="containers"]').click();
+function viewLogs(containerId) {
+    openLogsModal(containerId);
 }
 
-// Refresh buttons
-document.getElementById('refresh-apps-btn')?.addEventListener('click', loadAvailableApps);
-document.getElementById('refresh-containers-btn')?.addEventListener('click', loadContainers);
+function manageApp(appId) {
+    setActiveTab('installed');
+    if (installedAppsCache.some((app) => app.app_id === appId)) {
+        selectInstalledApp(appId);
+    }
+}
 
-// Initial load
-loadAvailableApps();
+document.getElementById('refresh-apps-btn')?.addEventListener('click', loadAvailableApps);
+document.getElementById('refresh-installed-btn')?.addEventListener('click', () => loadInstalledWorkspace(true));
+document.getElementById('container-logs-close-btn')?.addEventListener('click', closeLogsModal);
+document.getElementById('container-logs-refresh-btn')?.addEventListener('click', () => {
+    if (activeLogsContainerId) {
+        loadContainerLogs(activeLogsContainerId, false);
+    }
+});
+document.getElementById('container-logs-modal')?.addEventListener('click', (event) => {
+    if (event.target?.id === 'container-logs-modal') {
+        closeLogsModal();
+    }
+});
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+        closeLogsModal();
+    }
+});
 
 async function pollInstallStatus(appId) {
     const statusEl = document.getElementById('install-progress-status');
@@ -545,7 +804,6 @@ async function pollInstallStatus(appId) {
                 return;
             }
 
-            // Update UI
             statusEl.textContent = data.message || 'Installing...';
             percentEl.textContent = `${data.progress}%`;
             barEl.style.width = `${data.progress}%`;
@@ -558,10 +816,9 @@ async function pollInstallStatus(appId) {
             if (data.status === 'success') {
                 showNotification(`App "${appId}" installed successfully!`, 'success');
                 confirmBtn.textContent = 'Done';
-                setTimeout(() => {
+                setTimeout(async () => {
                     document.getElementById('install-modal').style.display = 'none';
-                    loadInstalledApps();
-                    // Reset modal for next time
+                    await loadInstalledWorkspace(true);
                     document.getElementById('install-progress-container').style.display = 'none';
                 }, 2000);
                 return;
@@ -576,7 +833,6 @@ async function pollInstallStatus(appId) {
                 return;
             }
 
-            // Continue polling
             setTimeout(poll, 1000);
 
         } catch (error) {
@@ -587,3 +843,6 @@ async function pollInstallStatus(appId) {
 
     poll();
 }
+
+// Default view: installed apps + containers
+setActiveTab('installed');
