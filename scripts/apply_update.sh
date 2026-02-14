@@ -3,7 +3,7 @@ set -euo pipefail
 
 PACKAGE_PATH="${1:-}"
 LOG_FILE="/var/log/alvaos/update-apply.log"
-SERVICE_NAME="alvaos.service"
+SERVICES=("alvaos.service" "alvaos-backend.service" "alvaos-ui.service")
 
 mkdir -p /var/log/alvaos /var/lib/alvaos || true
 
@@ -51,9 +51,41 @@ if [ -d "/var/lib/alvaos" ]; then
     cp -r /var/lib/alvaos /var/lib/alvaos.bak || log "WARNING: Backup failed"
 fi
 
+stop_services() {
+  if ! command -v systemctl >/dev/null 2>&1; then
+    return 0
+  fi
+  for svc in "${SERVICES[@]}"; do
+    log "Stopping service: $svc"
+    systemctl stop "$svc" || true
+  done
+}
+
+start_services() {
+  if ! command -v systemctl >/dev/null 2>&1; then
+    return 0
+  fi
+  systemctl daemon-reload || true
+  for svc in "${SERVICES[@]}"; do
+    log "Starting service: $svc"
+    systemctl start "$svc" || true
+  done
+}
+
+any_service_active() {
+  if ! command -v systemctl >/dev/null 2>&1; then
+    return 0
+  fi
+  for svc in "${SERVICES[@]}"; do
+    if systemctl is-active --quiet "$svc"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 update_state "installing" "Stopping services" 60
-log "Stopping service: $SERVICE_NAME"
-systemctl stop "$SERVICE_NAME" || true
+stop_services
 
 install_failed=0
 update_state "installing" "Installing package" 75
@@ -81,8 +113,12 @@ if [ -d "$migrations_dir" ]; then
 fi
 
 update_state "installing" "Starting services" 95
-log "Starting service: $SERVICE_NAME"
-systemctl start "$SERVICE_NAME" || true
+start_services
+if ! any_service_active; then
+  install_failed=1
+  update_state "error" "No AlvaOS service is running after update" 95
+  log "ERROR: No known AlvaOS service is active after update"
+fi
 
 if [ "$install_failed" -ne 0 ]; then
   log "Update completed with errors"

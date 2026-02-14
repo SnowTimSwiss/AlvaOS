@@ -11,7 +11,44 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import requests
-from packaging.version import Version, InvalidVersion
+try:
+    from packaging.version import Version, InvalidVersion
+except Exception:
+    class InvalidVersion(ValueError):
+        pass
+
+    class Version:
+        PRECEDENCE = {
+            "a": 0,
+            "alpha": 0,
+            "b": 1,
+            "beta": 1,
+            "pre": 2,
+            "rc": 3,
+            "": 4,
+        }
+
+        def __init__(self, version):
+            self.original = str(version or "")
+            self._key = self._parse(self.original)
+
+        @classmethod
+        def _parse(cls, value):
+            v = (value or "").strip().lower()
+            m = re.match(r"^(\d+(?:\.\d+)*)(?:(a|alpha|b|beta|pre|rc)(\d*))?$", v)
+            if not m:
+                raise InvalidVersion(f"Invalid version: {value}")
+
+            release = [int(part) for part in m.group(1).split(".")]
+            while len(release) > 1 and release[-1] == 0:
+                release.pop()
+
+            pre_tag = m.group(2) or ""
+            pre_num = int(m.group(3) or "0")
+            return (tuple(release), cls.PRECEDENCE.get(pre_tag, 0), pre_num)
+
+        def __gt__(self, other):
+            return self._key > other._key
 
 CMD = {
     'DPKG_DEB': '/usr/bin/dpkg-deb',
@@ -133,9 +170,17 @@ class UpdateManager:
     def normalize_version(self, version_str):
         if not version_str:
             return ""
-        # Handle "candidate" by replacing with "rc" for PEP440 compatibility
+        # Normalize common tag styles like "Release_Candidate_1" to "rc1".
         v = version_str.strip().lstrip("v").lower()
-        v = v.replace("candidate", "rc")
+        v = v.replace("_", ".").replace("-", ".")
+        v = re.sub(r"release[.]*candidate", "rc", v)
+        v = re.sub(r"candidate", "rc", v)
+        v = re.sub(r"alpha", "a", v)
+        v = re.sub(r"beta", "b", v)
+        v = re.sub(r"[^0-9a-z.+]", "", v)
+        v = re.sub(r"\.(rc|a|b|pre)", r"\1", v)
+        v = re.sub(r"(rc|a|b|pre)\.", r"\1", v)
+        v = re.sub(r"\.+", ".", v).strip(".")
         return v
 
     def is_newer(self, current, latest):

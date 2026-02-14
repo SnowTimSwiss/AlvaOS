@@ -2,12 +2,17 @@
 
 let lastRelease = null;
 let statusPoll = null;
+let reconnectPoll = null;
+let updateTransitionActive = false;
+let updateTransitionDisconnected = false;
 
 function getToken() {
     return localStorage.getItem('alvaos_token') || '';
 }
 
 async function apiFetch(path, options = {}) {
+    const skipAuthRedirect = !!options.skipAuthRedirect;
+    delete options.skipAuthRedirect;
     const headers = options.headers || {};
     headers['Authorization'] = getToken();
     if (options.json) {
@@ -16,7 +21,7 @@ async function apiFetch(path, options = {}) {
         delete options.json;
     }
     const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
-    if (res.status === 401) {
+    if (res.status === 401 && !skipAuthRedirect) {
         window.location.href = '/login.html';
         return null;
     }
@@ -43,6 +48,119 @@ function setProgress(active, percent = 0) {
 function setCurrentVersion(version) {
     const el = document.getElementById('current-version');
     if (el) el.textContent = version || '-';
+}
+
+function ensureUpdateTransitionOverlay() {
+    let overlay = document.getElementById('update-transition-overlay');
+    if (overlay) return overlay;
+
+    if (!document.getElementById('update-transition-style')) {
+        const style = document.createElement('style');
+        style.id = 'update-transition-style';
+        style.textContent = `
+            @keyframes alvaos-update-spin { 100% { transform: rotate(360deg); } }
+        `;
+        document.head.appendChild(style);
+    }
+
+    overlay = document.createElement('div');
+    overlay.id = 'update-transition-overlay';
+    overlay.style.cssText = `
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.85);
+        z-index: 25000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+    `;
+    overlay.innerHTML = `
+        <div style="text-align:center; color:white; max-width:640px;">
+            <div style="width:52px; height:52px; margin:0 auto 16px auto; border:4px solid rgba(255,255,255,0.25); border-top-color:#fff; border-radius:50%; animation: alvaos-update-spin 1s linear infinite;"></div>
+            <h2 id="update-transition-title" style="margin:0 0 8px 0; font-size:1.5rem; font-weight:700;">Update wird vorbereitet</h2>
+            <p id="update-transition-message" style="margin:0; color:rgba(255,255,255,0.85); line-height:1.4;">
+                Bitte nicht neu laden oder schließen.
+            </p>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+    return overlay;
+}
+
+function setUpdateTransitionMessage(title, message) {
+    const overlay = ensureUpdateTransitionOverlay();
+    const titleEl = overlay.querySelector('#update-transition-title');
+    const messageEl = overlay.querySelector('#update-transition-message');
+    if (titleEl) titleEl.textContent = title;
+    if (messageEl) messageEl.textContent = message;
+}
+
+function clearUpdateTransition() {
+    if (statusPoll) {
+        clearInterval(statusPoll);
+        statusPoll = null;
+    }
+    if (reconnectPoll) {
+        clearInterval(reconnectPoll);
+        reconnectPoll = null;
+    }
+    updateTransitionActive = false;
+    updateTransitionDisconnected = false;
+    document.getElementById('update-transition-overlay')?.remove();
+}
+
+function beginUpdateTransition(label) {
+    if (reconnectPoll) {
+        clearInterval(reconnectPoll);
+        reconnectPoll = null;
+    }
+    updateTransitionActive = true;
+    updateTransitionDisconnected = false;
+    setUpdateTransitionMessage(
+        'Update wird installiert',
+        `${label} gestartet. Bitte warten, Dienste werden neu gestartet.`
+    );
+}
+
+function markUpdateDisconnected() {
+    if (!updateTransitionActive || updateTransitionDisconnected) return;
+    updateTransitionDisconnected = true;
+    setUpdateTransitionMessage(
+        'Verbindung wird wiederhergestellt',
+        'Der Update-Prozess startet AlvaOS neu. Die Weboberflaeche verbindet sich gleich automatisch.'
+    );
+}
+
+function startReconnectPoll() {
+    if (!updateTransitionActive || reconnectPoll) return;
+    reconnectPoll = setInterval(async () => {
+        try {
+            const res = await fetch(`${API_BASE}/system/info`, {
+                headers: { Authorization: getToken() },
+                cache: 'no-store'
+            });
+            if (res.ok) {
+                clearInterval(reconnectPoll);
+                reconnectPoll = null;
+                setUpdateTransitionMessage('Update abgeschlossen', 'Weboberflaeche wird neu geladen...');
+                setTimeout(() => {
+                    window.location.reload();
+                }, 700);
+                return;
+            }
+            if (res.status === 401) {
+                clearInterval(reconnectPoll);
+                reconnectPoll = null;
+                setUpdateTransitionMessage('Update abgeschlossen', 'Bitte neu anmelden...');
+                setTimeout(() => {
+                    window.location.href = '/login.html';
+                }, 700);
+            }
+        } catch (err) {
+            // still restarting
+        }
+    }, 2500);
 }
 
 async function readJson(res) {
@@ -136,6 +254,7 @@ async function applyAlvaosUpdate() {
             return;
         }
         window.showToast('Update started', 'success');
+        beginUpdateTransition('AlvaOS-Update');
         setProgress(true, 25);
         pollUpdateStatus();
     } catch (err) {
@@ -269,6 +388,7 @@ async function applyOfflineUpdate(path) {
             return;
         }
         window.showToast('Offline update started', 'success');
+        beginUpdateTransition('Offline-Update');
         pollUpdateStatus();
     } catch (err) {
         window.showToast('Offline update failed', 'error');
@@ -339,21 +459,62 @@ async function saveSettings() {
 async function pollUpdateStatus() {
     if (statusPoll) clearInterval(statusPoll);
     statusPoll = setInterval(async () => {
-        const res = await apiFetch('/updates/status');
-        if (!res) return;
-        const data = await readJson(res);
-        if (!res.ok || !data) return;
-        if (data.status && data.status !== 'idle') {
-            setStatus(data.message || data.status);
-            const percent = data.progress && typeof data.progress.percent === 'number'
-                ? data.progress.percent
-                : (data.status === 'downloading' ? 35 : 60);
-            setProgress(true, percent);
-        } else if (data.status === 'idle') {
-            setStatus('Idle');
-            setProgress(false, 0);
-            clearInterval(statusPoll);
-            statusPoll = null;
+        try {
+            const res = await apiFetch('/updates/status', {
+                skipAuthRedirect: updateTransitionActive
+            });
+            if (!res) return;
+
+            if (updateTransitionActive && (res.status === 401 || res.status >= 500)) {
+                markUpdateDisconnected();
+                if (statusPoll) {
+                    clearInterval(statusPoll);
+                    statusPoll = null;
+                }
+                startReconnectPoll();
+                return;
+            }
+
+            const data = await readJson(res);
+            if (!res.ok || !data) return;
+
+            if (data.status && data.status !== 'idle') {
+                setStatus(data.message || data.status);
+                const percent = data.progress && typeof data.progress.percent === 'number'
+                    ? data.progress.percent
+                    : (data.status === 'downloading' ? 35 : 60);
+                setProgress(true, percent);
+                if (updateTransitionActive) {
+                    setUpdateTransitionMessage(
+                        'Update wird installiert',
+                        data.message || 'Update laeuft...'
+                    );
+                }
+            } else if (data.status === 'idle') {
+                setStatus('Idle');
+                setProgress(false, 0);
+                clearInterval(statusPoll);
+                statusPoll = null;
+                if (updateTransitionActive) {
+                    if (updateTransitionDisconnected) {
+                        startReconnectPoll();
+                    } else {
+                        setUpdateTransitionMessage('Update abgeschlossen', 'Weboberflaeche wird neu geladen...');
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 700);
+                    }
+                }
+            }
+        } catch (err) {
+            if (updateTransitionActive) {
+                markUpdateDisconnected();
+                if (statusPoll) {
+                    clearInterval(statusPoll);
+                    statusPoll = null;
+                }
+                startReconnectPoll();
+            }
         }
     }, 3000);
 }
