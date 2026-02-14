@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -eE
 set -o pipefail
 
 # AlvaOS Installation Script 0.4.0
@@ -13,7 +13,7 @@ NC='\033[0m'
 
 # Progress tracking
 PROGRESS=0
-TOTAL_STEPS=15
+TOTAL_STEPS=16
 
 # Log file for output redirection
 INSTALL_LOG="/tmp/alvaos-install.log"
@@ -75,6 +75,21 @@ netmask_to_prefix() {
         esac
     done
     echo "$prefix"
+}
+
+wait_for_network() {
+    local timeout_seconds="${1:-90}"
+    local elapsed=0
+
+    while [ "$elapsed" -lt "$timeout_seconds" ]; do
+        if ip route | grep -q '^default' && getent hosts deb.debian.org >/dev/null 2>&1; then
+            return 0
+        fi
+        sleep 2
+        elapsed=$((elapsed + 2))
+    done
+
+    return 1
 }
 
 # Cleanup function for error recovery
@@ -295,6 +310,12 @@ fi
     mkdir -p /mnt/boot/efi
     mount "$EFI_PART" /mnt/boot/efi >> "$INSTALL_LOG" 2>&1
 
+    update_progress "Checking installer network..."
+    if ! wait_for_network 90; then
+        echo "[$(date +%T)] Network preflight failed: no default route or DNS resolution for deb.debian.org." >> "$INSTALL_LOG"
+        exit 1
+    fi
+
     update_progress "Installing base system (debootstrap)..."
     debootstrap --arch=amd64 bookworm /mnt http://deb.debian.org/debian >> "$INSTALL_LOG" 2>&1
 
@@ -400,8 +421,10 @@ FSTAB_EOF
     mount -t proc proc /mnt/proc >> "$INSTALL_LOG" 2>&1
 
     update_progress "Installing kernel and essential packages..."
-    chroot /mnt apt-get update >> "$INSTALL_LOG" 2>&1
+    cp -L /etc/resolv.conf /mnt/etc/resolv.conf >> "$INSTALL_LOG" 2>&1 || true
+    chroot /mnt apt-get -o Acquire::Retries=3 update >> "$INSTALL_LOG" 2>&1
     chroot /mnt env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        -o Acquire::Retries=3 \
         -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" \
         linux-image-amd64 python3 python3-flask python3-flask-cors python3-psutil python3-requests python3-packaging python3-yaml \
         systemd network-manager openssh-server docker.io docker-compose btrfs-progs \
