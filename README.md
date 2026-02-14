@@ -55,8 +55,8 @@
 * **Base OS:** Debian (minimal)
 * **Storage:** Btrfs
 * **Containers:** Docker + Docker Compose
-* **Backend:** REST API (Go or Python)
-* **Frontend:** Web UI (Svelte / Vue)
+* **Backend:** REST API
+* **Frontend:** Web UI
 * **Networking:** LAN + optional WireGuard
 
 The Web UI never executes system commands directly. All actions go through a versioned API layer.
