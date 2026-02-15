@@ -58,7 +58,7 @@ Release strategy: "Iterate fast, stabilize often."
 - [ ] **Restore**: Recovery workflow from remote peer.
 
 ## v0.9.0 - Monitoring & Health
-- [ ] **Disks**: S.M.A.R.T. monitoring and basic health checks.
+- [x] **Disks**: S.M.A.R.T. monitoring and basic health checks.
 - [ ] **Smart Alerts**: Notification system for failures/warnings.
 - [ ] **Integrations**: Webhook support (Discord, Telegram, Email) for alerts.
 - [ ] **Usage and Temperature history**: Show usage and temperature history.
@@ -77,6 +77,7 @@ Release strategy: "Iterate fast, stabilize often."
 - [ ] **AlvaOS Branding**: Update AlvaOS branding in the UI.
 - [ ] **User friendly**: Make the UI more user friendly.
 - [ ] **User feedback**: Add user feedback to the UI.
+- [ ] **Custom Icons**: Replace Emojis with custom Icons.
 
 ## v1.0.0 - Stable Release 🚀
 - [ ] **Feature Complete**: All planned features implemented and stable.
