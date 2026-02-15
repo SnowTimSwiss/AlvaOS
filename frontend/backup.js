@@ -58,47 +58,61 @@ async function backupReadJson(response) {
     }
 }
 
+// ----------------------------------------------------------------------------
+// UTILS
+// ----------------------------------------------------------------------------
+
 function selectedSources() {
     return Array.from(document.querySelectorAll('.backup-source-toggle:checked'))
         .map((el) => String(el.value || '').trim())
         .filter(Boolean);
 }
 
-function setSelectOptions(selectId, selectedValue = '', includeDefault = true) {
+function setSelectOptions(selectId, selectedValue = '', items = []) {
     const selectEl = document.getElementById(selectId);
     if (!selectEl) return;
 
     const options = [];
-    if (includeDefault) {
-        options.push('<option value="">Default (auto)</option>');
-    }
+    options.push('<option value="">Default (auto)</option>');
 
-    backupTargets.forEach((target) => {
+    const usedPaths = new Set();
+
+    items.forEach((target) => {
+        if (!target.path) return;
+        usedPaths.add(target.path);
         options.push(`<option value="${backupEscapeHtml(target.path)}">${backupEscapeHtml(target.name)} (${backupEscapeHtml(target.path)})</option>`);
     });
+
+    // If selected value is custom (not in list), add it
     const selectedText = String(selectedValue || '');
-    if (selectedText && !backupTargets.some((target) => String(target.path) === selectedText)) {
+    if (selectedText && !usedPaths.has(selectedText)) {
         options.push(`<option value="${backupEscapeHtml(selectedText)}">Custom: ${backupEscapeHtml(selectedText)}</option>`);
     }
+
     selectEl.innerHTML = options.join('');
 
-    const value = selectedText;
-    if (value && Array.from(selectEl.options).some((opt) => opt.value === value)) {
-        selectEl.value = value;
-    } else if (!includeDefault && selectEl.options.length > 0) {
-        selectEl.value = selectEl.options[0].value;
+    if (selectedText) {
+        selectEl.value = selectedText;
+    } else {
+        selectEl.value = "";
     }
 }
+
+// ----------------------------------------------------------------------------
+// RENDER UI
+// ----------------------------------------------------------------------------
 
 function renderSources() {
     const container = document.getElementById('backup-sources');
     if (!container) return;
     if (!backupSources.length) {
-        container.innerHTML = '<div class="metric-sub">No backup sources found. Create pools/subvolumes first.</div>';
+        container.innerHTML = '<div class="metric-sub">No available backup sources found. Create Btrfs pools/subvolumes first.</div>';
         return;
     }
 
-    const configured = new Set((backupSettings.sources || []).map((p) => String(p)));
+    const pb = backupSettings.pool_backup || {};
+    const configured = new Set((pb.sources || []).map((p) => String(p)));
+
     container.innerHTML = backupSources.map((source) => `
         <label class="source-item">
             <input class="backup-source-toggle" type="checkbox" value="${backupEscapeHtml(source.path)}" ${configured.has(source.path) ? 'checked' : ''}>
@@ -111,11 +125,11 @@ function renderSources() {
 }
 
 function renderDataSnapshots(items) {
-    const container = document.getElementById('backup-snapshots-list');
+    const container = document.getElementById('pool-snapshots-list');
     if (!container) return;
     const snapshots = Array.isArray(items) ? items : [];
     if (!snapshots.length) {
-        container.innerHTML = '<div class="metric-sub">No data snapshots yet.</div>';
+        container.innerHTML = '<div class="metric-sub">No snapshots found.</div>';
         return;
     }
 
@@ -126,7 +140,6 @@ function renderDataSnapshots(items) {
                     <th>Created</th>
                     <th>Source</th>
                     <th>Name</th>
-                    <th>Path</th>
                     <th>Action</th>
                 </tr>
             </thead>
@@ -134,9 +147,8 @@ function renderDataSnapshots(items) {
                 ${snapshots.map((entry) => `
                     <tr>
                         <td class="mono-text">${backupEscapeHtml(backupFormatDate(entry.created_at))}</td>
-                        <td><div class="source-path">${backupEscapeHtml(entry.source_path || '-')}</div></td>
+                        <td><div class="source-path" title="${backupEscapeHtml(entry.source_path)}">${backupEscapeHtml(entry.source_path || '-')}</div></td>
                         <td>${backupEscapeHtml(entry.snapshot_name || '-')}</td>
-                        <td><div class="source-path">${backupEscapeHtml(entry.snapshot_path || '-')}</div></td>
                         <td>
                             <button class="btn-secondary backup-restore-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}" data-source-path="${backupEscapeHtml(entry.source_path || '')}">
                                 Restore
@@ -150,13 +162,14 @@ function renderDataSnapshots(items) {
 }
 
 function renderSystemSnapshots(items) {
-    const container = document.getElementById('backup-system-snapshots-list');
+    const container = document.getElementById('system-snapshots-list');
     if (!container) return;
     const snapshots = Array.isArray(items) ? items : [];
     if (!snapshots.length) {
-        container.innerHTML = '<div class="metric-sub">No system snapshots yet.</div>';
+        container.innerHTML = '<div class="metric-sub">No system snapshots found.</div>';
         return;
     }
+
     container.innerHTML = `
         <table class="snapshots-table">
             <thead>
@@ -164,7 +177,7 @@ function renderSystemSnapshots(items) {
                     <th>Created</th>
                     <th>Name</th>
                     <th>Path</th>
-                    <th>Rollback</th>
+                    <th>Action</th>
                 </tr>
             </thead>
             <tbody>
@@ -186,194 +199,167 @@ function renderSystemSnapshots(items) {
 }
 
 function updateStatusUi() {
-    const lastRunEl = document.getElementById('backup-last-run');
-    const nextRunEl = document.getElementById('backup-next-run');
-    const systemStateEl = document.getElementById('backup-system-state');
-    const systemLastEl = document.getElementById('backup-system-last-snapshot');
-    const systemPendingEl = document.getElementById('backup-system-pending');
+    // Pool Status
+    document.getElementById('pool-last-run').textContent = backupFormatDate(backupStatus.pool_last_run_at);
+    document.getElementById('pool-next-run').textContent = backupFormatDate(backupStatus.pool_next_run_at);
+    document.getElementById('pool-last-status').textContent = backupStatus.pool_last_status || 'idle';
 
-    if (lastRunEl) lastRunEl.textContent = `Last run: ${backupFormatDate(backupStatus.last_run_at)}`;
-    if (nextRunEl) nextRunEl.textContent = `Next run: ${backupFormatDate(backupStatus.next_run_at)}`;
-    if (systemLastEl) systemLastEl.textContent = `Last system snapshot: ${backupFormatDate(backupStatus.system_last_snapshot_at)}`;
-    if (systemPendingEl) {
-        systemPendingEl.textContent = backupStatus.system_pending_reboot
-            ? `Pending rollback after reboot: ${backupStatus.system_pending_snapshot_path || 'unknown'}`
-            : 'Pending rollback: none';
+    const poolError = document.getElementById('pool-last-error');
+    if (backupStatus.pool_last_error) {
+        poolError.textContent = `Error: ${backupStatus.pool_last_error}`;
+        poolError.style.display = 'block';
+    } else {
+        poolError.style.display = 'none';
     }
-    if (systemStateEl) {
-        if (backupSystemState.supported === false) {
-            systemStateEl.textContent = `System snapshot unsupported: ${backupSystemState.reason || 'unknown reason'}`;
-        } else {
-            systemStateEl.textContent = `Root subvol: ${backupSystemState.root_subvolume_id ?? '-'} | Default: ${backupSystemState.default_subvolume_id ?? '-'}`;
-        }
+
+    // System Status
+    document.getElementById('system-last-run').textContent = backupFormatDate(backupStatus.system_last_run_at);
+    document.getElementById('system-next-run').textContent = backupFormatDate(backupStatus.system_next_run_at);
+    document.getElementById('system-last-status').textContent = backupStatus.system_last_status || 'idle';
+
+    const sysError = document.getElementById('system-last-error');
+    if (backupStatus.system_last_error) {
+        sysError.textContent = `Error: ${backupStatus.system_last_error}`;
+        sysError.style.display = 'block';
+    } else {
+        sysError.style.display = 'none';
+    }
+
+    // System Info
+    const sysSupport = document.getElementById('system-support-info');
+    if (backupSystemState.supported === false) {
+        sysSupport.textContent = `Unsupported (${backupSystemState.reason || 'unknown'})`;
+        sysSupport.style.color = 'var(--error)';
+    } else {
+        sysSupport.textContent = `Supported (Root Subvol: ${backupSystemState.root_subvolume_id})`;
+        sysSupport.style.color = 'var(--success)';
+    }
+
+    const sysPending = document.getElementById('system-pending-rollback');
+    if (backupStatus.system_pending_reboot) {
+        sysPending.textContent = `YES - Will rollback to ${backupStatus.system_pending_snapshot_path} on reboot`;
+        sysPending.style.color = 'var(--warning)';
+    } else {
+        sysPending.textContent = 'None';
+        sysPending.style.color = 'var(--text-secondary)';
     }
 }
 
 function fillSettingsUi() {
-    const autoEnabled = document.getElementById('backup-auto-enabled');
-    const interval = document.getElementById('backup-interval');
-    const keepLast = document.getElementById('backup-keep-last');
-    const keepSystemLast = document.getElementById('backup-keep-system-last');
-    const includeSystemSchedule = document.getElementById('backup-include-system-schedule');
+    // Pool Settings
+    const pb = backupSettings.pool_backup || {};
+    document.getElementById('pool-enabled').checked = !!pb.enabled;
+    document.getElementById('pool-interval').value = String(pb.interval_minutes || 1440);
+    document.getElementById('pool-keep-last').value = String(pb.keep_last || 30);
 
-    if (autoEnabled) autoEnabled.checked = !!backupSettings.auto_enabled;
-    if (interval) interval.value = String(backupSettings.interval_minutes || 1440);
-    if (keepLast) keepLast.value = String(backupSettings.keep_last || 30);
-    if (keepSystemLast) keepSystemLast.value = String(backupSettings.keep_system_last || 10);
-    if (includeSystemSchedule) includeSystemSchedule.checked = !!backupSettings.include_system_in_schedule;
+    // System Settings
+    const sb = backupSettings.system_backup || {};
+    document.getElementById('system-enabled').checked = !!sb.enabled;
+    document.getElementById('system-interval').value = String(sb.interval_minutes || 10080);
+    document.getElementById('system-keep-last').value = String(sb.keep_last || 10);
 }
 
-function initTabs() {
-    const buttons = document.querySelectorAll('.tab-btn');
-    buttons.forEach((btn) => {
-        btn.addEventListener('click', () => {
-            buttons.forEach((b) => b.classList.remove('active'));
-            btn.classList.add('active');
-            const tab = btn.dataset.tab;
-            document.querySelectorAll('.tab-panel').forEach((panel) => {
-                panel.classList.toggle('active', panel.id === `tab-${tab}`);
-            });
-        });
-    });
-}
+// ----------------------------------------------------------------------------
+// ACTIONS
+// ----------------------------------------------------------------------------
 
-async function loadBackupSettings() {
-    const response = await backupApi('/backup/settings');
-    const data = await backupReadJson(response);
-    if (!response || !response.ok || !data) {
-        backupNotify(data?.error || 'Failed to load backup settings', 'error');
-        return;
-    }
-    backupSettings = data.settings || {};
-    backupStatus = data.status || {};
-    fillSettingsUi();
-    updateStatusUi();
-}
-
-async function loadBackupStatus() {
-    const response = await backupApi('/backup/status');
-    const data = await backupReadJson(response);
-    if (!response || !response.ok || !data) return;
-    backupStatus = data.status || backupStatus || {};
-    backupSystemState = data.system || backupSystemState || {};
-    updateStatusUi();
-}
-
-async function loadBackupSources() {
-    const response = await backupApi('/backup/sources');
-    const data = await backupReadJson(response);
-    if (!response || !response.ok || !data) {
-        backupNotify(data?.error || 'Failed to load backup sources', 'error');
-        return;
-    }
-    backupSources = data.sources || [];
-    renderSources();
-}
-
-async function loadBackupTargets() {
-    const response = await backupApi('/backup/targets');
-    const data = await backupReadJson(response);
-    if (!response || !response.ok || !data) {
-        backupNotify(data?.error || 'Failed to load backup targets', 'error');
-        return;
-    }
-    backupTargets = data.targets || [];
-    setSelectOptions('backup-target-path', backupSettings.snapshot_target_path || '');
-    setSelectOptions('backup-system-target-path', backupSettings.system_snapshot_target_path || '', false);
-}
-
-async function loadDataSnapshots() {
-    const response = await backupApi('/backup/snapshots');
-    const data = await backupReadJson(response);
-    if (!response || !response.ok || !data) {
-        backupNotify(data?.error || 'Failed to load snapshots', 'error');
-        return;
-    }
-    renderDataSnapshots(data.snapshots || []);
-}
-
-async function loadSystemSnapshots() {
-    const response = await backupApi('/backup/system/snapshots');
-    const data = await backupReadJson(response);
-    if (!response || !response.ok || !data) {
-        backupNotify(data?.error || 'Failed to load system snapshots', 'error');
-        return;
-    }
-    renderSystemSnapshots(data.snapshots || []);
-}
-
-async function saveBackupSettings() {
+async function savePoolSettings() {
     const payload = {
-        auto_enabled: document.getElementById('backup-auto-enabled')?.checked || false,
-        interval_minutes: Number(document.getElementById('backup-interval')?.value || 1440),
-        keep_last: Number(document.getElementById('backup-keep-last')?.value || 30),
-        keep_system_last: Number(document.getElementById('backup-keep-system-last')?.value || 10),
-        include_system_in_schedule: document.getElementById('backup-include-system-schedule')?.checked || false,
-        snapshot_target_path: document.getElementById('backup-target-path')?.value || '',
-        system_snapshot_target_path: document.getElementById('backup-system-target-path')?.value || '',
-        sources: selectedSources()
+        pool_backup: {
+            enabled: document.getElementById('pool-enabled').checked,
+            interval_minutes: Number(document.getElementById('pool-interval').value || 1440),
+            keep_last: Number(document.getElementById('pool-keep-last').value || 30),
+            target_path: document.getElementById('pool-target-path').value || '',
+            sources: selectedSources()
+        }
     };
 
     const response = await backupApi('/backup/settings', { method: 'POST', json: payload });
     const data = await backupReadJson(response);
     if (!response || !response.ok || !data) {
-        backupNotify(data?.error || 'Failed to save settings', 'error');
+        backupNotify(data?.error || 'Failed to save pool settings', 'error');
         return;
     }
-
     backupSettings = data.settings || backupSettings;
     backupStatus = data.status || backupStatus;
     fillSettingsUi();
     updateStatusUi();
-    backupNotify('Backup settings saved', 'success');
+    backupNotify('Pool backup settings saved', 'success');
 }
 
-async function runBackupNow() {
+async function saveSystemSettings() {
+    const payload = {
+        system_backup: {
+            enabled: document.getElementById('system-enabled').checked,
+            interval_minutes: Number(document.getElementById('system-interval').value || 10080),
+            keep_last: Number(document.getElementById('system-keep-last').value || 10),
+            target_path: document.getElementById('system-target-path').value || ''
+        }
+    };
+    // Note: sources for system are implicit (root)
+
+    const response = await backupApi('/backup/settings', { method: 'POST', json: payload });
+    const data = await backupReadJson(response);
+    if (!response || !response.ok || !data) {
+        backupNotify(data?.error || 'Failed to save system settings', 'error');
+        return;
+    }
+    backupSettings = data.settings || backupSettings;
+    backupStatus = data.status || backupStatus;
+    fillSettingsUi();
+    updateStatusUi();
+    backupNotify('System backup settings saved', 'success');
+}
+
+async function runPoolBackupNow() {
     const sources = selectedSources();
-    const includeSystem = !!(document.getElementById('backup-include-system-schedule')?.checked);
-    const targetPath = document.getElementById('backup-target-path')?.value || '';
-    if (!sources.length && !includeSystem) {
-        backupNotify('Select at least one source or include system snapshots.', 'warning');
+    if (!sources.length) {
+        backupNotify('Select at least one source first.', 'warning');
         return;
     }
 
+    backupNotify('Starting pool backup...', 'info');
     const response = await backupApi('/backup/run', {
         method: 'POST',
         json: {
-            sources,
-            include_system: includeSystem,
-            target_path: targetPath || undefined
+            backup_type: 'pool',
+            sources: sources,
+            target_path: document.getElementById('pool-target-path').value || undefined
         }
     });
+
     const data = await backupReadJson(response);
     if (!response || !response.ok || !data) {
-        backupNotify(data?.error || 'Backup run failed', 'error');
+        backupNotify(data?.error || 'Backup failed', 'error');
         return;
     }
 
     const createdCount = Array.isArray(data.created) ? data.created.length : 0;
     const failedCount = Array.isArray(data.failed) ? data.failed.length : 0;
-    if (failedCount > 0) backupNotify(`Backup completed with issues (${createdCount} created, ${failedCount} failed)`, 'warning');
-    else backupNotify(`Snapshot run completed (${createdCount} created)`, 'success');
+    if (failedCount > 0) backupNotify(`Backup finished with errors: ${failedCount} failed`, 'warning');
+    else backupNotify(`Pool backup completed (${createdCount} snapshots created)`, 'success');
 
-    await Promise.all([loadBackupSettings(), loadDataSnapshots(), loadSystemSnapshots(), loadBackupStatus()]);
+    await Promise.all([loadBackupStatus(), loadDataSnapshots()]);
 }
 
-async function createSystemSnapshot() {
-    const targetPath = document.getElementById('backup-system-target-path')?.value || '';
-    const response = await backupApi('/backup/system/snapshot', {
+async function runSystemBackupNow() {
+    backupNotify('Starting system backup...', 'info');
+    const response = await backupApi('/backup/run', {
         method: 'POST',
         json: {
-            target_path: targetPath || undefined
+            backup_type: 'system',
+            target_path: document.getElementById('system-target-path').value || undefined
         }
     });
+
     const data = await backupReadJson(response);
     if (!response || !response.ok || !data) {
-        backupNotify(data?.error || 'Failed to create full system snapshot', 'error');
+        backupNotify(data?.error || 'System backup failed', 'error');
         return;
     }
-    backupNotify('Full system snapshot created', 'success');
-    await Promise.all([loadSystemSnapshots(), loadBackupStatus(), loadBackupSettings()]);
+
+    backupNotify('System backup completed successfully', 'success');
+    await Promise.all([loadBackupStatus(), loadSystemSnapshots()]);
 }
 
 async function restoreDataSnapshot(snapshotPath, sourcePath) {
@@ -381,6 +367,7 @@ async function restoreDataSnapshot(snapshotPath, sourcePath) {
     const ok = await window.showConfirm('Restore this snapshot?\nCurrent data will be replaced and moved to a pre-restore backup path.');
     if (!ok) return;
 
+    backupNotify('Restoring snapshot...', 'info');
     const response = await backupApi('/backup/restore', {
         method: 'POST',
         json: { snapshot_path: snapshotPath, source_path: sourcePath || undefined }
@@ -412,21 +399,128 @@ async function prepareSystemRollback(snapshotPath) {
     await loadBackupStatus();
 }
 
-function initBackupHandlers() {
-    document.getElementById('backup-sources-refresh-btn')?.addEventListener('click', loadBackupSources);
-    document.getElementById('backup-snapshots-refresh-btn')?.addEventListener('click', loadDataSnapshots);
-    document.getElementById('backup-system-refresh-btn')?.addEventListener('click', loadSystemSnapshots);
-    document.getElementById('backup-save-settings-btn')?.addEventListener('click', saveBackupSettings);
-    document.getElementById('backup-run-btn')?.addEventListener('click', runBackupNow);
-    document.getElementById('backup-system-create-btn')?.addEventListener('click', createSystemSnapshot);
+// ----------------------------------------------------------------------------
+// LOADERS
+// ----------------------------------------------------------------------------
 
-    document.getElementById('backup-snapshots-list')?.addEventListener('click', (event) => {
+async function loadBackupSettings() {
+    const response = await backupApi('/backup/settings');
+    const data = await backupReadJson(response);
+    if (!response || !response.ok || !data) {
+        backupNotify('Failed to load settings', 'error');
+        return;
+    }
+    backupSettings = data.settings || {};
+    backupStatus = data.status || {};
+    fillSettingsUi();
+    updateStatusUi();
+
+    // Set target options after loading settings
+    // We assume targets are loaded separately, but we can try to set values now if targets exist
+    // Actually we await loadBackupTargets in init
+}
+
+async function loadBackupStatus() {
+    const response = await backupApi('/backup/status');
+    const data = await backupReadJson(response);
+    if (!response || !response.ok || !data) return;
+    backupStatus = data.status || backupStatus || {};
+    backupSystemState = data.system || backupSystemState || {};
+    updateStatusUi();
+}
+
+async function loadBackupSources() {
+    const response = await backupApi('/backup/sources');
+    const data = await backupReadJson(response);
+    if (!response || !response.ok || !data) {
+        backupNotify('Failed to load backup sources', 'error');
+        return;
+    }
+    backupSources = data.sources || [];
+    renderSources();
+}
+
+async function loadBackupTargets() {
+    const response = await backupApi('/backup/targets');
+    const data = await backupReadJson(response);
+    if (!response || !response.ok || !data) {
+        backupNotify('Failed to load backup targets', 'error');
+        return;
+    }
+    backupTargets = data.targets || [];
+
+    // Filter targets for pool vs system?
+    // Generally all targets are valid for pool.
+    // For system, only those on root filesystem are valid, but backend logic enforces it.
+    // We can show all for now.
+
+    // Pool Target Select
+    const pb = backupSettings.pool_backup || {};
+    setSelectOptions('pool-target-path', pb.target_path || '', backupTargets);
+
+    // System Target Select
+    const sb = backupSettings.system_backup || {};
+    setSelectOptions('system-target-path', sb.target_path || '', backupTargets);
+}
+
+async function loadDataSnapshots() {
+    const response = await backupApi('/backup/snapshots');
+    const data = await backupReadJson(response);
+    if (!response || !response.ok || !data) {
+        backupNotify('Failed to load snapshots', 'error');
+        return;
+    }
+    renderDataSnapshots(data.snapshots || []);
+}
+
+async function loadSystemSnapshots() {
+    const response = await backupApi('/backup/system/snapshots');
+    const data = await backupReadJson(response);
+    if (!response || !response.ok || !data) {
+        backupNotify('Failed to load system snapshots', 'error');
+        return;
+    }
+    renderSystemSnapshots(data.snapshots || []);
+}
+
+// ----------------------------------------------------------------------------
+// INIT
+// ----------------------------------------------------------------------------
+
+function initTabs() {
+    const buttons = document.querySelectorAll('.tab-btn');
+    buttons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+            buttons.forEach((b) => b.classList.remove('active'));
+            btn.classList.add('active');
+            const tab = btn.dataset.tab;
+            document.querySelectorAll('.tab-panel').forEach((panel) => {
+                panel.classList.toggle('active', panel.id === `tab-${tab}`);
+            });
+        });
+    });
+}
+
+function initBackupHandlers() {
+    // Pool Handlers
+    document.getElementById('pool-sources-refresh-btn')?.addEventListener('click', loadBackupSources);
+    document.getElementById('pool-snapshots-refresh-btn')?.addEventListener('click', loadDataSnapshots);
+    document.getElementById('pool-save-settings-btn')?.addEventListener('click', savePoolSettings);
+    document.getElementById('pool-run-btn')?.addEventListener('click', runPoolBackupNow);
+
+    // System Handlers
+    document.getElementById('system-run-btn')?.addEventListener('click', runSystemBackupNow);
+    document.getElementById('system-save-settings-btn')?.addEventListener('click', saveSystemSettings);
+    document.getElementById('system-snapshots-refresh-btn')?.addEventListener('click', loadSystemSnapshots);
+
+    // Delegate Event Listeners for Lists
+    document.getElementById('pool-snapshots-list')?.addEventListener('click', (event) => {
         const btn = event.target.closest('.backup-restore-btn');
         if (!btn) return;
         restoreDataSnapshot(btn.dataset.snapshotPath || '', btn.dataset.sourcePath || '');
     });
 
-    document.getElementById('backup-system-snapshots-list')?.addEventListener('click', (event) => {
+    document.getElementById('system-snapshots-list')?.addEventListener('click', (event) => {
         const btn = event.target.closest('.backup-system-rollback-btn');
         if (!btn) return;
         prepareSystemRollback(btn.dataset.snapshotPath || '');
@@ -436,12 +530,15 @@ function initBackupHandlers() {
 async function initBackupPage() {
     initTabs();
     initBackupHandlers();
-    await loadBackupSettings();
-    await loadBackupSources();
-    await loadBackupTargets();
-    await loadDataSnapshots();
-    await loadSystemSnapshots();
-    await loadBackupStatus();
+
+    await loadBackupSettings(); // Load first to have settings for checks
+    await Promise.all([
+        loadBackupSources(),
+        loadBackupTargets(), // Relies on settings for default selection
+        loadDataSnapshots(),
+        loadSystemSnapshots(),
+        loadBackupStatus()
+    ]);
 }
 
 if (document.readyState === 'loading') {

@@ -77,6 +77,18 @@
         .snapshots-table tr:last-child td {
             border-bottom: none;
         }
+        
+        .status-row {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 15px;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+        
+        .status-item strong {
+            color: var(--text-primary);
+        }
     </style>
 </head>
 
@@ -119,121 +131,163 @@
             <div style="margin-bottom: 24px;">
                 <h1 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 4px;">Local Backup</h1>
                 <p style="color: var(--text-secondary); font-size: 0.95rem;">
-                    Create and restore local Btrfs snapshots with automatic scheduling.
+                    Manage data and system backups.
                 </p>
             </div>
 
             <div class="tab-bar">
-                <button class="tab-btn active" data-tab="snapshots">Snapshots</button>
-                <button class="tab-btn" data-tab="schedule">Schedule</button>
+                <button class="tab-btn active" data-tab="pool-backup">Pool Backup</button>
+                <button class="tab-btn" data-tab="system-backup">System Backup</button>
             </div>
 
-            <div class="tab-panel active" id="tab-snapshots">
+            <!-- POOL BACKUP TAB -->
+            <div class="tab-panel active" id="tab-pool-backup">
+                
+                <!-- Status & Manual Run -->
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title">Snapshot Sources</div>
-                        <button id="backup-sources-refresh-btn" class="btn-secondary">Refresh Sources</button>
+                        <div class="card-title">Pool Backup Status</div>
+                        <button id="pool-run-btn" class="btn-primary">Backup Now</button>
                     </div>
+                    <div class="status-row">
+                        <div class="status-item">Last run: <strong id="pool-last-run">-</strong></div>
+                        <div class="status-item">Next run: <strong id="pool-next-run">-</strong></div>
+                        <div class="status-item">Status: <strong id="pool-last-status">-</strong></div>
+                    </div>
+                    <div id="pool-last-error" class="metric-sub" style="color: var(--error); display: none;"></div>
+                </div>
+
+                <!-- Sources -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Backup Sources</div>
+                        <button id="pool-sources-refresh-btn" class="btn-secondary">Refresh</button>
+                    </div>
+                    <p class="metric-sub" style="margin-bottom: 10px;">Select pools or subvolumes to include in the backup.</p>
                     <div id="backup-sources" class="sources-grid">
                         <div class="metric-sub">Loading sources...</div>
                     </div>
-                    <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
-                        <button id="backup-run-btn" class="btn-primary">Create Snapshot Now</button>
-                        <button id="backup-snapshots-refresh-btn" class="btn-secondary">Refresh Snapshot List</button>
-                    </div>
                 </div>
 
+                <!-- Settings -->
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title">Snapshots</div>
-                        <div class="mono-text" id="backup-last-run">Last run: -</div>
+                        <div class="card-title">Schedule Settings</div>
+                        <button id="pool-save-settings-btn" class="btn-primary">Save Settings</button>
                     </div>
-                    <div id="backup-snapshots-list">
-                        <div class="metric-sub">Loading snapshots...</div>
-                    </div>
-                </div>
-
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">Full System Snapshots</div>
-                        <div class="mono-text" id="backup-system-state">Checking system support...</div>
-                    </div>
-                    <p class="metric-sub" style="margin-bottom: 10px;">
-                        Full system rollback is prepared by switching the default Btrfs subvolume. Reboot is required.
-                    </p>
-                    <div style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap;">
-                        <button id="backup-system-create-btn" class="btn-primary">Create Full System Snapshot</button>
-                        <button id="backup-system-refresh-btn" class="btn-secondary">Refresh System Snapshots</button>
-                    </div>
-                    <div class="mono-text" id="backup-system-last-snapshot">Last system snapshot: -</div>
-                    <div class="mono-text" id="backup-system-pending" style="margin-top: 6px;">Pending rollback: none</div>
-                    <div id="backup-system-snapshots-list" style="margin-top: 12px;">
-                        <div class="metric-sub">Loading system snapshots...</div>
-                    </div>
-                    <p class="metric-sub" style="margin-top:10px;">
-                        Installer rollback: Boot installer and choose "Rollback from Snapshot" if the running system cannot boot.
-                    </p>
-                </div>
-            </div>
-
-            <div class="tab-panel" id="tab-schedule">
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">Automatic Snapshot Schedule</div>
-                        <div class="mono-text" id="backup-next-run">Next run: -</div>
-                    </div>
-
+                    
                     <div class="setting-group">
-                        <label class="setting-label">Enable Automatic Snapshots</label>
+                        <label class="setting-label">Enable Scheduled Backups</label>
                         <label class="toggle">
-                            <input type="checkbox" id="backup-auto-enabled">
+                            <input type="checkbox" id="pool-enabled">
                             <span class="toggle-slider"></span>
                         </label>
                     </div>
 
                     <div class="setting-group">
-                        <label class="setting-label" for="backup-interval">Interval</label>
-                        <select id="backup-interval" class="select-input">
+                        <label class="setting-label" for="pool-interval">Interval</label>
+                        <select id="pool-interval" class="select-input">
                             <option value="60">Every hour</option>
                             <option value="360">Every 6 hours</option>
+                            <option value="720">Every 12 hours</option>
                             <option value="1440">Daily</option>
                             <option value="10080">Weekly</option>
                         </select>
                     </div>
 
                     <div class="setting-group">
-                        <label class="setting-label" for="backup-keep-last">Retention (Keep last snapshots per source)</label>
-                        <input id="backup-keep-last" type="number" min="1" max="200" value="30" class="select-input">
+                        <label class="setting-label" for="pool-keep-last">Retention (Keep last)</label>
+                        <input id="pool-keep-last" type="number" min="1" max="200" value="30" class="select-input">
                     </div>
 
                     <div class="setting-group">
-                        <label class="setting-label" for="backup-keep-system-last">System Retention (Keep full system snapshots)</label>
-                        <input id="backup-keep-system-last" type="number" min="1" max="100" value="10" class="select-input">
+                        <label class="setting-label" for="pool-target-path">Target Location</label>
+                        <select id="pool-target-path" class="select-input"></select>
                     </div>
+                </div>
 
-                    <div class="setting-group">
-                        <label class="setting-label" for="backup-target-path">Snapshot Target (Data)</label>
-                        <select id="backup-target-path" class="select-input"></select>
-                        <p class="metric-sub">Where app/data snapshots are stored.</p>
+                <!-- Snapshots List -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Existing Snapshots</div>
+                        <button id="pool-snapshots-refresh-btn" class="btn-secondary">Refresh List</button>
                     </div>
-
-                    <div class="setting-group">
-                        <label class="setting-label" for="backup-system-target-path">Snapshot Target (System)</label>
-                        <select id="backup-system-target-path" class="select-input"></select>
-                        <p class="metric-sub">Must be on root Btrfs to allow one-click rollback.</p>
+                    <div id="pool-snapshots-list">
+                        <div class="metric-sub">Loading snapshots...</div>
                     </div>
+                </div>
+            </div>
 
+            <!-- SYSTEM BACKUP TAB -->
+            <div class="tab-panel" id="tab-system-backup">
+                
+                <!-- Status & Manual Run -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">System Backup Status</div>
+                        <button id="system-run-btn" class="btn-primary">Backup Now</button>
+                    </div>
+                    <div class="status-row">
+                        <div class="status-item">Last run: <strong id="system-last-run">-</strong></div>
+                        <div class="status-item">Next run: <strong id="system-next-run">-</strong></div>
+                         <div class="status-item">Status: <strong id="system-last-status">-</strong></div>
+                    </div>
+                    <div id="system-last-error" class="metric-sub" style="color: var(--error); display: none;"></div>
+                    
+                    <div style="margin-top: 10px; padding: 10px; background: var(--bg-body); border-radius: 4px;">
+                        <div class="metric-sub"><strong>System Support:</strong> <span id="system-support-info">Checking...</span></div>
+                        <div class="metric-sub" style="margin-top:5px;"><strong>Pending Rollback:</strong> <span id="system-pending-rollback">None</span></div>
+                    </div>
+                </div>
+
+                <!-- Settings -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Schedule Settings</div>
+                        <button id="system-save-settings-btn" class="btn-primary">Save Settings</button>
+                    </div>
+                    
                     <div class="setting-group">
-                        <label class="setting-label">Include Full System Snapshot in Schedule</label>
+                        <label class="setting-label">Enable Scheduled System Backups</label>
                         <label class="toggle">
-                            <input type="checkbox" id="backup-include-system-schedule">
+                            <input type="checkbox" id="system-enabled">
                             <span class="toggle-slider"></span>
                         </label>
                     </div>
 
                     <div class="setting-group">
-                        <button id="backup-save-settings-btn" class="btn-primary">Save Backup Settings</button>
+                        <label class="setting-label" for="system-interval">Interval</label>
+                        <select id="system-interval" class="select-input">
+                            <option value="1440">Daily</option>
+                            <option value="10080">Weekly</option>
+                            <option value="43200">Monthly</option>
+                        </select>
                     </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label" for="system-keep-last">Retention (Keep last)</label>
+                        <input id="system-keep-last" type="number" min="1" max="100" value="10" class="select-input">
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label" for="system-target-path">Target Location (Root Subvolume)</label>
+                        <select id="system-target-path" class="select-input"></select>
+                        <p class="metric-sub">System snapshots must reside on the same Btrfs filesystem as Root.</p>
+                    </div>
+                </div>
+
+                <!-- Snapshots List -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">System Snapshots</div>
+                        <button id="system-snapshots-refresh-btn" class="btn-secondary">Refresh List</button>
+                    </div>
+                    <div id="system-snapshots-list">
+                        <div class="metric-sub">Loading snapshots...</div>
+                    </div>
+                    <p class="metric-sub" style="margin-top:10px;">
+                        Note: Restoring a system snapshot requires a reboot. You can also rollback from the AlvaOS Installer via USB.
+                    </p>
                 </div>
             </div>
 

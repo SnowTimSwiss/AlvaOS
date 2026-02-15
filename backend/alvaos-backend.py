@@ -26,6 +26,61 @@ from docker_manager import DockerManager
 from app_store import AppStore
 from backup_manager import BackupManager
 
+
+def is_secure_system_device(device_name):
+    """
+    Check if a device (e.g. 'sda', 'nvme0n1') holds the root filesystem.
+    This uses /proc/mounts to find the root device and checks if the target
+    device is the same or a parent of the root device.
+    """
+    if platform.system() != 'Linux':
+        return False # Mock environment safety
+
+    try:
+        # 1. Provide a direct lookup for common root partition names if they match
+        # standardized collected info, but rely on /proc/mounts for truth.
+        root_device = None
+        with open('/proc/mounts', 'r') as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 2 and parts[1] == '/':
+                    root_device = parts[0] # e.g. /dev/sda2 or /dev/nvme0n1p3
+                    break
+        
+        if not root_device:
+            return False
+
+        # Resolve symlinks (e.g. /dev/root -> /dev/sda1)
+        if os.path.exists(root_device):
+            root_device = os.path.realpath(root_device)
+
+        # Check if the target device name is part of the root device path
+        # e.g. target='sda', root='/dev/sda2' -> match
+        # e.g. target='nvme0n1', root='/dev/nvme0n1p3' -> match
+        base_root = os.path.basename(root_device)
+        
+        # Exact match
+        if base_root == device_name:
+            return True
+            
+        # Partition match (startswith check is usually enough for sda1 vs sda, but be careful with sdaa vs sda)
+        # For standard sdX: sda is prefix of sda1. sda is NOT prefix of sdb.
+        # For nvme: nvme0n1 is prefix of nvme0n1p1.
+        if base_root.startswith(device_name):
+            # Verify it's actually a partition convention
+            suffix = base_root[len(device_name):]
+            # sda1 -> suffix '1' (digit)
+            # nvme0n1p1 -> suffix 'p1'
+            if suffix and (suffix[0].isdigit() or suffix.startswith('p')):
+                 return True
+                 
+        return False
+
+    except Exception as e:
+        print(f"Error checking system device: {e}")
+        # Fail safe: if we can't determine, assume it MIGHT be system to be safe? 
+        # Or returns false and rely on lsblk? Let's return False to avoid blocking everything if this fails.
+        return False
 # System Commands Paths for Sudo (must match sudoers configuration in install-system.sh)
 CMD = {
     'GETENT': '/usr/bin/getent',
@@ -1390,6 +1445,11 @@ def get_disks():
                                 is_system_disk = True
                                 break
                         
+                        # Strategy 2: Secure check via /proc/mounts logic
+                        if not is_system_disk and platform.system() == 'Linux':
+                            if is_secure_system_device(device['name']):
+                                is_system_disk = True
+                        
                         # Get SMART data
                         smart_status = 'unknown'
                         temp = None
@@ -1559,6 +1619,10 @@ def wipe_disk(disk_name):
     """Wipe disk signatures and partition table to make it available for pools"""
     if not disk_name.isalnum() and not all(c in '._-' for c in disk_name if not c.isalnum()):
         return jsonify({'error': 'Invalid disk name'}), 400
+    
+    # SYSTEM DISK PROTECTION
+    if is_secure_system_device(disk_name):
+        return jsonify({'error': 'Operation denied: Cannot wipe the system disk.'}), 403
         
     try:
         if platform.system() == 'Linux':
@@ -1781,6 +1845,13 @@ def manage_pools():
         
         if raid_level == 'raid10' and len(devices) < 4:
             return jsonify({'error': 'RAID10 requires at least 4 devices'}), 400
+        
+        # SYSTEM DISK PROTECTION
+        for dev_path in devices:
+            # dev_path is like /dev/sda
+            dev_name = os.path.basename(dev_path)
+            if is_secure_system_device(dev_name):
+                return jsonify({'error': f'Operation denied: Device {dev_name} is the system disk.'}), 403
         
         try:
             if platform.system() == 'Linux':
@@ -2016,6 +2087,12 @@ def expand_pool(pool_id):
     
     if not devices:
         return jsonify({'error': 'No devices provided'}), 400
+    
+    # SYSTEM DISK PROTECTION
+    for dev_path in devices:
+        dev_name = os.path.basename(dev_path)
+        if is_secure_system_device(dev_name):
+            return jsonify({'error': f'Operation denied: Device {dev_name} is the system disk.'}), 403
         
     pools_state = load_pools_state()
     if pool_id not in pools_state:
@@ -2623,13 +2700,14 @@ def backup_run_now():
         return jsonify({'error': 'Backup manager not initialized'}), 500
 
     data = request.get_json() or {}
+    backup_type = data.get('backup_type', 'pool')
     sources = data.get('sources')
-    include_system = bool(data.get('include_system', False))
     target_path = (data.get('target_path') or '').strip() or None
+    
     result = backup_manager.run_backup_now(
+        backup_type=backup_type,
         sources=sources,
         trigger='manual',
-        include_system=include_system,
         target_path=target_path
     )
     if not result.get('success') and not result.get('created'):

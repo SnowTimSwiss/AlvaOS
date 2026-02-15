@@ -22,21 +22,34 @@ CMD = {
 }
 
 DEFAULT_SETTINGS = {
-    "auto_enabled": False,
-    "interval_minutes": 1440,
-    "sources": [],
-    "keep_last": 30,
-    "snapshot_target_path": "",
-    "include_system_in_schedule": False,
-    "keep_system_last": 10,
-    "system_snapshot_target_path": "/var/lib/alvaos/system-snapshots",
+    # Pool Backup Settings
+    "pool_backup": {
+        "enabled": False,
+        "interval_minutes": 1440,
+        "keep_last": 30,
+        "sources": [],
+        "target_path": "",
+    },
+    # System Backup Settings
+    "system_backup": {
+        "enabled": False,
+        "interval_minutes": 10080, # Weekly
+        "keep_last": 10,
+        "target_path": "/var/lib/alvaos/system-snapshots",
+    }
 }
 
 DEFAULT_STATUS = {
-    "last_run_at": None,
-    "next_run_at": None,
-    "last_status": "idle",
-    "last_error": "",
+    "pool_last_run_at": None,
+    "pool_next_run_at": None,
+    "pool_last_status": "idle",
+    "pool_last_error": "",
+    
+    "system_last_run_at": None,
+    "system_next_run_at": None,
+    "system_last_status": "idle",
+    "system_last_error": "",
+    
     "system_last_snapshot_at": None,
     "system_last_rollback_at": None,
     "system_pending_reboot": False,
@@ -247,39 +260,55 @@ class BackupManager:
         return targets
 
     def get_settings(self) -> Dict:
-        settings = self._load_json(self.settings_file, DEFAULT_SETTINGS.copy())
+        # Load raw settings without defaults first to allow migration detection
+        settings = self._load_json(self.settings_file, {})
         if not isinstance(settings, dict):
             settings = {}
-        merged = DEFAULT_SETTINGS.copy()
-        merged.update(settings)
-        return self._normalize_settings(merged)
+        return self._normalize_settings(settings)
 
     def _normalize_settings(self, payload: Dict) -> Dict:
         merged = DEFAULT_SETTINGS.copy()
-        merged.update(payload or {})
+        
+        # Migration from old flat structure if needed
+        # Check if payload has old keys and missing new keys
+        if "pool_backup" not in payload and "auto_enabled" in payload:
+            # Migrate old pool settings
+            merged["pool_backup"] = {
+                "enabled": bool(payload.get("auto_enabled")),
+                "interval_minutes": int(payload.get("interval_minutes", 1440)),
+                "keep_last": int(payload.get("keep_last", 30)),
+                "sources": payload.get("sources", []),
+                "target_path": payload.get("snapshot_target_path", "")
+            }
+            # Migrate old system settings
+            if payload.get("include_system_in_schedule"):
+                 merged["system_backup"] = {
+                    "enabled": True,
+                    "interval_minutes": int(payload.get("interval_minutes", 1440)), # Inherit old interval
+                    "keep_last": int(payload.get("keep_system_last", 10)),
+                    "target_path": payload.get("system_snapshot_target_path", "/var/lib/alvaos/system-snapshots")
+                 }
+        else:
+            # Standard merge of nested dicts
+            if "pool_backup" in payload:
+                merged["pool_backup"].update(payload["pool_backup"])
+            if "system_backup" in payload:
+                merged["system_backup"].update(payload["system_backup"])
 
-        merged["auto_enabled"] = bool(merged.get("auto_enabled", False))
-        merged["include_system_in_schedule"] = bool(merged.get("include_system_in_schedule", False))
-
+        # Validate Pool Backup
+        pb = merged["pool_backup"]
+        pb["enabled"] = bool(pb.get("enabled", False))
         try:
-            merged["interval_minutes"] = int(merged.get("interval_minutes", 1440))
-        except Exception:
-            merged["interval_minutes"] = 1440
-        merged["interval_minutes"] = max(15, min(10080, merged["interval_minutes"]))
-
+            pb["interval_minutes"] = max(15, min(43200, int(pb.get("interval_minutes", 1440))))
+        except:
+            pb["interval_minutes"] = 1440
+            
         try:
-            merged["keep_last"] = int(merged.get("keep_last", 30))
-        except Exception:
-            merged["keep_last"] = 30
-        merged["keep_last"] = max(1, min(200, merged["keep_last"]))
-
-        try:
-            merged["keep_system_last"] = int(merged.get("keep_system_last", 10))
-        except Exception:
-            merged["keep_system_last"] = 10
-        merged["keep_system_last"] = max(1, min(100, merged["keep_system_last"]))
-
-        raw_sources = merged.get("sources", [])
+            pb["keep_last"] = max(1, min(200, int(pb.get("keep_last", 30))))
+        except:
+            pb["keep_last"] = 30
+            
+        raw_sources = pb.get("sources", [])
         if not isinstance(raw_sources, list):
             raw_sources = []
         unique_sources = []
@@ -289,13 +318,25 @@ class BackupManager:
             if normalized and normalized not in seen:
                 seen.add(normalized)
                 unique_sources.append(normalized)
-        merged["sources"] = unique_sources
+        pb["sources"] = unique_sources
+        pb["target_path"] = self._normalize_path(pb.get("target_path"))
 
-        merged["snapshot_target_path"] = self._normalize_path(merged.get("snapshot_target_path"))
-        system_target = self._normalize_path(merged.get("system_snapshot_target_path"))
-        if not system_target:
-            system_target = self._normalize_path(DEFAULT_SETTINGS["system_snapshot_target_path"])
-        merged["system_snapshot_target_path"] = system_target
+        # Validate System Backup
+        sb = merged["system_backup"]
+        sb["enabled"] = bool(sb.get("enabled", False))
+        try:
+            sb["interval_minutes"] = max(15, min(43200, int(sb.get("interval_minutes", 10080))))
+        except:
+            sb["interval_minutes"] = 10080
+            
+        try:
+            sb["keep_last"] = max(1, min(100, int(sb.get("keep_last", 10))))
+        except:
+            sb["keep_last"] = 10
+            
+        sb["target_path"] = self._normalize_path(sb.get("target_path"))
+        if not sb["target_path"]:
+            sb["target_path"] = self._normalize_path(DEFAULT_SETTINGS["system_backup"]["target_path"])
 
         return merged
 
@@ -325,11 +366,26 @@ class BackupManager:
     def _refresh_next_run(self, settings: Optional[Dict] = None):
         with self._schedule_lock:
             cfg = settings or self.get_settings()
-            if not cfg.get("auto_enabled") or (not cfg.get("sources") and not cfg.get("include_system_in_schedule")):
-                self._save_status({"next_run_at": None})
-                return
-            next_run = datetime.now(timezone.utc) + timedelta(minutes=cfg["interval_minutes"])
-            self._save_status({"next_run_at": next_run.isoformat()})
+            updates = {}
+            now = datetime.now(timezone.utc)
+            
+            # Pool Backup
+            pb = cfg.get("pool_backup", {})
+            if pb.get("enabled") and pb.get("sources"):
+                 next_t = now + timedelta(minutes=pb.get("interval_minutes", 1440))
+                 updates["pool_next_run_at"] = next_t.isoformat()
+            else:
+                 updates["pool_next_run_at"] = None
+
+            # System Backup
+            sb = cfg.get("system_backup", {})
+            if sb.get("enabled"):
+                 next_t = now + timedelta(minutes=sb.get("interval_minutes", 10080))
+                 updates["system_next_run_at"] = next_t.isoformat()
+            else:
+                 updates["system_next_run_at"] = None
+
+            self._save_status(updates)
 
     def list_snapshots(self, source_path: Optional[str] = None, snapshot_class: Optional[str] = None) -> List[Dict]:
         entries = self._load_json(self.snapshots_file, [])
@@ -509,7 +565,10 @@ class BackupManager:
             return False, {"error": f"Source path not found: {source}"}
 
         settings = self.get_settings()
-        selected_target = self._normalize_path(target_path or settings.get("snapshot_target_path"))
+        # New Settings Structure
+        pb = settings.get("pool_backup", {})
+        selected_target = self._normalize_path(target_path or pb.get("target_path"))
+        
         if selected_target:
             target_root = self._build_selected_data_target_root(source, selected_target)
         else:
@@ -559,9 +618,10 @@ class BackupManager:
         target_path: Optional[str] = None,
     ) -> Tuple[bool, Dict]:
         settings = self.get_settings()
-        target_base = self._normalize_path(target_path or settings.get("system_snapshot_target_path"))
+        sb = settings.get("system_backup", {})
+        target_base = self._normalize_path(target_path or sb.get("target_path"))
         if not target_base:
-            target_base = self._normalize_path(DEFAULT_SETTINGS["system_snapshot_target_path"])
+            target_base = self._normalize_path(DEFAULT_SETTINGS["system_backup"]["target_path"])
 
         if platform.system() == "Linux":
             if not self._path_is_btrfs_subvolume("/"):
@@ -630,64 +690,86 @@ class BackupManager:
 
     def run_backup_now(
         self,
+        backup_type: str = "pool",
         sources: Optional[List[str]] = None,
         trigger: str = "manual",
-        include_system: Optional[bool] = None,
         target_path: Optional[str] = None,
     ) -> Dict:
         with self._job_lock:
             settings = self.get_settings()
-            selected = sources if isinstance(sources, list) and sources else settings.get("sources", [])
-            selected = [self._normalize_path(s) for s in selected if self._normalize_path(s)]
-            run_system = include_system if include_system is not None else False
-
-            if not selected and not run_system:
-                error = "No backup sources configured"
-                self._save_status({"last_status": "error", "last_error": error})
-                return {"success": False, "error": error}
-
+            
             created = []
             failed = []
+            
+            if backup_type == "pool":
+                # Pool Backup Logic
+                current_settings = settings.get("pool_backup", {})
+                selected = sources if isinstance(sources, list) and sources else current_settings.get("sources", [])
+                selected = [self._normalize_path(s) for s in selected if self._normalize_path(s)]
+                
+                if not selected:
+                    error = "No backup sources configured"
+                    self._save_status({"pool_last_status": "error", "pool_last_error": error})
+                    return {"success": False, "error": error}
 
-            for source in selected:
-                ok, payload = self.create_snapshot(
-                    source_path=source,
-                    label=trigger,
-                    trigger=trigger,
-                    target_path=target_path,
-                    snapshot_class="data",
-                )
-                if ok:
-                    created.append(payload)
-                    self._enforce_retention(source, settings.get("keep_last", 30), "data")
+                for source in selected:
+                     ok, payload = self.create_snapshot(
+                         source_path=source,
+                         label=trigger,
+                         trigger=trigger,
+                         target_path=target_path,
+                         snapshot_class="data",
+                     )
+                     if ok:
+                         created.append(payload)
+                         self._enforce_retention(source, current_settings.get("keep_last", 30), "data")
+                     else:
+                         failed.append({"source_path": source, "error": payload.get("error", "unknown error")})
+                
+                status_payload = {
+                    "pool_last_run_at": self._now_iso(),
+                    "pool_last_status": "success" if not failed else ("partial" if created else "error"),
+                    "pool_last_error": "; ".join([f["error"] for f in failed]) if failed else "",
+                }
+                # Update next run if scheduled
+                if current_settings.get("enabled") and current_settings.get("sources"):
+                     next_run = datetime.now(timezone.utc) + timedelta(minutes=current_settings.get("interval_minutes", 1440))
+                     status_payload["pool_next_run_at"] = next_run.isoformat()
                 else:
-                    failed.append({"source_path": source, "error": payload.get("error", "unknown error")})
+                     status_payload["pool_next_run_at"] = None
+                self._save_status(status_payload)
 
-            if run_system:
-                ok, payload = self.create_system_snapshot(label=trigger, trigger=trigger)
+            elif backup_type == "system":
+                # System Backup Logic
+                current_settings = settings.get("system_backup", {})
+                
+                ok, payload = self.create_system_snapshot(label=trigger, trigger=trigger, target_path=target_path)
                 if ok:
-                    created.append(payload)
-                    self._enforce_retention("/", settings.get("keep_system_last", 10), "system")
+                     created.append(payload)
+                     self._enforce_retention("/", current_settings.get("keep_last", 10), "system")
                 else:
-                    failed.append({"source_path": "/", "error": payload.get("error", "unknown error")})
+                     failed.append({"source_path": "/", "error": payload.get("error", "unknown error")})
 
-            status_payload = {
-                "last_run_at": self._now_iso(),
-                "last_status": "success" if not failed else ("partial" if created else "error"),
-                "last_error": "; ".join([f["error"] for f in failed]) if failed else "",
-            }
-            if settings.get("auto_enabled") and (settings.get("sources") or settings.get("include_system_in_schedule")):
-                next_run = datetime.now(timezone.utc) + timedelta(minutes=settings.get("interval_minutes", 1440))
-                status_payload["next_run_at"] = next_run.isoformat()
+                status_payload = {
+                    "system_last_run_at": self._now_iso(),
+                    "system_last_status": "success" if not failed else "error",
+                    "system_last_error": "; ".join([f["error"] for f in failed]) if failed else "",
+                }
+                if current_settings.get("enabled"):
+                     next_run = datetime.now(timezone.utc) + timedelta(minutes=current_settings.get("interval_minutes", 10080))
+                     status_payload["system_next_run_at"] = next_run.isoformat()
+                else:
+                     status_payload["system_next_run_at"] = None
+                self._save_status(status_payload)
+
             else:
-                status_payload["next_run_at"] = None
-            self._save_status(status_payload)
+                 return {"success": False, "error": f"Unknown backup_type: {backup_type}"}
 
             return {
                 "success": len(created) > 0 and not failed,
                 "created": created,
                 "failed": failed,
-                "status": status_payload["last_status"],
+                "status": "success" if not failed else ("partial" if created else "error"),
             }
 
     def restore_snapshot(self, snapshot_path: str, source_path: Optional[str] = None) -> Tuple[bool, Dict]:
@@ -798,23 +880,37 @@ class BackupManager:
 
     def _schedule_tick(self):
         settings = self.get_settings()
-        has_work = bool(settings.get("sources") or settings.get("include_system_in_schedule"))
-        if not settings.get("auto_enabled") or not has_work:
-            return
+        now = datetime.now(timezone.utc)
+        
+        # Check Pool Backup
+        pb = settings.get("pool_backup", {})
+        if pb.get("enabled") and pb.get("sources"):
+             # Check if run needed
+             should_run = False
+             with self._schedule_lock:
+                 status = self.get_status()
+                 next_run = self._parse_iso(status.get("pool_next_run_at"))
+                 if next_run is None:
+                     # Initialize if missing
+                     self._refresh_next_run(settings)
+                 elif now >= next_run:
+                     should_run = True
 
-        with self._schedule_lock:
-            status = self.get_status()
-            next_run = self._parse_iso(status.get("next_run_at"))
-            now = datetime.now(timezone.utc)
-            if next_run is None:
-                next_run = now + timedelta(minutes=settings.get("interval_minutes", 1440))
-                self._save_status({"next_run_at": next_run.isoformat()})
-                return
+             if should_run:
+                 # Launch in thread to not block tick
+                 threading.Thread(target=self.run_backup_now, kwargs={"backup_type": "pool", "trigger": "schedule"}).start()
 
-            if now < next_run:
-                return
-
-        self.run_backup_now(
-            trigger="schedule",
-            include_system=bool(settings.get("include_system_in_schedule", False)),
-        )
+        # Check System Backup
+        sb = settings.get("system_backup", {})
+        if sb.get("enabled"):
+             should_run = False
+             with self._schedule_lock:
+                 status = self.get_status()
+                 next_run = self._parse_iso(status.get("system_next_run_at"))
+                 if next_run is None:
+                     self._refresh_next_run(settings)
+                 elif now >= next_run:
+                     should_run = True
+            
+             if should_run:
+                 threading.Thread(target=self.run_backup_now, kwargs={"backup_type": "system", "trigger": "schedule"}).start()
