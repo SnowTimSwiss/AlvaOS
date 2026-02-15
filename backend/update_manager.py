@@ -84,6 +84,26 @@ class UpdateManager:
         Path("/var/lib/alvaos").mkdir(parents=True, exist_ok=True)
         Path(self.cache_dir).mkdir(parents=True, exist_ok=True)
 
+    def cleanup_cache(self, keep=3):
+        """Keep only the N most recent .deb files in the cache."""
+        try:
+            if not os.path.exists(self.cache_dir):
+                return
+            files = [os.path.join(self.cache_dir, f) for f in os.listdir(self.cache_dir) 
+                     if f.endswith(".deb") and os.path.isfile(os.path.join(self.cache_dir, f))]
+            if len(files) <= keep:
+                return
+            
+            # Sort by modification time (most recent first)
+            files.sort(key=os.path.getmtime, reverse=True)
+            for f in files[keep:]:
+                try:
+                    os.remove(f)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     def load_json(self, path, default):
         try:
             if os.path.exists(path):
@@ -328,6 +348,7 @@ class UpdateManager:
         if not url or not url.startswith("https://"):
             raise ValueError("Invalid download URL")
         self.ensure_dirs()
+        self.cleanup_cache() 
         self.update_progress("downloading", f"Downloading {version}", 0, {"version": version})
 
         parsed = urlparse(url)

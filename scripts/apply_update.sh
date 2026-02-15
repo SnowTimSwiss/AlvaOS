@@ -45,10 +45,19 @@ if ! dpkg-deb --info "$PACKAGE_PATH" >/dev/null 2>&1; then
   exit 1
 fi
 
-update_state "installing" "Backing up user data" 50
+update_state "installing" "Backing up state" 50
 if [ -d "/var/lib/alvaos" ]; then
-    log "Backing up /var/lib/alvaos to /var/lib/alvaos.bak"
-    cp -r /var/lib/alvaos /var/lib/alvaos.bak || log "WARNING: Backup failed"
+    log "Backing up /var/lib/alvaos to /var/lib/alvaos.bak (excluding cache)"
+    mkdir -p /var/lib/alvaos.bak
+    # Use rsync if available for better performance and exclusion support
+    if command -v rsync >/dev/null 2>&1; then
+        rsync -a --delete --exclude 'updates/' /var/lib/alvaos/ /var/lib/alvaos.bak/ || log "WARNING: Rsync backup failed"
+    else
+        # Fallback to cp but exclude updates/ if possible
+        rm -rf /var/lib/alvaos.bak/*
+        # Simple bash copy excluding updates
+        find /var/lib/alvaos -maxdepth 1 ! -name 'updates' ! -name 'alvaos' -exec cp -r {} /var/lib/alvaos.bak/ \; || log "WARNING: CP backup failed"
+    fi
 fi
 
 stop_services() {
