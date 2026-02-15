@@ -108,7 +108,7 @@ CMD = {
     'LSBLK': '/usr/bin/lsblk',
     'WIPEFS': '/usr/sbin/wipefs',
     'PARTPROBE': '/usr/sbin/partprobe',
-    'BTRFS': '/usr/bin/btrfs',
+    'BTRFS': '/usr/sbin/btrfs',
     'MKFS_BTRFS': '/usr/sbin/mkfs.btrfs',
     'MKDIR': '/usr/bin/mkdir',
     'MOUNT': '/usr/bin/mount',

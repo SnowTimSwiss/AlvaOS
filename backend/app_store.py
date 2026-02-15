@@ -180,9 +180,9 @@ class AppStore:
         try:
             # Use absolute paths matching sudoers
             if os.getuid() != 0:
-                cmd = ['sudo', '-n', '/usr/bin/btrfs', 'subvolume', 'create', path]
+                cmd = ['sudo', '-n', '/usr/sbin/btrfs', 'subvolume', 'create', path]
             else:
-                cmd = ['/usr/bin/btrfs', 'subvolume', 'create', path]
+                cmd = ['/usr/sbin/btrfs', 'subvolume', 'create', path]
             
             result = subprocess.run(
                 cmd,
@@ -204,9 +204,9 @@ class AppStore:
         try:
             # Use absolute paths matching sudoers
             if os.getuid() != 0:
-                cmd = ['sudo', '-n', '/usr/bin/btrfs', 'subvolume', 'delete', path]
+                cmd = ['sudo', '-n', '/usr/sbin/btrfs', 'subvolume', 'delete', path]
             else:
-                cmd = ['/usr/bin/btrfs', 'subvolume', 'delete', path]
+                cmd = ['/usr/sbin/btrfs', 'subvolume', 'delete', path]
             
             result = subprocess.run(
                 cmd,

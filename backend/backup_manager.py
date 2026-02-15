@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
 CMD = {
-    "BTRFS": "/usr/bin/btrfs",
+    "BTRFS": "/usr/sbin/btrfs",
     "MKDIR": "/usr/bin/mkdir",
     "MV": "/usr/bin/mv",
     "BASH": "/usr/bin/bash",
@@ -431,11 +431,36 @@ class BackupManager:
             entries.append(entry)
             self._save_snapshots(entries)
 
+    def _get_btrfs_uuid(self, path: str) -> Optional[str]:
+        if platform.system() != "Linux":
+            return None
+        try:
+            res, err = self.run_command([CMD["BTRFS"], "filesystem", "show", path], timeout=10)
+            if res and res.returncode == 0:
+                m = re.search(r"uuid:\s+([A-Fa-f0-9-]+)", res.stdout, re.IGNORECASE)
+                if m:
+                    return m.group(1).lower()
+        except:
+            pass
+        return None
+
     def _same_filesystem(self, path_a: str, path_b: str) -> bool:
         try:
-            return os.stat(path_a).st_dev == os.stat(path_b).st_dev
+            # Traditional check
+            st_a = os.stat(path_a)
+            st_b = os.stat(path_b)
+            if st_a.st_dev == st_b.st_dev:
+                return True
+            
+            # Btrfs check: Even if mounted separately (different st_dev), 
+            # they could be on the same Btrfs UUID.
+            uuid_a = self._get_btrfs_uuid(path_a)
+            if uuid_a:
+                uuid_b = self._get_btrfs_uuid(path_b)
+                return uuid_a == uuid_b
         except Exception:
-            return False
+            pass
+        return False
 
     def _path_is_btrfs_subvolume(self, path: str) -> bool:
         if platform.system() != "Linux":
