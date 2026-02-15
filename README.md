@@ -20,7 +20,7 @@
   * Git‑based app templates
   * One‑click install & updates
 
-* 🔁 **Buddy Backup (Core Feature)**
+* 🔁 **Buddy Backup**
 
   * NAS‑to‑NAS backups over the internet
   * Encrypted, snapshot‑based, incremental
@@ -28,14 +28,13 @@
 
 * 🖥️ **Clean Web UI**
 
-  * Inspired by Unraid UX
-  * Dark mode first
+  * Inspired by Unraid and TrueNAS UX
+  * Dark mode first with option for light mode
   * API‑driven, minimal clicks
 
 * 🧱 **Ultra Stable Base**
 
   * Debian Stable
-  * No rolling releases
   * Conservative defaults
 
 ---
@@ -44,9 +43,9 @@
 
 * Stability over features
 * Simplicity over complexity
-* No cloud dependency
+* Easy backups and restore
 * Fully self‑hosted
-* Open source from day one
+* Lightweight and easely manageable
 
 ---
 
@@ -55,15 +54,15 @@
 * **Base OS:** Debian (minimal)
 * **Storage:** Btrfs
 * **Containers:** Docker + Docker Compose
-* **Backend:** REST API
+* **Backend:** Python
 * **Frontend:** Web UI
-* **Networking:** LAN + optional WireGuard
+* **Networking:** LAN + WireGuard (Buddy-backup)
 
 The Web UI never executes system commands directly. All actions go through a versioned API layer.
 
 ---
 
-## 🔁 Buddy Backup Concept
+## 🔁 Buddy Backup
 
 AlvaOS introduces **Buddy Backup**: a built‑in, peer‑to‑peer backup system.
 
@@ -71,15 +70,6 @@ AlvaOS introduces **Buddy Backup**: a built‑in, peer‑to‑peer backup system
 * Automatic encrypted connection
 * Incremental snapshot transfer
 * Restore everything on a new machine
-
-Backed up data includes:
-
-* Storage layout
-* Shares
-* Docker containers & app configs
-* Users & system settings
-
-The operating system itself is reinstalled from the installer.
 
 ---
 
