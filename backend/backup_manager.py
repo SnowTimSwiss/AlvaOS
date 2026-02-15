@@ -184,11 +184,27 @@ class BackupManager:
 
     def get_sources(self) -> List[Dict]:
         sources = []
+        seen_paths = set()
         mounts = self._list_pool_mounts()
         pools = self.load_pools_state() or {}
 
         for pool_id, mount_point in mounts:
+            mount_norm = self._normalize_path(mount_point)
+            if not mount_norm or mount_norm == "/":
+                continue
             pool_name = pools.get(pool_id, {}).get("name") or pool_id
+
+            if mount_norm not in seen_paths:
+                seen_paths.add(mount_norm)
+                sources.append(
+                    {
+                        "pool_id": pool_id,
+                        "pool_name": pool_name,
+                        "name": f"Pool: {pool_name}",
+                        "path": mount_norm,
+                        "kind": "pool"
+                    }
+                )
 
             if platform.system() == "Linux":
                 subvolumes = self._list_subvolumes(mount_point)
@@ -198,23 +214,19 @@ class BackupManager:
                         continue
                     if name.startswith("system-snapshots"):
                         continue
+                    sub_path = self._normalize_path(sub["path"])
+                    if not sub_path or sub_path in seen_paths:
+                        continue
+                    seen_paths.add(sub_path)
                     sources.append(
                         {
                             "pool_id": pool_id,
                             "pool_name": pool_name,
                             "name": f"{pool_name}: {name}",
-                            "path": sub["path"],
+                            "path": sub_path,
+                            "kind": "subvolume"
                         }
                     )
-            else:
-                sources.append(
-                    {
-                        "pool_id": pool_id,
-                        "pool_name": pool_name,
-                        "name": f"{pool_name}: root",
-                        "path": mount_point,
-                    }
-                )
 
         return sorted(sources, key=lambda item: item["name"].lower())
 
@@ -249,7 +261,11 @@ class BackupManager:
                         "kind": "subvolume"
                     })
 
-        system_default = self._normalize_path(self.get_settings().get("system_snapshot_target_path"))
+        settings = self.get_settings()
+        system_default = self._normalize_path(
+            settings.get("system_backup", {}).get("target_path")
+            or DEFAULT_SETTINGS["system_backup"]["target_path"]
+        )
         if system_default and system_default not in seen:
             targets.append({
                 "name": "System Default: /var/lib/alvaos/system-snapshots",
@@ -619,20 +635,35 @@ class BackupManager:
     ) -> Tuple[bool, Dict]:
         settings = self.get_settings()
         sb = settings.get("system_backup", {})
-        target_base = self._normalize_path(target_path or sb.get("target_path"))
-        if not target_base:
-            target_base = self._normalize_path(DEFAULT_SETTINGS["system_backup"]["target_path"])
+        explicit_target = self._normalize_path(target_path)
+        default_target = self._normalize_path(DEFAULT_SETTINGS["system_backup"]["target_path"])
+        target_base = self._normalize_path(explicit_target or sb.get("target_path") or default_target)
 
         if platform.system() == "Linux":
             if not self._path_is_btrfs_subvolume("/"):
                 return False, {"error": "Full system snapshots require Btrfs root"}
-            mk_res, mk_err = self.run_command([CMD["MKDIR"], "-p", target_base], timeout=30)
-            if mk_err or not mk_res or mk_res.returncode != 0:
-                return False, {"error": mk_err or "Failed to prepare system snapshot target path"}
-            if not self._path_on_btrfs(target_base):
-                return False, {"error": f"System snapshot target is not on Btrfs: {target_base}"}
-            if not self._same_filesystem("/", target_base):
-                return False, {"error": "System rollback requires snapshots on the root filesystem"}
+
+            def _validate_target(path: str) -> Tuple[bool, str]:
+                mk_res, mk_err = self.run_command([CMD["MKDIR"], "-p", path], timeout=30)
+                if mk_err or not mk_res or mk_res.returncode != 0:
+                    return False, mk_err or "Failed to prepare system snapshot target path"
+                if not self._path_on_btrfs(path):
+                    return False, f"System snapshot target is not on Btrfs: {path}"
+                if not self._same_filesystem("/", path):
+                    return False, "System rollback requires snapshots on the root filesystem"
+                return True, ""
+
+            target_ok, target_err = _validate_target(target_base)
+            if (not target_ok) and (not explicit_target) and default_target and default_target != target_base:
+                fallback_ok, fallback_err = _validate_target(default_target)
+                if fallback_ok:
+                    target_base = default_target
+                    target_ok = True
+                else:
+                    target_err = fallback_err
+
+            if not target_ok:
+                return False, {"error": target_err or "Failed to validate system snapshot target path"}
 
         snapshot_time = datetime.now(timezone.utc)
         name = f"{snapshot_time.strftime('%Y%m%d-%H%M%S')}-{self._slugify(label or trigger or 'system')}"

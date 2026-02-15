@@ -1096,17 +1096,26 @@ def system_time():
         })
     
     if request.method == 'POST':
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         if platform.system() == 'Linux':
             try:
+                warnings = []
                 if 'timezone' in data:
                     res, err = run_sudo_command([CMD['TIMEDATECTL'], 'set-timezone', data['timezone']])
                     if err: raise Exception(err)
                 if 'ntp' in data:
                     ntp_val = 'true' if data['ntp'] else 'false'
                     res, err = run_sudo_command([CMD['TIMEDATECTL'], 'set-ntp', ntp_val])
-                    if err: raise Exception(err)
-                
+                    if err:
+                        warnings.append(err)
+
+                if warnings:
+                    return jsonify({
+                        'success': True,
+                        'message': 'Time settings updated with warnings',
+                        'warnings': warnings
+                    })
+
                 return jsonify({'success': True, 'message': 'Time settings updated'})
             except Exception as e:
                 return jsonify({'error': str(e)}), 500
@@ -1690,9 +1699,19 @@ def manage_pools():
             return jsonify({'pools': STORAGE_CACHE['pools']['data']})
 
         pools = []
+        root_btrfs_uuid = None
         
         try:
             if platform.system() == 'Linux':
+                try:
+                    root_res, root_err = run_sudo_command([CMD['BTRFS'], 'filesystem', 'show', '/'])
+                    if root_res and root_res.returncode == 0 and not root_err:
+                        root_match = re.search(r"uuid:\s+([A-Fa-f0-9-]+)", root_res.stdout, re.IGNORECASE)
+                        if root_match:
+                            root_btrfs_uuid = root_match.group(1).lower()
+                except Exception as e:
+                    print(f"Warning: Could not detect root Btrfs UUID: {e}")
+
                 # Get list of Btrfs filesystems
                 result, err = run_sudo_command([CMD['BTRFS'], 'filesystem', 'show'])
                 
@@ -1704,7 +1723,7 @@ def manage_pools():
                     for block in fs_blocks:
                         if not block.strip(): continue
                         
-                        uuid_match = re.search(r"uuid:\s+([a-f0-9-]+)", block)
+                        uuid_match = re.search(r"uuid:\s+([A-Fa-f0-9-]+)", block, re.IGNORECASE)
                         if not uuid_match: continue
                         
                         uuid_val = uuid_match.group(1)
@@ -1724,7 +1743,8 @@ def manage_pools():
                             'total_size': 'Unknown',
                             'used_size': 'Unknown',
                             'raid_level': 'Single',
-                            'status': 'healthy'
+                            'status': 'healthy',
+                            'is_system_pool': bool(root_btrfs_uuid and uuid_val.lower() == root_btrfs_uuid)
                         }
                         
                         # Extract paths
@@ -1753,6 +1773,8 @@ def manage_pools():
                         mount_point = pool_state.get('mount_point', '')
                         if mount_point:
                             pool['mount_point'] = mount_point
+                            if mount_point == '/':
+                                pool['is_system_pool'] = True
                         
                         if pool['devices']:
                             try:

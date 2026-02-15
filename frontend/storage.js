@@ -199,22 +199,55 @@ function displayPools(pools) {
     pools.forEach(pool => {
         const poolCard = document.createElement('div');
         poolCard.className = 'card';
+        const isSystemPool = !!pool.is_system_pool;
+        const devices = Array.isArray(pool.devices) ? pool.devices : [];
+        if (isSystemPool) {
+            poolCard.style.borderLeft = '3px solid var(--accent-warning)';
+        }
 
         const isDegraded = pool.status === 'degraded';
-        const statusColor = isDegraded ? 'var(--accent-danger)' : 'var(--accent-success)';
-        const statusText = isDegraded ? 'DEGRADED' : 'Active';
-        const pulseClass = isDegraded ? 'pulse-danger' : '';
+        const statusColor = isSystemPool
+            ? 'var(--accent-warning)'
+            : (isDegraded ? 'var(--accent-danger)' : 'var(--accent-success)');
+        const statusText = isSystemPool ? 'SYSTEM POOL' : (isDegraded ? 'DEGRADED' : 'Active');
+        const actionsHtml = isSystemPool
+            ? `
+                <div style="display: flex; gap: 8px; margin-top: auto; flex-wrap: wrap;">
+                    <button class="btn-secondary" disabled style="flex: 1; min-width: 100px; font-size: 0.85rem; opacity: 0.6; cursor: not-allowed;">Subvolumes</button>
+                    <button class="btn-secondary" disabled style="flex: 1; min-width: 100px; font-size: 0.85rem; opacity: 0.6; cursor: not-allowed;">Expand</button>
+                    <button class="btn-secondary" disabled style="flex: 1; min-width: 100px; font-size: 0.85rem; opacity: 0.6; cursor: not-allowed;">Delete</button>
+                </div>
+                <div style="margin-top: 12px; font-size: 0.75rem; color: var(--accent-warning); display: flex; align-items: center; gap: 4px;">
+                    <span>!</span> System Pool - Restricted Actions
+                </div>
+            `
+            : `
+                <div style="display: flex; gap: 8px; margin-top: auto; flex-wrap: wrap;">
+                    <button onclick="manageSubvolumes('${pool.id}')" class="btn-primary" 
+                        style="flex: 1; min-width: 100px; font-size: 0.85rem;">
+                        Subvolumes
+                    </button>
+                    <button onclick="showExpandPoolDialog('${pool.id}', '${pool.name}')" class="btn-secondary" 
+                        style="flex: 1; min-width: 100px; font-size: 0.85rem; border-color: ${isDegraded ? 'var(--accent-danger)' : 'var(--accent-success)'}; color: ${isDegraded ? 'var(--accent-danger)' : 'var(--accent-success)'}; ${isDegraded ? 'background: rgba(248, 81, 73, 0.1); font-weight: 700;' : ''}">
+                        ${isDegraded ? 'Replace / Expand' : 'Expand'}
+                    </button>
+                    <button onclick="deletePool('${pool.id}', '${pool.name}')" class="btn-secondary" 
+                        style="flex: 1; min-width: 100px; font-size: 0.85rem; border-color: var(--accent-danger); color: var(--accent-danger);">
+                        Delete
+                    </button>
+                </div>
+            `;
 
         poolCard.innerHTML = `
             <div class="card-header">
-                <div class="card-title">🗄️ ${pool.name}</div>
+                <div class="card-title">${pool.name}</div>
                 <div style="font-size: 0.8rem; font-weight: 600; color: ${statusColor}; display: flex; align-items: center; gap: 4px;">
-                    <div class="status-dot ${isDegraded ? 'danger pulse-danger' : ''}" style="background: ${statusColor};"></div>
+                    <div class="status-dot ${isDegraded && !isSystemPool ? 'danger pulse-danger' : ''}" style="background: ${statusColor};"></div>
                     ${statusText}
                 </div>
             </div>
             
-            ${isDegraded ? `
+            ${isDegraded && !isSystemPool ? `
                 <div class="degraded-banner">
                     <span style="font-size: 1.5rem;">⚠️</span>
                     <div>
@@ -232,7 +265,7 @@ function displayPools(pools) {
                 </div>
                 <div>
                     <span class="setting-label">Devices</span>
-                    <span class="setting-val">${pool.devices.length}</span>
+                    <span class="setting-val">${devices.length}</span>
                 </div>
                 <div>
                     <span class="setting-label">Total Size</span>
@@ -244,24 +277,11 @@ function displayPools(pools) {
                 </div>
                 <div style="grid-column: 1 / -1;">
                     <span class="setting-label">Disk Members</span>
-                    <span class="setting-val" style="font-size: 0.8rem;">${pool.devices.join(', ')}</span>
+                    <span class="setting-val" style="font-size: 0.8rem;">${devices.join(', ')}</span>
                 </div>
             </div>
 
-            <div style="display: flex; gap: 8px; margin-top: auto; flex-wrap: wrap;">
-                <button onclick="manageSubvolumes('${pool.id}')" class="btn-primary" 
-                    style="flex: 1; min-width: 100px; font-size: 0.85rem;">
-                    Subvolumes
-                </button>
-                <button onclick="showExpandPoolDialog('${pool.id}', '${pool.name}')" class="btn-secondary" 
-                    style="flex: 1; min-width: 100px; font-size: 0.85rem; border-color: ${isDegraded ? 'var(--accent-danger)' : 'var(--accent-success)'}; color: ${isDegraded ? 'var(--accent-danger)' : 'var(--accent-success)'}; ${isDegraded ? 'background: rgba(248, 81, 73, 0.1); font-weight: 700;' : ''}">
-                    ${isDegraded ? 'Replace / Expand' : 'Expand'}
-                </button>
-                <button onclick="deletePool('${pool.id}', '${pool.name}')" class="btn-secondary" 
-                    style="flex: 1; min-width: 100px; font-size: 0.85rem; border-color: var(--accent-danger); color: var(--accent-danger);">
-                    Delete
-                </button>
-            </div>
+            ${actionsHtml}
         `;
 
         container.appendChild(poolCard);

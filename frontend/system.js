@@ -14,6 +14,11 @@ const els = {
     timeDisplay: document.getElementById('system-time-display')
 };
 
+let currentTimeSettings = {
+    timezone: null,
+    ntp: null
+};
+
 // Helper: Get Request Headers with fresh token
 function getHeaders() {
     const token = localStorage.getItem('alvaos_token');
@@ -62,8 +67,10 @@ async function fetchSettings() {
             const timeData = await timeRes.json();
             const tzSelect = document.getElementById('timezone-select');
             const ntpToggle = document.getElementById('ntp-toggle');
+            currentTimeSettings.timezone = timeData.timezone || 'UTC';
+            currentTimeSettings.ntp = !!timeData.ntp_enabled;
             if (tzSelect) {
-                const tzValue = timeData.timezone || 'UTC';
+                const tzValue = currentTimeSettings.timezone;
                 const hasOption = Array.from(tzSelect.options).some(opt => opt.value === tzValue);
                 if (!hasOption) {
                     const opt = document.createElement('option');
@@ -123,18 +130,41 @@ async function updateHostname() {
 async function updateTimeSettings() {
     const timezone = document.getElementById('timezone-select').value;
     const ntp = document.getElementById('ntp-toggle').checked;
+    const payload = {};
+
+    if (timezone && timezone !== currentTimeSettings.timezone) {
+        payload.timezone = timezone;
+    }
+    if (currentTimeSettings.ntp === null || ntp !== currentTimeSettings.ntp) {
+        payload.ntp = ntp;
+    }
+
+    if (Object.keys(payload).length === 0) {
+        alert('No time settings changed.');
+        return;
+    }
 
     try {
         const res = await fetch(`${API_BASE}/system/time`, {
             method: 'POST',
             headers: getHeaders(),
-            body: JSON.stringify({ timezone, ntp })
+            body: JSON.stringify(payload)
         });
+        const data = await res.json().catch(() => ({}));
 
         if (res.ok) {
-            alert('Time settings updated.');
+            currentTimeSettings.timezone = payload.timezone ?? currentTimeSettings.timezone;
+            if (Object.prototype.hasOwnProperty.call(payload, 'ntp')) {
+                currentTimeSettings.ntp = payload.ntp;
+            }
+
+            if (Array.isArray(data.warnings) && data.warnings.length) {
+                alert(`Time settings updated with warnings:\n${data.warnings.join('\n')}`);
+            } else {
+                alert(data.message || 'Time settings updated.');
+            }
         } else {
-            alert('Failed to update time settings.');
+            alert(`Failed to update time settings: ${data.error || 'Unknown error'}`);
         }
     } catch (e) {
         console.error(e);

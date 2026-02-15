@@ -227,12 +227,15 @@ function updateStatusUi() {
 
     // System Info
     const sysSupport = document.getElementById('system-support-info');
+    const systemRunBtn = document.getElementById('system-run-btn');
     if (backupSystemState.supported === false) {
         sysSupport.textContent = `Unsupported (${backupSystemState.reason || 'unknown'})`;
         sysSupport.style.color = 'var(--error)';
+        if (systemRunBtn) systemRunBtn.disabled = true;
     } else {
         sysSupport.textContent = `Supported (Root Subvol: ${backupSystemState.root_subvolume_id})`;
         sysSupport.style.color = 'var(--success)';
+        if (systemRunBtn) systemRunBtn.disabled = false;
     }
 
     const sysPending = document.getElementById('system-pending-rollback');
@@ -343,6 +346,11 @@ async function runPoolBackupNow() {
 }
 
 async function runSystemBackupNow() {
+    if (backupSystemState.supported === false) {
+        backupNotify(`System backup is not supported on this system (${backupSystemState.reason || 'unknown'})`, 'error');
+        return;
+    }
+
     backupNotify('Starting system backup...', 'info');
     const response = await backupApi('/backup/run', {
         method: 'POST',
