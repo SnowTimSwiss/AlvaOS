@@ -92,6 +92,282 @@ wait_for_network() {
     return 1
 }
 
+decode_plan_field() {
+    local raw="${1:-}"
+    printf '%b' "${raw//%/\\x}"
+}
+
+json_escape() {
+    local text="${1:-}"
+    text="${text//\\/\\\\}"
+    text="${text//\"/\\\"}"
+    text="${text//$'\n'/ }"
+    text="${text//$'\r'/ }"
+    printf '%s' "$text"
+}
+
+restore_pools_from_manifest() {
+    local manifest_path="$1"
+    local root_part="$2"
+    local restore_root="/mnt/alvaos-restore"
+
+    if [ ! -f "$manifest_path" ]; then
+        msg "Manifest not found:\n$manifest_path"
+        return 1
+    fi
+
+    declare -A POOL_NAME
+    declare -A POOL_RAID
+    declare -A POOL_MOUNT
+    declare -A POOL_DEVCOUNT
+    declare -A POOL_SELECTED
+    declare -A POOL_NEW_ID
+    declare -a POOL_IDS
+    declare -a SNAPSHOT_ROWS
+
+    while IFS='|' read -r rec f1 f2 f3 f4 f5 f6; do
+        [ -z "$rec" ] && continue
+        case "$rec" in
+            \#*) continue ;;
+            POOL)
+                local pid pname raid mountp devcount
+                pid=$(decode_plan_field "$f1")
+                pname=$(decode_plan_field "$f2")
+                raid=$(decode_plan_field "$f3")
+                mountp=$(decode_plan_field "$f4")
+                devcount=$(decode_plan_field "$f5")
+                [ -z "$pid" ] && continue
+                if [ -z "${POOL_NAME[$pid]+x}" ]; then
+                    POOL_IDS+=("$pid")
+                fi
+                POOL_NAME["$pid"]="$pname"
+                POOL_RAID["$pid"]="${raid:-single}"
+                POOL_MOUNT["$pid"]="$mountp"
+                if [[ "$devcount" =~ ^[0-9]+$ ]] && [ "$devcount" -gt 0 ]; then
+                    POOL_DEVCOUNT["$pid"]="$devcount"
+                else
+                    POOL_DEVCOUNT["$pid"]=1
+                fi
+                ;;
+            SNAPSHOT)
+                SNAPSHOT_ROWS+=("$f1|$f2|$f3|$f4|$f5")
+                ;;
+        esac
+    done < "$manifest_path"
+
+    if [ "${#POOL_IDS[@]}" -eq 0 ]; then
+        msg "The selected full-backup manifest has no pool entries."
+        return 0
+    fi
+
+    local root_disk
+    root_disk=$(lsblk -no PKNAME "$root_part" 2>/dev/null | head -n1 || true)
+
+    declare -a ALL_DISKS
+    while IFS='|' read -r dev size; do
+        [ -z "$dev" ] && continue
+        if [ -n "$root_disk" ] && [ "$dev" = "$root_disk" ]; then
+            continue
+        fi
+        ALL_DISKS+=("$dev|$size")
+    done < <(lsblk -dn -o NAME,SIZE,TYPE | awk '$3=="disk" {print $1 "|" $2}')
+
+    if [ "${#ALL_DISKS[@]}" -eq 0 ]; then
+        msg "No suitable disks available for pool restore."
+        return 1
+    fi
+
+    local used_disks=""
+    local pid
+    for pid in "${POOL_IDS[@]}"; do
+        local req pname raid opts item dev size selected selected_clean selected_count
+        req="${POOL_DEVCOUNT[$pid]}"
+        pname="${POOL_NAME[$pid]}"
+        raid="${POOL_RAID[$pid]}"
+        opts=()
+
+        for item in "${ALL_DISKS[@]}"; do
+            dev="${item%%|*}"
+            size="${item#*|}"
+            case " $used_disks " in
+                *" $dev "*) continue ;;
+            esac
+            opts+=("$dev" "$size" "off")
+        done
+
+        if [ "${#opts[@]}" -eq 0 ]; then
+            msg "Not enough free disks left for pool \"$pname\"."
+            return 1
+        fi
+
+        if ! selected=$(checklist "Select exactly $req disk(s) for pool \"$pname\" (RAID: $raid)" "${opts[@]}"); then
+            return 1
+        fi
+        selected_clean=$(echo "$selected" | tr -d '"')
+        selected_count=$(echo "$selected_clean" | wc -w)
+        if [ "$selected_count" -ne "$req" ]; then
+            msg "Pool \"$pname\" requires exactly $req disk(s). You selected $selected_count."
+            return 1
+        fi
+
+        POOL_SELECTED["$pid"]="$selected_clean"
+        used_disks="$used_disks $selected_clean"
+    done
+
+    local summary="The following disks will be erased:\n"
+    for pid in "${POOL_IDS[@]}"; do
+        summary="$summary\n- ${POOL_NAME[$pid]} (${POOL_RAID[$pid]}): ${POOL_SELECTED[$pid]}"
+    done
+    if ! confirm "WARNING: $summary\n\nContinue with pool restore?"; then
+        return 1
+    fi
+
+    mkdir -p "$restore_root"
+
+    for pid in "${POOL_IDS[@]}"; do
+        local pname raid mountp selected_list
+        local -a selected_arr mkfs_cmd
+        local pool_mount_dir
+
+        pname="${POOL_NAME[$pid]}"
+        raid="${POOL_RAID[$pid]}"
+        mountp="${POOL_MOUNT[$pid]}"
+        selected_list="${POOL_SELECTED[$pid]}"
+        selected_arr=($selected_list)
+
+        if [ "${#selected_arr[@]}" -eq 0 ]; then
+            msg "Internal error: no disks selected for pool \"$pname\"."
+            return 1
+        fi
+
+        mkfs_cmd=(mkfs.btrfs -f -L "$pname")
+        if [ "$raid" != "single" ] && [ "${#selected_arr[@]}" -gt 1 ]; then
+            mkfs_cmd+=(-d "$raid" -m "$raid")
+        fi
+        local d
+        for d in "${selected_arr[@]}"; do
+            mkfs_cmd+=("/dev/$d")
+        done
+
+        if ! "${mkfs_cmd[@]}" >> "$INSTALL_LOG" 2>&1; then
+            msg "Failed to create pool filesystem for \"$pname\".\nSee: $INSTALL_LOG"
+            return 1
+        fi
+
+        local new_uuid
+        new_uuid=$(blkid -s UUID -o value "/dev/${selected_arr[0]}" 2>/dev/null | head -n1 || true)
+        if [ -z "$new_uuid" ]; then
+            new_uuid="$pid"
+            echo "[WARN] Could not read new UUID for restored pool $pname; using manifest pool ID fallback." >> "$INSTALL_LOG"
+        fi
+        POOL_NEW_ID["$pid"]="$new_uuid"
+
+        pool_mount_dir="$restore_root/$pid"
+        mkdir -p "$pool_mount_dir"
+        if ! mount "/dev/${selected_arr[0]}" "$pool_mount_dir" >> "$INSTALL_LOG" 2>&1; then
+            msg "Failed to mount restored pool \"$pname\"."
+            return 1
+        fi
+
+        local row rp rk source_path snapshot_path source_rel target_parent snapshot_on_installer received_path final_path
+        for row in "${SNAPSHOT_ROWS[@]}"; do
+            IFS='|' read -r rp rk source_path snapshot_path _ <<< "$row"
+            rp=$(decode_plan_field "$rp")
+            [ "$rp" != "$pid" ] && continue
+
+            source_path=$(decode_plan_field "$source_path")
+            snapshot_path=$(decode_plan_field "$snapshot_path")
+            [ -z "$snapshot_path" ] && continue
+            snapshot_on_installer="/mnt${snapshot_path}"
+            if [ ! -d "$snapshot_on_installer" ]; then
+                echo "[WARN] Snapshot path not found: $snapshot_on_installer" >> "$INSTALL_LOG"
+                continue
+            fi
+
+            source_rel=""
+            if [ -n "$mountp" ] && [ "$source_path" = "$mountp" ]; then
+                source_rel=""
+            elif [ -n "$mountp" ] && [[ "$source_path" == "$mountp/"* ]]; then
+                source_rel="${source_path#"$mountp"/}"
+            else
+                source_rel="$(basename "$source_path")"
+            fi
+            if [ -z "$source_rel" ] || [ "$source_rel" = "." ]; then
+                source_rel="pool-root"
+            fi
+
+            target_parent="$pool_mount_dir/$(dirname "$source_rel")"
+            mkdir -p "$target_parent"
+
+            if ! btrfs send "$snapshot_on_installer" | btrfs receive "$target_parent" >> "$INSTALL_LOG" 2>&1; then
+                msg "Failed to restore snapshot $snapshot_path to pool \"$pname\".\nSee: $INSTALL_LOG"
+                return 1
+            fi
+
+            received_path="$target_parent/$(basename "$snapshot_on_installer")"
+            final_path="$pool_mount_dir/$source_rel"
+            if [ "$received_path" != "$final_path" ]; then
+                mkdir -p "$(dirname "$final_path")"
+                if [ -e "$final_path" ]; then
+                    if btrfs subvolume show "$final_path" >/dev/null 2>&1; then
+                        btrfs subvolume delete "$final_path" >> "$INSTALL_LOG" 2>&1 || true
+                    else
+                        rm -rf "$final_path" >> "$INSTALL_LOG" 2>&1 || true
+                    fi
+                fi
+                mv "$received_path" "$final_path" >> "$INSTALL_LOG" 2>&1
+            fi
+        done
+
+        umount "$pool_mount_dir" >> "$INSTALL_LOG" 2>&1 || true
+    done
+
+    mkdir -p /mnt/var/lib/alvaos
+    {
+        echo "{"
+        local idx=0
+        local total="${#POOL_IDS[@]}"
+        for pid in "${POOL_IDS[@]}"; do
+            idx=$((idx + 1))
+            local pname raid mountp selected_list pool_state_id
+            local -a selected_arr
+            pname="${POOL_NAME[$pid]}"
+            raid="${POOL_RAID[$pid]}"
+            mountp="${POOL_MOUNT[$pid]}"
+            [ -n "$mountp" ] || mountp="/mnt/alvaos/${pname}"
+            selected_list="${POOL_SELECTED[$pid]}"
+            selected_arr=($selected_list)
+            pool_state_id="${POOL_NEW_ID[$pid]}"
+            [ -n "$pool_state_id" ] || pool_state_id="$pid"
+
+            printf '  "%s": {\n' "$(json_escape "$pool_state_id")"
+            printf '    "name": "%s",\n' "$(json_escape "$pname")"
+            printf '    "devices": ['
+            local first_dev=1
+            local disk_name
+            for disk_name in "${selected_arr[@]}"; do
+                if [ "$first_dev" -eq 0 ]; then
+                    printf ', '
+                fi
+                printf '"%s"' "$(json_escape "/dev/$disk_name")"
+                first_dev=0
+            done
+            printf '],\n'
+            printf '    "raid_level": "%s",\n' "$(json_escape "$raid")"
+            printf '    "mount_point": "%s",\n' "$(json_escape "$mountp")"
+            printf '    "created_at": "%s"\n' "$(date -Iseconds)"
+            printf '  }'
+            if [ "$idx" -lt "$total" ]; then
+                printf ','
+            fi
+            printf '\n'
+        done
+        echo "}"
+    } > /mnt/var/lib/alvaos/pools.json
+
+    return 0
+}
+
 # Cleanup function for error recovery
 cleanup() {
     local exit_code=$?
@@ -165,12 +441,27 @@ rollback_from_snapshot() {
         return 1
     fi
 
+    local pool_restore_status="not_requested"
+    local manifest_path="/mnt/var/lib/alvaos/full-system-manifests/${selected}.plan"
+    if [ -f "$manifest_path" ]; then
+        if confirm "Full backup manifest found for this snapshot.\n\nDo you also want to restore storage pools and data?"; then
+            if restore_pools_from_manifest "$manifest_path" "$root_part"; then
+                pool_restore_status="restored"
+            else
+                pool_restore_status="failed"
+                if ! confirm "Pool restore failed.\n\nContinue with root rollback only?"; then
+                    return 1
+                fi
+            fi
+        fi
+    fi
+
     if ! btrfs subvolume set-default "$subvol_id" /mnt >> "$INSTALL_LOG" 2>&1; then
         msg "Failed to set default subvolume to snapshot ID $subvol_id."
         return 1
     fi
 
-    msg "Rollback prepared successfully.\n\nSnapshot: $selected\nSubvolume ID: $subvol_id\n\nReboot now to boot into this snapshot."
+    msg "Rollback prepared successfully.\n\nSnapshot: $selected\nSubvolume ID: $subvol_id\nPool restore: $pool_restore_status\n\nReboot now to boot into this snapshot."
     reboot
 }
 

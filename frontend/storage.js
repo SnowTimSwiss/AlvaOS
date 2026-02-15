@@ -1,6 +1,85 @@
 // AlvaOS Storage Management Logic
 // API_BASE is defined in app.js
 
+const IGNORED_DETECTED_POOLS_KEY = 'alvaos_ignored_detected_pools';
+
+function getIgnoredDetectedPools() {
+    try {
+        const raw = localStorage.getItem(IGNORED_DETECTED_POOLS_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? new Set(parsed.map((v) => String(v))) : new Set();
+    } catch {
+        return new Set();
+    }
+}
+
+function saveIgnoredDetectedPools(setValue) {
+    const values = Array.from(setValue || []).map((v) => String(v)).filter(Boolean);
+    localStorage.setItem(IGNORED_DETECTED_POOLS_KEY, JSON.stringify(values));
+}
+
+function ignoreDetectedPool(poolId) {
+    if (!poolId) return;
+    const ignored = getIgnoredDetectedPools();
+    ignored.add(String(poolId));
+    saveIgnoredDetectedPools(ignored);
+    if (window.showToast) window.showToast('Pool detection ignored for now.', 'info');
+    loadPools();
+}
+
+function unignoreDetectedPool(poolId) {
+    if (!poolId) return;
+    const ignored = getIgnoredDetectedPools();
+    if (ignored.delete(String(poolId))) {
+        saveIgnoredDetectedPools(ignored);
+    }
+}
+
+function notifyDetectedImportCandidates(pools) {
+    const ignored = getIgnoredDetectedPools();
+    const candidates = (Array.isArray(pools) ? pools : []).filter((pool) =>
+        pool
+        && pool.is_system_pool !== true
+        && pool.is_managed === false
+        && !ignored.has(String(pool.id || ''))
+    );
+    if (!candidates.length) return;
+    if (window.showToast) {
+        window.showToast(`${candidates.length} existing Btrfs pool(s) detected. Import or create a new one in the Pools tab.`, 'warning');
+    }
+}
+
+async function importDetectedPool(poolId, poolName) {
+    if (!poolId) return;
+    if (!await showConfirm(`Import existing pool "${poolName || poolId}"?\n\nThis will mount it and manage it in AlvaOS.`)) {
+        return;
+    }
+
+    try {
+        const token = localStorage.getItem('alvaos_token');
+        const response = await fetch(`${API_BASE}/storage/pools/import`, {
+            method: 'POST',
+            headers: {
+                'Authorization': token || '',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                pool_id: poolId,
+                pool_name: poolName || undefined
+            })
+        });
+
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Failed to import pool');
+
+        unignoreDetectedPool(poolId);
+        if (window.showToast) window.showToast(result.message || 'Pool imported', 'success');
+        await loadPools();
+    } catch (error) {
+        alert(`Error: ${error.message}`);
+    }
+}
+
 // Tab switching
 document.addEventListener('DOMContentLoaded', () => {
     const tabBtns = document.querySelectorAll('.tab-btn');
@@ -174,7 +253,13 @@ async function loadPools() {
         }
 
         const data = await response.json();
-        displayPools(data.pools);
+        const allPools = Array.isArray(data.pools) ? data.pools : [];
+        notifyDetectedImportCandidates(allPools);
+        const ignored = getIgnoredDetectedPools();
+        const visiblePools = allPools.filter((pool) => (
+            pool && (pool.is_managed !== false || !ignored.has(String(pool.id || '')))
+        ));
+        displayPools(visiblePools);
     } catch (error) {
         console.error('Error loading pools:', error);
         container.innerHTML = '<p style="text-align: center; color: var(--accent-danger); grid-column: 1/-1; padding: 2rem;">Failed to load pools. The storage service might be restarting.</p>';
@@ -200,16 +285,24 @@ function displayPools(pools) {
         const poolCard = document.createElement('div');
         poolCard.className = 'card';
         const isSystemPool = !!pool.is_system_pool;
+        const isManaged = pool.is_managed !== false;
         const devices = Array.isArray(pool.devices) ? pool.devices : [];
         if (isSystemPool) {
             poolCard.style.borderLeft = '3px solid var(--accent-warning)';
         }
+        if (!isManaged && !isSystemPool) {
+            poolCard.style.borderLeft = '3px solid var(--accent-warning)';
+        }
 
         const isDegraded = pool.status === 'degraded';
-        const statusColor = isSystemPool
+        const statusColor = !isManaged && !isSystemPool
+            ? 'var(--accent-warning)'
+            : isSystemPool
             ? 'var(--accent-warning)'
             : (isDegraded ? 'var(--accent-danger)' : 'var(--accent-success)');
-        const statusText = isSystemPool ? 'SYSTEM POOL' : (isDegraded ? 'DEGRADED' : 'Active');
+        const statusText = !isManaged && !isSystemPool
+            ? 'DETECTED (NOT IMPORTED)'
+            : (isSystemPool ? 'SYSTEM POOL' : (isDegraded ? 'DEGRADED' : 'Active'));
         const actionsHtml = isSystemPool
             ? `
                 <div style="display: flex; gap: 8px; margin-top: auto; flex-wrap: wrap;">
@@ -219,6 +312,26 @@ function displayPools(pools) {
                 </div>
                 <div style="margin-top: 12px; font-size: 0.75rem; color: var(--accent-warning); display: flex; align-items: center; gap: 4px;">
                     <span>!</span> System Pool - Restricted Actions
+                </div>
+            `
+            : (!isManaged
+                ? `
+                <div style="display: flex; gap: 8px; margin-top: auto; flex-wrap: wrap;">
+                    <button onclick="importDetectedPool('${pool.id}', '${pool.name}')" class="btn-primary"
+                        style="flex: 1; min-width: 120px; font-size: 0.85rem;">
+                        Import Pool
+                    </button>
+                    <button onclick="showCreatePoolDialog()" class="btn-secondary"
+                        style="flex: 1; min-width: 120px; font-size: 0.85rem;">
+                        Create New
+                    </button>
+                    <button onclick="ignoreDetectedPool('${pool.id}')" class="btn-secondary"
+                        style="flex: 1; min-width: 120px; font-size: 0.85rem;">
+                        Ignore
+                    </button>
+                </div>
+                <div style="margin-top: 12px; font-size: 0.75rem; color: var(--accent-warning); display: flex; align-items: center; gap: 4px;">
+                    <span>!</span> Existing Btrfs pool found. Import it, or ignore and create a new pool.
                 </div>
             `
             : `
@@ -236,7 +349,7 @@ function displayPools(pools) {
                         Delete
                     </button>
                 </div>
-            `;
+            `);
 
         poolCard.innerHTML = `
             <div class="card-header">

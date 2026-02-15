@@ -321,13 +321,17 @@ async function runPoolBackupNow() {
         return;
     }
 
+    const manualTarget = document.getElementById('pool-run-target-path')?.value
+        || document.getElementById('pool-target-path')?.value
+        || undefined;
+
     backupNotify('Starting pool backup...', 'info');
     const response = await backupApi('/backup/run', {
         method: 'POST',
         json: {
             backup_type: 'pool',
             sources: sources,
-            target_path: document.getElementById('pool-target-path').value || undefined
+            target_path: manualTarget
         }
     });
 
@@ -351,12 +355,16 @@ async function runSystemBackupNow() {
         return;
     }
 
+    const manualTarget = document.getElementById('system-run-target-path')?.value
+        || document.getElementById('system-target-path')?.value
+        || undefined;
+
     backupNotify('Starting system backup...', 'info');
     const response = await backupApi('/backup/run', {
         method: 'POST',
         json: {
             backup_type: 'system',
-            target_path: document.getElementById('system-target-path').value || undefined
+            target_path: manualTarget
         }
     });
 
@@ -465,10 +473,12 @@ async function loadBackupTargets() {
     // Pool Target Select
     const pb = backupSettings.pool_backup || {};
     setSelectOptions('pool-target-path', pb.target_path || '', backupTargets);
+    setSelectOptions('pool-run-target-path', pb.target_path || '', backupTargets);
 
     // System Target Select
     const sb = backupSettings.system_backup || {};
     setSelectOptions('system-target-path', sb.target_path || '', backupTargets);
+    setSelectOptions('system-run-target-path', sb.target_path || '', backupTargets);
 }
 
 async function loadDataSnapshots() {
@@ -515,11 +525,19 @@ function initBackupHandlers() {
     document.getElementById('pool-snapshots-refresh-btn')?.addEventListener('click', loadDataSnapshots);
     document.getElementById('pool-save-settings-btn')?.addEventListener('click', savePoolSettings);
     document.getElementById('pool-run-btn')?.addEventListener('click', runPoolBackupNow);
+    document.getElementById('pool-target-path')?.addEventListener('change', (event) => {
+        const runTarget = document.getElementById('pool-run-target-path');
+        if (runTarget) runTarget.value = event.target?.value || '';
+    });
 
     // System Handlers
     document.getElementById('system-run-btn')?.addEventListener('click', runSystemBackupNow);
     document.getElementById('system-save-settings-btn')?.addEventListener('click', saveSystemSettings);
     document.getElementById('system-snapshots-refresh-btn')?.addEventListener('click', loadSystemSnapshots);
+    document.getElementById('system-target-path')?.addEventListener('change', (event) => {
+        const runTarget = document.getElementById('system-run-target-path');
+        if (runTarget) runTarget.value = event.target?.value || '';
+    });
 
     // Delegate Event Listeners for Lists
     document.getElementById('pool-snapshots-list')?.addEventListener('click', (event) => {

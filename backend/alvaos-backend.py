@@ -1700,6 +1700,80 @@ def save_pools_state(state):
     except Exception as e:
         print(f"Error saving pools state: {e}")
 
+def sanitize_pool_name(name: str, fallback: str = "") -> str:
+    base = re.sub(r'[^a-zA-Z0-9._-]+', '-', (name or '').strip()).strip('-')
+    if base:
+        return base
+    if fallback:
+        return f"pool-{fallback[:8]}"
+    return "pool-imported"
+
+def detect_btrfs_pools():
+    pools = []
+    root_btrfs_uuid = None
+    if platform.system() != 'Linux':
+        return pools, root_btrfs_uuid
+
+    try:
+        root_res, root_err = run_sudo_command([CMD['BTRFS'], 'filesystem', 'show', '/'])
+        if root_res and root_res.returncode == 0 and not root_err:
+            root_match = re.search(r"uuid:\s+([A-Fa-f0-9-]+)", root_res.stdout, re.IGNORECASE)
+            if root_match:
+                root_btrfs_uuid = root_match.group(1).lower()
+    except Exception as e:
+        print(f"Warning: Could not detect root Btrfs UUID: {e}")
+
+    result, err = run_sudo_command([CMD['BTRFS'], 'filesystem', 'show'])
+    if not result or result.returncode != 0:
+        return pools, root_btrfs_uuid
+
+    output = result.stdout or ""
+    fs_blocks = re.split(r'Label:', output)
+    for block in fs_blocks:
+        if not block.strip():
+            continue
+
+        uuid_match = re.search(r"uuid:\s+([A-Fa-f0-9-]+)", block, re.IGNORECASE)
+        if not uuid_match:
+            continue
+        uuid_val = uuid_match.group(1)
+
+        label_match = re.match(r"\s*('(.*?)'|\S+)", block)
+        label = 'none'
+        if label_match:
+            label = (label_match.group(2) or label_match.group(1)).strip("'")
+            if label == 'none':
+                label = 'Unlabeled'
+
+        pool = {
+            'id': uuid_val,
+            'name': label,
+            'uuid': uuid_val,
+            'devices': [],
+            'device_sizes_bytes': [],
+            'total_size': 'Unknown',
+            'used_size': 'Unknown',
+            'raid_level': 'Single',
+            'status': 'healthy',
+            'is_system_pool': bool(root_btrfs_uuid and uuid_val.lower() == root_btrfs_uuid)
+        }
+
+        dev_lines = re.findall(r"path\s+(\S+)", block)
+        pool['devices'] = [d.strip() for d in dev_lines]
+
+        size_matches = re.findall(r"devid\s+\d+\s+size\s+(\d+\.?\d*[TiGkMBP]i?B)", block)
+        for sm in size_matches:
+            b = parse_size_to_bytes(sm)
+            if b:
+                pool['device_sizes_bytes'].append(b)
+
+        if 'missing' in block.lower():
+            pool['status'] = 'degraded'
+
+        pools.append(pool)
+
+    return pools, root_btrfs_uuid
+
 # Initialize backup manager after pool helpers are available
 if backup_manager is None:
     backup_manager = BackupManager(run_sudo_command, load_pools_state)
@@ -1716,142 +1790,84 @@ def manage_pools():
             return jsonify({'pools': STORAGE_CACHE['pools']['data']})
 
         pools = []
-        root_btrfs_uuid = None
         
         try:
             if platform.system() == 'Linux':
-                try:
-                    root_res, root_err = run_sudo_command([CMD['BTRFS'], 'filesystem', 'show', '/'])
-                    if root_res and root_res.returncode == 0 and not root_err:
-                        root_match = re.search(r"uuid:\s+([A-Fa-f0-9-]+)", root_res.stdout, re.IGNORECASE)
-                        if root_match:
-                            root_btrfs_uuid = root_match.group(1).lower()
-                except Exception as e:
-                    print(f"Warning: Could not detect root Btrfs UUID: {e}")
+                pools, _ = detect_btrfs_pools()
 
-                # Get list of Btrfs filesystems
-                result, err = run_sudo_command([CMD['BTRFS'], 'filesystem', 'show'])
-                
-                if result and result.returncode == 0:
-                    output = result.stdout
-                    # Split into filesystem blocks
-                    fs_blocks = re.split(r'Label:', output)
-                    
-                    for block in fs_blocks:
-                        if not block.strip(): continue
-                        
-                        uuid_match = re.search(r"uuid:\s+([A-Fa-f0-9-]+)", block, re.IGNORECASE)
-                        if not uuid_match: continue
-                        
-                        uuid_val = uuid_match.group(1)
-                        # Extract label
-                        label_match = re.match(r"\s*('(.*?)'|\S+)", block)
-                        label = 'none'
-                        if label_match:
-                            label = (label_match.group(2) or label_match.group(1)).strip("'")
-                            if label == 'none': label = 'Unlabeled'
-                        
-                        pool = {
-                            'id': uuid_val,
-                            'name': label,
-                            'uuid': uuid_val,
-                            'devices': [],
-                            'device_sizes_bytes': [],
-                            'total_size': 'Unknown',
-                            'used_size': 'Unknown',
-                            'raid_level': 'Single',
-                            'status': 'healthy',
-                            'is_system_pool': bool(root_btrfs_uuid and uuid_val.lower() == root_btrfs_uuid)
-                        }
-                        
-                        # Extract paths
-                        dev_lines = re.findall(r"path\s+(\S+)", block)
-                        pool['devices'] = [d.strip() for d in dev_lines]
+                # Load pools state to get mount points
+                pools_state = load_pools_state()
 
-                        # Extract device sizes
-                        size_matches = re.findall(r"devid\s+\d+\s+size\s+(\d+\.?\d*[TiGkMBP]i?B)", block)
-                        for sm in size_matches:
-                            b = parse_size_to_bytes(sm)
-                            if b:
-                                pool['device_sizes_bytes'].append(b)
-                        
-                        if 'missing' in block.lower():
-                            pool['status'] = 'degraded'
-                        
-                        pools.append(pool)
-                    
-                    # Load pools state to get mount points
-                    pools_state = load_pools_state()
-                    
-                    # Get usage information for each pool
-                    for pool in pools:
-                        # Get mount point from state
-                        pool_state = pools_state.get(pool['id'], {})
-                        mount_point = pool_state.get('mount_point', '')
-                        if mount_point:
-                            pool['mount_point'] = mount_point
-                            if mount_point == '/':
-                                pool['is_system_pool'] = True
-                        
-                        if pool['devices']:
+                # Get usage information for each pool
+                for pool in pools:
+                    pool_state = pools_state.get(pool['id'], {})
+                    mount_point = pool_state.get('mount_point', '')
+                    pool['is_managed'] = bool(pool_state and mount_point)
+                    if mount_point:
+                        pool['mount_point'] = mount_point
+                        if mount_point == '/':
+                            pool['is_system_pool'] = True
+
+                    if pool['devices']:
+                        try:
+                            usage_res, _ = run_sudo_command([CMD['BTRFS'], 'filesystem', 'usage', pool['devices'][0]], timeout=5)
+                            if usage_res and usage_res.returncode == 0:
+                                u_out = usage_res.stdout
+                                if 'RAID1' in u_out: pool['raid_level'] = 'RAID1'
+                                elif 'RAID10' in u_out: pool['raid_level'] = 'RAID10'
+                                elif 'RAID0' in u_out: pool['raid_level'] = 'RAID0'
+
+                                # Prefer explicit sizes when present
+                                used_match = re.search(r"Used:\s+(\d+\.?\d*[TiGkMBP]i?B)", u_out)
+                                dev_match = re.search(r"Device size:\s+(\d+\.?\d*[TiGkMBP]i?B)", u_out)
+                                fs_match = re.search(r"Filesystem size:\s+(\d+\.?\d*[TiGkMBP]i?B)", u_out)
+                                free_match = re.search(r"Free \(estimated\):\s+(\d+\.?\d*[TiGkMBP]i?B)", u_out)
+
+                                if used_match:
+                                    pool['used_size'] = used_match.group(1)
+                                if dev_match:
+                                    pool['total_size'] = dev_match.group(1)
+                                elif fs_match:
+                                    pool['total_size'] = fs_match.group(1)
+                                if free_match:
+                                    pool['free_size'] = free_match.group(1)
+                        except Exception as e:
+                            print(f"Error getting pool usage: {e}")
+
+                        # Adjust usable size for mirror-like RAID
+                        try:
+                            if pool['raid_level'] == 'RAID1' and pool['device_sizes_bytes']:
+                                total_bytes = sum(pool['device_sizes_bytes'])
+                                max_bytes = max(pool['device_sizes_bytes'])
+                                usable_bytes = max(0, total_bytes - max_bytes)
+                                if usable_bytes > 0:
+                                    pool['total_size'] = format_bytes_gib(usable_bytes)
+                            elif pool['raid_level'] == 'RAID10' and pool['device_sizes_bytes']:
+                                total_bytes = sum(pool['device_sizes_bytes'])
+                                usable_bytes = total_bytes // 2
+                                if usable_bytes > 0:
+                                    pool['total_size'] = format_bytes_gib(usable_bytes)
+                        except Exception as e:
+                            print(f"Error adjusting usable size: {e}")
+
+                        if (pool['used_size'] == 'Unknown' or 'Estimated' not in pool['total_size']) and mount_point:
                             try:
-                                usage_res, _ = run_sudo_command([CMD['BTRFS'], 'filesystem', 'usage', pool['devices'][0]], timeout=5)
-                                if usage_res and usage_res.returncode == 0:
-                                    u_out = usage_res.stdout
-                                    if 'RAID1' in u_out: pool['raid_level'] = 'RAID1'
-                                    elif 'RAID10' in u_out: pool['raid_level'] = 'RAID10'
-                                    elif 'RAID0' in u_out: pool['raid_level'] = 'RAID0'
-
-                                    # Prefer explicit sizes when present
-                                    used_match = re.search(r"Used:\s+(\d+\.?\d*[TiGkMBP]i?B)", u_out)
-                                    dev_match = re.search(r"Device size:\s+(\d+\.?\d*[TiGkMBP]i?B)", u_out)
-                                    fs_match = re.search(r"Filesystem size:\s+(\d+\.?\d*[TiGkMBP]i?B)", u_out)
-                                    free_match = re.search(r"Free \(estimated\):\s+(\d+\.?\d*[TiGkMBP]i?B)", u_out)
-
-                                    if used_match:
-                                        pool['used_size'] = used_match.group(1)
-                                    if dev_match:
-                                        pool['total_size'] = dev_match.group(1)
-                                    elif fs_match:
-                                        pool['total_size'] = fs_match.group(1)
-                                    if free_match:
-                                        pool['free_size'] = free_match.group(1)
-                            except Exception as e:
-                                print(f"Error getting pool usage: {e}")
-
-                            # Adjust usable size for mirror-like RAID
-                            try:
-                                if pool['raid_level'] == 'RAID1' and pool['device_sizes_bytes']:
-                                    total_bytes = sum(pool['device_sizes_bytes'])
-                                    max_bytes = max(pool['device_sizes_bytes'])
-                                    usable_bytes = max(0, total_bytes - max_bytes)
-                                    if usable_bytes > 0:
-                                        pool['total_size'] = format_bytes_gib(usable_bytes)
-                                elif pool['raid_level'] == 'RAID10' and pool['device_sizes_bytes']:
-                                    total_bytes = sum(pool['device_sizes_bytes'])
-                                    usable_bytes = total_bytes // 2
-                                    if usable_bytes > 0:
-                                        pool['total_size'] = format_bytes_gib(usable_bytes)
-                            except Exception as e:
-                                print(f"Error adjusting usable size: {e}")
-
-                            if (pool['used_size'] == 'Unknown' or 'Estimated' not in pool['total_size']) and mount_point:
-                                try:
-                                    df_res = subprocess.run([CMD['DF'], '-h', mount_point], capture_output=True, text=True, timeout=2)
-                                    if df_res.returncode == 0:
-                                        p_lines = df_res.stdout.strip().split('\n')
-                                        if len(p_lines) >= 2:
-                                            p_parts = p_lines[1].split()
-                                            if len(p_parts) >= 4:
-                                                pool['total_size'] = p_parts[1]
-                                                pool['used_size'] = p_parts[2]
-                                except: pass
+                                df_res = subprocess.run([CMD['DF'], '-h', mount_point], capture_output=True, text=True, timeout=2)
+                                if df_res.returncode == 0:
+                                    p_lines = df_res.stdout.strip().split('\n')
+                                    if len(p_lines) >= 2:
+                                        p_parts = p_lines[1].split()
+                                        if len(p_parts) >= 4:
+                                            pool['total_size'] = p_parts[1]
+                                            pool['used_size'] = p_parts[2]
+                            except:
+                                pass
             else:
                 pools = [
                     {
                         'id': 'mock-pool-1', 'name': 'storage-pool', 'uuid': 'abc-123',
                         'devices': ['/dev/sdb'], 'total_size': '4.0TiB', 'used_size': '1.2TiB',
-                        'raid_level': 'RAID1', 'status': 'healthy'
+                        'raid_level': 'RAID1', 'status': 'healthy', 'is_managed': True
                     }
                 ]
         except Exception as e:
@@ -2008,6 +2024,89 @@ def manage_pools():
         
         except Exception as e:
             return jsonify({'error': f'Failed to delete pool: {str(e)}'}), 500
+
+@app.route('/api/v1/storage/pools/import', methods=['POST'])
+@require_auth
+def import_pool():
+    """Import an existing detected Btrfs pool into managed state."""
+    data = request.get_json() or {}
+    pool_id = (data.get('pool_id') or '').strip()
+    requested_name = (data.get('pool_name') or '').strip()
+    requested_mount = (data.get('mount_point') or '').strip()
+
+    if not pool_id:
+        return jsonify({'error': 'pool_id is required'}), 400
+
+    if platform.system() != 'Linux':
+        return jsonify({'success': True, 'message': f'Mock: Pool {pool_id} imported'}), 200
+
+    try:
+        detected_pools, root_uuid = detect_btrfs_pools()
+        detected = None
+        for pool in detected_pools:
+            if (pool.get('id') or '').lower() == pool_id.lower():
+                detected = pool
+                break
+
+        if not detected:
+            return jsonify({'error': f'Pool not detected: {pool_id}'}), 404
+
+        if root_uuid and pool_id.lower() == root_uuid:
+            return jsonify({'error': 'System root pool cannot be imported via this endpoint'}), 400
+
+        pools_state = load_pools_state()
+        existing = pools_state.get(pool_id, {})
+        pool_name = requested_name or existing.get('name') or detected.get('name') or f'pool-{pool_id[:8]}'
+        safe_name = sanitize_pool_name(pool_name, pool_id)
+
+        mount_point = requested_mount or existing.get('mount_point') or f'/mnt/alvaos/{safe_name}'
+        used_mounts = {
+            (item.get('mount_point') or '').strip()
+            for item in pools_state.values()
+            if isinstance(item, dict) and (item.get('mount_point') or '').strip()
+        }
+        if not requested_mount and mount_point in used_mounts and pool_id not in pools_state:
+            base_mount = mount_point
+            suffix = 2
+            while mount_point in used_mounts:
+                mount_point = f"{base_mount}-{suffix}"
+                suffix += 1
+
+        mk_res, mk_err = run_sudo_command([CMD['MKDIR'], '-p', mount_point])
+        if mk_err or not mk_res or mk_res.returncode != 0:
+            return jsonify({'error': f'Failed to create mount point: {mk_err or "unknown error"}'}), 500
+
+        is_mounted = subprocess.run([CMD['MOUNTPOINT'], '-q', mount_point], check=False).returncode == 0
+        if not is_mounted:
+            mount_res, mount_err = run_sudo_command([CMD['MOUNT'], '-U', pool_id, mount_point], timeout=30)
+            if mount_err or not mount_res or mount_res.returncode != 0:
+                devices = detected.get('devices') or []
+                fallback_device = devices[0] if devices else None
+                if not fallback_device:
+                    return jsonify({'error': f'Failed to mount pool and no fallback device available: {mount_err or "unknown error"}'}), 500
+                mount_res, mount_err = run_sudo_command([CMD['MOUNT'], fallback_device, mount_point], timeout=30)
+                if mount_err or not mount_res or mount_res.returncode != 0:
+                    return jsonify({'error': f'Failed to mount imported pool: {mount_err or "unknown error"}'}), 500
+
+        pools_state[pool_id] = {
+            'name': pool_name,
+            'devices': detected.get('devices', []),
+            'raid_level': str(detected.get('raid_level', 'single')).lower(),
+            'mount_point': mount_point,
+            'created_at': existing.get('created_at') or datetime.now().isoformat(),
+            'imported_at': datetime.now().isoformat(),
+        }
+        save_pools_state(pools_state)
+        invalidate_storage_cache('pools', 'disks')
+
+        return jsonify({
+            'success': True,
+            'message': f'Pool "{pool_name}" imported successfully',
+            'pool_id': pool_id,
+            'mount_point': mount_point
+        })
+    except Exception as e:
+        return jsonify({'error': f'Failed to import pool: {str(e)}'}), 500
 
 @app.route('/api/v1/storage/pools/<pool_id>/subvolumes', methods=['GET', 'POST', 'DELETE'])
 @require_auth

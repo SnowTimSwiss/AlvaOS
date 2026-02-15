@@ -155,6 +155,10 @@
                         <div class="status-item">Status: <strong id="pool-last-status">-</strong></div>
                     </div>
                     <div id="pool-last-error" class="metric-sub" style="color: var(--error); display: none;"></div>
+                    <div class="setting-group" style="margin-top: 12px;">
+                        <label class="setting-label" for="pool-run-target-path">Target for Manual Backup</label>
+                        <select id="pool-run-target-path" class="select-input"></select>
+                    </div>
                 </div>
 
                 <!-- Sources -->
@@ -203,6 +207,7 @@
                     <div class="setting-group">
                         <label class="setting-label" for="pool-target-path">Target Location</label>
                         <select id="pool-target-path" class="select-input"></select>
+                        <p class="metric-sub">Used by scheduled pool backups (and as default for manual backups).</p>
                     </div>
                 </div>
 
@@ -238,6 +243,10 @@
                         <div class="metric-sub"><strong>System Support:</strong> <span id="system-support-info">Checking...</span></div>
                         <div class="metric-sub" style="margin-top:5px;"><strong>Pending Rollback:</strong> <span id="system-pending-rollback">None</span></div>
                     </div>
+                    <div class="setting-group" style="margin-top: 12px;">
+                        <label class="setting-label" for="system-run-target-path">Target for Manual Backup</label>
+                        <select id="system-run-target-path" class="select-input"></select>
+                    </div>
                 </div>
 
                 <!-- Settings -->
@@ -272,7 +281,7 @@
                     <div class="setting-group">
                         <label class="setting-label" for="system-target-path">Target Location (Root Subvolume)</label>
                         <select id="system-target-path" class="select-input"></select>
-                        <p class="metric-sub">System snapshots must reside on the same Btrfs filesystem as Root.</p>
+                        <p class="metric-sub">Used by scheduled system backups. Must be on the same Btrfs filesystem as Root.</p>
                     </div>
                 </div>
 

@@ -471,13 +471,81 @@ class BackupManager:
         res, err = self.run_command([CMD["BTRFS"], "subvolume", "show", target], timeout=20)
         return bool(res and res.returncode == 0 and not err)
 
+    def _decode_mountinfo_path(self, value: str) -> str:
+        if not value:
+            return value
+        return re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), value)
+
+    def _existing_probe_path(self, path: str) -> str:
+        probe = self._normalize_path(path)
+        if not probe:
+            return "/"
+        while probe != "/" and not os.path.exists(probe):
+            next_probe = os.path.dirname(probe)
+            if next_probe == probe:
+                break
+            probe = next_probe
+        return probe if probe else "/"
+
+    def _filesystem_type_for_path(self, path: str) -> Optional[str]:
+        probe = self._existing_probe_path(path)
+        if not probe:
+            return None
+        probe_real = os.path.realpath(probe)
+        best_fs_type = None
+        best_len = -1
+
+        try:
+            with open("/proc/self/mountinfo", "r", encoding="utf-8", errors="replace") as f:
+                for raw_line in f:
+                    line = raw_line.strip()
+                    if " - " not in line:
+                        continue
+                    left, right = line.split(" - ", 1)
+                    left_fields = left.split()
+                    right_fields = right.split()
+                    if len(left_fields) < 5 or not right_fields:
+                        continue
+
+                    mount_point = self._decode_mountinfo_path(left_fields[4])
+                    fs_type = right_fields[0].strip().lower()
+                    if not mount_point or not fs_type:
+                        continue
+
+                    mount_real = os.path.realpath(mount_point)
+                    is_match = (
+                        probe_real == mount_real
+                        or (mount_real == "/" and probe_real.startswith("/"))
+                        or (mount_real != "/" and probe_real.startswith(mount_real + os.sep))
+                    )
+                    if not is_match:
+                        continue
+
+                    mount_len = len(mount_real)
+                    if mount_len > best_len:
+                        best_len = mount_len
+                        best_fs_type = fs_type
+        except Exception:
+            return None
+
+        return best_fs_type
+
     def _path_on_btrfs(self, path: str) -> bool:
         if platform.system() != "Linux":
             return True
         target = self._normalize_path(path)
-        if not target or not os.path.exists(target):
+        if not target:
             return False
-        res, err = self.run_command([CMD["BTRFS"], "filesystem", "show", target], timeout=20)
+
+        fs_type = self._filesystem_type_for_path(target)
+        if fs_type:
+            return fs_type == "btrfs"
+
+        # Fallback for systems where mountinfo parsing is unavailable.
+        probe = self._existing_probe_path(target)
+        if not os.path.exists(probe):
+            return False
+        res, err = self.run_command([CMD["BTRFS"], "filesystem", "show", probe], timeout=20)
         return bool(res and res.returncode == 0 and not err)
 
     def _get_subvolume_id(self, path: str) -> Optional[int]:
@@ -533,6 +601,126 @@ class BackupManager:
         if not safe_rel:
             safe_rel = "__root__"
         return os.path.join(base, ".alvaos-snapshots", safe_rel)
+
+    def _plan_escape(self, value: Optional[str]) -> str:
+        text = str(value or "")
+        return (
+            text
+            .replace("%", "%25")
+            .replace("|", "%7C")
+            .replace("\n", "%0A")
+            .replace("\r", "")
+        )
+
+    def _collect_full_backup_sources(self) -> List[Dict]:
+        grouped: Dict[str, Dict[str, List[Dict]]] = {}
+        for item in self.get_sources():
+            pool_id = str(item.get("pool_id") or "")
+            source_path = self._normalize_path(item.get("path"))
+            kind = str(item.get("kind") or "").strip().lower()
+            if not pool_id or not source_path:
+                continue
+            if kind not in ("pool", "subvolume"):
+                continue
+            group = grouped.setdefault(pool_id, {"pool": [], "subvolume": []})
+            group[kind].append({
+                "pool_id": pool_id,
+                "pool_name": item.get("pool_name") or item.get("name") or pool_id,
+                "kind": kind,
+                "path": source_path,
+            })
+
+        selected: List[Dict] = []
+        for pool_id in sorted(grouped.keys()):
+            group = grouped[pool_id]
+            candidates = group.get("subvolume") or group.get("pool") or []
+            candidates = sorted(candidates, key=lambda entry: entry.get("path", ""))
+            selected.extend(candidates)
+        return selected
+
+    def _write_full_backup_manifest(
+        self,
+        system_snapshot_entry: Dict,
+        data_snapshot_entries: List[Dict],
+        failures: Optional[List[Dict]] = None,
+    ) -> Tuple[Optional[str], Optional[str]]:
+        manifest_dir = os.path.join(self.state_dir, "full-system-manifests")
+        mk_res, mk_err = self.run_command([CMD["MKDIR"], "-p", manifest_dir], timeout=30)
+        if mk_err or not mk_res or mk_res.returncode != 0:
+            return None, mk_err or "Failed to prepare manifest directory"
+
+        snapshot_name = str(system_snapshot_entry.get("snapshot_name") or "").strip()
+        if not snapshot_name:
+            return None, "Missing system snapshot name"
+
+        pools_state = self.load_pools_state() or {}
+        if not isinstance(pools_state, dict):
+            pools_state = {}
+
+        manifest_path = os.path.join(manifest_dir, f"{snapshot_name}.plan")
+        lines = [
+            "# AlvaOS Full Backup Manifest v1",
+            "META|format|1",
+            f"META|created_at|{self._plan_escape(self._now_iso())}",
+            f"META|system_snapshot_name|{self._plan_escape(snapshot_name)}",
+            f"META|system_snapshot_path|{self._plan_escape(system_snapshot_entry.get('snapshot_path'))}",
+            f"META|system_target_root|{self._plan_escape(system_snapshot_entry.get('target_root'))}",
+        ]
+
+        for pool_id in sorted(pools_state.keys()):
+            pool = pools_state.get(pool_id, {})
+            devices = pool.get("devices", [])
+            if not isinstance(devices, list):
+                devices = []
+            lines.append(
+                "POOL|{pool_id}|{name}|{raid}|{mount}|{count}".format(
+                    pool_id=self._plan_escape(pool_id),
+                    name=self._plan_escape(pool.get("name") or pool_id),
+                    raid=self._plan_escape(pool.get("raid_level") or "single"),
+                    mount=self._plan_escape(pool.get("mount_point") or ""),
+                    count=len(devices),
+                )
+            )
+            for index, dev in enumerate(devices):
+                lines.append(
+                    "POOL_DEVICE|{pool_id}|{index}|{device}".format(
+                        pool_id=self._plan_escape(pool_id),
+                        index=index,
+                        device=self._plan_escape(dev),
+                    )
+                )
+
+        for item in data_snapshot_entries:
+            source = item.get("source") or {}
+            snapshot = item.get("snapshot") or {}
+            lines.append(
+                "SNAPSHOT|{pool_id}|{kind}|{source_path}|{snapshot_path}|{snapshot_name}".format(
+                    pool_id=self._plan_escape(source.get("pool_id") or ""),
+                    kind=self._plan_escape(source.get("kind") or "subvolume"),
+                    source_path=self._plan_escape(source.get("path") or ""),
+                    snapshot_path=self._plan_escape(snapshot.get("snapshot_path") or ""),
+                    snapshot_name=self._plan_escape(snapshot.get("snapshot_name") or ""),
+                )
+            )
+
+        for item in failures or []:
+            err = str(item.get("error") or "").strip()
+            source_path = self._normalize_path(item.get("source_path"))
+            if not err or not source_path:
+                continue
+            lines.append(
+                "FAILURE|{source_path}|{error}".format(
+                    source_path=self._plan_escape(source_path),
+                    error=self._plan_escape(err),
+                )
+            )
+
+        try:
+            with open(manifest_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines) + "\n")
+            return manifest_path, None
+        except Exception as exc:
+            return None, str(exc)
 
     def _snapshot_direct(self, source_path: str, snapshot_path: str) -> Tuple[bool, str]:
         target_parent = os.path.dirname(snapshot_path)
@@ -798,17 +986,59 @@ class BackupManager:
             elif backup_type == "system":
                 # System Backup Logic
                 current_settings = settings.get("system_backup", {})
-                
+
                 ok, payload = self.create_system_snapshot(label=trigger, trigger=trigger, target_path=target_path)
                 if ok:
                      created.append(payload)
                      self._enforce_retention("/", current_settings.get("keep_last", 10), "system")
+
+                     full_data_created = []
+                     for source in self._collect_full_backup_sources():
+                         source_path = self._normalize_path(source.get("path"))
+                         if not source_path:
+                             continue
+                         data_ok, data_payload = self.create_snapshot(
+                             source_path=source_path,
+                             label=f"{trigger}-full",
+                             trigger=trigger,
+                             target_path=target_path,
+                             snapshot_class="full_data",
+                         )
+                         if data_ok:
+                             created.append(data_payload)
+                             full_data_created.append({
+                                 "source": source,
+                                 "snapshot": data_payload,
+                             })
+                             self._enforce_retention(
+                                 source_path,
+                                 current_settings.get("keep_last", 10),
+                                 "full_data",
+                             )
+                         else:
+                             failed.append({
+                                 "source_path": source_path,
+                                 "error": data_payload.get("error", "unknown error"),
+                             })
+
+                     manifest_path, manifest_err = self._write_full_backup_manifest(
+                         payload,
+                         full_data_created,
+                         failed,
+                     )
+                     if manifest_path:
+                         payload["full_backup_manifest_path"] = manifest_path
+                     if manifest_err:
+                         failed.append({
+                             "source_path": "/",
+                             "error": f"Failed to write full-backup manifest: {manifest_err}",
+                         })
                 else:
                      failed.append({"source_path": "/", "error": payload.get("error", "unknown error")})
 
                 status_payload = {
                     "system_last_run_at": self._now_iso(),
-                    "system_last_status": "success" if not failed else "error",
+                    "system_last_status": "success" if not failed else ("partial" if created else "error"),
                     "system_last_error": "; ".join([f["error"] for f in failed]) if failed else "",
                 }
                 if current_settings.get("enabled"):
