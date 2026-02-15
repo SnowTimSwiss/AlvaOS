@@ -397,10 +397,22 @@ deb http://security.debian.org/debian-security bookworm-security main contrib no
 SOURCES_EOF
 
     update_progress "Configuring fstab..."
-    ROOT_UUID=$(blkid -s UUID -o value $(findmnt -n -o SOURCE /mnt))
+    # findmnt on btrfs returns e.g. "/dev/sda2[/@]" — strip bracket notation and take first line
+    ROOT_SOURCE=$(findmnt -n -o SOURCE /mnt | head -n1 | sed 's/\[.*\]//')
+    ROOT_UUID=""
+    if [ -n "$ROOT_SOURCE" ]; then
+        ROOT_UUID=$(blkid -s UUID -o value "$ROOT_SOURCE" 2>/dev/null | head -n1)
+    fi
+    # Fallback: if UUID is empty, use the device path directly
+    if [ -n "$ROOT_UUID" ]; then
+        ROOT_ID="UUID=$ROOT_UUID"
+    else
+        ROOT_ID="$ROOT_SOURCE"
+        echo "[$(date +%T)] WARNING: Could not detect UUID for $ROOT_SOURCE, using device path" >> "$INSTALL_LOG"
+    fi
     cat > /mnt/etc/fstab << FSTAB_EOF
-UUID=$ROOT_UUID  /          btrfs  defaults,subvol=@  0  1
-UUID=$ROOT_UUID  /var/lib/alvaos/system-snapshots  btrfs  defaults,subvol=system-snapshots  0  2
+$ROOT_ID  /          btrfs  defaults,subvol=@  0  1
+$ROOT_ID  /var/lib/alvaos/system-snapshots  btrfs  defaults,subvol=system-snapshots  0  2
 FSTAB_EOF
     
     # EFI partitions in fstab
