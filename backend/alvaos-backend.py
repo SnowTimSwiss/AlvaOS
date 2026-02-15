@@ -1244,6 +1244,9 @@ def set_hostname():
         return jsonify({'error': 'Invalid hostname format'}), 400
 
     if platform.system() == 'Linux':
+        # 0. Capture old hostname BEFORE changing it
+        old_hostname = socket.gethostname()
+        
         # 1. Update hostname via hostnamectl
         res, err = run_sudo_command([CMD['HOSTNAMECTL'], 'set-hostname', new_hostname])
         if err:
@@ -1251,15 +1254,29 @@ def set_hostname():
              
         # 2. Update /etc/hosts to prevent "unable to resolve host" errors
         try:
-            # Simple strategy: replace occurrences of the old hostname with the new one
-            old_hostname = socket.gethostname()
             hosts_file = '/etc/hosts'
             
             # Read current hosts file
             res, err = run_sudo_command([CMD['CAT'], hosts_file])
             if res and res.returncode == 0:
                 content = res.stdout
-                new_content = content.replace(old_hostname, new_hostname)
+                
+                # More robust replacement
+                lines = content.splitlines()
+                new_lines = []
+                found_local_ip = False
+                
+                for line in lines:
+                    if line.strip().startswith('127.0.1.1'):
+                        new_lines.append(f'127.0.1.1\t{new_hostname}')
+                        found_local_ip = True
+                    else:
+                        new_lines.append(line.replace(old_hostname, new_hostname))
+                
+                if not found_local_ip:
+                    new_lines.append(f'127.0.1.1\t{new_hostname}')
+                
+                new_content = "\n".join(new_lines) + "\n"
                 
                 # Write back with tee
                 process = subprocess.Popen(
