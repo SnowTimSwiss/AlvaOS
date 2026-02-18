@@ -385,5 +385,268 @@
                 }
             ]
         }
+    },
+    "owncloud": {
+        "name": "ownCloud",
+        "description": "Classic self-hosted file sync and share server",
+        "icon": "/apps/icons/owncloud.png",
+        "category": "Productivity",
+        "version": "latest",
+        "docker_compose": {
+            "version": "3",
+            "services": {
+                "owncloud": {
+                    "image": "owncloud/server:latest",
+                    "restart": "unless-stopped",
+                    "ports": [
+                        "8082:8080"
+                    ],
+                    "volumes": [
+                        "${POOL_PATH}/data:/var/www/html"
+                    ],
+                    "environment": {
+                        "OWNCLOUD_DOMAIN": "localhost:8082",
+                        "OWNCLOUD_DB_TYPE": "sqlite",
+                        "OWNCLOUD_ADMIN_USERNAME": "admin",
+                        "OWNCLOUD_ADMIN_PASSWORD": "admin"
+                    }
+                }
+            }
+        },
+        "config_schema": {
+            "ports": [
+                {
+                    "internal": 8080,
+                    "external": 8082,
+                    "protocol": "tcp",
+                    "description": "Web UI"
+                }
+            ],
+            "volumes": [
+                {
+                    "container_path": "/var/www/html",
+                    "description": "ownCloud data and config",
+                    "required": true
+                }
+            ],
+            "environment": [
+                {
+                    "key": "OWNCLOUD_ADMIN_PASSWORD",
+                    "default": "admin",
+                    "description": "Admin password"
+                }
+            ]
+        }
+    },
+    "opencloud": {
+        "name": "OpenCloud",
+        "description": "Next-generation cloud-native file platform",
+        "icon": "/apps/icons/opencloud.png",
+        "category": "Productivity",
+        "version": "latest",
+        "docker_compose": {
+            "version": "3",
+            "services": {
+                "opencloud": {
+                    "image": "opencloudeu/opencloud-rolling:latest",
+                    "restart": "unless-stopped",
+                    "ports": [
+                        "8085:8080"
+                    ],
+                    "volumes": [
+                        "${POOL_PATH}/data:/var/lib/opencloud"
+                    ]
+                }
+            }
+        },
+        "config_schema": {
+            "ports": [
+                {
+                    "internal": 8080,
+                    "external": 8085,
+                    "protocol": "tcp",
+                    "description": "Web UI"
+                }
+            ],
+            "volumes": [
+                {
+                    "container_path": "/var/lib/opencloud",
+                    "description": "OpenCloud data",
+                    "required": true
+                }
+            ]
+        }
+    },
+    "transmission": {
+        "name": "Transmission",
+        "description": "Fast, easy, and free BitTorrent client",
+        "icon": "/apps/icons/transmission.png",
+        "category": "Media",
+        "version": "latest",
+        "docker_compose": {
+            "version": "3",
+            "services": {
+                "transmission": {
+                    "image": "linuxserver/transmission:latest",
+                    "restart": "unless-stopped",
+                    "environment": {
+                        "USER": "admin",
+                        "PASS": "admin",
+                        "TZ": "Europe/Berlin"
+                    },
+                    "ports": [
+                        "9091:9091",
+                        "51413:51413",
+                        "51413:51413/udp"
+                    ],
+                    "volumes": [
+                        "${POOL_PATH}/config:/config",
+                        "${POOL_PATH}/downloads:/downloads",
+                        "${POOL_PATH}/watch:/watch"
+                    ]
+                }
+            }
+        },
+        "config_schema": {
+            "ports": [
+                {
+                    "internal": 9091,
+                    "external": 9091,
+                    "protocol": "tcp",
+                    "description": "Web UI"
+                }
+            ],
+            "volumes": [
+                {
+                    "container_path": "/config",
+                    "description": "Configuration files",
+                    "required": true
+                },
+                {
+                    "container_path": "/downloads",
+                    "description": "Downloads directory",
+                    "required": true
+                }
+            ],
+            "environment": [
+                {
+                    "key": "PASS",
+                    "default": "admin",
+                    "description": "Web UI password"
+                }
+            ]
+        }
+    },
+    "wireguard": {
+        "name": "WireGuard",
+        "description": "Extremely simple yet fast and modern VPN",
+        "icon": "/apps/icons/wireguard.png",
+        "category": "Network",
+        "version": "latest",
+        "docker_compose": {
+            "version": "3",
+            "services": {
+                "wireguard": {
+                    "image": "linuxserver/wireguard:latest",
+                    "restart": "unless-stopped",
+                    "cap_add": [
+                        "NET_ADMIN",
+                        "SYS_MODULE"
+                    ],
+                    "environment": {
+                        "PUID": "1000",
+                        "PGID": "1000",
+                        "TZ": "Europe/Berlin",
+                        "PEERS": "1"
+                    },
+                    "ports": [
+                        "51820:51820/udp"
+                    ],
+                    "volumes": [
+                        "${POOL_PATH}/config:/config",
+                        "/lib/modules:/lib/modules"
+                    ]
+                }
+            }
+        },
+        "config_schema": {
+            "ports": [
+                {
+                    "internal": 51820,
+                    "external": 51820,
+                    "protocol": "udp",
+                    "description": "WireGuard port"
+                }
+            ],
+            "volumes": [
+                {
+                    "container_path": "/config",
+                    "description": "Configuration files",
+                    "required": true
+                }
+            ],
+            "environment": [
+                {
+                    "key": "PEERS",
+                    "default": "1",
+                    "description": "Number of peers to generate"
+                }
+            ]
+        }
+    },
+    "openvpn": {
+        "name": "OpenVPN",
+        "description": "User-friendly VPN solution based on OpenVPN Access Server",
+        "icon": "/apps/icons/openvpn.png",
+        "category": "Network",
+        "version": "latest",
+        "docker_compose": {
+            "version": "3",
+            "services": {
+                "openvpn": {
+                    "image": "linuxserver/openvpn-as:latest",
+                    "restart": "unless-stopped",
+                    "cap_add": [
+                        "NET_ADMIN"
+                    ],
+                    "environment": {
+                        "PUID": "1000",
+                        "PGID": "1000",
+                        "TZ": "Europe/Berlin"
+                    },
+                    "ports": [
+                        "943:943",
+                        "9443:9443",
+                        "1194:1194/udp"
+                    ],
+                    "volumes": [
+                        "${POOL_PATH}/config:/config"
+                    ]
+                }
+            }
+        },
+        "config_schema": {
+            "ports": [
+                {
+                    "internal": 943,
+                    "external": 943,
+                    "protocol": "tcp",
+                    "description": "Admin Web UI"
+                },
+                {
+                    "internal": 1194,
+                    "external": 1194,
+                    "protocol": "udp",
+                    "description": "VPN Port"
+                }
+            ],
+            "volumes": [
+                {
+                    "container_path": "/config",
+                    "description": "Configuration files",
+                    "required": true
+                }
+            ]
+        }
     }
 }

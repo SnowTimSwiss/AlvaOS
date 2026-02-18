@@ -10,3 +10,8 @@ Required icons(for now):
 - pihole.png
 - vaultwarden.png
 - immich.png
+- owncloud.png
+- opencloud.png
+- transmission.png
+- wireguard.png
+- openvpn.png
