@@ -156,7 +156,7 @@
                     </div>
                     <div id="pool-last-error" class="metric-sub" style="color: var(--error); display: none;"></div>
                     <div class="setting-group" style="margin-top: 12px;">
-                        <label class="setting-label" for="pool-run-target-path">Target for Manual Backup</label>
+                        <label class="setting-label" for="pool-run-target-path">Save To (Manual Backup)</label>
                         <select id="pool-run-target-path" class="select-input"></select>
                     </div>
                 </div>
@@ -205,9 +205,9 @@
                     </div>
 
                     <div class="setting-group">
-                        <label class="setting-label" for="pool-target-path">Target Location</label>
+                        <label class="setting-label" for="pool-target-path">Default Save Location</label>
                         <select id="pool-target-path" class="select-input"></select>
-                        <p class="metric-sub">Used by scheduled pool backups (and as default for manual backups).</p>
+                        <p class="metric-sub">Where pool snapshots are stored. Used for scheduled backups and as the default for manual backups.</p>
                     </div>
                 </div>
 
@@ -244,7 +244,7 @@
                         <div class="metric-sub" style="margin-top:5px;"><strong>Pending Rollback:</strong> <span id="system-pending-rollback">None</span></div>
                     </div>
                     <div class="setting-group" style="margin-top: 12px;">
-                        <label class="setting-label" for="system-run-target-path">Target for Manual Backup</label>
+                        <label class="setting-label" for="system-run-target-path">Save To (Manual Backup)</label>
                         <select id="system-run-target-path" class="select-input"></select>
                     </div>
                 </div>
@@ -279,9 +279,9 @@
                     </div>
 
                     <div class="setting-group">
-                        <label class="setting-label" for="system-target-path">Target Location (Root Subvolume)</label>
+                        <label class="setting-label" for="system-target-path">Default Save Location (Root Filesystem)</label>
                         <select id="system-target-path" class="select-input"></select>
-                        <p class="metric-sub">Used by scheduled system backups. Must be on the same Btrfs filesystem as Root.</p>
+                        <p class="metric-sub">Where system snapshots are stored. Must be on the same Btrfs filesystem as Root.</p>
                     </div>
                 </div>
 

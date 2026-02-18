@@ -73,7 +73,7 @@ function setSelectOptions(selectId, selectedValue = '', items = []) {
     if (!selectEl) return;
 
     const options = [];
-    options.push('<option value="">Default (auto)</option>');
+    options.push('<option value="">Default save location (auto)</option>');
 
     const usedPaths = new Set();
 
@@ -86,7 +86,7 @@ function setSelectOptions(selectId, selectedValue = '', items = []) {
     // If selected value is custom (not in list), add it
     const selectedText = String(selectedValue || '');
     if (selectedText && !usedPaths.has(selectedText)) {
-        options.push(`<option value="${backupEscapeHtml(selectedText)}">Custom: ${backupEscapeHtml(selectedText)}</option>`);
+        options.push(`<option value="${backupEscapeHtml(selectedText)}">Custom save location: ${backupEscapeHtml(selectedText)}</option>`);
     }
 
     selectEl.innerHTML = options.join('');
