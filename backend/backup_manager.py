@@ -548,6 +548,46 @@ class BackupManager:
         res, err = self.run_command([CMD["BTRFS"], "filesystem", "show", probe], timeout=20)
         return bool(res and res.returncode == 0 and not err)
 
+    def _ensure_snapshot_container(self, path: str, force_subvolume: bool = False) -> Tuple[bool, str, str]:
+        container = self._normalize_path(path)
+        if not container:
+            return False, "Invalid snapshot target path", ""
+
+        if platform.system() != "Linux":
+            try:
+                Path(container).mkdir(parents=True, exist_ok=True)
+                return True, "", container
+            except Exception as e:
+                return False, str(e), ""
+
+        if force_subvolume and os.path.exists(container) and not self._path_is_btrfs_subvolume(container):
+            # Existing plain directories cannot be converted in place; use a dedicated child subvolume.
+            container = os.path.join(container, "__snapshot-container")
+
+        parent = self._normalize_path(os.path.dirname(container))
+        mk_parent_res, mk_parent_err = self.run_command([CMD["MKDIR"], "-p", parent], timeout=30)
+        if mk_parent_err or not mk_parent_res or mk_parent_res.returncode != 0:
+            return False, mk_parent_err or "Failed to prepare snapshot target parent path", ""
+
+        if not self._path_on_btrfs(parent):
+            return False, f"Target path is not on Btrfs: {parent}", ""
+
+        if os.path.exists(container):
+            if force_subvolume and not self._path_is_btrfs_subvolume(container):
+                return False, f"Snapshot container is not a Btrfs subvolume: {container}", ""
+            return True, "", container
+
+        if force_subvolume:
+            create_res, create_err = self.run_command([CMD["BTRFS"], "subvolume", "create", container], timeout=60)
+            if create_err or not create_res or create_res.returncode != 0:
+                return False, create_err or "Failed to create snapshot container subvolume", ""
+            return True, "", container
+
+        mk_res, mk_err = self.run_command([CMD["MKDIR"], "-p", container], timeout=30)
+        if mk_err or not mk_res or mk_res.returncode != 0:
+            return False, mk_err or "Failed to prepare snapshot target path", ""
+        return True, "", container
+
     def _get_subvolume_id(self, path: str) -> Optional[int]:
         res, err = self.run_command([CMD["BTRFS"], "subvolume", "show", path], timeout=20)
         if err or not res or res.returncode != 0:
@@ -811,12 +851,18 @@ class BackupManager:
             if not self._path_is_btrfs_subvolume(source):
                 return False, {"error": f"Source path is not a Btrfs subvolume: {source}"}
 
-            target_parent = os.path.dirname(snapshot_path)
-            mk_res, mk_err = self.run_command([CMD["MKDIR"], "-p", target_parent], timeout=30)
-            if mk_err or not mk_res or mk_res.returncode != 0:
-                return False, {"error": mk_err or "Failed to prepare target path"}
-            if not self._path_on_btrfs(target_parent):
-                return False, {"error": f"Target path is not on Btrfs: {target_parent}"}
+            target_parent = self._normalize_path(os.path.dirname(snapshot_path))
+            nested_target = target_parent == source or target_parent.startswith(source + os.sep)
+            ok_container, container_err, resolved_parent = self._ensure_snapshot_container(
+                target_parent,
+                force_subvolume=nested_target
+            )
+            if not ok_container:
+                return False, {"error": container_err or "Failed to prepare target path"}
+            if resolved_parent != target_parent:
+                target_root = resolved_parent
+                snapshot_path = os.path.join(target_root, name)
+                target_parent = resolved_parent
 
             if self._same_filesystem(source, target_parent):
                 ok, err = self._snapshot_direct(source, snapshot_path)
@@ -1085,6 +1131,12 @@ class BackupManager:
                 "message": "Mock restore completed (non-Linux environment)",
             }
 
+        pool_mount_points = {self._normalize_path(mp) for _, mp in self._list_pool_mounts()}
+        if target_source in pool_mount_points:
+            return False, {
+                "error": "Restoring a pool root is not supported. Restore a subvolume snapshot instead."
+            }
+
         if not os.path.exists(snapshot):
             return False, {"error": f"Snapshot not found: {snapshot}"}
 
@@ -1161,7 +1213,13 @@ class BackupManager:
             try:
                 self._schedule_tick()
             except Exception as e:
-                self._save_status({"last_status": "error", "last_error": str(e)})
+                scheduler_error = f"Scheduler error: {e}"
+                self._save_status({
+                    "pool_last_error": scheduler_error,
+                    "system_last_error": scheduler_error,
+                    "last_status": "error",
+                    "last_error": str(e),
+                })
             self._stop_event.wait(30)
 
     def _schedule_tick(self):

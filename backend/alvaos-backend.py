@@ -1797,10 +1797,15 @@ def manage_pools():
 
                 # Load pools state to get mount points
                 pools_state = load_pools_state()
+                state_key_by_lower = {str(key).lower(): key for key in pools_state.keys()}
+                detected_ids = set()
 
                 # Get usage information for each pool
                 for pool in pools:
-                    pool_state = pools_state.get(pool['id'], {})
+                    pool_id = str(pool.get('id', ''))
+                    detected_ids.add(pool_id.lower())
+                    state_key = pool_id if pool_id in pools_state else state_key_by_lower.get(pool_id.lower())
+                    pool_state = pools_state.get(state_key, {}) if state_key else {}
                     mount_point = pool_state.get('mount_point', '')
                     pool['is_managed'] = bool(pool_state and mount_point)
                     if mount_point:
@@ -1862,6 +1867,42 @@ def manage_pools():
                                             pool['used_size'] = p_parts[2]
                             except:
                                 pass
+
+                # Fallback: include managed pools that were not returned by btrfs detection.
+                for state_key, pool_state in pools_state.items():
+                    state_id = str(state_key)
+                    if state_id.lower() in detected_ids:
+                        continue
+
+                    mount_point = (pool_state.get('mount_point') or '').strip()
+                    raid_level = str(pool_state.get('raid_level', 'single')).strip().lower()
+                    pool_entry = {
+                        'id': state_id,
+                        'name': pool_state.get('name') or state_id,
+                        'uuid': state_id,
+                        'devices': pool_state.get('devices', []) if isinstance(pool_state.get('devices', []), list) else [],
+                        'device_sizes_bytes': [],
+                        'total_size': 'Unknown',
+                        'used_size': 'Unknown',
+                        'raid_level': 'Single' if raid_level == 'single' else raid_level.upper(),
+                        'status': 'healthy',
+                        'is_system_pool': mount_point == '/',
+                        'is_managed': bool(mount_point)
+                    }
+                    if mount_point:
+                        pool_entry['mount_point'] = mount_point
+                        try:
+                            df_res = subprocess.run([CMD['DF'], '-h', mount_point], capture_output=True, text=True, timeout=2)
+                            if df_res.returncode == 0:
+                                p_lines = df_res.stdout.strip().split('\n')
+                                if len(p_lines) >= 2:
+                                    p_parts = p_lines[1].split()
+                                    if len(p_parts) >= 4:
+                                        pool_entry['total_size'] = p_parts[1]
+                                        pool_entry['used_size'] = p_parts[2]
+                        except:
+                            pass
+                    pools.append(pool_entry)
             else:
                 pools = [
                     {
