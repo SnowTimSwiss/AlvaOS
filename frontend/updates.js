@@ -323,8 +323,32 @@ async function applyDebianUpdates() {
         }
         window.showToast('Debian updates started', 'success');
         pollUpdateStatus();
+        await Promise.all([checkDebianUpdates(), loadUpdateHistory()]);
     } catch (err) {
         window.showToast('Debian updates failed', 'error');
+    }
+}
+
+async function applyAllDebianUpdates() {
+    const ok = await window.showConfirm('Apply all Debian updates?\nAll currently available package updates will be installed.');
+    if (!ok) return;
+
+    try {
+        const res = await apiFetch('/updates/debian/apply', {
+            method: 'POST',
+            json: {}
+        });
+        if (!res) return;
+        const data = (await readJson(res)) || {};
+        if (!res.ok || !data.success) {
+            window.showToast(data.error || 'Applying all Debian updates failed', 'error');
+            return;
+        }
+        window.showToast('All Debian updates started', 'success');
+        pollUpdateStatus();
+        await Promise.all([checkDebianUpdates(), loadUpdateHistory()]);
+    } catch (err) {
+        window.showToast('Applying all Debian updates failed', 'error');
     }
 }
 
@@ -538,6 +562,7 @@ function initHandlers() {
     document.getElementById('download-install-btn')?.addEventListener('click', applyAlvaosUpdate);
     document.getElementById('debian-check-btn')?.addEventListener('click', checkDebianUpdates);
     document.getElementById('debian-apply-btn')?.addEventListener('click', applyDebianUpdates);
+    document.getElementById('debian-apply-all-btn')?.addEventListener('click', applyAllDebianUpdates);
     document.getElementById('offline-scan-btn')?.addEventListener('click', scanOfflineUpdates);
     document.getElementById('settings-save-btn')?.addEventListener('click', saveSettings);
 }

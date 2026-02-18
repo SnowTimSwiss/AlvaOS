@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
 CMD = {
-    "BTRFS": "/usr/sbin/btrfs",
+    "BTRFS": "/usr/bin/btrfs",
     "MKDIR": "/usr/bin/mkdir",
     "MV": "/usr/bin/mv",
     "BASH": "/usr/bin/bash",

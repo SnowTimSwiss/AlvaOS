@@ -388,7 +388,7 @@ class UpdateManager:
         })
         return {"path": dest_path, "sha256": checksum}
 
-    def run_command(self, cmd, timeout=60):
+    def run_command(self, cmd, timeout=60, extra_env=None):
         if not cmd:
             return None, "Empty command"
         
@@ -404,7 +404,10 @@ class UpdateManager:
             final_cmd = cmd
             
         try:
-            result = subprocess.run(final_cmd, capture_output=True, text=True, timeout=timeout, env={"LC_ALL": "C"})
+            env = {"LC_ALL": "C"}
+            if extra_env and isinstance(extra_env, dict):
+                env.update(extra_env)
+            result = subprocess.run(final_cmd, capture_output=True, text=True, timeout=timeout, env=env)
             if result.returncode != 0:
                 stderr_text = (result.stderr or "").strip()
                 stdout_text = (result.stdout or "").strip()
@@ -545,18 +548,43 @@ class UpdateManager:
     def apply_debian_updates(self, packages=None):
         if platform.system() != "Linux":
             return {"success": False, "error": "Debian updates are only supported on Linux"}
+
+        selected_packages = []
+        if packages is not None:
+            if isinstance(packages, str):
+                packages = [packages]
+            if not isinstance(packages, list):
+                return {"success": False, "error": "packages must be a list or string"}
+
+            seen = set()
+            for item in packages:
+                if item is None:
+                    continue
+                pkg = str(item).strip()
+                if not pkg:
+                    continue
+                # Accept package names and optional package=version pin format.
+                if not re.match(r"^[a-zA-Z0-9.+:-]+(?:=\S+)?$", pkg):
+                    return {"success": False, "error": f"Invalid package name: {pkg}"}
+                if pkg not in seen:
+                    seen.add(pkg)
+                    selected_packages.append(pkg)
+
         self.set_update_state("installing", "Applying Debian updates")
-        update_res, update_err = self.run_command([CMD['APT_GET'], "update"], timeout=120)
+        apt_env = {"DEBIAN_FRONTEND": "noninteractive"}
+        apt_base = [CMD['APT_GET'], "-o", "Dpkg::Lock::Timeout=120"]
+
+        update_res, update_err = self.run_command(apt_base + ["update"], timeout=180, extra_env=apt_env)
         if update_err or not update_res or update_res.returncode != 0:
             error_msg = update_err or (update_res.stderr if update_res else "apt-get update failed")
             self.set_update_state("error", "Debian updates failed", {"error": error_msg})
             return {"success": False, "error": error_msg}
 
-        cmd = [CMD['APT_GET'], "upgrade", "-y"]
-        if packages:
-            cmd = [CMD['APT_GET'], "install", "-y"] + list(packages)
+        cmd = apt_base + ["upgrade", "-y"]
+        if selected_packages:
+            cmd = apt_base + ["install", "-y"] + selected_packages
 
-        res, err = self.run_command(cmd, timeout=1200)
+        res, err = self.run_command(cmd, timeout=1800, extra_env=apt_env)
         if err or not res or res.returncode != 0:
             error_msg = err or (res.stderr if res else "apt-get failed")
             self.set_update_state("error", "Debian updates failed", {"error": error_msg})
@@ -564,7 +592,7 @@ class UpdateManager:
 
         entry = {
             "type": "debian",
-            "packages": packages or [],
+            "packages": selected_packages,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "stdout": res.stdout[-2000:] if res.stdout else ""
         }

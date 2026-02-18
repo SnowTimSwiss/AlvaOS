@@ -178,11 +178,11 @@ class AppStore:
     def _create_subvolume(self, path: str) -> Tuple[bool, Optional[str]]:
         """Create a Btrfs subvolume"""
         try:
-            # Use absolute paths matching sudoers
+            # Use absolute path matching AlvaOS sudoers
             if os.getuid() != 0:
-                cmd = ['sudo', '-n', '/usr/sbin/btrfs', 'subvolume', 'create', path]
+                cmd = ['sudo', '-n', '/usr/bin/btrfs', 'subvolume', 'create', path]
             else:
-                cmd = ['/usr/sbin/btrfs', 'subvolume', 'create', path]
+                cmd = ['/usr/bin/btrfs', 'subvolume', 'create', path]
             
             result = subprocess.run(
                 cmd,
@@ -202,11 +202,11 @@ class AppStore:
     def _delete_subvolume(self, path: str) -> Tuple[bool, Optional[str]]:
         """Delete a Btrfs subvolume"""
         try:
-            # Use absolute paths matching sudoers
+            # Use absolute path matching AlvaOS sudoers
             if os.getuid() != 0:
-                cmd = ['sudo', '-n', '/usr/sbin/btrfs', 'subvolume', 'delete', path]
+                cmd = ['sudo', '-n', '/usr/bin/btrfs', 'subvolume', 'delete', path]
             else:
-                cmd = ['/usr/sbin/btrfs', 'subvolume', 'delete', path]
+                cmd = ['/usr/bin/btrfs', 'subvolume', 'delete', path]
             
             result = subprocess.run(
                 cmd,
