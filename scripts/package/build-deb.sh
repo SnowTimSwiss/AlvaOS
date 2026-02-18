@@ -92,6 +92,7 @@ cp "${REPO_ROOT}/backend/update_manager.py" "${PKG_DIR}/opt/alvaos/bin/"
 cp "${REPO_ROOT}/backend/docker_manager.py" "${PKG_DIR}/opt/alvaos/bin/"
 cp "${REPO_ROOT}/backend/app_store.py" "${PKG_DIR}/opt/alvaos/bin/"
 cp "${REPO_ROOT}/backend/backup_manager.py" "${PKG_DIR}/opt/alvaos/bin/"
+cp "${REPO_ROOT}/backend/buddy_backup_manager.py" "${PKG_DIR}/opt/alvaos/bin/"
 
 # Copy frontend
 cp -r "${REPO_ROOT}/frontend/"* "${PKG_DIR}/opt/alvaos/webui/"
@@ -224,6 +225,10 @@ alvaos ALL=(ALL) NOPASSWD: /bin/df
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/getent
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/nohup
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/bash
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/wg
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/wg
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/wg-quick
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/wg-quick
 SUDOERS_EOF
 
 log "Creating package control file..."
@@ -232,7 +237,7 @@ Package: alvaos-system
 Version: ${DEB_VERSION}
 Architecture: amd64
 Maintainer: AlvaOS Team <dev@alvaos.org>
-Depends: python3, python3-flask, python3-flask-cors, python3-psutil, python3-requests, docker.io, docker-compose, btrfs-progs, systemd, smartmontools, nfs-kernel-server, samba, network-manager
+Depends: python3, python3-flask, python3-flask-cors, python3-psutil, python3-requests, docker.io, docker-compose, btrfs-progs, wireguard-tools, systemd, smartmontools, nfs-kernel-server, samba, network-manager
 Section: admin
 Priority: optional
 Homepage: https://github.com/SnowTimSwiss/AlvaOS

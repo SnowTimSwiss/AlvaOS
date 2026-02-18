@@ -25,6 +25,7 @@ from update_manager import UpdateManager
 from docker_manager import DockerManager
 from app_store import AppStore
 from backup_manager import BackupManager
+from buddy_backup_manager import BuddyBackupManager
 
 
 def is_secure_system_device(device_name):
@@ -135,6 +136,7 @@ update_manager = UpdateManager()
 docker_manager = DockerManager()
 app_store = AppStore()
 backup_manager = None
+buddy_backup_manager = None
 
 # Cache for storage information (TTL in seconds)
 STORAGE_CACHE = {
@@ -1777,6 +1779,8 @@ def detect_btrfs_pools():
 # Initialize backup manager after pool helpers are available
 if backup_manager is None:
     backup_manager = BackupManager(run_sudo_command, load_pools_state)
+if buddy_backup_manager is None:
+    buddy_backup_manager = BuddyBackupManager(run_sudo_command)
 
 @app.route('/api/v1/storage/pools', methods=['GET', 'POST', 'DELETE'])
 @require_auth
@@ -2903,6 +2907,85 @@ def backup_status():
         'status': backup_manager.get_status(),
         'system': backup_manager.get_system_state()
     })
+
+@app.route('/api/v1/backup/pairing/status', methods=['GET'])
+@require_auth
+def buddy_pairing_status():
+    """Get Buddy Backup pairing and tunnel status."""
+    if buddy_backup_manager is None:
+        return jsonify({'error': 'Buddy backup manager not initialized'}), 500
+    return jsonify(buddy_backup_manager.get_status())
+
+@app.route('/api/v1/backup/pairing/generate', methods=['POST'])
+@require_auth
+def buddy_pairing_generate():
+    """Generate a short-lived buddy pairing token."""
+    if buddy_backup_manager is None:
+        return jsonify({'error': 'Buddy backup manager not initialized'}), 500
+
+    data = request.get_json() or {}
+    endpoint = (data.get('endpoint') or '').strip()
+    expires_minutes = data.get('expires_minutes', 20)
+
+    if not endpoint:
+        host = (request.host or '').split(':', 1)[0].strip()
+        if host and host not in ('localhost', '127.0.0.1', '::1'):
+            endpoint = f"{host}:51820"
+
+    success, payload = buddy_backup_manager.generate_pairing_token(
+        endpoint=endpoint,
+        expires_minutes=expires_minutes
+    )
+    if not success:
+        return jsonify({'error': payload.get('error', 'Failed to generate pairing token')}), 400
+    return jsonify({'success': True, **payload})
+
+@app.route('/api/v1/backup/pairing/validate', methods=['POST'])
+@require_auth
+def buddy_pairing_validate():
+    """Validate and store a buddy pairing token."""
+    if buddy_backup_manager is None:
+        return jsonify({'error': 'Buddy backup manager not initialized'}), 500
+
+    data = request.get_json() or {}
+    token = (data.get('token') or '').strip()
+    endpoint_override = (data.get('endpoint_override') or '').strip()
+    name_override = (data.get('name_override') or '').strip()
+
+    success, payload = buddy_backup_manager.validate_pairing_token(
+        token=token,
+        endpoint_override=endpoint_override,
+        name_override=name_override
+    )
+    if not success:
+        return jsonify({'error': payload.get('error', 'Pairing failed')}), 400
+    return jsonify({'success': True, **payload})
+
+@app.route('/api/v1/backup/pairing/remove', methods=['POST'])
+@require_auth
+def buddy_pairing_remove():
+    """Remove an existing buddy peer."""
+    if buddy_backup_manager is None:
+        return jsonify({'error': 'Buddy backup manager not initialized'}), 500
+
+    data = request.get_json() or {}
+    node_id = (data.get('node_id') or '').strip()
+    success, payload = buddy_backup_manager.remove_peer(node_id=node_id)
+    if not success:
+        return jsonify({'error': payload.get('error', 'Failed to remove peer')}), 400
+    return jsonify({'success': True, **payload})
+
+@app.route('/api/v1/backup/pairing/restart', methods=['POST'])
+@require_auth
+def buddy_pairing_restart():
+    """Apply buddy tunnel configuration and restart tunnel."""
+    if buddy_backup_manager is None:
+        return jsonify({'error': 'Buddy backup manager not initialized'}), 500
+
+    success, payload = buddy_backup_manager.restart_tunnel()
+    if not success:
+        return jsonify({'error': payload.get('error', 'Failed to restart tunnel')}), 500
+    return jsonify({'success': True, **payload})
 
 # ============================================================================
 # APP STORE & CONTAINER MANAGEMENT API

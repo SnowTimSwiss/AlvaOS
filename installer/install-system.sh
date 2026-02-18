@@ -730,7 +730,7 @@ FSTAB_EOF
         -o Acquire::Retries=3 \
         -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" \
         linux-image-amd64 python3 python3-flask python3-flask-cors python3-psutil python3-requests python3-packaging python3-yaml \
-        systemd systemd-timesyncd network-manager openssh-server docker.io docker-compose btrfs-progs \
+        systemd systemd-timesyncd network-manager openssh-server docker.io docker-compose btrfs-progs wireguard-tools \
         curl wget vim sudo smartmontools nfs-kernel-server samba >> "$INSTALL_LOG" 2>&1
 
     update_progress "Installing bootloader..."
@@ -884,6 +884,10 @@ alvaos ALL=(ALL) NOPASSWD: /bin/df
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/getent
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/nohup
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/bash
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/wg
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/wg
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/wg-quick
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/wg-quick
 SUDOERS_EOF
     chmod 440 /mnt/etc/sudoers.d/alvaos
 

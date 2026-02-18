@@ -95,6 +95,10 @@ alvaos ALL=(ALL) NOPASSWD: /bin/df
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/getent
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/nohup
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/bash
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/wg
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/wg
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/wg-quick
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/wg-quick
 SUDOERS_EOF
 
 chown root:root "$SUDOERS_FILE"

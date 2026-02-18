@@ -3,6 +3,7 @@ let backupTargets = [];
 let backupSettings = {};
 let backupStatus = {};
 let backupSystemState = {};
+let buddyState = {};
 
 function backupToken() {
     return localStorage.getItem('alvaos_token') || '';
@@ -262,6 +263,47 @@ function fillSettingsUi() {
     document.getElementById('system-keep-last').value = String(sb.keep_last || 10);
 }
 
+function renderBuddyStatus() {
+    const identity = buddyState.identity || {};
+    const peers = Array.isArray(buddyState.peers) ? buddyState.peers : [];
+    const tunnel = buddyState.tunnel || {};
+
+    const supportedEl = document.getElementById('buddy-support-info');
+    const tunnelEl = document.getElementById('buddy-tunnel-state');
+    const nodeEl = document.getElementById('buddy-node-id');
+    const keyEl = document.getElementById('buddy-public-key');
+    const ipEl = document.getElementById('buddy-tunnel-ip');
+    const portEl = document.getElementById('buddy-listen-port');
+    const peersEl = document.getElementById('buddy-peers-list');
+
+    if (supportedEl) supportedEl.textContent = buddyState.supported ? 'Yes' : 'No';
+    if (tunnelEl) tunnelEl.textContent = (tunnel.state || 'unknown').toUpperCase();
+    if (nodeEl) nodeEl.textContent = identity.node_id || '-';
+    if (keyEl) keyEl.textContent = identity.public_key || '-';
+    if (ipEl) ipEl.textContent = identity.tunnel_ip || '-';
+    if (portEl) portEl.textContent = String(identity.listen_port || '-');
+
+    if (!peersEl) return;
+    if (!peers.length) {
+        peersEl.innerHTML = '<div class="metric-sub">No buddies paired yet.</div>';
+        return;
+    }
+
+    peersEl.innerHTML = peers.map((peer) => `
+        <div class="list-item" style="align-items:flex-start; gap:12px;">
+            <div style="display:flex; flex-direction:column; gap:3px;">
+                <div><strong>${backupEscapeHtml(peer.name || peer.node_id || 'Buddy')}</strong></div>
+                <div class="metric-sub mono-text">${backupEscapeHtml(peer.node_id || '-')}</div>
+                <div class="metric-sub">Endpoint: ${backupEscapeHtml(peer.endpoint || '(not set)')}</div>
+                <div class="metric-sub">Tunnel IP: ${backupEscapeHtml(peer.tunnel_ip || '-')}</div>
+                <div class="metric-sub">Status: ${backupEscapeHtml(peer.status || 'unknown')}</div>
+                ${peer.last_error ? `<div class="metric-sub" style="color: var(--error);">Error: ${backupEscapeHtml(peer.last_error)}</div>` : ''}
+            </div>
+            <button class="btn-secondary buddy-remove-peer-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Remove</button>
+        </div>
+    `).join('');
+}
+
 // ----------------------------------------------------------------------------
 // ACTIONS
 // ----------------------------------------------------------------------------
@@ -445,6 +487,116 @@ async function loadBackupStatus() {
     updateStatusUi();
 }
 
+async function loadBuddyStatus() {
+    const response = await backupApi('/backup/pairing/status');
+    const data = await backupReadJson(response);
+    if (!response || !response.ok || !data) {
+        backupNotify(data?.error || 'Failed to load buddy status', 'error');
+        return;
+    }
+    buddyState = data;
+    renderBuddyStatus();
+}
+
+async function generateBuddyToken() {
+    const endpoint = document.getElementById('buddy-endpoint-input')?.value?.trim() || '';
+    const expiresMinutes = Number(document.getElementById('buddy-token-expiry')?.value || 20);
+
+    const response = await backupApi('/backup/pairing/generate', {
+        method: 'POST',
+        json: {
+            endpoint: endpoint,
+            expires_minutes: expiresMinutes
+        }
+    });
+    const data = await backupReadJson(response);
+    if (!response || !response.ok || !data) {
+        backupNotify(data?.error || 'Failed to generate pairing token', 'error');
+        return;
+    }
+
+    const tokenEl = document.getElementById('buddy-generated-token');
+    if (tokenEl) tokenEl.value = data.token || '';
+    backupNotify('Pairing token generated', 'success');
+    await loadBuddyStatus();
+}
+
+async function copyBuddyToken() {
+    const token = document.getElementById('buddy-generated-token')?.value || '';
+    if (!token) {
+        backupNotify('No token to copy', 'warning');
+        return;
+    }
+    try {
+        await navigator.clipboard.writeText(token);
+        backupNotify('Token copied to clipboard', 'success');
+    } catch {
+        backupNotify('Failed to copy token', 'error');
+    }
+}
+
+async function validateBuddyToken() {
+    const token = document.getElementById('buddy-token-input')?.value?.trim() || '';
+    if (!token) {
+        backupNotify('Paste a buddy token first', 'warning');
+        return;
+    }
+    const endpointOverride = document.getElementById('buddy-endpoint-override')?.value?.trim() || '';
+    const nameOverride = document.getElementById('buddy-name-override')?.value?.trim() || '';
+
+    const response = await backupApi('/backup/pairing/validate', {
+        method: 'POST',
+        json: {
+            token: token,
+            endpoint_override: endpointOverride,
+            name_override: nameOverride
+        }
+    });
+    const data = await backupReadJson(response);
+    if (!response || !response.ok || !data) {
+        backupNotify(data?.error || 'Pairing failed', 'error');
+        return;
+    }
+
+    backupNotify('Buddy paired successfully', 'success');
+    const tokenInput = document.getElementById('buddy-token-input');
+    if (tokenInput) tokenInput.value = '';
+    await loadBuddyStatus();
+}
+
+async function restartBuddyTunnel() {
+    const response = await backupApi('/backup/pairing/restart', {
+        method: 'POST',
+        json: {}
+    });
+    const data = await backupReadJson(response);
+    if (!response || !response.ok || !data) {
+        backupNotify(data?.error || 'Failed to restart buddy tunnel', 'error');
+        return;
+    }
+    backupNotify('Buddy tunnel restarted', 'success');
+    await loadBuddyStatus();
+}
+
+async function removeBuddyPeer(nodeId) {
+    const target = String(nodeId || '').trim();
+    if (!target) return;
+    const ok = await window.showConfirm('Remove this buddy peer?');
+    if (!ok) return;
+
+    const response = await backupApi('/backup/pairing/remove', {
+        method: 'POST',
+        json: { node_id: target }
+    });
+    const data = await backupReadJson(response);
+    if (!response || !response.ok || !data) {
+        backupNotify(data?.error || 'Failed to remove buddy peer', 'error');
+        return;
+    }
+    backupNotify('Buddy removed', 'success');
+    await loadBuddyStatus();
+}
+
 async function loadBackupSources() {
     const response = await backupApi('/backup/sources');
     const data = await backupReadJson(response);
@@ -551,6 +703,18 @@ function initBackupHandlers() {
         if (!btn) return;
         prepareSystemRollback(btn.dataset.snapshotPath || '');
     });
+
+    // Buddy Handlers
+    document.getElementById('buddy-refresh-btn')?.addEventListener('click', loadBuddyStatus);
+    document.getElementById('buddy-restart-tunnel-btn')?.addEventListener('click', restartBuddyTunnel);
+    document.getElementById('buddy-generate-token-btn')?.addEventListener('click', generateBuddyToken);
+    document.getElementById('buddy-copy-token-btn')?.addEventListener('click', copyBuddyToken);
+    document.getElementById('buddy-validate-token-btn')?.addEventListener('click', validateBuddyToken);
+    document.getElementById('buddy-peers-list')?.addEventListener('click', (event) => {
+        const btn = event.target.closest('.buddy-remove-peer-btn');
+        if (!btn) return;
+        removeBuddyPeer(btn.dataset.nodeId || '');
+    });
 }
 
 async function initBackupPage() {
@@ -563,7 +727,8 @@ async function initBackupPage() {
         loadBackupTargets(), // Relies on settings for default selection
         loadDataSnapshots(),
         loadSystemSnapshots(),
-        loadBackupStatus()
+        loadBackupStatus(),
+        loadBuddyStatus()
     ]);
 }
 

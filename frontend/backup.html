@@ -138,6 +138,7 @@
             <div class="tab-bar">
                 <button class="tab-btn active" data-tab="pool-backup">Pool Backup</button>
                 <button class="tab-btn" data-tab="system-backup">System Backup</button>
+                <button class="tab-btn" data-tab="buddy-backup">Buddy Backup</button>
             </div>
 
             <!-- POOL BACKUP TAB -->
@@ -297,6 +298,94 @@
                     <p class="metric-sub" style="margin-top:10px;">
                         Note: Restoring a system snapshot requires a reboot. You can also rollback from the AlvaOS Installer via USB.
                     </p>
+                </div>
+            </div>
+
+            <!-- BUDDY BACKUP TAB -->
+            <div class="tab-panel" id="tab-buddy-backup">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Buddy Backup Status</div>
+                        <div style="display:flex; gap:8px;">
+                            <button id="buddy-refresh-btn" class="btn-secondary">Refresh</button>
+                            <button id="buddy-restart-tunnel-btn" class="btn-secondary">Restart Tunnel</button>
+                        </div>
+                    </div>
+                    <div class="status-row">
+                        <div class="status-item">Supported: <strong id="buddy-support-info">-</strong></div>
+                        <div class="status-item">Tunnel: <strong id="buddy-tunnel-state">-</strong></div>
+                    </div>
+                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 12px;">
+                        <div>
+                            <div class="setting-label">Node ID</div>
+                            <div id="buddy-node-id" class="mono-text">-</div>
+                        </div>
+                        <div>
+                            <div class="setting-label">Public Key</div>
+                            <div id="buddy-public-key" class="mono-text" style="word-break: break-all;">-</div>
+                        </div>
+                        <div>
+                            <div class="setting-label">Tunnel IP</div>
+                            <div id="buddy-tunnel-ip" class="mono-text">-</div>
+                        </div>
+                        <div>
+                            <div class="setting-label">Listen Port</div>
+                            <div id="buddy-listen-port" class="mono-text">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Generate Pairing Token</div>
+                        <button id="buddy-generate-token-btn" class="btn-primary">Generate</button>
+                    </div>
+                    <p class="metric-sub" style="margin-bottom: 10px;">Share this token with your buddy administrator.</p>
+                    <div class="setting-group">
+                        <label class="setting-label" for="buddy-endpoint-input">Your Endpoint (host:port)</label>
+                        <input id="buddy-endpoint-input" type="text" class="select-input" placeholder="example.com:51820">
+                        <p class="metric-sub">This is where your buddy can reach your WireGuard endpoint.</p>
+                    </div>
+                    <div class="setting-group">
+                        <label class="setting-label" for="buddy-token-expiry">Token Validity (minutes)</label>
+                        <input id="buddy-token-expiry" type="number" min="1" max="240" value="20" class="select-input">
+                    </div>
+                    <div class="setting-group">
+                        <label class="setting-label" for="buddy-generated-token">Pairing Token</label>
+                        <textarea id="buddy-generated-token" class="select-input" rows="4" style="font-family: monospace;" readonly></textarea>
+                        <div style="margin-top: 8px;">
+                            <button id="buddy-copy-token-btn" class="btn-secondary">Copy Token</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Pair With Buddy</div>
+                        <button id="buddy-validate-token-btn" class="btn-primary">Pair</button>
+                    </div>
+                    <p class="metric-sub" style="margin-bottom: 10px;">Paste the token received from your buddy admin.</p>
+                    <div class="setting-group">
+                        <label class="setting-label" for="buddy-token-input">Buddy Token</label>
+                        <textarea id="buddy-token-input" class="select-input" rows="4" style="font-family: monospace;" placeholder="Paste buddy pairing token"></textarea>
+                    </div>
+                    <div class="setting-group">
+                        <label class="setting-label" for="buddy-endpoint-override">Endpoint Override (optional)</label>
+                        <input id="buddy-endpoint-override" type="text" class="select-input" placeholder="override-host:51820">
+                    </div>
+                    <div class="setting-group">
+                        <label class="setting-label" for="buddy-name-override">Buddy Name Override (optional)</label>
+                        <input id="buddy-name-override" type="text" class="select-input" placeholder="Friendly buddy name">
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Paired Buddies</div>
+                    </div>
+                    <div id="buddy-peers-list">
+                        <div class="metric-sub">No buddies paired yet.</div>
+                    </div>
                 </div>
             </div>
 
