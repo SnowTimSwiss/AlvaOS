@@ -164,9 +164,14 @@ function buildWebUiUrl(appId, appDetails, appContainers) {
 
     const schemaPorts = appDetails?.config_schema?.ports;
     if (Array.isArray(schemaPorts) && schemaPorts.length > 0) {
-        const preferred = schemaPorts.find((item) =>
-            String(item?.description || '').toLowerCase().includes('web')
-        ) || schemaPorts[0];
+        const preferred = schemaPorts.find((item) => {
+            const desc = String(item?.description || '').toLowerCase();
+            return desc.includes('web') || desc.includes('ui');
+        });
+
+        if (!preferred) {
+            return null;
+        }
 
         const externalPort = Number(preferred?.external);
         if (!Number.isNaN(externalPort) && externalPort > 0) {

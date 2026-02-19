@@ -251,13 +251,14 @@ class DockerManager:
                 cmd = [self.compose_cmd, '-f', compose_file, '-p', project_name, 'up', '-d']
             
             if callback:
+                compose_env = {'LC_ALL': 'C', 'COMPOSE_INTERACTIVE_NO_CLI': '1'}
                 # Use Popen for real-time output
                 process = subprocess.Popen(
                     cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
-                    env={'LC_ALL': 'C'}
+                    env=compose_env
                 )
                 
                 output = []
@@ -286,7 +287,7 @@ class DockerManager:
                     capture_output=True,
                     text=True,
                     timeout=600,  # Longer timeout for pulling images
-                    env={'LC_ALL': 'C'}
+                    env={'LC_ALL': 'C', 'COMPOSE_INTERACTIVE_NO_CLI': '1'}
                 )
                 
                 # Clean up temp file
