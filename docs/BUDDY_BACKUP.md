@@ -2,6 +2,14 @@
 
 Core NAS-to-NAS backup system for AlvaOS. Peer-to-peer, encrypted, and incremental.
 
+## Current Scope (0.7.x)
+- Pairing token workflow
+- Buddy peer management
+- Buddy backup configuration (incoming path, outgoing sources, interval, retention)
+- WireGuard tunnel provisioning state
+
+Data transfer, backup execution, and restore orchestration are planned for `0.8.0`.
+
 ## Overview & Philosophy
 **Buddy Backup** allows two AlvaOS instances to back up to each other over the internet.
 - **Simple**: Pair via short code; no manual key management.

@@ -769,6 +769,7 @@ FSTAB_EOF
     if [ -d "/opt/alvaos/scripts" ]; then
         cp /opt/alvaos/scripts/update_checker.sh /mnt/opt/alvaos/scripts/ 2>/dev/null || true
         cp /opt/alvaos/scripts/apply_update.sh /mnt/opt/alvaos/scripts/ 2>/dev/null || true
+        cp /opt/alvaos/scripts/setup_sudoers.sh /mnt/opt/alvaos/scripts/ 2>/dev/null || true
         chmod +x /mnt/opt/alvaos/scripts/*.sh 2>/dev/null || true
         [ -f "/opt/alvaos/scripts/alvaos-update-checker.service" ] && cp /opt/alvaos/scripts/alvaos-update-checker.service /mnt/etc/systemd/system/
     fi
@@ -831,6 +832,8 @@ alvaos ALL=(ALL) NOPASSWD: /usr/sbin/smartctl
 alvaos ALL=(ALL) NOPASSWD: /sbin/smartctl
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/lsblk
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/btrfs
+alvaos ALL=(ALL) NOPASSWD: /usr/sbin/btrfs
+alvaos ALL=(ALL) NOPASSWD: /sbin/btrfs
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/wipefs
 alvaos ALL=(ALL) NOPASSWD: /sbin/wipefs
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/partprobe
@@ -889,7 +892,12 @@ alvaos ALL=(ALL) NOPASSWD: /usr/sbin/wg
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/wg-quick
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/wg-quick
 SUDOERS_EOF
+    chown root:root /mnt/etc/sudoers.d/alvaos
     chmod 440 /mnt/etc/sudoers.d/alvaos
+    chroot /mnt visudo -c -f /etc/sudoers.d/alvaos >> "$INSTALL_LOG" 2>&1 || {
+        msg "Sudoers validation failed for /etc/sudoers.d/alvaos"
+        exit 1
+    }
 
     # SSH Security
     mkdir -p /mnt/etc/ssh/sshd_config.d

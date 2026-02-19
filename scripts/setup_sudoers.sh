@@ -103,6 +103,7 @@ SUDOERS_EOF
 
 chown root:root "$SUDOERS_FILE"
 chmod 440 "$SUDOERS_FILE"
+visudo -c -f "$SUDOERS_FILE" >/dev/null
 
 echo "Success! Sudo permissions configured."
 echo "You can now run updates and management tasks."

@@ -107,7 +107,8 @@ cp "${REPO_ROOT}/VERSION" "${PKG_DIR}/etc/alvaos/VERSION"
 # Copy update scripts
 cp "${REPO_ROOT}/scripts/update_checker.sh" "${PKG_DIR}/opt/alvaos/scripts/"
 cp "${REPO_ROOT}/scripts/apply_update.sh" "${PKG_DIR}/opt/alvaos/scripts/"
-chmod +x "${PKG_DIR}/opt/alvaos/scripts/update_checker.sh" "${PKG_DIR}/opt/alvaos/scripts/apply_update.sh"
+cp "${REPO_ROOT}/scripts/setup_sudoers.sh" "${PKG_DIR}/opt/alvaos/scripts/"
+chmod +x "${PKG_DIR}/opt/alvaos/scripts/update_checker.sh" "${PKG_DIR}/opt/alvaos/scripts/apply_update.sh" "${PKG_DIR}/opt/alvaos/scripts/setup_sudoers.sh"
 
 # Copy update checker unit
 cp "${REPO_ROOT}/scripts/alvaos-update-checker.service" "${PKG_DIR}/etc/systemd/system/"
@@ -273,8 +274,16 @@ chown -R alvaos:alvaos /opt/alvaos
 chown -R alvaos:alvaos /var/lib/alvaos
 chown -R alvaos:alvaos /var/log/alvaos
 chown -R alvaos:alvaos /etc/alvaos
-chown root:root /etc/sudoers.d/alvaos
-chmod 440 /etc/sudoers.d/alvaos
+
+# Ensure sudoers rules are repaired/updated on both fresh install and deb upgrades
+mkdir -p /etc/sudoers.d
+if [ -x /opt/alvaos/scripts/setup_sudoers.sh ]; then
+    /opt/alvaos/scripts/setup_sudoers.sh
+else
+    chown root:root /etc/sudoers.d/alvaos
+    chmod 440 /etc/sudoers.d/alvaos
+    visudo -c -f /etc/sudoers.d/alvaos >/dev/null
+fi
 
 # Reload systemd
 systemctl daemon-reload

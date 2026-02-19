@@ -213,8 +213,17 @@ def run_sudo_command(cmd, timeout=30):
         if result.returncode != 0:
             stderr_text = (result.stderr or '').strip()
             stdout_text = (result.stdout or '').strip()
-            stderr_low = stderr_text.lower()
-            if 'password is required' in stderr_low or 'a password is required' in stderr_low:
+            combined_low = f"{stderr_text}\n{stdout_text}".lower()
+            if '/etc/sudoers.d/alvaos' in combined_low and (
+                'is owned by uid' in combined_low
+                or 'is world writable' in combined_low
+                or 'bad permissions' in combined_low
+            ):
+                return result, (
+                    "System permission error: /etc/sudoers.d/alvaos has invalid ownership or permissions. "
+                    "Run as root: chown root:root /etc/sudoers.d/alvaos && chmod 440 /etc/sudoers.d/alvaos"
+                )
+            if 'password is required' in combined_low or 'a password is required' in combined_low:
                 cmd_str = " ".join(final_cmd)
                 return None, f"System permission error: Passwordless sudo is not configured for command: {cmd_str}. Please check the AlvaOS documentation for sudoers setup."
             cmd_str = " ".join(final_cmd)
@@ -2916,6 +2925,22 @@ def buddy_pairing_status():
         return jsonify({'error': 'Buddy backup manager not initialized'}), 500
     return jsonify(buddy_backup_manager.get_status())
 
+@app.route('/api/v1/backup/buddy/settings', methods=['GET', 'POST'])
+@require_auth
+def buddy_settings():
+    """Get or update Buddy Backup configuration (pairing + scheduling metadata only)."""
+    if buddy_backup_manager is None:
+        return jsonify({'error': 'Buddy backup manager not initialized'}), 500
+
+    if request.method == 'GET':
+        return jsonify({'success': True, 'settings': buddy_backup_manager.get_settings()})
+
+    payload = request.get_json() or {}
+    success, result = buddy_backup_manager.save_settings(payload)
+    if not success:
+        return jsonify({'error': result.get('error', 'Failed to save buddy settings')}), 400
+    return jsonify({'success': True, 'settings': result})
+
 @app.route('/api/v1/backup/pairing/generate', methods=['POST'])
 @require_auth
 def buddy_pairing_generate():
@@ -2928,7 +2953,8 @@ def buddy_pairing_generate():
     expires_minutes = data.get('expires_minutes', 20)
 
     if not endpoint:
-        host = (request.host or '').split(':', 1)[0].strip()
+        host_header = (request.headers.get('X-Forwarded-Host') or request.host or '').split(',')[0].strip()
+        host = host_header.split(':', 1)[0].strip()
         if host and host not in ('localhost', '127.0.0.1', '::1'):
             endpoint = f"{host}:51820"
 

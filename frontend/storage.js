@@ -779,7 +779,7 @@ async function showCreatePoolDialog() {
                 Cancel
             </button>
             <button id="create-pool-confirm-btn" 
-                style="flex: 1; background: var(--accent-success); color: white; border: none; padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600;">
+                style="flex: 1; background: var(--accent-primary); color: white; border: none; padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600;">
                 Create Pool
             </button>
         </div>
@@ -945,7 +945,7 @@ async function showExpandPoolDialog(poolId, poolName) {
         
         <div style="display: flex; gap: 0.75rem;">
             <button id="cancel-expand-btn" style="flex: 1; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--bg-border); padding: 0.75rem; border-radius: 4px; cursor: pointer;">Cancel</button>
-            <button id="confirm-expand-btn" style="flex: 1; background: var(--accent-success); color: white; border: none; padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600;">Add Disks</button>
+            <button id="confirm-expand-btn" style="flex: 1; background: var(--accent-primary); color: white; border: none; padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600;">Add Disks</button>
         </div>
     `;
 
@@ -1070,7 +1070,7 @@ async function manageSubvolumes(poolId) {
                 <input type="text" id="new-subvol-name" placeholder="Subvolume name" 
                     style="flex: 1; padding: 0.75rem;">
                 <button id="create-subvol-btn" 
-                    style="background: var(--accent-success); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; cursor: pointer; font-weight: 600;">
+                    style="background: var(--accent-primary); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; cursor: pointer; font-weight: 600;">
                     Create
                 </button>
             </div>
@@ -1314,7 +1314,7 @@ async function showCreateShareDialog() {
                 Cancel
             </button>
             <button id="create-share-confirm-btn" 
-                style="flex: 1; background: var(--accent-success); color: white; border: none; padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600;">
+                style="flex: 1; background: var(--accent-primary); color: white; border: none; padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600;">
                 Create Share
             </button>
         </div>

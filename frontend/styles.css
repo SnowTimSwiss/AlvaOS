@@ -333,7 +333,7 @@ button {
 }
 
 .btn-primary {
-    background: var(--accent-success);
+    background: var(--accent-primary);
     color: white;
     border: none;
     padding: 0.5rem 1rem;

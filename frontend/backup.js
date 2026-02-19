@@ -4,6 +4,7 @@ let backupSettings = {};
 let backupStatus = {};
 let backupSystemState = {};
 let buddyState = {};
+let buddySettings = {};
 
 function backupToken() {
     return localStorage.getItem('alvaos_token') || '';
@@ -69,6 +70,12 @@ function selectedSources() {
         .filter(Boolean);
 }
 
+function selectedBuddySources() {
+    return Array.from(document.querySelectorAll('.buddy-source-toggle:checked'))
+        .map((el) => String(el.value || '').trim())
+        .filter(Boolean);
+}
+
 function setSelectOptions(selectId, selectedValue = '', items = []) {
     const selectEl = document.getElementById(selectId);
     if (!selectEl) return;
@@ -117,6 +124,27 @@ function renderSources() {
     container.innerHTML = backupSources.map((source) => `
         <label class="source-item">
             <input class="backup-source-toggle" type="checkbox" value="${backupEscapeHtml(source.path)}" ${configured.has(source.path) ? 'checked' : ''}>
+            <div class="source-meta">
+                <div class="source-name">${backupEscapeHtml(source.name)}</div>
+                <div class="source-path">${backupEscapeHtml(source.path)}</div>
+            </div>
+        </label>
+    `).join('');
+}
+
+function renderBuddyOutgoingSources() {
+    const container = document.getElementById('buddy-outgoing-sources');
+    if (!container) return;
+
+    if (!backupSources.length) {
+        container.innerHTML = '<div class="metric-sub">No available sources found.</div>';
+        return;
+    }
+
+    const configured = new Set((buddySettings.outgoing_sources || []).map((path) => String(path)));
+    container.innerHTML = backupSources.map((source) => `
+        <label class="source-item">
+            <input class="buddy-source-toggle" type="checkbox" value="${backupEscapeHtml(source.path)}" ${configured.has(source.path) ? 'checked' : ''}>
             <div class="source-meta">
                 <div class="source-name">${backupEscapeHtml(source.name)}</div>
                 <div class="source-path">${backupEscapeHtml(source.path)}</div>
@@ -235,14 +263,14 @@ function updateStatusUi() {
         if (systemRunBtn) systemRunBtn.disabled = true;
     } else {
         sysSupport.textContent = `Supported (Root Subvol: ${backupSystemState.root_subvolume_id})`;
-        sysSupport.style.color = 'var(--success)';
+        sysSupport.style.color = 'var(--accent-success)';
         if (systemRunBtn) systemRunBtn.disabled = false;
     }
 
     const sysPending = document.getElementById('system-pending-rollback');
     if (backupStatus.system_pending_reboot) {
         sysPending.textContent = `YES - Will rollback to ${backupStatus.system_pending_snapshot_path} on reboot`;
-        sysPending.style.color = 'var(--warning)';
+        sysPending.style.color = 'var(--accent-warning)';
     } else {
         sysPending.textContent = 'None';
         sysPending.style.color = 'var(--text-secondary)';
@@ -263,10 +291,27 @@ function fillSettingsUi() {
     document.getElementById('system-keep-last').value = String(sb.keep_last || 10);
 }
 
+function fillBuddySettingsUi() {
+    const incomingEl = document.getElementById('buddy-incoming-path');
+    if (incomingEl) incomingEl.value = buddySettings.incoming_path || '/mnt/alvaos/buddy-incoming';
+
+    const intervalEl = document.getElementById('buddy-interval');
+    if (intervalEl) intervalEl.value = String(buddySettings.interval_minutes || 1440);
+
+    const keepEl = document.getElementById('buddy-keep-last');
+    if (keepEl) keepEl.value = String(buddySettings.keep_last || 30);
+
+    const recursiveEl = document.getElementById('buddy-recursive-retention');
+    if (recursiveEl) recursiveEl.checked = true;
+
+    renderBuddyOutgoingSources();
+}
+
 function renderBuddyStatus() {
     const identity = buddyState.identity || {};
     const peers = Array.isArray(buddyState.peers) ? buddyState.peers : [];
     const tunnel = buddyState.tunnel || {};
+    const requirements = buddyState.requirements || {};
 
     const supportedEl = document.getElementById('buddy-support-info');
     const tunnelEl = document.getElementById('buddy-tunnel-state');
@@ -276,12 +321,21 @@ function renderBuddyStatus() {
     const portEl = document.getElementById('buddy-listen-port');
     const peersEl = document.getElementById('buddy-peers-list');
 
-    if (supportedEl) supportedEl.textContent = buddyState.supported ? 'Yes' : 'No';
+    if (supportedEl) {
+        supportedEl.textContent = buddyState.supported ? 'Yes' : 'Limited (setup only)';
+        supportedEl.style.color = buddyState.supported ? 'var(--accent-success)' : 'var(--accent-warning)';
+    }
     if (tunnelEl) tunnelEl.textContent = (tunnel.state || 'unknown').toUpperCase();
     if (nodeEl) nodeEl.textContent = identity.node_id || '-';
     if (keyEl) keyEl.textContent = identity.public_key || '-';
     if (ipEl) ipEl.textContent = identity.tunnel_ip || '-';
     if (portEl) portEl.textContent = String(identity.listen_port || '-');
+
+    if (tunnelEl && identity.key_error && !buddyState.supported) {
+        tunnelEl.title = identity.key_error;
+    } else if (tunnelEl && !buddyState.supported && !requirements.wg_cmd) {
+        tunnelEl.title = 'WireGuard tools are missing. Pairing/settings work, tunnel starts after installing wireguard-tools.';
+    }
 
     if (!peersEl) return;
     if (!peers.length) {
@@ -495,17 +549,28 @@ async function loadBuddyStatus() {
         return;
     }
     buddyState = data;
+    buddySettings = data.settings || buddySettings || {};
+    fillBuddySettingsUi();
     renderBuddyStatus();
 }
 
+async function loadBuddySettings() {
+    const response = await backupApi('/backup/buddy/settings');
+    const data = await backupReadJson(response);
+    if (!response || !response.ok || !data) {
+        backupNotify(data?.error || 'Failed to load buddy settings', 'error');
+        return;
+    }
+    buddySettings = data.settings || {};
+    fillBuddySettingsUi();
+}
+
 async function generateBuddyToken() {
-    const endpoint = document.getElementById('buddy-endpoint-input')?.value?.trim() || '';
     const expiresMinutes = Number(document.getElementById('buddy-token-expiry')?.value || 20);
 
     const response = await backupApi('/backup/pairing/generate', {
         method: 'POST',
         json: {
-            endpoint: endpoint,
             expires_minutes: expiresMinutes
         }
     });
@@ -541,15 +606,11 @@ async function validateBuddyToken() {
         backupNotify('Paste a buddy token first', 'warning');
         return;
     }
-    const endpointOverride = document.getElementById('buddy-endpoint-override')?.value?.trim() || '';
-    const nameOverride = document.getElementById('buddy-name-override')?.value?.trim() || '';
 
     const response = await backupApi('/backup/pairing/validate', {
         method: 'POST',
         json: {
-            token: token,
-            endpoint_override: endpointOverride,
-            name_override: nameOverride
+            token: token
         }
     });
     const data = await backupReadJson(response);
@@ -562,6 +623,30 @@ async function validateBuddyToken() {
     const tokenInput = document.getElementById('buddy-token-input');
     if (tokenInput) tokenInput.value = '';
     await loadBuddyStatus();
+}
+
+async function saveBuddySettings() {
+    const payload = {
+        enabled: true,
+        incoming_path: document.getElementById('buddy-incoming-path')?.value?.trim() || '/mnt/alvaos/buddy-incoming',
+        outgoing_sources: selectedBuddySources(),
+        interval_minutes: Number(document.getElementById('buddy-interval')?.value || 1440),
+        keep_last: Number(document.getElementById('buddy-keep-last')?.value || 30),
+        recursive_retention: true
+    };
+
+    const response = await backupApi('/backup/buddy/settings', {
+        method: 'POST',
+        json: payload
+    });
+    const data = await backupReadJson(response);
+    if (!response || !response.ok || !data) {
+        backupNotify(data?.error || 'Failed to save buddy settings', 'error');
+        return;
+    }
+    buddySettings = data.settings || buddySettings;
+    fillBuddySettingsUi();
+    backupNotify('Buddy settings saved', 'success');
 }
 
 async function restartBuddyTunnel() {
@@ -606,6 +691,7 @@ async function loadBackupSources() {
     }
     backupSources = data.sources || [];
     renderSources();
+    renderBuddyOutgoingSources();
 }
 
 async function loadBackupTargets() {
@@ -710,6 +796,7 @@ function initBackupHandlers() {
     document.getElementById('buddy-generate-token-btn')?.addEventListener('click', generateBuddyToken);
     document.getElementById('buddy-copy-token-btn')?.addEventListener('click', copyBuddyToken);
     document.getElementById('buddy-validate-token-btn')?.addEventListener('click', validateBuddyToken);
+    document.getElementById('buddy-save-settings-btn')?.addEventListener('click', saveBuddySettings);
     document.getElementById('buddy-peers-list')?.addEventListener('click', (event) => {
         const btn = event.target.closest('.buddy-remove-peer-btn');
         if (!btn) return;
@@ -728,7 +815,8 @@ async function initBackupPage() {
         loadDataSnapshots(),
         loadSystemSnapshots(),
         loadBackupStatus(),
-        loadBuddyStatus()
+        loadBuddyStatus(),
+        loadBuddySettings()
     ]);
 }
 

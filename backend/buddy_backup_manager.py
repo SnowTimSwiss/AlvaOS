@@ -17,6 +17,15 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
+DEFAULT_BUDDY_SETTINGS = {
+    "enabled": False,
+    "incoming_path": "/mnt/alvaos/buddy-incoming",
+    "outgoing_sources": [],
+    "interval_minutes": 1440,
+    "keep_last": 30,
+    "recursive_retention": True,
+}
+
 
 class BuddyBackupManager:
     def __init__(self, run_command: Callable):
@@ -25,6 +34,7 @@ class BuddyBackupManager:
         self.identity_file = os.path.join(self.state_dir, "buddy_identity.json")
         self.peers_file = os.path.join(self.state_dir, "buddy_peers.json")
         self.tokens_file = os.path.join(self.state_dir, "buddy_tokens.json")
+        self.settings_file = os.path.join(self.state_dir, "buddy_settings.json")
         self.wg_dir = os.path.join(self.state_dir, "wireguard")
         self.wg_config_path = os.path.join(self.wg_dir, "buddy0.conf")
         self.interface_name = "buddy0"
@@ -80,6 +90,13 @@ class BuddyBackupManager:
         tokens.setdefault("used", [])
         self._save_json(self.tokens_file, tokens)
 
+        settings = self._load_json(self.settings_file, {})
+        if not isinstance(settings, dict):
+            settings = {}
+        merged = self._merge_settings(settings)
+        if merged != settings:
+            self._save_json(self.settings_file, merged)
+
     def _now(self) -> datetime:
         return datetime.now(timezone.utc)
 
@@ -109,13 +126,13 @@ class BuddyBackupManager:
 
     def _wg_cmd(self) -> Optional[str]:
         return self._detect_cmd(
-            ["/usr/bin/wg", "/usr/sbin/wg", "/bin/wg", "/sbin/wg"],
+            ["/usr/bin/wg", "/usr/sbin/wg", "/usr/local/bin/wg", "/bin/wg", "/sbin/wg"],
             "wg"
         )
 
     def _wg_quick_cmd(self) -> Optional[str]:
         return self._detect_cmd(
-            ["/usr/bin/wg-quick", "/usr/sbin/wg-quick", "/bin/wg-quick", "/sbin/wg-quick"],
+            ["/usr/bin/wg-quick", "/usr/sbin/wg-quick", "/usr/local/bin/wg-quick", "/bin/wg-quick", "/sbin/wg-quick"],
             "wg-quick"
         )
 
@@ -131,39 +148,49 @@ class BuddyBackupManager:
         host_octet = 2 + (digest[0] % 253)  # 2..254
         return f"10.77.77.{host_octet}"
 
-    def _generate_wg_keypair(self) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    def _placeholder_wg_keypair(self) -> Tuple[str, str]:
+        private_key = base64.b64encode(secrets.token_bytes(32)).decode("ascii")
+        public_key = base64.b64encode(secrets.token_bytes(32)).decode("ascii")
+        return private_key, public_key
+
+    def _generate_wg_keypair(self) -> Tuple[Optional[str], Optional[str], Optional[str], str]:
         if platform.system() != "Linux":
-            priv = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("ascii")[:44]
-            pub = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("ascii")[:44]
-            return priv, pub, None
+            priv, pub = self._placeholder_wg_keypair()
+            return priv, pub, None, "placeholder"
 
         wg_cmd = self._wg_cmd()
         bash_cmd = self._bash_cmd()
         if not wg_cmd:
-            return None, None, "WireGuard command not found (wg)"
+            priv, pub = self._placeholder_wg_keypair()
+            return priv, pub, "WireGuard command not found (wg). Install wireguard-tools to enable the tunnel.", "placeholder"
         if not bash_cmd:
-            return None, None, "Bash command not found"
+            priv, pub = self._placeholder_wg_keypair()
+            return priv, pub, "Bash command not found. Install bash to enable WireGuard key generation.", "placeholder"
 
         gen_res, gen_err = self.run_command([wg_cmd, "genkey"], timeout=10)
         if gen_err or not gen_res or gen_res.returncode != 0:
-            return None, None, gen_err or "Failed to generate WireGuard private key"
+            priv, pub = self._placeholder_wg_keypair()
+            return priv, pub, gen_err or "Failed to generate WireGuard private key", "placeholder"
         private_key = (gen_res.stdout or "").strip()
         if not private_key:
-            return None, None, "WireGuard private key generation returned empty output"
+            priv, pub = self._placeholder_wg_keypair()
+            return priv, pub, "WireGuard private key generation returned empty output", "placeholder"
 
         pub_cmd = f"printf '%s' {shlex.quote(private_key)} | {shlex.quote(wg_cmd)} pubkey"
         pub_res, pub_err = self.run_command([bash_cmd, "-lc", pub_cmd], timeout=10)
         if pub_err or not pub_res or pub_res.returncode != 0:
-            return None, None, pub_err or "Failed to derive WireGuard public key"
+            priv, pub = self._placeholder_wg_keypair()
+            return priv, pub, pub_err or "Failed to derive WireGuard public key", "placeholder"
         public_key = (pub_res.stdout or "").strip()
         if not public_key:
-            return None, None, "WireGuard public key generation returned empty output"
+            priv, pub = self._placeholder_wg_keypair()
+            return priv, pub, "WireGuard public key generation returned empty output", "placeholder"
 
-        return private_key, public_key, None
+        return private_key, public_key, None, "wireguard"
 
     def _create_identity(self) -> Dict:
         node_id = secrets.token_hex(8)
-        private_key, public_key, key_err = self._generate_wg_keypair()
+        private_key, public_key, key_err, key_source = self._generate_wg_keypair()
         identity = {
             "node_id": node_id,
             "name": self._hostname(),
@@ -174,6 +201,7 @@ class BuddyBackupManager:
             "created_at": self._now_iso(),
             "updated_at": self._now_iso(),
             "key_error": key_err or "",
+            "key_source": key_source,
         }
         return identity
 
@@ -192,12 +220,38 @@ class BuddyBackupManager:
         if not identity:
             identity = self._create_identity()
             self._save_identity(identity)
-        elif not identity.get("public_key") or not identity.get("private_key"):
-            private_key, public_key, key_err = self._generate_wg_keypair()
+        else:
+            key_source = str(identity.get("key_source") or "").strip()
+            if not key_source:
+                identity["key_source"] = "wireguard"
+                key_source = "wireguard"
+                self._save_identity(identity)
+
+            needs_regen = not identity.get("public_key") or not identity.get("private_key")
+            can_upgrade_from_placeholder = (
+                key_source != "wireguard"
+                and platform.system() == "Linux"
+                and bool(self._wg_cmd())
+            )
+            if not (needs_regen or can_upgrade_from_placeholder):
+                return {
+                    "node_id": identity.get("node_id", ""),
+                    "name": identity.get("name", ""),
+                    "public_key": identity.get("public_key", ""),
+                    "tunnel_ip": identity.get("tunnel_ip", ""),
+                    "listen_port": identity.get("listen_port", self.default_listen_port),
+                    "created_at": identity.get("created_at"),
+                    "updated_at": identity.get("updated_at"),
+                    "key_error": identity.get("key_error", ""),
+                    "key_source": identity.get("key_source", "wireguard"),
+                }
+
+            private_key, public_key, key_err, new_source = self._generate_wg_keypair()
             if private_key and public_key:
                 identity["private_key"] = private_key
                 identity["public_key"] = public_key
-                identity["key_error"] = ""
+                identity["key_error"] = key_err or ""
+                identity["key_source"] = new_source
                 self._save_identity(identity)
             else:
                 identity["key_error"] = key_err or identity.get("key_error", "")
@@ -211,6 +265,7 @@ class BuddyBackupManager:
             "created_at": identity.get("created_at"),
             "updated_at": identity.get("updated_at"),
             "key_error": identity.get("key_error", ""),
+            "key_source": identity.get("key_source", "wireguard"),
         }
 
     def _token_encode(self, payload: Dict) -> str:
@@ -249,6 +304,72 @@ class BuddyBackupManager:
 
     def _save_peers(self, peers: Dict[str, Dict]) -> None:
         self._save_json(self.peers_file, peers if isinstance(peers, dict) else {})
+
+    def _merge_settings(self, raw: Optional[Dict]) -> Dict:
+        source = raw if isinstance(raw, dict) else {}
+        merged = dict(DEFAULT_BUDDY_SETTINGS)
+
+        merged["enabled"] = bool(source.get("enabled", merged["enabled"]))
+
+        incoming_path = str(source.get("incoming_path", merged["incoming_path"]) or "").strip()
+        if not incoming_path.startswith("/"):
+            incoming_path = DEFAULT_BUDDY_SETTINGS["incoming_path"]
+        merged["incoming_path"] = incoming_path
+
+        outgoing = source.get("outgoing_sources", [])
+        unique_sources = []
+        seen = set()
+        if isinstance(outgoing, list):
+            for entry in outgoing:
+                path = str(entry or "").strip()
+                if not path.startswith("/") or path in seen:
+                    continue
+                seen.add(path)
+                unique_sources.append(path)
+        merged["outgoing_sources"] = unique_sources
+
+        try:
+            interval = int(source.get("interval_minutes", merged["interval_minutes"]))
+        except Exception:
+            interval = int(DEFAULT_BUDDY_SETTINGS["interval_minutes"])
+        merged["interval_minutes"] = max(15, min(43200, interval))
+
+        try:
+            keep_last = int(source.get("keep_last", merged["keep_last"]))
+        except Exception:
+            keep_last = int(DEFAULT_BUDDY_SETTINGS["keep_last"])
+        merged["keep_last"] = max(1, min(500, keep_last))
+
+        # Recursive retention is mandatory by design.
+        merged["recursive_retention"] = True
+
+        updated_at = str(source.get("updated_at", "") or "").strip()
+        merged["updated_at"] = updated_at or self._now_iso()
+        return merged
+
+    def get_settings(self) -> Dict:
+        settings = self._load_json(self.settings_file, {})
+        merged = self._merge_settings(settings)
+        if merged != settings:
+            self._save_json(self.settings_file, merged)
+        return merged
+
+    def save_settings(self, payload: Dict) -> Tuple[bool, Dict]:
+        if payload is None:
+            payload = {}
+        if not isinstance(payload, dict):
+            return False, {"error": "Invalid buddy settings payload"}
+
+        current = self.get_settings()
+        candidate = dict(current)
+        for field in ("enabled", "incoming_path", "outgoing_sources", "interval_minutes", "keep_last", "recursive_retention"):
+            if field in payload:
+                candidate[field] = payload.get(field)
+
+        merged = self._merge_settings(candidate)
+        merged["updated_at"] = self._now_iso()
+        self._save_json(self.settings_file, merged)
+        return True, merged
 
     def _token_hash(self, token: str) -> str:
         return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
@@ -384,6 +505,8 @@ class BuddyBackupManager:
         identity = self._load_identity()
         if not identity.get("private_key"):
             return False, {"error": identity.get("key_error") or "Missing WireGuard private key"}
+        if str(identity.get("key_source") or "wireguard") != "wireguard":
+            return False, {"error": "WireGuard is not fully configured. Install wireguard-tools and regenerate pairing identity."}
 
         wg_cmd = self._wg_cmd()
         wg_quick_cmd = self._wg_quick_cmd()
@@ -505,6 +628,15 @@ class BuddyBackupManager:
         self._save_peers(peers)
         ok, tunnel_result = self.apply_tunnel_config()
         if not ok:
+            err = str(tunnel_result.get("error", "")).lower()
+            if "wireguard" in err or "wg" in err:
+                return True, {
+                    "removed": removed,
+                    "tunnel_result": {
+                        "message": "Peer removed. Tunnel update deferred until WireGuard is available.",
+                        "warning": tunnel_result.get("error"),
+                    }
+                }
             return False, {"error": tunnel_result.get("error", "Peer removed, but tunnel reconfigure failed")}
         return True, {"removed": removed, "tunnel_result": tunnel_result}
 
@@ -516,18 +648,23 @@ class BuddyBackupManager:
         peers_map = self._load_peers()
         peers = sorted(peers_map.values(), key=lambda item: str(item.get("name", "")).lower())
         runtime = self._runtime_status()
+        settings = self.get_settings()
         wg_cmd = self._wg_cmd()
         wg_quick_cmd = self._wg_quick_cmd()
-        supported = platform.system() == "Linux" and bool(wg_cmd and wg_quick_cmd and identity.get("public_key"))
+        key_source = str(identity.get("key_source") or "wireguard")
+        supported = platform.system() == "Linux" and bool(wg_cmd and wg_quick_cmd and identity.get("public_key")) and key_source == "wireguard"
 
         return {
             "supported": supported,
             "identity": identity,
             "peers": peers,
             "tunnel": runtime,
+            "settings": settings,
+            "mode": "configuration-only",
             "requirements": {
                 "linux": platform.system() == "Linux",
                 "wg_cmd": wg_cmd or "",
                 "wg_quick_cmd": wg_quick_cmd or "",
+                "wireguard_identity": key_source,
             },
         }

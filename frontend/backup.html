@@ -340,12 +340,7 @@
                         <div class="card-title">Generate Pairing Token</div>
                         <button id="buddy-generate-token-btn" class="btn-primary">Generate</button>
                     </div>
-                    <p class="metric-sub" style="margin-bottom: 10px;">Share this token with your buddy administrator.</p>
-                    <div class="setting-group">
-                        <label class="setting-label" for="buddy-endpoint-input">Your Endpoint (host:port)</label>
-                        <input id="buddy-endpoint-input" type="text" class="select-input" placeholder="example.com:51820">
-                        <p class="metric-sub">This is where your buddy can reach your WireGuard endpoint.</p>
-                    </div>
+                    <p class="metric-sub" style="margin-bottom: 10px;">Generate, copy, und auf dem anderen NAS einfügen. Kein manuelles IP-Setup nötig.</p>
                     <div class="setting-group">
                         <label class="setting-label" for="buddy-token-expiry">Token Validity (minutes)</label>
                         <input id="buddy-token-expiry" type="number" min="1" max="240" value="20" class="select-input">
@@ -364,18 +359,10 @@
                         <div class="card-title">Pair With Buddy</div>
                         <button id="buddy-validate-token-btn" class="btn-primary">Pair</button>
                     </div>
-                    <p class="metric-sub" style="margin-bottom: 10px;">Paste the token received from your buddy admin.</p>
+                    <p class="metric-sub" style="margin-bottom: 10px;">Token vom anderen NAS einfügen und pairen.</p>
                     <div class="setting-group">
                         <label class="setting-label" for="buddy-token-input">Buddy Token</label>
                         <textarea id="buddy-token-input" class="select-input" rows="4" style="font-family: monospace;" placeholder="Paste buddy pairing token"></textarea>
-                    </div>
-                    <div class="setting-group">
-                        <label class="setting-label" for="buddy-endpoint-override">Endpoint Override (optional)</label>
-                        <input id="buddy-endpoint-override" type="text" class="select-input" placeholder="override-host:51820">
-                    </div>
-                    <div class="setting-group">
-                        <label class="setting-label" for="buddy-name-override">Buddy Name Override (optional)</label>
-                        <input id="buddy-name-override" type="text" class="select-input" placeholder="Friendly buddy name">
                     </div>
                 </div>
 
@@ -385,6 +372,47 @@
                     </div>
                     <div id="buddy-peers-list">
                         <div class="metric-sub">No buddies paired yet.</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Buddy Backup Settings</div>
+                        <button id="buddy-save-settings-btn" class="btn-primary">Save Settings</button>
+                    </div>
+                    <p class="metric-sub" style="margin-bottom: 10px;">Konfiguration für Buddy-Backup. Transfer/Restore-Logik folgt in 0.8.0.</p>
+                    <div class="setting-group">
+                        <label class="setting-label" for="buddy-incoming-path">Local Incoming Data Path</label>
+                        <input id="buddy-incoming-path" type="text" class="select-input" placeholder="/mnt/alvaos/buddy-incoming">
+                        <p class="metric-sub">Hier werden Daten gespeichert, die vom Buddy-NAS auf dieses NAS kommen.</p>
+                    </div>
+                    <div class="setting-group">
+                        <label class="setting-label">Backup To Buddy (Outgoing Sources)</label>
+                        <div id="buddy-outgoing-sources" class="sources-grid">
+                            <div class="metric-sub">Loading sources...</div>
+                        </div>
+                    </div>
+                    <div class="setting-group">
+                        <label class="setting-label" for="buddy-interval">Backup Interval</label>
+                        <select id="buddy-interval" class="select-input">
+                            <option value="60">Every hour</option>
+                            <option value="360">Every 6 hours</option>
+                            <option value="720">Every 12 hours</option>
+                            <option value="1440">Daily</option>
+                            <option value="10080">Weekly</option>
+                        </select>
+                    </div>
+                    <div class="setting-group">
+                        <label class="setting-label" for="buddy-keep-last">Retention (Keep last)</label>
+                        <input id="buddy-keep-last" type="number" min="1" max="500" value="30" class="select-input">
+                    </div>
+                    <div class="setting-group">
+                        <label class="setting-label">Recursive Retention</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="buddy-recursive-retention" checked disabled>
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <p class="metric-sub">Immer aktiv, damit Snapshot-Ketten konsistent bleiben und keine Datenexplosion entsteht.</p>
                     </div>
                 </div>
             </div>

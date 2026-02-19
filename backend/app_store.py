@@ -193,7 +193,7 @@ class AppStore:
             )
             
             if result.returncode != 0:
-                return False, result.stderr
+                return False, self._format_privilege_error(cmd, result)
             
             return True, None
         except Exception as e:
@@ -217,11 +217,36 @@ class AppStore:
             )
             
             if result.returncode != 0:
-                return False, result.stderr
+                return False, self._format_privilege_error(cmd, result)
             
             return True, None
         except Exception as e:
             return False, str(e)
+
+    def _format_privilege_error(self, cmd: List[str], result: subprocess.CompletedProcess) -> str:
+        stderr_text = str(result.stderr or "").strip()
+        stdout_text = str(result.stdout or "").strip()
+        combined = f"{stderr_text}\n{stdout_text}".strip()
+        lowered = combined.lower()
+        cmd_str = " ".join(str(part) for part in cmd)
+
+        if "/etc/sudoers.d/alvaos" in lowered and (
+            "is owned by uid" in lowered
+            or "is world writable" in lowered
+            or "bad permissions" in lowered
+        ):
+            return (
+                "System permission error: /etc/sudoers.d/alvaos has invalid ownership or mode. "
+                "Run as root: chown root:root /etc/sudoers.d/alvaos && chmod 440 /etc/sudoers.d/alvaos"
+            )
+        if "password is required" in lowered or "a password is required" in lowered:
+            return (
+                "System permission error: Passwordless sudo is not configured for AlvaOS commands. "
+                f"Command: {cmd_str}"
+            )
+
+        detail = stderr_text or stdout_text or f"exit code {result.returncode}"
+        return f"Command failed ({result.returncode}): {cmd_str}: {detail}"
     
     def _prepare_app_storage(
         self,
