@@ -668,7 +668,9 @@ class BuddyBackupManager:
             ttl = int(expires_minutes)
         except Exception:
             ttl = 20
-        ttl = max(1, min(240, ttl))
+        if ttl < 0:
+            ttl = 20
+        ttl = min(ttl, 43200)
 
         normalized_endpoint, endpoint_err = self._normalize_endpoint(endpoint)
         if endpoint_err:
@@ -678,7 +680,7 @@ class BuddyBackupManager:
             return False, {"error": api_err}
 
         issued_at = self._now()
-        expires_at = issued_at + timedelta(minutes=ttl)
+        expires_at = None if ttl == 0 else (issued_at + timedelta(minutes=ttl))
         payload = {
             "v": 1,
             "node_id": identity.get("node_id"),
@@ -689,27 +691,30 @@ class BuddyBackupManager:
             "endpoint": normalized_endpoint,
             "api_endpoint": normalized_api_endpoint,
             "issued_at": issued_at.isoformat(),
-            "expires_at": expires_at.isoformat(),
+            "expires_at": expires_at.isoformat() if expires_at else "",
             "nonce": secrets.token_hex(8),
         }
         token = self._token_encode(payload)
         return True, {
             "token": token,
             "expires_at": payload["expires_at"],
+            "expires_mode": "until_used" if ttl == 0 else "time_limited",
             "identity": identity,
         }
 
     def _token_to_peer(self, payload: Dict, endpoint_override: str = "", name_override: str = "") -> Tuple[Optional[Dict], Optional[str]]:
-        required = ["node_id", "public_key", "tunnel_ip", "expires_at"]
+        required = ["node_id", "public_key", "tunnel_ip"]
         for field in required:
             if not payload.get(field):
                 return None, f"Invalid pairing token: missing {field}"
 
-        expires_at = self._parse_iso(payload.get("expires_at"))
-        if not expires_at:
-            return None, "Invalid pairing token: invalid expires_at"
-        if self._now() > expires_at:
-            return None, "Pairing token expired"
+        expires_raw = payload.get("expires_at")
+        if expires_raw:
+            expires_at = self._parse_iso(expires_raw)
+            if not expires_at:
+                return None, "Invalid pairing token: invalid expires_at"
+            if self._now() > expires_at:
+                return None, "Pairing token expired"
 
         local = self._identity_public()
         if payload.get("node_id") == local.get("node_id"):

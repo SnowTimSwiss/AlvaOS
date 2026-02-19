@@ -680,7 +680,7 @@ async function loadBuddySettings() {
 }
 
 async function generateBuddyToken() {
-    const expiresMinutes = Number(document.getElementById('buddy-token-expiry')?.value || 20);
+    const expiresMinutes = Number(document.getElementById('buddy-token-expiry')?.value || 0);
 
     const response = await backupApi('/backup/pairing/generate', {
         method: 'POST',
@@ -706,11 +706,50 @@ async function copyBuddyToken() {
         backupNotify('No token to copy', 'warning');
         return;
     }
+
+    // Primary path: modern clipboard API
     try {
-        await navigator.clipboard.writeText(token);
-        backupNotify('Token copied to clipboard', 'success');
+        if (navigator?.clipboard?.writeText) {
+            await navigator.clipboard.writeText(token);
+            backupNotify('Token copied to clipboard', 'success');
+            return;
+        }
     } catch {
-        backupNotify('Failed to copy token', 'error');
+        // fallback below
+    }
+
+    // Fallback path: temporary textarea + execCommand copy
+    try {
+        const temp = document.createElement('textarea');
+        temp.value = token;
+        temp.setAttribute('readonly', 'readonly');
+        temp.style.position = 'fixed';
+        temp.style.left = '-9999px';
+        temp.style.top = '0';
+        document.body.appendChild(temp);
+        temp.focus();
+        temp.select();
+        temp.setSelectionRange(0, temp.value.length);
+        const ok = document.execCommand('copy');
+        document.body.removeChild(temp);
+        if (ok) {
+            backupNotify('Token copied to clipboard', 'success');
+            return;
+        }
+    } catch {
+        // manual fallback below
+    }
+
+    try {
+        const tokenEl = document.getElementById('buddy-generated-token');
+        if (tokenEl) {
+            tokenEl.focus();
+            tokenEl.select();
+            tokenEl.setSelectionRange(0, tokenEl.value.length);
+        }
+        backupNotify('Clipboard blocked. Token is selected, copy with Ctrl+C (or Cmd+C).', 'warning');
+    } catch {
+        backupNotify('Failed to copy automatically. Copy the token manually from the text box.', 'warning');
     }
 }
 

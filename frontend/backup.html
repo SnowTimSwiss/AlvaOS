@@ -343,7 +343,8 @@
                     <p class="metric-sub" style="margin-bottom: 10px;">Generate, copy, und auf dem anderen NAS einfügen. Kein manuelles IP-Setup nötig.</p>
                     <div class="setting-group">
                         <label class="setting-label" for="buddy-token-expiry">Token Validity (minutes)</label>
-                        <input id="buddy-token-expiry" type="number" min="1" max="240" value="20" class="select-input">
+                        <input id="buddy-token-expiry" type="number" min="0" max="43200" value="0" class="select-input">
+                        <p class="metric-sub">`0` = gültig bis ein Buddy erfolgreich paired.</p>
                     </div>
                     <div class="setting-group">
                         <label class="setting-label" for="buddy-generated-token">Pairing Token</label>
