@@ -188,15 +188,58 @@ class BuddyBackupManager:
         pattern = re.compile(rf"\b{re.escape(ip)}/\d+\b")
         return bool(pattern.search(res.stdout or ""))
 
-    def _derive_available_tunnel_ip(self, node_id: str) -> str:
+    def _derive_available_tunnel_ip(self, node_id: str, avoid_ip: str = "") -> str:
         digest = hashlib.sha256((node_id or "").encode("utf-8")).digest()
         start = 2 + (digest[0] % 253)
+        avoid = str(avoid_ip or "").strip()
         for offset in range(253):
             host_octet = 2 + ((start - 2 + offset) % 253)
             candidate = f"100.95.95.{host_octet}"
+            if avoid and candidate == avoid:
+                continue
             if not self._local_ipv4_in_use(candidate):
                 return candidate
-        return f"100.95.95.{start}"
+        fallback = f"100.95.95.{start}"
+        if avoid and fallback == avoid:
+            alt_octet = 2 + ((start - 1) % 253)
+            fallback = f"100.95.95.{alt_octet}"
+        return fallback
+
+    def _ensure_identity_tunnel_ip(self, identity: Dict, force_rotate: bool = False) -> Tuple[Dict, bool]:
+        if not isinstance(identity, dict):
+            return identity, False
+
+        current_ip = str(identity.get("tunnel_ip") or "").strip()
+        conflict = (
+            bool(current_ip)
+            and self._local_ipv4_in_use(current_ip)
+            and not self._ipv4_on_interface(current_ip, self.interface_name)
+        )
+        if not (force_rotate or not current_ip or conflict):
+            return identity, False
+
+        replacement_ip = self._derive_available_tunnel_ip(
+            str(identity.get("node_id") or ""),
+            avoid_ip=current_ip if force_rotate else "",
+        )
+        if replacement_ip == current_ip:
+            return identity, False
+
+        identity["tunnel_ip"] = replacement_ip
+        if current_ip and (conflict or force_rotate):
+            identity["key_error"] = (
+                f"Tunnel IP conflict detected for {current_ip}; switched to {replacement_ip}. "
+                "Re-pair with buddy if needed."
+            )
+        self._save_identity(identity)
+        return identity, True
+
+    def _is_address_in_use_error(self, error_text: str) -> bool:
+        text = str(error_text or "").lower()
+        return (
+            "address already in use" in text
+            or ("rtnetlink answers" in text and "already in use" in text)
+        )
 
     def _normalize_api_endpoint(self, endpoint: str) -> Tuple[Optional[str], Optional[str]]:
         value = str(endpoint or "").strip()
@@ -296,43 +339,19 @@ class BuddyBackupManager:
                 and platform.system() == "Linux"
                 and bool(self._wg_cmd())
             )
-            if not (needs_regen or can_upgrade_from_placeholder):
-                return {
-                    "node_id": identity.get("node_id", ""),
-                    "name": identity.get("name", ""),
-                    "public_key": identity.get("public_key", ""),
-                    "tunnel_ip": identity.get("tunnel_ip", ""),
-                    "listen_port": identity.get("listen_port", self.default_listen_port),
-                    "created_at": identity.get("created_at"),
-                    "updated_at": identity.get("updated_at"),
-                    "key_error": identity.get("key_error", ""),
-                    "key_source": identity.get("key_source", "wireguard"),
-                }
+            if needs_regen or can_upgrade_from_placeholder:
+                private_key, public_key, key_err, new_source = self._generate_wg_keypair()
+                if private_key and public_key:
+                    identity["private_key"] = private_key
+                    identity["public_key"] = public_key
+                    identity["key_error"] = key_err or ""
+                    identity["key_source"] = new_source
+                    self._save_identity(identity)
+                else:
+                    identity["key_error"] = key_err or identity.get("key_error", "")
+                    self._save_identity(identity)
 
-            private_key, public_key, key_err, new_source = self._generate_wg_keypair()
-            if private_key and public_key:
-                identity["private_key"] = private_key
-                identity["public_key"] = public_key
-                identity["key_error"] = key_err or ""
-                identity["key_source"] = new_source
-                self._save_identity(identity)
-            else:
-                identity["key_error"] = key_err or identity.get("key_error", "")
-                self._save_identity(identity)
-
-        current_ip = str(identity.get("tunnel_ip") or "").strip()
-        if not current_ip:
-            identity["tunnel_ip"] = self._derive_available_tunnel_ip(identity.get("node_id", ""))
-            self._save_identity(identity)
-        elif self._local_ipv4_in_use(current_ip) and not self._ipv4_on_interface(current_ip, self.interface_name):
-            replacement_ip = self._derive_available_tunnel_ip(identity.get("node_id", ""))
-            if replacement_ip != current_ip:
-                identity["tunnel_ip"] = replacement_ip
-                identity["key_error"] = (
-                    f"Tunnel IP conflict detected for {current_ip}; switched to {replacement_ip}. "
-                    "Re-pair with buddy if needed."
-                )
-                self._save_identity(identity)
+        identity, _ = self._ensure_identity_tunnel_ip(identity)
 
         return {
             "node_id": identity.get("node_id", ""),
@@ -789,17 +808,7 @@ class BuddyBackupManager:
             return False, {"error": "WireGuard tools (wg/wg-quick) are not installed"}
 
         peers = self._load_peers()
-        config_text = self._render_wg_config(identity, peers)
-        Path(self.wg_dir).mkdir(parents=True, exist_ok=True)
-        with open(self.wg_config_path, "w", encoding="utf-8") as f:
-            f.write(config_text)
-        try:
-            os.chmod(self.wg_config_path, 0o600)
-        except Exception:
-            pass
-
-        # Try to cleanly restart interface. Ignore "down" errors.
-        self.run_command([wg_quick_cmd, "down", self.wg_config_path], timeout=20)
+        identity, _ = self._ensure_identity_tunnel_ip(identity)
 
         active_peers = [
             p for p in peers.values()
@@ -808,14 +817,42 @@ class BuddyBackupManager:
         if not active_peers:
             return True, {"message": "No active peers configured"}
 
-        up_res, up_err = self.run_command([wg_quick_cmd, "up", self.wg_config_path], timeout=40)
-        if up_err or not up_res or up_res.returncode != 0:
+        conflict_note = ""
+        for attempt in range(2):
+            config_text = self._render_wg_config(identity, peers)
+            Path(self.wg_dir).mkdir(parents=True, exist_ok=True)
+            with open(self.wg_config_path, "w", encoding="utf-8") as f:
+                f.write(config_text)
+            try:
+                os.chmod(self.wg_config_path, 0o600)
+            except Exception:
+                pass
+
+            # Try to cleanly restart interface. Ignore "down" errors.
+            self.run_command([wg_quick_cmd, "down", self.wg_config_path], timeout=20)
+
+            up_res, up_err = self.run_command([wg_quick_cmd, "up", self.wg_config_path], timeout=40)
+            if not up_err and up_res and up_res.returncode == 0:
+                break
+
+            if attempt == 0 and self._is_address_in_use_error(up_err or ""):
+                old_ip = str(identity.get("tunnel_ip") or "").strip()
+                identity, changed = self._ensure_identity_tunnel_ip(identity, force_rotate=True)
+                if changed:
+                    conflict_note = f"Tunnel IP conflict resolved automatically: {old_ip} -> {identity.get('tunnel_ip', '')}"
+                    continue
             return False, {"error": up_err or "Failed to bring up WireGuard interface"}
 
         show_res, show_err = self.run_command([wg_cmd, "show", self.interface_name], timeout=10)
         if show_err:
-            return True, {"message": "Tunnel configured, but runtime status unavailable", "warning": show_err}
-        return True, {"message": "Tunnel configured", "runtime": (show_res.stdout or "").strip()[:1200]}
+            payload = {"message": "Tunnel configured, but runtime status unavailable", "warning": show_err}
+            if conflict_note:
+                payload["ip_update"] = conflict_note
+            return True, payload
+        payload = {"message": "Tunnel configured", "runtime": (show_res.stdout or "").strip()[:1200]}
+        if conflict_note:
+            payload["ip_update"] = conflict_note
+        return True, payload
 
     def _runtime_status(self) -> Dict:
         if platform.system() != "Linux":

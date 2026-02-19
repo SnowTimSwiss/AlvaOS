@@ -347,9 +347,6 @@ function fillBuddySettingsUi() {
     const keepEl = document.getElementById('buddy-keep-last');
     if (keepEl) keepEl.value = String(buddySettings.keep_last || 30);
 
-    const recursiveEl = document.getElementById('buddy-recursive-retention');
-    if (recursiveEl) recursiveEl.checked = true;
-
     const encryptionEnabledEl = document.getElementById('buddy-encryption-enabled');
     if (encryptionEnabledEl) encryptionEnabledEl.checked = !!buddySettings.encryption_enabled;
     const encryptionPasswordEl = document.getElementById('buddy-encryption-password');

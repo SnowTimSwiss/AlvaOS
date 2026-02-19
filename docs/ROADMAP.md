@@ -48,9 +48,9 @@ Release strategy: "Iterate fast, stabilize often."
 - [x] **Schedule**: Automatic snapshot creation.
 
 ## v0.7.0 - Buddy Backup (Part I: Connection)
-- [ ] **Identity**: Key generation and peering logic.
-- [ ] **WireGuard**: Automated tunnel setup between peers.
-- [ ] **Handshake**: Secure pairing workflow (QR code / token).
+- [x] **Identity**: Key generation and peering logic.
+- [x] **WireGuard**: Automated tunnel setup between peers.
+- [x] **Handshake**: Secure pairing workflow (token).
 
 ## v0.8.0 - Buddy Backup (Part II: Transfer)
 - [ ] **Snapshot Engine**: Btrfs send/receive logic.
