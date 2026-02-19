@@ -13,6 +13,8 @@ import re
 import secrets
 import shlex
 import shutil
+import urllib.error
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
@@ -20,10 +22,15 @@ from typing import Callable, Dict, List, Optional, Tuple
 DEFAULT_BUDDY_SETTINGS = {
     "enabled": False,
     "incoming_path": "/mnt/alvaos/buddy-incoming",
+    "incoming_quota_gb": 200,
     "outgoing_sources": [],
     "interval_minutes": 1440,
     "keep_last": 30,
     "recursive_retention": True,
+    "peer_policies": {},
+    "encryption_enabled": False,
+    "encryption_salt": "",
+    "encryption_hash": "",
 }
 
 
@@ -136,6 +143,12 @@ class BuddyBackupManager:
             "wg-quick"
         )
 
+    def _ip_cmd(self) -> Optional[str]:
+        return self._detect_cmd(
+            ["/usr/sbin/ip", "/usr/bin/ip", "/sbin/ip", "/bin/ip"],
+            "ip"
+        )
+
     def _bash_cmd(self) -> Optional[str]:
         return self._detect_cmd(
             ["/usr/bin/bash", "/bin/bash"],
@@ -143,10 +156,60 @@ class BuddyBackupManager:
         )
 
     def _derive_tunnel_ip(self, node_id: str) -> str:
-        # Deterministic host assignment in a private /24.
+        # Deterministic host assignment in a private /24 (less likely to collide with common home LAN ranges).
         digest = hashlib.sha256((node_id or "").encode("utf-8")).digest()
         host_octet = 2 + (digest[0] % 253)  # 2..254
-        return f"10.77.77.{host_octet}"
+        return f"100.95.95.{host_octet}"
+
+    def _local_ipv4_in_use(self, ip: str) -> bool:
+        if platform.system() != "Linux":
+            return False
+        ip_cmd = self._ip_cmd()
+        if not ip_cmd or not ip:
+            return False
+        res, err = self.run_command([ip_cmd, "-4", "-o", "addr", "show"], timeout=10)
+        if err or not res or res.returncode != 0:
+            return False
+        pattern = re.compile(rf"\b{re.escape(ip)}/\d+\b")
+        for raw in (res.stdout or "").splitlines():
+            if pattern.search(raw):
+                return True
+        return False
+
+    def _ipv4_on_interface(self, ip: str, interface: str) -> bool:
+        if platform.system() != "Linux":
+            return False
+        ip_cmd = self._ip_cmd()
+        if not ip_cmd or not ip or not interface:
+            return False
+        res, err = self.run_command([ip_cmd, "-4", "-o", "addr", "show", "dev", interface], timeout=10)
+        if err or not res or res.returncode != 0:
+            return False
+        pattern = re.compile(rf"\b{re.escape(ip)}/\d+\b")
+        return bool(pattern.search(res.stdout or ""))
+
+    def _derive_available_tunnel_ip(self, node_id: str) -> str:
+        digest = hashlib.sha256((node_id or "").encode("utf-8")).digest()
+        start = 2 + (digest[0] % 253)
+        for offset in range(253):
+            host_octet = 2 + ((start - 2 + offset) % 253)
+            candidate = f"100.95.95.{host_octet}"
+            if not self._local_ipv4_in_use(candidate):
+                return candidate
+        return f"100.95.95.{start}"
+
+    def _normalize_api_endpoint(self, endpoint: str) -> Tuple[Optional[str], Optional[str]]:
+        value = str(endpoint or "").strip()
+        if not value:
+            return "", None
+        value = re.sub(r"^https?://", "", value, flags=re.IGNORECASE).strip("/")
+        if len(value) > 255:
+            return None, "API endpoint is too long"
+        if any(ch.isspace() for ch in value):
+            return None, "API endpoint must not contain spaces"
+        if ":" not in value:
+            value = f"{value}:8080"
+        return value, None
 
     def _placeholder_wg_keypair(self) -> Tuple[str, str]:
         private_key = base64.b64encode(secrets.token_bytes(32)).decode("ascii")
@@ -256,6 +319,21 @@ class BuddyBackupManager:
             else:
                 identity["key_error"] = key_err or identity.get("key_error", "")
                 self._save_identity(identity)
+
+        current_ip = str(identity.get("tunnel_ip") or "").strip()
+        if not current_ip:
+            identity["tunnel_ip"] = self._derive_available_tunnel_ip(identity.get("node_id", ""))
+            self._save_identity(identity)
+        elif self._local_ipv4_in_use(current_ip) and not self._ipv4_on_interface(current_ip, self.interface_name):
+            replacement_ip = self._derive_available_tunnel_ip(identity.get("node_id", ""))
+            if replacement_ip != current_ip:
+                identity["tunnel_ip"] = replacement_ip
+                identity["key_error"] = (
+                    f"Tunnel IP conflict detected for {current_ip}; switched to {replacement_ip}. "
+                    "Re-pair with buddy if needed."
+                )
+                self._save_identity(identity)
+
         return {
             "node_id": identity.get("node_id", ""),
             "name": identity.get("name", ""),
@@ -305,6 +383,73 @@ class BuddyBackupManager:
     def _save_peers(self, peers: Dict[str, Dict]) -> None:
         self._save_json(self.peers_file, peers if isinstance(peers, dict) else {})
 
+    def _hash_passphrase(self, passphrase: str, salt: Optional[str] = None) -> Tuple[str, str]:
+        if salt:
+            salt_bytes = base64.b64decode(salt.encode("ascii"))
+        else:
+            salt_bytes = secrets.token_bytes(16)
+            salt = base64.b64encode(salt_bytes).decode("ascii")
+        digest = hashlib.pbkdf2_hmac(
+            "sha256",
+            str(passphrase or "").encode("utf-8"),
+            salt_bytes,
+            160000,
+        )
+        digest_b64 = base64.b64encode(digest).decode("ascii")
+        return digest_b64, salt
+
+    def _normalize_time_hhmm(self, value: str, default: str = "02:00") -> str:
+        text = str(value or "").strip()
+        if not re.match(r"^\d{2}:\d{2}$", text):
+            return default
+        hh = int(text[:2])
+        mm = int(text[3:5])
+        if hh < 0 or hh > 23 or mm < 0 or mm > 59:
+            return default
+        return f"{hh:02d}:{mm:02d}"
+
+    def _normalize_peer_policies(self, raw: Optional[Dict]) -> Dict[str, Dict]:
+        policies = raw if isinstance(raw, dict) else {}
+        normalized: Dict[str, Dict] = {}
+        for node_id, payload in policies.items():
+            nid = str(node_id or "").strip()
+            if not nid:
+                continue
+            item = payload if isinstance(payload, dict) else {}
+
+            try:
+                interval = int(item.get("interval_minutes", DEFAULT_BUDDY_SETTINGS["interval_minutes"]))
+            except Exception:
+                interval = int(DEFAULT_BUDDY_SETTINGS["interval_minutes"])
+            interval = max(15, min(43200, interval))
+
+            try:
+                quota = int(item.get("max_storage_gb", DEFAULT_BUDDY_SETTINGS["incoming_quota_gb"]))
+            except Exception:
+                quota = int(DEFAULT_BUDDY_SETTINGS["incoming_quota_gb"])
+            quota = max(1, min(20000, quota))
+
+            sources_raw = item.get("outgoing_sources", [])
+            unique_sources = []
+            seen = set()
+            if isinstance(sources_raw, list):
+                for source in sources_raw:
+                    path = str(source or "").strip()
+                    if not path.startswith("/") or path in seen:
+                        continue
+                    seen.add(path)
+                    unique_sources.append(path)
+
+            normalized[nid] = {
+                "enabled": bool(item.get("enabled", True)),
+                "interval_minutes": interval,
+                "send_time": self._normalize_time_hhmm(item.get("send_time", "02:00")),
+                "max_storage_gb": quota,
+                "outgoing_sources": unique_sources,
+                "updated_at": str(item.get("updated_at", "") or "").strip() or self._now_iso(),
+            }
+        return normalized
+
     def _merge_settings(self, raw: Optional[Dict]) -> Dict:
         source = raw if isinstance(raw, dict) else {}
         merged = dict(DEFAULT_BUDDY_SETTINGS)
@@ -315,6 +460,11 @@ class BuddyBackupManager:
         if not incoming_path.startswith("/"):
             incoming_path = DEFAULT_BUDDY_SETTINGS["incoming_path"]
         merged["incoming_path"] = incoming_path
+        try:
+            incoming_quota = int(source.get("incoming_quota_gb", merged["incoming_quota_gb"]))
+        except Exception:
+            incoming_quota = int(DEFAULT_BUDDY_SETTINGS["incoming_quota_gb"])
+        merged["incoming_quota_gb"] = max(1, min(20000, incoming_quota))
 
         outgoing = source.get("outgoing_sources", [])
         unique_sources = []
@@ -342,17 +492,31 @@ class BuddyBackupManager:
 
         # Recursive retention is mandatory by design.
         merged["recursive_retention"] = True
+        merged["peer_policies"] = self._normalize_peer_policies(source.get("peer_policies", {}))
+
+        merged["encryption_enabled"] = bool(source.get("encryption_enabled", False))
+        merged["encryption_salt"] = str(source.get("encryption_salt", "") or "").strip()
+        merged["encryption_hash"] = str(source.get("encryption_hash", "") or "").strip()
 
         updated_at = str(source.get("updated_at", "") or "").strip()
         merged["updated_at"] = updated_at or self._now_iso()
         return merged
 
-    def get_settings(self) -> Dict:
+    def _public_settings(self, settings: Dict) -> Dict:
+        result = dict(settings or {})
+        result.pop("encryption_hash", None)
+        result.pop("encryption_salt", None)
+        result["encryption_password_set"] = bool(
+            settings and settings.get("encryption_enabled") and settings.get("encryption_hash")
+        )
+        return result
+
+    def get_settings(self, include_secret: bool = False) -> Dict:
         settings = self._load_json(self.settings_file, {})
         merged = self._merge_settings(settings)
         if merged != settings:
             self._save_json(self.settings_file, merged)
-        return merged
+        return merged if include_secret else self._public_settings(merged)
 
     def save_settings(self, payload: Dict) -> Tuple[bool, Dict]:
         if payload is None:
@@ -360,16 +524,109 @@ class BuddyBackupManager:
         if not isinstance(payload, dict):
             return False, {"error": "Invalid buddy settings payload"}
 
-        current = self.get_settings()
+        current = self.get_settings(include_secret=True)
         candidate = dict(current)
-        for field in ("enabled", "incoming_path", "outgoing_sources", "interval_minutes", "keep_last", "recursive_retention"):
+        for field in (
+            "enabled",
+            "incoming_path",
+            "incoming_quota_gb",
+            "outgoing_sources",
+            "interval_minutes",
+            "keep_last",
+            "recursive_retention",
+            "peer_policies",
+            "encryption_enabled",
+        ):
             if field in payload:
                 candidate[field] = payload.get(field)
+
+        password_supplied = "encryption_password" in payload
+        encryption_password = str(payload.get("encryption_password", "") or "")
+        if password_supplied and encryption_password:
+            digest, salt = self._hash_passphrase(encryption_password)
+            candidate["encryption_hash"] = digest
+            candidate["encryption_salt"] = salt
+
+        if candidate.get("encryption_enabled"):
+            if not str(candidate.get("encryption_hash", "") or "").strip():
+                return False, {"error": "Encryption password is required when encryption is enabled"}
+        else:
+            candidate["encryption_hash"] = ""
+            candidate["encryption_salt"] = ""
 
         merged = self._merge_settings(candidate)
         merged["updated_at"] = self._now_iso()
         self._save_json(self.settings_file, merged)
-        return True, merged
+        return True, self._public_settings(merged)
+
+    def save_peer_policy(self, node_id: str, payload: Dict) -> Tuple[bool, Dict]:
+        nid = str(node_id or "").strip()
+        if not nid:
+            return False, {"error": "node_id is required"}
+        peers = self._load_peers()
+        if nid not in peers:
+            return False, {"error": "Peer not found"}
+        if payload is None:
+            payload = {}
+        if not isinstance(payload, dict):
+            return False, {"error": "Invalid peer policy payload"}
+
+        settings = self.get_settings(include_secret=True)
+        policies = dict(settings.get("peer_policies", {}))
+        existing = policies.get(nid, {})
+        candidate = dict(existing if isinstance(existing, dict) else {})
+        for field in ("enabled", "interval_minutes", "send_time", "max_storage_gb", "outgoing_sources"):
+            if field in payload:
+                candidate[field] = payload.get(field)
+        candidate["updated_at"] = self._now_iso()
+
+        normalized = self._normalize_peer_policies({nid: candidate})
+        policies[nid] = normalized.get(nid, {
+            "enabled": True,
+            "interval_minutes": int(DEFAULT_BUDDY_SETTINGS["interval_minutes"]),
+            "send_time": "02:00",
+            "max_storage_gb": int(DEFAULT_BUDDY_SETTINGS["incoming_quota_gb"]),
+            "outgoing_sources": [],
+            "updated_at": self._now_iso(),
+        })
+        settings["peer_policies"] = policies
+        merged = self._merge_settings(settings)
+        merged["updated_at"] = self._now_iso()
+        self._save_json(self.settings_file, merged)
+        return True, merged["peer_policies"].get(nid, {})
+
+    def get_peer_policy(self, node_id: str) -> Tuple[bool, Dict]:
+        nid = str(node_id or "").strip()
+        if not nid:
+            return False, {"error": "node_id is required"}
+        peers = self._load_peers()
+        if nid not in peers:
+            return False, {"error": "Peer not found"}
+        settings = self.get_settings(include_secret=True)
+        policies = settings.get("peer_policies", {})
+        policy = self._normalize_peer_policies({nid: policies.get(nid, {})}).get(nid, {
+            "enabled": True,
+            "interval_minutes": int(settings.get("interval_minutes", DEFAULT_BUDDY_SETTINGS["interval_minutes"])),
+            "send_time": "02:00",
+            "max_storage_gb": int(settings.get("incoming_quota_gb", DEFAULT_BUDDY_SETTINGS["incoming_quota_gb"])),
+            "outgoing_sources": [],
+            "updated_at": self._now_iso(),
+        })
+        return True, policy
+
+    def requires_encryption_passphrase(self) -> bool:
+        settings = self.get_settings(include_secret=True)
+        return bool(settings.get("encryption_enabled") and settings.get("encryption_hash") and settings.get("encryption_salt"))
+
+    def verify_encryption_passphrase(self, passphrase: str) -> bool:
+        settings = self.get_settings(include_secret=True)
+        if not (settings.get("encryption_enabled") and settings.get("encryption_hash") and settings.get("encryption_salt")):
+            return True
+        try:
+            digest, _ = self._hash_passphrase(passphrase, salt=str(settings.get("encryption_salt")))
+            return secrets.compare_digest(digest, str(settings.get("encryption_hash")))
+        except Exception:
+            return False
 
     def _token_hash(self, token: str) -> str:
         return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
@@ -397,7 +654,12 @@ class BuddyBackupManager:
         state["used"] = used
         self._save_json(self.tokens_file, state)
 
-    def generate_pairing_token(self, endpoint: str = "", expires_minutes: int = 20) -> Tuple[bool, Dict]:
+    def generate_pairing_token(
+        self,
+        endpoint: str = "",
+        expires_minutes: int = 20,
+        api_endpoint: str = "",
+    ) -> Tuple[bool, Dict]:
         identity = self._identity_public()
         if not identity.get("public_key"):
             return False, {"error": identity.get("key_error") or "WireGuard identity is not ready"}
@@ -411,6 +673,9 @@ class BuddyBackupManager:
         normalized_endpoint, endpoint_err = self._normalize_endpoint(endpoint)
         if endpoint_err:
             return False, {"error": endpoint_err}
+        normalized_api_endpoint, api_err = self._normalize_api_endpoint(api_endpoint)
+        if api_err:
+            return False, {"error": api_err}
 
         issued_at = self._now()
         expires_at = issued_at + timedelta(minutes=ttl)
@@ -422,6 +687,7 @@ class BuddyBackupManager:
             "tunnel_ip": identity.get("tunnel_ip"),
             "listen_port": identity.get("listen_port", self.default_listen_port),
             "endpoint": normalized_endpoint,
+            "api_endpoint": normalized_api_endpoint,
             "issued_at": issued_at.isoformat(),
             "expires_at": expires_at.isoformat(),
             "nonce": secrets.token_hex(8),
@@ -453,6 +719,9 @@ class BuddyBackupManager:
         endpoint, endpoint_err = self._normalize_endpoint(endpoint_candidate)
         if endpoint_err:
             return None, endpoint_err
+        api_endpoint, api_err = self._normalize_api_endpoint(payload.get("api_endpoint", ""))
+        if api_err:
+            return None, api_err
 
         peer_name = str(name_override or payload.get("name") or payload.get("node_id")).strip()
         if not peer_name:
@@ -465,6 +734,7 @@ class BuddyBackupManager:
             "tunnel_ip": str(payload.get("tunnel_ip")).strip(),
             "listen_port": int(payload.get("listen_port") or self.default_listen_port),
             "endpoint": endpoint,
+            "api_endpoint": api_endpoint,
             "last_paired_at": self._now_iso(),
             "status": "configured" if endpoint else "pending_endpoint",
             "last_error": "",
@@ -575,11 +845,90 @@ class BuddyBackupManager:
             "peers": peers,
         }
 
+    def _attempt_reciprocal_pair(
+        self,
+        remote_api_endpoint: str,
+        local_wg_endpoint: str = "",
+        local_api_endpoint: str = "",
+    ) -> Tuple[bool, Dict]:
+        normalized_remote, remote_err = self._normalize_api_endpoint(remote_api_endpoint)
+        if remote_err or not normalized_remote:
+            return False, {"error": remote_err or "Remote API endpoint missing"}
+
+        identity = self._identity_public()
+        if not identity.get("public_key"):
+            return False, {"error": identity.get("key_error") or "Local identity is not ready"}
+
+        normalized_local_wg, wg_err = self._normalize_endpoint(local_wg_endpoint)
+        if wg_err:
+            normalized_local_wg = ""
+
+        normalized_local_api, _ = self._normalize_api_endpoint(local_api_endpoint)
+        issued_at = self._now()
+        expires_at = issued_at + timedelta(minutes=20)
+        payload = {
+            "v": 1,
+            "node_id": identity.get("node_id"),
+            "name": identity.get("name"),
+            "public_key": identity.get("public_key"),
+            "tunnel_ip": identity.get("tunnel_ip"),
+            "listen_port": identity.get("listen_port", self.default_listen_port),
+            "endpoint": normalized_local_wg,
+            "api_endpoint": normalized_local_api,
+            "issued_at": issued_at.isoformat(),
+            "expires_at": expires_at.isoformat(),
+            "nonce": secrets.token_hex(8),
+        }
+        token = self._token_encode(payload)
+        req_payload = json.dumps({"token": token}).encode("utf-8")
+
+        urls = [
+            f"http://{normalized_remote}/api/v1/backup/pairing/accept",
+            f"https://{normalized_remote}/api/v1/backup/pairing/accept",
+        ]
+        last_error = "Reciprocal pairing failed"
+        for url in urls:
+            request_obj = urllib.request.Request(
+                url,
+                data=req_payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(request_obj, timeout=8) as response:
+                    text = response.read().decode("utf-8", errors="replace")
+                    try:
+                        data = json.loads(text) if text else {}
+                    except Exception:
+                        data = {}
+                    if int(response.status) >= 200 and int(response.status) < 300 and not data.get("error"):
+                        return True, {
+                            "message": "Reciprocal pairing completed",
+                            "remote_api_endpoint": normalized_remote,
+                        }
+                    last_error = data.get("error") or f"HTTP {response.status}"
+            except urllib.error.HTTPError as exc:
+                try:
+                    body = exc.read().decode("utf-8", errors="replace")
+                    parsed = json.loads(body) if body else {}
+                    last_error = parsed.get("error") or f"HTTP {exc.code}"
+                except Exception:
+                    last_error = f"HTTP {exc.code}"
+            except Exception as exc:
+                last_error = str(exc)
+        return False, {
+            "error": last_error,
+            "remote_api_endpoint": normalized_remote,
+        }
+
     def validate_pairing_token(
         self,
         token: str,
         endpoint_override: str = "",
-        name_override: str = ""
+        name_override: str = "",
+        auto_reciprocal: bool = False,
+        local_wg_endpoint: str = "",
+        local_api_endpoint: str = "",
     ) -> Tuple[bool, Dict]:
         payload, decode_err = self._token_decode(token)
         if decode_err:
@@ -597,6 +946,23 @@ class BuddyBackupManager:
         self._save_peers(peers)
         self._mark_token_used(token)
 
+        settings = self.get_settings(include_secret=True)
+        policies = settings.get("peer_policies", {})
+        if not isinstance(policies, dict):
+            policies = {}
+        if peer["node_id"] not in policies:
+            policies[peer["node_id"]] = {
+                "enabled": True,
+                "interval_minutes": int(settings.get("interval_minutes", DEFAULT_BUDDY_SETTINGS["interval_minutes"])),
+                "send_time": "02:00",
+                "max_storage_gb": int(settings.get("incoming_quota_gb", DEFAULT_BUDDY_SETTINGS["incoming_quota_gb"])),
+                "outgoing_sources": [],
+                "updated_at": self._now_iso(),
+            }
+            settings["peer_policies"] = policies
+            settings["updated_at"] = self._now_iso()
+            self._save_json(self.settings_file, self._merge_settings(settings))
+
         tunnel_result = {"message": "Peer saved (endpoint missing). Add endpoint to activate tunnel."}
         if peer.get("endpoint"):
             ok, tunnel_result = self.apply_tunnel_config()
@@ -612,9 +978,23 @@ class BuddyBackupManager:
             self._save_peers(peers)
             peer = current
 
+        reciprocal = {"skipped": True}
+        if auto_reciprocal:
+            remote_api_endpoint = str(peer.get("api_endpoint") or "").strip()
+            if remote_api_endpoint:
+                reciprocal_ok, reciprocal_payload = self._attempt_reciprocal_pair(
+                    remote_api_endpoint=remote_api_endpoint,
+                    local_wg_endpoint=local_wg_endpoint,
+                    local_api_endpoint=local_api_endpoint,
+                )
+                reciprocal = {"success": reciprocal_ok, **reciprocal_payload}
+            else:
+                reciprocal = {"skipped": True, "reason": "Remote API endpoint is not available in token"}
+
         return True, {
             "peer": peer,
             "tunnel_result": tunnel_result,
+            "reciprocal": reciprocal,
         }
 
     def remove_peer(self, node_id: str) -> Tuple[bool, Dict]:
@@ -626,6 +1006,15 @@ class BuddyBackupManager:
             return False, {"error": "Peer not found"}
         removed = peers.pop(target)
         self._save_peers(peers)
+
+        settings = self.get_settings(include_secret=True)
+        policies = settings.get("peer_policies", {})
+        if isinstance(policies, dict) and target in policies:
+            policies.pop(target, None)
+            settings["peer_policies"] = policies
+            settings["updated_at"] = self._now_iso()
+            self._save_json(self.settings_file, self._merge_settings(settings))
+
         ok, tunnel_result = self.apply_tunnel_config()
         if not ok:
             err = str(tunnel_result.get("error", "")).lower()
@@ -646,9 +1035,27 @@ class BuddyBackupManager:
     def get_status(self) -> Dict:
         identity = self._identity_public()
         peers_map = self._load_peers()
-        peers = sorted(peers_map.values(), key=lambda item: str(item.get("name", "")).lower())
+        settings_full = self.get_settings(include_secret=True)
+        policies = settings_full.get("peer_policies", {})
+        peers = []
+        for peer in peers_map.values():
+            item = dict(peer if isinstance(peer, dict) else {})
+            node_id = str(item.get("node_id") or "").strip()
+            policy = self._normalize_peer_policies({node_id: policies.get(node_id, {})}).get(node_id, {})
+            if not policy:
+                policy = {
+                    "enabled": True,
+                    "interval_minutes": int(settings_full.get("interval_minutes", DEFAULT_BUDDY_SETTINGS["interval_minutes"])),
+                    "send_time": "02:00",
+                    "max_storage_gb": int(settings_full.get("incoming_quota_gb", DEFAULT_BUDDY_SETTINGS["incoming_quota_gb"])),
+                    "outgoing_sources": [],
+                    "updated_at": self._now_iso(),
+                }
+            item["policy"] = policy
+            peers.append(item)
+        peers = sorted(peers, key=lambda item: str(item.get("name", "")).lower())
         runtime = self._runtime_status()
-        settings = self.get_settings()
+        settings = self._public_settings(settings_full)
         wg_cmd = self._wg_cmd()
         wg_quick_cmd = self._wg_quick_cmd()
         key_source = str(identity.get("key_source") or "wireguard")

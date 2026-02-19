@@ -2839,6 +2839,12 @@ def backup_system_rollback():
     snapshot_path = (data.get('snapshot_path') or '').strip()
     if not snapshot_path:
         return jsonify({'error': 'snapshot_path is required'}), 400
+    if buddy_backup_manager is not None and buddy_backup_manager.requires_encryption_passphrase():
+        passphrase = str(data.get('encryption_passphrase') or '')
+        if not passphrase:
+            return jsonify({'error': 'Encryption password is required for rollback'}), 400
+        if not buddy_backup_manager.verify_encryption_passphrase(passphrase):
+            return jsonify({'error': 'Invalid encryption password'}), 403
 
     success, payload = backup_manager.rollback_system_snapshot(snapshot_path=snapshot_path)
     if not success:
@@ -2857,6 +2863,12 @@ def backup_restore():
     source_path = (data.get('source_path') or '').strip() or None
     if not snapshot_path:
         return jsonify({'error': 'snapshot_path is required'}), 400
+    if buddy_backup_manager is not None and buddy_backup_manager.requires_encryption_passphrase():
+        passphrase = str(data.get('encryption_passphrase') or '')
+        if not passphrase:
+            return jsonify({'error': 'Encryption password is required for rollback'}), 400
+        if not buddy_backup_manager.verify_encryption_passphrase(passphrase):
+            return jsonify({'error': 'Invalid encryption password'}), 403
 
     success, payload = backup_manager.restore_snapshot(snapshot_path=snapshot_path, source_path=source_path)
     if not success:
@@ -2941,6 +2953,25 @@ def buddy_settings():
         return jsonify({'error': result.get('error', 'Failed to save buddy settings')}), 400
     return jsonify({'success': True, 'settings': result})
 
+@app.route('/api/v1/backup/buddy/peers/<node_id>/policy', methods=['GET', 'POST'])
+@require_auth
+def buddy_peer_policy(node_id):
+    """Get or update send schedule/quota policy for a specific buddy peer."""
+    if buddy_backup_manager is None:
+        return jsonify({'error': 'Buddy backup manager not initialized'}), 500
+
+    if request.method == 'GET':
+        success, payload = buddy_backup_manager.get_peer_policy(node_id=node_id)
+        if not success:
+            return jsonify({'error': payload.get('error', 'Failed to load peer policy')}), 404
+        return jsonify({'success': True, 'policy': payload})
+
+    data = request.get_json() or {}
+    success, payload = buddy_backup_manager.save_peer_policy(node_id=node_id, payload=data)
+    if not success:
+        return jsonify({'error': payload.get('error', 'Failed to save peer policy')}), 400
+    return jsonify({'success': True, 'policy': payload})
+
 @app.route('/api/v1/backup/pairing/generate', methods=['POST'])
 @require_auth
 def buddy_pairing_generate():
@@ -2952,15 +2983,17 @@ def buddy_pairing_generate():
     endpoint = (data.get('endpoint') or '').strip()
     expires_minutes = data.get('expires_minutes', 20)
 
+    host_header = (request.headers.get('X-Forwarded-Host') or request.host or '').split(',')[0].strip()
+    api_endpoint = host_header
     if not endpoint:
-        host_header = (request.headers.get('X-Forwarded-Host') or request.host or '').split(',')[0].strip()
         host = host_header.split(':', 1)[0].strip()
         if host and host not in ('localhost', '127.0.0.1', '::1'):
             endpoint = f"{host}:51820"
 
     success, payload = buddy_backup_manager.generate_pairing_token(
         endpoint=endpoint,
-        expires_minutes=expires_minutes
+        expires_minutes=expires_minutes,
+        api_endpoint=api_endpoint,
     )
     if not success:
         return jsonify({'error': payload.get('error', 'Failed to generate pairing token')}), 400
@@ -2977,14 +3010,42 @@ def buddy_pairing_validate():
     token = (data.get('token') or '').strip()
     endpoint_override = (data.get('endpoint_override') or '').strip()
     name_override = (data.get('name_override') or '').strip()
+    host_header = (request.headers.get('X-Forwarded-Host') or request.host or '').split(',')[0].strip()
+    local_api_endpoint = host_header
+    local_host = host_header.split(':', 1)[0].strip()
+    local_wg_endpoint = ''
+    if local_host and local_host not in ('localhost', '127.0.0.1', '::1'):
+        local_wg_endpoint = f'{local_host}:51820'
 
     success, payload = buddy_backup_manager.validate_pairing_token(
         token=token,
         endpoint_override=endpoint_override,
-        name_override=name_override
+        name_override=name_override,
+        auto_reciprocal=True,
+        local_wg_endpoint=local_wg_endpoint,
+        local_api_endpoint=local_api_endpoint,
     )
     if not success:
         return jsonify({'error': payload.get('error', 'Pairing failed')}), 400
+    return jsonify({'success': True, **payload})
+
+@app.route('/api/v1/backup/pairing/accept', methods=['POST'])
+def buddy_pairing_accept():
+    """Accept reciprocal buddy pairing without interactive login."""
+    if buddy_backup_manager is None:
+        return jsonify({'error': 'Buddy backup manager not initialized'}), 500
+
+    data = request.get_json() or {}
+    token = (data.get('token') or '').strip()
+    if not token:
+        return jsonify({'error': 'token is required'}), 400
+
+    success, payload = buddy_backup_manager.validate_pairing_token(
+        token=token,
+        auto_reciprocal=False
+    )
+    if not success:
+        return jsonify({'error': payload.get('error', 'Pairing accept failed')}), 400
     return jsonify({'success': True, **payload})
 
 @app.route('/api/v1/backup/pairing/remove', methods=['POST'])

@@ -76,6 +76,24 @@ function selectedBuddySources() {
         .filter(Boolean);
 }
 
+function buddyIncomingOptions() {
+    const options = [];
+    const seen = new Set();
+    const sourceList = Array.isArray(backupSources) ? backupSources : [];
+    sourceList
+        .filter((item) => String(item?.kind || '').toLowerCase() === 'subvolume')
+        .forEach((item) => {
+            const path = String(item?.path || '').trim();
+            if (!path || seen.has(path)) return;
+            seen.add(path);
+            options.push({
+                path,
+                name: String(item?.name || path)
+            });
+        });
+    return options;
+}
+
 function setSelectOptions(selectId, selectedValue = '', items = []) {
     const selectEl = document.getElementById(selectId);
     if (!selectEl) return;
@@ -104,6 +122,32 @@ function setSelectOptions(selectId, selectedValue = '', items = []) {
     } else {
         selectEl.value = "";
     }
+}
+
+function setBuddyIncomingPathOptions(selectedValue = '') {
+    const selectEl = document.getElementById('buddy-incoming-path');
+    if (!selectEl) return;
+    const entries = buddyIncomingOptions();
+    const options = [];
+    const seen = new Set();
+
+    if (!entries.length) {
+        const fallback = String(selectedValue || '/mnt/alvaos/buddy-incoming');
+        options.push(`<option value="${backupEscapeHtml(fallback)}">${backupEscapeHtml(fallback)}</option>`);
+        seen.add(fallback);
+    } else {
+        entries.forEach((entry) => {
+            seen.add(entry.path);
+            options.push(`<option value="${backupEscapeHtml(entry.path)}">${backupEscapeHtml(entry.name)} (${backupEscapeHtml(entry.path)})</option>`);
+        });
+    }
+
+    const selectedText = String(selectedValue || '');
+    if (selectedText && !seen.has(selectedText)) {
+        options.push(`<option value="${backupEscapeHtml(selectedText)}">${backupEscapeHtml(selectedText)} (custom)</option>`);
+    }
+    selectEl.innerHTML = options.join('');
+    selectEl.value = selectedText || (entries[0]?.path || '/mnt/alvaos/buddy-incoming');
 }
 
 // ----------------------------------------------------------------------------
@@ -292,8 +336,10 @@ function fillSettingsUi() {
 }
 
 function fillBuddySettingsUi() {
-    const incomingEl = document.getElementById('buddy-incoming-path');
-    if (incomingEl) incomingEl.value = buddySettings.incoming_path || '/mnt/alvaos/buddy-incoming';
+    setBuddyIncomingPathOptions(buddySettings.incoming_path || '/mnt/alvaos/buddy-incoming');
+
+    const incomingQuotaEl = document.getElementById('buddy-incoming-quota');
+    if (incomingQuotaEl) incomingQuotaEl.value = String(buddySettings.incoming_quota_gb || 200);
 
     const intervalEl = document.getElementById('buddy-interval');
     if (intervalEl) intervalEl.value = String(buddySettings.interval_minutes || 1440);
@@ -304,7 +350,36 @@ function fillBuddySettingsUi() {
     const recursiveEl = document.getElementById('buddy-recursive-retention');
     if (recursiveEl) recursiveEl.checked = true;
 
+    const encryptionEnabledEl = document.getElementById('buddy-encryption-enabled');
+    if (encryptionEnabledEl) encryptionEnabledEl.checked = !!buddySettings.encryption_enabled;
+    const encryptionPasswordEl = document.getElementById('buddy-encryption-password');
+    if (encryptionPasswordEl) {
+        encryptionPasswordEl.value = '';
+        encryptionPasswordEl.placeholder = buddySettings.encryption_password_set
+            ? 'Password already set (enter to change)'
+            : 'Set encryption password';
+    }
+
     renderBuddyOutgoingSources();
+}
+
+function getRollbackPassphraseIfNeeded() {
+    if (!buddySettings?.encryption_enabled) {
+        return { ok: true, passphrase: '' };
+    }
+    const passphrase = window.prompt('Encryption password required for rollback/restore:');
+    if (passphrase === null) return { ok: false, passphrase: '' };
+    if (!String(passphrase).trim()) {
+        backupNotify('Encryption password is required', 'warning');
+        return { ok: false, passphrase: '' };
+    }
+    return { ok: true, passphrase: String(passphrase) };
+}
+
+function buddyPeerField(className, nodeId) {
+    const target = String(nodeId || '').trim();
+    return Array.from(document.querySelectorAll(`.${className}`))
+        .find((el) => String(el.dataset.nodeId || '').trim() === target) || null;
 }
 
 function renderBuddyStatus() {
@@ -352,6 +427,34 @@ function renderBuddyStatus() {
                 <div class="metric-sub">Tunnel IP: ${backupEscapeHtml(peer.tunnel_ip || '-')}</div>
                 <div class="metric-sub">Status: ${backupEscapeHtml(peer.status || 'unknown')}</div>
                 ${peer.last_error ? `<div class="metric-sub" style="color: var(--error);">Error: ${backupEscapeHtml(peer.last_error)}</div>` : ''}
+                <div style="margin-top:8px; padding:8px; border:1px solid var(--border-default); border-radius:6px; background:var(--bg-body);">
+                    <div class="setting-group" style="margin-bottom:6px;">
+                        <label class="setting-label">Send To This Buddy</label>
+                        <label class="toggle">
+                            <input type="checkbox" class="buddy-peer-enabled" data-node-id="${backupEscapeHtml(peer.node_id || '')}" ${peer.policy?.enabled !== false ? 'checked' : ''}>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="setting-group" style="margin-bottom:6px;">
+                        <label class="setting-label">Schedule Interval</label>
+                        <select class="select-input buddy-peer-interval" data-node-id="${backupEscapeHtml(peer.node_id || '')}">
+                            <option value="60" ${String(peer.policy?.interval_minutes || 1440) === '60' ? 'selected' : ''}>Every hour</option>
+                            <option value="360" ${String(peer.policy?.interval_minutes || 1440) === '360' ? 'selected' : ''}>Every 6 hours</option>
+                            <option value="720" ${String(peer.policy?.interval_minutes || 1440) === '720' ? 'selected' : ''}>Every 12 hours</option>
+                            <option value="1440" ${String(peer.policy?.interval_minutes || 1440) === '1440' ? 'selected' : ''}>Daily</option>
+                            <option value="10080" ${String(peer.policy?.interval_minutes || 1440) === '10080' ? 'selected' : ''}>Weekly</option>
+                        </select>
+                    </div>
+                    <div class="setting-group" style="margin-bottom:6px;">
+                        <label class="setting-label">Preferred Send Time</label>
+                        <input type="time" class="select-input buddy-peer-send-time" data-node-id="${backupEscapeHtml(peer.node_id || '')}" value="${backupEscapeHtml(peer.policy?.send_time || '02:00')}">
+                    </div>
+                    <div class="setting-group" style="margin-bottom:6px;">
+                        <label class="setting-label">Storage Limit For This Buddy (GB)</label>
+                        <input type="number" min="1" max="20000" class="select-input buddy-peer-quota" data-node-id="${backupEscapeHtml(peer.node_id || '')}" value="${backupEscapeHtml(String(peer.policy?.max_storage_gb || buddySettings?.incoming_quota_gb || 200))}">
+                    </div>
+                    <button class="btn-secondary buddy-save-peer-policy-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Save Buddy Policy</button>
+                </div>
             </div>
             <button class="btn-secondary buddy-remove-peer-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Remove</button>
         </div>
@@ -478,11 +581,17 @@ async function restoreDataSnapshot(snapshotPath, sourcePath) {
     if (!snapshotPath) return;
     const ok = await window.showConfirm('Restore this snapshot?\nCurrent data will be replaced and moved to a pre-restore backup path.');
     if (!ok) return;
+    const pass = getRollbackPassphraseIfNeeded();
+    if (!pass.ok) return;
 
     backupNotify('Restoring snapshot...', 'info');
     const response = await backupApi('/backup/restore', {
         method: 'POST',
-        json: { snapshot_path: snapshotPath, source_path: sourcePath || undefined }
+        json: {
+            snapshot_path: snapshotPath,
+            source_path: sourcePath || undefined,
+            encryption_passphrase: pass.passphrase || undefined
+        }
     });
     const data = await backupReadJson(response);
     if (!response || !response.ok || !data) {
@@ -497,10 +606,15 @@ async function prepareSystemRollback(snapshotPath) {
     if (!snapshotPath) return;
     const ok = await window.showConfirm('Prepare full system rollback to this snapshot?\nSystem will boot into that snapshot after reboot.');
     if (!ok) return;
+    const pass = getRollbackPassphraseIfNeeded();
+    if (!pass.ok) return;
 
     const response = await backupApi('/backup/system/rollback', {
         method: 'POST',
-        json: { snapshot_path: snapshotPath }
+        json: {
+            snapshot_path: snapshotPath,
+            encryption_passphrase: pass.passphrase || undefined
+        }
     });
     const data = await backupReadJson(response);
     if (!response || !response.ok || !data) {
@@ -619,21 +733,37 @@ async function validateBuddyToken() {
         return;
     }
 
-    backupNotify('Buddy paired successfully', 'success');
+    if (data?.reciprocal?.success === false) {
+        backupNotify(
+            `Buddy paired locally, but reciprocal pairing failed: ${data.reciprocal.error || 'unknown error'}`,
+            'warning'
+        );
+    } else if (data?.reciprocal?.success === true) {
+        backupNotify('Buddy paired on both NAS systems', 'success');
+    } else {
+        backupNotify('Buddy paired successfully', 'success');
+    }
     const tokenInput = document.getElementById('buddy-token-input');
     if (tokenInput) tokenInput.value = '';
     await loadBuddyStatus();
 }
 
 async function saveBuddySettings() {
+    const encryptionEnabled = !!document.getElementById('buddy-encryption-enabled')?.checked;
+    const encryptionPassword = document.getElementById('buddy-encryption-password')?.value || '';
     const payload = {
         enabled: true,
         incoming_path: document.getElementById('buddy-incoming-path')?.value?.trim() || '/mnt/alvaos/buddy-incoming',
+        incoming_quota_gb: Number(document.getElementById('buddy-incoming-quota')?.value || 200),
         outgoing_sources: selectedBuddySources(),
         interval_minutes: Number(document.getElementById('buddy-interval')?.value || 1440),
         keep_last: Number(document.getElementById('buddy-keep-last')?.value || 30),
-        recursive_retention: true
+        recursive_retention: true,
+        encryption_enabled: encryptionEnabled
     };
+    if (encryptionPassword.trim()) {
+        payload.encryption_password = encryptionPassword.trim();
+    }
 
     const response = await backupApi('/backup/buddy/settings', {
         method: 'POST',
@@ -647,6 +777,34 @@ async function saveBuddySettings() {
     buddySettings = data.settings || buddySettings;
     fillBuddySettingsUi();
     backupNotify('Buddy settings saved', 'success');
+}
+
+async function saveBuddyPeerPolicy(nodeId) {
+    const target = String(nodeId || '').trim();
+    if (!target) return;
+    const enabledEl = buddyPeerField('buddy-peer-enabled', target);
+    const intervalEl = buddyPeerField('buddy-peer-interval', target);
+    const sendTimeEl = buddyPeerField('buddy-peer-send-time', target);
+    const quotaEl = buddyPeerField('buddy-peer-quota', target);
+
+    const payload = {
+        enabled: !!enabledEl?.checked,
+        interval_minutes: Number(intervalEl?.value || 1440),
+        send_time: String(sendTimeEl?.value || '02:00'),
+        max_storage_gb: Number(quotaEl?.value || buddySettings?.incoming_quota_gb || 200)
+    };
+
+    const response = await backupApi(`/backup/buddy/peers/${encodeURIComponent(target)}/policy`, {
+        method: 'POST',
+        json: payload
+    });
+    const data = await backupReadJson(response);
+    if (!response || !response.ok || !data) {
+        backupNotify(data?.error || 'Failed to save buddy policy', 'error');
+        return;
+    }
+    backupNotify('Buddy policy saved', 'success');
+    await loadBuddyStatus();
 }
 
 async function restartBuddyTunnel() {
@@ -692,6 +850,7 @@ async function loadBackupSources() {
     backupSources = data.sources || [];
     renderSources();
     renderBuddyOutgoingSources();
+    setBuddyIncomingPathOptions(buddySettings.incoming_path || '/mnt/alvaos/buddy-incoming');
 }
 
 async function loadBackupTargets() {
@@ -798,6 +957,11 @@ function initBackupHandlers() {
     document.getElementById('buddy-validate-token-btn')?.addEventListener('click', validateBuddyToken);
     document.getElementById('buddy-save-settings-btn')?.addEventListener('click', saveBuddySettings);
     document.getElementById('buddy-peers-list')?.addEventListener('click', (event) => {
+        const saveBtn = event.target.closest('.buddy-save-peer-policy-btn');
+        if (saveBtn) {
+            saveBuddyPeerPolicy(saveBtn.dataset.nodeId || '');
+            return;
+        }
         const btn = event.target.closest('.buddy-remove-peer-btn');
         if (!btn) return;
         removeBuddyPeer(btn.dataset.nodeId || '');

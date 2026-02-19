@@ -382,9 +382,14 @@
                     </div>
                     <p class="metric-sub" style="margin-bottom: 10px;">Konfiguration für Buddy-Backup. Transfer/Restore-Logik folgt in 0.8.0.</p>
                     <div class="setting-group">
-                        <label class="setting-label" for="buddy-incoming-path">Local Incoming Data Path</label>
-                        <input id="buddy-incoming-path" type="text" class="select-input" placeholder="/mnt/alvaos/buddy-incoming">
+                        <label class="setting-label" for="buddy-incoming-path">Local Incoming Data Path (Subvolume)</label>
+                        <select id="buddy-incoming-path" class="select-input"></select>
                         <p class="metric-sub">Hier werden Daten gespeichert, die vom Buddy-NAS auf dieses NAS kommen.</p>
+                    </div>
+                    <div class="setting-group">
+                        <label class="setting-label" for="buddy-incoming-quota">Default Buddy Storage Limit (GB)</label>
+                        <input id="buddy-incoming-quota" type="number" min="1" max="20000" value="200" class="select-input">
+                        <p class="metric-sub">Standard-Limit pro Buddy (pro Buddy anpassbar in der Buddy-Liste).</p>
                     </div>
                     <div class="setting-group">
                         <label class="setting-label">Backup To Buddy (Outgoing Sources)</label>
@@ -393,7 +398,7 @@
                         </div>
                     </div>
                     <div class="setting-group">
-                        <label class="setting-label" for="buddy-interval">Backup Interval</label>
+                        <label class="setting-label" for="buddy-interval">Default Backup Interval</label>
                         <select id="buddy-interval" class="select-input">
                             <option value="60">Every hour</option>
                             <option value="360">Every 6 hours</option>
@@ -405,6 +410,15 @@
                     <div class="setting-group">
                         <label class="setting-label" for="buddy-keep-last">Retention (Keep last)</label>
                         <input id="buddy-keep-last" type="number" min="1" max="500" value="30" class="select-input">
+                    </div>
+                    <div class="setting-group">
+                        <label class="setting-label">Encryption (Password Required For Rollback)</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="buddy-encryption-enabled">
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <input id="buddy-encryption-password" type="password" class="select-input" style="margin-top:8px;" placeholder="Set or change encryption password">
+                        <p class="metric-sub">Wenn aktiv, muss das Passwort bei Restore/Rollback eingegeben werden.</p>
                     </div>
                     <div class="setting-group">
                         <label class="setting-label">Recursive Retention</label>
