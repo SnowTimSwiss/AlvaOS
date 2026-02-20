@@ -103,7 +103,7 @@ function setSelectOptions(selectId, selectedValue = '', items = []) {
     if (!selectEl) return;
 
     const options = [];
-    options.push('<option value="">Default save location (auto)</option>');
+    options.push('<option value="" disabled selected>Select target path</option>');
 
     const usedPaths = new Set();
 
@@ -113,10 +113,10 @@ function setSelectOptions(selectId, selectedValue = '', items = []) {
         options.push(`<option value="${backupEscapeHtml(target.path)}">${backupEscapeHtml(target.name)} (${backupEscapeHtml(target.path)})</option>`);
     });
 
-    // If selected value is custom (not in list), add it
+    // Keep showing a previously configured path if it is no longer available.
     const selectedText = String(selectedValue || '');
     if (selectedText && !usedPaths.has(selectedText)) {
-        options.push(`<option value="${backupEscapeHtml(selectedText)}">Custom save location: ${backupEscapeHtml(selectedText)}</option>`);
+        options.push(`<option value="${backupEscapeHtml(selectedText)}">Previously configured: ${backupEscapeHtml(selectedText)}</option>`);
     }
 
     selectEl.innerHTML = options.join('');
@@ -135,23 +135,22 @@ function setBuddyIncomingPathOptions(selectedValue = '') {
     const options = [];
     const seen = new Set();
 
-    if (!entries.length) {
-        const fallback = String(selectedValue || '/mnt/alvaos/buddy-incoming');
-        options.push(`<option value="${backupEscapeHtml(fallback)}">${backupEscapeHtml(fallback)}</option>`);
-        seen.add(fallback);
-    } else {
-        entries.forEach((entry) => {
-            seen.add(entry.path);
-            options.push(`<option value="${backupEscapeHtml(entry.path)}">${backupEscapeHtml(entry.name)} (${backupEscapeHtml(entry.path)})</option>`);
-        });
-    }
+    options.push('<option value="" disabled selected>Select incoming path</option>');
+    entries.forEach((entry) => {
+        seen.add(entry.path);
+        options.push(`<option value="${backupEscapeHtml(entry.path)}">${backupEscapeHtml(entry.name)} (${backupEscapeHtml(entry.path)})</option>`);
+    });
 
     const selectedText = String(selectedValue || '');
     if (selectedText && !seen.has(selectedText)) {
-        options.push(`<option value="${backupEscapeHtml(selectedText)}">${backupEscapeHtml(selectedText)} (custom)</option>`);
+        options.push(`<option value="${backupEscapeHtml(selectedText)}">Previously configured: ${backupEscapeHtml(selectedText)}</option>`);
     }
     selectEl.innerHTML = options.join('');
-    selectEl.value = selectedText || (entries[0]?.path || '/mnt/alvaos/buddy-incoming');
+    if (selectedText) {
+        selectEl.value = selectedText;
+    } else {
+        selectEl.value = '';
+    }
 }
 
 // ----------------------------------------------------------------------------
@@ -353,7 +352,7 @@ function fillSettingsUi() {
 }
 
 function fillBuddySettingsUi() {
-    setBuddyIncomingPathOptions(buddySettings.incoming_path || '/mnt/alvaos/buddy-incoming');
+    setBuddyIncomingPathOptions(buddySettings.incoming_path || '');
 
     const incomingQuotaEl = document.getElementById('buddy-incoming-quota');
     if (incomingQuotaEl) incomingQuotaEl.value = String(buddySettings.incoming_quota_gb || 200);
@@ -962,9 +961,14 @@ async function validateBuddyToken() {
 async function saveBuddySettings() {
     const encryptionEnabled = !!document.getElementById('buddy-encryption-enabled')?.checked;
     const encryptionPassword = document.getElementById('buddy-encryption-password')?.value || '';
+    const incomingPath = document.getElementById('buddy-incoming-path')?.value?.trim() || '';
+    if (!incomingPath) {
+        backupNotify('Please select a local incoming data path first', 'warning');
+        return;
+    }
     const payload = {
         enabled: true,
-        incoming_path: document.getElementById('buddy-incoming-path')?.value?.trim() || '/mnt/alvaos/buddy-incoming',
+        incoming_path: incomingPath,
         incoming_quota_gb: Number(document.getElementById('buddy-incoming-quota')?.value || 200),
         recursive_retention: true,
         encryption_enabled: encryptionEnabled
@@ -1203,7 +1207,7 @@ async function loadBackupSources() {
     }
     backupSources = data.sources || [];
     renderSources();
-    setBuddyIncomingPathOptions(buddySettings.incoming_path || '/mnt/alvaos/buddy-incoming');
+    setBuddyIncomingPathOptions(buddySettings.incoming_path || '');
     renderBuddyStatus();
 }
 
@@ -1215,11 +1219,6 @@ async function loadBackupTargets() {
         return;
     }
     backupTargets = data.targets || [];
-
-    // Filter targets for pool vs system?
-    // Generally all targets are valid for pool.
-    // For system, only those on root filesystem are valid, but backend logic enforces it.
-    // We can show all for now.
 
     // Pool Target Select
     const pb = backupSettings.pool_backup || {};

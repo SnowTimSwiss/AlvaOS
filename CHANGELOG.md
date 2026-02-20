@@ -2,6 +2,32 @@
 
 All notable changes to AlvaOS will be documented in this file.
 
+## [0.8.0] - 20.02.26
+
+### Added - Buddy Backup (Part II)
+- **End-to-end buddy transfer flow**: Snapshot stream upload, remote snapshot listing, and remote restore workflow.
+- **Per-buddy policy controls**: Per peer enable/disable, schedule interval, preferred send time, storage limit, and outgoing source selection.
+- **Remote snapshot management**: Delete remote buddy snapshots directly from the Backup UI.
+- **Local snapshot management**: Delete pool snapshots directly from the Backup UI.
+- **Optional transfer encryption**: Password-based stream encryption with password requirement on restore/rollback.
+- **Cloudflared app**: Added to the app catalog.
+
+### Changed
+- **Buddy pairing UX**: Streamlined token-based workflow for simpler NAS-to-NAS setup with less manual endpoint handling.
+- **Backup UI layout**: Pool/System/Buddy tabs were streamlined for more consistent card structure and actions.
+- **Buddy restore reliability**: Improved receive-path resolution and collision handling when temporary receive subvolumes already exist.
+- **Buddy temporary snapshot handling**: Temporary send snapshots now use hidden naming and improved cleanup behavior.
+
+### Fixed
+- **Backup command path portability**: Backup manager now resolves required system commands more robustly across Linux layouts.
+- **Snapshot path accessibility edge cases**: Local restore and snapshot operations now handle Btrfs subvolume checks when plain filesystem existence checks fail.
+- **Buddy stream write-path fallback**: Better writable path selection and fallback behavior for stream payload storage.
+- **Buddy connection testing**: Connection tests now perform active peer API probing instead of relying only on handshake recency.
+- **Remote restore errors**: Improved handling for restore stream path resolution failures.
+
+### Known Limitations
+- **Advanced restore orchestration** remains intentionally minimal in this release and will continue to evolve in subsequent 0.8.x updates.
+
 ## [0.5.0] - TBD
 
 ### Added - App Store & Container Management

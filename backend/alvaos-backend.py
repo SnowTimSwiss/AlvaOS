@@ -82,6 +82,33 @@ def is_secure_system_device(device_name):
         # Fail safe: if we can't determine, assume it MIGHT be system to be safe? 
         # Or returns false and rely on lsblk? Let's return False to avoid blocking everything if this fails.
         return False
+
+
+def _existing_probe_path(path):
+    target = os.path.normpath(str(path or '').strip())
+    if not target:
+        return '/'
+    probe = os.path.realpath(target)
+    while probe != '/' and not os.path.exists(probe):
+        next_probe = os.path.dirname(probe)
+        if next_probe == probe:
+            break
+        probe = next_probe
+    return probe if probe else '/'
+
+
+def is_path_on_system_disk(path):
+    """Return True when a path resolves to the same filesystem device as root (/)."""
+    if platform.system() != 'Linux':
+        return False
+    candidate = str(path or '').strip()
+    if not candidate:
+        return False
+    try:
+        probe = _existing_probe_path(candidate)
+        return os.stat(probe).st_dev == os.stat('/').st_dev
+    except Exception:
+        return False
 # System Commands Paths for Sudo (must match sudoers configuration in install-system.sh)
 CMD = {
     'GETENT': '/usr/bin/getent',
@@ -1449,6 +1476,101 @@ def save_update_settings():
 # STORAGE MANAGEMENT ENDPOINTS (v0.2.0)
 # ============================================================================
 
+def _json_or_none(raw_text):
+    try:
+        text = str(raw_text or "").strip()
+        if not text:
+            return None
+        return json.loads(text)
+    except Exception:
+        return None
+
+def _smartctl_messages(payload):
+    if not isinstance(payload, dict):
+        return []
+    messages = []
+    smartctl_meta = payload.get('smartctl', {})
+    if isinstance(smartctl_meta, dict):
+        for item in smartctl_meta.get('messages', []) if isinstance(smartctl_meta.get('messages'), list) else []:
+            if not isinstance(item, dict):
+                continue
+            message = str(item.get('string') or '').strip()
+            if message:
+                messages.append(message)
+    return messages
+
+def _smartctl_has_payload(payload):
+    if not isinstance(payload, dict):
+        return False
+    if isinstance(payload.get('smart_status'), dict):
+        return True
+    if payload.get('ata_smart_attributes'):
+        return True
+    if payload.get('nvme_smart_health_information_log'):
+        return True
+    if payload.get('scsi_grown_defect_list'):
+        return True
+    if payload.get('scsi_error_counter_log'):
+        return True
+    if payload.get('power_on_time'):
+        return True
+    return False
+
+def _compact_smart_error(error_text):
+    text = str(error_text or '').strip()
+    if not text:
+        return ''
+    if ': {' in text:
+        text = text.split(': {', 1)[0].strip()
+    if len(text) > 320:
+        text = text[:320].rstrip() + '...'
+    return text
+
+def _collect_smart_report(disk_name, detailed=False, timeout=6):
+    disk = str(disk_name or '').strip()
+    if not disk:
+        return None, '', 'Invalid disk name'
+    disk_path = f'/dev/{disk}'
+
+    base_args = ['-a'] if detailed else ['-H', '-A']
+    attempts = [list(base_args)]
+    if not disk.startswith('nvme'):
+        attempts.append(list(base_args) + ['-d', 'sat'])
+        attempts.append(list(base_args) + ['-d', 'scsi'])
+
+    saw_unknown_bridge = False
+    last_error = ''
+
+    for args in attempts:
+        cmd = [CMD['SMARTCTL']] + args + ['-j', disk_path]
+        result, err = run_sudo_command(cmd, timeout=timeout)
+        payload = _json_or_none((result.stdout if result else '') or '')
+        messages = _smartctl_messages(payload)
+
+        msg_text = ' '.join(messages).lower()
+        err_text = str(err or '').lower()
+        if 'unknown usb bridge' in msg_text or 'unknown usb bridge' in err_text:
+            saw_unknown_bridge = True
+            if payload and _smartctl_has_payload(payload):
+                return payload, '', ''
+            continue
+
+        if payload and (_smartctl_has_payload(payload) or payload.get('smart_support', {}).get('available') is False):
+            return payload, '', ''
+
+        if err:
+            last_error = _compact_smart_error(err)
+        elif result and result.stderr:
+            last_error = _compact_smart_error(result.stderr)
+
+    if saw_unknown_bridge:
+        return None, (
+            'SMART monitoring unavailable: unsupported USB-SATA bridge. '
+            'Try direct SATA/NVMe connection or a supported USB bridge.'
+        ), ''
+
+    return None, '', (last_error or 'Device did not return SMART data')
+
 @app.route('/api/v1/storage/disks', methods=['GET'])
 @require_auth
 def get_disks():
@@ -1493,29 +1615,35 @@ def get_disks():
                         power_on_hours = None
                         
                         try:
-                            # Try to get detailed SMART info in JSON format
-                            res, err = run_sudo_command([CMD['SMARTCTL'], '-H', '-A', '-j', f'/dev/{device["name"]}'], timeout=5)
-                            
-                            if res and (res.returncode == 0 or (res.returncode & 0x1) == 0):
-                                smart_data = json.loads(res.stdout)
-                                
-                                # Status
-                                if smart_data.get('smart_status', {}).get('passed'):
+                            smart_data, unsupported_reason, _ = _collect_smart_report(
+                                device["name"],
+                                detailed=False,
+                                timeout=5
+                            )
+                            if isinstance(smart_data, dict):
+                                if smart_data.get('smart_support', {}).get('available', True) is False:
+                                    smart_status = 'unknown'
+                                elif smart_data.get('smart_status', {}).get('passed'):
                                     smart_status = 'healthy'
-                                else:
+                                elif isinstance(smart_data.get('smart_status'), dict):
                                     smart_status = 'failed'
-                                
-                                # Extract temp and hours from attributes
+
+                                # Extract temp and hours from attributes (ATA)
                                 attributes = smart_data.get('ata_smart_attributes', {}).get('table', [])
                                 for attr in attributes:
-                                    # Temperature (standard ID 194 or 190)
                                     if attr.get('id') in [194, 190]:
                                         temp = attr.get('raw', {}).get('value')
-                                    # Power On Hours (standard ID 9)
                                     elif attr.get('id') == 9:
                                         power_on_hours = attr.get('raw', {}).get('value')
-                        except:
-                            # Fallback if JSON fails or smartctl not found
+
+                                # NVMe fallback values
+                                if temp is None:
+                                    temp = smart_data.get('temperature', {}).get('current') or smart_data.get('nvme_smart_health_information_log', {}).get('temperature')
+                                if power_on_hours is None:
+                                    power_on_hours = smart_data.get('power_on_time', {}).get('hours') or smart_data.get('nvme_smart_health_information_log', {}).get('power_on_hours')
+                            elif unsupported_reason:
+                                smart_status = 'unknown'
+                        except Exception:
                             pass
                         
                         # Determine if removable (USB/SD)
@@ -1614,23 +1742,22 @@ def get_disk_smart(disk_name):
         
     try:
         if platform.system() == 'Linux':
-            # Try to determine if it's NVMe
-            is_nvme = disk_name.startswith('nvme')
-            
-            # Get detailed SMART info in JSON format
-            # For NVMe, smartctl -a is standard, for others we might need specific types
-            cmd = [CMD['SMARTCTL'], '-a', '-j', f'/dev/{disk_name}']
-            result, err = run_sudo_command(cmd, timeout=5)
-            if err:
-                return jsonify({'error': err}), 500
-            if result and result.stdout:
-                data = json.loads(result.stdout)
-                # Check if SMART is actually supported/enabled
+            data, unsupported_reason, read_error = _collect_smart_report(
+                disk_name=disk_name,
+                detailed=True,
+                timeout=8
+            )
+            if isinstance(data, dict):
                 if not data.get('smart_support', {}).get('available', True):
-                    return jsonify({'error': 'SMART not supported on this device (common for USB sticks)'}), 200
+                    return jsonify({'error': 'SMART not supported on this device (common for USB sticks/bridges)'}), 200
                 return jsonify(data)
-            if result and result.stderr:
-                return jsonify({'error': 'SMART returned no data', 'details': result.stderr}), 500
+
+            if unsupported_reason:
+                return jsonify({'error': unsupported_reason}), 200
+
+            if read_error:
+                return jsonify({'error': f'SMART read failed: {read_error}'}), 500
+
             return jsonify({'error': 'Device did not return any SMART data'}), 404
         else:
             # Mock data (unchanged)
@@ -1663,24 +1790,71 @@ def wipe_disk(disk_name):
         
     try:
         if platform.system() == 'Linux':
-            # 1. Unmount any Partitions
-            # Get list of partitions for the disk
+            disk_path = f'/dev/{disk_name}'
+
+            # 1. Collect children + mountpoints and unmount deepest first.
+            device_rows = []
+            mountpoints = []
             try:
-                lsblk_res = subprocess.run([CMD['LSBLK'], '-nr', '-o', 'NAME', f'/dev/{disk_name}'], capture_output=True, text=True)
-                if lsblk_res.returncode == 0:
-                    for line in lsblk_res.stdout.splitlines():
-                        dev_path = f'/dev/{line.split()[0]}'
-                        run_sudo_command([CMD['UMOUNT'], '-l', dev_path])
-            except:
+                lsblk_res, lsblk_err = run_sudo_command(
+                    [CMD['LSBLK'], '-nrpo', 'NAME,TYPE,MOUNTPOINT', disk_path],
+                    timeout=10
+                )
+                if not lsblk_err and lsblk_res and lsblk_res.returncode == 0:
+                    for raw in (lsblk_res.stdout or '').splitlines():
+                        line = raw.strip()
+                        if not line:
+                            continue
+                        parts = line.split(None, 2)
+                        name = parts[0].strip() if len(parts) > 0 else ''
+                        dev_type = parts[1].strip() if len(parts) > 1 else ''
+                        mnt = parts[2].strip() if len(parts) > 2 else ''
+                        if not name:
+                            continue
+                        device_rows.append({'name': name, 'type': dev_type, 'mountpoint': mnt})
+                        if mnt and mnt not in ('-', '[SWAP]'):
+                            mountpoints.append(mnt)
+            except Exception:
                 pass
-            
-            # 2. Wipe file system signatures
-            res, err = run_sudo_command([CMD['WIPEFS'], '-a', f'/dev/{disk_name}'])
+
+            for mnt in sorted(set(mountpoints), key=len, reverse=True):
+                run_sudo_command([CMD['UMOUNT'], '-l', mnt], timeout=20)
+
+            # Also try device-path unmount for remaining holders.
+            for row in sorted(device_rows, key=lambda item: len(item.get('name', '')), reverse=True):
+                dev_name = row.get('name') or ''
+                if not dev_name:
+                    continue
+                run_sudo_command([CMD['UMOUNT'], '-l', dev_name], timeout=20)
+
+            # 2. Wipe children first, then root disk.
+            children = [
+                row.get('name')
+                for row in sorted(device_rows, key=lambda item: len(item.get('name', '')), reverse=True)
+                if row.get('name') and row.get('name') != disk_path
+            ]
+            for child in children:
+                run_sudo_command([CMD['WIPEFS'], '-a', '-f', child], timeout=30)
+
+            res, err = run_sudo_command([CMD['WIPEFS'], '-a', '-f', disk_path], timeout=45)
             if err:
-                return jsonify({'error': f'Wipe failed: {err}'}), 500
-                
+                # Retry once after partprobe in case kernel still holds stale partition refs.
+                run_sudo_command([CMD['PARTPROBE'], disk_path], timeout=20)
+                res, err = run_sudo_command([CMD['WIPEFS'], '-a', '-f', disk_path], timeout=45)
+            if err:
+                # Include active mountpoints for actionable troubleshooting.
+                busy_mounts = []
+                try:
+                    mp_res, mp_err = run_sudo_command([CMD['LSBLK'], '-nrpo', 'MOUNTPOINT', disk_path], timeout=10)
+                    if not mp_err and mp_res and mp_res.returncode == 0:
+                        busy_mounts = [ln.strip() for ln in (mp_res.stdout or '').splitlines() if ln.strip() and ln.strip() != '-']
+                except Exception:
+                    pass
+                extra = f" Active mounts: {', '.join(sorted(set(busy_mounts)))}" if busy_mounts else ""
+                return jsonify({'error': f'Wipe failed: {err}{extra}'}), 500
+
             # 3. Inform kernel of changes
-            run_sudo_command([CMD['PARTPROBE'], f'/dev/{disk_name}'])
+            run_sudo_command([CMD['PARTPROBE'], disk_path], timeout=20)
             invalidate_storage_cache('disks', 'pools')
             
             return jsonify({'success': True, 'message': f'Disk /dev/{disk_name} wiped successfully and is now ready for use.'})
@@ -2362,7 +2536,7 @@ def save_shares_state(state):
 def get_available_paths():
     """Get list of all potential share paths (pools and subvolumes)"""
     paths = []
-    
+
     # Add base mount point (Removed as per user request to only allow pools/subvolumes)
     # base_path = '/mnt/alvaos'
     # if platform.system() == 'Linux':
@@ -2376,43 +2550,50 @@ def get_available_paths():
     #         base_path = None
     # if base_path:
     #     paths.append({'name': 'Default Storage Root', 'path': base_path})
-    
+
     # Add Pools
     pools = load_pools_state()
     for pid, pool in pools.items():
-        if 'mount_point' in pool:
-            paths.append({'name': f"Pool: {pool['name']}", 'path': pool['mount_point']})
-            
-            # Dynamic Subvolume Lookup
-            # Instead of looking for a non-existent cache file, we list subvolumes directly
-            if platform.system() == 'Linux':
-                try:
-                    result, err = run_sudo_command(
-                        [CMD['BTRFS'], 'subvolume', 'list', pool['mount_point']], timeout=3
-                    )
-                    if result and result.returncode == 0:
-                        for line in result.stdout.split('\n'):
-                             if not line.strip(): continue
-                             # ID 256 gen 7 top level 5 path subvol1
-                             parts = line.split()
-                             path_idx = -1
-                             try:
-                                 path_idx = parts.index('path')
-                             except ValueError:
-                                 continue
-                                 
-                             if path_idx + 1 < len(parts):
-                                 subvol_name = parts[path_idx + 1]
-                                 paths.append({
-                                     'name': f"  ↳ Subvolume: {subvol_name}", 
-                                     'path': f"{pool['mount_point']}/{subvol_name}"
-                                 })
-                except Exception as e:
-                    print(f"Error listing subvolumes for path: {e}")
-            else:
-                 # Mock subvolumes for dev
-                 paths.append({'name': f"  ↳ Subvolume: mock-subvol", 'path': f"{pool['mount_point']}/mock-subvol"})
-                    
+        mount_point = os.path.normpath(str(pool.get('mount_point') or '').strip())
+        if not mount_point:
+            continue
+        if platform.system() == 'Linux' and is_path_on_system_disk(mount_point):
+            continue
+
+        paths.append({'name': f"Pool: {pool.get('name') or pid}", 'path': mount_point})
+
+        # Dynamic subvolume lookup.
+        if platform.system() == 'Linux':
+            try:
+                result, err = run_sudo_command(
+                    [CMD['BTRFS'], 'subvolume', 'list', mount_point], timeout=3
+                )
+                if result and result.returncode == 0:
+                    for line in result.stdout.split('\n'):
+                        if not line.strip():
+                            continue
+                        # ID 256 gen 7 top level 5 path subvol1
+                        parts = line.split()
+                        try:
+                            path_idx = parts.index('path')
+                        except ValueError:
+                            continue
+
+                        if path_idx + 1 < len(parts):
+                            subvol_name = parts[path_idx + 1]
+                            subvol_path = os.path.normpath(os.path.join(mount_point, subvol_name))
+                            if is_path_on_system_disk(subvol_path):
+                                continue
+                            paths.append({
+                                'name': f"  -> Subvolume: {subvol_name}",
+                                'path': subvol_path
+                            })
+            except Exception as e:
+                print(f"Error listing subvolumes for path: {e}")
+        else:
+            # Mock subvolumes for dev
+            paths.append({'name': "  -> Subvolume: mock-subvol", 'path': f"{mount_point}/mock-subvol"})
+
     return jsonify({'paths': paths})
 
 @app.route('/api/v1/storage/shares', methods=['GET', 'POST', 'DELETE'])
@@ -2447,6 +2628,8 @@ def manage_shares():
         
         if not share_path:
             return jsonify({'error': 'Share path is required'}), 400
+        if platform.system() == 'Linux' and not os.path.isabs(share_path):
+            return jsonify({'error': 'Share path must be an absolute path'}), 400
         
         if protocol not in ['nfs', 'smb']:
             return jsonify({'error': 'Protocol must be "nfs" or "smb"'}), 400
@@ -2454,6 +2637,8 @@ def manage_shares():
         # Check if path exists
         if platform.system() == 'Linux' and not os.path.exists(share_path):
             return jsonify({'error': f'Path does not exist: {share_path}'}), 400
+        if platform.system() == 'Linux' and is_path_on_system_disk(share_path):
+            return jsonify({'error': f'Share path is on the system disk and is not allowed: {share_path}'}), 400
 
         if protocol == 'smb' and isinstance(data.get('smb_permissions', {}), dict) and len(data.get('smb_permissions', {})) > 0:
             allowed_users = [u for u, r in smb_permissions.items() if r in ('read', 'write')]

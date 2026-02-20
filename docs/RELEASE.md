@@ -6,15 +6,6 @@ Predictable, well-tested, and easy-to-upgrade releases.
 - **SemVer**: `vMAJOR.MINOR.PATCH` (e.g., `v1.0.0`).
 - **Stable**: Production-ready (default).
 - **Beta**: Feature previews (`v1.0.0-beta.1`).
-- **Dev**: Unstable nightly builds from `main`.
-
-## Release Checklist
-- [ ] Features finished, tests passed, and docs updated.
-- [ ] Section added to `CHANGELOG.md`.
-- [ ] GitHub release drafted (Tag: `v1.0.0`, Target: `main`).
-- [ ] Release published (CI builds ISO, .deb, and checksums).
-- [ ] Artifacts verified (`sha256sum -c checksums.txt`).
-- [ ] Release announced in the community.
 
 ## Artifacts
 1. **Installer**: `alvaos-installer-{version}.iso` (~500MB) for fresh installs.
@@ -31,4 +22,3 @@ Users update via **Web UI → Settings → Updates**. The system restarts automa
 
 ---
 **Philosophy**: Users should never fear updating their NAS.
-

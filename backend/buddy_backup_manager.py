@@ -28,7 +28,7 @@ import requests
 
 DEFAULT_BUDDY_SETTINGS = {
     "enabled": False,
-    "incoming_path": "/mnt/alvaos/buddy-incoming",
+    "incoming_path": "",
     "incoming_quota_gb": 200,
     "outgoing_sources": [],
     "interval_minutes": 1440,
@@ -152,6 +152,43 @@ class BuddyBackupManager:
             return datetime.fromisoformat(value)
         except Exception:
             return None
+
+    def _normalize_path(self, path: Optional[str]) -> str:
+        if not path:
+            return ""
+        return os.path.normpath(str(path).strip())
+
+    def _existing_probe_path(self, path: str) -> str:
+        probe = self._normalize_path(path)
+        if not probe:
+            return "/"
+        while probe != "/" and not os.path.exists(probe):
+            next_probe = os.path.dirname(probe)
+            if next_probe == probe:
+                break
+            probe = next_probe
+        return probe if probe else "/"
+
+    def _path_on_system_disk(self, path: str) -> bool:
+        if platform.system() != "Linux":
+            return False
+        target = self._normalize_path(path)
+        if not target:
+            return False
+        try:
+            probe = os.path.realpath(self._existing_probe_path(target))
+            root = os.path.realpath("/")
+            return os.stat(probe).st_dev == os.stat(root).st_dev
+        except Exception:
+            return False
+
+    def _sanitize_non_system_path(self, path: Optional[str]) -> str:
+        normalized = self._normalize_path(path)
+        if not normalized.startswith("/"):
+            return ""
+        if self._path_on_system_disk(normalized):
+            return ""
+        return normalized
 
     def _hostname(self) -> str:
         try:
@@ -619,8 +656,8 @@ class BuddyBackupManager:
             seen = set()
             if isinstance(sources_raw, list):
                 for source in sources_raw:
-                    path = str(source or "").strip()
-                    if not path.startswith("/") or path in seen:
+                    path = self._sanitize_non_system_path(source)
+                    if not path or path in seen:
                         continue
                     seen.add(path)
                     unique_sources.append(path)
@@ -641,10 +678,9 @@ class BuddyBackupManager:
 
         merged["enabled"] = bool(source.get("enabled", merged["enabled"]))
 
-        incoming_path = str(source.get("incoming_path", merged["incoming_path"]) or "").strip()
-        if not incoming_path.startswith("/"):
-            incoming_path = DEFAULT_BUDDY_SETTINGS["incoming_path"]
-        merged["incoming_path"] = incoming_path
+        merged["incoming_path"] = self._sanitize_non_system_path(
+            source.get("incoming_path", merged["incoming_path"])
+        )
         try:
             incoming_quota = int(source.get("incoming_quota_gb", merged["incoming_quota_gb"]))
         except Exception:
@@ -656,8 +692,8 @@ class BuddyBackupManager:
         seen = set()
         if isinstance(outgoing, list):
             for entry in outgoing:
-                path = str(entry or "").strip()
-                if not path.startswith("/") or path in seen:
+                path = self._sanitize_non_system_path(entry)
+                if not path or path in seen:
                     continue
                 seen.add(path)
                 unique_sources.append(path)
@@ -786,6 +822,8 @@ class BuddyBackupManager:
             candidate["encryption_salt"] = ""
 
         merged = self._merge_settings(candidate)
+        if merged.get("enabled") and not str(merged.get("incoming_path") or "").strip():
+            return False, {"error": "Local incoming path is required and must be on a non-system disk"}
         merged["updated_at"] = self._now_iso()
         self._save_json(self.settings_file, merged)
         return True, self._public_settings(merged)
@@ -1016,6 +1054,34 @@ class BuddyBackupManager:
             path = os.path.join(base, candidate)
             self._cleanup_temp_subvolume(path, btrfs_cmd, attempts=2)
 
+    def _device_id_for_path(self, path: str) -> Optional[int]:
+        target = str(path or "").strip()
+        if not target:
+            return None
+        try:
+            return int(os.stat(target).st_dev)
+        except Exception:
+            return None
+
+    def _best_temp_snapshot_parent(self, source_path: str) -> str:
+        source = os.path.normpath(str(source_path or "").strip())
+        if not source:
+            return "/"
+
+        source_dev = self._device_id_for_path(source)
+        parent = os.path.normpath(os.path.dirname(source.rstrip("/")) or "/")
+
+        if source_dev is None:
+            return parent
+
+        parent_dev = self._device_id_for_path(parent)
+        if parent_dev is not None and parent_dev == source_dev:
+            return parent
+
+        # If parent is on another device (e.g. /mnt/alvaos vs /mnt/alvaos/pool),
+        # place temp snapshot inside source to keep snapshot operation on one filesystem.
+        return source
+
     def _mkdir_p(self, path: str) -> Tuple[bool, str]:
         target = str(path or "").strip()
         if not target:
@@ -1134,7 +1200,9 @@ class BuddyBackupManager:
 
     def _stream_root_path(self) -> str:
         settings = self.get_settings(include_secret=True)
-        base = str(settings.get("incoming_path") or DEFAULT_BUDDY_SETTINGS["incoming_path"]).strip()
+        base = self._sanitize_non_system_path(settings.get("incoming_path"))
+        if not base:
+            return ""
         return os.path.join(base, ".alvaos-buddy-streams")
 
     def _fallback_stream_root_path(self) -> str:
@@ -1147,10 +1215,9 @@ class BuddyBackupManager:
             return None, None, "owner_node_id is required"
 
         preferred_root = self._stream_root_path()
-        fallback_root = self._fallback_stream_root_path()
+        if not preferred_root:
+            return None, None, "Local incoming path is not configured or not allowed"
         candidates = [preferred_root]
-        if fallback_root != preferred_root:
-            candidates.append(fallback_root)
 
         last_error = "No writable stream directory available"
         for root in candidates:
@@ -1919,7 +1986,7 @@ class BuddyBackupManager:
                 }
             return False, {"error": f"Source path is not a Btrfs subvolume: {source}"}
 
-        source_parent = os.path.dirname(source.rstrip("/")) or "/"
+        source_parent = self._best_temp_snapshot_parent(source)
         source_slug = re.sub(r"[^a-z0-9._-]+", "-", source.strip("/").lower()) or "source"
         stamp = self._now().strftime("%Y%m%d-%H%M%S")
         temp_name = f".alvaos-buddy-{source_slug}-{stamp}-{secrets.token_hex(2)}"
@@ -1939,6 +2006,20 @@ class BuddyBackupManager:
                 [btrfs_cmd, "subvolume", "snapshot", "-r", source, temp_snapshot],
                 timeout=240,
             )
+            if (snap_err or not snap_res or snap_res.returncode != 0) and "invalid cross-device link" in str(snap_err or "").lower():
+                # Retry once inside source path; some pool root paths have parent dirs on another device.
+                fallback_parent = source
+                fallback_snapshot = os.path.join(fallback_parent, temp_name)
+                if fallback_snapshot != temp_snapshot:
+                    ok_fallback_parent, fallback_parent_err = self._mkdir_p(fallback_parent)
+                    if not ok_fallback_parent:
+                        return False, {"error": fallback_parent_err or "Failed to prepare source parent"}
+                    source_parent = fallback_parent
+                    temp_snapshot = fallback_snapshot
+                    snap_res, snap_err = self.run_command(
+                        [btrfs_cmd, "subvolume", "snapshot", "-r", source, temp_snapshot],
+                        timeout=240,
+                    )
             if snap_err or not snap_res or snap_res.returncode != 0:
                 return False, {"error": snap_err or "Failed to create temporary snapshot"}
 

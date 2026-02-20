@@ -227,6 +227,8 @@ class BackupManager:
             mount_norm = self._normalize_path(mount_point)
             if not mount_norm or mount_norm == "/":
                 continue
+            if self._path_on_system_disk(mount_norm):
+                continue
             pool_name = pools.get(pool_id, {}).get("name") or pool_id
 
             if mount_norm not in seen_paths:
@@ -252,6 +254,8 @@ class BackupManager:
                     sub_path = self._normalize_path(sub["path"])
                     if not sub_path or sub_path in seen_paths:
                         continue
+                    if self._path_on_system_disk(sub_path):
+                        continue
                     seen_paths.add(sub_path)
                     sources.append(
                         {
@@ -273,7 +277,7 @@ class BackupManager:
         for pool_id, mount_point in self._list_pool_mounts():
             pool_name = pools.get(pool_id, {}).get("name") or pool_id
             norm_mount = self._normalize_path(mount_point)
-            if norm_mount and norm_mount not in seen:
+            if norm_mount and norm_mount not in seen and not self._path_on_system_disk(norm_mount):
                 seen.add(norm_mount)
                 targets.append({
                     "name": f"Pool: {pool_name}",
@@ -289,6 +293,8 @@ class BackupManager:
                         continue
                     if rel.startswith(".alvaos-snapshots"):
                         continue
+                    if self._path_on_system_disk(path):
+                        continue
                     seen.add(path)
                     targets.append({
                         "name": f"{pool_name}: {rel}",
@@ -301,7 +307,7 @@ class BackupManager:
             settings.get("system_backup", {}).get("target_path")
             or DEFAULT_SETTINGS["system_backup"]["target_path"]
         )
-        if system_default and system_default not in seen:
+        if system_default and system_default not in seen and not self._path_on_system_disk(system_default):
             targets.append({
                 "name": "System Default: /var/lib/alvaos/system-snapshots",
                 "path": system_default,
@@ -366,11 +372,17 @@ class BackupManager:
         seen = set()
         for source in raw_sources:
             normalized = self._normalize_path(source)
-            if normalized and normalized not in seen:
+            if not normalized:
+                continue
+            if self._path_on_system_disk(normalized):
+                continue
+            if normalized not in seen:
                 seen.add(normalized)
                 unique_sources.append(normalized)
         pb["sources"] = unique_sources
         pb["target_path"] = self._normalize_path(pb.get("target_path"))
+        if pb["target_path"] and self._path_on_system_disk(pb["target_path"]):
+            pb["target_path"] = ""
 
         # Validate System Backup
         sb = merged["system_backup"]
@@ -386,8 +398,8 @@ class BackupManager:
             sb["keep_last"] = 10
             
         sb["target_path"] = self._normalize_path(sb.get("target_path"))
-        if not sb["target_path"]:
-            sb["target_path"] = self._normalize_path(DEFAULT_SETTINGS["system_backup"]["target_path"])
+        if sb["target_path"] and self._path_on_system_disk(sb["target_path"]):
+            sb["target_path"] = ""
 
         return merged
 
@@ -575,6 +587,19 @@ class BackupManager:
             probe = next_probe
         return probe if probe else "/"
 
+    def _path_on_system_disk(self, path: str) -> bool:
+        if platform.system() != "Linux":
+            return False
+        target = self._normalize_path(path)
+        if not target:
+            return False
+        try:
+            probe = os.path.realpath(self._existing_probe_path(target))
+            root = os.path.realpath("/")
+            return os.stat(probe).st_dev == os.stat(root).st_dev
+        except Exception:
+            return False
+
     def _filesystem_type_for_path(self, path: str) -> Optional[str]:
         probe = self._existing_probe_path(path)
         if not probe:
@@ -718,6 +743,8 @@ class BackupManager:
     def get_system_state(self) -> Dict:
         if platform.system() != "Linux":
             return {"supported": False, "reason": "System snapshots are supported on Linux only"}
+        if self._path_on_system_disk("/"):
+            return {"supported": False, "reason": "System-disk backup targets are disabled by policy"}
         if not self._path_is_btrfs_subvolume("/"):
             return {"supported": False, "reason": "Root filesystem is not a Btrfs subvolume"}
         return {
@@ -951,6 +978,8 @@ class BackupManager:
         source = self._normalize_path(source_path)
         if not source:
             return False, {"error": "source_path is required"}
+        if platform.system() == "Linux" and self._path_on_system_disk(source):
+            return False, {"error": f"Source path is on the system disk and is not allowed: {source}"}
         if platform.system() == "Linux":
             source_is_subvolume = self._path_is_btrfs_subvolume(source)
             if not source_is_subvolume:
@@ -970,6 +999,8 @@ class BackupManager:
             target_root = self._build_selected_data_target_root(source, selected_target)
         else:
             target_root = self._build_default_data_target_root(source)
+        if platform.system() == "Linux" and self._path_on_system_disk(target_root):
+            return False, {"error": f"Target path is on the system disk and is not allowed: {target_root}"}
 
         snapshot_time = datetime.now(timezone.utc)
         name = f"{snapshot_time.strftime('%Y%m%d-%H%M%S')}-{self._slugify(label or trigger or 'snapshot')}"
@@ -1020,8 +1051,11 @@ class BackupManager:
         settings = self.get_settings()
         sb = settings.get("system_backup", {})
         explicit_target = self._normalize_path(target_path)
-        default_target = self._normalize_path(DEFAULT_SETTINGS["system_backup"]["target_path"])
-        target_base = self._normalize_path(explicit_target or sb.get("target_path") or default_target)
+        target_base = self._normalize_path(explicit_target or sb.get("target_path"))
+        if not target_base:
+            return False, {"error": "System snapshot target path is required"}
+        if platform.system() == "Linux" and self._path_on_system_disk(target_base):
+            return False, {"error": f"System snapshot target is on the system disk and is not allowed: {target_base}"}
 
         if platform.system() == "Linux":
             if not self._path_is_btrfs_subvolume("/"):
@@ -1041,14 +1075,6 @@ class BackupManager:
                 return True, ""
 
             target_ok, target_err = _validate_target(target_base)
-            if (not target_ok) and (not explicit_target) and default_target and default_target != target_base:
-                fallback_ok, fallback_err = _validate_target(default_target)
-                if fallback_ok:
-                    target_base = default_target
-                    target_ok = True
-                else:
-                    target_err = fallback_err
-
             if not target_ok:
                 return False, {"error": target_err or "Failed to validate system snapshot target path"}
 

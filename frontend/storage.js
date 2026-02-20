@@ -1182,14 +1182,15 @@ async function showCreateShareDialog() {
         });
         if (pathsRes.ok) {
             const pathsData = await pathsRes.json();
-            availablePaths = pathsData.paths;
+            availablePaths = Array.isArray(pathsData.paths) ? pathsData.paths : [];
         }
     } catch (e) {
         console.error('Error fetching available paths:', e);
     }
 
     if (availablePaths.length === 0) {
-        availablePaths = [{ name: 'Default Root', path: '/mnt/alvaos' }];
+        alert('No eligible storage paths available. Create or mount a non-system pool/subvolume first.');
+        return;
     }
 
     // Get users for SMB permissions
@@ -1259,6 +1260,7 @@ async function showCreateShareDialog() {
             <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Share Path (Pool or Subvolume)</label>
             <select id="path-select" 
                 style="width: 100%; padding: 0.75rem;">
+                <option value="" selected disabled>Select share path</option>
                 ${availablePaths.map(p => `<option value="${p.path}">${p.name} (${p.path})</option>`).join('')}
             </select>
         </div>
