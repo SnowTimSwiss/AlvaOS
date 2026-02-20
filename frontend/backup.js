@@ -71,8 +71,10 @@ function selectedSources() {
         .filter(Boolean);
 }
 
-function selectedBuddySources() {
-    return Array.from(document.querySelectorAll('.buddy-source-toggle:checked'))
+function selectedBuddyPeerSources(nodeId) {
+    const target = String(nodeId || '').trim();
+    return Array.from(document.querySelectorAll('.buddy-peer-source-toggle'))
+        .filter((el) => String(el.dataset.nodeId || '').trim() === target && !!el.checked)
         .map((el) => String(el.value || '').trim())
         .filter(Boolean);
 }
@@ -177,25 +179,31 @@ function renderSources() {
     `).join('');
 }
 
-function renderBuddyOutgoingSources() {
-    const container = document.getElementById('buddy-outgoing-sources');
-    if (!container) return;
-
+function renderBuddyPeerSourcePicker(nodeId, configuredSources = []) {
+    const normalizedNodeId = String(nodeId || '').trim();
+    const selected = new Set((Array.isArray(configuredSources) ? configuredSources : []).map((path) => String(path)));
     if (!backupSources.length) {
-        container.innerHTML = '<div class="metric-sub">No available sources found.</div>';
-        return;
+        return '<div class="metric-sub">No available sources found.</div>';
     }
-
-    const configured = new Set((buddySettings.outgoing_sources || []).map((path) => String(path)));
-    container.innerHTML = backupSources.map((source) => `
-        <label class="source-item">
-            <input class="buddy-source-toggle" type="checkbox" value="${backupEscapeHtml(source.path)}" ${configured.has(source.path) ? 'checked' : ''}>
-            <div class="source-meta">
-                <div class="source-name">${backupEscapeHtml(source.name)}</div>
-                <div class="source-path">${backupEscapeHtml(source.path)}</div>
-            </div>
-        </label>
-    `).join('');
+    return `
+        <div class="buddy-peer-sources">
+            ${backupSources.map((source) => `
+                <label class="buddy-peer-source-item">
+                    <input
+                        type="checkbox"
+                        class="buddy-peer-source-toggle"
+                        data-node-id="${backupEscapeHtml(normalizedNodeId)}"
+                        value="${backupEscapeHtml(source.path)}"
+                        ${selected.has(source.path) ? 'checked' : ''}
+                    >
+                    <div class="source-meta">
+                        <div class="source-name">${backupEscapeHtml(source.name)}</div>
+                        <div class="source-path">${backupEscapeHtml(source.path)}</div>
+                    </div>
+                </label>
+            `).join('')}
+        </div>
+    `;
 }
 
 function renderDataSnapshots(items) {
@@ -342,12 +350,6 @@ function fillBuddySettingsUi() {
     const incomingQuotaEl = document.getElementById('buddy-incoming-quota');
     if (incomingQuotaEl) incomingQuotaEl.value = String(buddySettings.incoming_quota_gb || 200);
 
-    const intervalEl = document.getElementById('buddy-interval');
-    if (intervalEl) intervalEl.value = String(buddySettings.interval_minutes || 1440);
-
-    const keepEl = document.getElementById('buddy-keep-last');
-    if (keepEl) keepEl.value = String(buddySettings.keep_last || 30);
-
     const encryptionEnabledEl = document.getElementById('buddy-encryption-enabled');
     if (encryptionEnabledEl) encryptionEnabledEl.checked = !!buddySettings.encryption_enabled;
     const encryptionPasswordEl = document.getElementById('buddy-encryption-password');
@@ -357,8 +359,6 @@ function fillBuddySettingsUi() {
             ? 'Password already set (enter to change)'
             : 'Set encryption password';
     }
-
-    renderBuddyOutgoingSources();
 }
 
 function getRollbackPassphraseIfNeeded() {
@@ -483,6 +483,9 @@ function renderBuddyStatus() {
         const onlineClass = `buddy-state-pill${online ? ' ok' : ''}`;
         const connectedClass = `buddy-state-pill${connected ? ' ok' : ''}`;
         const handshakeText = runtime.latest_handshake || '-';
+        const policyOutgoing = Array.isArray(peer.policy?.outgoing_sources)
+            ? peer.policy.outgoing_sources
+            : [];
 
         return `
         <div class="buddy-peer-card">
@@ -524,10 +527,15 @@ function renderBuddyStatus() {
                         <label class="setting-label">Storage Limit For This Buddy (GB)</label>
                         <input type="number" min="1" max="20000" class="select-input buddy-peer-quota" data-node-id="${backupEscapeHtml(peer.node_id || '')}" value="${backupEscapeHtml(String(peer.policy?.max_storage_gb || buddySettings?.incoming_quota_gb || 200))}">
                     </div>
+                    <div class="setting-group">
+                        <label class="setting-label">Outgoing Sources To This Buddy</label>
+                        ${renderBuddyPeerSourcePicker(peer.node_id || '', policyOutgoing)}
+                    </div>
                     <button class="btn-secondary buddy-save-peer-policy-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Save Buddy Policy</button>
                 </div>
             </div>
             <div class="buddy-peer-actions">
+                <button class="btn-primary buddy-backup-now-peer-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Backup Now</button>
                 <button class="btn-secondary buddy-test-peer-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Test Connection</button>
                 <button class="btn-secondary buddy-remove-peer-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Remove</button>
             </div>
@@ -870,9 +878,6 @@ async function saveBuddySettings() {
         enabled: true,
         incoming_path: document.getElementById('buddy-incoming-path')?.value?.trim() || '/mnt/alvaos/buddy-incoming',
         incoming_quota_gb: Number(document.getElementById('buddy-incoming-quota')?.value || 200),
-        outgoing_sources: selectedBuddySources(),
-        interval_minutes: Number(document.getElementById('buddy-interval')?.value || 1440),
-        keep_last: Number(document.getElementById('buddy-keep-last')?.value || 30),
         recursive_retention: true,
         encryption_enabled: encryptionEnabled
     };
@@ -906,7 +911,8 @@ async function saveBuddyPeerPolicy(nodeId) {
         enabled: !!enabledEl?.checked,
         interval_minutes: Number(intervalEl?.value || 1440),
         send_time: String(sendTimeEl?.value || '02:00'),
-        max_storage_gb: Number(quotaEl?.value || buddySettings?.incoming_quota_gb || 200)
+        max_storage_gb: Number(quotaEl?.value || buddySettings?.incoming_quota_gb || 200),
+        outgoing_sources: selectedBuddyPeerSources(target)
     };
 
     const response = await backupApi(`/backup/buddy/peers/${encodeURIComponent(target)}/policy`, {
@@ -977,28 +983,33 @@ async function testBuddyPeerConnection(nodeId) {
     await loadBuddyStatus();
 }
 
-async function syncBuddyNow() {
-    const nodeId = getBuddyTransferPeerId();
+async function syncBuddyNow(preferredNodeId = '') {
+    const requestedNodeId = String(preferredNodeId || '').trim();
+    const nodeId = requestedNodeId || getBuddyTransferPeerId();
     if (!nodeId) {
         backupNotify('Select a buddy first', 'warning');
         return;
     }
-    backupNotify('Starting buddy sync...', 'info');
+    const selectEl = document.getElementById('buddy-transfer-peer');
+    if (selectEl && requestedNodeId) {
+        selectEl.value = requestedNodeId;
+    }
+    backupNotify('Starting buddy backup...', 'info');
     const response = await backupApi('/backup/buddy/sync', {
         method: 'POST',
         json: { node_id: nodeId }
     });
     const data = await backupReadJson(response);
     if (!response || !response.ok || !data) {
-        backupNotify(data?.error || 'Buddy sync failed', 'error');
+        backupNotify(data?.error || 'Buddy backup failed', 'error');
         return;
     }
     if (String(data.status || '') === 'success') {
-        backupNotify('Buddy sync completed', 'success');
+        backupNotify('Buddy backup completed', 'success');
     } else if (String(data.status || '') === 'partial') {
-        backupNotify('Buddy sync completed with warnings', 'warning');
+        backupNotify('Buddy backup completed with warnings', 'warning');
     } else {
-        backupNotify('Buddy sync failed', 'error');
+        backupNotify('Buddy backup failed', 'error');
     }
     await loadBuddyStatus();
     await loadBuddyRemoteSnapshots();
@@ -1069,8 +1080,8 @@ async function loadBackupSources() {
     }
     backupSources = data.sources || [];
     renderSources();
-    renderBuddyOutgoingSources();
     setBuddyIncomingPathOptions(buddySettings.incoming_path || '/mnt/alvaos/buddy-incoming');
+    renderBuddyStatus();
 }
 
 async function loadBackupTargets() {
@@ -1183,6 +1194,11 @@ function initBackupHandlers() {
         const saveBtn = event.target.closest('.buddy-save-peer-policy-btn');
         if (saveBtn) {
             saveBuddyPeerPolicy(saveBtn.dataset.nodeId || '');
+            return;
+        }
+        const backupBtn = event.target.closest('.buddy-backup-now-peer-btn');
+        if (backupBtn) {
+            syncBuddyNow(backupBtn.dataset.nodeId || '');
             return;
         }
         const testBtn = event.target.closest('.buddy-test-peer-btn');
