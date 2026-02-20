@@ -18,6 +18,19 @@ const els = {
     telegramPairingStatus: document.getElementById('telegram-pairing-status'),
     telegramPairingCommand: document.getElementById('telegram-pairing-command'),
     telegramPairedChat: document.getElementById('telegram-paired-chat'),
+
+    // 2FA
+    tfaStatusText: document.getElementById('tfa-status-text'),
+    tfaStatusDot: document.getElementById('tfa-status-dot'),
+    tfaEnableBtn: document.getElementById('tfa-enable-btn'),
+    tfaDisableBtn: document.getElementById('tfa-disable-btn'),
+
+    // Watchdog
+    watchdogList: document.getElementById('watchdog-service-list'),
+    watchdogCheckBtn: document.getElementById('watchdog-check-btn'),
+    watchdogLastRun: document.getElementById('watchdog-last-run'),
+    watchdogRecoveryLog: document.getElementById('watchdog-recovery-log'),
+    watchdogRecoveryItems: document.getElementById('watchdog-recovery-items'),
 };
 
 let currentTimeSettings = {
@@ -114,6 +127,8 @@ async function fetchSettings() {
     }
 
     await fetchAlertSettings();
+    await fetch2faStatus();
+    await fetchWatchdogStatus();
 }
 
 function renderAlertSettings(settings) {
@@ -397,6 +412,195 @@ async function sendPowerAction(action) {
     }
 }
 
+// --- 2FA Management ---
+
+async function fetch2faStatus() {
+    try {
+        const res = await fetch(`${API_BASE}/auth/2fa/status`, { headers: getHeaders() });
+        const data = await res.json();
+
+        const enabled = data.enabled;
+        els.tfaStatusText.textContent = enabled ? 'Enabled' : 'Disabled';
+        els.tfaStatusDot.style.background = enabled ? 'var(--accent-success)' : 'var(--text-secondary)';
+
+        els.tfaEnableBtn.style.display = enabled ? 'none' : 'block';
+        els.tfaDisableBtn.style.display = enabled ? 'block' : 'none';
+    } catch (e) {
+        console.error('Failed to fetch 2FA status:', e);
+    }
+}
+
+async function setup2fa() {
+    try {
+        // 1. Get Secret & QR
+        const res = await fetch(`${API_BASE}/auth/2fa/setup`, {
+            method: 'POST',
+            headers: getHeaders()
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Setup failed');
+
+        // Create a simple modal div for setup
+        const modal = document.createElement('div');
+        modal.className = 'setup-modal';
+        modal.style = `
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); display: flex; align-items: center;
+            justify-content: center; z-index: 9999; padding: 20px;
+        `;
+        modal.innerHTML = `
+            <div class="card" style="max-width: 400px; width: 100%; text-align: center; border: 1px solid var(--border-default); background: var(--bg-card); padding: 24px; border-radius: 8px;">
+                <h2 style="margin-bottom: 1rem; color: var(--text-primary);">Setup 2FA</h2>
+                <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1.5rem;">
+                    Scan this QR code with your authenticator app (Google Authenticator, Authy, Aegis).
+                </p>
+                <img src="${data.qr_code}" style="width: 200px; height: 200px; margin: 0 auto 1.5rem; display: block; background: white; padding: 10px; border-radius: 8px;">
+                <div class="setting-group" style="text-align: left;">
+                    <label class="setting-label">Verification Code</label>
+                    <input type="text" id="tfa-verify-code" placeholder="6-digit code" style="width: 100%; background: var(--bg-body); border: 1px solid var(--border-default); color: var(--text-primary); padding: 8px; border-radius: 4px;">
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 1.5rem;">
+                    <button id="tfa-cancel-setup" class="btn-secondary" style="flex:1;">Cancel</button>
+                    <button id="tfa-confirm-setup" class="btn-primary" style="flex:1;">Verify & Enable</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        document.getElementById('tfa-cancel-setup').onclick = () => modal.remove();
+        document.getElementById('tfa-confirm-setup').onclick = async () => {
+            const code = document.getElementById('tfa-verify-code').value;
+            try {
+                const verifyRes = await fetch(`${API_BASE}/auth/2fa/verify-setup`, {
+                    method: 'POST',
+                    headers: getHeaders(),
+                    body: JSON.stringify({ code })
+                });
+                const vData = await verifyRes.json();
+                if (!verifyRes.ok) throw new Error(vData.error || 'Verification failed');
+
+                modal.remove();
+                if (window.showToast) window.showToast('Two-Factor Authentication enabled successfully!', 'success');
+                fetch2faStatus();
+            } catch (err) {
+                alert(err.message);
+            }
+        };
+    } catch (e) {
+        alert(e.message);
+    }
+}
+
+async function disable2fa() {
+    const password = prompt('Please enter your root password to disable 2FA:');
+    if (!password) return;
+
+    try {
+        const res = await fetch(`${API_BASE}/auth/2fa/disable`, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify({ password })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to disable 2FA');
+
+        if (window.showToast) window.showToast('2FA has been disabled.', 'success');
+        fetch2faStatus();
+    } catch (e) {
+        alert(e.message);
+    }
+}
+
+// --- Watchdog Management ---
+
+async function fetchWatchdogStatus() {
+    try {
+        const res = await fetch(`${API_BASE}/watchdog/status`, { headers: getHeaders() });
+        const data = await res.json();
+        if (!res.ok) return;
+
+        renderWatchdog(data);
+    } catch (e) {
+        console.error('Watchdog fetch error:', e);
+    }
+}
+
+function renderWatchdog(data) {
+    if (!els.watchdogList) return;
+
+    // Services
+    els.watchdogList.innerHTML = '';
+    data.services.forEach(svc => {
+        const item = document.createElement('div');
+        item.className = 'list-item';
+        item.innerHTML = `
+            <span>${svc.label} <small style="color:var(--text-secondary); margin-left:8px;">${svc.name}</small></span>
+            <span class="status-badge" style="border:none; background:transparent; padding:0;">
+                <span class="status-dot" style="background:${svc.active ? 'var(--accent-success)' : 'var(--accent-danger)'};"></span>
+                <span>${svc.active ? 'Active' : 'Stopped'}</span>
+            </span>
+        `;
+        els.watchdogList.appendChild(item);
+    });
+
+    // Last Run
+    if (data.last_check) {
+        const date = new Date(data.last_check);
+        els.watchdogLastRun.textContent = `Last check: ${date.toLocaleTimeString()}`;
+    }
+
+    // Recoveries
+    if (data.recoveries && data.recoveries.length > 0) {
+        els.watchdogRecoveryLog.style.display = 'block';
+        els.watchdogRecoveryItems.innerHTML = '';
+        data.recoveries.forEach(rec => {
+            const date = new Date(rec.timestamp);
+            const item = document.createElement('div');
+            item.className = 'list-item';
+            item.style.fontSize = '0.8rem';
+            item.innerHTML = `
+                <div style="display:flex; flex-direction:column;">
+                    <span style="font-weight:600;">Restarted ${rec.label}</span>
+                    <span style="color:var(--text-secondary);">${date.toLocaleString()}</span>
+                    ${rec.error ? `<span style="color:var(--accent-danger); font-size:0.75rem;">Error: ${rec.error}</span>` : ''}
+                </div>
+                <span style="color:${rec.recovered ? 'var(--accent-success)' : 'var(--accent-danger)'}; font-weight:600;">
+                    ${rec.recovered ? 'FIXED' : 'FAILED'}
+                </span>
+            `;
+            els.watchdogRecoveryItems.appendChild(item);
+        });
+    } else {
+        els.watchdogRecoveryLog.style.display = 'none';
+    }
+}
+
+async function runWatchdogCheck() {
+    els.watchdogCheckBtn.disabled = true;
+    els.watchdogCheckBtn.textContent = 'Checking...';
+    try {
+        const res = await fetch(`${API_BASE}/watchdog/check`, {
+            method: 'POST',
+            headers: getHeaders()
+        });
+        const data = await res.json();
+        if (res.ok) {
+            renderWatchdog({
+                services: data.services,
+                last_check: data.last_check,
+                recoveries: [] // Fetch full status next to get log
+            });
+            await fetchWatchdogStatus();
+            if (window.showToast) window.showToast('System health check complete.', 'success');
+        }
+    } catch (e) {
+        console.error(e);
+    } finally {
+        els.watchdogCheckBtn.disabled = false;
+        els.watchdogCheckBtn.textContent = 'Run Check Now';
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     setInterval(() => {
         if (els.timeDisplay) els.timeDisplay.textContent = new Date().toLocaleString();
@@ -420,4 +624,11 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('telegram-check-pairing-btn')?.addEventListener('click', checkTelegramPairing);
     document.getElementById('telegram-test-btn')?.addEventListener('click', sendTelegramTest);
     document.getElementById('telegram-unpair-btn')?.addEventListener('click', unpairTelegram);
+
+    els.tfaEnableBtn?.addEventListener('click', setup2fa);
+    els.tfaDisableBtn?.addEventListener('click', disable2fa);
+    els.watchdogCheckBtn?.addEventListener('click', runWatchdogCheck);
+
+    // Poll watchdog status every 30s
+    setInterval(fetchWatchdogStatus, 30000);
 });

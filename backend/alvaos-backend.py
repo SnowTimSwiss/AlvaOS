@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-AlvaOS Backend 0.2.0
+AlvaOS Backend 0.10.0
 Comprehensive Storage Management Engine
 """
 
-from flask import Flask, jsonify, send_from_directory, request
+from flask import Flask, jsonify, send_from_directory, request, Response
 from flask_cors import CORS
 import psutil
 import platform
@@ -20,13 +20,23 @@ import secrets
 import functools
 import re
 import time
-import subprocess
 import requests
+import io
+try:
+    import pyotp
+    import qrcode
+    import qrcode.image.pil
+    import base64
+    TOTP_AVAILABLE = True
+except ImportError:
+    TOTP_AVAILABLE = False
+    print("Warning: pyotp/qrcode not installed. 2FA will be unavailable.")
 from update_manager import UpdateManager
 from docker_manager import DockerManager
 from app_store import AppStore
 from backup_manager import BackupManager
 from buddy_backup_manager import BuddyBackupManager
+from watchdog_manager import WatchdogManager
 
 
 def is_secure_system_device(device_name):
@@ -165,6 +175,7 @@ docker_manager = DockerManager()
 app_store = AppStore()
 backup_manager = None
 buddy_backup_manager = None
+watchdog_manager = WatchdogManager()
 
 # Cache for storage information (TTL in seconds)
 STORAGE_CACHE = {
@@ -208,7 +219,16 @@ AUTH_FILE = '/var/lib/alvaos/auth.json'
 USERS_STATE_FILE = '/var/lib/alvaos/users.json'
 ALERTS_STATE_FILE = '/var/lib/alvaos/alerts.json'
 CONFIG_DIR = '/etc/alvaos'
-SESSIONS = {} # Token -> Username (In-memory for 0.1)
+# SESSIONS: token -> {username, role, expires_at}
+SESSIONS = {}
+SESSION_TTL_HOURS = 24
+# Temporary tokens used during 2FA two-step login: temp_token -> {username, role, expires_at}
+TEMP_2FA_TOKENS = {}
+TEMP_2FA_TTL_SECONDS = 300  # 5 minutes
+# Rate limiting: ip -> {count, window_start}
+LOGIN_RATE_LIMIT = {}
+LOGIN_MAX_ATTEMPTS = 10
+LOGIN_WINDOW_SECONDS = 900  # 15 minutes
 
 ALERT_THRESHOLDS = {
     'cpu_usage_warning': 85.0,
@@ -1045,19 +1065,110 @@ def mark_setup_complete(password):
     with open(SETUP_STATUS_FILE, 'w') as f:
         json.dump(setup_data, f, indent=2)
 
-def require_auth(f):
-    """Decorator to require authentication if setup is complete"""
-    @functools.wraps(f)
-    def decorated_function(*args, **kwargs):
-        if not is_setup_complete():
-            return f(*args, **kwargs)
-            
-        token = request.headers.get('Authorization')
-        if not token or token not in SESSIONS:
-            return jsonify({'error': 'Authentication required'}), 401
-            
-        return f(*args, **kwargs)
-    return decorated_function
+def _purge_expired_sessions():
+    """Remove sessions that have passed their expiry time."""
+    now = _utc_now()
+    expired = [t for t, s in SESSIONS.items() if _parse_iso(s.get('expires_at')) and _parse_iso(s['expires_at']) < now]
+    for t in expired:
+        del SESSIONS[t]
+    expired_temp = [t for t, s in TEMP_2FA_TOKENS.items() if _parse_iso(s.get('expires_at')) and _parse_iso(s['expires_at']) < now]
+    for t in expired_temp:
+        del TEMP_2FA_TOKENS[t]
+
+def _create_session(username, role='admin'):
+    """Create a new session token, returning the token string."""
+    token = secrets.token_hex(32)
+    expires_at = (_utc_now() + timedelta(hours=SESSION_TTL_HOURS)).isoformat()
+    SESSIONS[token] = {'username': username, 'role': role, 'expires_at': expires_at}
+    return token
+
+def _get_session(token):
+    """Return session dict if valid and not expired, else None."""
+    if not token or token not in SESSIONS:
+        return None
+    session = SESSIONS[token]
+    expires = _parse_iso(session.get('expires_at'))
+    if expires and expires < _utc_now():
+        del SESSIONS[token]
+        return None
+    return session
+
+def _get_current_session():
+    """Get the session for the current request."""
+    token = request.headers.get('Authorization', '').strip()
+    return _get_session(token)
+
+def require_auth(f=None, require_admin=False):
+    """Decorator to require authentication. Optionally enforce admin role."""
+    def decorator(fn):
+        @functools.wraps(fn)
+        def decorated_function(*args, **kwargs):
+            if not is_setup_complete():
+                return fn(*args, **kwargs)
+            _purge_expired_sessions()
+            session = _get_current_session()
+            if not session:
+                return jsonify({'error': 'Authentication required'}), 401
+            if require_admin and session.get('role') != 'admin':
+                return jsonify({'error': 'Admin privileges required'}), 403
+            return fn(*args, **kwargs)
+        return decorated_function
+    # Support both @require_auth and @require_auth(require_admin=True)
+    if f is not None:
+        return decorator(f)
+    return decorator
+
+def _check_rate_limit(ip):
+    """Returns (allowed, retry_after_seconds). Updates rate limit state."""
+    now = time.time()
+    entry = LOGIN_RATE_LIMIT.get(ip)
+    if entry is None or now - entry['window_start'] > LOGIN_WINDOW_SECONDS:
+        LOGIN_RATE_LIMIT[ip] = {'count': 0, 'window_start': now}
+        entry = LOGIN_RATE_LIMIT[ip]
+    entry['count'] += 1
+    if entry['count'] > LOGIN_MAX_ATTEMPTS:
+        retry_after = int(LOGIN_WINDOW_SECONDS - (now - entry['window_start'])) + 1
+        return False, retry_after
+    return True, 0
+
+def _reset_rate_limit(ip):
+    LOGIN_RATE_LIMIT.pop(ip, None)
+
+# ── 2FA helpers ──────────────────────────────────────────────────────────
+def _load_totp_secret():
+    """Return the TOTP secret from auth.json, or None if 2FA is disabled."""
+    try:
+        with open(AUTH_FILE, 'r') as f:
+            data = json.load(f)
+        return data.get('totp_secret') or None
+    except Exception:
+        return None
+
+def _save_totp_secret(secret):
+    """Persist a TOTP secret into auth.json."""
+    try:
+        with open(AUTH_FILE, 'r') as f:
+            data = json.load(f)
+        if secret is None:
+            data.pop('totp_secret', None)
+        else:
+            data['totp_secret'] = secret
+        with open(AUTH_FILE, 'w') as f:
+            json.dump(data, f, indent=2)
+        return True
+    except Exception as e:
+        print(f"Error saving TOTP secret: {e}")
+        return False
+
+def _verify_totp(secret, code):
+    """Verify a TOTP code against the given secret. Returns bool."""
+    if not TOTP_AVAILABLE or not secret or not code:
+        return False
+    try:
+        totp = pyotp.TOTP(secret)
+        return totp.verify(str(code).strip(), valid_window=1)
+    except Exception:
+        return False
 
 @app.route('/')
 def index():
@@ -1181,8 +1292,7 @@ def complete_setup():
         mark_setup_complete(password)
         
         # Auto-login for the setup session
-        token = secrets.token_hex(24)
-        SESSIONS[token] = 'root'
+        token = _create_session('root', role='admin')
         
         return jsonify({
             'success': True,
@@ -1193,36 +1303,161 @@ def complete_setup():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.after_request
+def add_security_headers(response):
+    """Add security hardening headers to every response."""
+    response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    response.headers.setdefault('X-Frame-Options', 'SAMEORIGIN')
+    response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+    return response
+
 @app.route('/api/v1/auth/login', methods=['POST'])
 def login():
-    """Login with root password"""
+    """Login with root password. Returns full token or temp_token when 2FA is required."""
     if not is_setup_complete():
         return jsonify({'error': 'Setup not complete'}), 400
-        
+
+    # Rate limiting
+    client_ip = request.remote_addr or 'unknown'
+    allowed, retry_after = _check_rate_limit(client_ip)
+    if not allowed:
+        resp = jsonify({'error': f'Too many login attempts. Try again in {retry_after}s.'})
+        resp.headers['Retry-After'] = str(retry_after)
+        return resp, 429
+
     data = request.get_json()
     if not data or 'password' not in data:
         return jsonify({'error': 'Password required'}), 400
-        
+
     password = data['password']
-    
+
     try:
         with open(AUTH_FILE, 'r') as f:
             auth_data = json.load(f)
-            
+
         h = hashlib.sha256((password + auth_data['salt']).encode()).hexdigest()
-        
-        if h == auth_data['password_hash']:
-            token = secrets.token_hex(24)
-            SESSIONS[token] = 'root'
-            return jsonify({'token': token, 'success': True})
-        else:
+
+        if h != auth_data['password_hash']:
             return jsonify({'error': 'Invalid password'}), 401
-            
+
+        _reset_rate_limit(client_ip)
+
+        # Check 2FA
+        totp_secret = auth_data.get('totp_secret')
+        if totp_secret:
+            # Issue short-lived temp token; client must call /api/v1/auth/2fa/complete
+            temp_token = secrets.token_hex(24)
+            expires_at = (_utc_now() + timedelta(seconds=TEMP_2FA_TTL_SECONDS)).isoformat()
+            TEMP_2FA_TOKENS[temp_token] = {'username': 'root', 'role': 'admin', 'expires_at': expires_at}
+            return jsonify({'require_2fa': True, 'temp_token': temp_token})
+
+        token = _create_session('root', role='admin')
+        return jsonify({'token': token, 'success': True})
+
     except Exception as e:
+        print(f"Login error: {e}")
         return jsonify({'error': 'Authentication failed'}), 500
 
-@app.route('/api/v1/users', methods=['GET', 'POST', 'DELETE'])
+@app.route('/api/v1/auth/2fa/complete', methods=['POST'])
+def complete_2fa_login():
+    """Complete login by verifying a TOTP code against a temp token."""
+    data = request.get_json() or {}
+    temp_token = str(data.get('temp_token', '')).strip()
+    code = str(data.get('code', '')).strip()
+
+    if not temp_token or not code:
+        return jsonify({'error': 'temp_token and code are required'}), 400
+
+    _purge_expired_sessions()
+    pending = TEMP_2FA_TOKENS.get(temp_token)
+    if not pending:
+        return jsonify({'error': 'Invalid or expired token'}), 401
+
+    totp_secret = _load_totp_secret()
+    if not totp_secret:
+        return jsonify({'error': '2FA not configured on server'}), 400
+
+    if not _verify_totp(totp_secret, code):
+        return jsonify({'error': 'Invalid 2FA code'}), 401
+
+    del TEMP_2FA_TOKENS[temp_token]
+    token = _create_session(pending['username'], role=pending.get('role', 'admin'))
+    return jsonify({'token': token, 'success': True})
+
+@app.route('/api/v1/auth/2fa/status', methods=['GET'])
 @require_auth
+def get_2fa_status():
+    """Return whether 2FA is currently enabled."""
+    secret = _load_totp_secret()
+    return jsonify({'enabled': bool(secret), 'totp_available': TOTP_AVAILABLE})
+
+@app.route('/api/v1/auth/2fa/setup', methods=['POST'])
+@require_auth
+def setup_2fa():
+    """Generate a new TOTP secret and return a QR code data-URI."""
+    if not TOTP_AVAILABLE:
+        return jsonify({'error': '2FA library not installed on server'}), 501
+    try:
+        secret = pyotp.random_base32()
+        totp = pyotp.TOTP(secret)
+        hostname = socket.gethostname() or 'AlvaOS'
+        provisioning_uri = totp.provisioning_uri(name='admin', issuer_name=f'AlvaOS ({hostname})')
+        # Build QR code as a base64 PNG data-URI
+        qr = qrcode.QRCode(box_size=6, border=2)
+        qr.add_data(provisioning_uri)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color='black', back_color='white')
+        buf = io.BytesIO()
+        img.save(buf, format='PNG')
+        qr_b64 = base64.b64encode(buf.getvalue()).decode('ascii')
+        return jsonify({
+            'secret': secret,
+            'qr_code': f'data:image/png;base64,{qr_b64}',
+            'provisioning_uri': provisioning_uri,
+        })
+    except Exception as e:
+        print(f"2FA setup error: {e}")
+        return jsonify({'error': 'Failed to generate 2FA setup'}), 500
+
+@app.route('/api/v1/auth/2fa/verify-setup', methods=['POST'])
+@require_auth
+def verify_2fa_setup():
+    """Confirm first TOTP code to activate 2FA."""
+    if not TOTP_AVAILABLE:
+        return jsonify({'error': '2FA library not installed'}), 501
+    data = request.get_json() or {}
+    secret = str(data.get('secret', '')).strip()
+    code = str(data.get('code', '')).strip()
+    if not secret or not code:
+        return jsonify({'error': 'secret and code are required'}), 400
+    if not _verify_totp(secret, code):
+        return jsonify({'error': 'Invalid code — please check your authenticator app'}), 400
+    if not _save_totp_secret(secret):
+        return jsonify({'error': 'Failed to save 2FA secret'}), 500
+    return jsonify({'success': True, 'message': '2FA enabled successfully'})
+
+@app.route('/api/v1/auth/2fa/disable', methods=['POST'])
+@require_auth
+def disable_2fa():
+    """Disable 2FA. Requires current password confirmation."""
+    data = request.get_json() or {}
+    password = str(data.get('password', '')).strip()
+    if not password:
+        return jsonify({'error': 'Current password is required'}), 400
+    try:
+        with open(AUTH_FILE, 'r') as f:
+            auth_data = json.load(f)
+        h = hashlib.sha256((password + auth_data['salt']).encode()).hexdigest()
+        if h != auth_data['password_hash']:
+            return jsonify({'error': 'Incorrect password'}), 401
+    except Exception:
+        return jsonify({'error': 'Authentication failed'}), 500
+    if not _save_totp_secret(None):
+        return jsonify({'error': 'Failed to disable 2FA'}), 500
+    return jsonify({'success': True, 'message': '2FA disabled'})
+
+@app.route('/api/v1/users', methods=['GET', 'POST', 'DELETE'])
+@require_auth(require_admin=True)
 def manage_users():
     """Manage system users and Samba users"""
     if request.method == 'GET':
@@ -1343,7 +1578,7 @@ def manage_users():
             return jsonify({'error': f'Failed to delete user: {str(e)}'}), 500
 
 @app.route('/api/v1/users/<username>', methods=['PATCH'])
-@require_auth
+@require_auth(require_admin=True)
 def update_user(username):
     """Update user password or role"""
     username = username.strip()
@@ -1557,7 +1792,7 @@ def get_alerts():
     })
 
 @app.route('/api/v1/alerts/settings', methods=['GET', 'POST'])
-@require_auth
+@require_auth(require_admin=True)
 def alerts_settings():
     state = load_alerts_state()
 
@@ -1778,7 +2013,7 @@ def unpair_telegram_alert_delivery():
     })
 
 @app.route('/api/v1/system/time', methods=['GET', 'POST'])
-@require_auth
+@require_auth(require_admin=True)
 def system_time():
     """Get or Set system time settings"""
     if request.method == 'GET':
@@ -1835,7 +2070,7 @@ def system_time():
             return jsonify({'success': True, 'message': 'Mock: Time settings updated'})
 
 @app.route('/api/v1/system/power', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def system_power():
     """Handle Shutdown/Reboot"""
     data = request.get_json()
@@ -1942,7 +2177,7 @@ def get_network_details():
     })
 
 @app.route('/api/v1/system/hostname', methods=['PUT'])
-@require_auth
+@require_auth(require_admin=True)
 def set_hostname():
     """Set system hostname"""
     data = request.get_json()
@@ -2063,7 +2298,7 @@ def check_alvaos_updates():
     return jsonify(result), 200
 
 @app.route('/api/v1/updates/alvaos/apply', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def apply_alvaos_update():
     data = request.get_json() or {}
     url = data.get('url')
@@ -2093,7 +2328,7 @@ def check_debian_updates():
     return jsonify(result), status
 
 @app.route('/api/v1/updates/debian/apply', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def apply_debian_updates():
     data = request.get_json() or {}
     packages = data.get('packages')
@@ -2111,7 +2346,7 @@ def scan_offline_updates():
     return jsonify({'packages': packages})
 
 @app.route('/api/v1/updates/offline/apply', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def apply_offline_update():
     data = request.get_json() or {}
     package_path = data.get('path')
@@ -2137,7 +2372,7 @@ def get_update_settings():
     return jsonify(update_manager.get_settings())
 
 @app.route('/api/v1/updates/settings', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def save_update_settings():
     data = request.get_json() or {}
     settings = {
@@ -2454,7 +2689,7 @@ def get_disk_smart(disk_name):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/v1/storage/disks/<disk_name>/wipe', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def wipe_disk(disk_name):
     """Wipe disk signatures and partition table to make it available for pools"""
     if not disk_name.isalnum() and not all(c in '._-' for c in disk_name if not c.isalnum()):
@@ -2642,7 +2877,7 @@ if buddy_backup_manager is None:
     buddy_backup_manager = BuddyBackupManager(run_sudo_command)
 
 @app.route('/api/v1/storage/pools', methods=['GET', 'POST', 'DELETE'])
-@require_auth
+@require_auth(require_admin=True)
 def manage_pools():
     """Manage Btrfs pools"""
     
@@ -2930,7 +3165,7 @@ def manage_pools():
             return jsonify({'error': f'Failed to delete pool: {str(e)}'}), 500
 
 @app.route('/api/v1/storage/pools/import', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def import_pool():
     """Import an existing detected Btrfs pool into managed state."""
     data = request.get_json() or {}
@@ -3013,7 +3248,7 @@ def import_pool():
         return jsonify({'error': f'Failed to import pool: {str(e)}'}), 500
 
 @app.route('/api/v1/storage/pools/<pool_id>/subvolumes', methods=['GET', 'POST', 'DELETE'])
-@require_auth
+@require_auth(require_admin=True)
 def manage_subvolumes(pool_id):
     """Manage subvolumes in a pool"""
     
@@ -3180,7 +3415,7 @@ def manage_subvolumes(pool_id):
             return jsonify({'error': f'Failed to delete subvolume: {str(e)}'}), 500
 
 @app.route('/api/v1/storage/pools/<pool_id>/expand', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def expand_pool(pool_id):
     """Add new devices to an existing pool"""
     data = request.get_json()
@@ -3332,7 +3567,7 @@ def get_available_paths():
     return jsonify({'paths': paths})
 
 @app.route('/api/v1/storage/shares', methods=['GET', 'POST', 'DELETE'])
-@require_auth
+@require_auth(require_admin=True)
 def manage_shares():
     """Manage network shares (NFS and SMB)"""
     
@@ -3567,7 +3802,7 @@ def manage_shares():
     })
 
 @app.route('/api/v1/storage/shares/permissions', methods=['PUT'])
-@require_auth
+@require_auth(require_admin=True)
 def update_share_permissions():
     """Update SMB permissions for a share"""
     data = request.get_json() or {}
@@ -3691,7 +3926,7 @@ def get_backup_targets():
     return jsonify({'targets': backup_manager.get_target_locations()})
 
 @app.route('/api/v1/backup/snapshots', methods=['GET', 'POST', 'DELETE'])
-@require_auth
+@require_auth(require_admin=True)
 def backup_snapshots():
     """List snapshots or create a new snapshot."""
     if backup_manager is None:
@@ -3740,7 +3975,7 @@ def backup_system_snapshots():
     return jsonify({'snapshots': backup_manager.list_system_snapshots()})
 
 @app.route('/api/v1/backup/system/snapshot', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def backup_system_snapshot():
     """Create full system snapshot."""
     if backup_manager is None:
@@ -3760,7 +3995,7 @@ def backup_system_snapshot():
     return jsonify({'success': True, 'snapshot': payload})
 
 @app.route('/api/v1/backup/system/rollback', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def backup_system_rollback():
     """Prepare full system rollback by switching Btrfs default subvolume."""
     if backup_manager is None:
@@ -3783,7 +4018,7 @@ def backup_system_rollback():
     return jsonify({'success': True, 'result': payload})
 
 @app.route('/api/v1/backup/restore', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def backup_restore():
     """Restore (rollback) a source from a selected snapshot."""
     if backup_manager is None:
@@ -3807,7 +4042,7 @@ def backup_restore():
     return jsonify({'success': True, 'result': payload})
 
 @app.route('/api/v1/backup/settings', methods=['GET', 'POST'])
-@require_auth
+@require_auth(require_admin=True)
 def backup_settings():
     """Get or save backup schedule settings."""
     if backup_manager is None:
@@ -3828,7 +4063,7 @@ def backup_settings():
     })
 
 @app.route('/api/v1/backup/run', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def backup_run_now():
     """Trigger immediate snapshot run for configured or provided sources."""
     if backup_manager is None:
@@ -3869,7 +4104,7 @@ def buddy_pairing_status():
     return jsonify(buddy_backup_manager.get_status())
 
 @app.route('/api/v1/backup/buddy/settings', methods=['GET', 'POST'])
-@require_auth
+@require_auth(require_admin=True)
 def buddy_settings():
     """Get or update Buddy Backup configuration (pairing + scheduling metadata only)."""
     if buddy_backup_manager is None:
@@ -3904,7 +4139,7 @@ def buddy_peer_policy(node_id):
     return jsonify({'success': True, 'policy': payload})
 
 @app.route('/api/v1/backup/pairing/generate', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def buddy_pairing_generate():
     """Generate a short-lived buddy pairing token."""
     if buddy_backup_manager is None:
@@ -3937,7 +4172,7 @@ def buddy_pairing_generate():
     return jsonify({'success': True, **payload})
 
 @app.route('/api/v1/backup/pairing/validate', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def buddy_pairing_validate():
     """Validate and store a buddy pairing token."""
     if buddy_backup_manager is None:
@@ -3992,7 +4227,7 @@ def buddy_pairing_accept():
     return jsonify({'success': True, **payload})
 
 @app.route('/api/v1/backup/pairing/remove', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def buddy_pairing_remove():
     """Remove an existing buddy peer."""
     if buddy_backup_manager is None:
@@ -4030,7 +4265,7 @@ def buddy_pairing_remove_accept():
     return jsonify({'success': True, **payload})
 
 @app.route('/api/v1/backup/pairing/restart', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def buddy_pairing_restart():
     """Apply buddy tunnel configuration and restart tunnel."""
     if buddy_backup_manager is None:
@@ -4056,7 +4291,7 @@ def buddy_pairing_test():
     return jsonify({'success': True, **payload})
 
 @app.route('/api/v1/backup/buddy/sync', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def buddy_sync_now():
     """Run buddy transfer sync for one peer."""
     if buddy_backup_manager is None:
@@ -4087,7 +4322,7 @@ def buddy_remote_snapshots():
     return jsonify({'success': True, **payload})
 
 @app.route('/api/v1/backup/buddy/remote/snapshot', methods=['DELETE'])
-@require_auth
+@require_auth(require_admin=True)
 def buddy_remote_snapshot_delete():
     """Delete one snapshot stream stored on a remote buddy for this node."""
     if buddy_backup_manager is None:
@@ -4107,7 +4342,7 @@ def buddy_remote_snapshot_delete():
     return jsonify({'success': True, **payload})
 
 @app.route('/api/v1/backup/buddy/restore/remote', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def buddy_remote_restore():
     """Restore local data from a remote buddy snapshot stream."""
     if buddy_backup_manager is None:
@@ -4251,7 +4486,7 @@ def get_app_details_endpoint(app_id):
     return jsonify(details)
 
 @app.route('/api/v1/apps/install', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def install_app():
     """Install an app"""
     data = request.get_json() or {}
@@ -4293,7 +4528,7 @@ def get_app_install_status():
     return jsonify(app_store.get_install_status())
 
 @app.route('/api/v1/apps/<app_id>', methods=['DELETE'])
-@require_auth
+@require_auth(require_admin=True)
 def uninstall_app(app_id):
     """Uninstall an app"""
     data = request.get_json() or {}
@@ -4332,7 +4567,7 @@ def get_container_details_endpoint(container_id):
     return jsonify(details)
 
 @app.route('/api/v1/containers/<container_id>/start', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def start_container(container_id):
     """Start a container"""
     success, error = docker_manager.start_container(container_id)
@@ -4341,7 +4576,7 @@ def start_container(container_id):
     return jsonify({'success': True, 'message': 'Container started'})
 
 @app.route('/api/v1/containers/<container_id>/stop', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def stop_container(container_id):
     """Stop a container"""
     success, error = docker_manager.stop_container(container_id)
@@ -4350,7 +4585,7 @@ def stop_container(container_id):
     return jsonify({'success': True, 'message': 'Container stopped'})
 
 @app.route('/api/v1/containers/<container_id>/restart', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def restart_container(container_id):
     """Restart a container"""
     success, error = docker_manager.restart_container(container_id)
@@ -4369,7 +4604,7 @@ def get_container_logs(container_id):
     return jsonify({'logs': logs})
 
 @app.route('/api/v1/containers/<container_id>', methods=['DELETE'])
-@require_auth
+@require_auth(require_admin=True)
 def delete_container(container_id):
     """Delete a container"""
     force = request.args.get('force', 'false').lower() == 'true'
@@ -4387,6 +4622,28 @@ def get_docker_status():
         'running': is_running,
         'error': error
     })
+
+# ── Watchdog Routes ──────────────────────────────────────────────────────────
+
+@app.route('/api/v1/watchdog/status', methods=['GET'])
+@require_auth
+def get_watchdog_status():
+    """Return live service status and recent recovery log."""
+    try:
+        status = watchdog_manager.get_status()
+        return jsonify({'success': True, **status})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/v1/watchdog/check', methods=['POST'])
+@require_auth(require_admin=True)
+def run_watchdog_check():
+    """Trigger a manual health check with auto-restart for failing services."""
+    try:
+        result = watchdog_manager.run_check()
+        return jsonify({'success': True, **result})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     print(f"Starting AlvaOS Backend v{VERSION}...")

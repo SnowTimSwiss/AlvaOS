@@ -2,6 +2,26 @@
 
 All notable changes to AlvaOS will be documented in this file.
 
+## [0.10.0] - 20.02.26
+
+### Added - Security & Reliability
+- **Two-Factor Authentication (TOTP)**: Users can now enable authenticator-based 2FA (Google Authenticator, Authy, etc.) for login.
+- **Auto-Healing Watchdog**: New watchdog service monitors critical components (Samba, NFS, Docker) and automatically attempts recovery if they fail.
+- **Role-Based Access Control (RBAC)**: Implemented admin vs. regular user roles. Critical system functions (power, network, user management, storage) now strictly require admin privileges.
+- **Login Rate Limiting**: Brute-force protection on the login endpoint (10 attempts per 15 minutes).
+- **HTTP Security Headers**: Added modern security headers (HSTS, CSP, X-Frame-Options) to the Web UI backend.
+
+### Changed
+- **Session Management**: Sessions now expire after 24 hours and include role-based token validation.
+- **Login Flow**: Redesigned as a two-step process to accommodate optional 2FA codes.
+- **System Settings**: Added new cards for 2FA management and Auto-Healing service status.
+- **User Management**: Users now have role badges and explicit admin/user selectors.
+
+### Fixed
+- **Session cleanup**: Expired sessions are now automatically purged from memory.
+- **Unauthorized API access**: Hardened various API routes that previously lacked sufficient privilege checks.
+
+
 ## [0.9.0] - 20.02.26
 
 ### Added - Monitoring & Health

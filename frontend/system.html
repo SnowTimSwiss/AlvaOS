@@ -168,12 +168,14 @@
                         <div class="card-title">Telegram Critical Alerts</div>
                         <div style="color:var(--text-secondary)">📣</div>
                     </div>
-                    <p class="metric-sub" style="margin-bottom: 12px;">Pair a Telegram bot to receive critical system alerts.</p>
+                    <p class="metric-sub" style="margin-bottom: 12px;">Pair a Telegram bot to receive critical system
+                        alerts.</p>
 
                     <div class="setting-group">
                         <label style="display: flex; align-items: center; cursor: pointer;">
                             <input type="checkbox" id="telegram-enabled-toggle" style="margin-right:8px;">
-                            <span style="font-size:0.85rem; color:var(--text-secondary);">Enable Telegram delivery</span>
+                            <span style="font-size:0.85rem; color:var(--text-secondary);">Enable Telegram
+                                delivery</span>
                         </label>
                     </div>
 
@@ -209,6 +211,59 @@
                         <button id="telegram-test-btn" class="btn-secondary">Send Test Alert</button>
                         <button id="telegram-unpair-btn" class="btn-secondary"
                             style="border-color:var(--accent-danger); color:var(--accent-danger);">Unpair</button>
+                    </div>
+                </div>
+
+                <!-- Two-Factor Authentication -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Two-Factor Authentication</div>
+                        <div style="color:var(--text-secondary)">🔑</div>
+                    </div>
+                    <p class="metric-sub" style="margin-bottom: 12px;">Protect login with a TOTP authenticator app
+                        (Google Authenticator, Aegis, etc.)</p>
+
+                    <div class="list-box" style="margin-bottom:14px;">
+                        <div class="list-item">
+                            <span>Status</span>
+                            <span id="tfa-status-badge" class="status-badge"
+                                style="border:none; background:transparent; padding:0;">
+                                <span class="status-dot" id="tfa-status-dot"
+                                    style="background:var(--text-secondary);"></span>
+                                <span id="tfa-status-text">Checking...</span>
+                            </span>
+                        </div>
+                    </div>
+
+                    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                        <button id="tfa-enable-btn" class="btn-primary" style="display:none;">Enable 2FA</button>
+                        <button id="tfa-disable-btn" class="btn-secondary"
+                            style="display:none; border-color:var(--accent-danger); color:var(--accent-danger);">Disable
+                            2FA</button>
+                    </div>
+                </div>
+
+                <!-- Auto-Healing Services -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Auto-Healing Services</div>
+                        <div style="color:var(--text-secondary)">⚕️</div>
+                    </div>
+                    <p class="metric-sub" style="margin-bottom: 12px;">Monitors critical services and automatically
+                        restarts them if they crash.</p>
+
+                    <div id="watchdog-service-list" class="list-box" style="margin-bottom:14px;">
+                        <div style="color:var(--text-secondary); font-size:0.85rem; padding:8px;">Loading...</div>
+                    </div>
+
+                    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+                        <button id="watchdog-check-btn" class="btn-primary">Run Check Now</button>
+                        <span id="watchdog-last-run" style="font-size:0.8rem; color:var(--text-secondary);"></span>
+                    </div>
+
+                    <div id="watchdog-recovery-log" style="margin-top:14px; display:none;">
+                        <div class="setting-label" style="margin-bottom:6px;">Recent Recoveries</div>
+                        <div id="watchdog-recovery-items" class="list-box"></div>
                     </div>
                 </div>
 

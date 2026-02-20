@@ -19,6 +19,11 @@ async function loadUsers() {
             headers: { 'Authorization': token || '' }
         });
 
+        if (response.status === 403) {
+            container.innerHTML = '<p style="color: var(--accent-danger);">Access Denied: Admin privileges required.</p>';
+            return;
+        }
+
         if (!response.ok) {
             throw new Error('Failed to load users');
         }
@@ -44,18 +49,28 @@ function renderUsers(users) {
     users.forEach(user => {
         const row = document.createElement('div');
         row.className = 'card';
-        row.style.marginBottom = '0';
+        row.style.marginBottom = '12px';
+
+        const roleBadgeColor = user.role === 'admin' ? 'var(--accent-warning)' : 'var(--text-secondary)';
 
         row.innerHTML = `
             <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
                 <div>
-                    <div style="font-weight:600; font-size:1rem;">${user.username}</div>
-                    <div style="color: var(--text-secondary); font-size:0.85rem;">
-                        ${user.system_exists ? 'System user: yes' : 'System user: missing'}
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span style="font-weight:600; font-size:1.1rem;">${user.username}</span>
+                        <span style="font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; background: ${roleBadgeColor}; color: var(--bg-card); font-weight: 700; text-transform: uppercase;">
+                            ${user.role}
+                        </span>
+                    </div>
+                    <div style="color: var(--text-secondary); font-size:0.85rem; margin-top:2px;">
+                        ${user.system_exists ? 'System user synchronization: Active' : 'System user: Missing (Manual intervention required)'}
+                    </div>
+                    <div style="font-size: 0.75rem; color: var(--text-secondary); opacity: 0.7;">
+                        Created: ${user.created_at ? new Date(user.created_at).toLocaleDateString() : 'Unknown'}
                     </div>
                 </div>
                 <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-                    <select data-user="${user.username}" class="role-select">
+                    <select data-user="${user.username}" class="role-select" style="background: var(--bg-body); color: var(--text-primary); border: 1px solid var(--border-default); padding: 4px 8px; border-radius: 4px;">
                         <option value="user" ${user.role === 'user' ? 'selected' : ''}>User</option>
                         <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option>
                     </select>
@@ -105,6 +120,7 @@ async function createUser() {
         });
 
         const result = await response.json();
+        if (response.status === 403) throw new Error('Permission denied: Only admins can create users.');
         if (!response.ok) throw new Error(result.error || 'Failed to create user');
 
         window.showToast(result.message || 'User created', 'success');
@@ -131,6 +147,7 @@ async function deleteUser(username) {
             body: JSON.stringify({ username })
         });
         const result = await response.json();
+        if (response.status === 403) throw new Error('Permission denied: Only admins can delete users.');
         if (!response.ok) throw new Error(result.error || 'Failed to delete user');
 
         window.showToast(result.message || 'User deleted', 'success');
@@ -152,8 +169,10 @@ async function updateUserRole(username, role) {
             body: JSON.stringify({ role })
         });
         const result = await response.json();
+        if (response.status === 403) throw new Error('Permission denied: Only admins can change roles.');
         if (!response.ok) throw new Error(result.error || 'Failed to update role');
         window.showToast(`Role updated for ${username}`, 'success');
+        loadUsers(); // Refresh for badges
     } catch (error) {
         window.showToast(error.message || 'Failed to update role', 'error');
         loadUsers();
@@ -165,13 +184,13 @@ function showPasswordResetModal(username) {
     modal.className = 'modal-overlay';
     modal.style.cssText = `
         position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-        z-index: 10000;
+        z-index: 10000; background: rgba(0,0,0,0.7);
     `;
 
     const panel = document.createElement('div');
     panel.style.cssText = `
-        background: var(--bg-surface);
-        border: 1px solid var(--border-hover);
+        background: var(--bg-card);
+        border: 1px solid var(--border-default);
         border-radius: 8px;
         padding: 1.5rem;
         max-width: 420px;
@@ -179,9 +198,9 @@ function showPasswordResetModal(username) {
     `;
 
     panel.innerHTML = `
-        <h3 style="margin-bottom: 0.5rem;">Reset Password</h3>
+        <h3 style="margin-bottom: 0.5rem; color: var(--text-primary);">Reset Password</h3>
         <p style="color: var(--text-secondary); margin-bottom: 1rem;">Set a new password for <strong>${username}</strong>.</p>
-        <input type="password" id="reset-pass-input" placeholder="Minimum 8 characters" style="width: 100%; margin-bottom: 1rem;" />
+        <input type="password" id="reset-pass-input" placeholder="Minimum 8 characters" style="width: 100%; margin-bottom: 1.5rem; background: var(--bg-body); color: var(--text-primary); border: 1px solid var(--border-default); padding: 8px; border-radius: 4px;" />
         <div style="display:flex; gap:8px;">
             <button id="cancel-reset-btn" class="btn-secondary" style="flex:1;">Cancel</button>
             <button id="confirm-reset-btn" class="btn-primary" style="flex:1;">Update</button>
@@ -215,6 +234,7 @@ async function updateUserPassword(username, password) {
             body: JSON.stringify({ password })
         });
         const result = await response.json();
+        if (response.status === 403) throw new Error('Permission denied: Only admins can reset passwords.');
         if (!response.ok) throw new Error(result.error || 'Failed to update password');
         window.showToast('Password updated', 'success');
     } catch (error) {

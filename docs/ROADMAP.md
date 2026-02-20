@@ -66,11 +66,10 @@ Release strategy: "Iterate fast, stabilize often."
 
 
 ## v0.10.0 - Security
-- [ ] **Hardening**: Firewall rules and permission audits.
-- [ ] **Auto-Healing**: Service recovery.
-- [ ] **Security**: Security updates and patches.
-- [ ] **User Management**: User and group management with different permissions.
-- [ ] **2FA**: Two-factor authentication for user accounts.
+- [x] **Auto-Healing**: Service recovery.
+- [x] **Security**: Security updates and patches.
+- [x] **User Management**: User and group management with different permissions (RBAC).
+- [x] **2FA**: Two-factor authentication for admin. (TOTP)
 
 ## v0.11.0 - Polish (Beta)
 - [ ] **UX Refinement**: Mobile view, animations, and themes.

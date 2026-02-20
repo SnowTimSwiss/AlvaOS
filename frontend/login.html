@@ -12,14 +12,12 @@
     <link rel="stylesheet" href="styles.css">
     <style>
         body {
-            /* Override styles.css body for centering */
             display: flex;
             align-items: center;
             justify-content: center;
             min-height: 100vh;
             padding: 1rem;
             background: var(--bg-body);
-            /* Explicit again if needed */
         }
 
         .login-container {
@@ -34,14 +32,6 @@
         .logo {
             text-align: center;
             margin-bottom: 2rem;
-        }
-
-        .logo-icon {
-            display: inline-flex;
-            width: 48px;
-            height: 48px;
-            margin-bottom: 12px;
-            color: var(--accent-primary);
         }
 
         .logo h1 {
@@ -78,6 +68,7 @@
             font-family: 'Inter', sans-serif;
             font-size: 0.95rem;
             transition: border-color 0.2s;
+            box-sizing: border-box;
         }
 
         .form-group input:focus {
@@ -102,15 +93,53 @@
             opacity: 0.9;
         }
 
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            width: 100%;
+            padding: 0.75rem;
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-btn);
+            font-weight: 500;
+            font-size: 0.875rem;
+            cursor: pointer;
+            margin-top: 0.75rem;
+            transition: all 0.2s;
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--accent-primary);
+            color: var(--text-primary);
+        }
+
         .error-message {
             background: rgba(248, 81, 73, 0.15);
-            /* Soft red bg */
             color: var(--accent-danger);
             border: 1px solid rgba(248, 81, 73, 0.3);
             padding: 0.875rem;
             border-radius: var(--radius-default);
             margin-bottom: 1rem;
             font-size: 0.875rem;
+        }
+
+        .mfa-hint {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            text-align: center;
+            margin-top: 0.75rem;
+        }
+
+        .step {
+            display: none;
+        }
+
+        .step.active {
+            display: block;
         }
     </style>
 </head>
@@ -119,19 +148,35 @@
     <div class="login-container">
         <div class="logo">
             <h1>AlvaOS</h1>
-            <p>System Login</p>
+            <p id="login-subtitle">System Login</p>
         </div>
 
         <div id="error-container"></div>
 
-        <form id="login-form">
-            <div class="form-group">
-                <label for="password">Root Password</label>
-                <input type="password" id="password" name="password" required autofocus>
-            </div>
+        <!-- Step 1: Password -->
+        <div id="step-password" class="step active">
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="password">Root Password</label>
+                    <input type="password" id="password" name="password" required autofocus>
+                </div>
+                <button type="submit" class="btn" id="login-btn">Login</button>
+            </form>
+        </div>
 
-            <button type="submit" class="btn" id="login-btn">Login</button>
-        </form>
+        <!-- Step 2: 2FA TOTP code -->
+        <div id="step-2fa" class="step">
+            <form id="totp-form">
+                <div class="form-group">
+                    <label for="totp-code">Authenticator Code</label>
+                    <input type="text" id="totp-code" name="code" inputmode="numeric" pattern="[0-9]*" maxlength="6"
+                        placeholder="6-digit code" autocomplete="one-time-code">
+                </div>
+                <button type="submit" class="btn" id="totp-btn">Verify</button>
+                <button type="button" class="btn-secondary" id="back-btn">&#8592; Back to password</button>
+            </form>
+            <p class="mfa-hint">Open your authenticator app and enter the 6-digit code.</p>
+        </div>
 
         <div style="margin-top: 1.25rem; text-align: center; font-size: 0.8rem; color: var(--text-secondary);">
             AlvaOS {{VERSION}}
@@ -140,42 +185,90 @@
 
     <script src="password-toggle.js"></script>
     <script>
-        const loginForm = document.getElementById('login-form');
-        const passwordInput = document.getElementById('password');
-        const loginBtn = document.getElementById('login-btn');
         const errorContainer = document.getElementById('error-container');
+        let pendingTempToken = null;
 
-        loginForm.addEventListener('submit', async (e) => {
+        function showError(msg) {
+            errorContainer.innerHTML = `<div class="error-message">${msg}</div>`;
+        }
+        function clearError() { errorContainer.innerHTML = ''; }
+
+        function showStep(name) {
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+            document.getElementById('step-' + name).classList.add('active');
+            document.getElementById('login-subtitle').textContent =
+                name === '2fa' ? 'Two-Factor Authentication' : 'System Login';
+        }
+
+        // Step 1: Password
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            errorContainer.innerHTML = '';
-
-            const password = passwordInput.value;
-            loginBtn.disabled = true;
-            loginBtn.textContent = 'Logging in...';
+            clearError();
+            const btn = document.getElementById('login-btn');
+            btn.disabled = true;
+            btn.textContent = 'Logging in...';
 
             try {
                 const response = await fetch('/api/v1/auth/login', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ password })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: document.getElementById('password').value })
                 });
-
                 const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Login failed');
 
-                if (!response.ok) {
-                    throw new Error(data.error || 'Login failed');
+                if (data.require_2fa) {
+                    pendingTempToken = data.temp_token;
+                    showStep('2fa');
+                    setTimeout(() => document.getElementById('totp-code').focus(), 50);
+                } else {
+                    localStorage.setItem('alvaos_token', data.token);
+                    window.location.href = '/';
                 }
+            } catch (err) {
+                showError(err.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Login';
+            }
+        });
+
+        // Step 2: TOTP code
+        document.getElementById('totp-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            clearError();
+            const btn = document.getElementById('totp-btn');
+            btn.disabled = true;
+            btn.textContent = 'Verifying...';
+
+            try {
+                const response = await fetch('/api/v1/auth/2fa/complete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        temp_token: pendingTempToken,
+                        code: document.getElementById('totp-code').value
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Verification failed');
 
                 localStorage.setItem('alvaos_token', data.token);
                 window.location.href = '/';
-
-            } catch (error) {
-                errorContainer.innerHTML = `<div class="error-message">${error.message}</div>`;
-                loginBtn.disabled = false;
-                loginBtn.textContent = 'Login';
+            } catch (err) {
+                showError(err.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Verify';
             }
+        });
+
+        // Back button clears temp token and returns to password step
+        document.getElementById('back-btn').addEventListener('click', () => {
+            pendingTempToken = null;
+            clearError();
+            document.getElementById('totp-code').value = '';
+            showStep('password');
         });
     </script>
 </body>
