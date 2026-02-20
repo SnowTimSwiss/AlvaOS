@@ -1049,7 +1049,14 @@ async function removeBuddyPeer(nodeId) {
         backupNotify(data?.error || 'Failed to remove buddy peer', 'error');
         return;
     }
-    backupNotify('Buddy removed', 'success');
+    if (data?.reciprocal?.attempted === true && data?.reciprocal?.success === false) {
+        backupNotify(
+            `Buddy removed locally, but remote cleanup failed: ${data.reciprocal.error || 'unknown error'}`,
+            'warning'
+        );
+    } else {
+        backupNotify('Buddy removed', 'success');
+    }
     await loadBuddyStatus();
 }
 

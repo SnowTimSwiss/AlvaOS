@@ -3270,6 +3270,30 @@ def buddy_pairing_remove():
         return jsonify({'error': payload.get('error', 'Failed to remove peer')}), 400
     return jsonify({'success': True, **payload})
 
+@app.route('/api/v1/backup/pairing/remove/accept', methods=['POST'])
+def buddy_pairing_remove_accept():
+    """Accept reciprocal buddy unpair request without interactive login."""
+    if buddy_backup_manager is None:
+        return jsonify({'error': 'Buddy backup manager not initialized'}), 500
+
+    secret = request.headers.get('X-Buddy-Secret', '')
+    if not buddy_backup_manager.verify_buddy_api_secret(secret):
+        return jsonify({'error': 'Unauthorized buddy request'}), 403
+
+    data = request.get_json() or {}
+    node_id = (data.get('node_id') or '').strip()
+    if not node_id:
+        return jsonify({'error': 'node_id is required'}), 400
+
+    success, payload = buddy_backup_manager.remove_peer(
+        node_id=node_id,
+        reciprocal=False,
+        allow_missing=True,
+    )
+    if not success:
+        return jsonify({'error': payload.get('error', 'Failed to remove peer')}), 400
+    return jsonify({'success': True, **payload})
+
 @app.route('/api/v1/backup/pairing/restart', methods=['POST'])
 @require_auth
 def buddy_pairing_restart():

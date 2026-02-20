@@ -251,6 +251,18 @@ class BuddyBackupManager:
             "mv"
         )
 
+    def _chown_cmd(self) -> Optional[str]:
+        return self._detect_cmd(
+            ["/usr/bin/chown", "/bin/chown", "/usr/sbin/chown", "/sbin/chown"],
+            "chown"
+        )
+
+    def _chmod_cmd(self) -> Optional[str]:
+        return self._detect_cmd(
+            ["/usr/bin/chmod", "/bin/chmod", "/usr/sbin/chmod", "/sbin/chmod"],
+            "chmod"
+        )
+
     def _derive_tunnel_ip(self, node_id: str) -> str:
         # Deterministic host assignment in a private /24 (less likely to collide with common home LAN ranges).
         digest = hashlib.sha256((node_id or "").encode("utf-8")).digest()
@@ -1234,27 +1246,105 @@ class BuddyBackupManager:
                 last_error = f"Failed to prepare owner stream path: {owner_dir} ({exc})"
                 continue
 
-            probe = os.path.join(owner_dir, f".write-probe-{secrets.token_hex(4)}")
-            try:
-                with open(probe, "wb") as f:
-                    f.write(b"ok")
+            def _probe_write(path: str) -> Tuple[bool, str]:
+                probe = os.path.join(path, f".write-probe-{secrets.token_hex(4)}")
                 try:
-                    os.remove(probe)
-                except Exception:
-                    pass
-                return root, owner_dir, None
-            except Exception as exc:
-                last_error = (
-                    f"Stream path is not writable: {owner_dir} ({exc})"
-                )
-                try:
-                    if os.path.exists(probe):
+                    with open(probe, "wb") as f:
+                        f.write(b"ok")
+                    try:
                         os.remove(probe)
-                except Exception:
-                    pass
-                continue
+                    except Exception:
+                        pass
+                    return True, ""
+                except Exception as exc:
+                    try:
+                        if os.path.exists(probe):
+                            os.remove(probe)
+                    except Exception:
+                        pass
+                    return False, str(exc)
+
+            writable, probe_err = _probe_write(owner_dir)
+            if writable:
+                return root, owner_dir, None
+
+            # Try to repair ownership/permissions for the service user.
+            if platform.system() == "Linux":
+                mkdir_cmd = self._mkdir_cmd()
+                chown_cmd = self._chown_cmd()
+                chmod_cmd = self._chmod_cmd()
+                uid = os.getuid()
+                gid = os.getgid()
+                if mkdir_cmd:
+                    self.run_command([mkdir_cmd, "-p", owner_dir], timeout=30)
+                if chown_cmd:
+                    self.run_command([chown_cmd, "-R", f"{uid}:{gid}", owner_dir], timeout=30)
+                if chmod_cmd:
+                    self.run_command([chmod_cmd, "-R", "u+rwX,g+rwX", owner_dir], timeout=30)
+
+                writable_after_fix, probe_err_after_fix = _probe_write(owner_dir)
+                if writable_after_fix:
+                    return root, owner_dir, None
+                probe_err = probe_err_after_fix or probe_err
+
+            last_error = f"Stream path is not writable: {owner_dir} ({probe_err})"
+            continue
 
         return None, None, last_error
+
+    def _notify_remote_peer_removed(self, peer: Dict) -> Dict:
+        if not isinstance(peer, dict):
+            return {"attempted": False, "success": False, "error": "Invalid peer payload"}
+
+        remote_secret = str(peer.get("api_secret") or "").strip()
+        if not remote_secret:
+            return {"attempted": False, "success": False, "error": "Peer API secret missing"}
+
+        local_node_id = str(self._identity_public().get("node_id") or "").strip()
+        if not local_node_id:
+            return {"attempted": False, "success": False, "error": "Local node ID missing"}
+
+        urls = self._peer_api_urls(peer, "/api/v1/backup/pairing/remove/accept")
+        if not urls:
+            return {"attempted": False, "success": False, "error": "Peer API endpoint not configured"}
+
+        last_url = ""
+        last_error = "Reciprocal remove failed"
+        for url in urls:
+            last_url = url
+            try:
+                response = requests.post(
+                    url,
+                    json={"node_id": local_node_id},
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-Buddy-Secret": remote_secret,
+                    },
+                    timeout=8,
+                    verify=False if url.lower().startswith("https://") else True,
+                )
+                body = {}
+                try:
+                    body = response.json() if response.text else {}
+                except Exception:
+                    body = {}
+                if 200 <= response.status_code < 300 and not body.get("error"):
+                    return {
+                        "attempted": True,
+                        "success": True,
+                        "url": url,
+                        "error": "",
+                    }
+                last_error = body.get("error") or f"HTTP {response.status_code}"
+            except Exception as exc:
+                last_error = str(exc)
+
+        return {
+            "attempted": True,
+            "success": False,
+            "url": last_url,
+            "error": last_error,
+        }
 
     def _probe_peer_api(self, peer: Dict) -> Dict:
         remote_secret = str(peer.get("api_secret") or "").strip()
@@ -2535,12 +2625,14 @@ class BuddyBackupManager:
                     except Exception:
                         pass
 
-    def remove_peer(self, node_id: str) -> Tuple[bool, Dict]:
+    def remove_peer(self, node_id: str, reciprocal: bool = True, allow_missing: bool = False) -> Tuple[bool, Dict]:
         target = str(node_id or "").strip()
         if not target:
             return False, {"error": "node_id is required"}
         peers = self._load_peers()
         if target not in peers:
+            if allow_missing:
+                return True, {"removed": {}, "already_absent": True}
             return False, {"error": "Peer not found"}
         removed = peers.pop(target)
         self._save_peers(peers)
@@ -2569,19 +2661,24 @@ class BuddyBackupManager:
         if len(kept_streams) != len(streams):
             self._save_stream_entries(kept_streams)
 
+        reciprocal_result = {"attempted": False, "success": False, "error": ""}
+        if reciprocal:
+            reciprocal_result = self._notify_remote_peer_removed(removed)
+
         ok, tunnel_result = self.apply_tunnel_config()
         if not ok:
             err = str(tunnel_result.get("error", "")).lower()
             if "wireguard" in err or "wg" in err:
                 return True, {
                     "removed": removed,
+                    "reciprocal": reciprocal_result,
                     "tunnel_result": {
                         "message": "Peer removed. Tunnel update deferred until WireGuard is available.",
                         "warning": tunnel_result.get("error"),
                     }
                 }
             return False, {"error": tunnel_result.get("error", "Peer removed, but tunnel reconfigure failed")}
-        return True, {"removed": removed, "tunnel_result": tunnel_result}
+        return True, {"removed": removed, "reciprocal": reciprocal_result, "tunnel_result": tunnel_result}
 
     def test_peer_connection(self, node_id: str) -> Tuple[bool, Dict]:
         target = str(node_id or "").strip()

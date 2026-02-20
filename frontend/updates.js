@@ -253,6 +253,13 @@ async function applyAlvaosUpdate() {
             setStatus('Install failed');
             return;
         }
+        if (window.setUpdateIndicators) {
+            window.setUpdateIndicators({
+                available: false,
+                version: '',
+                checkedAt: Date.now()
+            });
+        }
         window.showToast('Update started', 'success');
         beginUpdateTransition('AlvaOS-Update');
         setProgress(true, 25);
@@ -519,6 +526,13 @@ async function pollUpdateStatus() {
                 setProgress(false, 0);
                 clearInterval(statusPoll);
                 statusPoll = null;
+                if (window.setUpdateIndicators) {
+                    window.setUpdateIndicators({
+                        available: false,
+                        version: '',
+                        checkedAt: Date.now()
+                    });
+                }
                 if (updateTransitionActive) {
                     if (updateTransitionDisconnected) {
                         startReconnectPoll();
