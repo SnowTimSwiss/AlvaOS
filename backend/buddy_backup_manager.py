@@ -1033,6 +1033,55 @@ class BuddyBackupManager:
         base = str(settings.get("incoming_path") or DEFAULT_BUDDY_SETTINGS["incoming_path"]).strip()
         return os.path.join(base, ".alvaos-buddy-streams")
 
+    def _fallback_stream_root_path(self) -> str:
+        return os.path.join(self.state_dir, "buddy-streams")
+
+    def _select_writable_stream_owner_dir(self, owner_node_id: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+        owner = str(owner_node_id or "").strip()
+        if not owner:
+            return None, None, "owner_node_id is required"
+
+        preferred_root = self._stream_root_path()
+        fallback_root = self._fallback_stream_root_path()
+        candidates = [preferred_root]
+        if fallback_root != preferred_root:
+            candidates.append(fallback_root)
+
+        last_error = "No writable stream directory available"
+        for root in candidates:
+            ok_root, root_err = self._mkdir_p(root)
+            if not ok_root:
+                last_error = root_err or f"Failed to prepare stream root: {root}"
+                continue
+
+            owner_dir = os.path.join(root, owner)
+            ok_owner, owner_err = self._mkdir_p(owner_dir)
+            if not ok_owner:
+                last_error = owner_err or f"Failed to prepare owner stream path: {owner_dir}"
+                continue
+
+            probe = os.path.join(owner_dir, f".write-probe-{secrets.token_hex(4)}")
+            try:
+                with open(probe, "wb") as f:
+                    f.write(b"ok")
+                try:
+                    os.remove(probe)
+                except Exception:
+                    pass
+                return root, owner_dir, None
+            except Exception as exc:
+                last_error = (
+                    f"Stream path is not writable: {owner_dir} ({exc})"
+                )
+                try:
+                    if os.path.exists(probe):
+                        os.remove(probe)
+                except Exception:
+                    pass
+                continue
+
+        return None, None, last_error
+
     def _public_stream_entry(self, item: Dict) -> Dict:
         return {
             "id": str(item.get("id") or ""),
@@ -1560,14 +1609,9 @@ class BuddyBackupManager:
         if owner not in peers:
             return False, {"error": "Unknown owner_node_id"}
 
-        root = self._stream_root_path()
-        ok_root, root_err = self._mkdir_p(root)
-        if not ok_root:
-            return False, {"error": root_err or "Failed to prepare buddy incoming stream path"}
-        owner_dir = os.path.join(root, owner)
-        ok_owner, owner_err = self._mkdir_p(owner_dir)
-        if not ok_owner:
-            return False, {"error": owner_err or "Failed to prepare owner stream path"}
+        root, owner_dir, select_err = self._select_writable_stream_owner_dir(owner)
+        if not root or not owner_dir:
+            return False, {"error": select_err or "Failed to prepare writable buddy stream path"}
 
         stream_id = f"{int(self._now().timestamp())}-{secrets.token_hex(4)}"
         ext = ".enc" if encrypted else ".stream"
