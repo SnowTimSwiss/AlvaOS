@@ -273,12 +273,51 @@
             font-size: 0.74rem;
         }
 
-        .buddy-transfer-controls {
+        .buddy-restore-layout {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) auto auto;
+            grid-template-columns: 280px minmax(0, 1fr);
+            gap: 12px;
+            align-items: start;
+        }
+
+        .buddy-restore-buddies {
+            display: flex;
+            flex-direction: column;
             gap: 8px;
-            align-items: end;
-            margin-bottom: 12px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: var(--bg-body);
+            padding: 8px;
+            max-height: 380px;
+            overflow: auto;
+        }
+
+        .buddy-restore-buddy {
+            width: 100%;
+            text-align: left;
+            padding: 8px 10px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: transparent;
+            color: var(--text-primary);
+            cursor: pointer;
+        }
+
+        .buddy-restore-buddy.active {
+            border-color: var(--accent-primary);
+            background: rgba(56, 139, 253, 0.12);
+        }
+
+        .buddy-restore-right {
+            min-height: 220px;
+        }
+
+        .buddy-restore-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
         }
 
         .buddy-remote-list {
@@ -306,7 +345,7 @@
         }
 
         @media (max-width: 980px) {
-            .buddy-transfer-controls {
+            .buddy-restore-layout {
                 grid-template-columns: 1fr;
             }
         }
@@ -620,16 +659,22 @@
                     <div class="card-header">
                         <div class="card-title">Buddy Transfer & Restore</div>
                     </div>
-                    <div class="buddy-transfer-controls">
-                        <div class="setting-group" style="margin-bottom:0;">
-                            <label class="setting-label" for="buddy-transfer-peer">Buddy</label>
-                            <select id="buddy-transfer-peer" class="select-input"></select>
+                    <div class="buddy-restore-layout">
+                        <div>
+                            <div class="setting-label" style="margin-bottom:8px;">Buddies</div>
+                            <div id="buddy-restore-buddy-list" class="buddy-restore-buddies">
+                                <div class="metric-sub">No buddy available.</div>
+                            </div>
                         </div>
-                        <button id="buddy-sync-now-btn" class="btn-primary">Backup Now</button>
-                        <button id="buddy-refresh-remote-btn" class="btn-secondary">Refresh Remote Backups</button>
-                    </div>
-                    <div id="buddy-remote-snapshots-list" class="buddy-remote-list">
-                        <div class="metric-sub">Select a buddy and refresh remote backups.</div>
+                        <div class="buddy-restore-right">
+                            <div class="buddy-restore-header">
+                                <div class="setting-label" id="buddy-restore-selected-label">Snapshots</div>
+                                <button id="buddy-refresh-remote-btn" class="btn-secondary">Refresh Snapshots</button>
+                            </div>
+                            <div id="buddy-remote-snapshots-list" class="buddy-remote-list">
+                                <div class="metric-sub">Select a buddy to view snapshots.</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
