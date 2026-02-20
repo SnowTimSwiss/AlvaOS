@@ -277,6 +277,8 @@ class BackupManager:
                 subvolumes = self._list_subvolumes(mount_point)
                 for sub in subvolumes:
                     name = sub["name"]
+                    if name.startswith("."):
+                        continue
                     if name.startswith(".alvaos-snapshots"):
                         continue
                     if name.startswith("system-snapshots"):
@@ -318,6 +320,8 @@ class BackupManager:
             if platform.system() == "Linux":
                 for sub in self._list_subvolumes(mount_point):
                     rel = sub.get("name", "")
+                    if rel.startswith("."):
+                        continue
                     path = self._normalize_path(sub.get("path"))
                     if not path or path in seen:
                         continue
@@ -592,6 +596,8 @@ class BackupManager:
         source = self._normalize_path(source_path)
         if not source:
             return "/"
+        if os.path.exists(source):
+            return source
         source_dev = self._device_id_for_path(source)
         parent = self._normalize_path(os.path.dirname(source)) or "/"
         if source_dev is None:
@@ -786,7 +792,7 @@ class BackupManager:
         res, err = self.run_command([btrfs_cmd, "subvolume", "get-default", path], timeout=20)
         if err or not res or res.returncode != 0:
             return None
-        m = re.search(r"ID\\s+(\\d+)", (res.stdout or "").strip())
+        m = re.search(r"ID\s+(\d+)", (res.stdout or "").strip())
         if not m:
             return None
         try:
@@ -1083,6 +1089,8 @@ class BackupManager:
 
             if self._same_filesystem(source, target_parent):
                 ok, err = self._snapshot_direct(source, snapshot_path)
+                if (not ok) and err and "invalid cross-device link" in str(err).lower():
+                    ok, err = self._snapshot_via_send_receive(source, snapshot_path)
             else:
                 ok, err = self._snapshot_via_send_receive(source, snapshot_path)
 

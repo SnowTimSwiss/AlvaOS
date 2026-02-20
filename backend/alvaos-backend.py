@@ -2431,6 +2431,65 @@ def manage_subvolumes(pool_id):
                 res, err = run_sudo_command([CMD['BTRFS'], 'subvolume', 'delete', subvol_path])
                 
                 if err:
+                    err_text = str(err)
+                    if 'not deleting default subvolume id' in err_text.lower():
+                        def _parse_subvol_id(text):
+                            m = re.search(r'Subvolume ID:\s*(\d+)', str(text or ''))
+                            if not m:
+                                return None
+                            try:
+                                return int(m.group(1))
+                            except Exception:
+                                return None
+
+                        def _parse_default_id(text):
+                            m = re.search(r'ID\s+(\d+)', str(text or ''))
+                            if not m:
+                                return None
+                            try:
+                                return int(m.group(1))
+                            except Exception:
+                                return None
+
+                        active_id = None
+                        target_id = None
+                        default_id = None
+
+                        active_res, active_err = run_sudo_command([CMD['BTRFS'], 'subvolume', 'show', mount_point], timeout=15)
+                        if not active_err and active_res and active_res.returncode == 0:
+                            active_id = _parse_subvol_id(active_res.stdout)
+
+                        target_res, target_err = run_sudo_command([CMD['BTRFS'], 'subvolume', 'show', subvol_path], timeout=15)
+                        if not target_err and target_res and target_res.returncode == 0:
+                            target_id = _parse_subvol_id(target_res.stdout)
+
+                        default_res, default_err = run_sudo_command([CMD['BTRFS'], 'subvolume', 'get-default', mount_point], timeout=15)
+                        if not default_err and default_res and default_res.returncode == 0:
+                            default_id = _parse_default_id(default_res.stdout)
+
+                        if (
+                            active_id is not None
+                            and target_id is not None
+                            and default_id is not None
+                            and default_id == target_id
+                            and active_id != target_id
+                        ):
+                            set_res, set_err = run_sudo_command(
+                                [CMD['BTRFS'], 'subvolume', 'set-default', str(active_id), mount_point],
+                                timeout=20
+                            )
+                            if not set_err and set_res and set_res.returncode == 0:
+                                res, err = run_sudo_command([CMD['BTRFS'], 'subvolume', 'delete', subvol_path])
+
+                if err and 'not deleting default subvolume id' in str(err).lower():
+                    return jsonify({
+                        'error': (
+                            'Failed to delete subvolume: this snapshot is currently configured as default. '
+                            'Restore/switch to another snapshot first, then delete it.'
+                        )
+                    }), 409
+
+                if err:
                     return jsonify({'error': f'Failed to delete subvolume: {err}'}), 500
                 
                 return jsonify({

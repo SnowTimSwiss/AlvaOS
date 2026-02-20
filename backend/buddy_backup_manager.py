@@ -1118,6 +1118,8 @@ class BuddyBackupManager:
         source = os.path.normpath(str(source_path or "").strip())
         if not source:
             return "/"
+        if os.path.exists(source):
+            return source
 
         source_dev = self._device_id_for_path(source)
         parent = os.path.normpath(os.path.dirname(source.rstrip("/")) or "/")
@@ -1218,7 +1220,7 @@ class BuddyBackupManager:
         res, err = self.run_command([btrfs_cmd, "subvolume", "get-default", target], timeout=20)
         if err or not res or res.returncode != 0:
             return None
-        m = re.search(r"ID\\s+(\\d+)", (res.stdout or "").strip())
+        m = re.search(r"ID\s+(\d+)", (res.stdout or "").strip())
         if not m:
             return None
         try:
@@ -2766,8 +2768,13 @@ class BuddyBackupManager:
                         "last_restore_status": "success",
                         "last_restore_error": "",
                     })
+                    result_message = str((restore_payload or {}).get("message") or "").strip()
+                    pending_remount = bool((restore_payload or {}).get("pending_remount"))
                     return True, {
-                        "message": "Remote restore completed",
+                        "message": (
+                            result_message
+                            or ("Remote restore prepared. Remount/reboot required." if pending_remount else "Remote restore completed")
+                        ),
                         "stream": stream_entry,
                         "result": restore_payload,
                     }

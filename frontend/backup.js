@@ -383,6 +383,56 @@ function getRollbackPassphraseIfNeeded() {
     return { ok: true, passphrase: String(passphrase) };
 }
 
+function showRebootRequiredDialog() {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-title">Reboot Required</div>
+            <div class="modal-body">
+                The restore was prepared successfully.<br>
+                A reboot is required to activate the restored snapshot.
+            </div>
+            <div class="modal-actions">
+                <button id="backup-reboot-later" class="btn-secondary">Later</button>
+                <button id="backup-reboot-now" class="btn-primary">Reboot now</button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+    const rebootBtn = overlay.querySelector('#backup-reboot-now');
+    const laterBtn = overlay.querySelector('#backup-reboot-later');
+    if (rebootBtn) rebootBtn.focus();
+
+    return new Promise((resolve) => {
+        const finish = (value) => {
+            overlay.remove();
+            resolve(value);
+        };
+        if (laterBtn) laterBtn.onclick = () => finish(false);
+        if (rebootBtn) rebootBtn.onclick = () => finish(true);
+    });
+}
+
+async function rebootSystemNow() {
+    const response = await backupApi('/system/power', {
+        method: 'POST',
+        json: { action: 'reboot' }
+    });
+    const data = await backupReadJson(response);
+    if (!response || !response.ok) {
+        backupNotify(data?.error || 'Failed to trigger reboot', 'error');
+        return false;
+    }
+    if (window.handleConnectionError) {
+        window.handleConnectionError();
+    } else {
+        backupNotify('Reboot command sent', 'success');
+    }
+    return true;
+}
+
 function buddyPeerField(className, nodeId) {
     const target = String(nodeId || '').trim();
     return Array.from(document.querySelectorAll(`.${className}`))
@@ -751,7 +801,18 @@ async function restoreDataSnapshot(snapshotPath, sourcePath) {
         backupNotify(data?.error || 'Restore failed', 'error');
         return;
     }
-    backupNotify('Snapshot restore completed', 'success');
+    const restoreResult = (data && typeof data.result === 'object' && data.result) ? data.result : null;
+    const pendingRemount = Boolean(restoreResult?.pending_remount);
+    const restoreMessage = String(
+        data?.message
+        || restoreResult?.message
+        || (pendingRemount ? 'Restore prepared. Remount/reboot required.' : 'Snapshot restore completed')
+    );
+    backupNotify(restoreMessage, pendingRemount ? 'warning' : 'success');
+    if (pendingRemount) {
+        const rebootNow = await showRebootRequiredDialog();
+        if (rebootNow) await rebootSystemNow();
+    }
     await loadDataSnapshots();
 }
 
@@ -1177,7 +1238,18 @@ async function restoreBuddyRemoteSnapshot(streamId, sourcePath, encrypted) {
         backupNotify(data?.error || 'Remote restore failed', 'error');
         return;
     }
-    backupNotify('Remote restore completed', 'success');
+    const restoreResult = (data && typeof data.result === 'object' && data.result) ? data.result : null;
+    const pendingRemount = Boolean(restoreResult?.pending_remount);
+    const restoreMessage = String(
+        data?.message
+        || restoreResult?.message
+        || (pendingRemount ? 'Remote restore prepared. Remount/reboot required.' : 'Remote restore completed')
+    );
+    backupNotify(restoreMessage, pendingRemount ? 'warning' : 'success');
+    if (pendingRemount) {
+        const rebootNow = await showRebootRequiredDialog();
+        if (rebootNow) await rebootSystemNow();
+    }
     await Promise.all([loadBuddyStatus(), loadDataSnapshots(), loadBuddyRemoteSnapshots()]);
 }
 
