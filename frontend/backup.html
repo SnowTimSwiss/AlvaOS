@@ -242,6 +242,8 @@
         .buddy-peer-actions {
             display: flex;
             align-items: flex-start;
+            flex-direction: column;
+            gap: 8px;
         }
 
         .buddy-token-area {
@@ -526,11 +528,11 @@
                         <div class="card-title">Generate Pairing Token</div>
                         <button id="buddy-generate-token-btn" class="btn-primary">Generate</button>
                     </div>
-                    <p class="metric-sub" style="margin-bottom: 10px;">Generate, copy, und auf dem anderen NAS einfügen. Kein manuelles IP-Setup nötig.</p>
+                    <p class="metric-sub" style="margin-bottom: 10px;">Generate, copy, and paste this token on the other NAS. No manual IP setup required.</p>
                     <div class="setting-group">
                         <label class="setting-label" for="buddy-token-expiry">Token Validity (minutes)</label>
                         <input id="buddy-token-expiry" type="number" min="0" max="43200" value="0" class="select-input">
-                        <p class="metric-sub">`0` = gültig bis ein Buddy erfolgreich paired.</p>
+                        <p class="metric-sub">`0` = valid until one buddy has paired successfully.</p>
                     </div>
                     <div class="setting-group">
                         <label class="setting-label" for="buddy-generated-token">Pairing Token</label>
@@ -546,7 +548,7 @@
                         <div class="card-title">Pair With Buddy</div>
                         <button id="buddy-validate-token-btn" class="btn-primary">Pair</button>
                     </div>
-                    <p class="metric-sub" style="margin-bottom: 10px;">Token vom anderen NAS einfügen und pairen.</p>
+                    <p class="metric-sub" style="margin-bottom: 10px;">Paste the token from the other NAS and pair.</p>
                     <div class="setting-group">
                         <label class="setting-label" for="buddy-token-input">Buddy Token</label>
                         <textarea id="buddy-token-input" class="select-input buddy-token-area" rows="4" placeholder="Paste buddy pairing token"></textarea>
@@ -568,16 +570,16 @@
                         <div class="card-title">Buddy Backup Settings</div>
                         <button id="buddy-save-settings-btn" class="btn-primary">Save Settings</button>
                     </div>
-                    <p class="metric-sub" style="margin-bottom: 10px;">Konfiguration für Buddy-Backup. Transfer/Restore-Logik folgt in 0.8.0.</p>
+                    <p class="metric-sub" style="margin-bottom: 10px;">Configuration for Buddy Backup. Transfer and restore logic arrives in 0.8.0.</p>
                     <div class="setting-group">
                         <label class="setting-label" for="buddy-incoming-path">Local Incoming Data Path (Subvolume)</label>
                         <select id="buddy-incoming-path" class="select-input"></select>
-                        <p class="metric-sub">Hier werden Daten gespeichert, die vom Buddy-NAS auf dieses NAS kommen.</p>
+                        <p class="metric-sub">Incoming data from buddy NAS systems will be stored here.</p>
                     </div>
                     <div class="setting-group">
                         <label class="setting-label" for="buddy-incoming-quota">Default Buddy Storage Limit (GB)</label>
                         <input id="buddy-incoming-quota" type="number" min="1" max="20000" value="200" class="select-input">
-                        <p class="metric-sub">Standard-Limit pro Buddy (pro Buddy anpassbar in der Buddy-Liste).</p>
+                        <p class="metric-sub">Default limit per buddy (can be customized per buddy in the list).</p>
                     </div>
                     <div class="setting-group">
                         <label class="setting-label">Backup To Buddy (Outgoing Sources)</label>
@@ -606,7 +608,7 @@
                             <span class="toggle-slider"></span>
                         </label>
                         <input id="buddy-encryption-password" type="password" class="select-input" style="margin-top:8px;" placeholder="Set or change encryption password">
-                        <p class="metric-sub">Wenn aktiv, muss das Passwort bei Restore/Rollback eingegeben werden.</p>
+                        <p class="metric-sub">When enabled, the password is required for restore and rollback.</p>
                     </div>
                 </div>
             </div>

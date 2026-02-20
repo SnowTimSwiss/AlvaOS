@@ -157,6 +157,12 @@ class BuddyBackupManager:
             "bash"
         )
 
+    def _ping_cmd(self) -> Optional[str]:
+        return self._detect_cmd(
+            ["/usr/bin/ping", "/bin/ping", "/usr/sbin/ping", "/sbin/ping"],
+            "ping"
+        )
+
     def _derive_tunnel_ip(self, node_id: str) -> str:
         # Deterministic host assignment in a private /24 (less likely to collide with common home LAN ranges).
         digest = hashlib.sha256((node_id or "").encode("utf-8")).digest()
@@ -1218,6 +1224,71 @@ class BuddyBackupManager:
                 }
             return False, {"error": tunnel_result.get("error", "Peer removed, but tunnel reconfigure failed")}
         return True, {"removed": removed, "tunnel_result": tunnel_result}
+
+    def test_peer_connection(self, node_id: str) -> Tuple[bool, Dict]:
+        target = str(node_id or "").strip()
+        if not target:
+            return False, {"error": "node_id is required"}
+
+        peers = self._load_peers()
+        peer = peers.get(target)
+        if not isinstance(peer, dict):
+            return False, {"error": "Peer not found"}
+
+        runtime = self._runtime_status()
+        runtime_peers_by_key = {}
+        for item in runtime.get("peers", []) if isinstance(runtime.get("peers"), list) else []:
+            if not isinstance(item, dict):
+                continue
+            public_key = str(item.get("public_key") or "").strip()
+            if public_key:
+                runtime_peers_by_key[public_key] = item
+
+        public_key = str(peer.get("public_key") or "").strip()
+        runtime_peer = runtime_peers_by_key.get(public_key, {})
+        latest_handshake = str(runtime_peer.get("latest_handshake") or "").strip()
+        handshake_age = self._parse_handshake_age_seconds(latest_handshake)
+        online = bool(runtime_peer) and latest_handshake.lower() not in ("", "never")
+        connected = bool(online and handshake_age is not None and handshake_age <= self.connected_handshake_threshold_seconds)
+
+        tunnel_ip = str(peer.get("tunnel_ip") or "").strip()
+        ping_payload = {
+            "attempted": False,
+            "success": False,
+            "error": "",
+        }
+        ping_cmd = self._ping_cmd()
+        if platform.system() == "Linux" and ping_cmd and tunnel_ip:
+            ping_payload["attempted"] = True
+            ping_res, ping_err = self.run_command([ping_cmd, "-c", "1", "-W", "2", tunnel_ip], timeout=8)
+            ping_ok = bool(ping_res and ping_res.returncode == 0 and not ping_err)
+            ping_payload["success"] = ping_ok
+            if not ping_ok:
+                ping_payload["error"] = ping_err or ((ping_res.stderr or ping_res.stdout or "").strip()[:240])
+
+        connection_ok = bool(connected or ping_payload["success"])
+        if connection_ok:
+            if connected:
+                message = "Connection test successful (recent WireGuard handshake detected)"
+            else:
+                message = "Connection test successful (peer replied to ping)"
+        else:
+            message = "Connection test failed (no recent handshake and ping did not succeed)"
+
+        return True, {
+            "node_id": target,
+            "peer_name": str(peer.get("name") or target),
+            "connection_ok": connection_ok,
+            "message": message,
+            "runtime": {
+                "state": str(runtime.get("state") or "unknown"),
+                "online": online,
+                "connected": connected,
+                "latest_handshake": latest_handshake,
+                "endpoint": str(runtime_peer.get("endpoint") or "").strip(),
+            },
+            "ping": ping_payload,
+        }
 
     def restart_tunnel(self) -> Tuple[bool, Dict]:
         return self.apply_tunnel_config()

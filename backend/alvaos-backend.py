@@ -3086,6 +3086,20 @@ def buddy_pairing_restart():
         return jsonify({'error': payload.get('error', 'Failed to restart tunnel')}), 500
     return jsonify({'success': True, **payload})
 
+@app.route('/api/v1/backup/pairing/test', methods=['POST'])
+@require_auth
+def buddy_pairing_test():
+    """Test connectivity for a configured buddy peer."""
+    if buddy_backup_manager is None:
+        return jsonify({'error': 'Buddy backup manager not initialized'}), 500
+
+    data = request.get_json() or {}
+    node_id = (data.get('node_id') or '').strip()
+    success, payload = buddy_backup_manager.test_peer_connection(node_id=node_id)
+    if not success:
+        return jsonify({'error': payload.get('error', 'Failed to test buddy connection')}), 400
+    return jsonify({'success': True, **payload})
+
 # ============================================================================
 # APP STORE & CONTAINER MANAGEMENT API
 # ============================================================================

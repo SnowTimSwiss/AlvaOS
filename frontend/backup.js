@@ -475,6 +475,7 @@ function renderBuddyStatus() {
                 </div>
             </div>
             <div class="buddy-peer-actions">
+                <button class="btn-secondary buddy-test-peer-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Test Connection</button>
                 <button class="btn-secondary buddy-remove-peer-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Remove</button>
             </div>
         </div>
@@ -900,6 +901,28 @@ async function removeBuddyPeer(nodeId) {
     await loadBuddyStatus();
 }
 
+async function testBuddyPeerConnection(nodeId) {
+    const target = String(nodeId || '').trim();
+    if (!target) return;
+
+    const response = await backupApi('/backup/pairing/test', {
+        method: 'POST',
+        json: { node_id: target }
+    });
+    const data = await backupReadJson(response);
+    if (!response || !response.ok || !data) {
+        backupNotify(data?.error || 'Connection test failed', 'error');
+        return;
+    }
+
+    if (data.connection_ok) {
+        backupNotify(data.message || 'Connection test successful', 'success');
+    } else {
+        backupNotify(data.message || 'Connection test failed', 'warning');
+    }
+    await loadBuddyStatus();
+}
+
 async function loadBackupSources() {
     const response = await backupApi('/backup/sources');
     const data = await backupReadJson(response);
@@ -1020,6 +1043,11 @@ function initBackupHandlers() {
         const saveBtn = event.target.closest('.buddy-save-peer-policy-btn');
         if (saveBtn) {
             saveBuddyPeerPolicy(saveBtn.dataset.nodeId || '');
+            return;
+        }
+        const testBtn = event.target.closest('.buddy-test-peer-btn');
+        if (testBtn) {
+            testBuddyPeerConnection(testBtn.dataset.nodeId || '');
             return;
         }
         const btn = event.target.closest('.buddy-remove-peer-btn');
