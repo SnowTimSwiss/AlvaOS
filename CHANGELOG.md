@@ -13,9 +13,7 @@ All notable changes to AlvaOS will be documented in this file.
 - **Dashboard UX**: Added health overview strip, smart alert feed, and quick actions panel.
 - **Alert rendering**: Dashboard now shows clickable alerts with severity chips and scan timestamp.
 - **System settings UX**: Added Telegram pairing workflow in System Settings.
-
-### Notes
-- **Usage and temperature history** remains planned for a later release.
+- **Dashboard history**: Added usage and CPU temperature history charts based on rolling dashboard samples.
 
 ## [0.8.0] - 20.02.26
 

@@ -2,6 +2,9 @@
 const API_BASE = '/api/v1';
 let updateInterval;
 let alertsInterval;
+const HISTORY_CACHE_KEY = 'alvaos_dashboard_history_v1';
+const HISTORY_MAX_SAMPLES = 120;
+let usageHistory = [];
 
 function escapeHtml(value) {
     return String(value ?? '')
@@ -51,6 +54,163 @@ function safeRoute(route) {
     return '';
 }
 
+function toFiniteNumber(value) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getLastFinite(values) {
+    for (let i = values.length - 1; i >= 0; i -= 1) {
+        if (Number.isFinite(values[i])) return values[i];
+    }
+    return null;
+}
+
+function loadUsageHistory() {
+    usageHistory = [];
+    try {
+        const raw = localStorage.getItem(HISTORY_CACHE_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return;
+
+        const cutoff = Date.now() - (4 * 60 * 60 * 1000);
+        const cleaned = parsed
+            .map((sample) => ({
+                ts: toFiniteNumber(sample?.ts) || Date.now(),
+                cpu: toFiniteNumber(sample?.cpu),
+                memory: toFiniteNumber(sample?.memory),
+                disk: toFiniteNumber(sample?.disk),
+                temp: toFiniteNumber(sample?.temp),
+            }))
+            .filter((sample) => sample.ts >= cutoff)
+            .slice(-HISTORY_MAX_SAMPLES);
+
+        usageHistory = cleaned;
+    } catch (_error) {
+        usageHistory = [];
+    }
+}
+
+function saveUsageHistory() {
+    try {
+        localStorage.setItem(HISTORY_CACHE_KEY, JSON.stringify(usageHistory.slice(-HISTORY_MAX_SAMPLES)));
+    } catch (_error) {
+        // Ignore storage quota/runtime issues.
+    }
+}
+
+function buildLinePath(values, minValue, maxValue) {
+    if (!Array.isArray(values) || values.length < 2) return '';
+    const points = values
+        .map((value, idx) => ({ value, idx }))
+        .filter((point) => Number.isFinite(point.value));
+    if (points.length < 2) return '';
+
+    const width = 100;
+    const height = 30;
+    const xDivisor = Math.max(values.length - 1, 1);
+    const range = Math.max(maxValue - minValue, 0.0001);
+
+    return points.map((point, pointIndex) => {
+        const x = (point.idx / xDivisor) * width;
+        const normalized = (point.value - minValue) / range;
+        const y = height - (Math.max(0, Math.min(1, normalized)) * height);
+        const cmd = pointIndex === 0 ? 'M' : 'L';
+        return `${cmd}${x.toFixed(2)} ${y.toFixed(2)}`;
+    }).join(' ');
+}
+
+function renderHistorySeries(pathId, valueId, values, options = {}) {
+    const pathEl = document.getElementById(pathId);
+    const valueEl = document.getElementById(valueId);
+    if (!pathEl || !valueEl) return;
+
+    const suffix = String(options.suffix || '');
+    const decimals = Number.isFinite(options.decimals) ? options.decimals : 1;
+    const latest = getLastFinite(values);
+    valueEl.textContent = Number.isFinite(latest) ? `${latest.toFixed(decimals)}${suffix}` : 'N/A';
+
+    let minValue = toFiniteNumber(options.min);
+    let maxValue = toFiniteNumber(options.max);
+    if (!Number.isFinite(minValue) || !Number.isFinite(maxValue)) {
+        const finiteValues = values.filter((v) => Number.isFinite(v));
+        if (finiteValues.length > 0) {
+            minValue = Math.min(...finiteValues);
+            maxValue = Math.max(...finiteValues);
+            if (minValue === maxValue) {
+                minValue -= 1;
+                maxValue += 1;
+            }
+        }
+    }
+
+    if (!Number.isFinite(minValue) || !Number.isFinite(maxValue)) {
+        pathEl.setAttribute('d', '');
+        return;
+    }
+
+    pathEl.setAttribute('d', buildLinePath(values, minValue, maxValue));
+}
+
+function renderUsageHistory() {
+    if (!document.getElementById('history-cpu-path')) return;
+
+    const samples = usageHistory.slice(-HISTORY_MAX_SAMPLES);
+    const cpuValues = samples.map((sample) => sample.cpu);
+    const memValues = samples.map((sample) => sample.memory);
+    const diskValues = samples.map((sample) => sample.disk);
+    const tempValues = samples.map((sample) => sample.temp);
+
+    renderHistorySeries('history-cpu-path', 'history-cpu-current', cpuValues, {
+        min: 0,
+        max: 100,
+        suffix: '%',
+        decimals: 1,
+    });
+    renderHistorySeries('history-mem-path', 'history-mem-current', memValues, {
+        min: 0,
+        max: 100,
+        suffix: '%',
+        decimals: 1,
+    });
+    renderHistorySeries('history-disk-path', 'history-disk-current', diskValues, {
+        min: 0,
+        max: 100,
+        suffix: '%',
+        decimals: 1,
+    });
+
+    const tempFinite = tempValues.filter((v) => Number.isFinite(v));
+    const tempMin = tempFinite.length ? Math.max(20, Math.min(...tempFinite) - 3) : null;
+    const tempMax = tempFinite.length ? Math.max(tempMin + 10, Math.max(...tempFinite) + 3) : null;
+    renderHistorySeries('history-temp-path', 'history-temp-current', tempValues, {
+        min: tempMin,
+        max: tempMax,
+        suffix: ' degC',
+        decimals: 1,
+    });
+
+    const rangeEl = document.getElementById('history-range-label');
+    if (!rangeEl) return;
+    if (samples.length < 2) {
+        rangeEl.textContent = 'Collecting samples...';
+        return;
+    }
+
+    const minutes = Math.max(1, Math.round((samples[samples.length - 1].ts - samples[0].ts) / 60000));
+    rangeEl.textContent = `Last ${minutes} minute${minutes === 1 ? '' : 's'}`;
+}
+
+function appendUsageSample(sample) {
+    usageHistory.push(sample);
+    if (usageHistory.length > HISTORY_MAX_SAMPLES) {
+        usageHistory = usageHistory.slice(-HISTORY_MAX_SAMPLES);
+    }
+    saveUsageHistory();
+    renderUsageHistory();
+}
+
 async function fetchSystemInfo() {
     try {
         const token = localStorage.getItem('alvaos_token');
@@ -89,6 +249,7 @@ function updateDashboard(data) {
 
     const cpuUsage = Number(cpu.usage_percent) || 0;
     const cpuFrequencyMhz = Number(cpu.frequency_mhz) || 0;
+    const cpuTemp = toFiniteNumber(cpu.temperature_c);
 
     setText('cpu-cores', `${cpu.cores ?? '-'} / ${cpu.threads ?? '-'}`);
     setText('cpu-usage', `${cpuUsage.toFixed(1)}%`);
@@ -101,8 +262,8 @@ function updateDashboard(data) {
 
     const cpuTempEl = document.getElementById('cpu-temp');
     if (cpuTempEl) {
-        cpuTempEl.textContent = (cpu.temperature_c || cpu.temperature_c === 0)
-            ? `${Number(cpu.temperature_c).toFixed(1)} degC`
+        cpuTempEl.textContent = (cpuTemp || cpuTemp === 0)
+            ? `${cpuTemp.toFixed(1)} degC`
             : 'N/A';
     }
 
@@ -122,12 +283,14 @@ function updateDashboard(data) {
         && typeof pool.used_gb === 'number'
         && typeof pool.free_gb === 'number'
     );
+    let historyDiskPercent = Number(disk.percent) || 0;
 
     if (mountedPools.length > 0) {
         const poolTotal = mountedPools.reduce((sum, pool) => sum + pool.total_gb, 0);
         const poolUsed = mountedPools.reduce((sum, pool) => sum + pool.used_gb, 0);
         const poolFree = mountedPools.reduce((sum, pool) => sum + pool.free_gb, 0);
         const poolPercent = poolTotal > 0 ? (poolUsed / poolTotal) * 100 : 0;
+        historyDiskPercent = poolPercent;
 
         setText('disk-total', `${poolTotal.toFixed(2)} GB`);
         setText('disk-used', `${poolUsed.toFixed(2)} GB`);
@@ -136,6 +299,7 @@ function updateDashboard(data) {
         setWidth('disk-progress', `${Math.max(0, Math.min(100, poolPercent))}%`);
     } else {
         const diskPercent = Number(disk.percent) || 0;
+        historyDiskPercent = diskPercent;
         setText('disk-total', `${Number(disk.total_gb || 0).toFixed(2)} GB`);
         setText('disk-used', `${Number(disk.used_gb || 0).toFixed(2)} GB`);
         setText('disk-free', `${Number(disk.free_gb || 0).toFixed(2)} GB`);
@@ -193,6 +357,14 @@ function updateDashboard(data) {
     setText('os-version', `${system.os || '-'} ${system.os_version || ''}`.trim());
     setText('uptime', `${Number(system.uptime_hours || 0).toFixed(1)} hours`);
     setText('last-update', new Date().toLocaleTimeString());
+
+    appendUsageSample({
+        ts: Date.now(),
+        cpu: cpuUsage,
+        memory: memPercent,
+        disk: historyDiskPercent,
+        temp: cpuTemp,
+    });
 
     const errorDiv = document.querySelector('.error-banner');
     if (errorDiv) {
@@ -400,6 +572,8 @@ async function init() {
     }
 
     if (document.getElementById('cpu-usage')) {
+        loadUsageHistory();
+        renderUsageHistory();
         await refreshDashboardData();
         updateInterval = setInterval(fetchSystemInfo, 5000);
         alertsInterval = setInterval(fetchAlerts, 15000);

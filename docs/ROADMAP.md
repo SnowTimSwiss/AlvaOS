@@ -61,7 +61,7 @@ Release strategy: "Iterate fast, stabilize often."
 - [x] **Disks**: S.M.A.R.T. monitoring and basic health checks.
 - [x] **Smart Alerts**: Notification system for failures/warnings with clickable destinations.
 - [x] **Integrations**: Telegram notifications with bot pairing workflow.
-- [ ] **Usage and Temperature history**: Show usage and temperature history.
+- [x] **Usage and Temperature history**: Show usage and temperature history.
 - [x] **Better Dashboard**: Health overview, quick actions, and alert feed.
 
 
@@ -81,8 +81,10 @@ Release strategy: "Iterate fast, stabilize often."
 - [ ] **User feedback**: Add user feedback to the UI.
 - [ ] **Custom Icons**: Replace Emojis with custom Icons.
 
+## v0.12.0 - Debian 13
+- [ ] **Debian 13**: Update to Debian 13 from Debian 12.
+
 ## v1.0.0 - Stable Release 🚀
 - [ ] **Feature Complete**: All planned features implemented and stable.
 - [ ] **Production Ready**: No critical bugs, complete documentation.
 - [ ] **Launch**: Public release.
-- [ ] **Debian 13**: Update to Debian 13 from Debian 12.
