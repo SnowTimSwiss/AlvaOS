@@ -89,6 +89,185 @@
         .status-item strong {
             color: var(--text-primary);
         }
+
+        .backup-status-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .backup-status-chip {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: var(--bg-body);
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .backup-info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+            margin-bottom: 10px;
+        }
+
+        .backup-info-item {
+            padding: 10px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: var(--bg-body);
+            min-width: 0;
+        }
+
+        .backup-info-value {
+            margin-top: 4px;
+            color: var(--text-primary);
+            font-size: 0.85rem;
+            overflow-wrap: anywhere;
+        }
+
+        .buddy-status-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .buddy-status-chip {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 10px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: var(--bg-body);
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .buddy-identity-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px;
+            margin-top: 12px;
+        }
+
+        .buddy-identity-item {
+            padding: 10px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: var(--bg-body);
+            min-width: 0;
+        }
+
+        .buddy-identity-value {
+            margin-top: 4px;
+            color: var(--text-primary);
+            font-size: 0.85rem;
+            overflow-wrap: anywhere;
+        }
+
+        .buddy-pairing-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+        }
+
+        .buddy-peers-wrap {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .buddy-peer-card {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 14px;
+            padding: 12px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: var(--bg-body);
+        }
+
+        .buddy-peer-main {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 0;
+            flex: 1;
+        }
+
+        .buddy-peer-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .buddy-state-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: 999px;
+            border: 1px solid var(--border-default);
+            font-size: 0.75rem;
+            font-weight: 600;
+            background: rgba(139, 148, 158, 0.12);
+            color: var(--text-secondary);
+        }
+
+        .buddy-state-pill.ok {
+            background: rgba(35, 134, 54, 0.16);
+            border-color: rgba(35, 134, 54, 0.45);
+            color: var(--accent-success);
+        }
+
+        .buddy-peer-policy {
+            margin-top: 8px;
+            padding: 10px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: var(--bg-card);
+        }
+
+        .buddy-peer-actions {
+            display: flex;
+            align-items: flex-start;
+        }
+
+        .buddy-token-area {
+            font-family: 'JetBrains Mono', monospace;
+            min-height: 96px;
+        }
+
+        @media (max-width: 980px) {
+            .buddy-pairing-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 760px) {
+            .buddy-peer-card {
+                flex-direction: column;
+            }
+
+            .buddy-peer-actions {
+                width: 100%;
+            }
+
+            .buddy-peer-actions .btn-secondary {
+                width: 100%;
+            }
+        }
     </style>
 </head>
 
@@ -150,10 +329,10 @@
                         <div class="card-title">Pool Backup Status</div>
                         <button id="pool-run-btn" class="btn-primary">Backup Now</button>
                     </div>
-                    <div class="status-row">
-                        <div class="status-item">Last run: <strong id="pool-last-run">-</strong></div>
-                        <div class="status-item">Next run: <strong id="pool-next-run">-</strong></div>
-                        <div class="status-item">Status: <strong id="pool-last-status">-</strong></div>
+                    <div class="backup-status-row">
+                        <div class="backup-status-chip">Last run <strong id="pool-last-run">-</strong></div>
+                        <div class="backup-status-chip">Next run <strong id="pool-next-run">-</strong></div>
+                        <div class="backup-status-chip">Status <strong id="pool-last-status">-</strong></div>
                     </div>
                     <div id="pool-last-error" class="metric-sub" style="color: var(--error); display: none;"></div>
                     <div class="setting-group" style="margin-top: 12px;">
@@ -233,16 +412,22 @@
                         <div class="card-title">System Backup Status</div>
                         <button id="system-run-btn" class="btn-primary">Backup Now</button>
                     </div>
-                    <div class="status-row">
-                        <div class="status-item">Last run: <strong id="system-last-run">-</strong></div>
-                        <div class="status-item">Next run: <strong id="system-next-run">-</strong></div>
-                         <div class="status-item">Status: <strong id="system-last-status">-</strong></div>
+                    <div class="backup-status-row">
+                        <div class="backup-status-chip">Last run <strong id="system-last-run">-</strong></div>
+                        <div class="backup-status-chip">Next run <strong id="system-next-run">-</strong></div>
+                        <div class="backup-status-chip">Status <strong id="system-last-status">-</strong></div>
                     </div>
                     <div id="system-last-error" class="metric-sub" style="color: var(--error); display: none;"></div>
-                    
-                    <div style="margin-top: 10px; padding: 10px; background: var(--bg-body); border-radius: 4px;">
-                        <div class="metric-sub"><strong>System Support:</strong> <span id="system-support-info">Checking...</span></div>
-                        <div class="metric-sub" style="margin-top:5px;"><strong>Pending Rollback:</strong> <span id="system-pending-rollback">None</span></div>
+
+                    <div class="backup-info-grid">
+                        <div class="backup-info-item">
+                            <div class="setting-label">System Support</div>
+                            <div id="system-support-info" class="backup-info-value">Checking...</div>
+                        </div>
+                        <div class="backup-info-item">
+                            <div class="setting-label">Pending Rollback</div>
+                            <div id="system-pending-rollback" class="backup-info-value">None</div>
+                        </div>
                     </div>
                     <div class="setting-group" style="margin-top: 12px;">
                         <label class="setting-label" for="system-run-target-path">Save To (Manual Backup)</label>
@@ -311,31 +496,32 @@
                             <button id="buddy-restart-tunnel-btn" class="btn-secondary">Restart Tunnel</button>
                         </div>
                     </div>
-                    <div class="status-row">
-                        <div class="status-item">Supported: <strong id="buddy-support-info">-</strong></div>
-                        <div class="status-item">Tunnel: <strong id="buddy-tunnel-state">-</strong></div>
+                    <div class="buddy-status-row">
+                        <div class="buddy-status-chip">Supported <strong id="buddy-support-info">-</strong></div>
+                        <div class="buddy-status-chip">Tunnel <strong id="buddy-tunnel-state">-</strong></div>
                     </div>
-                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 12px;">
-                        <div>
+                    <div class="buddy-identity-grid">
+                        <div class="buddy-identity-item">
                             <div class="setting-label">Node ID</div>
-                            <div id="buddy-node-id" class="mono-text">-</div>
+                            <div id="buddy-node-id" class="mono-text buddy-identity-value">-</div>
                         </div>
-                        <div>
+                        <div class="buddy-identity-item">
                             <div class="setting-label">Public Key</div>
-                            <div id="buddy-public-key" class="mono-text" style="word-break: break-all;">-</div>
+                            <div id="buddy-public-key" class="mono-text buddy-identity-value">-</div>
                         </div>
-                        <div>
+                        <div class="buddy-identity-item">
                             <div class="setting-label">Tunnel IP</div>
-                            <div id="buddy-tunnel-ip" class="mono-text">-</div>
+                            <div id="buddy-tunnel-ip" class="mono-text buddy-identity-value">-</div>
                         </div>
-                        <div>
+                        <div class="buddy-identity-item">
                             <div class="setting-label">Listen Port</div>
-                            <div id="buddy-listen-port" class="mono-text">-</div>
+                            <div id="buddy-listen-port" class="mono-text buddy-identity-value">-</div>
                         </div>
                     </div>
                 </div>
 
-                <div class="card">
+                <div class="buddy-pairing-grid">
+                    <div class="card">
                     <div class="card-header">
                         <div class="card-title">Generate Pairing Token</div>
                         <button id="buddy-generate-token-btn" class="btn-primary">Generate</button>
@@ -348,14 +534,14 @@
                     </div>
                     <div class="setting-group">
                         <label class="setting-label" for="buddy-generated-token">Pairing Token</label>
-                        <textarea id="buddy-generated-token" class="select-input" rows="4" style="font-family: monospace;" readonly></textarea>
+                        <textarea id="buddy-generated-token" class="select-input buddy-token-area" rows="4" readonly></textarea>
                         <div style="margin-top: 8px;">
                             <button id="buddy-copy-token-btn" class="btn-secondary">Copy Token</button>
                         </div>
                     </div>
                 </div>
 
-                <div class="card">
+                    <div class="card">
                     <div class="card-header">
                         <div class="card-title">Pair With Buddy</div>
                         <button id="buddy-validate-token-btn" class="btn-primary">Pair</button>
@@ -363,15 +549,16 @@
                     <p class="metric-sub" style="margin-bottom: 10px;">Token vom anderen NAS einfügen und pairen.</p>
                     <div class="setting-group">
                         <label class="setting-label" for="buddy-token-input">Buddy Token</label>
-                        <textarea id="buddy-token-input" class="select-input" rows="4" style="font-family: monospace;" placeholder="Paste buddy pairing token"></textarea>
+                        <textarea id="buddy-token-input" class="select-input buddy-token-area" rows="4" placeholder="Paste buddy pairing token"></textarea>
                     </div>
+                </div>
                 </div>
 
                 <div class="card">
                     <div class="card-header">
                         <div class="card-title">Paired Buddies</div>
                     </div>
-                    <div id="buddy-peers-list">
+                    <div id="buddy-peers-list" class="buddy-peers-wrap">
                         <div class="metric-sub">No buddies paired yet.</div>
                     </div>
                 </div>
