@@ -6,6 +6,7 @@ Identity + token pairing + WireGuard tunnel automation.
 
 import base64
 import hashlib
+import hmac
 import json
 import os
 import platform
@@ -14,11 +15,15 @@ import secrets
 import shlex
 import shutil
 import socket
+import tempfile
+import threading
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
+
+import requests
 
 DEFAULT_BUDDY_SETTINGS = {
     "enabled": False,
@@ -34,6 +39,16 @@ DEFAULT_BUDDY_SETTINGS = {
     "encryption_hash": "",
 }
 
+DEFAULT_BUDDY_RUNTIME = {
+    "last_sync_at": "",
+    "last_sync_status": "idle",
+    "last_sync_error": "",
+    "last_restore_at": "",
+    "last_restore_status": "idle",
+    "last_restore_error": "",
+    "per_peer": {},
+}
+
 
 class BuddyBackupManager:
     def __init__(self, run_command: Callable):
@@ -43,11 +58,14 @@ class BuddyBackupManager:
         self.peers_file = os.path.join(self.state_dir, "buddy_peers.json")
         self.tokens_file = os.path.join(self.state_dir, "buddy_tokens.json")
         self.settings_file = os.path.join(self.state_dir, "buddy_settings.json")
+        self.streams_file = os.path.join(self.state_dir, "buddy_streams.json")
+        self.runtime_file = os.path.join(self.state_dir, "buddy_runtime.json")
         self.wg_dir = os.path.join(self.state_dir, "wireguard")
         self.wg_config_path = os.path.join(self.wg_dir, "buddy0.conf")
         self.interface_name = "buddy0"
         self.default_listen_port = 51820
         self.connected_handshake_threshold_seconds = 180
+        self._transfer_lock = threading.RLock()
 
         self._ensure_dirs()
         self._ensure_defaults()
@@ -98,6 +116,20 @@ class BuddyBackupManager:
             tokens = {}
         tokens.setdefault("used", [])
         self._save_json(self.tokens_file, tokens)
+
+        streams = self._load_json(self.streams_file, [])
+        if not isinstance(streams, list):
+            streams = []
+        self._save_json(self.streams_file, streams)
+
+        runtime = self._load_json(self.runtime_file, {})
+        if not isinstance(runtime, dict):
+            runtime = {}
+        merged_runtime = dict(DEFAULT_BUDDY_RUNTIME)
+        merged_runtime.update(runtime)
+        if not isinstance(merged_runtime.get("per_peer"), dict):
+            merged_runtime["per_peer"] = {}
+        self._save_json(self.runtime_file, merged_runtime)
 
         settings = self._load_json(self.settings_file, {})
         if not isinstance(settings, dict):
@@ -161,6 +193,24 @@ class BuddyBackupManager:
         return self._detect_cmd(
             ["/usr/bin/ping", "/bin/ping", "/usr/sbin/ping", "/sbin/ping"],
             "ping"
+        )
+
+    def _btrfs_cmd(self) -> Optional[str]:
+        return self._detect_cmd(
+            ["/usr/bin/btrfs", "/bin/btrfs", "/usr/sbin/btrfs", "/sbin/btrfs"],
+            "btrfs"
+        )
+
+    def _mkdir_cmd(self) -> Optional[str]:
+        return self._detect_cmd(
+            ["/usr/bin/mkdir", "/bin/mkdir"],
+            "mkdir"
+        )
+
+    def _mv_cmd(self) -> Optional[str]:
+        return self._detect_cmd(
+            ["/usr/bin/mv", "/bin/mv"],
+            "mv"
         )
 
     def _derive_tunnel_ip(self, node_id: str) -> str:
@@ -412,6 +462,7 @@ class BuddyBackupManager:
             "name": self._hostname(),
             "private_key": private_key or "",
             "public_key": public_key or "",
+            "api_secret": secrets.token_urlsafe(32),
             "tunnel_ip": self._derive_tunnel_ip(node_id),
             "listen_port": self.default_listen_port,
             "created_at": self._now_iso(),
@@ -441,6 +492,10 @@ class BuddyBackupManager:
             if not key_source:
                 identity["key_source"] = "wireguard"
                 key_source = "wireguard"
+                self._save_identity(identity)
+
+            if not str(identity.get("api_secret") or "").strip():
+                identity["api_secret"] = secrets.token_urlsafe(32)
                 self._save_identity(identity)
 
             needs_regen = not identity.get("public_key") or not identity.get("private_key")
@@ -647,6 +702,52 @@ class BuddyBackupManager:
             self._save_json(self.settings_file, merged)
         return merged if include_secret else self._public_settings(merged)
 
+    def _load_runtime(self) -> Dict:
+        runtime = self._load_json(self.runtime_file, {})
+        if not isinstance(runtime, dict):
+            runtime = {}
+        merged = dict(DEFAULT_BUDDY_RUNTIME)
+        merged.update(runtime)
+        if not isinstance(merged.get("per_peer"), dict):
+            merged["per_peer"] = {}
+        return merged
+
+    def _save_runtime(self, runtime: Dict) -> Dict:
+        payload = dict(DEFAULT_BUDDY_RUNTIME)
+        if isinstance(runtime, dict):
+            payload.update(runtime)
+        if not isinstance(payload.get("per_peer"), dict):
+            payload["per_peer"] = {}
+        self._save_json(self.runtime_file, payload)
+        return payload
+
+    def _update_runtime(self, updates: Dict, node_id: str = "") -> Dict:
+        runtime = self._load_runtime()
+        runtime.update(updates or {})
+        if node_id:
+            per_peer = runtime.get("per_peer", {})
+            if not isinstance(per_peer, dict):
+                per_peer = {}
+            peer_runtime = per_peer.get(node_id, {})
+            if not isinstance(peer_runtime, dict):
+                peer_runtime = {}
+            peer_updates = updates.get("peer", {}) if isinstance(updates, dict) else {}
+            if isinstance(peer_updates, dict):
+                peer_runtime.update(peer_updates)
+            per_peer[node_id] = peer_runtime
+            runtime["per_peer"] = per_peer
+        return self._save_runtime(runtime)
+
+    def _load_stream_entries(self) -> List[Dict]:
+        entries = self._load_json(self.streams_file, [])
+        return entries if isinstance(entries, list) else []
+
+    def _save_stream_entries(self, entries: List[Dict]) -> None:
+        payload = entries if isinstance(entries, list) else []
+        if len(payload) > 4000:
+            payload = payload[-4000:]
+        self._save_json(self.streams_file, payload)
+
     def save_settings(self, payload: Dict) -> Tuple[bool, Dict]:
         if payload is None:
             payload = {}
@@ -757,6 +858,24 @@ class BuddyBackupManager:
         except Exception:
             return False
 
+    def _identity_private(self) -> Dict:
+        identity = self._load_identity()
+        if not identity:
+            identity = self._create_identity()
+            self._save_identity(identity)
+        if not str(identity.get("api_secret") or "").strip():
+            identity["api_secret"] = secrets.token_urlsafe(32)
+            self._save_identity(identity)
+        return identity
+
+    def verify_buddy_api_secret(self, secret: str) -> bool:
+        provided = str(secret or "").strip()
+        if not provided:
+            return False
+        identity = self._identity_private()
+        expected = str(identity.get("api_secret") or "").strip()
+        return bool(expected) and hmac.compare_digest(provided, expected)
+
     def _token_hash(self, token: str) -> str:
         return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
 
@@ -782,6 +901,209 @@ class BuddyBackupManager:
         used = used[-1000:]
         state["used"] = used
         self._save_json(self.tokens_file, state)
+
+    def _path_is_btrfs_subvolume(self, path: str) -> bool:
+        if platform.system() != "Linux":
+            return True
+        btrfs_cmd = self._btrfs_cmd()
+        target = str(path or "").strip()
+        if not btrfs_cmd or not target:
+            return False
+        res, err = self.run_command([btrfs_cmd, "subvolume", "show", target], timeout=20)
+        return bool(res and res.returncode == 0 and not err)
+
+    def _mkdir_p(self, path: str) -> Tuple[bool, str]:
+        target = str(path or "").strip()
+        if not target:
+            return False, "Invalid directory path"
+        if platform.system() != "Linux":
+            try:
+                Path(target).mkdir(parents=True, exist_ok=True)
+                return True, ""
+            except Exception as exc:
+                return False, str(exc)
+
+        mkdir_cmd = self._mkdir_cmd()
+        if not mkdir_cmd:
+            return False, "mkdir command not found"
+        res, err = self.run_command([mkdir_cmd, "-p", target], timeout=30)
+        if err or not res or res.returncode != 0:
+            return False, err or f"Failed to create directory: {target}"
+        return True, ""
+
+    def _file_sha256(self, path: str) -> str:
+        digest = hashlib.sha256()
+        with open(path, "rb") as f:
+            while True:
+                chunk = f.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def _derive_transfer_key(self) -> Tuple[Optional[bytes], Optional[str]]:
+        settings = self.get_settings(include_secret=True)
+        if not settings.get("encryption_enabled"):
+            return None, None
+        enc_hash = str(settings.get("encryption_hash") or "").strip()
+        enc_salt = str(settings.get("encryption_salt") or "").strip()
+        if not enc_hash or not enc_salt:
+            return None, "Encryption is enabled, but no encryption key material is configured"
+        key = hashlib.sha256(f"{enc_hash}|{enc_salt}|alvaos-buddy-v1".encode("utf-8")).digest()
+        return key, None
+
+    def _xor_stream_chunk(self, data: bytes, key: bytes, nonce: bytes, counter_start: int) -> Tuple[bytes, int]:
+        out = bytearray()
+        counter = int(counter_start)
+        cursor = 0
+        while cursor < len(data):
+            block = hmac.new(key, nonce + counter.to_bytes(8, "big"), hashlib.sha256).digest()
+            take = min(len(block), len(data) - cursor)
+            segment = bytes(data[cursor + i] ^ block[i] for i in range(take))
+            out.extend(segment)
+            cursor += take
+            counter += 1
+        return bytes(out), counter
+
+    def _encrypt_stream_file(self, plain_path: str, encrypted_path: str, key: bytes) -> Tuple[bool, str]:
+        magic = b"ALVAENC1"
+        nonce = secrets.token_bytes(16)
+        header = magic + nonce
+        mac_key = hashlib.sha256(key + b":mac").digest()
+        mac = hmac.new(mac_key, digestmod=hashlib.sha256)
+        mac.update(header)
+        counter = 0
+        try:
+            with open(plain_path, "rb") as src, open(encrypted_path, "wb") as dst:
+                dst.write(header)
+                while True:
+                    chunk = src.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    cipher_chunk, counter = self._xor_stream_chunk(chunk, key, nonce, counter)
+                    dst.write(cipher_chunk)
+                    mac.update(cipher_chunk)
+                dst.write(mac.digest())
+            return True, ""
+        except Exception as exc:
+            return False, str(exc)
+
+    def _decrypt_stream_file(self, encrypted_path: str, plain_path: str, key: bytes) -> Tuple[bool, str]:
+        magic = b"ALVAENC1"
+        header_len = len(magic) + 16
+        tag_len = 32
+        mac_key = hashlib.sha256(key + b":mac").digest()
+        try:
+            size = os.path.getsize(encrypted_path)
+            if size < header_len + tag_len:
+                return False, "Encrypted stream is too small"
+            cipher_len = size - header_len - tag_len
+            with open(encrypted_path, "rb") as src, open(plain_path, "wb") as dst:
+                header = src.read(header_len)
+                if len(header) != header_len or not header.startswith(magic):
+                    return False, "Invalid encrypted stream header"
+                nonce = header[len(magic):]
+                mac = hmac.new(mac_key, digestmod=hashlib.sha256)
+                mac.update(header)
+                remaining = cipher_len
+                counter = 0
+                while remaining > 0:
+                    read_len = min(1024 * 1024, remaining)
+                    cipher_chunk = src.read(read_len)
+                    if not cipher_chunk:
+                        return False, "Encrypted stream is truncated"
+                    remaining -= len(cipher_chunk)
+                    mac.update(cipher_chunk)
+                    plain_chunk, counter = self._xor_stream_chunk(cipher_chunk, key, nonce, counter)
+                    dst.write(plain_chunk)
+                expected_tag = src.read(tag_len)
+                actual_tag = mac.digest()
+                if not hmac.compare_digest(expected_tag, actual_tag):
+                    try:
+                        os.remove(plain_path)
+                    except Exception:
+                        pass
+                    return False, "Encrypted stream authentication failed"
+            return True, ""
+        except Exception as exc:
+            return False, str(exc)
+
+    def _stream_root_path(self) -> str:
+        settings = self.get_settings(include_secret=True)
+        base = str(settings.get("incoming_path") or DEFAULT_BUDDY_SETTINGS["incoming_path"]).strip()
+        return os.path.join(base, ".alvaos-buddy-streams")
+
+    def _public_stream_entry(self, item: Dict) -> Dict:
+        return {
+            "id": str(item.get("id") or ""),
+            "owner_node_id": str(item.get("owner_node_id") or ""),
+            "from_node_id": str(item.get("from_node_id") or ""),
+            "source_path": str(item.get("source_path") or ""),
+            "snapshot_name": str(item.get("snapshot_name") or ""),
+            "created_at": str(item.get("created_at") or ""),
+            "received_at": str(item.get("received_at") or ""),
+            "encrypted": bool(item.get("encrypted")),
+            "size_bytes": int(item.get("size_bytes") or 0),
+            "sha256": str(item.get("sha256") or ""),
+        }
+
+    def _enforce_stream_quota(self, owner_node_id: str) -> None:
+        owner = str(owner_node_id or "").strip()
+        if not owner:
+            return
+        settings = self.get_settings(include_secret=True)
+        policies = settings.get("peer_policies", {})
+        policy = policies.get(owner, {}) if isinstance(policies, dict) else {}
+        try:
+            limit_gb = int(policy.get("max_storage_gb", settings.get("incoming_quota_gb", 200)))
+        except Exception:
+            limit_gb = 200
+        limit_bytes = max(1, limit_gb) * (1024 ** 3)
+
+        entries = self._load_stream_entries()
+        owner_entries = [e for e in entries if str(e.get("owner_node_id") or "").strip() == owner]
+        owner_entries.sort(key=lambda item: str(item.get("received_at") or ""), reverse=True)
+        total = sum(int(item.get("size_bytes") or 0) for item in owner_entries)
+        if total <= limit_bytes:
+            return
+
+        remove_ids = set()
+        for item in reversed(owner_entries):
+            if total <= limit_bytes:
+                break
+            remove_ids.add(str(item.get("id") or ""))
+            total -= int(item.get("size_bytes") or 0)
+
+        filtered = []
+        for item in entries:
+            item_id = str(item.get("id") or "")
+            if item_id in remove_ids:
+                payload_path = str(item.get("payload_path") or "").strip()
+                try:
+                    if payload_path and os.path.exists(payload_path):
+                        os.remove(payload_path)
+                except Exception:
+                    pass
+                continue
+            filtered.append(item)
+        self._save_stream_entries(filtered)
+
+    def _peer_api_urls(self, peer: Dict, path: str) -> List[str]:
+        path_part = str(path or "").strip()
+        if not path_part.startswith("/"):
+            path_part = f"/{path_part}"
+        api_endpoint = str(peer.get("api_endpoint") or "").strip()
+        if not api_endpoint:
+            wg_endpoint = str(peer.get("endpoint") or "").strip()
+            host = wg_endpoint.split(":", 1)[0].strip()
+            if host:
+                api_endpoint = f"{host}:8080"
+        if not api_endpoint:
+            return []
+        return [
+            f"http://{api_endpoint}{path_part}",
+            f"https://{api_endpoint}{path_part}",
+        ]
 
     def generate_pairing_token(
         self,
@@ -810,11 +1132,13 @@ class BuddyBackupManager:
 
         issued_at = self._now()
         expires_at = None if ttl == 0 else (issued_at + timedelta(minutes=ttl))
+        identity_private = self._identity_private()
         payload = {
             "v": 1,
             "node_id": identity.get("node_id"),
             "name": identity.get("name"),
             "public_key": identity.get("public_key"),
+            "api_secret": str(identity_private.get("api_secret") or ""),
             "tunnel_ip": identity.get("tunnel_ip"),
             "listen_port": identity.get("listen_port", self.default_listen_port),
             "endpoint": normalized_endpoint,
@@ -865,6 +1189,7 @@ class BuddyBackupManager:
             "node_id": str(payload.get("node_id")),
             "name": peer_name,
             "public_key": str(payload.get("public_key")).strip(),
+            "api_secret": str(payload.get("api_secret") or "").strip(),
             "tunnel_ip": str(payload.get("tunnel_ip")).strip(),
             "listen_port": int(payload.get("listen_port") or self.default_listen_port),
             "endpoint": endpoint,
@@ -1062,11 +1387,13 @@ class BuddyBackupManager:
         normalized_local_api, _ = self._normalize_api_endpoint(local_api_endpoint)
         issued_at = self._now()
         expires_at = issued_at + timedelta(minutes=20)
+        identity_private = self._identity_private()
         payload = {
             "v": 1,
             "node_id": identity.get("node_id"),
             "name": identity.get("name"),
             "public_key": identity.get("public_key"),
+            "api_secret": str(identity_private.get("api_secret") or ""),
             "tunnel_ip": identity.get("tunnel_ip"),
             "listen_port": identity.get("listen_port", self.default_listen_port),
             "endpoint": normalized_local_wg,
@@ -1193,6 +1520,572 @@ class BuddyBackupManager:
             "reciprocal": reciprocal,
         }
 
+    def ingest_peer_stream(
+        self,
+        owner_node_id: str,
+        from_node_id: str,
+        source_path: str,
+        snapshot_name: str,
+        created_at: str,
+        encrypted: bool,
+        payload_stream,
+    ) -> Tuple[bool, Dict]:
+        owner = str(owner_node_id or "").strip()
+        sender = str(from_node_id or "").strip()
+        source = str(source_path or "").strip()
+        snap_name = str(snapshot_name or "").strip()
+        created = str(created_at or "").strip() or self._now_iso()
+        if not owner:
+            return False, {"error": "owner_node_id is required"}
+        if not sender:
+            return False, {"error": "from_node_id is required"}
+        if not source.startswith("/"):
+            return False, {"error": "source_path must be an absolute path"}
+        if not snap_name:
+            return False, {"error": "snapshot_name is required"}
+
+        peers = self._load_peers()
+        if owner not in peers:
+            return False, {"error": "Unknown owner_node_id"}
+
+        root = self._stream_root_path()
+        ok_root, root_err = self._mkdir_p(root)
+        if not ok_root:
+            return False, {"error": root_err or "Failed to prepare buddy incoming stream path"}
+        owner_dir = os.path.join(root, owner)
+        ok_owner, owner_err = self._mkdir_p(owner_dir)
+        if not ok_owner:
+            return False, {"error": owner_err or "Failed to prepare owner stream path"}
+
+        stream_id = f"{int(self._now().timestamp())}-{secrets.token_hex(4)}"
+        ext = ".enc" if encrypted else ".stream"
+        payload_path = os.path.join(owner_dir, f"{stream_id}{ext}")
+        sha = hashlib.sha256()
+        size_bytes = 0
+        try:
+            with open(payload_path, "wb") as dst:
+                while True:
+                    chunk = payload_stream.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    if isinstance(chunk, str):
+                        chunk = chunk.encode("utf-8")
+                    sha.update(chunk)
+                    size_bytes += len(chunk)
+                    dst.write(chunk)
+        except Exception as exc:
+            try:
+                if os.path.exists(payload_path):
+                    os.remove(payload_path)
+            except Exception:
+                pass
+            return False, {"error": f"Failed to store stream payload: {exc}"}
+
+        entry = {
+            "id": stream_id,
+            "owner_node_id": owner,
+            "from_node_id": sender,
+            "source_path": source,
+            "snapshot_name": snap_name,
+            "created_at": created,
+            "received_at": self._now_iso(),
+            "encrypted": bool(encrypted),
+            "size_bytes": int(size_bytes),
+            "sha256": sha.hexdigest(),
+            "payload_path": payload_path,
+        }
+        entries = self._load_stream_entries()
+        entries.append(entry)
+        self._save_stream_entries(entries)
+        self._enforce_stream_quota(owner)
+        return True, {"stream": self._public_stream_entry(entry)}
+
+    def list_peer_streams(self, owner_node_id: str, limit: int = 100) -> Tuple[bool, Dict]:
+        owner = str(owner_node_id or "").strip()
+        if not owner:
+            return False, {"error": "owner_node_id is required"}
+        entries = [
+            self._public_stream_entry(item)
+            for item in self._load_stream_entries()
+            if str(item.get("owner_node_id") or "").strip() == owner
+        ]
+        entries = sorted(entries, key=lambda item: str(item.get("created_at") or ""), reverse=True)
+        max_items = max(1, min(500, int(limit or 100)))
+        return True, {"streams": entries[:max_items]}
+
+    def get_peer_stream_payload(self, owner_node_id: str, stream_id: str) -> Tuple[bool, Dict]:
+        owner = str(owner_node_id or "").strip()
+        sid = str(stream_id or "").strip()
+        if not owner:
+            return False, {"error": "owner_node_id is required"}
+        if not sid:
+            return False, {"error": "stream_id is required"}
+        for item in self._load_stream_entries():
+            if str(item.get("owner_node_id") or "").strip() != owner:
+                continue
+            if str(item.get("id") or "").strip() != sid:
+                continue
+            payload_path = str(item.get("payload_path") or "").strip()
+            if not payload_path or not os.path.exists(payload_path):
+                return False, {"error": "Stored stream payload is missing"}
+            return True, {"stream": self._public_stream_entry(item), "payload_path": payload_path}
+        return False, {"error": "Stream not found"}
+
+    def _create_send_stream(self, source_path: str) -> Tuple[bool, Dict]:
+        source = str(source_path or "").strip()
+        if not source.startswith("/"):
+            return False, {"error": "source_path must be an absolute path"}
+        if not os.path.exists(source):
+            return False, {"error": f"Source path not found: {source}"}
+        if platform.system() != "Linux":
+            return False, {"error": "Buddy transfer is supported on Linux only"}
+
+        btrfs_cmd = self._btrfs_cmd()
+        if not btrfs_cmd:
+            return False, {"error": "btrfs command not found"}
+        if not self._path_is_btrfs_subvolume(source):
+            return False, {"error": f"Source path is not a Btrfs subvolume: {source}"}
+
+        source_parent = os.path.dirname(source.rstrip("/")) or "/"
+        source_slug = re.sub(r"[^a-z0-9._-]+", "-", source.strip("/").lower()) or "source"
+        stamp = self._now().strftime("%Y%m%d-%H%M%S")
+        temp_name = f"alvaos-buddy-{source_slug}-{stamp}-{secrets.token_hex(2)}"
+        temp_snapshot = os.path.join(source_parent, temp_name)
+        ok_parent, parent_err = self._mkdir_p(source_parent)
+        if not ok_parent:
+            return False, {"error": parent_err or "Failed to prepare source parent"}
+
+        stream_fd, stream_path = tempfile.mkstemp(prefix="buddy-send-", suffix=".stream", dir=self.state_dir)
+        os.close(stream_fd)
+        try:
+            snap_res, snap_err = self.run_command(
+                [btrfs_cmd, "subvolume", "snapshot", "-r", source, temp_snapshot],
+                timeout=240,
+            )
+            if snap_err or not snap_res or snap_res.returncode != 0:
+                return False, {"error": snap_err or "Failed to create temporary snapshot"}
+
+            send_res, send_err = self.run_command(
+                [btrfs_cmd, "send", "-f", stream_path, temp_snapshot],
+                timeout=1800,
+            )
+            if send_err or not send_res or send_res.returncode != 0:
+                return False, {"error": send_err or "Failed to create Btrfs stream"}
+
+            return True, {
+                "stream_path": stream_path,
+                "snapshot_name": temp_name,
+                "created_at": self._now_iso(),
+            }
+        finally:
+            self.run_command([btrfs_cmd, "subvolume", "delete", temp_snapshot], timeout=180)
+
+    def _upload_stream_to_peer(self, peer: Dict, payload_path: str, metadata: Dict) -> Tuple[bool, Dict]:
+        remote_secret = str(peer.get("api_secret") or "").strip()
+        if not remote_secret:
+            return False, {"error": "Peer is missing API secret. Re-pair to enable transfer."}
+        urls = self._peer_api_urls(peer, "/api/v1/backup/buddy/peer/upload")
+        if not urls:
+            return False, {"error": "Peer API endpoint is not configured"}
+
+        last_error = "Upload failed"
+        headers = {"X-Buddy-Secret": remote_secret}
+        for url in urls:
+            verify_tls = not url.startswith("https://")
+            try:
+                with open(payload_path, "rb") as fh:
+                    response = requests.post(
+                        url,
+                        headers=headers,
+                        data=metadata,
+                        files={"payload": ("stream.bin", fh, "application/octet-stream")},
+                        timeout=1800,
+                        verify=verify_tls,
+                    )
+                try:
+                    body = response.json() if response.content else {}
+                except Exception:
+                    body = {}
+                if response.status_code >= 200 and response.status_code < 300 and not body.get("error"):
+                    return True, body
+                last_error = body.get("error") or f"HTTP {response.status_code}"
+            except Exception as exc:
+                last_error = str(exc)
+        return False, {"error": last_error}
+
+    def sync_to_peer(self, node_id: str, sources: Optional[List[str]] = None) -> Tuple[bool, Dict]:
+        target = str(node_id or "").strip()
+        if not target:
+            return False, {"error": "node_id is required"}
+
+        with self._transfer_lock:
+            peers = self._load_peers()
+            peer = peers.get(target)
+            if not isinstance(peer, dict):
+                return False, {"error": "Peer not found"}
+
+            settings = self.get_settings(include_secret=True)
+            policies = settings.get("peer_policies", {})
+            policy = policies.get(target, {}) if isinstance(policies, dict) else {}
+            if policy.get("enabled") is False:
+                return False, {"error": "Peer sync is disabled by policy"}
+
+            selected_sources = []
+            if isinstance(sources, list) and sources:
+                selected_sources = [str(path or "").strip() for path in sources if str(path or "").strip().startswith("/")]
+            elif isinstance(policy.get("outgoing_sources"), list) and policy.get("outgoing_sources"):
+                selected_sources = [str(path or "").strip() for path in policy.get("outgoing_sources", []) if str(path or "").strip().startswith("/")]
+            else:
+                selected_sources = [str(path or "").strip() for path in settings.get("outgoing_sources", []) if str(path or "").strip().startswith("/")]
+
+            deduped = []
+            seen = set()
+            for path in selected_sources:
+                if path in seen:
+                    continue
+                seen.add(path)
+                deduped.append(path)
+            selected_sources = deduped
+
+            if not selected_sources:
+                return False, {"error": "No outgoing sources configured for this peer"}
+
+            identity = self._identity_public()
+            local_node_id = str(identity.get("node_id") or "")
+            transfer_key, key_err = self._derive_transfer_key()
+            if key_err:
+                return False, {"error": key_err}
+            encryption_enabled = bool(transfer_key)
+
+            created = []
+            failed = []
+            for source_path in selected_sources:
+                send_ok, send_payload = self._create_send_stream(source_path)
+                if not send_ok:
+                    failed.append({"source_path": source_path, "error": send_payload.get("error", "Failed to build stream")})
+                    continue
+                stream_path = str(send_payload.get("stream_path") or "")
+                upload_path = stream_path
+                encrypted_flag = False
+                encrypted_path = ""
+                try:
+                    if encryption_enabled:
+                        encrypted_path = f"{stream_path}.enc"
+                        enc_ok, enc_err = self._encrypt_stream_file(stream_path, encrypted_path, transfer_key or b"")
+                        if not enc_ok:
+                            failed.append({"source_path": source_path, "error": enc_err or "Failed to encrypt stream"})
+                            continue
+                        upload_path = encrypted_path
+                        encrypted_flag = True
+
+                    meta = {
+                        "owner_node_id": local_node_id,
+                        "from_node_id": local_node_id,
+                        "source_path": source_path,
+                        "snapshot_name": str(send_payload.get("snapshot_name") or ""),
+                        "created_at": str(send_payload.get("created_at") or self._now_iso()),
+                        "encrypted": "1" if encrypted_flag else "0",
+                        "sha256": self._file_sha256(upload_path),
+                    }
+                    upload_ok, upload_payload = self._upload_stream_to_peer(peer, upload_path, meta)
+                    if upload_ok:
+                        created.append({
+                            "source_path": source_path,
+                            "snapshot_name": meta["snapshot_name"],
+                            "encrypted": encrypted_flag,
+                            "remote": upload_payload.get("stream", {}),
+                        })
+                    else:
+                        failed.append({"source_path": source_path, "error": upload_payload.get("error", "Upload failed")})
+                finally:
+                    for path in (stream_path, encrypted_path):
+                        if not path:
+                            continue
+                        try:
+                            if os.path.exists(path):
+                                os.remove(path)
+                        except Exception:
+                            pass
+
+            status = "success" if not failed else ("partial" if created else "error")
+            sync_error = "; ".join(item.get("error", "") for item in failed if item.get("error"))
+            now_iso = self._now_iso()
+            self._update_runtime(
+                {
+                    "last_sync_at": now_iso,
+                    "last_sync_status": status,
+                    "last_sync_error": sync_error,
+                    "peer": {
+                        "last_sync_at": now_iso,
+                        "last_sync_status": status,
+                        "last_sync_error": sync_error,
+                    },
+                },
+                node_id=target,
+            )
+
+            return True, {
+                "node_id": target,
+                "status": status,
+                "created": created,
+                "failed": failed,
+                "encryption_enabled": encryption_enabled,
+            }
+
+    def fetch_remote_snapshots(self, node_id: str, limit: int = 100) -> Tuple[bool, Dict]:
+        target = str(node_id or "").strip()
+        if not target:
+            return False, {"error": "node_id is required"}
+        peers = self._load_peers()
+        peer = peers.get(target)
+        if not isinstance(peer, dict):
+            return False, {"error": "Peer not found"}
+        remote_secret = str(peer.get("api_secret") or "").strip()
+        if not remote_secret:
+            return False, {"error": "Peer is missing API secret. Re-pair to enable transfer."}
+
+        identity = self._identity_public()
+        owner_node_id = str(identity.get("node_id") or "")
+        params = {"owner_node_id": owner_node_id, "limit": str(max(1, min(500, int(limit or 100))))}
+        urls = self._peer_api_urls(peer, "/api/v1/backup/buddy/peer/list")
+        if not urls:
+            return False, {"error": "Peer API endpoint is not configured"}
+
+        last_error = "Failed to fetch remote snapshots"
+        for url in urls:
+            verify_tls = not url.startswith("https://")
+            try:
+                response = requests.get(
+                    url,
+                    headers={"X-Buddy-Secret": remote_secret},
+                    params=params,
+                    timeout=30,
+                    verify=verify_tls,
+                )
+                try:
+                    body = response.json() if response.content else {}
+                except Exception:
+                    body = {}
+                if response.status_code >= 200 and response.status_code < 300 and not body.get("error"):
+                    streams = body.get("streams", [])
+                    if not isinstance(streams, list):
+                        streams = []
+                    streams = sorted(streams, key=lambda item: str(item.get("created_at") or ""), reverse=True)
+                    return True, {"node_id": target, "streams": streams}
+                last_error = body.get("error") or f"HTTP {response.status_code}"
+            except Exception as exc:
+                last_error = str(exc)
+        return False, {"error": last_error}
+
+    def _download_remote_stream(self, peer: Dict, stream_id: str, owner_node_id: str, destination_path: str) -> Tuple[bool, str]:
+        remote_secret = str(peer.get("api_secret") or "").strip()
+        urls = self._peer_api_urls(peer, f"/api/v1/backup/buddy/peer/download/{stream_id}")
+        if not remote_secret or not urls:
+            return False, "Peer API is not configured"
+        params = {"owner_node_id": owner_node_id}
+        last_error = "Download failed"
+        for url in urls:
+            verify_tls = not url.startswith("https://")
+            try:
+                with requests.get(
+                    url,
+                    headers={"X-Buddy-Secret": remote_secret},
+                    params=params,
+                    timeout=1800,
+                    stream=True,
+                    verify=verify_tls,
+                ) as response:
+                    if response.status_code < 200 or response.status_code >= 300:
+                        try:
+                            payload = response.json() if response.content else {}
+                            last_error = payload.get("error") or f"HTTP {response.status_code}"
+                        except Exception:
+                            last_error = f"HTTP {response.status_code}"
+                        continue
+                    with open(destination_path, "wb") as dst:
+                        for chunk in response.iter_content(chunk_size=1024 * 1024):
+                            if not chunk:
+                                continue
+                            dst.write(chunk)
+                    return True, ""
+            except Exception as exc:
+                last_error = str(exc)
+        return False, last_error
+
+    def _restore_from_stream_file(self, stream_path: str, snapshot_name: str, source_path: str) -> Tuple[bool, Dict]:
+        target_source = str(source_path or "").strip()
+        if not target_source.startswith("/"):
+            return False, {"error": "source_path must be an absolute path"}
+        if platform.system() != "Linux":
+            return True, {
+                "restored_to": target_source,
+                "previous_backup": None,
+                "message": "Mock restore completed (non-Linux environment)",
+            }
+
+        btrfs_cmd = self._btrfs_cmd()
+        mv_cmd = self._mv_cmd()
+        bash_cmd = self._bash_cmd()
+        if not (btrfs_cmd and mv_cmd and bash_cmd):
+            return False, {"error": "Missing required system commands (btrfs/mv/bash)"}
+
+        target_parent = os.path.dirname(target_source.rstrip("/")) or "/"
+        ok_parent, parent_err = self._mkdir_p(target_parent)
+        if not ok_parent:
+            return False, {"error": parent_err or "Failed to prepare target parent"}
+
+        before = set()
+        try:
+            before = set(os.listdir(target_parent))
+        except Exception:
+            before = set()
+
+        receive_cmd = f"{shlex.quote(btrfs_cmd)} receive {shlex.quote(target_parent)} < {shlex.quote(stream_path)}"
+        recv_res, recv_err = self.run_command([bash_cmd, "-lc", receive_cmd], timeout=1800)
+        if recv_err or not recv_res or recv_res.returncode != 0:
+            return False, {"error": recv_err or "Failed to receive Btrfs stream"}
+
+        received_path = os.path.join(target_parent, snapshot_name)
+        if not os.path.exists(received_path):
+            try:
+                after = set(os.listdir(target_parent))
+                candidates = sorted(list(after - before))
+                for name in candidates:
+                    candidate_path = os.path.join(target_parent, name)
+                    if self._path_is_btrfs_subvolume(candidate_path):
+                        received_path = candidate_path
+                        break
+            except Exception:
+                pass
+
+        if not os.path.exists(received_path):
+            return False, {"error": "Restore stream received, but snapshot path could not be resolved"}
+
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        previous_path = f"{target_source}.pre-restore-{stamp}"
+        moved_old = False
+
+        if os.path.exists(target_source):
+            mv_res, mv_err = self.run_command([mv_cmd, target_source, previous_path], timeout=120)
+            if mv_err or not mv_res or mv_res.returncode != 0:
+                return False, {"error": mv_err or "Failed to stage current data for restore"}
+            moved_old = True
+
+        snap_res, snap_err = self.run_command(
+            [btrfs_cmd, "subvolume", "snapshot", received_path, target_source],
+            timeout=300,
+        )
+        if snap_err or not snap_res or snap_res.returncode != 0:
+            if moved_old and not os.path.exists(target_source):
+                self.run_command([mv_cmd, previous_path, target_source], timeout=120)
+            return False, {"error": snap_err or "Failed to apply restored snapshot"}
+
+        self.run_command([btrfs_cmd, "subvolume", "delete", received_path], timeout=180)
+        return True, {
+            "restored_to": target_source,
+            "previous_backup": previous_path if moved_old else None,
+            "message": "Restore completed",
+        }
+
+    def restore_from_remote_snapshot(
+        self,
+        node_id: str,
+        stream_id: str,
+        source_path: str = "",
+        encryption_passphrase: str = "",
+    ) -> Tuple[bool, Dict]:
+        target = str(node_id or "").strip()
+        sid = str(stream_id or "").strip()
+        source_override = str(source_path or "").strip()
+        if not target:
+            return False, {"error": "node_id is required"}
+        if not sid:
+            return False, {"error": "stream_id is required"}
+
+        with self._transfer_lock:
+            peers = self._load_peers()
+            peer = peers.get(target)
+            if not isinstance(peer, dict):
+                return False, {"error": "Peer not found"}
+
+            list_ok, list_payload = self.fetch_remote_snapshots(target, limit=500)
+            if not list_ok:
+                return False, {"error": list_payload.get("error", "Failed to fetch remote snapshots")}
+            stream_entry = None
+            for item in list_payload.get("streams", []):
+                if str(item.get("id") or "") == sid:
+                    stream_entry = item
+                    break
+            if not isinstance(stream_entry, dict):
+                return False, {"error": "Remote snapshot not found"}
+
+            restore_source = source_override or str(stream_entry.get("source_path") or "").strip()
+            if not restore_source.startswith("/"):
+                return False, {"error": "Invalid restore source path in remote snapshot"}
+
+            encrypted = bool(stream_entry.get("encrypted"))
+            transfer_key = None
+            if encrypted:
+                if not encryption_passphrase:
+                    return False, {"error": "Encryption password is required for remote restore"}
+                if not self.verify_encryption_passphrase(encryption_passphrase):
+                    return False, {"error": "Invalid encryption password"}
+                transfer_key, key_err = self._derive_transfer_key()
+                if key_err or not transfer_key:
+                    return False, {"error": key_err or "Missing encryption key material"}
+
+            identity = self._identity_public()
+            owner_node_id = str(identity.get("node_id") or "")
+            fd_encrypted, encrypted_tmp = tempfile.mkstemp(prefix="buddy-restore-", suffix=".stream.enc", dir=self.state_dir)
+            os.close(fd_encrypted)
+            plain_tmp = ""
+            try:
+                dl_ok, dl_err = self._download_remote_stream(peer, sid, owner_node_id, encrypted_tmp)
+                if not dl_ok:
+                    return False, {"error": dl_err or "Failed to download remote snapshot stream"}
+
+                stream_for_restore = encrypted_tmp
+                if encrypted:
+                    fd_plain, plain_tmp = tempfile.mkstemp(prefix="buddy-restore-", suffix=".stream", dir=self.state_dir)
+                    os.close(fd_plain)
+                    dec_ok, dec_err = self._decrypt_stream_file(encrypted_tmp, plain_tmp, transfer_key or b"")
+                    if not dec_ok:
+                        return False, {"error": dec_err or "Failed to decrypt remote snapshot stream"}
+                    stream_for_restore = plain_tmp
+
+                restore_ok, restore_payload = self._restore_from_stream_file(
+                    stream_path=stream_for_restore,
+                    snapshot_name=str(stream_entry.get("snapshot_name") or ""),
+                    source_path=restore_source,
+                )
+                now_iso = self._now_iso()
+                if restore_ok:
+                    self._update_runtime({
+                        "last_restore_at": now_iso,
+                        "last_restore_status": "success",
+                        "last_restore_error": "",
+                    })
+                    return True, {
+                        "message": "Remote restore completed",
+                        "stream": stream_entry,
+                        "result": restore_payload,
+                    }
+                self._update_runtime({
+                    "last_restore_at": now_iso,
+                    "last_restore_status": "error",
+                    "last_restore_error": str(restore_payload.get("error") or "Restore failed"),
+                })
+                return False, {"error": restore_payload.get("error", "Restore failed")}
+            finally:
+                for path in (encrypted_tmp, plain_tmp):
+                    if not path:
+                        continue
+                    try:
+                        if os.path.exists(path):
+                            os.remove(path)
+                    except Exception:
+                        pass
+
     def remove_peer(self, node_id: str) -> Tuple[bool, Dict]:
         target = str(node_id or "").strip()
         if not target:
@@ -1210,6 +2103,22 @@ class BuddyBackupManager:
             settings["peer_policies"] = policies
             settings["updated_at"] = self._now_iso()
             self._save_json(self.settings_file, self._merge_settings(settings))
+
+        streams = self._load_stream_entries()
+        kept_streams = []
+        for entry in streams:
+            owner = str(entry.get("owner_node_id") or "").strip()
+            if owner == target:
+                payload_path = str(entry.get("payload_path") or "").strip()
+                try:
+                    if payload_path and os.path.exists(payload_path):
+                        os.remove(payload_path)
+                except Exception:
+                    pass
+                continue
+            kept_streams.append(entry)
+        if len(kept_streams) != len(streams):
+            self._save_stream_entries(kept_streams)
 
         ok, tunnel_result = self.apply_tunnel_config()
         if not ok:
@@ -1310,6 +2219,7 @@ class BuddyBackupManager:
         peers = []
         for peer in peers_map.values():
             item = dict(peer if isinstance(peer, dict) else {})
+            item.pop("api_secret", None)
             node_id = str(item.get("node_id") or "").strip()
             policy = self._normalize_peer_policies({node_id: policies.get(node_id, {})}).get(node_id, {})
             if not policy:
@@ -1340,6 +2250,7 @@ class BuddyBackupManager:
             peers.append(item)
         peers = sorted(peers, key=lambda item: str(item.get("name", "")).lower())
         settings = self._public_settings(settings_full)
+        runtime_state = self._load_runtime()
         wg_cmd = self._wg_cmd()
         wg_quick_cmd = self._wg_quick_cmd()
         key_source = str(identity.get("key_source") or "wireguard")
@@ -1351,7 +2262,8 @@ class BuddyBackupManager:
             "peers": peers,
             "tunnel": runtime,
             "settings": settings,
-            "mode": "configuration-only",
+            "transfer": runtime_state,
+            "mode": "transfer-ready",
             "requirements": {
                 "linux": platform.system() == "Linux",
                 "wg_cmd": wg_cmd or "",

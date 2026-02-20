@@ -251,8 +251,44 @@
             min-height: 96px;
         }
 
+        .buddy-transfer-controls {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto auto;
+            gap: 8px;
+            align-items: end;
+            margin-bottom: 12px;
+        }
+
+        .buddy-remote-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .buddy-remote-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 10px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: var(--bg-body);
+        }
+
+        .buddy-remote-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            min-width: 0;
+        }
+
         @media (max-width: 980px) {
             .buddy-pairing-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .buddy-transfer-controls {
                 grid-template-columns: 1fr;
             }
         }
@@ -567,10 +603,27 @@
 
                 <div class="card">
                     <div class="card-header">
+                        <div class="card-title">Buddy Transfer & Restore</div>
+                    </div>
+                    <div class="buddy-transfer-controls">
+                        <div class="setting-group" style="margin-bottom:0;">
+                            <label class="setting-label" for="buddy-transfer-peer">Buddy</label>
+                            <select id="buddy-transfer-peer" class="select-input"></select>
+                        </div>
+                        <button id="buddy-sync-now-btn" class="btn-primary">Sync Now</button>
+                        <button id="buddy-refresh-remote-btn" class="btn-secondary">Refresh Remote Backups</button>
+                    </div>
+                    <div id="buddy-remote-snapshots-list" class="buddy-remote-list">
+                        <div class="metric-sub">Select a buddy and refresh remote backups.</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
                         <div class="card-title">Buddy Backup Settings</div>
                         <button id="buddy-save-settings-btn" class="btn-primary">Save Settings</button>
                     </div>
-                    <p class="metric-sub" style="margin-bottom: 10px;">Configuration for Buddy Backup. Transfer and restore logic arrives in 0.8.0.</p>
+                    <p class="metric-sub" style="margin-bottom: 10px;">Configuration for Buddy Backup. Transfer and restore are available in 0.8.0.</p>
                     <div class="setting-group">
                         <label class="setting-label" for="buddy-incoming-path">Local Incoming Data Path (Subvolume)</label>
                         <select id="buddy-incoming-path" class="select-input"></select>

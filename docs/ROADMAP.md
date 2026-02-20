@@ -53,9 +53,9 @@ Release strategy: "Iterate fast, stabilize often."
 - [x] **Handshake**: Secure pairing workflow (token).
 
 ## v0.8.0 - Buddy Backup (Part II: Transfer)
-- [ ] **Snapshot Engine**: Btrfs send/receive logic.
-- [ ] **Encryption**: Client-side encryption before transfer.
-- [ ] **Restore**: Recovery workflow from remote peer.
+- [x] **Snapshot Engine**: Btrfs send/receive logic.
+- [x] **Encryption**: Client-side encryption before transfer.
+- [x] **Restore**: Recovery workflow from remote peer.
 
 ## v0.9.0 - Monitoring & Health
 - [x] **Disks**: S.M.A.R.T. monitoring and basic health checks.

@@ -5,6 +5,7 @@ let backupStatus = {};
 let backupSystemState = {};
 let buddyState = {};
 let buddySettings = {};
+let buddyRemoteSnapshots = [];
 
 function backupToken() {
     return localStorage.getItem('alvaos_token') || '';
@@ -379,6 +380,55 @@ function buddyPeerField(className, nodeId) {
         .find((el) => String(el.dataset.nodeId || '').trim() === target) || null;
 }
 
+function getBuddyTransferPeerId() {
+    const selectEl = document.getElementById('buddy-transfer-peer');
+    return String(selectEl?.value || '').trim();
+}
+
+function setBuddyTransferPeerOptions(peers) {
+    const selectEl = document.getElementById('buddy-transfer-peer');
+    if (!selectEl) return;
+    const list = Array.isArray(peers) ? peers : [];
+    const previous = String(selectEl.value || '').trim();
+    if (!list.length) {
+        selectEl.innerHTML = '<option value="">No buddy available</option>';
+        selectEl.value = '';
+        return;
+    }
+    selectEl.innerHTML = list
+        .map((peer) => `<option value="${backupEscapeHtml(peer.node_id || '')}">${backupEscapeHtml(peer.name || peer.node_id || 'Buddy')}</option>`)
+        .join('');
+    const values = new Set(list.map((peer) => String(peer.node_id || '').trim()));
+    selectEl.value = values.has(previous) ? previous : String(list[0].node_id || '');
+}
+
+function renderBuddyRemoteSnapshotsList() {
+    const container = document.getElementById('buddy-remote-snapshots-list');
+    if (!container) return;
+    if (!Array.isArray(buddyRemoteSnapshots) || !buddyRemoteSnapshots.length) {
+        container.innerHTML = '<div class="metric-sub">No remote backups available for this buddy.</div>';
+        return;
+    }
+    container.innerHTML = buddyRemoteSnapshots.map((item) => `
+        <div class="buddy-remote-item">
+            <div class="buddy-remote-meta">
+                <div><strong>${backupEscapeHtml(item.source_path || '-')}</strong></div>
+                <div class="metric-sub">Snapshot: ${backupEscapeHtml(item.snapshot_name || '-')}</div>
+                <div class="metric-sub">Created: ${backupEscapeHtml(backupFormatDate(item.created_at))}</div>
+                <div class="metric-sub">Encrypted: ${item.encrypted ? 'Yes' : 'No'} | Size: ${backupEscapeHtml(String(item.size_bytes || 0))} bytes</div>
+            </div>
+            <button
+                class="btn-secondary buddy-restore-remote-btn"
+                data-stream-id="${backupEscapeHtml(item.id || '')}"
+                data-source-path="${backupEscapeHtml(item.source_path || '')}"
+                data-encrypted="${item.encrypted ? '1' : '0'}"
+            >
+                Restore
+            </button>
+        </div>
+    `).join('');
+}
+
 function renderBuddyStatus() {
     const identity = buddyState.identity || {};
     const peers = Array.isArray(buddyState.peers) ? buddyState.peers : [];
@@ -416,8 +466,11 @@ function renderBuddyStatus() {
     }
 
     if (!peersEl) return;
+    setBuddyTransferPeerOptions(peers);
     if (!peers.length) {
         peersEl.innerHTML = '<div class="metric-sub">No buddies paired yet.</div>';
+        buddyRemoteSnapshots = [];
+        renderBuddyRemoteSnapshotsList();
         return;
     }
 
@@ -688,6 +741,7 @@ async function loadBuddyStatus() {
     buddySettings = data.settings || buddySettings || {};
     fillBuddySettingsUi();
     renderBuddyStatus();
+    await loadBuddyRemoteSnapshots();
 }
 
 async function loadBuddySettings() {
@@ -923,6 +977,89 @@ async function testBuddyPeerConnection(nodeId) {
     await loadBuddyStatus();
 }
 
+async function syncBuddyNow() {
+    const nodeId = getBuddyTransferPeerId();
+    if (!nodeId) {
+        backupNotify('Select a buddy first', 'warning');
+        return;
+    }
+    backupNotify('Starting buddy sync...', 'info');
+    const response = await backupApi('/backup/buddy/sync', {
+        method: 'POST',
+        json: { node_id: nodeId }
+    });
+    const data = await backupReadJson(response);
+    if (!response || !response.ok || !data) {
+        backupNotify(data?.error || 'Buddy sync failed', 'error');
+        return;
+    }
+    if (String(data.status || '') === 'success') {
+        backupNotify('Buddy sync completed', 'success');
+    } else if (String(data.status || '') === 'partial') {
+        backupNotify('Buddy sync completed with warnings', 'warning');
+    } else {
+        backupNotify('Buddy sync failed', 'error');
+    }
+    await loadBuddyStatus();
+    await loadBuddyRemoteSnapshots();
+}
+
+async function loadBuddyRemoteSnapshots() {
+    const nodeId = getBuddyTransferPeerId();
+    if (!nodeId) {
+        buddyRemoteSnapshots = [];
+        renderBuddyRemoteSnapshotsList();
+        return;
+    }
+    const response = await backupApi(`/backup/buddy/remote/snapshots?node_id=${encodeURIComponent(nodeId)}`);
+    const data = await backupReadJson(response);
+    if (!response || !response.ok || !data) {
+        backupNotify(data?.error || 'Failed to load remote backups', 'error');
+        return;
+    }
+    buddyRemoteSnapshots = Array.isArray(data.streams) ? data.streams : [];
+    renderBuddyRemoteSnapshotsList();
+}
+
+async function restoreBuddyRemoteSnapshot(streamId, sourcePath, encrypted) {
+    const nodeId = getBuddyTransferPeerId();
+    const stream = String(streamId || '').trim();
+    if (!nodeId || !stream) {
+        backupNotify('Select a buddy and snapshot first', 'warning');
+        return;
+    }
+    const ok = await window.showConfirm('Restore this remote snapshot to the local source path? Current local data will be moved to a pre-restore backup path.');
+    if (!ok) return;
+
+    let passphrase = '';
+    if (encrypted) {
+        const entered = window.prompt('Encryption password required for remote restore:');
+        if (entered === null) return;
+        if (!String(entered).trim()) {
+            backupNotify('Encryption password is required', 'warning');
+            return;
+        }
+        passphrase = String(entered);
+    }
+
+    const response = await backupApi('/backup/buddy/restore/remote', {
+        method: 'POST',
+        json: {
+            node_id: nodeId,
+            stream_id: stream,
+            source_path: String(sourcePath || ''),
+            encryption_passphrase: passphrase || undefined
+        }
+    });
+    const data = await backupReadJson(response);
+    if (!response || !response.ok || !data) {
+        backupNotify(data?.error || 'Remote restore failed', 'error');
+        return;
+    }
+    backupNotify('Remote restore completed', 'success');
+    await Promise.all([loadBuddyStatus(), loadDataSnapshots(), loadBuddyRemoteSnapshots()]);
+}
+
 async function loadBackupSources() {
     const response = await backupApi('/backup/sources');
     const data = await backupReadJson(response);
@@ -1039,6 +1176,9 @@ function initBackupHandlers() {
     document.getElementById('buddy-copy-token-btn')?.addEventListener('click', copyBuddyToken);
     document.getElementById('buddy-validate-token-btn')?.addEventListener('click', validateBuddyToken);
     document.getElementById('buddy-save-settings-btn')?.addEventListener('click', saveBuddySettings);
+    document.getElementById('buddy-sync-now-btn')?.addEventListener('click', syncBuddyNow);
+    document.getElementById('buddy-refresh-remote-btn')?.addEventListener('click', loadBuddyRemoteSnapshots);
+    document.getElementById('buddy-transfer-peer')?.addEventListener('change', loadBuddyRemoteSnapshots);
     document.getElementById('buddy-peers-list')?.addEventListener('click', (event) => {
         const saveBtn = event.target.closest('.buddy-save-peer-policy-btn');
         if (saveBtn) {
@@ -1053,6 +1193,15 @@ function initBackupHandlers() {
         const btn = event.target.closest('.buddy-remove-peer-btn');
         if (!btn) return;
         removeBuddyPeer(btn.dataset.nodeId || '');
+    });
+    document.getElementById('buddy-remote-snapshots-list')?.addEventListener('click', (event) => {
+        const btn = event.target.closest('.buddy-restore-remote-btn');
+        if (!btn) return;
+        restoreBuddyRemoteSnapshot(
+            btn.dataset.streamId || '',
+            btn.dataset.sourcePath || '',
+            String(btn.dataset.encrypted || '') === '1'
+        );
     });
 }
 

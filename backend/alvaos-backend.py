@@ -3100,6 +3100,140 @@ def buddy_pairing_test():
         return jsonify({'error': payload.get('error', 'Failed to test buddy connection')}), 400
     return jsonify({'success': True, **payload})
 
+@app.route('/api/v1/backup/buddy/sync', methods=['POST'])
+@require_auth
+def buddy_sync_now():
+    """Run buddy transfer sync for one peer."""
+    if buddy_backup_manager is None:
+        return jsonify({'error': 'Buddy backup manager not initialized'}), 500
+
+    data = request.get_json() or {}
+    node_id = (data.get('node_id') or '').strip()
+    sources = data.get('sources')
+    if sources is not None and not isinstance(sources, list):
+        return jsonify({'error': 'sources must be a list'}), 400
+
+    success, payload = buddy_backup_manager.sync_to_peer(node_id=node_id, sources=sources)
+    if not success:
+        return jsonify({'error': payload.get('error', 'Buddy sync failed')}), 400
+    return jsonify({'success': True, **payload})
+
+@app.route('/api/v1/backup/buddy/remote/snapshots', methods=['GET'])
+@require_auth
+def buddy_remote_snapshots():
+    """List snapshots stored on a remote buddy for this node."""
+    if buddy_backup_manager is None:
+        return jsonify({'error': 'Buddy backup manager not initialized'}), 500
+
+    node_id = (request.args.get('node_id') or '').strip()
+    success, payload = buddy_backup_manager.fetch_remote_snapshots(node_id=node_id, limit=200)
+    if not success:
+        return jsonify({'error': payload.get('error', 'Failed to load remote snapshots')}), 400
+    return jsonify({'success': True, **payload})
+
+@app.route('/api/v1/backup/buddy/restore/remote', methods=['POST'])
+@require_auth
+def buddy_remote_restore():
+    """Restore local data from a remote buddy snapshot stream."""
+    if buddy_backup_manager is None:
+        return jsonify({'error': 'Buddy backup manager not initialized'}), 500
+
+    data = request.get_json() or {}
+    node_id = (data.get('node_id') or '').strip()
+    stream_id = (data.get('stream_id') or '').strip()
+    source_path = (data.get('source_path') or '').strip()
+    encryption_passphrase = str(data.get('encryption_passphrase') or '')
+
+    success, payload = buddy_backup_manager.restore_from_remote_snapshot(
+        node_id=node_id,
+        stream_id=stream_id,
+        source_path=source_path,
+        encryption_passphrase=encryption_passphrase,
+    )
+    if not success:
+        return jsonify({'error': payload.get('error', 'Remote restore failed')}), 400
+    return jsonify({'success': True, **payload})
+
+@app.route('/api/v1/backup/buddy/peer/upload', methods=['POST'])
+def buddy_peer_upload():
+    """Receive a buddy snapshot stream payload from a paired peer."""
+    if buddy_backup_manager is None:
+        return jsonify({'error': 'Buddy backup manager not initialized'}), 500
+
+    secret = request.headers.get('X-Buddy-Secret', '')
+    if not buddy_backup_manager.verify_buddy_api_secret(secret):
+        return jsonify({'error': 'Unauthorized buddy request'}), 403
+
+    owner_node_id = (request.form.get('owner_node_id') or '').strip()
+    from_node_id = (request.form.get('from_node_id') or '').strip()
+    source_path = (request.form.get('source_path') or '').strip()
+    snapshot_name = (request.form.get('snapshot_name') or '').strip()
+    created_at = (request.form.get('created_at') or '').strip()
+    encrypted = str(request.form.get('encrypted') or '').strip().lower() in ('1', 'true', 'yes')
+    payload_file = request.files.get('payload')
+    if payload_file is None:
+        return jsonify({'error': 'payload file is required'}), 400
+
+    success, payload = buddy_backup_manager.ingest_peer_stream(
+        owner_node_id=owner_node_id,
+        from_node_id=from_node_id,
+        source_path=source_path,
+        snapshot_name=snapshot_name,
+        created_at=created_at,
+        encrypted=encrypted,
+        payload_stream=payload_file.stream,
+    )
+    if not success:
+        return jsonify({'error': payload.get('error', 'Failed to ingest buddy stream')}), 400
+    return jsonify({'success': True, **payload})
+
+@app.route('/api/v1/backup/buddy/peer/list', methods=['GET'])
+def buddy_peer_list():
+    """List snapshot streams stored for a specific owner node."""
+    if buddy_backup_manager is None:
+        return jsonify({'error': 'Buddy backup manager not initialized'}), 500
+
+    secret = request.headers.get('X-Buddy-Secret', '')
+    if not buddy_backup_manager.verify_buddy_api_secret(secret):
+        return jsonify({'error': 'Unauthorized buddy request'}), 403
+
+    owner_node_id = (request.args.get('owner_node_id') or '').strip()
+    limit = request.args.get('limit', 100)
+    try:
+        limit_int = int(limit)
+    except Exception:
+        limit_int = 100
+    success, payload = buddy_backup_manager.list_peer_streams(owner_node_id=owner_node_id, limit=limit_int)
+    if not success:
+        return jsonify({'error': payload.get('error', 'Failed to list streams')}), 400
+    return jsonify({'success': True, **payload})
+
+@app.route('/api/v1/backup/buddy/peer/download/<stream_id>', methods=['GET'])
+def buddy_peer_download(stream_id):
+    """Download one snapshot stream stored for an owner node."""
+    if buddy_backup_manager is None:
+        return jsonify({'error': 'Buddy backup manager not initialized'}), 500
+
+    secret = request.headers.get('X-Buddy-Secret', '')
+    if not buddy_backup_manager.verify_buddy_api_secret(secret):
+        return jsonify({'error': 'Unauthorized buddy request'}), 403
+
+    owner_node_id = (request.args.get('owner_node_id') or '').strip()
+    success, payload = buddy_backup_manager.get_peer_stream_payload(
+        owner_node_id=owner_node_id,
+        stream_id=stream_id,
+    )
+    if not success:
+        return jsonify({'error': payload.get('error', 'Failed to resolve stream payload')}), 404
+
+    file_path = payload.get('payload_path')
+    if not file_path or not os.path.exists(file_path):
+        return jsonify({'error': 'Stream payload not found'}), 404
+
+    directory = os.path.dirname(file_path)
+    filename = os.path.basename(file_path)
+    return send_from_directory(directory, filename, as_attachment=True)
+
 # ============================================================================
 # APP STORE & CONTAINER MANAGEMENT API
 # ============================================================================
