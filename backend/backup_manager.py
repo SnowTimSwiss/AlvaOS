@@ -337,7 +337,7 @@ class BackupManager:
             settings.get("system_backup", {}).get("target_path")
             or DEFAULT_SETTINGS["system_backup"]["target_path"]
         )
-        if system_default and system_default not in seen and not self._path_on_system_disk(system_default):
+        if system_default and system_default not in seen:
             targets.append({
                 "name": "System Default: /var/lib/alvaos/system-snapshots",
                 "path": system_default,
@@ -428,8 +428,8 @@ class BackupManager:
             sb["keep_last"] = 10
             
         sb["target_path"] = self._normalize_path(sb.get("target_path"))
-        if sb["target_path"] and self._path_on_system_disk(sb["target_path"]):
-            sb["target_path"] = ""
+        if not sb["target_path"]:
+            sb["target_path"] = self._normalize_path(DEFAULT_SETTINGS["system_backup"]["target_path"])
 
         return merged
 
@@ -578,6 +578,30 @@ class BackupManager:
         except Exception:
             pass
         return False
+
+    def _device_id_for_path(self, path: str) -> Optional[int]:
+        target = self._normalize_path(path)
+        if not target:
+            return None
+        try:
+            return int(os.stat(target).st_dev)
+        except Exception:
+            return None
+
+    def _best_temp_snapshot_parent(self, source_path: str) -> str:
+        source = self._normalize_path(source_path)
+        if not source:
+            return "/"
+        source_dev = self._device_id_for_path(source)
+        parent = self._normalize_path(os.path.dirname(source)) or "/"
+        if source_dev is None:
+            return parent
+        parent_dev = self._device_id_for_path(parent)
+        if parent_dev is not None and parent_dev == source_dev:
+            return parent
+        # Parent is on a different fs (common for /mnt/alvaos vs /mnt/alvaos/<pool>).
+        # Use source path as temp parent so snapshot creation stays on the source fs.
+        return source
 
     def _path_is_btrfs_subvolume(self, path: str) -> bool:
         if platform.system() != "Linux":
@@ -773,8 +797,6 @@ class BackupManager:
     def get_system_state(self) -> Dict:
         if platform.system() != "Linux":
             return {"supported": False, "reason": "System snapshots are supported on Linux only"}
-        if self._path_on_system_disk("/"):
-            return {"supported": False, "reason": "System-disk backup targets are disabled by policy"}
         if not self._path_is_btrfs_subvolume("/"):
             return {"supported": False, "reason": "Root filesystem is not a Btrfs subvolume"}
         return {
@@ -956,14 +978,23 @@ class BackupManager:
             return False, "btrfs command not found"
         if not bash_cmd:
             return False, "bash command not found"
-        source_parent = self._normalize_path(os.path.dirname(source_path)) or "/"
-        temp_source_snapshot = os.path.join(source_parent, name)
+        source_parent = self._best_temp_snapshot_parent(source_path)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        temp_name = f".alvaos-send-{self._slugify(name)}-{stamp}-{os.getpid()}"
+        temp_source_snapshot = os.path.join(source_parent, temp_name)
 
         mk_res, mk_err = self.run_command([mkdir_cmd, "-p", target_parent], timeout=30)
         if mk_err or not mk_res or mk_res.returncode != 0:
             return False, mk_err or "Failed to prepare target directory"
 
         ok, err = self._snapshot_direct(source_path, temp_source_snapshot)
+        if (not ok) and err and "invalid cross-device link" in str(err).lower():
+            # Retry once with source itself as parent.
+            fallback_parent = self._normalize_path(source_path)
+            fallback_snapshot = os.path.join(fallback_parent, temp_name)
+            if fallback_snapshot != temp_source_snapshot:
+                temp_source_snapshot = fallback_snapshot
+                ok, err = self._snapshot_direct(source_path, temp_source_snapshot)
         if not ok:
             return False, f"Failed to create temporary snapshot for transfer: {err}"
 
@@ -1081,11 +1112,8 @@ class BackupManager:
         settings = self.get_settings()
         sb = settings.get("system_backup", {})
         explicit_target = self._normalize_path(target_path)
-        target_base = self._normalize_path(explicit_target or sb.get("target_path"))
-        if not target_base:
-            return False, {"error": "System snapshot target path is required"}
-        if platform.system() == "Linux" and self._path_on_system_disk(target_base):
-            return False, {"error": f"System snapshot target is on the system disk and is not allowed: {target_base}"}
+        default_target = self._normalize_path(DEFAULT_SETTINGS["system_backup"]["target_path"])
+        target_base = self._normalize_path(explicit_target or sb.get("target_path") or default_target)
 
         if platform.system() == "Linux":
             if not self._path_is_btrfs_subvolume("/"):
@@ -1105,6 +1133,13 @@ class BackupManager:
                 return True, ""
 
             target_ok, target_err = _validate_target(target_base)
+            if (not target_ok) and (not explicit_target) and default_target and default_target != target_base:
+                fallback_ok, fallback_err = _validate_target(default_target)
+                if fallback_ok:
+                    target_base = default_target
+                    target_ok = True
+                else:
+                    target_err = fallback_err
             if not target_ok:
                 return False, {"error": target_err or "Failed to validate system snapshot target path"}
 

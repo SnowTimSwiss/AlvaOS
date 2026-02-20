@@ -1151,6 +1151,42 @@ class BuddyBackupManager:
         except Exception:
             return False
 
+    def _get_subvolume_id(self, path: str) -> Optional[int]:
+        target = os.path.normpath(str(path or "").strip())
+        if not target:
+            return None
+        btrfs_cmd = self._btrfs_cmd()
+        if not btrfs_cmd:
+            return None
+        res, err = self.run_command([btrfs_cmd, "subvolume", "show", target], timeout=20)
+        if err or not res or res.returncode != 0:
+            return None
+        for line in (res.stdout or "").splitlines():
+            if "Subvolume ID:" in line:
+                try:
+                    return int(line.split(":", 1)[1].strip())
+                except Exception:
+                    return None
+        return None
+
+    def _get_default_subvolume_id(self, path: str) -> Optional[int]:
+        target = os.path.normpath(str(path or "").strip())
+        if not target:
+            return None
+        btrfs_cmd = self._btrfs_cmd()
+        if not btrfs_cmd:
+            return None
+        res, err = self.run_command([btrfs_cmd, "subvolume", "get-default", target], timeout=20)
+        if err or not res or res.returncode != 0:
+            return None
+        m = re.search(r"ID\\s+(\\d+)", (res.stdout or "").strip())
+        if not m:
+            return None
+        try:
+            return int(m.group(1))
+        except Exception:
+            return None
+
     def _file_sha256(self, path: str) -> str:
         digest = hashlib.sha256()
         with open(path, "rb") as f:
@@ -2477,25 +2513,18 @@ class BuddyBackupManager:
                 "previous_backup": None,
                 "message": "Mock restore completed (non-Linux environment)",
             }
-
-        # Restoring directly onto a mounted pool root cannot be done via path rename/swap.
-        if self._is_mounted_path(target_source):
-            return False, {
-                "error": (
-                    "Restore target is a mounted filesystem root and cannot be replaced in place. "
-                    "Restore to a subvolume/share path instead (for example /mnt/alvaos/<pool>/<subvolume>)."
-                )
-            }
+        target_is_mount_root = self._is_mounted_path(target_source)
 
         btrfs_cmd = self._btrfs_cmd()
         bash_cmd = self._bash_cmd()
         if not (btrfs_cmd and bash_cmd):
             return False, {"error": "Missing required system commands (btrfs/bash)"}
 
-        target_parent = os.path.dirname(target_source.rstrip("/")) or "/"
-        ok_parent, parent_err = self._mkdir_p(target_parent)
-        if not ok_parent:
-            return False, {"error": parent_err or "Failed to prepare target parent"}
+        target_parent = target_source if target_is_mount_root else (os.path.dirname(target_source.rstrip("/")) or "/")
+        if not target_is_mount_root:
+            ok_parent, parent_err = self._mkdir_p(target_parent)
+            if not ok_parent:
+                return False, {"error": parent_err or "Failed to prepare target parent"}
         expected_name = str(snapshot_name or "").strip()
 
         # If an old receive left the same temporary snapshot behind, remove it first.
@@ -2554,6 +2583,29 @@ class BuddyBackupManager:
         if not received_path:
             extra = f" expected={expected_name or '-'} discovered={','.join(new_names) if new_names else '-'}"
             return False, {"error": f"Restore stream received, but snapshot path could not be resolved ({extra})"}
+
+        if target_is_mount_root:
+            previous_default_id = self._get_default_subvolume_id(target_source)
+            received_id = self._get_subvolume_id(received_path)
+            if not received_id:
+                return False, {"error": f"Received snapshot has no resolvable subvolume ID: {received_path}"}
+            set_res, set_err = self.run_command(
+                [btrfs_cmd, "subvolume", "set-default", str(received_id), target_source],
+                timeout=120,
+            )
+            if set_err or not set_res or set_res.returncode != 0:
+                return False, {"error": set_err or "Failed to switch default subvolume for mounted target"}
+            return True, {
+                "restored_to": target_source,
+                "previous_backup": None,
+                "previous_default_subvolume_id": previous_default_id,
+                "new_default_subvolume_id": received_id,
+                "pending_remount": True,
+                "message": (
+                    "Rollback prepared. Default subvolume switched to restored snapshot. "
+                    "Unmount/mount the pool or reboot to activate it."
+                ),
+            }
 
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
         previous_path = f"{target_source}.pre-restore-{stamp}"
