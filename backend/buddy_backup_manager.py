@@ -1142,6 +1142,15 @@ class BuddyBackupManager:
 
         return False, last_error or f"Failed to move {src} -> {dst}"
 
+    def _is_mounted_path(self, path: str) -> bool:
+        target = os.path.normpath(str(path or "").strip())
+        if not target:
+            return False
+        try:
+            return os.path.ismount(target)
+        except Exception:
+            return False
+
     def _file_sha256(self, path: str) -> str:
         digest = hashlib.sha256()
         with open(path, "rb") as f:
@@ -2467,6 +2476,15 @@ class BuddyBackupManager:
                 "restored_to": target_source,
                 "previous_backup": None,
                 "message": "Mock restore completed (non-Linux environment)",
+            }
+
+        # Restoring directly onto a mounted pool root cannot be done via path rename/swap.
+        if self._is_mounted_path(target_source):
+            return False, {
+                "error": (
+                    "Restore target is a mounted filesystem root and cannot be replaced in place. "
+                    "Restore to a subvolume/share path instead (for example /mnt/alvaos/<pool>/<subvolume>)."
+                )
             }
 
         btrfs_cmd = self._btrfs_cmd()

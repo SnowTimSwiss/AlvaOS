@@ -182,12 +182,14 @@ function renderSources() {
 function renderBuddyPeerSourcePicker(nodeId, configuredSources = []) {
     const normalizedNodeId = String(nodeId || '').trim();
     const selected = new Set((Array.isArray(configuredSources) ? configuredSources : []).map((path) => String(path)));
-    if (!backupSources.length) {
-        return '<div class="metric-sub">No available sources found.</div>';
+    const buddySources = (Array.isArray(backupSources) ? backupSources : [])
+        .filter((source) => String(source?.kind || '').toLowerCase() === 'subvolume');
+    if (!buddySources.length) {
+        return '<div class="metric-sub">No eligible subvolume sources found.</div>';
     }
     return `
         <div class="buddy-peer-sources">
-            ${backupSources.map((source) => `
+            ${buddySources.map((source) => `
                 <label class="buddy-peer-source-item">
                     <input
                         type="checkbox"
