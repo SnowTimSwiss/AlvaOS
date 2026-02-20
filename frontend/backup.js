@@ -233,9 +233,14 @@ function renderDataSnapshots(items) {
                         <td><div class="source-path" title="${backupEscapeHtml(entry.source_path)}">${backupEscapeHtml(entry.source_path || '-')}</div></td>
                         <td>${backupEscapeHtml(entry.snapshot_name || '-')}</td>
                         <td>
-                            <button class="btn-secondary backup-restore-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}" data-source-path="${backupEscapeHtml(entry.source_path || '')}">
-                                Restore
-                            </button>
+                            <div class="table-actions">
+                                <button class="btn-secondary backup-restore-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}" data-source-path="${backupEscapeHtml(entry.source_path || '')}">
+                                    Restore
+                                </button>
+                                <button class="btn-secondary backup-delete-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}">
+                                    Delete
+                                </button>
+                            </div>
                         </td>
                     </tr>
                 `).join('')}
@@ -270,9 +275,11 @@ function renderSystemSnapshots(items) {
                         <td>${backupEscapeHtml(entry.snapshot_name || '-')}</td>
                         <td><div class="source-path">${backupEscapeHtml(entry.snapshot_path || '-')}</div></td>
                         <td>
-                            <button class="btn-secondary backup-system-rollback-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}">
-                                Prepare Rollback
-                            </button>
+                            <div class="table-actions">
+                                <button class="btn-secondary backup-system-rollback-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}">
+                                    Prepare Rollback
+                                </button>
+                            </div>
                         </td>
                     </tr>
                 `).join('')}
@@ -438,14 +445,22 @@ function renderBuddyRemoteSnapshotsList() {
                 <div class="metric-sub">Created: ${backupEscapeHtml(backupFormatDate(item.created_at))}</div>
                 <div class="metric-sub">Encrypted: ${item.encrypted ? 'Yes' : 'No'} | Size: ${backupEscapeHtml(String(item.size_bytes || 0))} bytes</div>
             </div>
-            <button
-                class="btn-secondary buddy-restore-remote-btn"
-                data-stream-id="${backupEscapeHtml(item.id || '')}"
-                data-source-path="${backupEscapeHtml(item.source_path || '')}"
-                data-encrypted="${item.encrypted ? '1' : '0'}"
-            >
-                Restore
-            </button>
+            <div class="buddy-remote-actions">
+                <button
+                    class="btn-secondary buddy-restore-remote-btn"
+                    data-stream-id="${backupEscapeHtml(item.id || '')}"
+                    data-source-path="${backupEscapeHtml(item.source_path || '')}"
+                    data-encrypted="${item.encrypted ? '1' : '0'}"
+                >
+                    Restore
+                </button>
+                <button
+                    class="btn-secondary buddy-delete-remote-btn"
+                    data-stream-id="${backupEscapeHtml(item.id || '')}"
+                >
+                    Delete
+                </button>
+            </div>
         </div>
     `).join('');
 }
@@ -737,6 +752,25 @@ async function restoreDataSnapshot(snapshotPath, sourcePath) {
     }
     backupNotify('Snapshot restore completed', 'success');
     await loadDataSnapshots();
+}
+
+async function deleteDataSnapshot(snapshotPath) {
+    const snap = String(snapshotPath || '').trim();
+    if (!snap) return;
+    const ok = await window.showConfirm('Delete this snapshot? This cannot be undone.');
+    if (!ok) return;
+
+    const response = await backupApi('/backup/snapshots', {
+        method: 'DELETE',
+        json: { snapshot_path: snap }
+    });
+    const data = await backupReadJson(response);
+    if (!response || !response.ok || !data) {
+        backupNotify(data?.error || 'Failed to delete snapshot', 'error');
+        return;
+    }
+    backupNotify('Snapshot deleted', 'success');
+    await Promise.all([loadDataSnapshots(), loadBackupStatus()]);
 }
 
 async function prepareSystemRollback(snapshotPath) {
@@ -1134,6 +1168,32 @@ async function restoreBuddyRemoteSnapshot(streamId, sourcePath, encrypted) {
     await Promise.all([loadBuddyStatus(), loadDataSnapshots(), loadBuddyRemoteSnapshots()]);
 }
 
+async function deleteBuddyRemoteSnapshot(streamId) {
+    const nodeId = getBuddyTransferPeerId();
+    const stream = String(streamId || '').trim();
+    if (!nodeId || !stream) {
+        backupNotify('Select a buddy and snapshot first', 'warning');
+        return;
+    }
+    const ok = await window.showConfirm('Delete this remote snapshot on your buddy? This cannot be undone.');
+    if (!ok) return;
+
+    const response = await backupApi('/backup/buddy/remote/snapshot', {
+        method: 'DELETE',
+        json: {
+            node_id: nodeId,
+            stream_id: stream
+        }
+    });
+    const data = await backupReadJson(response);
+    if (!response || !response.ok || !data) {
+        backupNotify(data?.error || 'Failed to delete remote snapshot', 'error');
+        return;
+    }
+    backupNotify('Remote snapshot deleted', 'success');
+    await loadBuddyRemoteSnapshots();
+}
+
 async function loadBackupSources() {
     const response = await backupApi('/backup/sources');
     const data = await backupReadJson(response);
@@ -1232,6 +1292,11 @@ function initBackupHandlers() {
 
     // Delegate Event Listeners for Lists
     document.getElementById('pool-snapshots-list')?.addEventListener('click', (event) => {
+        const deleteBtn = event.target.closest('.backup-delete-btn');
+        if (deleteBtn) {
+            deleteDataSnapshot(deleteBtn.dataset.snapshotPath || '');
+            return;
+        }
         const btn = event.target.closest('.backup-restore-btn');
         if (!btn) return;
         restoreDataSnapshot(btn.dataset.snapshotPath || '', btn.dataset.sourcePath || '');
@@ -1283,6 +1348,11 @@ function initBackupHandlers() {
         loadBuddyRemoteSnapshots();
     });
     document.getElementById('buddy-remote-snapshots-list')?.addEventListener('click', (event) => {
+        const deleteBtn = event.target.closest('.buddy-delete-remote-btn');
+        if (deleteBtn) {
+            deleteBuddyRemoteSnapshot(deleteBtn.dataset.streamId || '');
+            return;
+        }
         const btn = event.target.closest('.buddy-restore-remote-btn');
         if (!btn) return;
         restoreBuddyRemoteSnapshot(

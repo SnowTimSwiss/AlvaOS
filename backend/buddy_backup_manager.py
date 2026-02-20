@@ -941,6 +941,45 @@ class BuddyBackupManager:
                 names.append(name)
         return sorted(list(set(names)))
 
+    def _path_is_within_parent(self, path: str, parent: str) -> bool:
+        target = os.path.normpath(str(path or "").strip())
+        base = os.path.normpath(str(parent or "").strip())
+        if not target or not base:
+            return False
+        if base == os.sep:
+            return target.startswith(os.sep)
+        return target == base or target.startswith(base + os.sep)
+
+    def _extract_receive_exists_name(self, error_text: str) -> str:
+        text = str(error_text or "")
+        match = re.search(r"creating subvolume\s+(.+?)\s+failed:\s*File exists", text, re.IGNORECASE)
+        if not match:
+            return ""
+        name = str(match.group(1) or "").strip().strip("'\"")
+        if not name:
+            return ""
+        name = os.path.basename(name.rstrip("/"))
+        if name in ("", ".", ".."):
+            return ""
+        return name
+
+    def _delete_subvolume_if_exists(self, subvolume_path: str, btrfs_cmd: str) -> Tuple[bool, str, bool]:
+        target = os.path.normpath(str(subvolume_path or "").strip())
+        if not target:
+            return False, "Invalid subvolume path", False
+
+        exists = os.path.exists(target)
+        is_subvolume = self._path_is_btrfs_subvolume(target)
+        if not exists and not is_subvolume:
+            return True, "", False
+        if not is_subvolume:
+            return False, f"Path exists but is not a Btrfs subvolume: {target}", False
+
+        res, err = self.run_command([btrfs_cmd, "subvolume", "delete", target], timeout=300)
+        if err or not res or res.returncode != 0:
+            return False, err or f"Failed to delete existing subvolume: {target}", False
+        return True, "", True
+
     def _mkdir_p(self, path: str) -> Tuple[bool, str]:
         target = str(path or "").strip()
         if not target:
@@ -1784,6 +1823,43 @@ class BuddyBackupManager:
             return True, {"stream": self._public_stream_entry(item), "payload_path": payload_path}
         return False, {"error": "Stream not found"}
 
+    def delete_peer_stream(self, owner_node_id: str, stream_id: str) -> Tuple[bool, Dict]:
+        owner = str(owner_node_id or "").strip()
+        sid = str(stream_id or "").strip()
+        if not owner:
+            return False, {"error": "owner_node_id is required"}
+        if not sid:
+            return False, {"error": "stream_id is required"}
+
+        entries = self._load_stream_entries()
+        target_entry = None
+        filtered = []
+        for item in entries:
+            item_owner = str(item.get("owner_node_id") or "").strip()
+            item_id = str(item.get("id") or "").strip()
+            if item_owner == owner and item_id == sid and target_entry is None:
+                target_entry = item
+                continue
+            filtered.append(item)
+
+        if target_entry is None:
+            return False, {"error": "Stream not found"}
+
+        payload_path = str(target_entry.get("payload_path") or "").strip()
+        payload_removed = False
+        if payload_path and os.path.exists(payload_path):
+            try:
+                os.remove(payload_path)
+                payload_removed = True
+            except Exception as exc:
+                return False, {"error": f"Failed to delete stream payload: {exc}"}
+
+        self._save_stream_entries(filtered)
+        return True, {
+            "stream": self._public_stream_entry(target_entry),
+            "payload_removed": payload_removed,
+        }
+
     def _create_send_stream(self, source_path: str) -> Tuple[bool, Dict]:
         source = str(source_path or "").strip()
         if not source.startswith("/"):
@@ -2042,6 +2118,56 @@ class BuddyBackupManager:
                 last_error = str(exc)
         return False, {"error": last_error}
 
+    def delete_remote_snapshot(self, node_id: str, stream_id: str) -> Tuple[bool, Dict]:
+        target = str(node_id or "").strip()
+        sid = str(stream_id or "").strip()
+        if not target:
+            return False, {"error": "node_id is required"}
+        if not sid:
+            return False, {"error": "stream_id is required"}
+
+        peers = self._load_peers()
+        peer = peers.get(target)
+        if not isinstance(peer, dict):
+            return False, {"error": "Peer not found"}
+
+        remote_secret = str(peer.get("api_secret") or "").strip()
+        if not remote_secret:
+            return False, {"error": "Peer is missing API secret. Re-pair to enable transfer."}
+
+        identity = self._identity_public()
+        owner_node_id = str(identity.get("node_id") or "")
+        params = {"owner_node_id": owner_node_id}
+        urls = self._peer_api_urls(peer, f"/api/v1/backup/buddy/peer/delete/{sid}")
+        if not urls:
+            return False, {"error": "Peer API endpoint is not configured"}
+
+        last_error = "Failed to delete remote snapshot"
+        for url in urls:
+            verify_tls = False if url.startswith("https://") else True
+            try:
+                response = requests.delete(
+                    url,
+                    headers={"X-Buddy-Secret": remote_secret},
+                    params=params,
+                    timeout=30,
+                    verify=verify_tls,
+                )
+                try:
+                    body = response.json() if response.content else {}
+                except Exception:
+                    body = {}
+                if response.status_code >= 200 and response.status_code < 300 and not body.get("error"):
+                    return True, {
+                        "node_id": target,
+                        "deleted": body.get("deleted", {}),
+                    }
+                last_error = body.get("error") or f"HTTP {response.status_code}"
+                return False, {"error": last_error}
+            except Exception as exc:
+                last_error = str(exc)
+        return False, {"error": last_error}
+
     def _download_remote_stream(self, peer: Dict, stream_id: str, owner_node_id: str, destination_path: str) -> Tuple[bool, str]:
         remote_secret = str(peer.get("api_secret") or "").strip()
         urls = self._peer_api_urls(peer, f"/api/v1/backup/buddy/peer/download/{stream_id}")
@@ -2099,12 +2225,34 @@ class BuddyBackupManager:
         if not ok_parent:
             return False, {"error": parent_err or "Failed to prepare target parent"}
         expected_name = str(snapshot_name or "").strip()
+
+        # If an old receive left the same temporary snapshot behind, remove it first.
+        if expected_name:
+            expected_path = os.path.normpath(os.path.join(target_parent, expected_name))
+            if self._path_is_within_parent(expected_path, target_parent) and expected_path != os.path.normpath(target_parent):
+                cleanup_ok, cleanup_err, _ = self._delete_subvolume_if_exists(expected_path, btrfs_cmd)
+                if not cleanup_ok:
+                    return False, {"error": cleanup_err or f"Failed to prepare restore target: {expected_path}"}
+
         before_names = set(self._list_btrfs_subvolume_names_under(target_parent))
 
         receive_cmd = f"{shlex.quote(btrfs_cmd)} receive {shlex.quote(target_parent)} < {shlex.quote(stream_path)}"
         recv_res, recv_err = self.run_command([bash_cmd, "-lc", receive_cmd], timeout=1800)
         if recv_err or not recv_res or recv_res.returncode != 0:
-            return False, {"error": recv_err or "Failed to receive Btrfs stream"}
+            # Retry once if receive failed because a subvolume from a previous run already exists.
+            collision_name = self._extract_receive_exists_name(recv_err or "")
+            retried = False
+            if collision_name:
+                collision_path = os.path.normpath(os.path.join(target_parent, collision_name))
+                if self._path_is_within_parent(collision_path, target_parent) and collision_path != os.path.normpath(target_parent):
+                    cleanup_ok, cleanup_err, cleaned = self._delete_subvolume_if_exists(collision_path, btrfs_cmd)
+                    if cleanup_ok and cleaned:
+                        retried = True
+                        recv_res, recv_err = self.run_command([bash_cmd, "-lc", receive_cmd], timeout=1800)
+                    elif not cleanup_ok:
+                        return False, {"error": cleanup_err or f"Failed to clear existing receive subvolume: {collision_path}"}
+            if (not retried) or recv_err or not recv_res or recv_res.returncode != 0:
+                return False, {"error": recv_err or "Failed to receive Btrfs stream"}
 
         received_path = ""
         if expected_name:

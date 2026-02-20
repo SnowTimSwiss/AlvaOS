@@ -453,6 +453,46 @@ class BackupManager:
     def list_system_snapshots(self) -> List[Dict]:
         return self.list_snapshots(snapshot_class="system")
 
+    def delete_snapshot(self, snapshot_path: str) -> Tuple[bool, Dict]:
+        snapshot = self._normalize_path(snapshot_path)
+        if not snapshot:
+            return False, {"error": "snapshot_path is required"}
+
+        with self._job_lock:
+            entries = self._load_json(self.snapshots_file, [])
+            if not isinstance(entries, list):
+                entries = []
+
+            matching = [
+                item for item in entries
+                if self._normalize_path(item.get("snapshot_path")) == snapshot
+            ]
+
+            path_exists = os.path.exists(snapshot)
+            if platform.system() == "Linux" and not path_exists:
+                # Fall back to subvolume metadata check for non-traversable paths.
+                path_exists = self._path_is_btrfs_subvolume(snapshot)
+
+            if not matching and not path_exists:
+                return False, {"error": f"Snapshot not found: {snapshot}"}
+
+            if path_exists and platform.system() == "Linux":
+                if not self._delete_snapshot_path(snapshot):
+                    return False, {"error": f"Failed to delete snapshot path: {snapshot}"}
+
+            if matching:
+                filtered = [
+                    item for item in entries
+                    if self._normalize_path(item.get("snapshot_path")) != snapshot
+                ]
+                self._save_snapshots(filtered)
+
+            return True, {
+                "snapshot_path": snapshot,
+                "deleted_path": bool(path_exists),
+                "deleted_metadata": bool(matching),
+            }
+
     def _save_snapshots(self, entries: List[Dict]) -> None:
         if len(entries) > 1000:
             entries = entries[-1000:]

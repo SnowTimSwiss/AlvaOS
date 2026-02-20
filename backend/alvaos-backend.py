@@ -2770,7 +2770,7 @@ def get_backup_targets():
         return jsonify({'error': 'Backup manager not initialized'}), 500
     return jsonify({'targets': backup_manager.get_target_locations()})
 
-@app.route('/api/v1/backup/snapshots', methods=['GET', 'POST'])
+@app.route('/api/v1/backup/snapshots', methods=['GET', 'POST', 'DELETE'])
 @require_auth
 def backup_snapshots():
     """List snapshots or create a new snapshot."""
@@ -2781,6 +2781,17 @@ def backup_snapshots():
         source_path = (request.args.get('source_path') or '').strip() or None
         snapshots = backup_manager.list_snapshots(source_path=source_path)
         return jsonify({'snapshots': snapshots})
+
+    if request.method == 'DELETE':
+        data = request.get_json(silent=True) or {}
+        snapshot_path = (data.get('snapshot_path') or request.args.get('snapshot_path') or '').strip()
+        if not snapshot_path:
+            return jsonify({'error': 'snapshot_path is required'}), 400
+
+        success, payload = backup_manager.delete_snapshot(snapshot_path=snapshot_path)
+        if not success:
+            return jsonify({'error': payload.get('error', 'Failed to delete snapshot')}), 400
+        return jsonify({'success': True, 'result': payload})
 
     data = request.get_json() or {}
     source_path = (data.get('source_path') or '').strip()
@@ -3131,6 +3142,26 @@ def buddy_remote_snapshots():
         return jsonify({'error': payload.get('error', 'Failed to load remote snapshots')}), 400
     return jsonify({'success': True, **payload})
 
+@app.route('/api/v1/backup/buddy/remote/snapshot', methods=['DELETE'])
+@require_auth
+def buddy_remote_snapshot_delete():
+    """Delete one snapshot stream stored on a remote buddy for this node."""
+    if buddy_backup_manager is None:
+        return jsonify({'error': 'Buddy backup manager not initialized'}), 500
+
+    data = request.get_json(silent=True) or {}
+    node_id = (data.get('node_id') or request.args.get('node_id') or '').strip()
+    stream_id = (data.get('stream_id') or request.args.get('stream_id') or '').strip()
+    if not node_id:
+        return jsonify({'error': 'node_id is required'}), 400
+    if not stream_id:
+        return jsonify({'error': 'stream_id is required'}), 400
+
+    success, payload = buddy_backup_manager.delete_remote_snapshot(node_id=node_id, stream_id=stream_id)
+    if not success:
+        return jsonify({'error': payload.get('error', 'Failed to delete remote snapshot')}), 400
+    return jsonify({'success': True, **payload})
+
 @app.route('/api/v1/backup/buddy/restore/remote', methods=['POST'])
 @require_auth
 def buddy_remote_restore():
@@ -3233,6 +3264,25 @@ def buddy_peer_download(stream_id):
     directory = os.path.dirname(file_path)
     filename = os.path.basename(file_path)
     return send_from_directory(directory, filename, as_attachment=True)
+
+@app.route('/api/v1/backup/buddy/peer/delete/<stream_id>', methods=['DELETE'])
+def buddy_peer_delete(stream_id):
+    """Delete one snapshot stream payload stored for an owner node."""
+    if buddy_backup_manager is None:
+        return jsonify({'error': 'Buddy backup manager not initialized'}), 500
+
+    secret = request.headers.get('X-Buddy-Secret', '')
+    if not buddy_backup_manager.verify_buddy_api_secret(secret):
+        return jsonify({'error': 'Unauthorized buddy request'}), 403
+
+    owner_node_id = (request.args.get('owner_node_id') or '').strip()
+    success, payload = buddy_backup_manager.delete_peer_stream(
+        owner_node_id=owner_node_id,
+        stream_id=stream_id,
+    )
+    if not success:
+        return jsonify({'error': payload.get('error', 'Failed to delete stream')}), 404
+    return jsonify({'success': True, 'deleted': payload.get('stream', {}), 'payload_removed': payload.get('payload_removed', False)})
 
 # ============================================================================
 # APP STORE & CONTAINER MANAGEMENT API

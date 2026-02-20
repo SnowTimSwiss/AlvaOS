@@ -13,6 +13,73 @@
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="notifications.css">
     <style>
+        .backup-page .tab-panel.active {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .backup-page .card {
+            margin-bottom: 0;
+            padding: 12px;
+        }
+
+        .backup-page .card-header {
+            margin-bottom: 10px;
+        }
+
+        .backup-page .page-intro {
+            margin-bottom: 18px;
+        }
+
+        .backup-page .page-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .backup-page .page-subtitle {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        .card-header-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .card-help {
+            margin-bottom: 10px;
+        }
+
+        .table-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .table-actions .btn-secondary {
+            padding: 0.4rem 0.75rem;
+            font-size: 0.82rem;
+        }
+
+        .buddy-pairing-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px 12px;
+        }
+
+        .buddy-pairing-grid .setting-group {
+            margin-bottom: 0;
+        }
+
+        .buddy-pairing-grid .setting-group.full {
+            grid-column: 1 / -1;
+        }
+
         .sources-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -279,6 +346,7 @@
             display: flex;
             gap: 8px;
             flex-wrap: wrap;
+            margin-top: 8px;
         }
 
         .buddy-peer-sources {
@@ -374,13 +442,43 @@
             min-width: 0;
         }
 
+        .buddy-remote-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            align-items: flex-end;
+            min-width: 140px;
+        }
+
         @media (max-width: 980px) {
             .buddy-restore-layout {
                 grid-template-columns: 1fr;
             }
+
+            .buddy-pairing-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .buddy-remote-actions {
+                min-width: 0;
+                align-items: stretch;
+                width: 100%;
+            }
         }
 
         @media (max-width: 760px) {
+            .table-actions {
+                width: 100%;
+            }
+
+            .table-actions .btn-secondary {
+                width: 100%;
+            }
+
+            .buddy-remote-item {
+                flex-direction: column;
+            }
+
             .buddy-peer-top {
                 flex-direction: column;
             }
@@ -439,19 +537,19 @@
             </div>
         </header>
 
-        <div class="content-scroll">
+        <div class="content-scroll backup-page">
             <div id="update-banner-slot"></div>
-            <div style="margin-bottom: 24px;">
-                <h1 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 4px;">Local Backup</h1>
-                <p style="color: var(--text-secondary); font-size: 0.95rem;">
+            <div class="page-intro">
+                <h1 class="page-title">Local Backup</h1>
+                <p class="page-subtitle">
                     Manage data and system backups.
                 </p>
             </div>
 
             <div class="tab-bar">
-                <button class="tab-btn active" data-tab="pool-backup">Pool Backup</button>
-                <button class="tab-btn" data-tab="system-backup">System Backup</button>
-                <button class="tab-btn" data-tab="buddy-backup">Buddy Backup</button>
+                <button class="tab-btn active" data-tab="pool-backup">Pool</button>
+                <button class="tab-btn" data-tab="system-backup">System</button>
+                <button class="tab-btn" data-tab="buddy-backup">Buddy</button>
             </div>
 
             <!-- POOL BACKUP TAB -->
@@ -460,7 +558,7 @@
                 <!-- Status & Manual Run -->
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title">Pool Backup Status</div>
+                        <div class="card-title">Status & Run</div>
                         <button id="pool-run-btn" class="btn-primary">Backup Now</button>
                     </div>
                     <div class="backup-status-row">
@@ -478,10 +576,10 @@
                 <!-- Sources -->
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title">Backup Sources</div>
+                        <div class="card-title">Sources</div>
                         <button id="pool-sources-refresh-btn" class="btn-secondary">Refresh</button>
                     </div>
-                    <p class="metric-sub" style="margin-bottom: 10px;">Select pools or subvolumes to include in the backup.</p>
+                    <p class="metric-sub card-help">Select pools or subvolumes to include in the backup.</p>
                     <div id="backup-sources" class="sources-grid">
                         <div class="metric-sub">Loading sources...</div>
                     </div>
@@ -490,7 +588,7 @@
                 <!-- Settings -->
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title">Schedule Settings</div>
+                        <div class="card-title">Schedule</div>
                         <button id="pool-save-settings-btn" class="btn-primary">Save Settings</button>
                     </div>
                     
@@ -528,7 +626,7 @@
                 <!-- Snapshots List -->
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title">Existing Snapshots</div>
+                        <div class="card-title">Snapshots</div>
                         <button id="pool-snapshots-refresh-btn" class="btn-secondary">Refresh List</button>
                     </div>
                     <div id="pool-snapshots-list">
@@ -543,7 +641,7 @@
                 <!-- Status & Manual Run -->
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title">System Backup Status</div>
+                        <div class="card-title">Status & Run</div>
                         <button id="system-run-btn" class="btn-primary">Backup Now</button>
                     </div>
                     <div class="backup-status-row">
@@ -572,7 +670,7 @@
                 <!-- Settings -->
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title">Schedule Settings</div>
+                        <div class="card-title">Schedule</div>
                         <button id="system-save-settings-btn" class="btn-primary">Save Settings</button>
                     </div>
                     
@@ -608,7 +706,7 @@
                 <!-- Snapshots List -->
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title">System Snapshots</div>
+                        <div class="card-title">Snapshots</div>
                         <button id="system-snapshots-refresh-btn" class="btn-secondary">Refresh List</button>
                     </div>
                     <div id="system-snapshots-list">
@@ -624,8 +722,8 @@
             <div class="tab-panel" id="tab-buddy-backup">
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title">Buddy Backup Status</div>
-                        <div style="display:flex; gap:8px;">
+                        <div class="card-title">Status & Connectivity</div>
+                        <div class="card-header-actions">
                             <button id="buddy-refresh-btn" class="btn-secondary">Refresh</button>
                             <button id="buddy-restart-tunnel-btn" class="btn-secondary">Restart Tunnel</button>
                         </div>
@@ -658,25 +756,27 @@
                     <div class="card-header">
                         <div class="card-title">Pairing</div>
                     </div>
-                    <p class="metric-sub" style="margin-bottom: 10px;">Generate your token or paste your buddy token here. No manual IP setup required.</p>
-                    <div class="setting-group">
-                        <label class="setting-label" for="buddy-token-expiry">Token Validity (minutes)</label>
-                        <input id="buddy-token-expiry" type="number" min="0" max="43200" value="0" class="select-input">
-                        <p class="metric-sub">`0` = valid until one buddy has paired successfully.</p>
-                    </div>
-                    <div class="setting-group">
-                        <label class="setting-label" for="buddy-generated-token">Your Pairing Token</label>
-                        <textarea id="buddy-generated-token" class="select-input buddy-token-area" rows="4" readonly></textarea>
-                        <div class="buddy-inline-actions" style="margin-top: 8px;">
-                            <button id="buddy-generate-token-btn" class="btn-primary">Generate Token</button>
-                            <button id="buddy-copy-token-btn" class="btn-secondary">Copy Token</button>
+                    <p class="metric-sub card-help">Generate your token or paste your buddy token here. No manual IP setup required.</p>
+                    <div class="buddy-pairing-grid">
+                        <div class="setting-group full">
+                            <label class="setting-label" for="buddy-token-expiry">Token Validity (minutes)</label>
+                            <input id="buddy-token-expiry" type="number" min="0" max="43200" value="0" class="select-input">
+                            <p class="metric-sub">`0` = valid until one buddy has paired successfully.</p>
                         </div>
-                    </div>
-                    <div class="setting-group">
-                        <label class="setting-label" for="buddy-token-input">Buddy Token</label>
-                        <textarea id="buddy-token-input" class="select-input buddy-token-area" rows="4" placeholder="Paste buddy pairing token"></textarea>
-                        <div class="buddy-inline-actions" style="margin-top: 8px;">
-                            <button id="buddy-validate-token-btn" class="btn-primary">Pair With Buddy</button>
+                        <div class="setting-group">
+                            <label class="setting-label" for="buddy-generated-token">Your Pairing Token</label>
+                            <textarea id="buddy-generated-token" class="select-input buddy-token-area" rows="4" readonly></textarea>
+                            <div class="buddy-inline-actions">
+                                <button id="buddy-generate-token-btn" class="btn-primary">Generate Token</button>
+                                <button id="buddy-copy-token-btn" class="btn-secondary">Copy Token</button>
+                            </div>
+                        </div>
+                        <div class="setting-group">
+                            <label class="setting-label" for="buddy-token-input">Buddy Token</label>
+                            <textarea id="buddy-token-input" class="select-input buddy-token-area" rows="4" placeholder="Paste buddy pairing token"></textarea>
+                            <div class="buddy-inline-actions">
+                                <button id="buddy-validate-token-btn" class="btn-primary">Pair With Buddy</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -718,7 +818,7 @@
                         <div class="card-title">Buddy Defaults & Security</div>
                         <button id="buddy-save-settings-btn" class="btn-primary">Save Settings</button>
                     </div>
-                    <p class="metric-sub" style="margin-bottom: 10px;">Per-buddy schedule and source settings are configured inside each buddy card above.</p>
+                    <p class="metric-sub card-help">Per-buddy schedule and source settings are configured inside each buddy card above.</p>
                     <div class="setting-group">
                         <label class="setting-label" for="buddy-incoming-path">Local Incoming Data Path (Subvolume)</label>
                         <select id="buddy-incoming-path" class="select-input"></select>
