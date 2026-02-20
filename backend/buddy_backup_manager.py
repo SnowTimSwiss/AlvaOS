@@ -1635,15 +1635,23 @@ class BuddyBackupManager:
         source = str(source_path or "").strip()
         if not source.startswith("/"):
             return False, {"error": "source_path must be an absolute path"}
-        if not os.path.exists(source):
-            return False, {"error": f"Source path not found: {source}"}
         if platform.system() != "Linux":
             return False, {"error": "Buddy transfer is supported on Linux only"}
 
         btrfs_cmd = self._btrfs_cmd()
         if not btrfs_cmd:
             return False, {"error": "btrfs command not found"}
-        if not self._path_is_btrfs_subvolume(source):
+        # `os.path.exists()` can return False for non-root service users on paths
+        # that are present but not traversable. Validate with btrfs metadata first.
+        source_is_subvolume = self._path_is_btrfs_subvolume(source)
+        if not source_is_subvolume:
+            if not os.path.exists(source):
+                return False, {
+                    "error": (
+                        f"Source path not found or not accessible by backend user: {source}. "
+                        "If this path exists, ensure backend permissions or re-select the subvolume source."
+                    )
+                }
             return False, {"error": f"Source path is not a Btrfs subvolume: {source}"}
 
         source_parent = os.path.dirname(source.rstrip("/")) or "/"

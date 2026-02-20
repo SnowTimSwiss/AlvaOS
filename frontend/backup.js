@@ -511,54 +511,64 @@ function renderBuddyStatus() {
         return `
         <div class="buddy-peer-card">
             <div class="buddy-peer-main">
-                <div class="buddy-peer-header">
-                    <strong>${backupEscapeHtml(peer.name || peer.node_id || 'Buddy')}</strong>
-                    <span class="${onlineClass}">Online: ${onlineText}</span>
-                    <span class="${connectedClass}">Connected: ${connectedText}</span>
+                <div class="buddy-peer-top">
+                    <div>
+                        <div class="buddy-peer-header">
+                            <strong>${backupEscapeHtml(peer.name || peer.node_id || 'Buddy')}</strong>
+                            <span class="${onlineClass}">Online: ${onlineText}</span>
+                            <span class="${connectedClass}">Connected: ${connectedText}</span>
+                        </div>
+                        <div class="metric-sub mono-text">${backupEscapeHtml(peer.node_id || '-')}</div>
+                    </div>
+                    <div class="buddy-peer-actions">
+                        <button class="btn-primary buddy-backup-now-peer-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Backup Now</button>
+                        <button class="btn-secondary buddy-test-peer-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Test Connection</button>
+                        <button class="btn-secondary buddy-remove-peer-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Remove</button>
+                    </div>
                 </div>
-                <div class="metric-sub mono-text">${backupEscapeHtml(peer.node_id || '-')}</div>
-                <div class="metric-sub">Endpoint: ${backupEscapeHtml(peer.endpoint || '(not set)')}</div>
-                <div class="metric-sub">Tunnel IP: ${backupEscapeHtml(peer.tunnel_ip || '-')}</div>
-                <div class="metric-sub">Status: ${backupEscapeHtml(peer.status || 'unknown')}</div>
-                <div class="metric-sub">Last Handshake: ${backupEscapeHtml(handshakeText)}</div>
+                <div class="buddy-peer-meta-grid">
+                    <div class="metric-sub buddy-peer-meta-item">Endpoint: ${backupEscapeHtml(peer.endpoint || '(not set)')}</div>
+                    <div class="metric-sub buddy-peer-meta-item">Tunnel IP: ${backupEscapeHtml(peer.tunnel_ip || '-')}</div>
+                    <div class="metric-sub buddy-peer-meta-item">Status: ${backupEscapeHtml(peer.status || 'unknown')}</div>
+                    <div class="metric-sub buddy-peer-meta-item">Last Handshake: ${backupEscapeHtml(handshakeText)}</div>
+                </div>
                 ${peer.last_error ? `<div class="metric-sub" style="color: var(--error);">Error: ${backupEscapeHtml(peer.last_error)}</div>` : ''}
                 <div class="buddy-peer-policy">
-                    <div class="setting-group">
-                        <label class="setting-label">Send To This Buddy</label>
-                        <label class="toggle">
-                            <input type="checkbox" class="buddy-peer-enabled" data-node-id="${backupEscapeHtml(peer.node_id || '')}" ${peer.policy?.enabled !== false ? 'checked' : ''}>
-                            <span class="toggle-slider"></span>
-                        </label>
+                    <div class="buddy-peer-policy-grid">
+                        <div class="setting-group">
+                            <label class="setting-label">Send To This Buddy</label>
+                            <label class="toggle">
+                                <input type="checkbox" class="buddy-peer-enabled" data-node-id="${backupEscapeHtml(peer.node_id || '')}" ${peer.policy?.enabled !== false ? 'checked' : ''}>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-group">
+                            <label class="setting-label">Schedule Interval</label>
+                            <select class="select-input buddy-peer-interval" data-node-id="${backupEscapeHtml(peer.node_id || '')}">
+                                <option value="60" ${String(peer.policy?.interval_minutes || 1440) === '60' ? 'selected' : ''}>Every hour</option>
+                                <option value="360" ${String(peer.policy?.interval_minutes || 1440) === '360' ? 'selected' : ''}>Every 6 hours</option>
+                                <option value="720" ${String(peer.policy?.interval_minutes || 1440) === '720' ? 'selected' : ''}>Every 12 hours</option>
+                                <option value="1440" ${String(peer.policy?.interval_minutes || 1440) === '1440' ? 'selected' : ''}>Daily</option>
+                                <option value="10080" ${String(peer.policy?.interval_minutes || 1440) === '10080' ? 'selected' : ''}>Weekly</option>
+                            </select>
+                        </div>
+                        <div class="setting-group">
+                            <label class="setting-label">Preferred Send Time</label>
+                            <input type="time" class="select-input buddy-peer-send-time" data-node-id="${backupEscapeHtml(peer.node_id || '')}" value="${backupEscapeHtml(peer.policy?.send_time || '02:00')}">
+                        </div>
+                        <div class="setting-group">
+                            <label class="setting-label">Storage Limit (GB)</label>
+                            <input type="number" min="1" max="20000" class="select-input buddy-peer-quota" data-node-id="${backupEscapeHtml(peer.node_id || '')}" value="${backupEscapeHtml(String(peer.policy?.max_storage_gb || buddySettings?.incoming_quota_gb || 200))}">
+                        </div>
+                        <div class="setting-group" style="grid-column: 1 / -1;">
+                            <label class="setting-label">Outgoing Sources</label>
+                            ${renderBuddyPeerSourcePicker(peer.node_id || '', policyOutgoing)}
+                        </div>
                     </div>
-                    <div class="setting-group">
-                        <label class="setting-label">Schedule Interval</label>
-                        <select class="select-input buddy-peer-interval" data-node-id="${backupEscapeHtml(peer.node_id || '')}">
-                            <option value="60" ${String(peer.policy?.interval_minutes || 1440) === '60' ? 'selected' : ''}>Every hour</option>
-                            <option value="360" ${String(peer.policy?.interval_minutes || 1440) === '360' ? 'selected' : ''}>Every 6 hours</option>
-                            <option value="720" ${String(peer.policy?.interval_minutes || 1440) === '720' ? 'selected' : ''}>Every 12 hours</option>
-                            <option value="1440" ${String(peer.policy?.interval_minutes || 1440) === '1440' ? 'selected' : ''}>Daily</option>
-                            <option value="10080" ${String(peer.policy?.interval_minutes || 1440) === '10080' ? 'selected' : ''}>Weekly</option>
-                        </select>
+                    <div class="buddy-peer-policy-footer">
+                        <button class="btn-secondary buddy-save-peer-policy-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Save Buddy Policy</button>
                     </div>
-                    <div class="setting-group">
-                        <label class="setting-label">Preferred Send Time</label>
-                        <input type="time" class="select-input buddy-peer-send-time" data-node-id="${backupEscapeHtml(peer.node_id || '')}" value="${backupEscapeHtml(peer.policy?.send_time || '02:00')}">
-                    </div>
-                    <div class="setting-group">
-                        <label class="setting-label">Storage Limit For This Buddy (GB)</label>
-                        <input type="number" min="1" max="20000" class="select-input buddy-peer-quota" data-node-id="${backupEscapeHtml(peer.node_id || '')}" value="${backupEscapeHtml(String(peer.policy?.max_storage_gb || buddySettings?.incoming_quota_gb || 200))}">
-                    </div>
-                    <div class="setting-group">
-                        <label class="setting-label">Outgoing Sources To This Buddy</label>
-                        ${renderBuddyPeerSourcePicker(peer.node_id || '', policyOutgoing)}
-                    </div>
-                    <button class="btn-secondary buddy-save-peer-policy-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Save Buddy Policy</button>
                 </div>
-            </div>
-            <div class="buddy-peer-actions">
-                <button class="btn-primary buddy-backup-now-peer-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Backup Now</button>
-                <button class="btn-secondary buddy-test-peer-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Test Connection</button>
-                <button class="btn-secondary buddy-remove-peer-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Remove</button>
             </div>
         </div>
     `;
