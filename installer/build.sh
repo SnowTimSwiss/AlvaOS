@@ -234,7 +234,7 @@ SSH:
   password: alvaos
 
 Local:
-  Installer startet automatisch
+  Installer starts automatically
 =====================================
 EOF
 

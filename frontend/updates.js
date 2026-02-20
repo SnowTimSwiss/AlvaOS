@@ -78,9 +78,9 @@ function ensureUpdateTransitionOverlay() {
     overlay.innerHTML = `
         <div style="text-align:center; color:white; max-width:640px;">
             <div style="width:52px; height:52px; margin:0 auto 16px auto; border:4px solid rgba(255,255,255,0.25); border-top-color:#fff; border-radius:50%; animation: alvaos-update-spin 1s linear infinite;"></div>
-            <h2 id="update-transition-title" style="margin:0 0 8px 0; font-size:1.5rem; font-weight:700;">Update wird vorbereitet</h2>
+            <h2 id="update-transition-title" style="margin:0 0 8px 0; font-size:1.5rem; font-weight:700;">Preparing update</h2>
             <p id="update-transition-message" style="margin:0; color:rgba(255,255,255,0.85); line-height:1.4;">
-                Bitte nicht neu laden oder schließen.
+                Please do not reload or close.
             </p>
         </div>
     `;
@@ -118,8 +118,8 @@ function beginUpdateTransition(label) {
     updateTransitionActive = true;
     updateTransitionDisconnected = false;
     setUpdateTransitionMessage(
-        'Update wird installiert',
-        `${label} gestartet. Bitte warten, Dienste werden neu gestartet.`
+        'Installing update',
+        `${label} started. Please wait, services are being restarted.`
     );
 }
 
@@ -127,8 +127,8 @@ function markUpdateDisconnected() {
     if (!updateTransitionActive || updateTransitionDisconnected) return;
     updateTransitionDisconnected = true;
     setUpdateTransitionMessage(
-        'Verbindung wird wiederhergestellt',
-        'Der Update-Prozess startet AlvaOS neu. Die Weboberflaeche verbindet sich gleich automatisch.'
+        'Restoring connection',
+        'The update process is restarting AlvaOS. The web interface will reconnect automatically shortly.'
     );
 }
 
@@ -143,7 +143,7 @@ function startReconnectPoll() {
             if (res.ok) {
                 clearInterval(reconnectPoll);
                 reconnectPoll = null;
-                setUpdateTransitionMessage('Update abgeschlossen', 'Weboberflaeche wird neu geladen...');
+                setUpdateTransitionMessage('Update completed', 'Web interface is reloading...');
                 setTimeout(() => {
                     window.location.reload();
                 }, 700);
@@ -152,7 +152,7 @@ function startReconnectPoll() {
             if (res.status === 401) {
                 clearInterval(reconnectPoll);
                 reconnectPoll = null;
-                setUpdateTransitionMessage('Update abgeschlossen', 'Bitte neu anmelden...');
+                setUpdateTransitionMessage('Update completed', 'Please log in again...');
                 setTimeout(() => {
                     window.location.href = '/login.html';
                 }, 700);
@@ -518,8 +518,8 @@ async function pollUpdateStatus() {
                 setProgress(true, percent);
                 if (updateTransitionActive) {
                     setUpdateTransitionMessage(
-                        'Update wird installiert',
-                        data.message || 'Update laeuft...'
+                        'Installing update',
+                        data.message || 'Update in progress...'
                     );
                 }
             } else if (data.status === 'idle') {
@@ -538,7 +538,7 @@ async function pollUpdateStatus() {
                     if (updateTransitionDisconnected) {
                         startReconnectPoll();
                     } else {
-                        setUpdateTransitionMessage('Update abgeschlossen', 'Weboberflaeche wird neu geladen...');
+                        setUpdateTransitionMessage('Update completed', 'Web interface is reloading...');
                         setTimeout(() => {
                             window.location.reload();
                         }, 700);
