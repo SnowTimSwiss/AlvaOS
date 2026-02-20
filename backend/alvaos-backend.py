@@ -2982,13 +2982,19 @@ def buddy_pairing_generate():
     data = request.get_json() or {}
     endpoint = (data.get('endpoint') or '').strip()
     expires_minutes = data.get('expires_minutes', 20)
+    try:
+        identity = buddy_backup_manager._identity_public()
+        listen_port = int(identity.get('listen_port') or 51820)
+    except Exception:
+        listen_port = 51820
+    listen_port = max(1024, min(65535, listen_port))
 
     host_header = (request.headers.get('X-Forwarded-Host') or request.host or '').split(',')[0].strip()
     api_endpoint = host_header
     if not endpoint:
         host = host_header.split(':', 1)[0].strip()
         if host and host not in ('localhost', '127.0.0.1', '::1'):
-            endpoint = f"{host}:51820"
+            endpoint = f"{host}:{listen_port}"
 
     success, payload = buddy_backup_manager.generate_pairing_token(
         endpoint=endpoint,
@@ -3010,12 +3016,18 @@ def buddy_pairing_validate():
     token = (data.get('token') or '').strip()
     endpoint_override = (data.get('endpoint_override') or '').strip()
     name_override = (data.get('name_override') or '').strip()
+    try:
+        identity = buddy_backup_manager._identity_public()
+        listen_port = int(identity.get('listen_port') or 51820)
+    except Exception:
+        listen_port = 51820
+    listen_port = max(1024, min(65535, listen_port))
     host_header = (request.headers.get('X-Forwarded-Host') or request.host or '').split(',')[0].strip()
     local_api_endpoint = host_header
     local_host = host_header.split(':', 1)[0].strip()
     local_wg_endpoint = ''
     if local_host and local_host not in ('localhost', '127.0.0.1', '::1'):
-        local_wg_endpoint = f'{local_host}:51820'
+        local_wg_endpoint = f'{local_host}:{listen_port}'
 
     success, payload = buddy_backup_manager.validate_pairing_token(
         token=token,

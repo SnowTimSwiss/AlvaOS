@@ -13,6 +13,7 @@ import re
 import secrets
 import shlex
 import shutil
+import socket
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -46,6 +47,7 @@ class BuddyBackupManager:
         self.wg_config_path = os.path.join(self.wg_dir, "buddy0.conf")
         self.interface_name = "buddy0"
         self.default_listen_port = 51820
+        self.connected_handshake_threshold_seconds = 180
 
         self._ensure_dirs()
         self._ensure_defaults()
@@ -240,6 +242,108 @@ class BuddyBackupManager:
             "address already in use" in text
             or ("rtnetlink answers" in text and "already in use" in text)
         )
+
+    def _udp_port_in_use(self, port: int) -> bool:
+        try:
+            candidate = int(port)
+        except Exception:
+            return False
+        if candidate < 1 or candidate > 65535:
+            return False
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sock.bind(("0.0.0.0", candidate))
+            return False
+        except OSError as exc:
+            code = getattr(exc, "errno", None)
+            if code in (98, 10048):
+                return True
+            return "address already in use" in str(exc).lower()
+        finally:
+            try:
+                sock.close()
+            except Exception:
+                pass
+
+    def _derive_available_listen_port(self, preferred_port: int, avoid_port: int = 0) -> int:
+        try:
+            preferred = int(preferred_port)
+        except Exception:
+            preferred = self.default_listen_port
+        preferred = max(1024, min(65535, preferred))
+        avoid = int(avoid_port) if str(avoid_port or "").strip().isdigit() else 0
+        span = 65535 - 1024 + 1
+        for offset in range(span):
+            candidate = 1024 + ((preferred - 1024 + offset) % span)
+            if avoid and candidate == avoid:
+                continue
+            if not self._udp_port_in_use(candidate):
+                return candidate
+        return self.default_listen_port
+
+    def _ensure_identity_listen_port(self, identity: Dict, force_rotate: bool = False) -> Tuple[Dict, bool]:
+        if not isinstance(identity, dict):
+            return identity, False
+
+        try:
+            current_port = int(identity.get("listen_port") or self.default_listen_port)
+        except Exception:
+            current_port = self.default_listen_port
+        current_port = max(1024, min(65535, current_port))
+        current_in_use = self._udp_port_in_use(current_port)
+
+        if not (force_rotate or current_in_use):
+            if identity.get("listen_port") != current_port:
+                identity["listen_port"] = current_port
+                self._save_identity(identity)
+                return identity, True
+            return identity, False
+
+        replacement_port = self._derive_available_listen_port(
+            current_port,
+            avoid_port=current_port if force_rotate else 0,
+        )
+        if replacement_port == current_port:
+            return identity, False
+
+        identity["listen_port"] = replacement_port
+        if current_in_use or force_rotate:
+            identity["key_error"] = (
+                f"WireGuard listen port conflict detected for {current_port}; switched to {replacement_port}. "
+                "If your endpoint includes the old port, regenerate/share a fresh pairing token."
+            )
+        self._save_identity(identity)
+        return identity, True
+
+    def _parse_handshake_age_seconds(self, value: str) -> Optional[int]:
+        text = str(value or "").strip().lower()
+        if not text or text == "never":
+            return None
+        if text == "now":
+            return 0
+        if text.endswith("ago"):
+            text = text[:-3].strip()
+
+        total = 0
+        matched = False
+        for amount_raw, unit in re.findall(r"(\d+)\s*(second|seconds|minute|minutes|hour|hours|day|days)", text):
+            try:
+                amount = int(amount_raw)
+            except Exception:
+                continue
+            matched = True
+            if unit.startswith("second"):
+                total += amount
+            elif unit.startswith("minute"):
+                total += amount * 60
+            elif unit.startswith("hour"):
+                total += amount * 3600
+            elif unit.startswith("day"):
+                total += amount * 86400
+        if not matched:
+            return None
+        return total
 
     def _normalize_api_endpoint(self, endpoint: str) -> Tuple[Optional[str], Optional[str]]:
         value = str(endpoint or "").strip()
@@ -766,11 +870,17 @@ class BuddyBackupManager:
         return peer, None
 
     def _render_wg_config(self, identity: Dict, peers: Dict[str, Dict]) -> str:
+        try:
+            listen_port = int(identity.get("listen_port") or self.default_listen_port)
+        except Exception:
+            listen_port = self.default_listen_port
+        listen_port = max(1024, min(65535, listen_port))
+
         lines = [
             "[Interface]",
             f"PrivateKey = {identity.get('private_key', '')}",
             f"Address = {identity.get('tunnel_ip', '')}/24",
-            f"ListenPort = {int(identity.get('listen_port') or self.default_listen_port)}",
+            f"ListenPort = {listen_port}",
             "",
         ]
 
@@ -817,8 +927,12 @@ class BuddyBackupManager:
         if not active_peers:
             return True, {"message": "No active peers configured"}
 
-        conflict_note = ""
+        conflict_notes: List[str] = []
         for attempt in range(2):
+            # Try to cleanly restart interface. Ignore "down" errors.
+            self.run_command([wg_quick_cmd, "down", self.wg_config_path], timeout=20)
+
+            identity, _ = self._ensure_identity_listen_port(identity)
             config_text = self._render_wg_config(identity, peers)
             Path(self.wg_dir).mkdir(parents=True, exist_ok=True)
             with open(self.wg_config_path, "w", encoding="utf-8") as f:
@@ -828,30 +942,64 @@ class BuddyBackupManager:
             except Exception:
                 pass
 
-            # Try to cleanly restart interface. Ignore "down" errors.
-            self.run_command([wg_quick_cmd, "down", self.wg_config_path], timeout=20)
-
             up_res, up_err = self.run_command([wg_quick_cmd, "up", self.wg_config_path], timeout=40)
             if not up_err and up_res and up_res.returncode == 0:
                 break
 
             if attempt == 0 and self._is_address_in_use_error(up_err or ""):
-                old_ip = str(identity.get("tunnel_ip") or "").strip()
-                identity, changed = self._ensure_identity_tunnel_ip(identity, force_rotate=True)
-                if changed:
-                    conflict_note = f"Tunnel IP conflict resolved automatically: {old_ip} -> {identity.get('tunnel_ip', '')}"
+                recovered = False
+
+                current_ip = str(identity.get("tunnel_ip") or "").strip()
+                has_ip_conflict = (
+                    bool(current_ip)
+                    and self._local_ipv4_in_use(current_ip)
+                    and not self._ipv4_on_interface(current_ip, self.interface_name)
+                )
+                if has_ip_conflict:
+                    old_ip = current_ip
+                    identity, ip_changed = self._ensure_identity_tunnel_ip(identity, force_rotate=True)
+                    if ip_changed:
+                        conflict_notes.append(
+                            f"Tunnel IP conflict resolved automatically: {old_ip} -> {identity.get('tunnel_ip', '')}"
+                        )
+                        recovered = True
+
+                try:
+                    current_port = int(identity.get("listen_port") or self.default_listen_port)
+                except Exception:
+                    current_port = self.default_listen_port
+                if self._udp_port_in_use(current_port):
+                    old_port = current_port
+                    identity, port_changed = self._ensure_identity_listen_port(identity, force_rotate=True)
+                    if port_changed:
+                        conflict_notes.append(
+                            f"Listen port conflict resolved automatically: {old_port} -> {identity.get('listen_port', '')}"
+                        )
+                        recovered = True
+
+                if recovered:
                     continue
             return False, {"error": up_err or "Failed to bring up WireGuard interface"}
 
         show_res, show_err = self.run_command([wg_cmd, "show", self.interface_name], timeout=10)
         if show_err:
             payload = {"message": "Tunnel configured, but runtime status unavailable", "warning": show_err}
-            if conflict_note:
-                payload["ip_update"] = conflict_note
+            if conflict_notes:
+                payload["updates"] = conflict_notes
+                for note in conflict_notes:
+                    if note.startswith("Tunnel IP conflict"):
+                        payload["ip_update"] = note
+                    if note.startswith("Listen port conflict"):
+                        payload["port_update"] = note
             return True, payload
         payload = {"message": "Tunnel configured", "runtime": (show_res.stdout or "").strip()[:1200]}
-        if conflict_note:
-            payload["ip_update"] = conflict_note
+        if conflict_notes:
+            payload["updates"] = conflict_notes
+            for note in conflict_notes:
+                if note.startswith("Tunnel IP conflict"):
+                    payload["ip_update"] = note
+                if note.startswith("Listen port conflict"):
+                    payload["port_update"] = note
         return True, payload
 
     def _runtime_status(self) -> Dict:
@@ -1079,6 +1227,15 @@ class BuddyBackupManager:
         peers_map = self._load_peers()
         settings_full = self.get_settings(include_secret=True)
         policies = settings_full.get("peer_policies", {})
+        runtime = self._runtime_status()
+        runtime_peers_by_key = {}
+        for item in runtime.get("peers", []) if isinstance(runtime.get("peers"), list) else []:
+            if not isinstance(item, dict):
+                continue
+            public_key = str(item.get("public_key") or "").strip()
+            if public_key:
+                runtime_peers_by_key[public_key] = item
+
         peers = []
         for peer in peers_map.values():
             item = dict(peer if isinstance(peer, dict) else {})
@@ -1094,9 +1251,23 @@ class BuddyBackupManager:
                     "updated_at": self._now_iso(),
                 }
             item["policy"] = policy
+
+            public_key = str(item.get("public_key") or "").strip()
+            runtime_peer = runtime_peers_by_key.get(public_key, {})
+            latest_handshake = str(runtime_peer.get("latest_handshake") or "").strip()
+            handshake_age = self._parse_handshake_age_seconds(latest_handshake)
+            online = bool(runtime_peer) and latest_handshake.lower() not in ("", "never")
+            connected = bool(online and handshake_age is not None and handshake_age <= self.connected_handshake_threshold_seconds)
+            item["runtime"] = {
+                "in_tunnel": bool(runtime_peer),
+                "endpoint": str(runtime_peer.get("endpoint") or "").strip(),
+                "latest_handshake": latest_handshake,
+                "handshake_age_seconds": handshake_age,
+                "online": online,
+                "connected": connected,
+            }
             peers.append(item)
         peers = sorted(peers, key=lambda item: str(item.get("name", "")).lower())
-        runtime = self._runtime_status()
         settings = self._public_settings(settings_full)
         wg_cmd = self._wg_cmd()
         wg_quick_cmd = self._wg_quick_cmd()

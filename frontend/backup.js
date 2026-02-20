@@ -397,7 +397,13 @@ function renderBuddyStatus() {
         supportedEl.textContent = buddyState.supported ? 'Yes' : 'Limited (setup only)';
         supportedEl.style.color = buddyState.supported ? 'var(--accent-success)' : 'var(--accent-warning)';
     }
-    if (tunnelEl) tunnelEl.textContent = (tunnel.state || 'unknown').toUpperCase();
+    if (tunnelEl) {
+        const tunnelState = String(tunnel.state || 'unknown').toLowerCase();
+        tunnelEl.textContent = tunnelState.toUpperCase();
+        if (tunnelState === 'up') tunnelEl.style.color = 'var(--accent-success)';
+        else if (tunnelState === 'down') tunnelEl.style.color = 'var(--error)';
+        else tunnelEl.style.color = 'var(--text-secondary)';
+    }
     if (nodeEl) nodeEl.textContent = identity.node_id || '-';
     if (keyEl) keyEl.textContent = identity.public_key || '-';
     if (ipEl) ipEl.textContent = identity.tunnel_ip || '-';
@@ -415,7 +421,17 @@ function renderBuddyStatus() {
         return;
     }
 
-    peersEl.innerHTML = peers.map((peer) => `
+    peersEl.innerHTML = peers.map((peer) => {
+        const runtime = peer?.runtime || {};
+        const online = runtime.online === true;
+        const connected = runtime.connected === true;
+        const onlineText = online ? 'Yes' : 'No';
+        const connectedText = connected ? 'Yes' : 'No';
+        const onlineColor = online ? 'var(--accent-success)' : 'var(--text-secondary)';
+        const connectedColor = connected ? 'var(--accent-success)' : 'var(--text-secondary)';
+        const handshakeText = runtime.latest_handshake || '-';
+
+        return `
         <div class="list-item" style="align-items:flex-start; gap:12px;">
             <div style="display:flex; flex-direction:column; gap:3px;">
                 <div><strong>${backupEscapeHtml(peer.name || peer.node_id || 'Buddy')}</strong></div>
@@ -423,6 +439,9 @@ function renderBuddyStatus() {
                 <div class="metric-sub">Endpoint: ${backupEscapeHtml(peer.endpoint || '(not set)')}</div>
                 <div class="metric-sub">Tunnel IP: ${backupEscapeHtml(peer.tunnel_ip || '-')}</div>
                 <div class="metric-sub">Status: ${backupEscapeHtml(peer.status || 'unknown')}</div>
+                <div class="metric-sub">Online: <strong style="color:${onlineColor};">${onlineText}</strong></div>
+                <div class="metric-sub">Connected: <strong style="color:${connectedColor};">${connectedText}</strong></div>
+                <div class="metric-sub">Last Handshake: ${backupEscapeHtml(handshakeText)}</div>
                 ${peer.last_error ? `<div class="metric-sub" style="color: var(--error);">Error: ${backupEscapeHtml(peer.last_error)}</div>` : ''}
                 <div style="margin-top:8px; padding:8px; border:1px solid var(--border-default); border-radius:6px; background:var(--bg-body);">
                     <div class="setting-group" style="margin-bottom:6px;">
@@ -455,7 +474,8 @@ function renderBuddyStatus() {
             </div>
             <button class="btn-secondary buddy-remove-peer-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Remove</button>
         </div>
-    `).join('');
+    `;
+    }).join('');
 }
 
 // ----------------------------------------------------------------------------
