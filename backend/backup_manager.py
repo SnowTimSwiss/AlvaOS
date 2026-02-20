@@ -9,6 +9,7 @@ import os
 import platform
 import re
 import shlex
+import shutil
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -140,6 +141,37 @@ class BackupManager:
     def _now_iso(self) -> str:
         return datetime.now(timezone.utc).isoformat()
 
+    def _detect_cmd(self, candidates: List[str], which_name: str) -> Optional[str]:
+        for candidate in candidates:
+            if candidate and os.path.exists(candidate):
+                return candidate
+        found = shutil.which(which_name)
+        return found if found else None
+
+    def _btrfs_cmd(self) -> Optional[str]:
+        return self._detect_cmd(
+            ["/usr/bin/btrfs", "/bin/btrfs", "/usr/sbin/btrfs", "/sbin/btrfs", CMD.get("BTRFS")],
+            "btrfs",
+        )
+
+    def _mkdir_cmd(self) -> Optional[str]:
+        return self._detect_cmd(
+            ["/usr/bin/mkdir", "/bin/mkdir", CMD.get("MKDIR")],
+            "mkdir",
+        )
+
+    def _mv_cmd(self) -> Optional[str]:
+        return self._detect_cmd(
+            ["/usr/bin/mv", "/bin/mv", CMD.get("MV")],
+            "mv",
+        )
+
+    def _bash_cmd(self) -> Optional[str]:
+        return self._detect_cmd(
+            ["/usr/bin/bash", "/bin/bash", CMD.get("BASH")],
+            "bash",
+        )
+
     def _list_pool_mounts(self) -> List[Tuple[str, str]]:
         pools = self.load_pools_state() or {}
         mounts = []
@@ -161,8 +193,11 @@ class BackupManager:
         subvolumes = []
         if platform.system() != "Linux":
             return subvolumes
+        btrfs_cmd = self._btrfs_cmd()
+        if not btrfs_cmd:
+            return subvolumes
 
-        res, err = self.run_command([CMD["BTRFS"], "subvolume", "list", mount_point], timeout=10)
+        res, err = self.run_command([btrfs_cmd, "subvolume", "list", mount_point], timeout=10)
         if err or not res or res.returncode != 0:
             return subvolumes
 
@@ -434,8 +469,11 @@ class BackupManager:
     def _get_btrfs_uuid(self, path: str) -> Optional[str]:
         if platform.system() != "Linux":
             return None
+        btrfs_cmd = self._btrfs_cmd()
+        if not btrfs_cmd:
+            return None
         try:
-            res, err = self.run_command([CMD["BTRFS"], "filesystem", "show", path], timeout=10)
+            res, err = self.run_command([btrfs_cmd, "filesystem", "show", path], timeout=10)
             if res and res.returncode == 0:
                 m = re.search(r"uuid:\s+([A-Fa-f0-9-]+)", res.stdout, re.IGNORECASE)
                 if m:
@@ -468,7 +506,10 @@ class BackupManager:
         target = self._normalize_path(path)
         if not target:
             return False
-        res, err = self.run_command([CMD["BTRFS"], "subvolume", "show", target], timeout=20)
+        btrfs_cmd = self._btrfs_cmd()
+        if not btrfs_cmd:
+            return False
+        res, err = self.run_command([btrfs_cmd, "subvolume", "show", target], timeout=20)
         return bool(res and res.returncode == 0 and not err)
 
     def _decode_mountinfo_path(self, value: str) -> str:
@@ -545,7 +586,10 @@ class BackupManager:
         probe = self._existing_probe_path(target)
         if not os.path.exists(probe):
             return False
-        res, err = self.run_command([CMD["BTRFS"], "filesystem", "show", probe], timeout=20)
+        btrfs_cmd = self._btrfs_cmd()
+        if not btrfs_cmd:
+            return False
+        res, err = self.run_command([btrfs_cmd, "filesystem", "show", probe], timeout=20)
         return bool(res and res.returncode == 0 and not err)
 
     def _ensure_snapshot_container(self, path: str, force_subvolume: bool = False) -> Tuple[bool, str, str]:
@@ -565,7 +609,10 @@ class BackupManager:
             container = os.path.join(container, "__snapshot-container")
 
         parent = self._normalize_path(os.path.dirname(container))
-        mk_parent_res, mk_parent_err = self.run_command([CMD["MKDIR"], "-p", parent], timeout=30)
+        mkdir_cmd = self._mkdir_cmd()
+        if not mkdir_cmd:
+            return False, "mkdir command not found", ""
+        mk_parent_res, mk_parent_err = self.run_command([mkdir_cmd, "-p", parent], timeout=30)
         if mk_parent_err or not mk_parent_res or mk_parent_res.returncode != 0:
             return False, mk_parent_err or "Failed to prepare snapshot target parent path", ""
 
@@ -578,18 +625,24 @@ class BackupManager:
             return True, "", container
 
         if force_subvolume:
-            create_res, create_err = self.run_command([CMD["BTRFS"], "subvolume", "create", container], timeout=60)
+            btrfs_cmd = self._btrfs_cmd()
+            if not btrfs_cmd:
+                return False, "btrfs command not found", ""
+            create_res, create_err = self.run_command([btrfs_cmd, "subvolume", "create", container], timeout=60)
             if create_err or not create_res or create_res.returncode != 0:
                 return False, create_err or "Failed to create snapshot container subvolume", ""
             return True, "", container
 
-        mk_res, mk_err = self.run_command([CMD["MKDIR"], "-p", container], timeout=30)
+        mk_res, mk_err = self.run_command([mkdir_cmd, "-p", container], timeout=30)
         if mk_err or not mk_res or mk_res.returncode != 0:
             return False, mk_err or "Failed to prepare snapshot target path", ""
         return True, "", container
 
     def _get_subvolume_id(self, path: str) -> Optional[int]:
-        res, err = self.run_command([CMD["BTRFS"], "subvolume", "show", path], timeout=20)
+        btrfs_cmd = self._btrfs_cmd()
+        if not btrfs_cmd:
+            return None
+        res, err = self.run_command([btrfs_cmd, "subvolume", "show", path], timeout=20)
         if err or not res or res.returncode != 0:
             return None
         for line in (res.stdout or "").splitlines():
@@ -601,7 +654,10 @@ class BackupManager:
         return None
 
     def _get_default_subvolume_id(self, path: str = "/") -> Optional[int]:
-        res, err = self.run_command([CMD["BTRFS"], "subvolume", "get-default", path], timeout=20)
+        btrfs_cmd = self._btrfs_cmd()
+        if not btrfs_cmd:
+            return None
+        res, err = self.run_command([btrfs_cmd, "subvolume", "get-default", path], timeout=20)
         if err or not res or res.returncode != 0:
             return None
         m = re.search(r"ID\\s+(\\d+)", (res.stdout or "").strip())
@@ -685,7 +741,10 @@ class BackupManager:
         failures: Optional[List[Dict]] = None,
     ) -> Tuple[Optional[str], Optional[str]]:
         manifest_dir = os.path.join(self.state_dir, "full-system-manifests")
-        mk_res, mk_err = self.run_command([CMD["MKDIR"], "-p", manifest_dir], timeout=30)
+        mkdir_cmd = self._mkdir_cmd()
+        if not mkdir_cmd:
+            return None, "mkdir command not found"
+        mk_res, mk_err = self.run_command([mkdir_cmd, "-p", manifest_dir], timeout=30)
         if mk_err or not mk_res or mk_res.returncode != 0:
             return None, mk_err or "Failed to prepare manifest directory"
 
@@ -764,11 +823,17 @@ class BackupManager:
 
     def _snapshot_direct(self, source_path: str, snapshot_path: str) -> Tuple[bool, str]:
         target_parent = os.path.dirname(snapshot_path)
-        mk_res, mk_err = self.run_command([CMD["MKDIR"], "-p", target_parent], timeout=30)
+        mkdir_cmd = self._mkdir_cmd()
+        btrfs_cmd = self._btrfs_cmd()
+        if not mkdir_cmd:
+            return False, "mkdir command not found"
+        if not btrfs_cmd:
+            return False, "btrfs command not found"
+        mk_res, mk_err = self.run_command([mkdir_cmd, "-p", target_parent], timeout=30)
         if mk_err or not mk_res or mk_res.returncode != 0:
             return False, mk_err or "Failed to prepare snapshot directory"
         snap_res, snap_err = self.run_command(
-            [CMD["BTRFS"], "subvolume", "snapshot", "-r", source_path, snapshot_path],
+            [btrfs_cmd, "subvolume", "snapshot", "-r", source_path, snapshot_path],
             timeout=180,
         )
         if snap_err or not snap_res or snap_res.returncode != 0:
@@ -778,10 +843,19 @@ class BackupManager:
     def _snapshot_via_send_receive(self, source_path: str, snapshot_path: str) -> Tuple[bool, str]:
         target_parent = os.path.dirname(snapshot_path)
         name = os.path.basename(snapshot_path)
+        mkdir_cmd = self._mkdir_cmd()
+        btrfs_cmd = self._btrfs_cmd()
+        bash_cmd = self._bash_cmd()
+        if not mkdir_cmd:
+            return False, "mkdir command not found"
+        if not btrfs_cmd:
+            return False, "btrfs command not found"
+        if not bash_cmd:
+            return False, "bash command not found"
         source_parent = self._normalize_path(os.path.dirname(source_path)) or "/"
         temp_source_snapshot = os.path.join(source_parent, name)
 
-        mk_res, mk_err = self.run_command([CMD["MKDIR"], "-p", target_parent], timeout=30)
+        mk_res, mk_err = self.run_command([mkdir_cmd, "-p", target_parent], timeout=30)
         if mk_err or not mk_res or mk_res.returncode != 0:
             return False, mk_err or "Failed to prepare target directory"
 
@@ -796,23 +870,23 @@ class BackupManager:
 
         try:
             send_res, send_err = self.run_command(
-                [CMD["BTRFS"], "send", "-f", stream_file, temp_source_snapshot],
+                [btrfs_cmd, "send", "-f", stream_file, temp_source_snapshot],
                 timeout=600,
             )
             if send_err or not send_res or send_res.returncode != 0:
                 return False, send_err or "Failed to send snapshot stream"
 
             receive_cmd = (
-                f"{shlex.quote(CMD['BTRFS'])} receive {shlex.quote(target_parent)} "
+                f"{shlex.quote(btrfs_cmd)} receive {shlex.quote(target_parent)} "
                 f"< {shlex.quote(stream_file)}"
             )
-            recv_res, recv_err = self.run_command([CMD["BASH"], "-lc", receive_cmd], timeout=600)
+            recv_res, recv_err = self.run_command([bash_cmd, "-lc", receive_cmd], timeout=600)
             if recv_err or not recv_res or recv_res.returncode != 0:
                 return False, recv_err or "Failed to receive snapshot stream"
 
             return True, ""
         finally:
-            self.run_command([CMD["BTRFS"], "subvolume", "delete", temp_source_snapshot], timeout=120)
+            self.run_command([btrfs_cmd, "subvolume", "delete", temp_source_snapshot], timeout=120)
             try:
                 if os.path.exists(stream_file):
                     os.remove(stream_file)
@@ -830,8 +904,15 @@ class BackupManager:
         source = self._normalize_path(source_path)
         if not source:
             return False, {"error": "source_path is required"}
-        if not os.path.exists(source):
-            return False, {"error": f"Source path not found: {source}"}
+        if platform.system() == "Linux":
+            source_is_subvolume = self._path_is_btrfs_subvolume(source)
+            if not source_is_subvolume:
+                if not os.path.exists(source):
+                    return False, {"error": f"Source path not found: {source}"}
+                return False, {"error": f"Source path is not a Btrfs subvolume: {source}"}
+        else:
+            if not os.path.exists(source):
+                return False, {"error": f"Source path not found: {source}"}
 
         settings = self.get_settings()
         # New Settings Structure
@@ -848,9 +929,6 @@ class BackupManager:
         snapshot_path = os.path.join(target_root, name)
 
         if platform.system() == "Linux":
-            if not self._path_is_btrfs_subvolume(source):
-                return False, {"error": f"Source path is not a Btrfs subvolume: {source}"}
-
             target_parent = self._normalize_path(os.path.dirname(snapshot_path))
             nested_target = target_parent == source or target_parent.startswith(source + os.sep)
             ok_container, container_err, resolved_parent = self._ensure_snapshot_container(
@@ -903,7 +981,10 @@ class BackupManager:
                 return False, {"error": "Full system snapshots require Btrfs root"}
 
             def _validate_target(path: str) -> Tuple[bool, str]:
-                mk_res, mk_err = self.run_command([CMD["MKDIR"], "-p", path], timeout=30)
+                mkdir_cmd = self._mkdir_cmd()
+                if not mkdir_cmd:
+                    return False, "mkdir command not found"
+                mk_res, mk_err = self.run_command([mkdir_cmd, "-p", path], timeout=30)
                 if mk_err or not mk_res or mk_res.returncode != 0:
                     return False, mk_err or "Failed to prepare system snapshot target path"
                 if not self._path_on_btrfs(path):
@@ -954,7 +1035,10 @@ class BackupManager:
             return False
         if platform.system() != "Linux":
             return True
-        res, err = self.run_command([CMD["BTRFS"], "subvolume", "delete", target], timeout=120)
+        btrfs_cmd = self._btrfs_cmd()
+        if not btrfs_cmd:
+            return False
+        res, err = self.run_command([btrfs_cmd, "subvolume", "delete", target], timeout=120)
         return bool(res and res.returncode == 0 and not err)
 
     def _enforce_retention(self, source_path: str, keep_last: int, snapshot_class: str) -> None:
@@ -1143,20 +1227,26 @@ class BackupManager:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
         previous_path = f"{target_source}.pre-restore-{stamp}"
         moved_old = False
+        mv_cmd = self._mv_cmd()
+        btrfs_cmd = self._btrfs_cmd()
+        if not mv_cmd:
+            return False, {"error": "mv command not found"}
+        if not btrfs_cmd:
+            return False, {"error": "btrfs command not found"}
 
         if os.path.exists(target_source):
-            mv_res, mv_err = self.run_command([CMD["MV"], target_source, previous_path], timeout=60)
+            mv_res, mv_err = self.run_command([mv_cmd, target_source, previous_path], timeout=60)
             if mv_err or not mv_res or mv_res.returncode != 0:
                 return False, {"error": f"Failed to stage current data for restore: {mv_err or 'unknown error'}"}
             moved_old = True
 
         restore_res, restore_err = self.run_command(
-            [CMD["BTRFS"], "subvolume", "snapshot", snapshot, target_source],
+            [btrfs_cmd, "subvolume", "snapshot", snapshot, target_source],
             timeout=180,
         )
         if restore_err or not restore_res or restore_res.returncode != 0:
             if moved_old and not os.path.exists(target_source):
-                self.run_command([CMD["MV"], previous_path, target_source], timeout=60)
+                self.run_command([mv_cmd, previous_path, target_source], timeout=60)
             return False, {"error": f"Restore failed: {restore_err or 'unknown error'}"}
 
         return True, {
@@ -1182,10 +1272,13 @@ class BackupManager:
         snapshot_subvol_id = self._get_subvolume_id(snapshot)
         if snapshot_subvol_id is None:
             return False, {"error": "Could not resolve snapshot subvolume ID"}
+        btrfs_cmd = self._btrfs_cmd()
+        if not btrfs_cmd:
+            return False, {"error": "btrfs command not found"}
 
         previous_default = self._get_default_subvolume_id("/")
         set_res, set_err = self.run_command(
-            [CMD["BTRFS"], "subvolume", "set-default", str(snapshot_subvol_id), "/"],
+            [btrfs_cmd, "subvolume", "set-default", str(snapshot_subvol_id), "/"],
             timeout=60,
         )
         if set_err or not set_res or set_res.returncode != 0:

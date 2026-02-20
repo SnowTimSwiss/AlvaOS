@@ -650,14 +650,24 @@ async function runPoolBackupNow() {
 
     const data = await backupReadJson(response);
     if (!response || !response.ok || !data) {
-        backupNotify(data?.error || 'Backup failed', 'error');
+        const detailFail = Array.isArray(data?.result?.failed) && data.result.failed.length
+            ? (data.result.failed[0]?.error || '')
+            : '';
+        backupNotify(detailFail || data?.error || 'Backup failed', 'error');
         return;
     }
 
     const createdCount = Array.isArray(data.created) ? data.created.length : 0;
     const failedCount = Array.isArray(data.failed) ? data.failed.length : 0;
-    if (failedCount > 0) backupNotify(`Backup finished with errors: ${failedCount} failed`, 'warning');
-    else backupNotify(`Pool backup completed (${createdCount} snapshots created)`, 'success');
+    const firstFailure = Array.isArray(data.failed) && data.failed.length ? (data.failed[0]?.error || '') : '';
+    if (failedCount > 0) {
+        backupNotify(
+            firstFailure || `Backup finished with errors: ${failedCount} failed`,
+            'warning'
+        );
+    } else {
+        backupNotify(`Pool backup completed (${createdCount} snapshots created)`, 'success');
+    }
 
     await Promise.all([loadBackupStatus(), loadDataSnapshots()]);
 }
@@ -683,11 +693,24 @@ async function runSystemBackupNow() {
 
     const data = await backupReadJson(response);
     if (!response || !response.ok || !data) {
-        backupNotify(data?.error || 'System backup failed', 'error');
+        const detailFail = Array.isArray(data?.result?.failed) && data.result.failed.length
+            ? (data.result.failed[0]?.error || '')
+            : '';
+        backupNotify(detailFail || data?.error || 'System backup failed', 'error');
         return;
     }
 
-    backupNotify('System backup completed successfully', 'success');
+    const createdCount = Array.isArray(data.created) ? data.created.length : 0;
+    const failedCount = Array.isArray(data.failed) ? data.failed.length : 0;
+    const firstFailure = Array.isArray(data.failed) && data.failed.length ? (data.failed[0]?.error || '') : '';
+    if (failedCount > 0) {
+        backupNotify(
+            firstFailure || `System backup finished with errors: ${failedCount} failed`,
+            'warning'
+        );
+    } else {
+        backupNotify(`System backup completed (${createdCount} snapshots created)`, 'success');
+    }
     await Promise.all([loadBackupStatus(), loadSystemSnapshots()]);
 }
 

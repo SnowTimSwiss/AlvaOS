@@ -912,6 +912,35 @@ class BuddyBackupManager:
         res, err = self.run_command([btrfs_cmd, "subvolume", "show", target], timeout=20)
         return bool(res and res.returncode == 0 and not err)
 
+    def _list_btrfs_subvolume_names_under(self, path: str) -> List[str]:
+        base = str(path or "").strip()
+        if platform.system() != "Linux" or not base:
+            return []
+        btrfs_cmd = self._btrfs_cmd()
+        if not btrfs_cmd:
+            return []
+
+        res, err = self.run_command([btrfs_cmd, "subvolume", "list", "-o", base], timeout=30)
+        if err or not res or res.returncode != 0:
+            return []
+
+        names: List[str] = []
+        for raw in (res.stdout or "").splitlines():
+            line = str(raw or "").strip()
+            if not line:
+                continue
+            marker = " path "
+            idx = line.find(marker)
+            if idx == -1:
+                continue
+            rel_path = line[idx + len(marker):].strip()
+            if not rel_path:
+                continue
+            name = os.path.basename(rel_path.rstrip("/"))
+            if name:
+                names.append(name)
+        return sorted(list(set(names)))
+
     def _mkdir_p(self, path: str) -> Tuple[bool, str]:
         target = str(path or "").strip()
         if not target:
@@ -2069,33 +2098,42 @@ class BuddyBackupManager:
         ok_parent, parent_err = self._mkdir_p(target_parent)
         if not ok_parent:
             return False, {"error": parent_err or "Failed to prepare target parent"}
-
-        before = set()
-        try:
-            before = set(os.listdir(target_parent))
-        except Exception:
-            before = set()
+        expected_name = str(snapshot_name or "").strip()
+        before_names = set(self._list_btrfs_subvolume_names_under(target_parent))
 
         receive_cmd = f"{shlex.quote(btrfs_cmd)} receive {shlex.quote(target_parent)} < {shlex.quote(stream_path)}"
         recv_res, recv_err = self.run_command([bash_cmd, "-lc", receive_cmd], timeout=1800)
         if recv_err or not recv_res or recv_res.returncode != 0:
             return False, {"error": recv_err or "Failed to receive Btrfs stream"}
 
-        received_path = os.path.join(target_parent, snapshot_name)
-        if not os.path.exists(received_path):
-            try:
-                after = set(os.listdir(target_parent))
-                candidates = sorted(list(after - before))
-                for name in candidates:
-                    candidate_path = os.path.join(target_parent, name)
-                    if self._path_is_btrfs_subvolume(candidate_path):
-                        received_path = candidate_path
-                        break
-            except Exception:
-                pass
+        received_path = ""
+        if expected_name:
+            expected_path = os.path.join(target_parent, expected_name)
+            if self._path_is_btrfs_subvolume(expected_path) or os.path.exists(expected_path):
+                received_path = expected_path
 
-        if not os.path.exists(received_path):
-            return False, {"error": "Restore stream received, but snapshot path could not be resolved"}
+        after_names = set(self._list_btrfs_subvolume_names_under(target_parent))
+        new_names = sorted(list(after_names - before_names))
+
+        if not received_path:
+            name_candidates: List[str] = []
+            if expected_name and expected_name in after_names:
+                name_candidates.append(expected_name)
+            if expected_name:
+                name_candidates.extend([name for name in new_names if expected_name in name and name not in name_candidates])
+            name_candidates.extend([name for name in new_names if name not in name_candidates])
+            if len(name_candidates) == 0 and len(after_names) == 1:
+                name_candidates = list(after_names)
+
+            for name in name_candidates:
+                candidate_path = os.path.join(target_parent, name)
+                if self._path_is_btrfs_subvolume(candidate_path) or os.path.exists(candidate_path):
+                    received_path = candidate_path
+                    break
+
+        if not received_path:
+            extra = f" expected={expected_name or '-'} discovered={','.join(new_names) if new_names else '-'}"
+            return False, {"error": f"Restore stream received, but snapshot path could not be resolved ({extra})"}
 
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
         previous_path = f"{target_source}.pre-restore-{stamp}"
