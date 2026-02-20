@@ -172,6 +172,36 @@ class BackupManager:
             "bash",
         )
 
+    def _move_path_best_effort(self, source: str, destination: str, timeout: int = 60) -> Tuple[bool, str]:
+        src = self._normalize_path(source)
+        dst = self._normalize_path(destination)
+        if not src or not dst:
+            return False, "Invalid move path"
+
+        try:
+            os.rename(src, dst)
+            return True, ""
+        except Exception as exc:
+            last_error = str(exc)
+
+        mv_cmd = self._mv_cmd()
+        if mv_cmd:
+            mv_res, mv_err = self.run_command([mv_cmd, src, dst], timeout=timeout)
+            if not mv_err and mv_res and mv_res.returncode == 0:
+                return True, ""
+            last_error = mv_err or last_error
+
+        bash_cmd = self._bash_cmd()
+        if bash_cmd:
+            quoted = f"{shlex.quote(src)} {shlex.quote(dst)}"
+            cmd = f"mv {quoted}"
+            bash_res, bash_err = self.run_command([bash_cmd, "-lc", cmd], timeout=timeout)
+            if not bash_err and bash_res and bash_res.returncode == 0:
+                return True, ""
+            last_error = bash_err or last_error
+
+        return False, last_error or f"Failed to move {src} -> {dst}"
+
     def _list_pool_mounts(self) -> List[Tuple[str, str]]:
         pools = self.load_pools_state() or {}
         mounts = []
@@ -1315,17 +1345,14 @@ class BackupManager:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
         previous_path = f"{target_source}.pre-restore-{stamp}"
         moved_old = False
-        mv_cmd = self._mv_cmd()
         btrfs_cmd = self._btrfs_cmd()
-        if not mv_cmd:
-            return False, {"error": "mv command not found"}
         if not btrfs_cmd:
             return False, {"error": "btrfs command not found"}
 
         if os.path.exists(target_source):
-            mv_res, mv_err = self.run_command([mv_cmd, target_source, previous_path], timeout=60)
-            if mv_err or not mv_res or mv_res.returncode != 0:
-                return False, {"error": f"Failed to stage current data for restore: {mv_err or 'unknown error'}"}
+            move_ok, move_err = self._move_path_best_effort(target_source, previous_path, timeout=60)
+            if not move_ok:
+                return False, {"error": f"Failed to stage current data for restore: {move_err or 'unknown error'}"}
             moved_old = True
 
         restore_res, restore_err = self.run_command(
@@ -1334,7 +1361,7 @@ class BackupManager:
         )
         if restore_err or not restore_res or restore_res.returncode != 0:
             if moved_old and not os.path.exists(target_source):
-                self.run_command([mv_cmd, previous_path, target_source], timeout=60)
+                self._move_path_best_effort(previous_path, target_source, timeout=60)
             return False, {"error": f"Restore failed: {restore_err or 'unknown error'}"}
 
         return True, {

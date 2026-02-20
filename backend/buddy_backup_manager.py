@@ -1113,6 +1113,35 @@ class BuddyBackupManager:
             return False, err or f"Failed to create directory: {target}"
         return True, ""
 
+    def _move_path_best_effort(self, source: str, destination: str, timeout: int = 120) -> Tuple[bool, str]:
+        src = os.path.normpath(str(source or "").strip())
+        dst = os.path.normpath(str(destination or "").strip())
+        if not src or not dst:
+            return False, "Invalid move path"
+
+        try:
+            os.rename(src, dst)
+            return True, ""
+        except Exception as exc:
+            last_error = str(exc)
+
+        mv_cmd = self._mv_cmd()
+        if mv_cmd:
+            mv_res, mv_err = self.run_command([mv_cmd, src, dst], timeout=timeout)
+            if not mv_err and mv_res and mv_res.returncode == 0:
+                return True, ""
+            last_error = mv_err or last_error
+
+        bash_cmd = self._bash_cmd()
+        if bash_cmd:
+            cmd = f"mv {shlex.quote(src)} {shlex.quote(dst)}"
+            bash_res, bash_err = self.run_command([bash_cmd, "-lc", cmd], timeout=timeout)
+            if not bash_err and bash_res and bash_res.returncode == 0:
+                return True, ""
+            last_error = bash_err or last_error
+
+        return False, last_error or f"Failed to move {src} -> {dst}"
+
     def _file_sha256(self, path: str) -> str:
         digest = hashlib.sha256()
         with open(path, "rb") as f:
@@ -2441,10 +2470,9 @@ class BuddyBackupManager:
             }
 
         btrfs_cmd = self._btrfs_cmd()
-        mv_cmd = self._mv_cmd()
         bash_cmd = self._bash_cmd()
-        if not (btrfs_cmd and mv_cmd and bash_cmd):
-            return False, {"error": "Missing required system commands (btrfs/mv/bash)"}
+        if not (btrfs_cmd and bash_cmd):
+            return False, {"error": "Missing required system commands (btrfs/bash)"}
 
         target_parent = os.path.dirname(target_source.rstrip("/")) or "/"
         ok_parent, parent_err = self._mkdir_p(target_parent)
@@ -2514,9 +2542,9 @@ class BuddyBackupManager:
         moved_old = False
 
         if os.path.exists(target_source):
-            mv_res, mv_err = self.run_command([mv_cmd, target_source, previous_path], timeout=120)
-            if mv_err or not mv_res or mv_res.returncode != 0:
-                return False, {"error": mv_err or "Failed to stage current data for restore"}
+            move_ok, move_err = self._move_path_best_effort(target_source, previous_path, timeout=120)
+            if not move_ok:
+                return False, {"error": move_err or "Failed to stage current data for restore"}
             moved_old = True
 
         snap_res, snap_err = self.run_command(
@@ -2525,7 +2553,7 @@ class BuddyBackupManager:
         )
         if snap_err or not snap_res or snap_res.returncode != 0:
             if moved_old and not os.path.exists(target_source):
-                self.run_command([mv_cmd, previous_path, target_source], timeout=120)
+                self._move_path_best_effort(previous_path, target_source, timeout=120)
             return False, {"error": snap_err or "Failed to apply restored snapshot"}
 
         self.run_command([btrfs_cmd, "subvolume", "delete", received_path], timeout=180)
@@ -2732,10 +2760,23 @@ class BuddyBackupManager:
         if platform.system() == "Linux" and ping_cmd and tunnel_ip:
             ping_payload["attempted"] = True
             ping_res, ping_err = self.run_command([ping_cmd, "-c", "1", "-W", "2", tunnel_ip], timeout=8)
-            ping_ok = bool(ping_res and ping_res.returncode == 0 and not ping_err)
-            ping_payload["success"] = ping_ok
-            if not ping_ok:
-                ping_payload["error"] = ping_err or ((ping_res.stderr or ping_res.stdout or "").strip()[:240])
+            ping_err_text = str(ping_err or "").lower()
+            ping_permission_blocked = (
+                "passwordless sudo is not configured" in ping_err_text
+                or "a password is required" in ping_err_text
+                or "password is required" in ping_err_text
+            )
+            if ping_permission_blocked:
+                # Ping is optional for connection test. Do not fail when sudo policy blocks ping.
+                ping_payload["attempted"] = False
+                ping_payload["success"] = False
+                ping_payload["error"] = ""
+                ping_payload["permission_blocked"] = True
+            else:
+                ping_ok = bool(ping_res and ping_res.returncode == 0 and not ping_err)
+                ping_payload["success"] = ping_ok
+                if not ping_ok:
+                    ping_payload["error"] = ping_err or ((ping_res.stderr or ping_res.stdout or "").strip()[:240])
 
         api_probe = self._probe_peer_api(peer)
 
