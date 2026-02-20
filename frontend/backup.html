@@ -68,8 +68,8 @@
 
         .buddy-pairing-grid {
             display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 10px 12px;
+            grid-template-columns: repeat(2, minmax(280px, 1fr));
+            gap: 12px;
         }
 
         .buddy-pairing-grid .setting-group {
@@ -78,6 +78,33 @@
 
         .buddy-pairing-grid .setting-group.full {
             grid-column: 1 / -1;
+        }
+
+        .buddy-pairing-meta {
+            display: grid;
+            grid-template-columns: minmax(190px, 230px) minmax(0, 1fr);
+            gap: 12px;
+            align-items: end;
+        }
+
+        .buddy-pairing-note {
+            margin: 0;
+            color: var(--text-secondary);
+            font-size: 0.82rem;
+            line-height: 1.35;
+        }
+
+        .buddy-pairing-card {
+            padding: 10px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: var(--bg-body);
+        }
+
+        .buddy-pairing-grid .select-input,
+        .buddy-pairing-grid .buddy-token-area {
+            width: 100%;
+            box-sizing: border-box;
         }
 
         .sources-grid {
@@ -339,7 +366,8 @@
 
         .buddy-token-area {
             font-family: 'JetBrains Mono', monospace;
-            min-height: 96px;
+            min-height: 98px;
+            resize: vertical;
         }
 
         .buddy-inline-actions {
@@ -457,6 +485,11 @@
 
             .buddy-pairing-grid {
                 grid-template-columns: 1fr;
+            }
+
+            .buddy-pairing-meta {
+                grid-template-columns: 1fr;
+                align-items: start;
             }
 
             .buddy-remote-actions {
@@ -758,12 +791,14 @@
                     </div>
                     <p class="metric-sub card-help">Generate your token or paste your buddy token here. No manual IP setup required.</p>
                     <div class="buddy-pairing-grid">
-                        <div class="setting-group full">
-                            <label class="setting-label" for="buddy-token-expiry">Token Validity (minutes)</label>
-                            <input id="buddy-token-expiry" type="number" min="0" max="43200" value="0" class="select-input">
-                            <p class="metric-sub">`0` = valid until one buddy has paired successfully.</p>
+                        <div class="setting-group full buddy-pairing-meta">
+                            <div>
+                                <label class="setting-label" for="buddy-token-expiry">Token Validity (minutes)</label>
+                                <input id="buddy-token-expiry" type="number" min="0" max="43200" value="0" class="select-input">
+                            </div>
+                            <p class="buddy-pairing-note">`0` = valid until one buddy has paired successfully.</p>
                         </div>
-                        <div class="setting-group">
+                        <div class="setting-group buddy-pairing-card">
                             <label class="setting-label" for="buddy-generated-token">Your Pairing Token</label>
                             <textarea id="buddy-generated-token" class="select-input buddy-token-area" rows="4" readonly></textarea>
                             <div class="buddy-inline-actions">
@@ -771,7 +806,7 @@
                                 <button id="buddy-copy-token-btn" class="btn-secondary">Copy Token</button>
                             </div>
                         </div>
-                        <div class="setting-group">
+                        <div class="setting-group buddy-pairing-card">
                             <label class="setting-label" for="buddy-token-input">Buddy Token</label>
                             <textarea id="buddy-token-input" class="select-input buddy-token-area" rows="4" placeholder="Paste buddy pairing token"></textarea>
                             <div class="buddy-inline-actions">
