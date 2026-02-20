@@ -17,6 +17,7 @@ import shutil
 import socket
 import tempfile
 import threading
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -980,6 +981,41 @@ class BuddyBackupManager:
             return False, err or f"Failed to delete existing subvolume: {target}", False
         return True, "", True
 
+    def _cleanup_temp_subvolume(self, subvolume_path: str, btrfs_cmd: str, attempts: int = 3) -> Tuple[bool, str]:
+        target = os.path.normpath(str(subvolume_path or "").strip())
+        if not target:
+            return False, "Invalid subvolume path"
+
+        tries = max(1, int(attempts or 1))
+        last_error = ""
+        for attempt in range(tries):
+            exists_now = os.path.exists(target) or self._path_is_btrfs_subvolume(target)
+            if not exists_now:
+                return True, ""
+            res, err = self.run_command([btrfs_cmd, "subvolume", "delete", target], timeout=300)
+            if not err and res and res.returncode == 0:
+                return True, ""
+            last_error = err or f"Failed to delete temporary snapshot: {target}"
+            if attempt < tries - 1:
+                time.sleep(0.35 * (attempt + 1))
+        return False, last_error or f"Failed to delete temporary snapshot: {target}"
+
+    def _cleanup_stale_send_snapshots(self, source_parent: str, source_slug: str, btrfs_cmd: str) -> None:
+        base = os.path.normpath(str(source_parent or "").strip())
+        slug = str(source_slug or "").strip()
+        if not base or not slug:
+            return
+        pattern = re.compile(
+            rf"^\.?alvaos-buddy-{re.escape(slug)}-\d{{8}}-\d{{6}}-[0-9a-f]{{4}}$",
+            re.IGNORECASE,
+        )
+        for name in self._list_btrfs_subvolume_names_under(base):
+            candidate = str(name or "").strip()
+            if not pattern.match(candidate):
+                continue
+            path = os.path.join(base, candidate)
+            self._cleanup_temp_subvolume(path, btrfs_cmd, attempts=2)
+
     def _mkdir_p(self, path: str) -> Tuple[bool, str]:
         target = str(path or "").strip()
         if not target:
@@ -1886,14 +1922,18 @@ class BuddyBackupManager:
         source_parent = os.path.dirname(source.rstrip("/")) or "/"
         source_slug = re.sub(r"[^a-z0-9._-]+", "-", source.strip("/").lower()) or "source"
         stamp = self._now().strftime("%Y%m%d-%H%M%S")
-        temp_name = f"alvaos-buddy-{source_slug}-{stamp}-{secrets.token_hex(2)}"
+        temp_name = f".alvaos-buddy-{source_slug}-{stamp}-{secrets.token_hex(2)}"
         temp_snapshot = os.path.join(source_parent, temp_name)
         ok_parent, parent_err = self._mkdir_p(source_parent)
         if not ok_parent:
             return False, {"error": parent_err or "Failed to prepare source parent"}
 
+        # Best-effort cleanup from older runs so stale temp snapshots do not accumulate in shares.
+        self._cleanup_stale_send_snapshots(source_parent=source_parent, source_slug=source_slug, btrfs_cmd=btrfs_cmd)
+
         stream_fd, stream_path = tempfile.mkstemp(prefix="buddy-send-", suffix=".stream", dir=self.state_dir)
         os.close(stream_fd)
+        payload = None
         try:
             snap_res, snap_err = self.run_command(
                 [btrfs_cmd, "subvolume", "snapshot", "-r", source, temp_snapshot],
@@ -1909,13 +1949,19 @@ class BuddyBackupManager:
             if send_err or not send_res or send_res.returncode != 0:
                 return False, {"error": send_err or "Failed to create Btrfs stream"}
 
-            return True, {
+            payload = {
                 "stream_path": stream_path,
                 "snapshot_name": temp_name,
                 "created_at": self._now_iso(),
             }
+            return True, payload
         finally:
-            self.run_command([btrfs_cmd, "subvolume", "delete", temp_snapshot], timeout=180)
+            cleanup_ok, cleanup_err = self._cleanup_temp_subvolume(temp_snapshot, btrfs_cmd, attempts=3)
+            if not cleanup_ok:
+                if isinstance(payload, dict):
+                    payload["cleanup_warning"] = cleanup_err
+                else:
+                    print(f"Buddy temp snapshot cleanup warning: {cleanup_err}")
 
     def _upload_stream_to_peer(self, peer: Dict, payload_path: str, metadata: Dict) -> Tuple[bool, Dict]:
         remote_secret = str(peer.get("api_secret") or "").strip()

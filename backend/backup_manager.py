@@ -468,10 +468,7 @@ class BackupManager:
                 if self._normalize_path(item.get("snapshot_path")) == snapshot
             ]
 
-            path_exists = os.path.exists(snapshot)
-            if platform.system() == "Linux" and not path_exists:
-                # Fall back to subvolume metadata check for non-traversable paths.
-                path_exists = self._path_is_btrfs_subvolume(snapshot)
+            path_exists = self._path_exists_or_is_subvolume(snapshot)
 
             if not matching and not path_exists:
                 return False, {"error": f"Snapshot not found: {snapshot}"}
@@ -551,6 +548,16 @@ class BackupManager:
             return False
         res, err = self.run_command([btrfs_cmd, "subvolume", "show", target], timeout=20)
         return bool(res and res.returncode == 0 and not err)
+
+    def _path_exists_or_is_subvolume(self, path: str) -> bool:
+        target = self._normalize_path(path)
+        if not target:
+            return False
+        if os.path.exists(target):
+            return True
+        if platform.system() == "Linux":
+            return self._path_is_btrfs_subvolume(target)
+        return False
 
     def _decode_mountinfo_path(self, value: str) -> str:
         if not value:
@@ -1261,7 +1268,22 @@ class BackupManager:
                 "error": "Restoring a pool root is not supported. Restore a subvolume snapshot instead."
             }
 
-        if not os.path.exists(snapshot):
+        if not self._path_exists_or_is_subvolume(snapshot):
+            # Fallback resolution: same source + same snapshot name, but different stored path root.
+            snapshot_name = os.path.basename(snapshot)
+            if snapshot_name:
+                for item in self.list_snapshots(source_path=target_source):
+                    item_name = str(item.get("snapshot_name") or "").strip() or os.path.basename(
+                        self._normalize_path(item.get("snapshot_path"))
+                    )
+                    if item_name != snapshot_name:
+                        continue
+                    candidate = self._normalize_path(item.get("snapshot_path"))
+                    if candidate and self._path_exists_or_is_subvolume(candidate):
+                        snapshot = candidate
+                        break
+
+        if not self._path_exists_or_is_subvolume(snapshot):
             return False, {"error": f"Snapshot not found: {snapshot}"}
 
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
@@ -1303,7 +1325,21 @@ class BackupManager:
         if platform.system() != "Linux":
             return False, {"error": "System rollback is supported on Linux only"}
 
-        if not os.path.exists(snapshot):
+        if not self._path_exists_or_is_subvolume(snapshot):
+            snapshot_name = os.path.basename(snapshot)
+            if snapshot_name:
+                for item in self.list_system_snapshots():
+                    item_name = str(item.get("snapshot_name") or "").strip() or os.path.basename(
+                        self._normalize_path(item.get("snapshot_path"))
+                    )
+                    if item_name != snapshot_name:
+                        continue
+                    candidate = self._normalize_path(item.get("snapshot_path"))
+                    if candidate and self._path_exists_or_is_subvolume(candidate):
+                        snapshot = candidate
+                        break
+
+        if not self._path_exists_or_is_subvolume(snapshot):
             return False, {"error": f"Snapshot not found: {snapshot}"}
 
         if not self._same_filesystem("/", snapshot):
