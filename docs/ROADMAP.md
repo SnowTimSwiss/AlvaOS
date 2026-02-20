@@ -59,9 +59,11 @@ Release strategy: "Iterate fast, stabilize often."
 
 ## v0.9.0 - Monitoring & Health
 - [x] **Disks**: S.M.A.R.T. monitoring and basic health checks.
-- [ ] **Smart Alerts**: Notification system for failures/warnings.
-- [ ] **Integrations**: Webhook support (Discord, Telegram, Email) for alerts.
+- [x] **Smart Alerts**: Notification system for failures/warnings with clickable destinations.
+- [x] **Integrations**: Telegram notifications with bot pairing workflow.
 - [ ] **Usage and Temperature history**: Show usage and temperature history.
+- [x] **Better Dashboard**: Health overview, quick actions, and alert feed.
+
 
 ## v0.10.0 - Security
 - [ ] **Hardening**: Firewall rules and permission audits.

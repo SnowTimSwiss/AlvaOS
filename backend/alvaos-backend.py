@@ -12,7 +12,7 @@ import socket
 import os
 import json
 import subprocess
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import hashlib
 import hmac
@@ -21,6 +21,7 @@ import functools
 import re
 import time
 import subprocess
+import requests
 from update_manager import UpdateManager
 from docker_manager import DockerManager
 from app_store import AppStore
@@ -205,8 +206,48 @@ VERSION = get_version()
 SETUP_STATUS_FILE = '/var/lib/alvaos/setup_complete.json'
 AUTH_FILE = '/var/lib/alvaos/auth.json'
 USERS_STATE_FILE = '/var/lib/alvaos/users.json'
+ALERTS_STATE_FILE = '/var/lib/alvaos/alerts.json'
 CONFIG_DIR = '/etc/alvaos'
 SESSIONS = {} # Token -> Username (In-memory for 0.1)
+
+ALERT_THRESHOLDS = {
+    'cpu_usage_warning': 85.0,
+    'cpu_usage_critical': 95.0,
+    'cpu_temp_warning': 75.0,
+    'cpu_temp_critical': 85.0,
+    'memory_warning': 85.0,
+    'memory_critical': 93.0,
+    'disk_warning': 90.0,
+    'disk_critical': 95.0,
+    'pool_warning': 85.0,
+    'pool_critical': 95.0,
+}
+
+ALERT_SEVERITY_PRIORITY = {
+    'critical': 0,
+    'warning': 1,
+    'info': 2,
+}
+
+DEFAULT_ALERTS_STATE = {
+    'telegram': {
+        'enabled': False,
+        'bot_token': '',
+        'paired_chat_id': '',
+        'paired_chat_label': '',
+        'paired_at': '',
+        'last_update_id': 0,
+    },
+    'pairing': {
+        'code': '',
+        'started_at': '',
+        'expires_at': '',
+    },
+    'delivery': {
+        'last_critical_fingerprint': '',
+        'last_critical_sent_at': '',
+    }
+}
 
 def is_root_user():
     try:
@@ -332,6 +373,405 @@ def save_users_state(state):
             json.dump(state, f, indent=2)
     except Exception as e:
         print(f"Error saving users state: {e}")
+
+def _utc_now():
+    return datetime.now(timezone.utc)
+
+def _now_iso():
+    return _utc_now().isoformat()
+
+def _parse_iso(value):
+    try:
+        raw = str(value or '').strip()
+        if not raw:
+            return None
+        if raw.endswith('Z'):
+            raw = raw[:-1] + '+00:00'
+        return datetime.fromisoformat(raw)
+    except Exception:
+        return None
+
+def _safe_int(value, fallback=0):
+    try:
+        return int(value)
+    except Exception:
+        return fallback
+
+def _read_cpu_temperature_c():
+    try:
+        temps = psutil.sensors_temperatures(fahrenheit=False)
+        if isinstance(temps, dict):
+            for group_name in ('coretemp', 'k10temp', 'cpu_thermal', 'cpu-thermal', 'soc_thermal'):
+                entries = temps.get(group_name, [])
+                for entry in entries:
+                    current = getattr(entry, 'current', None)
+                    if isinstance(current, (int, float)):
+                        return round(float(current), 1)
+            for entries in temps.values():
+                for entry in entries:
+                    current = getattr(entry, 'current', None)
+                    if isinstance(current, (int, float)):
+                        return round(float(current), 1)
+    except Exception:
+        pass
+    return None
+
+def _build_default_alerts_state():
+    return json.loads(json.dumps(DEFAULT_ALERTS_STATE))
+
+def _normalize_alerts_state(payload):
+    defaults = _build_default_alerts_state()
+    if not isinstance(payload, dict):
+        return defaults
+
+    merged = defaults
+    telegram = payload.get('telegram')
+    if isinstance(telegram, dict):
+        merged['telegram'].update(telegram)
+    pairing = payload.get('pairing')
+    if isinstance(pairing, dict):
+        merged['pairing'].update(pairing)
+    delivery = payload.get('delivery')
+    if isinstance(delivery, dict):
+        merged['delivery'].update(delivery)
+
+    merged['telegram']['enabled'] = bool(merged['telegram'].get('enabled', False))
+    merged['telegram']['bot_token'] = str(merged['telegram'].get('bot_token', '')).strip()
+    merged['telegram']['paired_chat_id'] = str(merged['telegram'].get('paired_chat_id', '')).strip()
+    merged['telegram']['paired_chat_label'] = str(merged['telegram'].get('paired_chat_label', '')).strip()
+    merged['telegram']['paired_at'] = str(merged['telegram'].get('paired_at', '')).strip()
+    merged['telegram']['last_update_id'] = _safe_int(merged['telegram'].get('last_update_id', 0), 0)
+
+    merged['pairing']['code'] = str(merged['pairing'].get('code', '')).strip().upper()
+    merged['pairing']['started_at'] = str(merged['pairing'].get('started_at', '')).strip()
+    merged['pairing']['expires_at'] = str(merged['pairing'].get('expires_at', '')).strip()
+
+    merged['delivery']['last_critical_fingerprint'] = str(merged['delivery'].get('last_critical_fingerprint', '')).strip()
+    merged['delivery']['last_critical_sent_at'] = str(merged['delivery'].get('last_critical_sent_at', '')).strip()
+
+    return merged
+
+def load_alerts_state():
+    try:
+        if os.path.exists(ALERTS_STATE_FILE):
+            with open(ALERTS_STATE_FILE, 'r') as f:
+                loaded = json.load(f)
+                normalized = _normalize_alerts_state(loaded)
+                if normalized != loaded:
+                    save_alerts_state(normalized)
+                return normalized
+    except Exception as e:
+        print(f"Error loading alerts state: {e}")
+    return _build_default_alerts_state()
+
+def save_alerts_state(state):
+    try:
+        ensure_directories()
+        normalized = _normalize_alerts_state(state)
+        with open(ALERTS_STATE_FILE, 'w') as f:
+            json.dump(normalized, f, indent=2)
+        return normalized
+    except Exception as e:
+        print(f"Error saving alerts state: {e}")
+        return _normalize_alerts_state(state)
+
+def _clear_pairing_state(state):
+    state['pairing'] = {
+        'code': '',
+        'started_at': '',
+        'expires_at': '',
+    }
+
+def _clear_telegram_chat_binding(state):
+    state['telegram']['paired_chat_id'] = ''
+    state['telegram']['paired_chat_label'] = ''
+    state['telegram']['paired_at'] = ''
+
+def _is_pairing_active(state):
+    pairing = state.get('pairing', {})
+    code = str(pairing.get('code', '')).strip()
+    expires_at = _parse_iso(pairing.get('expires_at'))
+    if not code or not expires_at:
+        return False
+    return expires_at > _utc_now()
+
+def _alert_settings_public_payload(state):
+    telegram = state.get('telegram', {})
+    pairing = state.get('pairing', {})
+    pairing_active = _is_pairing_active(state)
+    pairing_code = str(pairing.get('code', '')).strip() if pairing_active else ''
+    paired_chat = str(telegram.get('paired_chat_label') or telegram.get('paired_chat_id') or '').strip()
+
+    return {
+        'telegram': {
+            'enabled': bool(telegram.get('enabled')),
+            'bot_token_configured': bool(str(telegram.get('bot_token', '')).strip()),
+            'paired': bool(str(telegram.get('paired_chat_id', '')).strip()),
+            'paired_chat': paired_chat,
+            'paired_at': str(telegram.get('paired_at') or '').strip() or None,
+        },
+        'pairing': {
+            'active': pairing_active,
+            'code': pairing_code,
+            'command': f"/pair {pairing_code}" if pairing_code else '',
+            'expires_at': str(pairing.get('expires_at') or '').strip() or None,
+        }
+    }
+
+def _telegram_api_call(bot_token, method, payload=None, params=None, timeout_sec=10):
+    token = str(bot_token or '').strip()
+    if not token:
+        return False, 'Telegram bot token is not configured', None
+
+    url = f"https://api.telegram.org/bot{token}/{method}"
+    try:
+        if payload is not None:
+            response = requests.post(url, json=payload, timeout=timeout_sec)
+        else:
+            response = requests.get(url, params=params, timeout=timeout_sec)
+    except Exception as e:
+        return False, f'Telegram request failed: {e}', None
+
+    try:
+        data = response.json()
+    except Exception:
+        data = {}
+
+    if response.status_code != 200 or not isinstance(data, dict) or not data.get('ok'):
+        description = ''
+        if isinstance(data, dict):
+            description = str(data.get('description') or '').strip()
+        detail = description or f'HTTP {response.status_code}'
+        return False, f'Telegram API error: {detail}', data
+
+    return True, '', data.get('result')
+
+def _generate_pairing_code(length=6):
+    alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
+
+def _build_alert_item(alert_id, severity, title, message, route='', action_label='Open'):
+    return {
+        'id': alert_id,
+        'severity': severity,
+        'title': title,
+        'message': message,
+        'route': route,
+        'action_label': action_label if route else '',
+        'created_at': _now_iso(),
+    }
+
+def _collect_system_alerts():
+    alerts = []
+
+    try:
+        cpu_usage = float(psutil.cpu_percent(interval=0.15))
+        if cpu_usage >= ALERT_THRESHOLDS['cpu_usage_critical']:
+            alerts.append(_build_alert_item(
+                alert_id='cpu-usage-critical',
+                severity='critical',
+                title='CPU usage is critical',
+                message=f'CPU load is at {cpu_usage:.1f}%.',
+                route='index.html',
+                action_label='Open Dashboard'
+            ))
+        elif cpu_usage >= ALERT_THRESHOLDS['cpu_usage_warning']:
+            alerts.append(_build_alert_item(
+                alert_id='cpu-usage-warning',
+                severity='warning',
+                title='CPU usage is high',
+                message=f'CPU load is at {cpu_usage:.1f}%.',
+                route='index.html',
+                action_label='Open Dashboard'
+            ))
+    except Exception:
+        pass
+
+    cpu_temp_c = _read_cpu_temperature_c()
+    if isinstance(cpu_temp_c, (int, float)):
+        if cpu_temp_c >= ALERT_THRESHOLDS['cpu_temp_critical']:
+            alerts.append(_build_alert_item(
+                alert_id='cpu-temp-critical',
+                severity='critical',
+                title='CPU temperature is critical',
+                message=f'CPU temperature reached {cpu_temp_c:.1f} degC.',
+                route='index.html',
+                action_label='Open Dashboard'
+            ))
+        elif cpu_temp_c >= ALERT_THRESHOLDS['cpu_temp_warning']:
+            alerts.append(_build_alert_item(
+                alert_id='cpu-temp-warning',
+                severity='warning',
+                title='CPU temperature is elevated',
+                message=f'CPU temperature is {cpu_temp_c:.1f} degC.',
+                route='index.html',
+                action_label='Open Dashboard'
+            ))
+
+    try:
+        memory_percent = float(psutil.virtual_memory().percent)
+        if memory_percent >= ALERT_THRESHOLDS['memory_critical']:
+            alerts.append(_build_alert_item(
+                alert_id='memory-critical',
+                severity='critical',
+                title='Memory pressure is critical',
+                message=f'RAM usage is at {memory_percent:.1f}%.',
+                route='index.html',
+                action_label='Open Dashboard'
+            ))
+        elif memory_percent >= ALERT_THRESHOLDS['memory_warning']:
+            alerts.append(_build_alert_item(
+                alert_id='memory-warning',
+                severity='warning',
+                title='Memory usage is high',
+                message=f'RAM usage is at {memory_percent:.1f}%.',
+                route='index.html',
+                action_label='Open Dashboard'
+            ))
+    except Exception:
+        pass
+
+    try:
+        root_disk_percent = float(psutil.disk_usage('/').percent)
+        if root_disk_percent >= ALERT_THRESHOLDS['disk_critical']:
+            alerts.append(_build_alert_item(
+                alert_id='root-disk-critical',
+                severity='critical',
+                title='Root filesystem is almost full',
+                message=f'Root filesystem usage is at {root_disk_percent:.1f}%.',
+                route='storage.html',
+                action_label='Open Storage'
+            ))
+        elif root_disk_percent >= ALERT_THRESHOLDS['disk_warning']:
+            alerts.append(_build_alert_item(
+                alert_id='root-disk-warning',
+                severity='warning',
+                title='Root filesystem usage is high',
+                message=f'Root filesystem usage is at {root_disk_percent:.1f}%.',
+                route='storage.html',
+                action_label='Open Storage'
+            ))
+    except Exception:
+        pass
+
+    try:
+        pools_state = load_pools_state()
+        if isinstance(pools_state, dict):
+            for pool_id, pool_data in pools_state.items():
+                mount_point = str((pool_data or {}).get('mount_point') or '').strip()
+                if not mount_point:
+                    continue
+                pool_name = str((pool_data or {}).get('name') or pool_id)
+                if not os.path.ismount(mount_point):
+                    alerts.append(_build_alert_item(
+                        alert_id=f'pool-{pool_id}-unmounted',
+                        severity='critical',
+                        title='Pool is not mounted',
+                        message=f'Pool "{pool_name}" is configured but not mounted.',
+                        route='storage.html',
+                        action_label='Open Storage'
+                    ))
+                    continue
+                try:
+                    pool_percent = float(psutil.disk_usage(mount_point).percent)
+                    if pool_percent >= ALERT_THRESHOLDS['pool_critical']:
+                        alerts.append(_build_alert_item(
+                            alert_id=f'pool-{pool_id}-critical',
+                            severity='critical',
+                            title='Pool capacity is critical',
+                            message=f'Pool "{pool_name}" is at {pool_percent:.1f}% usage.',
+                            route='storage.html',
+                            action_label='Open Storage'
+                        ))
+                    elif pool_percent >= ALERT_THRESHOLDS['pool_warning']:
+                        alerts.append(_build_alert_item(
+                            alert_id=f'pool-{pool_id}-warning',
+                            severity='warning',
+                            title='Pool capacity is high',
+                            message=f'Pool "{pool_name}" is at {pool_percent:.1f}% usage.',
+                            route='storage.html',
+                            action_label='Open Storage'
+                        ))
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    alerts.sort(key=lambda item: (
+        ALERT_SEVERITY_PRIORITY.get(str(item.get('severity', 'info')).lower(), 9),
+        str(item.get('title', ''))
+    ))
+    return alerts
+
+def _build_alert_summary(alerts):
+    summary = {'critical': 0, 'warning': 0, 'info': 0, 'total': 0}
+    for item in alerts:
+        sev = str(item.get('severity', 'info')).lower()
+        if sev not in summary:
+            continue
+        summary[sev] += 1
+        summary['total'] += 1
+    return summary
+
+def _critical_fingerprint(alerts):
+    critical = [
+        f"{item.get('id', '')}:{item.get('message', '')}"
+        for item in alerts
+        if str(item.get('severity', '')).lower() == 'critical'
+    ]
+    if not critical:
+        return ''
+    digest_input = '|'.join(sorted(critical))
+    return hashlib.sha256(digest_input.encode('utf-8')).hexdigest()
+
+def _maybe_send_telegram_critical_alerts(alerts, state):
+    telegram = state.get('telegram', {})
+    delivery = state.get('delivery', {})
+    token = str(telegram.get('bot_token', '')).strip()
+    chat_id = str(telegram.get('paired_chat_id', '')).strip()
+    enabled = bool(telegram.get('enabled', False))
+    if not enabled or not token or not chat_id:
+        return
+
+    fingerprint = _critical_fingerprint(alerts)
+    if not fingerprint:
+        if delivery.get('last_critical_fingerprint'):
+            state['delivery']['last_critical_fingerprint'] = ''
+            save_alerts_state(state)
+        return
+
+    if fingerprint == str(delivery.get('last_critical_fingerprint', '')).strip():
+        return
+
+    critical_alerts = [item for item in alerts if str(item.get('severity', '')).lower() == 'critical']
+    if not critical_alerts:
+        return
+
+    lines = ['AlvaOS critical alerts detected:']
+    for item in critical_alerts[:8]:
+        lines.append(f"- {item.get('title')}: {item.get('message')}")
+    if len(critical_alerts) > 8:
+        lines.append(f"- ... and {len(critical_alerts) - 8} more")
+    lines.append('')
+    lines.append(f"Generated at {_utc_now().strftime('%Y-%m-%d %H:%M:%S UTC')}")
+
+    ok, error, _result = _telegram_api_call(
+        token,
+        'sendMessage',
+        payload={
+            'chat_id': chat_id,
+            'text': '\n'.join(lines),
+            'disable_web_page_preview': True,
+        },
+        timeout_sec=12
+    )
+    if not ok:
+        print(f"Telegram critical alert delivery failed: {error}")
+        return
+
+    state['delivery']['last_critical_fingerprint'] = fingerprint
+    state['delivery']['last_critical_sent_at'] = _now_iso()
+    save_alerts_state(state)
 
 def is_valid_username(username):
     return bool(re.match(r'^[a-z_][a-z0-9_-]{1,31}$', username))
@@ -1101,6 +1541,240 @@ def get_system_info():
         'storage_pools': pool_storage_info,
         'network': network_info,
         'system': system_info,
+    })
+
+@app.route('/api/v1/alerts', methods=['GET'])
+@require_auth
+def get_alerts():
+    alerts = _collect_system_alerts()
+    summary = _build_alert_summary(alerts)
+    state = load_alerts_state()
+    _maybe_send_telegram_critical_alerts(alerts, state)
+    return jsonify({
+        'alerts': alerts,
+        'summary': summary,
+        'generated_at': _now_iso(),
+    })
+
+@app.route('/api/v1/alerts/settings', methods=['GET', 'POST'])
+@require_auth
+def alerts_settings():
+    state = load_alerts_state()
+
+    if request.method == 'GET':
+        return jsonify({
+            'success': True,
+            'settings': _alert_settings_public_payload(state)
+        })
+
+    payload = request.get_json(silent=True) or {}
+    telegram_payload = payload.get('telegram')
+    if telegram_payload is None:
+        telegram_payload = payload
+    if not isinstance(telegram_payload, dict):
+        return jsonify({'error': 'Invalid payload'}), 400
+
+    telegram = state.get('telegram', {})
+    if 'enabled' in telegram_payload:
+        telegram['enabled'] = bool(telegram_payload.get('enabled'))
+
+    if 'bot_token' in telegram_payload:
+        bot_token = str(telegram_payload.get('bot_token') or '').strip()
+        previous_token = str(telegram.get('bot_token') or '').strip()
+        telegram['bot_token'] = bot_token
+
+        if not bot_token:
+            _clear_telegram_chat_binding(state)
+            _clear_pairing_state(state)
+            state['delivery']['last_critical_fingerprint'] = ''
+        elif previous_token and previous_token != bot_token:
+            _clear_telegram_chat_binding(state)
+            _clear_pairing_state(state)
+            telegram['last_update_id'] = 0
+            state['delivery']['last_critical_fingerprint'] = ''
+
+    if bool(telegram_payload.get('clear_pairing')):
+        _clear_telegram_chat_binding(state)
+        _clear_pairing_state(state)
+        state['delivery']['last_critical_fingerprint'] = ''
+
+    state['telegram'] = telegram
+    saved = save_alerts_state(state)
+
+    return jsonify({
+        'success': True,
+        'settings': _alert_settings_public_payload(saved)
+    })
+
+@app.route('/api/v1/alerts/telegram/pairing/start', methods=['POST'])
+@require_auth
+def start_telegram_pairing():
+    state = load_alerts_state()
+    token = str(state.get('telegram', {}).get('bot_token') or '').strip()
+    if not token:
+        return jsonify({'error': 'Configure and save a Telegram bot token first'}), 400
+
+    expires_at = _utc_now() + timedelta(minutes=10)
+    code = _generate_pairing_code(6)
+    state['pairing'] = {
+        'code': code,
+        'started_at': _now_iso(),
+        'expires_at': expires_at.isoformat(),
+    }
+    save_alerts_state(state)
+
+    return jsonify({
+        'success': True,
+        'pairing': _alert_settings_public_payload(state).get('pairing', {}),
+        'message': f'Send "/pair {code}" to your bot, then click "Check Pairing".'
+    })
+
+@app.route('/api/v1/alerts/telegram/pairing/check', methods=['POST'])
+@require_auth
+def check_telegram_pairing():
+    state = load_alerts_state()
+    telegram = state.get('telegram', {})
+    token = str(telegram.get('bot_token') or '').strip()
+    if not token:
+        return jsonify({'error': 'Telegram bot token is not configured'}), 400
+
+    payload = request.get_json(silent=True) or {}
+    expected_code = str(payload.get('code') or state.get('pairing', {}).get('code') or '').strip().upper()
+    if not expected_code:
+        return jsonify({'error': 'No active pairing code. Generate one first.'}), 400
+    if not _is_pairing_active(state):
+        _clear_pairing_state(state)
+        save_alerts_state(state)
+        return jsonify({'error': 'Pairing code expired. Generate a new one.'}), 400
+
+    offset = _safe_int(telegram.get('last_update_id', 0), 0) + 1
+    ok, error, updates = _telegram_api_call(
+        token,
+        'getUpdates',
+        payload=None,
+        params={
+            'offset': offset,
+            'limit': 100,
+            'timeout': 0
+        },
+        timeout_sec=12
+    )
+    if not ok:
+        return jsonify({'error': error}), 400
+
+    if not isinstance(updates, list):
+        updates = []
+
+    max_update_id = _safe_int(telegram.get('last_update_id', 0), 0)
+    started_at = _parse_iso(state.get('pairing', {}).get('started_at'))
+    started_ts = int(started_at.timestamp()) if started_at else 0
+    matched_chat = None
+
+    for update in updates:
+        update_id = _safe_int(update.get('update_id', 0), 0)
+        if update_id > max_update_id:
+            max_update_id = update_id
+
+        message = update.get('message') or update.get('edited_message') or {}
+        text = str(message.get('text') or '').strip()
+        if not text:
+            continue
+
+        cmd = re.match(r'^/?pair(?:@\w+)?\s+([A-Za-z0-9]+)\s*$', text, flags=re.IGNORECASE)
+        if not cmd:
+            continue
+
+        sent_code = str(cmd.group(1) or '').strip().upper()
+        if sent_code != expected_code:
+            continue
+
+        msg_ts = _safe_int(message.get('date', 0), 0)
+        if started_ts and msg_ts and msg_ts < (started_ts - 60):
+            continue
+
+        chat = message.get('chat') or {}
+        chat_id = chat.get('id')
+        if chat_id is None:
+            continue
+
+        chat_label = (
+            str(chat.get('title') or '').strip()
+            or str(chat.get('username') or '').strip()
+            or (
+                f"{str(chat.get('first_name') or '').strip()} {str(chat.get('last_name') or '').strip()}"
+            ).strip()
+            or str(chat_id)
+        )
+
+        matched_chat = {
+            'id': str(chat_id),
+            'label': chat_label,
+        }
+        break
+
+    telegram['last_update_id'] = max_update_id
+    state['telegram'] = telegram
+
+    if matched_chat:
+        state['telegram']['paired_chat_id'] = matched_chat['id']
+        state['telegram']['paired_chat_label'] = matched_chat['label']
+        state['telegram']['paired_at'] = _now_iso()
+        _clear_pairing_state(state)
+        save_alerts_state(state)
+        return jsonify({
+            'success': True,
+            'paired': True,
+            'settings': _alert_settings_public_payload(state),
+            'message': f'Paired successfully with "{matched_chat["label"]}".'
+        })
+
+    save_alerts_state(state)
+    return jsonify({
+        'success': True,
+        'paired': False,
+        'settings': _alert_settings_public_payload(state),
+        'message': 'No matching pairing message found yet. Send the pairing command in Telegram and retry.'
+    })
+
+@app.route('/api/v1/alerts/telegram/test', methods=['POST'])
+@require_auth
+def test_telegram_alert_delivery():
+    state = load_alerts_state()
+    telegram = state.get('telegram', {})
+    token = str(telegram.get('bot_token') or '').strip()
+    chat_id = str(telegram.get('paired_chat_id') or '').strip()
+    if not token:
+        return jsonify({'error': 'Telegram bot token is not configured'}), 400
+    if not chat_id:
+        return jsonify({'error': 'Telegram bot is not paired'}), 400
+
+    ok, error, _ = _telegram_api_call(
+        token,
+        'sendMessage',
+        payload={
+            'chat_id': chat_id,
+            'text': f'AlvaOS test alert\nTime: {_utc_now().strftime("%Y-%m-%d %H:%M:%S UTC")}\nSeverity: critical',
+            'disable_web_page_preview': True,
+        },
+        timeout_sec=12
+    )
+    if not ok:
+        return jsonify({'error': error}), 400
+
+    return jsonify({'success': True, 'message': 'Test alert sent to Telegram'})
+
+@app.route('/api/v1/alerts/telegram/unpair', methods=['POST'])
+@require_auth
+def unpair_telegram_alert_delivery():
+    state = load_alerts_state()
+    _clear_telegram_chat_binding(state)
+    _clear_pairing_state(state)
+    state['delivery']['last_critical_fingerprint'] = ''
+    save_alerts_state(state)
+    return jsonify({
+        'success': True,
+        'settings': _alert_settings_public_payload(state),
+        'message': 'Telegram pairing removed'
     })
 
 @app.route('/api/v1/system/time', methods=['GET', 'POST'])

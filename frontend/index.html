@@ -61,6 +61,28 @@
                 <p style="color: var(--text-secondary); font-size: 0.95rem;">System health and resource usage.</p>
             </div>
 
+            <div class="card health-overview-card">
+                <div class="card-header">
+                    <div class="card-title">Health Overview</div>
+                    <div style="color:var(--text-secondary)">🩺</div>
+                </div>
+                <div class="health-overview-grid">
+                    <div class="health-status-pill healthy" id="health-overall-status">Healthy</div>
+                    <div class="health-overview-stat">
+                        <span class="setting-label">Critical Alerts</span>
+                        <span class="mono-text" id="alert-count-critical">0</span>
+                    </div>
+                    <div class="health-overview-stat">
+                        <span class="setting-label">Warnings</span>
+                        <span class="mono-text" id="alert-count-warning">0</span>
+                    </div>
+                    <div class="health-overview-stat">
+                        <span class="setting-label">Last Alert Scan</span>
+                        <span class="mono-text" id="alerts-last-scan">-</span>
+                    </div>
+                </div>
+            </div>
+
             <div class="dashboard-grid">
 
                 <!-- CPU Card -->
@@ -158,6 +180,90 @@
                 </div>
 
                 <!-- System Info Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Quick Actions</div>
+                        <div style="color:var(--text-secondary)">🚀</div>
+                    </div>
+                    <div class="quick-actions-grid">
+                        <a class="quick-action-link" href="storage.html">
+                            <span class="quick-action-title">Storage</span>
+                            <span class="quick-action-sub">Pools, disks, and shares</span>
+                        </a>
+                        <a class="quick-action-link" href="updates.html">
+                            <span class="quick-action-title">Updates</span>
+                            <span class="quick-action-sub">Check and install updates</span>
+                        </a>
+                        <a class="quick-action-link" href="system.html">
+                            <span class="quick-action-title">System</span>
+                            <span class="quick-action-sub">Network, time, and power</span>
+                        </a>
+                        <a class="quick-action-link" href="backup.html">
+                            <span class="quick-action-title">Backup</span>
+                            <span class="quick-action-sub">Snapshots and restore</span>
+                        </a>
+                    </div>
+                </div>
+
+                <div class="card" style="grid-column: 1 / -1;">
+                    <div class="card-header">
+                        <div class="card-title">Smart Alerts</div>
+                        <div style="color:var(--text-secondary)">🚨</div>
+                    </div>
+                    <div id="dashboard-alert-list" class="alerts-list">
+                        <div class="alerts-empty">No active alerts. Your system looks healthy.</div>
+                    </div>
+                </div>
+
+                <div class="card" style="grid-column: 1 / -1;">
+                    <div class="card-header">
+                        <div class="card-title">Usage & Temperature History</div>
+                        <div style="color:var(--text-secondary)">📈</div>
+                    </div>
+                    <div class="metric-sub" style="justify-content: space-between; margin-bottom: 10px;">
+                        <span>Recent trend from dashboard samples</span>
+                        <span class="mono-text" id="history-range-label">Last 10 minutes</span>
+                    </div>
+                    <div class="history-grid">
+                        <div class="history-panel">
+                            <div class="history-panel-head">
+                                <span>CPU Usage</span>
+                                <span id="history-cpu-current" class="mono-text">-</span>
+                            </div>
+                            <svg class="history-chart" viewBox="0 0 100 30" preserveAspectRatio="none">
+                                <path id="history-cpu-path" class="history-line cpu"></path>
+                            </svg>
+                        </div>
+                        <div class="history-panel">
+                            <div class="history-panel-head">
+                                <span>Memory Usage</span>
+                                <span id="history-mem-current" class="mono-text">-</span>
+                            </div>
+                            <svg class="history-chart" viewBox="0 0 100 30" preserveAspectRatio="none">
+                                <path id="history-mem-path" class="history-line mem"></path>
+                            </svg>
+                        </div>
+                        <div class="history-panel">
+                            <div class="history-panel-head">
+                                <span>Storage Usage</span>
+                                <span id="history-disk-current" class="mono-text">-</span>
+                            </div>
+                            <svg class="history-chart" viewBox="0 0 100 30" preserveAspectRatio="none">
+                                <path id="history-disk-path" class="history-line disk"></path>
+                            </svg>
+                        </div>
+                        <div class="history-panel">
+                            <div class="history-panel-head">
+                                <span>CPU Temperature</span>
+                                <span id="history-temp-current" class="mono-text">-</span>
+                            </div>
+                            <svg class="history-chart" viewBox="0 0 100 30" preserveAspectRatio="none">
+                                <path id="history-temp-path" class="history-line temp"></path>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="card" style="grid-column: 1 / -1;">
                     <div class="card-header">
                         <div class="card-title">System Information</div>

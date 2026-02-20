@@ -162,6 +162,56 @@
                     </div>
                 </div>
 
+                <!-- Telegram Alerts -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Telegram Critical Alerts</div>
+                        <div style="color:var(--text-secondary)">📣</div>
+                    </div>
+                    <p class="metric-sub" style="margin-bottom: 12px;">Pair a Telegram bot to receive critical system alerts.</p>
+
+                    <div class="setting-group">
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" id="telegram-enabled-toggle" style="margin-right:8px;">
+                            <span style="font-size:0.85rem; color:var(--text-secondary);">Enable Telegram delivery</span>
+                        </label>
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label" for="telegram-bot-token">Bot Token</label>
+                        <input type="password" id="telegram-bot-token" placeholder="123456789:AA..." autocomplete="off"
+                            style="width:100%;">
+                        <div class="metric-sub" id="telegram-token-status" style="margin-top:6px;">No token saved.</div>
+                    </div>
+
+                    <div style="display:flex; gap:10px; flex-wrap: wrap; margin-bottom: 12px;">
+                        <button id="telegram-save-btn" class="btn-primary">Save Settings</button>
+                        <button id="telegram-start-pairing-btn" class="btn-secondary">Generate Pairing Code</button>
+                    </div>
+
+                    <div class="list-box" style="margin-bottom: 12px;">
+                        <div class="list-item">
+                            <span>Pairing Status</span>
+                            <span id="telegram-pairing-status" class="mono-text">Not paired</span>
+                        </div>
+                        <div class="list-item">
+                            <span>Pairing Command</span>
+                            <span id="telegram-pairing-command" class="mono-text">-</span>
+                        </div>
+                        <div class="list-item">
+                            <span>Paired Chat</span>
+                            <span id="telegram-paired-chat" class="mono-text">-</span>
+                        </div>
+                    </div>
+
+                    <div style="display:flex; gap:10px; flex-wrap: wrap;">
+                        <button id="telegram-check-pairing-btn" class="btn-secondary">Check Pairing</button>
+                        <button id="telegram-test-btn" class="btn-secondary">Send Test Alert</button>
+                        <button id="telegram-unpair-btn" class="btn-secondary"
+                            style="border-color:var(--accent-danger); color:var(--accent-danger);">Unpair</button>
+                    </div>
+                </div>
+
                 <!-- Logs (Full Width) -->
                 <div class="card" style="grid-column: 1 / -1; height: 400px; display:flex; flex-direction:column;">
                     <div class="card-header">

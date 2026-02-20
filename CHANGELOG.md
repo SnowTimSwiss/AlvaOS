@@ -2,6 +2,21 @@
 
 All notable changes to AlvaOS will be documented in this file.
 
+## [0.9.0] - 20.02.26
+
+### Added - Monitoring & Health
+- **Smart alerts API**: New `/api/v1/alerts` endpoint with severity-based system alerts (critical/warning/info).
+- **Alert navigation targets**: Alerts now include contextual destinations so users can jump directly to relevant pages.
+- **Telegram critical alerts**: New Telegram integration with bot token storage, pairing flow, test delivery, and unpair controls.
+
+### Changed
+- **Dashboard UX**: Added health overview strip, smart alert feed, and quick actions panel.
+- **Alert rendering**: Dashboard now shows clickable alerts with severity chips and scan timestamp.
+- **System settings UX**: Added Telegram pairing workflow in System Settings.
+
+### Notes
+- **Usage and temperature history** remains planned for a later release.
+
 ## [0.8.0] - 20.02.26
 
 ### Added - Buddy Backup (Part II)
