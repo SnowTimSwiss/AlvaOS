@@ -1218,8 +1218,8 @@ class BuddyBackupManager:
         return os.path.join(base, ".alvaos-buddy-streams")
 
     def _fallback_stream_root_path(self) -> str:
-        # Keep a user-writable fallback outside potentially root-owned storage paths.
-        return os.path.join(tempfile.gettempdir(), "alvaos-buddy-streams")
+        # Persistent service-owned fallback when selected incoming path is not writable.
+        return os.path.join(self.state_dir, "buddy-streams")
 
     def _select_writable_stream_owner_dir(self, owner_node_id: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
         owner = str(owner_node_id or "").strip()
@@ -1229,7 +1229,10 @@ class BuddyBackupManager:
         preferred_root = self._stream_root_path()
         if not preferred_root:
             return None, None, "Local incoming path is not configured or not allowed"
+        fallback_root = self._fallback_stream_root_path()
         candidates = [preferred_root]
+        if fallback_root and fallback_root != preferred_root:
+            candidates.append(fallback_root)
 
         last_error = "No writable stream directory available"
         for root in candidates:
@@ -1287,7 +1290,13 @@ class BuddyBackupManager:
                     return root, owner_dir, None
                 probe_err = probe_err_after_fix or probe_err
 
-            last_error = f"Stream path is not writable: {owner_dir} ({probe_err})"
+            if root == fallback_root:
+                last_error = f"Stream path is not writable: {owner_dir} ({probe_err})"
+            else:
+                last_error = (
+                    f"Primary stream path not writable ({owner_dir}): {probe_err}. "
+                    f"Trying fallback path..."
+                )
             continue
 
         return None, None, last_error
@@ -2691,6 +2700,8 @@ class BuddyBackupManager:
             return False, {"error": "Peer not found"}
 
         runtime = self._runtime_status()
+        tunnel_state = str(runtime.get("state") or "unknown").lower()
+        tunnel_up = tunnel_state == "up"
         runtime_peers_by_key = {}
         for item in runtime.get("peers", []) if isinstance(runtime.get("peers"), list) else []:
             if not isinstance(item, dict):
@@ -2703,8 +2714,13 @@ class BuddyBackupManager:
         runtime_peer = runtime_peers_by_key.get(public_key, {})
         latest_handshake = str(runtime_peer.get("latest_handshake") or "").strip()
         handshake_age = self._parse_handshake_age_seconds(latest_handshake)
-        online = bool(runtime_peer) and latest_handshake.lower() not in ("", "never")
-        connected = bool(online and handshake_age is not None and handshake_age <= self.connected_handshake_threshold_seconds)
+        online = bool(tunnel_up and runtime_peer) and latest_handshake.lower() not in ("", "never")
+        connected = bool(
+            tunnel_up
+            and online
+            and handshake_age is not None
+            and handshake_age <= self.connected_handshake_threshold_seconds
+        )
 
         tunnel_ip = str(peer.get("tunnel_ip") or "").strip()
         ping_payload = {
@@ -2723,21 +2739,24 @@ class BuddyBackupManager:
 
         api_probe = self._probe_peer_api(peer)
 
-        if api_probe.get("attempted"):
-            connection_ok = bool(api_probe.get("success"))
-            if connection_ok:
-                message = "Connection test successful (buddy API reachable and authenticated)"
-            else:
-                message = f"Connection test failed (API check): {api_probe.get('error') or 'unknown error'}"
+        ping_ok = bool(ping_payload.get("success"))
+        api_ok = bool(api_probe.get("success"))
+        wg_transport_ok = bool(connected and (not ping_payload.get("attempted") or ping_ok))
+        connection_ok = wg_transport_ok
+        if connection_ok:
+            message = "Connection test successful (WireGuard tunnel + buddy transport reachable)"
         else:
-            connection_ok = bool(ping_payload["success"])
-            if connection_ok:
-                message = "Connection test successful (ICMP ping succeeded, API probe unavailable)"
+            if not tunnel_up:
+                if api_ok:
+                    message = "Buddy API reachable, but WireGuard tunnel is DOWN"
+                else:
+                    message = f"WireGuard tunnel is DOWN ({runtime.get('message') or 'no runtime info'})"
+            elif not connected:
+                message = "WireGuard tunnel is up, but no recent handshake with this buddy"
+            elif ping_payload.get("attempted") and not ping_ok:
+                message = f"WireGuard handshake exists, but tunnel ping failed: {ping_payload.get('error') or 'unknown error'}"
             else:
-                message = (
-                    "Connection test failed (API probe unavailable and ping failed): "
-                    f"{api_probe.get('error') or 'unknown reason'}"
-                )
+                message = f"Connection test failed: {api_probe.get('error') or 'unknown reason'}"
 
         return True, {
             "node_id": target,
@@ -2764,6 +2783,8 @@ class BuddyBackupManager:
         settings_full = self.get_settings(include_secret=True)
         policies = settings_full.get("peer_policies", {})
         runtime = self._runtime_status()
+        tunnel_state = str(runtime.get("state") or "unknown").lower()
+        tunnel_up = tunnel_state == "up"
         runtime_peers_by_key = {}
         for item in runtime.get("peers", []) if isinstance(runtime.get("peers"), list) else []:
             if not isinstance(item, dict):
@@ -2793,8 +2814,13 @@ class BuddyBackupManager:
             runtime_peer = runtime_peers_by_key.get(public_key, {})
             latest_handshake = str(runtime_peer.get("latest_handshake") or "").strip()
             handshake_age = self._parse_handshake_age_seconds(latest_handshake)
-            online = bool(runtime_peer) and latest_handshake.lower() not in ("", "never")
-            connected = bool(online and handshake_age is not None and handshake_age <= self.connected_handshake_threshold_seconds)
+            online = bool(tunnel_up and runtime_peer) and latest_handshake.lower() not in ("", "never")
+            connected = bool(
+                tunnel_up
+                and online
+                and handshake_age is not None
+                and handshake_age <= self.connected_handshake_threshold_seconds
+            )
             item["runtime"] = {
                 "in_tunnel": bool(runtime_peer),
                 "endpoint": str(runtime_peer.get("endpoint") or "").strip(),
