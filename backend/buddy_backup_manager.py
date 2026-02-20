@@ -1031,6 +1031,45 @@ class BuddyBackupManager:
             return False, err or f"Failed to delete existing subvolume: {target}", False
         return True, "", True
 
+    def _ensure_restore_collision_not_default(
+        self,
+        collision_path: str,
+        mount_root: str,
+        btrfs_cmd: str,
+    ) -> Tuple[bool, str]:
+        target = os.path.normpath(str(collision_path or "").strip())
+        root = os.path.normpath(str(mount_root or "").strip())
+        if not target or not root:
+            return False, "Invalid restore collision path"
+        if not self._path_is_btrfs_subvolume(target):
+            return True, ""
+
+        collision_id = self._get_subvolume_id(target)
+        if not collision_id:
+            return True, ""
+        default_id = self._get_default_subvolume_id(root)
+        if not default_id or collision_id != default_id:
+            return True, ""
+
+        active_id = self._get_subvolume_id(root)
+        if not active_id:
+            return False, (
+                f"Restore target default subvolume points to existing snapshot ({target}), "
+                "but mounted subvolume ID could not be resolved"
+            )
+        if active_id == collision_id:
+            return False, (
+                f"Restore collision subvolume is currently mounted/default and cannot be deleted in place: {target}"
+            )
+
+        set_res, set_err = self.run_command(
+            [btrfs_cmd, "subvolume", "set-default", str(active_id), root],
+            timeout=120,
+        )
+        if set_err or not set_res or set_res.returncode != 0:
+            return False, set_err or "Failed to switch default subvolume before cleanup"
+        return True, ""
+
     def _cleanup_temp_subvolume(self, subvolume_path: str, btrfs_cmd: str, attempts: int = 3) -> Tuple[bool, str]:
         target = os.path.normpath(str(subvolume_path or "").strip())
         if not target:
@@ -2531,6 +2570,14 @@ class BuddyBackupManager:
         if expected_name:
             expected_path = os.path.normpath(os.path.join(target_parent, expected_name))
             if self._path_is_within_parent(expected_path, target_parent) and expected_path != os.path.normpath(target_parent):
+                if target_is_mount_root:
+                    def_ok, def_err = self._ensure_restore_collision_not_default(
+                        collision_path=expected_path,
+                        mount_root=target_source,
+                        btrfs_cmd=btrfs_cmd,
+                    )
+                    if not def_ok:
+                        return False, {"error": def_err or "Failed to prepare restore target default subvolume"}
                 cleanup_ok, cleanup_err, _ = self._delete_subvolume_if_exists(expected_path, btrfs_cmd)
                 if not cleanup_ok:
                     return False, {"error": cleanup_err or f"Failed to prepare restore target: {expected_path}"}
@@ -2546,6 +2593,14 @@ class BuddyBackupManager:
             if collision_name:
                 collision_path = os.path.normpath(os.path.join(target_parent, collision_name))
                 if self._path_is_within_parent(collision_path, target_parent) and collision_path != os.path.normpath(target_parent):
+                    if target_is_mount_root:
+                        def_ok, def_err = self._ensure_restore_collision_not_default(
+                            collision_path=collision_path,
+                            mount_root=target_source,
+                            btrfs_cmd=btrfs_cmd,
+                        )
+                        if not def_ok:
+                            return False, {"error": def_err or "Failed to prepare receive collision cleanup"}
                     cleanup_ok, cleanup_err, cleaned = self._delete_subvolume_if_exists(collision_path, btrfs_cmd)
                     if cleanup_ok and cleaned:
                         retried = True
