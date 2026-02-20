@@ -1034,7 +1034,8 @@ class BuddyBackupManager:
         return os.path.join(base, ".alvaos-buddy-streams")
 
     def _fallback_stream_root_path(self) -> str:
-        return os.path.join(self.state_dir, "buddy-streams")
+        # Keep a user-writable fallback outside potentially root-owned storage paths.
+        return os.path.join(tempfile.gettempdir(), "alvaos-buddy-streams")
 
     def _select_writable_stream_owner_dir(self, owner_node_id: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
         owner = str(owner_node_id or "").strip()
@@ -1049,15 +1050,17 @@ class BuddyBackupManager:
 
         last_error = "No writable stream directory available"
         for root in candidates:
-            ok_root, root_err = self._mkdir_p(root)
-            if not ok_root:
-                last_error = root_err or f"Failed to prepare stream root: {root}"
+            try:
+                Path(root).mkdir(parents=True, exist_ok=True)
+            except Exception as exc:
+                last_error = f"Failed to prepare stream root: {root} ({exc})"
                 continue
 
             owner_dir = os.path.join(root, owner)
-            ok_owner, owner_err = self._mkdir_p(owner_dir)
-            if not ok_owner:
-                last_error = owner_err or f"Failed to prepare owner stream path: {owner_dir}"
+            try:
+                Path(owner_dir).mkdir(parents=True, exist_ok=True)
+            except Exception as exc:
+                last_error = f"Failed to prepare owner stream path: {owner_dir} ({exc})"
                 continue
 
             probe = os.path.join(owner_dir, f".write-probe-{secrets.token_hex(4)}")
@@ -1081,6 +1084,71 @@ class BuddyBackupManager:
                 continue
 
         return None, None, last_error
+
+    def _probe_peer_api(self, peer: Dict) -> Dict:
+        remote_secret = str(peer.get("api_secret") or "").strip()
+        if not remote_secret:
+            return {
+                "attempted": False,
+                "success": False,
+                "url": "",
+                "error": "Peer is missing API secret. Re-pair required.",
+            }
+
+        urls = self._peer_api_urls(peer, "/api/v1/backup/buddy/peer/list")
+        if not urls:
+            return {
+                "attempted": False,
+                "success": False,
+                "url": "",
+                "error": "Peer API endpoint is not configured",
+            }
+
+        identity = self._identity_public()
+        owner_node_id = str(identity.get("node_id") or "").strip()
+        params = {"owner_node_id": owner_node_id, "limit": "1"}
+        last_error = "API probe failed"
+        last_url = ""
+
+        for url in urls:
+            last_url = url
+            verify_tls = False if url.startswith("https://") else True
+            try:
+                response = requests.get(
+                    url,
+                    headers={"X-Buddy-Secret": remote_secret},
+                    params=params,
+                    timeout=8,
+                    verify=verify_tls,
+                )
+                try:
+                    body = response.json() if response.content else {}
+                except Exception:
+                    body = {}
+                if 200 <= int(response.status_code) < 300 and not body.get("error"):
+                    return {
+                        "attempted": True,
+                        "success": True,
+                        "url": url,
+                        "error": "",
+                    }
+                last_error = body.get("error") or f"HTTP {response.status_code}"
+                # Peer answered -> use this concrete failure and stop.
+                return {
+                    "attempted": True,
+                    "success": False,
+                    "url": url,
+                    "error": last_error,
+                }
+            except Exception as exc:
+                last_error = str(exc)
+
+        return {
+            "attempted": True,
+            "success": False,
+            "url": last_url,
+            "error": last_error,
+        }
 
     def _public_stream_entry(self, item: Dict) -> Dict:
         return {
@@ -2243,14 +2311,23 @@ class BuddyBackupManager:
             if not ping_ok:
                 ping_payload["error"] = ping_err or ((ping_res.stderr or ping_res.stdout or "").strip()[:240])
 
-        connection_ok = bool(connected or ping_payload["success"])
-        if connection_ok:
-            if connected:
-                message = "Connection test successful (recent WireGuard handshake detected)"
+        api_probe = self._probe_peer_api(peer)
+
+        if api_probe.get("attempted"):
+            connection_ok = bool(api_probe.get("success"))
+            if connection_ok:
+                message = "Connection test successful (buddy API reachable and authenticated)"
             else:
-                message = "Connection test successful (peer replied to ping)"
+                message = f"Connection test failed (API check): {api_probe.get('error') or 'unknown error'}"
         else:
-            message = "Connection test failed (no recent handshake and ping did not succeed)"
+            connection_ok = bool(ping_payload["success"])
+            if connection_ok:
+                message = "Connection test successful (ICMP ping succeeded, API probe unavailable)"
+            else:
+                message = (
+                    "Connection test failed (API probe unavailable and ping failed): "
+                    f"{api_probe.get('error') or 'unknown reason'}"
+                )
 
         return True, {
             "node_id": target,
@@ -2265,6 +2342,7 @@ class BuddyBackupManager:
                 "endpoint": str(runtime_peer.get("endpoint") or "").strip(),
             },
             "ping": ping_payload,
+            "api_probe": api_probe,
         }
 
     def restart_tunnel(self) -> Tuple[bool, Dict]:
