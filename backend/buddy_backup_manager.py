@@ -1100,6 +1100,18 @@ class BuddyBackupManager:
                 api_endpoint = f"{host}:8080"
         if not api_endpoint:
             return []
+        port_hint = ""
+        if ":" in api_endpoint:
+            maybe_port = api_endpoint.rsplit(":", 1)[1].strip()
+            if maybe_port.isdigit():
+                port_hint = maybe_port
+
+        # Avoid protocol mismatch noise on common plain-HTTP ports.
+        if port_hint in ("80", "8080"):
+            return [f"http://{api_endpoint}{path_part}"]
+        if port_hint in ("443",):
+            return [f"https://{api_endpoint}{path_part}"]
+
         return [
             f"http://{api_endpoint}{path_part}",
             f"https://{api_endpoint}{path_part}",
@@ -1699,7 +1711,7 @@ class BuddyBackupManager:
         last_error = "Upload failed"
         headers = {"X-Buddy-Secret": remote_secret}
         for url in urls:
-            verify_tls = not url.startswith("https://")
+            verify_tls = False if url.startswith("https://") else True
             try:
                 with open(payload_path, "rb") as fh:
                     response = requests.post(
@@ -1717,6 +1729,9 @@ class BuddyBackupManager:
                 if response.status_code >= 200 and response.status_code < 300 and not body.get("error"):
                     return True, body
                 last_error = body.get("error") or f"HTTP {response.status_code}"
+                # The peer answered, so use this concrete error instead of trying another
+                # scheme and potentially masking it with a secondary SSL error.
+                return False, {"error": last_error}
             except Exception as exc:
                 last_error = str(exc)
         return False, {"error": last_error}
@@ -1861,7 +1876,7 @@ class BuddyBackupManager:
 
         last_error = "Failed to fetch remote snapshots"
         for url in urls:
-            verify_tls = not url.startswith("https://")
+            verify_tls = False if url.startswith("https://") else True
             try:
                 response = requests.get(
                     url,
@@ -1881,6 +1896,7 @@ class BuddyBackupManager:
                     streams = sorted(streams, key=lambda item: str(item.get("created_at") or ""), reverse=True)
                     return True, {"node_id": target, "streams": streams}
                 last_error = body.get("error") or f"HTTP {response.status_code}"
+                return False, {"error": last_error}
             except Exception as exc:
                 last_error = str(exc)
         return False, {"error": last_error}
@@ -1893,7 +1909,7 @@ class BuddyBackupManager:
         params = {"owner_node_id": owner_node_id}
         last_error = "Download failed"
         for url in urls:
-            verify_tls = not url.startswith("https://")
+            verify_tls = False if url.startswith("https://") else True
             try:
                 with requests.get(
                     url,
@@ -1909,7 +1925,7 @@ class BuddyBackupManager:
                             last_error = payload.get("error") or f"HTTP {response.status_code}"
                         except Exception:
                             last_error = f"HTTP {response.status_code}"
-                        continue
+                        return False, last_error
                     with open(destination_path, "wb") as dst:
                         for chunk in response.iter_content(chunk_size=1024 * 1024):
                             if not chunk:

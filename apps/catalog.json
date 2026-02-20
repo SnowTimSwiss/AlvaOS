@@ -649,5 +649,45 @@
             ],
             "webui_path": "/admin"
         }
+    },
+    "cloudflared": {
+        "name": "Cloudflared",
+        "description": "Cloudflare Tunnel connector for secure inbound access",
+        "icon": "/apps/icons/cloudflared.png",
+        "category": "Network",
+        "version": "latest",
+        "docker_compose": {
+            "version": "3",
+            "services": {
+                "cloudflared": {
+                    "image": "cloudflare/cloudflared:latest",
+                    "restart": "unless-stopped",
+                    "command": "tunnel --no-autoupdate run",
+                    "environment": {
+                        "TUNNEL_TOKEN": ""
+                    },
+                    "volumes": [
+                        "${POOL_PATH}/config:/etc/cloudflared"
+                    ]
+                }
+            }
+        },
+        "config_schema": {
+            "ports": [],
+            "volumes": [
+                {
+                    "container_path": "/etc/cloudflared",
+                    "description": "Tunnel configuration and credentials",
+                    "required": true
+                }
+            ],
+            "environment": [
+                {
+                    "key": "TUNNEL_TOKEN",
+                    "default": "",
+                    "description": "Cloudflare tunnel token from Zero Trust dashboard"
+                }
+            ]
+        }
     }
 }
