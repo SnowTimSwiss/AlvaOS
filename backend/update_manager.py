@@ -193,6 +193,8 @@ class UpdateManager:
         # Normalize common tag styles like "Release_Candidate_1" to "rc1".
         v = version_str.strip().lstrip("v").lower()
         v = v.replace("_", ".").replace("-", ".")
+        v = re.sub(r"pre[.\-]*release", "pre", v)
+        v = re.sub(r"preview", "pre", v)
         v = re.sub(r"release[.]*candidate", "rc", v)
         v = re.sub(r"candidate", "rc", v)
         v = re.sub(r"alpha", "a", v)
@@ -242,7 +244,7 @@ class UpdateManager:
             "assets": assets
         }
 
-    def check_alvaos_updates(self, channel="stable"):
+    def check_alvaos_updates(self, channel="stable", force_refresh=False):
         channel = channel if channel in ("stable", "unstable") else "stable"
         self.set_update_state("checking", f"Checking {channel} channel")
         base_url = f"https://api.github.com/repos/{self.repo}"
@@ -254,8 +256,9 @@ class UpdateManager:
         cached_entry = cache.get(cache_key)
         
         now = datetime.now(timezone.utc)
-        # Cache for 1 hour to stay safe with rate limits
-        if cached_entry:
+        # Cache for 1 hour to stay safe with rate limits.
+        # Manual checks may request force_refresh=True to bypass this.
+        if cached_entry and not force_refresh:
             try:
                 cached_at_str = cached_entry.get("cached_at")
                 cached_at = datetime.fromisoformat(cached_at_str) if cached_at_str else None

@@ -1383,7 +1383,9 @@ def get_system_logs():
 @require_auth
 def check_alvaos_updates():
     channel = request.args.get('channel', 'stable')
-    result = update_manager.check_alvaos_updates(channel)
+    force_raw = str(request.args.get('force', '') or '').strip().lower()
+    force_refresh = force_raw in ('1', 'true', 'yes', 'on')
+    result = update_manager.check_alvaos_updates(channel, force_refresh=force_refresh)
     return jsonify(result), 200
 
 @app.route('/api/v1/updates/alvaos/apply', methods=['POST'])

@@ -186,12 +186,13 @@ function renderRelease(release, updateAvailable, latestVersion) {
     if (notesEl) notesEl.textContent = release.body || 'No release notes.';
 }
 
-async function checkAlvaosUpdates() {
+async function checkAlvaosUpdates(forceRefresh = false) {
     const channel = document.getElementById('update-channel-select')?.value || 'stable';
     lastRelease = null;
     setStatus(`Checking ${channel} channel...`);
     try {
-        const res = await apiFetch(`/updates/alvaos/check?channel=${encodeURIComponent(channel)}`);
+        const forceParam = forceRefresh ? '&force=1' : '';
+        const res = await apiFetch(`/updates/alvaos/check?channel=${encodeURIComponent(channel)}${forceParam}`);
         if (!res) return;
         const data = await readJson(res);
         if (data && data.current_version) {
@@ -572,7 +573,7 @@ function initTabs() {
 }
 
 function initHandlers() {
-    document.getElementById('check-updates-btn')?.addEventListener('click', checkAlvaosUpdates);
+    document.getElementById('check-updates-btn')?.addEventListener('click', () => checkAlvaosUpdates(true));
     document.getElementById('download-install-btn')?.addEventListener('click', applyAlvaosUpdate);
     document.getElementById('debian-check-btn')?.addEventListener('click', checkDebianUpdates);
     document.getElementById('debian-apply-btn')?.addEventListener('click', applyDebianUpdates);
