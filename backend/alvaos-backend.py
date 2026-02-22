@@ -20,6 +20,8 @@ import secrets
 import functools
 import re
 import time
+import importlib
+import sys
 import requests
 import io
 try:
@@ -1170,6 +1172,20 @@ def _verify_totp(secret, code):
     except Exception:
         return False
 
+def _refresh_totp_runtime():
+    """Reload 2FA libraries at runtime after installation."""
+    global pyotp, qrcode, base64, TOTP_AVAILABLE
+    try:
+        pyotp = importlib.import_module('pyotp')
+        qrcode = importlib.import_module('qrcode')
+        importlib.import_module('qrcode.image.pil')
+        base64 = importlib.import_module('base64')
+        TOTP_AVAILABLE = True
+        return True, None
+    except Exception as e:
+        TOTP_AVAILABLE = False
+        return False, str(e)
+
 @app.route('/')
 def index():
     """Serve the Web UI with version replacement"""
@@ -1418,6 +1434,36 @@ def setup_2fa():
     except Exception as e:
         print(f"2FA setup error: {e}")
         return jsonify({'error': 'Failed to generate 2FA setup'}), 500
+
+@app.route('/api/v1/auth/2fa/install', methods=['POST'])
+@require_auth(require_admin=True)
+def install_2fa_library():
+    """Install missing 2FA dependencies and reload them without a full backend restart."""
+    ready, _err = _refresh_totp_runtime()
+    if ready:
+        return jsonify({
+            'success': True,
+            'message': '2FA library is already installed.',
+            'totp_available': True,
+            'restart_required': False
+        })
+
+    python_bin = sys.executable or 'python3'
+    install_cmd = [python_bin, '-m', 'pip', 'install', '--upgrade', 'pyotp', 'qrcode[pil]']
+    _result, install_err = run_sudo_command(install_cmd, timeout=240)
+    if install_err:
+        return jsonify({'error': f'Failed to install 2FA library: {install_err}'}), 500
+
+    ready, reload_err = _refresh_totp_runtime()
+    if not ready:
+        return jsonify({'error': f'2FA library installed but failed to load: {reload_err}'}), 500
+
+    return jsonify({
+        'success': True,
+        'message': '2FA library installed successfully. You can now enable 2FA.',
+        'totp_available': True,
+        'restart_required': False
+    })
 
 @app.route('/api/v1/auth/2fa/verify-setup', methods=['POST'])
 @require_auth

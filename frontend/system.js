@@ -23,6 +23,7 @@ const els = {
     tfaStatusText: document.getElementById('tfa-status-text'),
     tfaStatusDot: document.getElementById('tfa-status-dot'),
     tfaEnableBtn: document.getElementById('tfa-enable-btn'),
+    tfaInstallBtn: document.getElementById('tfa-install-btn'),
     tfaDisableBtn: document.getElementById('tfa-disable-btn'),
 
     // Watchdog
@@ -417,16 +418,62 @@ async function sendPowerAction(action) {
 async function fetch2faStatus() {
     try {
         const res = await fetch(`${API_BASE}/auth/2fa/status`, { headers: getHeaders() });
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Failed to fetch 2FA status');
 
-        const enabled = data.enabled;
-        els.tfaStatusText.textContent = enabled ? 'Enabled' : 'Disabled';
-        els.tfaStatusDot.style.background = enabled ? 'var(--accent-success)' : 'var(--text-secondary)';
+        const enabled = !!data.enabled;
+        const totpAvailable = !!data.totp_available;
 
-        els.tfaEnableBtn.style.display = enabled ? 'none' : 'block';
-        els.tfaDisableBtn.style.display = enabled ? 'block' : 'none';
+        if (!totpAvailable) {
+            els.tfaStatusText.textContent = 'Library Not Installed';
+            els.tfaStatusDot.style.background = 'var(--accent-warning)';
+        } else {
+            els.tfaStatusText.textContent = enabled ? 'Enabled' : 'Disabled';
+            els.tfaStatusDot.style.background = enabled ? 'var(--accent-success)' : 'var(--text-secondary)';
+        }
+
+        if (els.tfaEnableBtn) {
+            els.tfaEnableBtn.style.display = (!totpAvailable || enabled) ? 'none' : 'block';
+        }
+        if (els.tfaInstallBtn) {
+            els.tfaInstallBtn.style.display = totpAvailable ? 'none' : 'block';
+        }
+        if (els.tfaDisableBtn) {
+            els.tfaDisableBtn.style.display = (totpAvailable && enabled) ? 'block' : 'none';
+        }
     } catch (e) {
         console.error('Failed to fetch 2FA status:', e);
+    }
+}
+
+async function install2faLibrary() {
+    if (!await showConfirm('Install missing 2FA libraries now?')) return;
+
+    const installButton = els.tfaInstallBtn;
+    const originalText = installButton?.textContent || 'Install 2FA Library';
+    if (installButton) {
+        installButton.disabled = true;
+        installButton.textContent = 'Installing...';
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/auth/2fa/install`, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify({})
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Failed to install 2FA library');
+
+        if (window.showToast) window.showToast(data.message || '2FA library installed.', 'success');
+        await fetch2faStatus();
+    } catch (e) {
+        alert(e.message || 'Failed to install 2FA library');
+    } finally {
+        if (installButton) {
+            installButton.disabled = false;
+            installButton.textContent = originalText;
+        }
     }
 }
 
@@ -626,6 +673,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('telegram-unpair-btn')?.addEventListener('click', unpairTelegram);
 
     els.tfaEnableBtn?.addEventListener('click', setup2fa);
+    els.tfaInstallBtn?.addEventListener('click', install2faLibrary);
     els.tfaDisableBtn?.addEventListener('click', disable2fa);
     els.watchdogCheckBtn?.addEventListener('click', runWatchdogCheck);
 
