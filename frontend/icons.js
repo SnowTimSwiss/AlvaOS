@@ -47,8 +47,7 @@
         'monitor': ['rect x="3" y="4" width="18" height="12" rx="2"', 'path d="M8 20h8"', 'path d="M12 16v4"'],
         'laptop': ['path d="M3 17h18"', 'rect x="6" y="5" width="12" height="8" rx="1"'],
         'eye': ['path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"', 'circle cx="12" cy="12" r="2.5"'],
-        'loader-circle': ['path d="M12 3a9 9 0 1 0 9 9"']
-        ,
+        'loader-circle': ['path d="M12 3a9 9 0 1 0 9 9"'],
         'message-square': ['path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10Z"']
     };
 
@@ -77,7 +76,11 @@
 
     function render(root = document) {
         const target = root && root.querySelectorAll ? root : document;
-        const nodes = target.querySelectorAll('[data-lucide]');
+        const nodes = [];
+        if (target.matches && target.matches('[data-lucide]')) {
+            nodes.push(target);
+        }
+        nodes.push(...target.querySelectorAll('[data-lucide]'));
         nodes.forEach((node) => {
             const name = node.getAttribute('data-lucide') || 'info';
             const className = node.getAttribute('class') || '';
@@ -91,6 +94,39 @@
         return iconSvg(name, className, attrs);
     }
 
+    let iconRenderScheduled = false;
+    let queuedRenderRoot = null;
+
+    function scheduleRender(root) {
+        const nextRoot = root || document;
+        if (!queuedRenderRoot) {
+            queuedRenderRoot = nextRoot;
+        } else if (
+            queuedRenderRoot !== document
+            && nextRoot !== document
+            && queuedRenderRoot !== nextRoot
+        ) {
+            const queuedContainsNext = !!(queuedRenderRoot.contains && queuedRenderRoot.contains(nextRoot));
+            const nextContainsQueued = !!(nextRoot.contains && nextRoot.contains(queuedRenderRoot));
+            if (!queuedContainsNext && !nextContainsQueued) {
+                // Different branches changed in same frame: render document once to avoid missed icons.
+                queuedRenderRoot = document;
+            } else if (nextContainsQueued) {
+                queuedRenderRoot = nextRoot;
+            }
+        }
+        if (iconRenderScheduled) return;
+        iconRenderScheduled = true;
+
+        const runner = window.requestAnimationFrame || ((cb) => setTimeout(cb, 16));
+        runner(() => {
+            iconRenderScheduled = false;
+            const rootToRender = queuedRenderRoot || document;
+            queuedRenderRoot = null;
+            render(rootToRender);
+        });
+    }
+
     function initObserver() {
         if (!window.MutationObserver) return;
         const observer = new MutationObserver((mutations) => {
@@ -98,7 +134,7 @@
                 for (const node of mutation.addedNodes) {
                     if (!node || node.nodeType !== 1) continue;
                     if ((node.matches && node.matches('[data-lucide]')) || (node.querySelector && node.querySelector('[data-lucide]'))) {
-                        render(node.parentElement || document);
+                        scheduleRender(node);
                     }
                 }
             }

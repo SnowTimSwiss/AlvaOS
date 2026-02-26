@@ -11,6 +11,10 @@ let activeLogsRequestId = 0;
 let containersLoaded = false;
 let containersLoading = false;
 let installedLoadRequestId = 0;
+let availableAppsLoadPromise = null;
+let availableAppsCache = [];
+let availableSearchQuery = '';
+let availableCategoryFilter = 'all';
 
 function showNotification(message, type = 'info') {
     if (window.showToast) {
@@ -34,11 +38,119 @@ function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
+function setLoadingButtonState(button, isLoading, loadingLabel = 'Loading...') {
+    if (!button) return;
+    if (isLoading) {
+        if (!button.dataset.defaultLabel) {
+            button.dataset.defaultLabel = button.textContent.trim() || 'Refresh';
+        }
+        button.disabled = true;
+        button.textContent = loadingLabel;
+        return;
+    }
+
+    button.disabled = false;
+    if (button.dataset.defaultLabel) {
+        button.textContent = button.dataset.defaultLabel;
+    }
+}
+
 function formatDate(value) {
     if (!value) return 'Unknown';
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return 'Unknown';
     return date.toLocaleString();
+}
+
+function setStoreMeta(message) {
+    const metaEl = document.getElementById('apps-store-meta');
+    if (metaEl) metaEl.textContent = message;
+}
+
+function normalizeSearchText(value) {
+    return String(value || '').toLowerCase().trim();
+}
+
+function populateCategoryFilter(apps) {
+    const selectEl = document.getElementById('app-category-filter');
+    if (!selectEl) return;
+
+    const categories = Array.from(new Set(
+        apps.map((app) => String(app?.category || 'Other'))
+    )).sort((a, b) => a.localeCompare(b));
+
+    const previousValue = availableCategoryFilter;
+    selectEl.innerHTML = `
+        <option value="all">All categories</option>
+        ${categories.map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join('')}
+    `;
+
+    if (previousValue !== 'all' && categories.includes(previousValue)) {
+        selectEl.value = previousValue;
+    } else {
+        selectEl.value = 'all';
+        availableCategoryFilter = 'all';
+    }
+}
+
+function getFilteredAvailableApps() {
+    const query = normalizeSearchText(availableSearchQuery);
+    const categoryFilter = String(availableCategoryFilter || 'all');
+
+    return availableAppsCache.filter((app) => {
+        const category = String(app?.category || 'Other');
+        if (categoryFilter !== 'all' && category !== categoryFilter) return false;
+
+        if (!query) return true;
+
+        const haystack = `${app?.name || ''} ${app?.description || ''} ${app?.id || ''}`;
+        return normalizeSearchText(haystack).includes(query);
+    });
+}
+
+function renderAvailableApps() {
+    const container = document.getElementById('apps-container');
+    if (!container) return;
+
+    const total = availableAppsCache.length;
+    if (total === 0) {
+        setStoreMeta('No apps available in the catalog.');
+        container.innerHTML = `
+            <div class="empty-state" style="grid-column: 1/-1;">
+                <div class="empty-state-icon">${window.alvaIcon ? window.alvaIcon('loader-circle', '', 'aria-hidden="true"') : '...'}</div>
+                <div>No apps available</div>
+            </div>
+        `;
+        return;
+    }
+
+    const filteredApps = getFilteredAvailableApps();
+    setStoreMeta(`Showing ${filteredApps.length} of ${total} app${total === 1 ? '' : 's'}.`);
+
+    if (filteredApps.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state" style="grid-column: 1/-1;">
+                <div class="empty-state-icon">${window.alvaIcon ? window.alvaIcon('triangle-alert', '', 'aria-hidden="true"') : '!'}</div>
+                <div>No apps match your current filters</div>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = filteredApps.map((app) => `
+        <div class="app-card" onclick="showAppDetails('${escapeHtml(app.id)}')">
+            <div class="app-icon">${getAppIcon(app.category)}</div>
+            <div class="app-name">${escapeHtml(app.name)}</div>
+            <div class="app-description">${escapeHtml(app.description)}</div>
+            <div class="app-category">${escapeHtml(app.category)}</div>
+            <div class="app-footer">
+                <span style="font-size: 0.8rem; color: var(--text-secondary);">v${escapeHtml(app.version)}</span>
+                <button class="btn-primary" style="padding: 6px 12px; font-size: 0.85rem;" onclick="event.stopPropagation(); installApp('${escapeHtml(app.id)}')">
+                    Install
+                </button>
+            </div>
+        </div>
+    `).join('');
 }
 
 function getAppIcon(category) {
@@ -357,8 +469,10 @@ function renderInstalledWorkspace() {
 
 async function loadInstalledWorkspace(preserveSelection = true) {
     const container = document.getElementById('installed-container');
+    const refreshBtn = document.getElementById('refresh-installed-btn');
     if (!container) return;
     const requestId = ++installedLoadRequestId;
+    setLoadingButtonState(refreshBtn, true, 'Refreshing...');
 
     container.innerHTML = `
         <div class="empty-state">
@@ -418,6 +532,7 @@ async function loadInstalledWorkspace(preserveSelection = true) {
             renderInspector();
         }
     } catch (error) {
+        if (requestId !== installedLoadRequestId) return;
         console.error('Error loading installed workspace:', error);
         containersLoaded = false;
         containersLoading = false;
@@ -429,6 +544,10 @@ async function loadInstalledWorkspace(preserveSelection = true) {
                 <p style="font-size: 0.85rem; margin-top: 8px; color: var(--accent-danger);">${escapeHtml(error.message)}</p>
             </div>
         `;
+    } finally {
+        if (requestId === installedLoadRequestId) {
+            setLoadingButtonState(refreshBtn, false);
+        }
     }
 }
 function selectInstalledApp(appId) {
@@ -440,53 +559,42 @@ function selectInstalledApp(appId) {
 // Load available apps from catalog
 async function loadAvailableApps() {
     const container = document.getElementById('apps-container');
+    const refreshBtn = document.getElementById('refresh-apps-btn');
     if (!container) return;
+    if (availableAppsLoadPromise) return availableAppsLoadPromise;
 
-    try {
-        const response = await fetch(`${API_BASE}/apps/available`, {
-            headers: { 'Authorization': authToken }
-        });
+    availableAppsLoadPromise = (async () => {
+        setLoadingButtonState(refreshBtn, true, 'Refreshing...');
 
-        if (!response.ok) throw new Error('Failed to load apps');
+        try {
+            const response = await fetch(`${API_BASE}/apps/available`, {
+                headers: { 'Authorization': authToken }
+            });
 
-        const data = await response.json();
-        const apps = data.apps || [];
+            if (!response.ok) throw new Error('Failed to load apps');
 
-        if (apps.length === 0) {
+            const data = await response.json();
+            availableAppsCache = Array.isArray(data.apps) ? data.apps : [];
+            populateCategoryFilter(availableAppsCache);
+            renderAvailableApps();
+        } catch (error) {
+            console.error('Error loading apps:', error);
+            availableAppsCache = [];
+            setStoreMeta('Failed to load app catalog.');
             container.innerHTML = `
                 <div class="empty-state" style="grid-column: 1/-1;">
-                    <div class="empty-state-icon">${window.alvaIcon ? window.alvaIcon('loader-circle', '', 'aria-hidden="true"') : '...'}</div>
-                    <div>No apps available</div>
+                    <div class="empty-state-icon">${window.alvaIcon ? window.alvaIcon('triangle-alert', '', 'aria-hidden="true"') : '!'}</div>
+                    <div>Failed to load apps</div>
+                    <p style="font-size: 0.85rem; margin-top: 8px; color: var(--accent-danger);">${escapeHtml(error.message)}</p>
                 </div>
             `;
-            return;
+        } finally {
+            availableAppsLoadPromise = null;
+            setLoadingButtonState(refreshBtn, false);
         }
+    })();
 
-        container.innerHTML = apps.map((app) => `
-            <div class="app-card" onclick="showAppDetails('${escapeHtml(app.id)}')">
-                <div class="app-icon">${getAppIcon(app.category)}</div>
-                <div class="app-name">${escapeHtml(app.name)}</div>
-                <div class="app-description">${escapeHtml(app.description)}</div>
-                <div class="app-category">${escapeHtml(app.category)}</div>
-                <div class="app-footer">
-                    <span style="font-size: 0.8rem; color: var(--text-secondary);">v${escapeHtml(app.version)}</span>
-                    <button class="btn-primary" style="padding: 6px 12px; font-size: 0.85rem;" onclick="event.stopPropagation(); installApp('${escapeHtml(app.id)}')">
-                        Install
-                    </button>
-                </div>
-            </div>
-        `).join('');
-
-    } catch (error) {
-        console.error('Error loading apps:', error);
-        container.innerHTML = `
-            <div class="empty-state" style="grid-column: 1/-1;">
-                <div class="empty-state-icon">${window.alvaIcon ? window.alvaIcon('triangle-alert', '', 'aria-hidden="true"') : '!'}</div>
-                <div>Failed to load apps</div>
-                <p style="font-size: 0.85rem; margin-top: 8px; color: var(--accent-danger);">${escapeHtml(error.message)}</p>
-            </div>
-        `;
-    }
+    return availableAppsLoadPromise;
 }
 
 // Keep compatibility for existing calls
@@ -643,7 +751,7 @@ async function showInstallWizard(appId) {
 }
 
 function showAppDetails(appId) {
-    console.log('Show details for:', appId);
+    showInstallWizard(appId);
 }
 
 async function installApp(appId) {
@@ -853,6 +961,14 @@ function manageApp(appId) {
 
 document.getElementById('refresh-apps-btn')?.addEventListener('click', loadAvailableApps);
 document.getElementById('refresh-installed-btn')?.addEventListener('click', () => loadInstalledWorkspace(true));
+document.getElementById('app-search-input')?.addEventListener('input', (event) => {
+    availableSearchQuery = String(event.target?.value || '');
+    renderAvailableApps();
+});
+document.getElementById('app-category-filter')?.addEventListener('change', (event) => {
+    availableCategoryFilter = String(event.target?.value || 'all');
+    renderAvailableApps();
+});
 document.getElementById('container-logs-close-btn')?.addEventListener('click', closeLogsModal);
 document.getElementById('container-logs-refresh-btn')?.addEventListener('click', () => {
     if (activeLogsContainerId) {

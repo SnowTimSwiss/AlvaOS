@@ -2,6 +2,12 @@
 const API_BASE = '/api/v1';
 let updateInterval;
 let alertsInterval;
+let isSystemFetchInFlight = false;
+let isAlertsFetchInFlight = false;
+const SYSTEM_POLL_MS_ACTIVE = 5000;
+const SYSTEM_POLL_MS_HIDDEN = 20000;
+const ALERTS_POLL_MS_ACTIVE = 15000;
+const ALERTS_POLL_MS_HIDDEN = 60000;
 const HISTORY_CACHE_KEY = 'alvaos_dashboard_history_v1';
 const HISTORY_MAX_SAMPLES = 120;
 let usageHistory = [];
@@ -472,8 +478,8 @@ async function fetchAlerts() {
 }
 
 async function refreshDashboardData() {
-    await fetchSystemInfo();
-    await fetchAlerts();
+    await runSystemFetch();
+    await runAlertsFetch();
 }
 
 // Show error message (using Toast or overlay for critical)
@@ -486,6 +492,54 @@ function showError(message) {
 }
 
 let isReconnecting = false;
+
+async function runSystemFetch() {
+    if (isSystemFetchInFlight) return null;
+    isSystemFetchInFlight = true;
+    try {
+        return await fetchSystemInfo();
+    } finally {
+        isSystemFetchInFlight = false;
+    }
+}
+
+async function runAlertsFetch() {
+    if (isAlertsFetchInFlight) return null;
+    isAlertsFetchInFlight = true;
+    try {
+        return await fetchAlerts();
+    } finally {
+        isAlertsFetchInFlight = false;
+    }
+}
+
+function getSystemPollDelay() {
+    return document.visibilityState === 'hidden' ? SYSTEM_POLL_MS_HIDDEN : SYSTEM_POLL_MS_ACTIVE;
+}
+
+function getAlertsPollDelay() {
+    return document.visibilityState === 'hidden' ? ALERTS_POLL_MS_HIDDEN : ALERTS_POLL_MS_ACTIVE;
+}
+
+function scheduleSystemPoll(delay = getSystemPollDelay()) {
+    if (updateInterval) {
+        clearTimeout(updateInterval);
+    }
+    updateInterval = setTimeout(async () => {
+        await runSystemFetch();
+        scheduleSystemPoll();
+    }, delay);
+}
+
+function scheduleAlertsPoll(delay = getAlertsPollDelay()) {
+    if (alertsInterval) {
+        clearTimeout(alertsInterval);
+    }
+    alertsInterval = setTimeout(async () => {
+        await runAlertsFetch();
+        scheduleAlertsPoll();
+    }, delay);
+}
 
 function handleConnectionError() {
     if (isReconnecting) return;
@@ -576,8 +630,16 @@ async function init() {
         loadUsageHistory();
         renderUsageHistory();
         await refreshDashboardData();
-        updateInterval = setInterval(fetchSystemInfo, 5000);
-        alertsInterval = setInterval(fetchAlerts, 15000);
+        scheduleSystemPoll();
+        scheduleAlertsPoll();
+        document.addEventListener('visibilitychange', () => {
+            scheduleSystemPoll(document.visibilityState === 'visible' ? 1000 : getSystemPollDelay());
+            scheduleAlertsPoll(document.visibilityState === 'visible' ? 1200 : getAlertsPollDelay());
+            if (document.visibilityState === 'visible') {
+                runSystemFetch();
+                runAlertsFetch();
+            }
+        });
     } else {
         console.log('Not on dashboard, skipping system info polling.');
     }
@@ -587,10 +649,10 @@ async function init() {
 
 window.addEventListener('beforeunload', () => {
     if (updateInterval) {
-        clearInterval(updateInterval);
+        clearTimeout(updateInterval);
     }
     if (alertsInterval) {
-        clearInterval(alertsInterval);
+        clearTimeout(alertsInterval);
     }
 });
 

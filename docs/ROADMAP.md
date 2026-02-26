@@ -73,10 +73,10 @@ Release strategy: "Iterate fast, stabilize often."
 
 ## v0.11.0 - Polish (Beta)
 - [x] **UX Refinement**: Mobile view, animations, and themes.
-- [ ] **Performance**: Optimization of API and Frontend.
-- [ ] **Bug Hunt**: Excessive testing and edge-case fixing.
-- [ ] **AlvaOS Branding**: Update AlvaOS branding in the UI.
-- [ ] **User friendly**: Make the UI more user friendly.
+- [x] **Performance**: Optimization of API and Frontend.
+- [x] **Bug Hunt**: Excessive testing and edge-case fixing.
+- [x] **AlvaOS Branding**: Update AlvaOS branding in the UI.
+- [x] **User friendly**: Make the UI more user friendly.
 - [x] **User feedback**: Add user feedback to the UI.
 - [x] **Custom Icons**: Replace Emojis with custom Icons. (we now use icons from https://lucide.dev/)
 

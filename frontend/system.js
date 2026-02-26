@@ -486,6 +486,8 @@ async function setup2fa() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Setup failed');
+        const setupSecret = String(data.secret || '').trim();
+        if (!setupSecret) throw new Error('Setup failed: missing secret from server');
 
         // Create a simple modal div for setup
         const modal = document.createElement('div');
@@ -521,7 +523,7 @@ async function setup2fa() {
                 const verifyRes = await fetch(`${API_BASE}/auth/2fa/verify-setup`, {
                     method: 'POST',
                     headers: getHeaders(),
-                    body: JSON.stringify({ code })
+                    body: JSON.stringify({ secret: setupSecret, code })
                 });
                 const vData = await verifyRes.json();
                 if (!verifyRes.ok) throw new Error(vData.error || 'Verification failed');

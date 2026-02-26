@@ -288,6 +288,24 @@
             margin-top: 4px;
         }
 
+        .store-tools {
+            display: grid;
+            grid-template-columns: minmax(220px, 1fr) minmax(180px, 240px);
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .store-tools input,
+        .store-tools select {
+            width: 100%;
+        }
+
+        .store-meta {
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+        }
+
         @media (max-width: 980px) {
             .apps-workspace {
                 grid-template-columns: 1fr;
@@ -299,6 +317,10 @@
         }
 
         @media (max-width: 760px) {
+            .store-tools {
+                grid-template-columns: 1fr;
+            }
+
             .app-footer {
                 flex-direction: column;
                 align-items: stretch;
@@ -473,6 +495,14 @@
                     <button id="refresh-apps-btn" class="btn-secondary"
                         style="padding: 4px 10px; font-size: 0.85rem;">Refresh</button>
                 </div>
+                <div class="store-tools">
+                    <input id="app-search-input" type="search" placeholder="Search apps by name or description"
+                        aria-label="Search available apps">
+                    <select id="app-category-filter" aria-label="Filter apps by category">
+                        <option value="all">All categories</option>
+                    </select>
+                </div>
+                <div id="apps-store-meta" class="store-meta">Loading app catalog...</div>
                 <div id="apps-container" class="apps-grid">
                     <div class="empty-state" style="grid-column: 1/-1;">
                         <div class="empty-state-icon">...</div>
