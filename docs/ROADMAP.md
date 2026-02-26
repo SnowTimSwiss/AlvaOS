@@ -72,12 +72,12 @@ Release strategy: "Iterate fast, stabilize often."
 - [x] **2FA**: Two-factor authentication for admin. (TOTP)
 
 ## v0.11.0 - Polish (Beta)
-- [ ] **UX Refinement**: Mobile view, animations, and themes.
+- [x] **UX Refinement**: Mobile view, animations, and themes.
 - [ ] **Performance**: Optimization of API and Frontend.
 - [ ] **Bug Hunt**: Excessive testing and edge-case fixing.
 - [ ] **AlvaOS Branding**: Update AlvaOS branding in the UI.
 - [ ] **User friendly**: Make the UI more user friendly.
-- [ ] **User feedback**: Add user feedback to the UI.
+- [x] **User feedback**: Add user feedback to the UI.
 - [x] **Custom Icons**: Replace Emojis with custom Icons. (we now use icons from https://lucide.dev/)
 
 ## v0.12.0 - Debian 13

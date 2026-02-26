@@ -90,6 +90,10 @@
             overflow: hidden;
         }
 
+        .table-scroll .containers-table {
+            min-width: 820px;
+        }
+
         .containers-table th {
             background: var(--bg-body);
             padding: 12px;
@@ -287,6 +291,51 @@
         @media (max-width: 980px) {
             .apps-workspace {
                 grid-template-columns: 1fr;
+            }
+
+            .apps-list {
+                max-height: none;
+            }
+        }
+
+        @media (max-width: 760px) {
+            .app-footer {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .app-footer .btn-primary {
+                width: 100%;
+            }
+
+            .inspector-actions .btn-link,
+            .inspector-actions .btn-icon,
+            .inspector-actions .btn-secondary {
+                width: 100%;
+            }
+
+            .logs-modal {
+                padding: 12px;
+            }
+
+            .logs-modal-header {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .logs-modal-header>div:last-child {
+                width: 100%;
+                display: grid !important;
+                grid-template-columns: 1fr;
+            }
+
+            .logs-modal-header>div:last-child .btn-secondary {
+                width: 100%;
+            }
+
+            #install-app-info {
+                flex-direction: column;
+                align-items: flex-start;
             }
         }
 
@@ -535,10 +584,12 @@
     <!-- Scripts -->
     <script src="icons.js"></script>
     <script src="notifications.js"></script>
+    <script src="feedback.js"></script>
     <script src="app.js"></script>
     <script src="password-toggle.js"></script>
     <script src="apps.js"></script>
 </body>
 
 </html>
+
 

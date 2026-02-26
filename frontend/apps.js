@@ -296,6 +296,7 @@ function renderContainerTable(containers) {
     }
 
     return `
+        <div class="table-scroll">
         <table class="containers-table">
             <thead>
                 <tr>
@@ -335,6 +336,7 @@ function renderContainerTable(containers) {
                 }).join('')}
             </tbody>
         </table>
+        </div>
     `;
 }
 

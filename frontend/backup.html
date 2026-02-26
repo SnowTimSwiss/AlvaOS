@@ -152,6 +152,10 @@
             background: var(--bg-card);
         }
 
+        .table-scroll .snapshots-table {
+            min-width: 760px;
+        }
+
         .snapshots-table th,
         .snapshots-table td {
             text-align: left;
@@ -500,6 +504,22 @@
         }
 
         @media (max-width: 760px) {
+            .backup-page .card-header {
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+
+            .backup-page .card-header .btn-primary,
+            .backup-page .card-header .btn-secondary {
+                width: 100%;
+            }
+
+            .backup-status-chip,
+            .buddy-status-chip {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
             .table-actions {
                 width: 100%;
             }
@@ -530,6 +550,11 @@
             }
 
             .buddy-peer-actions .btn-secondary {
+                width: 100%;
+            }
+
+            .buddy-inline-actions .btn-primary,
+            .buddy-inline-actions .btn-secondary {
                 width: 100%;
             }
         }
@@ -886,8 +911,10 @@
     <!-- Scripts -->
     <script src="icons.js"></script>
     <script src="notifications.js"></script>
+    <script src="feedback.js"></script>
     <script src="app.js"></script>
     <script src="backup.js"></script>
 </body>
 
 </html>
+

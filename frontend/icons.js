@@ -48,6 +48,8 @@
         'laptop': ['path d="M3 17h18"', 'rect x="6" y="5" width="12" height="8" rx="1"'],
         'eye': ['path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"', 'circle cx="12" cy="12" r="2.5"'],
         'loader-circle': ['path d="M12 3a9 9 0 1 0 9 9"']
+        ,
+        'message-square': ['path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10Z"']
     };
 
     function parseAttrs(attrs) {

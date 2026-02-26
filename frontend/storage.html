@@ -19,6 +19,7 @@
             margin-bottom: 24px;
             padding-bottom: 12px;
             border-bottom: 1px solid var(--border-default);
+            flex-wrap: wrap;
         }
 
         .tab-btn {
@@ -63,6 +64,18 @@
             to {
                 opacity: 1;
                 transform: translateY(0);
+            }
+        }
+
+        @media (max-width: 760px) {
+            .tab-nav {
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                padding-bottom: 6px;
+            }
+
+            .tab-btn {
+                white-space: nowrap;
             }
         }
     </style>
@@ -182,8 +195,10 @@
     <!-- Scripts -->
     <script src="icons.js"></script>
     <script src="notifications.js"></script>
+    <script src="feedback.js"></script>
     <script src="app.js"></script>
     <script src="storage.js"></script>
 </body>
 
 </html>
+

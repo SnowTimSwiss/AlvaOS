@@ -218,6 +218,7 @@ function renderDataSnapshots(items) {
     }
 
     container.innerHTML = `
+        <div class="table-scroll">
         <table class="snapshots-table">
             <thead>
                 <tr>
@@ -247,6 +248,7 @@ function renderDataSnapshots(items) {
                 `).join('')}
             </tbody>
         </table>
+        </div>
     `;
 }
 
@@ -260,6 +262,7 @@ function renderSystemSnapshots(items) {
     }
 
     container.innerHTML = `
+        <div class="table-scroll">
         <table class="snapshots-table">
             <thead>
                 <tr>
@@ -286,6 +289,7 @@ function renderSystemSnapshots(items) {
                 `).join('')}
             </tbody>
         </table>
+        </div>
     `;
 }
 
