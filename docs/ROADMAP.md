@@ -78,7 +78,7 @@ Release strategy: "Iterate fast, stabilize often."
 - [ ] **AlvaOS Branding**: Update AlvaOS branding in the UI.
 - [ ] **User friendly**: Make the UI more user friendly.
 - [ ] **User feedback**: Add user feedback to the UI.
-- [ ] **Custom Icons**: Replace Emojis with custom Icons.
+- [x] **Custom Icons**: Replace Emojis with custom Icons. (we now use icons from https://lucide.dev/)
 
 ## v0.12.0 - Debian 13
 - [ ] **Debian 13**: Update to Debian 13 from Debian 12.

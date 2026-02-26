@@ -41,17 +41,18 @@ function formatDate(value) {
     return date.toLocaleString();
 }
 
-function getAppEmoji(category) {
-    const emojis = {
-        'Productivity': '\uD83D\uDCDD',
-        'Media': '\uD83C\uDFAC',
-        'Development': '\uD83D\uDCBB',
-        'Smart Home': '\uD83C\uDFE0',
-        'Network': '\uD83C\uDF10',
-        'Security': '\uD83D\uDD12',
-        'Other': '\uD83D\uDCE6'
+function getAppIcon(category) {
+    const icons = {
+        'Productivity': 'briefcase',
+        'Media': 'film',
+        'Development': 'code-2',
+        'Smart Home': 'house',
+        'Network': 'globe',
+        'Security': 'shield-check',
+        'Other': 'package'
     };
-    return emojis[category] || '\uD83D\uDCE6';
+    const iconName = icons[category] || 'package';
+    return window.alvaIcon ? window.alvaIcon(iconName, '', 'aria-hidden="true"') : '';
 }
 
 function setActiveTab(tabName) {
@@ -222,7 +223,7 @@ async function renderInspector() {
         inspector.innerHTML = `
             <div class="inspector-card">
                 <div class="empty-state">
-                    <div class="empty-state-icon">...</div>
+                    <div class="empty-state-icon">${window.alvaIcon ? window.alvaIcon('loader-circle', '', 'aria-hidden="true"') : '...'}</div>
                     <div>Select an app to see details.</div>
                 </div>
             </div>
@@ -359,7 +360,7 @@ async function loadInstalledWorkspace(preserveSelection = true) {
 
     container.innerHTML = `
         <div class="empty-state">
-            <div class="empty-state-icon">...</div>
+            <div class="empty-state-icon">${window.alvaIcon ? window.alvaIcon('loader-circle', '', 'aria-hidden="true"') : '...'}</div>
             <div>Loading installed apps...</div>
         </div>
     `;
@@ -376,7 +377,7 @@ async function loadInstalledWorkspace(preserveSelection = true) {
             containersCache = [];
             container.innerHTML = `
                 <div class="empty-state">
-                    <div class="empty-state-icon">...</div>
+                    <div class="empty-state-icon">${window.alvaIcon ? window.alvaIcon('loader-circle', '', 'aria-hidden="true"') : '...'}</div>
                     <div>No apps installed yet</div>
                     <p style="font-size: 0.9rem; margin-top: 8px;">Install your first app from the store.</p>
                     <button id="open-store-btn" class="btn-link" style="margin-top: 12px;">Open App Store</button>
@@ -421,7 +422,7 @@ async function loadInstalledWorkspace(preserveSelection = true) {
         containersCache = [];
         container.innerHTML = `
             <div class="empty-state">
-                <div class="empty-state-icon">!</div>
+                <div class="empty-state-icon">${window.alvaIcon ? window.alvaIcon('triangle-alert', '', 'aria-hidden="true"') : '!'}</div>
                 <div>Failed to load installed apps</div>
                 <p style="font-size: 0.85rem; margin-top: 8px; color: var(--accent-danger);">${escapeHtml(error.message)}</p>
             </div>
@@ -452,7 +453,7 @@ async function loadAvailableApps() {
         if (apps.length === 0) {
             container.innerHTML = `
                 <div class="empty-state" style="grid-column: 1/-1;">
-                    <div class="empty-state-icon">...</div>
+                    <div class="empty-state-icon">${window.alvaIcon ? window.alvaIcon('loader-circle', '', 'aria-hidden="true"') : '...'}</div>
                     <div>No apps available</div>
                 </div>
             `;
@@ -461,7 +462,7 @@ async function loadAvailableApps() {
 
         container.innerHTML = apps.map((app) => `
             <div class="app-card" onclick="showAppDetails('${escapeHtml(app.id)}')">
-                <div class="app-icon">${getAppEmoji(app.category)}</div>
+                <div class="app-icon">${getAppIcon(app.category)}</div>
                 <div class="app-name">${escapeHtml(app.name)}</div>
                 <div class="app-description">${escapeHtml(app.description)}</div>
                 <div class="app-category">${escapeHtml(app.category)}</div>
@@ -478,7 +479,7 @@ async function loadAvailableApps() {
         console.error('Error loading apps:', error);
         container.innerHTML = `
             <div class="empty-state" style="grid-column: 1/-1;">
-                <div class="empty-state-icon">!</div>
+                <div class="empty-state-icon">${window.alvaIcon ? window.alvaIcon('triangle-alert', '', 'aria-hidden="true"') : '!'}</div>
                 <div>Failed to load apps</div>
                 <p style="font-size: 0.85rem; margin-top: 8px; color: var(--accent-danger);">${escapeHtml(error.message)}</p>
             </div>
@@ -531,7 +532,7 @@ async function showInstallWizard(appId) {
         document.getElementById('install-app-name').textContent = app.name || appId;
         document.getElementById('install-app-version').textContent = `Version: ${app.version || 'latest'}`;
         document.getElementById('install-app-desc').textContent = app.description || '';
-        document.getElementById('install-app-icon').textContent = getAppEmoji(app.category);
+        document.getElementById('install-app-icon').innerHTML = getAppIcon(app.category);
 
         const environmentSchema = Array.isArray(app?.config_schema?.environment)
             ? app.config_schema.environment

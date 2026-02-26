@@ -24,7 +24,7 @@
         const button = document.createElement('button');
         button.type = 'button';
         button.className = BTN_CLASS;
-        button.innerHTML = '&#128065;'; // eye icon
+        button.innerHTML = window.alvaIcon ? window.alvaIcon('eye', '', 'aria-hidden="true"') : 'Show';
         button.setAttribute('aria-label', 'Show password');
         button.title = 'Show password';
         button.style.position = 'absolute';
@@ -56,6 +56,7 @@
         });
 
         wrapper.appendChild(button);
+        if (window.renderAlvaIcons) window.renderAlvaIcons(wrapper);
         input.dataset.passwordToggleInit = '1';
         input.dataset.passwordToggleOriginalPaddingRight = originalPaddingRight || '';
     }

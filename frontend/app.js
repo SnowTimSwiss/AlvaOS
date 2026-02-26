@@ -501,12 +501,13 @@ function handleConnectionError() {
         color: white; backdrop-filter: blur(5px);
     `;
     overlay.innerHTML = `
-        <div style="font-size: 3rem; margin-bottom: 1rem; animation: spin 1s linear infinite;">&#8635;</div>
+        <div style="font-size: 3rem; margin-bottom: 1rem; animation: spin 1s linear infinite;">${window.alvaIcon ? window.alvaIcon('refresh-cw', '', 'aria-hidden="true"') : '...'}</div>
         <h2 style="margin-bottom: 0.5rem;">Connection Lost</h2>
         <p style="color: var(--text-secondary);">Waiting for AlvaOS to come back online...</p>
         <style>@keyframes spin { 100% { transform: rotate(360deg); } }</style>
     `;
     document.body.appendChild(overlay);
+    if (window.renderAlvaIcons) window.renderAlvaIcons(overlay);
 
     setTimeout(startPolling, 3000);
 

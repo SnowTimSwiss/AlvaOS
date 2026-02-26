@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -81,15 +81,15 @@
         </div>
 
         <nav>
-            <a href="index.html" class="nav-link"><span>🏠</span> Dashboard</a>
-            <a href="storage.html" class="nav-link active"><span>🗄️</span> Storage</a>
-            <a href="apps.html" class="nav-link"><span>🧩</span> Apps</a>
-            <a href="backup.html" class="nav-link"><span>🔁</span> Backup</a>
-            <a href="users.html" class="nav-link"><span>👥</span> Users</a>
-            <a href="updates.html" class="nav-link"><span>&#x1F504;</span> Updates <span class="nav-badge"
+            <a href="index.html" class="nav-link"><i data-lucide="house"></i> Dashboard</a>
+            <a href="storage.html" class="nav-link active"><i data-lucide="hard-drive"></i> Storage</a>
+            <a href="apps.html" class="nav-link"><i data-lucide="blocks"></i> Apps</a>
+            <a href="backup.html" class="nav-link"><i data-lucide="refresh-cw"></i> Backup</a>
+            <a href="users.html" class="nav-link"><i data-lucide="users"></i> Users</a>
+            <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw"></i> Updates <span class="nav-badge"
                     id="updates-nav-badge" style="display:none;">!</span></a>
             <div style="flex:1"></div>
-            <a href="system.html" class="nav-link"><span>⚙️</span> System</a>
+            <a href="system.html" class="nav-link"><i data-lucide="settings"></i> System</a>
         </nav>
     </aside>
 
@@ -118,9 +118,9 @@
 
             <!-- Tab Navigation (ID preserved for potential logic, usually class based) -->
             <div class="tab-nav">
-                <button class="tab-btn active" data-tab="disks">💿 Disks</button>
-                <button class="tab-btn" data-tab="pools">🗄️ Pools</button>
-                <button class="tab-btn" data-tab="shares">🌐 Shares</button>
+                <button class="tab-btn active" data-tab="disks"><i data-lucide="disc"></i> Disks</button>
+                <button class="tab-btn" data-tab="pools"><i data-lucide="database"></i> Pools</button>
+                <button class="tab-btn" data-tab="shares"><i data-lucide="network"></i> Shares</button>
             </div>
 
             <!-- Disks Tab -->
@@ -130,7 +130,7 @@
                         style="font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em;">
                         Available Disks</h2>
                     <button id="refresh-disks-btn" class="btn-secondary"
-                        style="padding: 4px 10px; font-size: 0.85rem;">🔄 Refresh</button>
+                        style="padding: 4px 10px; font-size: 0.85rem;"><i data-lucide="refresh-cw"></i> Refresh</button>
                 </div>
                 <div id="disks-container" class="dashboard-grid">
                     <div style="padding: 2rem; text-align:center; color: var(--text-secondary); grid-column: 1/-1;">
@@ -144,7 +144,7 @@
                     <h2
                         style="font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em;">
                         Storage Pools</h2>
-                    <button id="create-pool-btn" class="btn-primary" style="padding: 4px 10px; font-size: 0.85rem;">➕
+                    <button id="create-pool-btn" class="btn-primary" style="padding: 4px 10px; font-size: 0.85rem;"><i data-lucide="plus"></i>
                         Create Pool</button>
                 </div>
                 <div id="pools-container" class="dashboard-grid">
@@ -160,7 +160,7 @@
                     <h2
                         style="font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em;">
                         Network Shares</h2>
-                    <button id="create-share-btn" class="btn-primary" style="padding: 4px 10px; font-size: 0.85rem;">➕
+                    <button id="create-share-btn" class="btn-primary" style="padding: 4px 10px; font-size: 0.85rem;"><i data-lucide="plus"></i>
                         Create Share</button>
                 </div>
                 <div id="shares-container" class="dashboard-grid">
@@ -180,6 +180,7 @@
     </div>
 
     <!-- Scripts -->
+    <script src="icons.js"></script>
     <script src="notifications.js"></script>
     <script src="app.js"></script>
     <script src="storage.js"></script>

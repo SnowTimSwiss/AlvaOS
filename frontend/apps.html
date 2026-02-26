@@ -358,15 +358,15 @@
         </div>
 
         <nav>
-            <a href="index.html" class="nav-link"><span>&#x1F3E0;</span> Dashboard</a>
-            <a href="storage.html" class="nav-link"><span>&#x1F5C4;&#xFE0F;</span> Storage</a>
-            <a href="apps.html" class="nav-link active"><span>&#x1F9E9;</span> Apps</a>
-            <a href="backup.html" class="nav-link"><span>&#x1F501;</span> Backup</a>
-            <a href="users.html" class="nav-link"><span>&#x1F465;</span> Users</a>
-            <a href="updates.html" class="nav-link"><span>&#x1F504;</span> Updates <span class="nav-badge"
+            <a href="index.html" class="nav-link"><i data-lucide="house"></i> Dashboard</a>
+            <a href="storage.html" class="nav-link"><i data-lucide="hard-drive"></i> Storage</a>
+            <a href="apps.html" class="nav-link active"><i data-lucide="blocks"></i> Apps</a>
+            <a href="backup.html" class="nav-link"><i data-lucide="refresh-cw"></i> Backup</a>
+            <a href="users.html" class="nav-link"><i data-lucide="users"></i> Users</a>
+            <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw"></i> Updates <span class="nav-badge"
                     id="updates-nav-badge" style="display:none;">!</span></a>
             <div style="flex:1"></div>
-            <a href="system.html" class="nav-link"><span>&#x2699;&#xFE0F;</span> System</a>
+            <a href="system.html" class="nav-link"><i data-lucide="settings"></i> System</a>
         </nav>
     </aside>
 
@@ -458,7 +458,7 @@
                 style="display: flex; gap: 16px; margin-bottom: 24px; padding: 16px; background: var(--bg-body); border-radius: var(--radius-default); border: 1px solid var(--border-subtle);">
                 <div id="install-app-icon"
                     style="font-size: 2.5rem; width: 64px; height: 64px; display: flex; align-items: center; justify-content: center; background: var(--bg-card); border-radius: var(--radius-default); border: 1px solid var(--border-default);">
-                    &#x1F4E6;</div>
+                    <i data-lucide="package"></i></div>
                 <div style="flex: 1;">
                     <h3 id="install-app-name" style="margin: 0 0 4px 0; font-size: 1.1rem;">App Name</h3>
                     <p id="install-app-version"
@@ -486,7 +486,7 @@
 
             <div id="install-port-warning"
                 style="margin-top: 16px; padding: 12px; background: rgba(248, 81, 73, 0.1); border: 1px solid var(--accent-danger); border-radius: var(--radius-default); display: none;">
-                <p style="font-size: 0.85rem; color: var(--accent-danger); margin: 0;">&#x26A0; Some default ports are already
+                <p style="font-size: 0.85rem; color: var(--accent-danger); margin: 0;"><i data-lucide="triangle-alert"></i> Some default ports are already
                     in use. You may need to remap them after installation.</p>
             </div>
 
@@ -533,6 +533,7 @@
     </div>
 
     <!-- Scripts -->
+    <script src="icons.js"></script>
     <script src="notifications.js"></script>
     <script src="app.js"></script>
     <script src="password-toggle.js"></script>

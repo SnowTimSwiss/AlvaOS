@@ -145,6 +145,18 @@ body {
     border-bottom-left-radius: 2px;
 }
 
+.nav-link .lucide {
+    width: 16px;
+    height: 16px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+
+.nav-link:hover .lucide,
+.nav-link.active .lucide {
+    color: currentColor;
+}
+
 .nav-badge {
     margin-left: auto;
     background: var(--accent-warning);
@@ -288,6 +300,14 @@ body {
 
 .mono-text {
     font-family: 'JetBrains Mono', monospace;
+}
+
+.lucide {
+    width: 1em;
+    height: 1em;
+    display: inline-block;
+    vertical-align: -0.15em;
+    color: currentColor;
 }
 
 /* Grids */

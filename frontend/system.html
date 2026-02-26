@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -27,15 +27,15 @@
         </div>
 
         <nav>
-            <a href="index.html" class="nav-link"><span>🏠</span> Dashboard</a>
-            <a href="storage.html" class="nav-link"><span>🗄️</span> Storage</a>
-            <a href="apps.html" class="nav-link"><span>🧩</span> Apps</a>
-            <a href="backup.html" class="nav-link"><span>🔁</span> Backup</a>
-            <a href="users.html" class="nav-link"><span>👥</span> Users</a>
-            <a href="updates.html" class="nav-link"><span>&#x1F504;</span> Updates <span class="nav-badge"
+            <a href="index.html" class="nav-link"><i data-lucide="house"></i> Dashboard</a>
+            <a href="storage.html" class="nav-link"><i data-lucide="hard-drive"></i> Storage</a>
+            <a href="apps.html" class="nav-link"><i data-lucide="blocks"></i> Apps</a>
+            <a href="backup.html" class="nav-link"><i data-lucide="refresh-cw"></i> Backup</a>
+            <a href="users.html" class="nav-link"><i data-lucide="users"></i> Users</a>
+            <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw"></i> Updates <span class="nav-badge"
                     id="updates-nav-badge" style="display:none;">!</span></a>
             <div style="flex:1"></div>
-            <a href="system.html" class="nav-link active"><span>⚙️</span> System</a>
+            <a href="system.html" class="nav-link active"><i data-lucide="settings"></i> System</a>
         </nav>
     </aside>
 
@@ -67,7 +67,7 @@
                 <div class="card">
                     <div class="card-header">
                         <div class="card-title">General</div>
-                        <div style="color:var(--text-secondary)">⚙️</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="settings"></i></div>
                     </div>
 
                     <div class="setting-group">
@@ -89,7 +89,7 @@
                 <div class="card">
                     <div class="card-header">
                         <div class="card-title">Network Interface</div>
-                        <div style="color:var(--text-secondary)">🌐</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="globe"></i></div>
                     </div>
 
                     <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:16px;">
@@ -121,7 +121,7 @@
                 <div class="card">
                     <div class="card-header">
                         <div class="card-title">Date & Time</div>
-                        <div style="color:var(--text-secondary)">🕒</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="clock-3"></i></div>
                     </div>
 
                     <div class="setting-group">
@@ -148,7 +148,7 @@
                 <div class="card">
                     <div class="card-header">
                         <div class="card-title" style="color: var(--accent-danger);">Power Controls</div>
-                        <div style="color:var(--accent-danger)">⚠️</div>
+                        <div style="color:var(--accent-danger)"><i data-lucide="triangle-alert"></i></div>
                     </div>
                     <div class="setting-group">
                         <span class="setting-label">Current State</span>
@@ -166,7 +166,7 @@
                 <div class="card">
                     <div class="card-header">
                         <div class="card-title">Telegram Critical Alerts</div>
-                        <div style="color:var(--text-secondary)">📣</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="megaphone"></i></div>
                     </div>
                     <p class="metric-sub" style="margin-bottom: 12px;">Pair a Telegram bot to receive critical system
                         alerts.</p>
@@ -218,7 +218,7 @@
                 <div class="card">
                     <div class="card-header">
                         <div class="card-title">Two-Factor Authentication</div>
-                        <div style="color:var(--text-secondary)">🔑</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="key-round"></i></div>
                     </div>
                     <p class="metric-sub" style="margin-bottom: 12px;">Protect login with a TOTP authenticator app
                         (Google Authenticator, Aegis, etc.)</p>
@@ -248,7 +248,7 @@
                 <div class="card">
                     <div class="card-header">
                         <div class="card-title">Auto-Healing Services</div>
-                        <div style="color:var(--text-secondary)">⚕️</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="shield-plus"></i></div>
                     </div>
                     <p class="metric-sub" style="margin-bottom: 12px;">Monitors critical services and automatically
                         restarts them if they crash.</p>
@@ -272,7 +272,7 @@
                 <div class="card" style="grid-column: 1 / -1; height: 400px; display:flex; flex-direction:column;">
                     <div class="card-header">
                         <div class="card-title">System Logs</div>
-                        <div style="color:var(--text-secondary)">📜</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="scroll-text"></i></div>
                     </div>
                     <div id="log-viewer"
                         style="flex:1; background: #0d1117; border: 1px solid var(--border-default); border-radius: 4px; padding: 12px; overflow-y: scroll; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--text-secondary); white-space: pre-wrap;">
@@ -291,6 +291,7 @@
     </div>
 
     <!-- Scripts -->
+    <script src="icons.js"></script>
     <script src="notifications.js"></script>
     <script src="app.js"></script>
     <script src="system.js"></script>

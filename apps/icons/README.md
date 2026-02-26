@@ -15,3 +15,10 @@ Required icons(for now):
 - transmission.png
 - wireguard.png
 - openvpn.png
+- cloudflared.png
+
+Currently missing (based on `apps/catalog.json`):
+- homeassistant.png
+- pihole.png
+- wireguard.png
+- cloudflared.png

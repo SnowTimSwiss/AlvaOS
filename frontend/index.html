@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -27,15 +27,15 @@
         </div>
 
         <nav>
-            <a href="index.html" class="nav-link active"><span>🏠</span> Dashboard</a>
-            <a href="storage.html" class="nav-link"><span>🗄️</span> Storage</a>
-            <a href="apps.html" class="nav-link"><span>🧩</span> Apps</a>
-            <a href="backup.html" class="nav-link"><span>🔁</span> Backup</a>
-            <a href="users.html" class="nav-link"><span>👥</span> Users</a>
-            <a href="updates.html" class="nav-link"><span>&#x1F504;</span> Updates <span class="nav-badge"
+            <a href="index.html" class="nav-link active"><i data-lucide="house"></i> Dashboard</a>
+            <a href="storage.html" class="nav-link"><i data-lucide="hard-drive"></i> Storage</a>
+            <a href="apps.html" class="nav-link"><i data-lucide="blocks"></i> Apps</a>
+            <a href="backup.html" class="nav-link"><i data-lucide="refresh-cw"></i> Backup</a>
+            <a href="users.html" class="nav-link"><i data-lucide="users"></i> Users</a>
+            <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw"></i> Updates <span class="nav-badge"
                     id="updates-nav-badge" style="display:none;">!</span></a>
             <div style="flex:1"></div>
-            <a href="system.html" class="nav-link"><span>⚙️</span> System</a>
+            <a href="system.html" class="nav-link"><i data-lucide="settings"></i> System</a>
         </nav>
     </aside>
 
@@ -64,7 +64,7 @@
             <div class="card health-overview-card">
                 <div class="card-header">
                     <div class="card-title">Health Overview</div>
-                    <div style="color:var(--text-secondary)">🩺</div>
+                    <div style="color:var(--text-secondary)"><i data-lucide="stethoscope"></i></div>
                 </div>
                 <div class="health-overview-grid">
                     <div class="health-status-pill healthy" id="health-overall-status">Healthy</div>
@@ -89,7 +89,7 @@
                 <div class="card">
                     <div class="card-header">
                         <div class="card-title">CPU Load</div>
-                        <div style="color:var(--text-secondary)">🧠</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="cpu"></i></div>
                     </div>
                     <!-- Using old ID 'cpu-usage' for value -->
                     <div class="metric-value" id="cpu-usage">0%</div>
@@ -105,7 +105,7 @@
                         <span id="cpu-freq">- GHz</span>
                         <div>
                             <span id="cpu-cores" style="margin-right:8px;">- Cores</span>
-                            <span id="cpu-temp">-°C</span>
+                            <span id="cpu-temp">-�C</span>
                         </div>
                     </div>
                 </div>
@@ -114,7 +114,7 @@
                 <div class="card">
                     <div class="card-header">
                         <div class="card-title">Memory</div>
-                        <div style="color:var(--text-secondary)">💾</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="memory-stick"></i></div>
                     </div>
                     <!-- Old ID 'mem-usage-percent' -->
                     <div class="metric-value" id="mem-usage-percent">0%</div>
@@ -147,7 +147,7 @@
                 <div class="card">
                     <div class="card-header">
                         <div class="card-title">Storage Usage</div>
-                        <div style="color:var(--text-secondary)">🗄️</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="database"></i></div>
                     </div>
                     <div class="metric-value" id="disk-usage-percent">0%</div>
                     <div class="metric-sub">
@@ -183,7 +183,7 @@
                 <div class="card">
                     <div class="card-header">
                         <div class="card-title">Quick Actions</div>
-                        <div style="color:var(--text-secondary)">🚀</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="rocket"></i></div>
                     </div>
                     <div class="quick-actions-grid">
                         <a class="quick-action-link" href="storage.html">
@@ -208,7 +208,7 @@
                 <div class="card" style="grid-column: 1 / -1;">
                     <div class="card-header">
                         <div class="card-title">Smart Alerts</div>
-                        <div style="color:var(--text-secondary)">🚨</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="siren"></i></div>
                     </div>
                     <div id="dashboard-alert-list" class="alerts-list">
                         <div class="alerts-empty">No active alerts. Your system looks healthy.</div>
@@ -218,7 +218,7 @@
                 <div class="card" style="grid-column: 1 / -1;">
                     <div class="card-header">
                         <div class="card-title">Usage & Temperature History</div>
-                        <div style="color:var(--text-secondary)">📈</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="chart-line"></i></div>
                     </div>
                     <div class="metric-sub" style="justify-content: space-between; margin-bottom: 10px;">
                         <span>Recent trend from dashboard samples</span>
@@ -316,6 +316,7 @@
     </div>
 
     <!-- Scripts -->
+    <script src="icons.js"></script>
     <script src="notifications.js"></script>
     <script src="app.js"></script>
 </body>

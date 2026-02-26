@@ -1,41 +1,45 @@
 // Modern Notification System for AlvaOS
 
-// Create Toast Container
 const toastContainer = document.createElement('div');
 toastContainer.className = 'toast-container';
 document.body.appendChild(toastContainer);
 
-// Show Toast Function
+function getToastIconName(type) {
+    if (type === 'success') return 'circle-check-big';
+    if (type === 'error') return 'circle-x';
+    if (type === 'warning') return 'triangle-alert';
+    return 'info';
+}
+
 window.showToast = function (message, type = 'info') {
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
 
-    let icon = 'ℹ️';
-    if (type === 'success') icon = '✅';
-    if (type === 'error') icon = '❌';
-    if (type === 'warning') icon = '⚠️';
+    const iconHtml = window.alvaIcon
+        ? window.alvaIcon(getToastIconName(type), 'toast-type-icon', 'aria-hidden="true"')
+        : '';
 
     toast.innerHTML = `
         <div style="display:flex; align-items:center; gap:12px;">
-            <span style="font-size:1.2rem;">${icon}</span>
+            <span style="display:inline-flex; font-size:1.1rem;">${iconHtml}</span>
             <span>${message}</span>
         </div>
-        <button class="toast-close" onclick="this.parentElement.remove()">✕</button>
+        <button class="toast-close" onclick="this.parentElement.remove()" aria-label="Close notification">
+            ${window.alvaIcon ? window.alvaIcon('x', '', 'aria-hidden="true"') : 'x'}
+        </button>
     `;
 
     toastContainer.appendChild(toast);
+    if (window.renderAlvaIcons) window.renderAlvaIcons(toast);
 
-    // Auto remove
     setTimeout(() => {
         toast.style.animation = 'fadeOut 0.3s ease-out forwards';
         setTimeout(() => toast.remove(), 300);
     }, 5000);
 };
 
-// Override Alert
 window.originalAlert = window.alert;
 window.alert = function (message) {
-    // Determine type based on keywords
     let type = 'info';
     const lowerMsg = String(message).toLowerCase();
     if (lowerMsg.includes('error') || lowerMsg.includes('failed')) type = 'error';
@@ -45,12 +49,10 @@ window.alert = function (message) {
     window.showToast(message, type);
 };
 
-// Custom Confirm Modal
 window.confirmModal = function (message, onConfirm, onCancel) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
 
-    // Check if message has a title (split by newline)
     let title = 'Confirmation';
     let body = message;
     if (message.includes('\n')) {
@@ -59,7 +61,6 @@ window.confirmModal = function (message, onConfirm, onCancel) {
         body = parts.slice(1).join('<br>');
     }
 
-    // Danger check
     const isDanger = message.toLowerCase().includes('delete') || message.toLowerCase().includes('erase') || message.toLowerCase().includes('wipe');
     const confirmBtnColor = isDanger ? 'var(--accent-danger)' : 'var(--accent-primary)';
 
@@ -75,8 +76,6 @@ window.confirmModal = function (message, onConfirm, onCancel) {
     `;
 
     document.body.appendChild(overlay);
-
-    // Focus confirm
     overlay.querySelector('#modal-confirm').focus();
 
     return new Promise((resolve) => {
@@ -94,13 +93,8 @@ window.confirmModal = function (message, onConfirm, onCancel) {
     });
 };
 
-// Override Confirm (Note: Native confirm is synchronous, this is async.
-// We cannot truly override window.confirm to be sync. 
-// We must update the calling code to use await confirmModal() or handle async.)
-// For now, we provide showConfirm as a utility and I will update usages.
 window.showConfirm = window.confirmModal;
 
-// Update Banner & Badge
 const UPDATE_CACHE_KEYS = {
     lastCheck: 'alvaos_update_last_check',
     available: 'alvaos_update_available',
@@ -214,14 +208,14 @@ function triggerUpdateCheck() {
     }
 
     fetch('/api/v1/updates/settings', {
-        headers: { 'Authorization': token }
+        headers: { Authorization: token }
     })
         .then(res => res.ok ? res.json() : null)
         .then(settings => {
             if (!settings || !settings.auto_check) return null;
             const channel = settings.channel || 'stable';
             return fetch(`/api/v1/updates/alvaos/check?channel=${encodeURIComponent(channel)}`, {
-                headers: { 'Authorization': token }
+                headers: { Authorization: token }
             });
         })
         .then(res => res ? res.json() : null)

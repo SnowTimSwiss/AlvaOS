@@ -181,7 +181,7 @@ function displayDisks(disks) {
         diskCard.innerHTML = `
             <div class="card-header">
                 <div class="card-title">
-                    ${disk.is_removable ? '🔌' : '💿'} /dev/${disk.name}
+                    ${window.alvaIcon ? window.alvaIcon(disk.is_removable ? 'plug-zap' : 'disc-3', '', 'aria-hidden="true"') : ''} /dev/${disk.name}
                 </div>
                 <div style="font-size: 0.8rem; font-weight: 600; color: ${statusColor}; display: flex; align-items: center; gap: 4px;">
                     <div style="width: 8px; height: 8px; border-radius: 50%; background: ${statusColor};"></div>
@@ -228,7 +228,7 @@ function displayDisks(disks) {
             
             ${disk.is_system_disk ? `
                 <div style="margin-top: 12px; font-size: 0.75rem; color: var(--accent-warning); display: flex; align-items: center; gap: 4px;">
-                    <span>⚠️</span> System Disk - Restricted Actions
+                    <span>${window.alvaIcon ? window.alvaIcon('triangle-alert', '', 'aria-hidden="true"') : '!'}</span> System Disk - Restricted Actions
                 </div>
             ` : ''}
         `;
@@ -362,7 +362,7 @@ function displayPools(pools) {
             
             ${isDegraded && !isSystemPool ? `
                 <div class="degraded-banner">
-                    <span style="font-size: 1.5rem;">⚠️</span>
+                    <span style="font-size: 1.5rem;">${window.alvaIcon ? window.alvaIcon('triangle-alert', '', 'aria-hidden="true"') : '!'}</span>
                     <div>
                         <strong style="display: block; margin-bottom: 2px;">RAID DEGRADED</strong>
                         One or more disks in this pool have failed or are missing. Your data is at risk if another disk fails.
@@ -443,7 +443,9 @@ function displayShares(shares) {
         const shareCard = document.createElement('div');
         shareCard.className = 'card';
 
-        const protocolIcon = share.protocol === 'nfs' ? '📁' : '🗂️';
+        const protocolIcon = window.alvaIcon
+            ? window.alvaIcon(share.protocol === 'nfs' ? 'folder' : 'folder-open', '', 'aria-hidden="true"')
+            : '';
         const protocolName = share.protocol.toUpperCase();
         const accessType = share.read_only ? 'Read-Only' : 'Read-Write';
         const smbPermissionsText = share.protocol === 'smb' ? formatSmbPermissions(share) : '';
@@ -528,7 +530,7 @@ async function initializeDisk(diskName) {
 
 // Wipe Disk
 async function wipeDisk(diskName) {
-    if (!await showConfirm(`Are you sure you want to WIPE /dev/${diskName}?\n\n⚠️ ALL DATA, partitions and file systems will be PERMANENTLY ERASED.\nThis cannot be undone.`)) {
+    if (!await showConfirm(`Are you sure you want to WIPE /dev/${diskName}?\n\n[WARNING] ALL DATA, partitions and file systems will be PERMANENTLY ERASED.\nThis cannot be undone.`)) {
         return;
     }
 
@@ -585,7 +587,7 @@ async function viewDiskDetails(diskName) {
             panel.innerHTML = `
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
                     <h2 style="margin: 0; color: var(--text-primary);">Disk Health: /dev/${diskName}</h2>
-                    <button id="close-modal-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">✕</button>
+                    <button id="close-modal-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">${window.alvaIcon ? window.alvaIcon('x', '', 'aria-hidden="true"') : 'x'}</button>
                 </div>
                 <div style="padding: 2rem; text-align: center; background: var(--bg-primary); border-radius: 8px; border-left: 4px solid var(--accent-warning);">
                     <div style="font-size: 3rem; margin-bottom: 1rem;">ℹ️</div>
@@ -616,7 +618,7 @@ async function viewDiskDetails(diskName) {
         panel.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
                 <h2 style="margin: 0; color: var(--text-primary);">Disk Health: /dev/${diskName}</h2>
-                <button id="close-modal-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">✕</button>
+                <button id="close-modal-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">${window.alvaIcon ? window.alvaIcon('x', '', 'aria-hidden="true"') : 'x'}</button>
             </div>
 
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
@@ -769,7 +771,7 @@ async function showCreatePoolDialog() {
                 <option value="raid10">RAID10 (Striping + Mirroring - 4+ disks)</option>
             </select>
             <p style="font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.5rem;" id="raid-description">
-                ⚠️ High Risk. No data protection. If the disk dies, data is lost. Full capacity (100%).
+                [WARNING] High Risk. No data protection. If the disk dies, data is lost. Full capacity (100%).
             </p>
         </div>
 
@@ -802,10 +804,10 @@ async function showCreatePoolDialog() {
     const raidSelect = wizard.querySelector('#raid-level-select');
     const raidDesc = wizard.querySelector('#raid-description');
     const raidDescriptions = {
-        'single': '⚠️ High Risk. No data protection. If the disk dies, data is lost. Full capacity (100%).',
-        'raid0': '⚠️ Very High Risk. High speed, but NO protection. If ONE disk fails, ALL data is lost. Capacity: 100%.',
-        'raid1': '✅ Recommended. Mirrors data for safety. Survives 1 disk failure. Capacity: 50% (requires 2+ disks).',
-        'raid10': '🚀 Best Performance & Safety. Combines speed of RAID0 with safety of RAID1. Requires 4+ disks. Capacity: 50%.'
+        'single': '[WARNING] High Risk. No data protection. If the disk dies, data is lost. Full capacity (100%).',
+        'raid0': '[WARNING] Very High Risk. High speed, but NO protection. If ONE disk fails, ALL data is lost. Capacity: 100%.',
+        'raid1': '[RECOMMENDED] Mirrors data for safety. Survives 1 disk failure. Capacity: 50% (requires 2+ disks).',
+        'raid10': '[HIGH PERFORMANCE] Combines speed of RAID0 with safety of RAID1. Requires 4+ disks. Capacity: 50%.'
     };
 
     raidSelect.addEventListener('change', () => {
@@ -843,7 +845,7 @@ async function showCreatePoolDialog() {
             return;
         }
 
-        if (!await showConfirm(`Create pool "${poolName}" with ${selectedDisks.length} disk(s) in ${raidLevel.toUpperCase()} mode?\n\n⚠️ This will ERASE all data on the selected disks!`)) {
+        if (!await showConfirm(`Create pool "${poolName}" with ${selectedDisks.length} disk(s) in ${raidLevel.toUpperCase()} mode?\n\n[WARNING] This will ERASE all data on the selected disks!`)) {
             return;
         }
 
@@ -961,7 +963,7 @@ async function showExpandPoolDialog(poolId, poolName) {
             return;
         }
 
-        if (!await showConfirm(`Add ${selectedDisks.length} disk(s) to pool "${poolName}"?\n\n⚠️ DATA ON SELECTED DISKS WILL BE ERASED!`)) {
+        if (!await showConfirm(`Add ${selectedDisks.length} disk(s) to pool "${poolName}"?\n\n[WARNING] DATA ON SELECTED DISKS WILL BE ERASED!`)) {
             return;
         }
 
@@ -989,7 +991,7 @@ async function showExpandPoolDialog(poolId, poolName) {
 
 // Delete Pool
 async function deletePool(poolId, poolName) {
-    if (!await showConfirm(`Delete pool "${poolName}"?\n\n⚠️ This will unmount the pool but NOT erase the data.`)) {
+    if (!await showConfirm(`Delete pool "${poolName}"?\n\n[WARNING] This will unmount the pool but NOT erase the data.`)) {
         return;
     }
 
@@ -1062,7 +1064,7 @@ async function manageSubvolumes(poolId) {
     panel.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
             <h2 style="margin: 0; color: var(--text-primary);">Manage Subvolumes</h2>
-            <button id="close-subvol-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">✕</button>
+            <button id="close-subvol-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">${window.alvaIcon ? window.alvaIcon('x', '', 'aria-hidden="true"') : 'x'}</button>
         </div>
 
         <div style="margin-bottom: 1.5rem;">
@@ -1137,7 +1139,7 @@ async function manageSubvolumes(poolId) {
 
 // Delete Subvolume
 async function deleteSubvolume(poolId, subvolName) {
-    if (!await showConfirm(`Delete subvolume "${subvolName}"?\n\n⚠️ This will delete all data in the subvolume!`)) {
+    if (!await showConfirm(`Delete subvolume "${subvolName}"?\n\n[WARNING] This will delete all data in the subvolume!`)) {
         return;
     }
 
@@ -1433,7 +1435,7 @@ async function showCreateShareDialog() {
 
 // Delete Share
 async function deleteShare(shareId, shareName) {
-    if (!await showConfirm(`Delete share "${shareName}"?\n\n⚠️ This will remove the share configuration.`)) {
+    if (!await showConfirm(`Delete share "${shareName}"?\n\n[WARNING] This will remove the share configuration.`)) {
         return;
     }
 
@@ -1526,7 +1528,7 @@ async function showSmbPermissions(shareId) {
     panel.innerHTML = `
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1rem;">
             <h2 style="margin: 0;">SMB Permissions: ${share.name}</h2>
-            <button id="close-perm-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">✕</button>
+            <button id="close-perm-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">${window.alvaIcon ? window.alvaIcon('x', '', 'aria-hidden="true"') : 'x'}</button>
         </div>
         <div style="margin-bottom: 1rem; color: var(--text-secondary); font-size: 0.9rem;">
             Set per-user access for this SMB share.
@@ -1603,7 +1605,7 @@ async function showConnectionInfo(shareId) {
 
     if (share.protocol === 'nfs') {
         instructionsHtml = `
-            <h4 style="margin-bottom: 0.5rem; color: var(--accent-primary);">🐧 Linux/macOS (NFS)</h4>
+            <h4 style="margin-bottom: 0.5rem; color: var(--accent-primary);">${window.alvaIcon ? window.alvaIcon('terminal', '', 'aria-hidden="true"') : ''} Linux/macOS (NFS)</h4>
             <div style="margin-bottom: 1.5rem;">
                 <p style="margin-bottom: 0.5rem; font-size: 0.9rem;">1. Create mount point:</p>
                 <div class="code-block" style="background: #1e1e1e; padding: 0.75rem; border-radius: 4px; font-family: monospace; color: #d4d4d4; margin-bottom: 1rem;">
@@ -1623,7 +1625,7 @@ async function showConnectionInfo(shareId) {
         `;
     } else {
         instructionsHtml = `
-            <h4 style="margin-bottom: 0.5rem; color: var(--accent-primary);">🪟 Windows (SMB)</h4>
+            <h4 style="margin-bottom: 0.5rem; color: var(--accent-primary);">${window.alvaIcon ? window.alvaIcon('monitor', '', 'aria-hidden="true"') : ''} Windows (SMB)</h4>
             <div style="margin-bottom: 1.5rem;">
                 <p style="margin-bottom: 0.5rem; font-size: 0.9rem;">Type in File Explorer address bar:</p>
                 <div class="code-block" style="background: #1e1e1e; padding: 0.75rem; border-radius: 4px; font-family: monospace; color: #d4d4d4; user-select: text;">
@@ -1631,7 +1633,7 @@ async function showConnectionInfo(shareId) {
                 </div>
             </div>
 
-            <h4 style="margin-bottom: 0.5rem; color: var(--accent-primary);">🍎 macOS</h4>
+            <h4 style="margin-bottom: 0.5rem; color: var(--accent-primary);">${window.alvaIcon ? window.alvaIcon('laptop', '', 'aria-hidden="true"') : ''} macOS</h4>
             <div style="margin-bottom: 1.5rem;">
                 <p style="margin-bottom: 0.5rem; font-size: 0.9rem;">Finder (Cmd+K):</p>
                 <div class="code-block" style="background: #1e1e1e; padding: 0.75rem; border-radius: 4px; font-family: monospace; color: #d4d4d4; user-select: text;">
@@ -1639,7 +1641,7 @@ async function showConnectionInfo(shareId) {
                 </div>
             </div>
 
-            <h4 style="margin-bottom: 0.5rem; color: var(--accent-primary);">🐧 Linux</h4>
+            <h4 style="margin-bottom: 0.5rem; color: var(--accent-primary);">${window.alvaIcon ? window.alvaIcon('terminal', '', 'aria-hidden="true"') : ''} Linux</h4>
             <div style="margin-bottom: 1.5rem;">
                 <p style="margin-bottom: 0.5rem; font-size: 0.9rem;">Mount command:</p>
                 <div class="code-block" style="background: #1e1e1e; padding: 0.75rem; border-radius: 4px; font-family: monospace; color: #d4d4d4; user-select: text;">
@@ -1678,7 +1680,7 @@ async function showConnectionInfo(shareId) {
     panel.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
             <h2 style="margin: 0; color: var(--text-primary);">Connection Info: ${share.name}</h2>
-            <button id="close-info-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">✕</button>
+            <button id="close-info-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">${window.alvaIcon ? window.alvaIcon('x', '', 'aria-hidden="true"') : 'x'}</button>
         </div>
 
         <div style="background: var(--bg-primary); border: 1px solid var(--bg-border); border-radius: 6px; padding: 1.5rem;">

@@ -27,17 +27,17 @@
         </div>
 
         <nav>
-            <a href="index.html" class="nav-link"><span>&#x1F3E0;</span> Dashboard</a>
-            <a href="storage.html" class="nav-link"><span>&#x1F5C4;&#xFE0F;</span> Storage</a>
-            <a href="apps.html" class="nav-link"><span>&#x1F9E9;</span> Apps</a>
-            <a href="backup.html" class="nav-link"><span>&#x1F501;</span> Backup</a>
-            <a href="users.html" class="nav-link"><span>&#x1F465;</span> Users</a>
+            <a href="index.html" class="nav-link"><i data-lucide="house"></i> Dashboard</a>
+            <a href="storage.html" class="nav-link"><i data-lucide="hard-drive"></i> Storage</a>
+            <a href="apps.html" class="nav-link"><i data-lucide="blocks"></i> Apps</a>
+            <a href="backup.html" class="nav-link"><i data-lucide="refresh-cw"></i> Backup</a>
+            <a href="users.html" class="nav-link"><i data-lucide="users"></i> Users</a>
             <a href="updates.html" class="nav-link active">
-                <span>&#x1F504;</span> Updates
+                <i data-lucide="rotate-cw"></i> Updates
                 <span class="nav-badge" id="updates-nav-badge" style="display:none;">!</span>
             </a>
             <div style="flex:1"></div>
-            <a href="system.html" class="nav-link"><span>&#9881;&#xFE0F;</span> System</a>
+            <a href="system.html" class="nav-link"><i data-lucide="settings"></i> System</a>
         </nav>
     </aside>
 
@@ -75,7 +75,7 @@
                 <div class="card">
                     <div class="card-header">
                         <div class="card-title">AlvaOS Updates</div>
-                        <div style="color:var(--text-secondary)">&#x1F504;</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="rotate-cw"></i></div>
                     </div>
                     <div class="setting-group">
                         <label class="setting-label">Current Version</label>
@@ -97,7 +97,7 @@
                 <div class="card" id="update-available-card" style="display:none;">
                     <div class="card-header">
                         <div class="card-title">Available Update</div>
-                        <div style="color:var(--text-secondary)">&#x2B06;&#xFE0F;</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="upload"></i></div>
                     </div>
                     <div class="setting-group">
                         <label class="setting-label">Latest Version</label>
@@ -120,7 +120,7 @@
                 <div class="card">
                     <div class="card-header">
                         <div class="card-title">Debian Package Updates</div>
-                        <div style="color:var(--text-secondary)">&#x1F4E6;</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="package"></i></div>
                     </div>
                     <div style="display:flex; gap:8px; align-items:center; margin-bottom: 12px;">
                         <button id="debian-check-btn" class="btn-primary">Check for Updates</button>
@@ -137,7 +137,7 @@
                 <div class="card">
                     <div class="card-header">
                         <div class="card-title">Offline Updates</div>
-                        <div style="color:var(--text-secondary)">&#x1F4BE;</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="hard-drive-download"></i></div>
                     </div>
                     <div style="display:flex; gap:8px; align-items:center; margin-bottom: 12px;">
                         <button id="offline-scan-btn" class="btn-primary">Scan USB Devices</button>
@@ -152,7 +152,7 @@
                 <div class="card">
                     <div class="card-header">
                         <div class="card-title">Update History</div>
-                        <div style="color:var(--text-secondary)">&#x1F5D2;&#xFE0F;</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="scroll-text"></i></div>
                     </div>
                     <div id="history-list" class="list-box">
                         <div class="metric-sub">No history yet.</div>
@@ -164,7 +164,7 @@
                 <div class="card">
                     <div class="card-header">
                         <div class="card-title">Update Settings</div>
-                        <div style="color:var(--text-secondary)">&#9881;&#xFE0F;</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="settings"></i></div>
                     </div>
                     <div class="setting-group">
                         <label class="setting-label">Automatic update check on startup</label>
@@ -197,6 +197,7 @@
     </div>
 
     <!-- Scripts -->
+    <script src="icons.js"></script>
     <script src="notifications.js"></script>
     <script src="app.js"></script>
     <script src="updates.js"></script>
