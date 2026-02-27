@@ -2,6 +2,15 @@
 // API_BASE is defined in app.js
 let authToken = localStorage.getItem('alvaos_token');
 
+async function apiFetch(url, options = {}) {
+    const response = await window.fetch(url, options);
+    if (response.status === 401) {
+        localStorage.removeItem('alvaos_token');
+        window.location.href = '/login.html';
+    }
+    return response;
+}
+
 let installedAppsCache = [];
 let containersCache = [];
 let selectedAppId = null;
@@ -222,7 +231,7 @@ document.querySelectorAll('.tab-btn').forEach((btn) => {
 });
 
 async function fetchInstalledAppsData() {
-    const response = await fetch(`${API_BASE}/apps/installed`, {
+    const response = await apiFetch(`${API_BASE}/apps/installed`, {
         headers: { 'Authorization': authToken }
     });
 
@@ -233,7 +242,7 @@ async function fetchInstalledAppsData() {
 }
 
 async function fetchContainersData() {
-    const response = await fetch(`${API_BASE}/containers`, {
+    const response = await apiFetch(`${API_BASE}/containers`, {
         headers: { 'Authorization': authToken }
     });
 
@@ -274,7 +283,7 @@ async function getAppDetails(appId) {
     if (appDetailsCache[appId]) return appDetailsCache[appId];
 
     try {
-        const response = await fetch(`${API_BASE}/apps/available/${appId}`, {
+        const response = await apiFetch(`${API_BASE}/apps/available/${appId}`, {
             headers: { 'Authorization': authToken }
         });
 
@@ -595,7 +604,7 @@ async function loadAvailableApps() {
         setLoadingButtonState(refreshBtn, true, 'Refreshing...');
 
         try {
-            const response = await fetch(`${API_BASE}/apps/available`, {
+            const response = await apiFetch(`${API_BASE}/apps/available`, {
                 headers: { 'Authorization': authToken }
             });
 
@@ -660,7 +669,7 @@ async function showInstallWizard(appId) {
 
     try {
         // Fetch app details
-        const appRes = await fetch(`${API_BASE}/apps/available/${appId}`, {
+        const appRes = await apiFetch(`${API_BASE}/apps/available/${appId}`, {
             headers: { 'Authorization': authToken }
         });
         if (!appRes.ok) throw new Error('Failed to load app details');
@@ -701,7 +710,7 @@ async function showInstallWizard(appId) {
         }
 
         // Fetch pools
-        const poolsRes = await fetch(`${API_BASE}/storage/pools`, {
+        const poolsRes = await apiFetch(`${API_BASE}/storage/pools`, {
             headers: { 'Authorization': authToken }
         });
         if (!poolsRes.ok) throw new Error('Failed to load storage pools');
@@ -739,7 +748,7 @@ async function showInstallWizard(appId) {
             confirmBtn.textContent = 'Starting...';
 
             try {
-                const installRes = await fetch(`${API_BASE}/apps/install`, {
+                const installRes = await apiFetch(`${API_BASE}/apps/install`, {
                     method: 'POST',
                     headers: {
                         'Authorization': authToken,
@@ -825,7 +834,7 @@ async function uninstallApp(appId) {
     if (keepData === null) return;
 
     try {
-        const response = await fetch(`${API_BASE}/apps/${appId}`, {
+        const response = await apiFetch(`${API_BASE}/apps/${appId}`, {
             method: 'DELETE',
             headers: {
                 'Authorization': authToken,
@@ -850,7 +859,7 @@ async function uninstallApp(appId) {
 
 async function startContainer(containerId) {
     try {
-        const response = await fetch(`${API_BASE}/containers/${containerId}/start`, {
+        const response = await apiFetch(`${API_BASE}/containers/${containerId}/start`, {
             method: 'POST',
             headers: { 'Authorization': authToken }
         });
@@ -868,7 +877,7 @@ async function startContainer(containerId) {
 
 async function stopContainer(containerId) {
     try {
-        const response = await fetch(`${API_BASE}/containers/${containerId}/stop`, {
+        const response = await apiFetch(`${API_BASE}/containers/${containerId}/stop`, {
             method: 'POST',
             headers: { 'Authorization': authToken }
         });
@@ -888,7 +897,7 @@ async function deleteContainer(containerId) {
     if (!confirm('Are you sure you want to delete this container?')) return;
 
     try {
-        const response = await fetch(`${API_BASE}/containers/${containerId}?force=true`, {
+        const response = await apiFetch(`${API_BASE}/containers/${containerId}?force=true`, {
             method: 'DELETE',
             headers: { 'Authorization': authToken }
         });
@@ -952,7 +961,7 @@ async function loadContainerLogs(containerId, scrollToBottom = false) {
     const requestId = ++activeLogsRequestId;
 
     try {
-        const response = await fetch(`${API_BASE}/containers/${containerId}/logs?lines=400`, {
+        const response = await apiFetch(`${API_BASE}/containers/${containerId}/logs?lines=400`, {
             headers: { 'Authorization': authToken }
         });
 
@@ -1024,7 +1033,7 @@ async function pollInstallStatus(appId) {
 
     const poll = async () => {
         try {
-            const res = await fetch(`${API_BASE}/apps/install/status`, {
+            const res = await apiFetch(`${API_BASE}/apps/install/status`, {
                 headers: { 'Authorization': authToken }
             });
             if (!res.ok) {
@@ -1081,4 +1090,5 @@ async function pollInstallStatus(appId) {
 
 // Default view: installed apps + containers
 setActiveTab('installed');
+
 

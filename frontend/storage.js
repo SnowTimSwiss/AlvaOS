@@ -3,6 +3,15 @@
 
 const IGNORED_DETECTED_POOLS_KEY = 'alvaos_ignored_detected_pools';
 
+async function apiFetch(url, options = {}) {
+    const response = await window.fetch(url, options);
+    if (response.status === 401) {
+        localStorage.removeItem('alvaos_token');
+        window.location.href = '/login.html';
+    }
+    return response;
+}
+
 function getIgnoredDetectedPools() {
     try {
         const raw = localStorage.getItem(IGNORED_DETECTED_POOLS_KEY);
@@ -57,7 +66,7 @@ async function importDetectedPool(poolId, poolName) {
 
     try {
         const token = localStorage.getItem('alvaos_token');
-        const response = await fetch(`${API_BASE}/storage/pools/import`, {
+        const response = await apiFetch(`${API_BASE}/storage/pools/import`, {
             method: 'POST',
             headers: {
                 'Authorization': token || '',
@@ -131,7 +140,7 @@ async function loadDisks() {
 
     try {
         const token = localStorage.getItem('alvaos_token');
-        const response = await fetch(`${API_BASE}/storage/disks`, {
+        const response = await apiFetch(`${API_BASE}/storage/disks`, {
             headers: { 'Authorization': token || '' }
         });
 
@@ -244,7 +253,7 @@ async function loadPools() {
 
     try {
         const token = localStorage.getItem('alvaos_token');
-        const response = await fetch(`${API_BASE}/storage/pools`, {
+        const response = await apiFetch(`${API_BASE}/storage/pools`, {
             headers: { 'Authorization': token || '' }
         });
 
@@ -408,7 +417,7 @@ async function loadShares() {
 
     try {
         const token = localStorage.getItem('alvaos_token');
-        const response = await fetch(`${API_BASE}/storage/shares`, {
+        const response = await apiFetch(`${API_BASE}/storage/shares`, {
             headers: { 'Authorization': token || '' }
         });
 
@@ -536,7 +545,7 @@ async function wipeDisk(diskName) {
 
     const token = localStorage.getItem('alvaos_token');
     try {
-        const response = await fetch(`${API_BASE}/storage/disks/${diskName}/wipe`, {
+        const response = await apiFetch(`${API_BASE}/storage/disks/${diskName}/wipe`, {
             method: 'POST',
             headers: { 'Authorization': token || '' }
         });
@@ -575,7 +584,7 @@ async function viewDiskDetails(diskName) {
     document.body.appendChild(modal);
 
     try {
-        const response = await fetch(`${API_BASE}/storage/disks/${diskName}/smart`, {
+        const response = await apiFetch(`${API_BASE}/storage/disks/${diskName}/smart`, {
             headers: { 'Authorization': token || '' }
         });
 
@@ -590,7 +599,7 @@ async function viewDiskDetails(diskName) {
                     <button id="close-modal-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">${window.alvaIcon ? window.alvaIcon('x', '', 'aria-hidden="true"') : 'x'}</button>
                 </div>
                 <div style="padding: 2rem; text-align: center; background: var(--bg-primary); border-radius: 8px; border-left: 4px solid var(--accent-warning);">
-                    <div style="font-size: 3rem; margin-bottom: 1rem;">ℹ️</div>
+                    <div style="font-size: 3rem; margin-bottom: 1rem;">â„¹ï¸</div>
                     <h3 style="margin-bottom: 0.5rem;">SMART Monitoring Unavailable</h3>
                     <p style="color: var(--text-secondary);">${data.error}</p>
                 </div>
@@ -628,7 +637,7 @@ async function viewDiskDetails(diskName) {
                 </div>
                 <div style="background: var(--bg-primary); padding: 1rem; border-radius: 6px; text-align: center;">
                     <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase;">Temperature</div>
-                    <div style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary);">${temp}°C</div>
+                    <div style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary);">${temp}Â°C</div>
                 </div>
                 <div style="background: var(--bg-primary); padding: 1rem; border-radius: 6px; text-align: center;">
                     <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase;">Power On</div>
@@ -688,7 +697,7 @@ async function viewDiskDetails(diskName) {
 async function showCreatePoolDialog() {
     // Fetch available disks
     const token = localStorage.getItem('alvaos_token');
-    const response = await fetch(`${API_BASE}/storage/disks`, {
+    const response = await apiFetch(`${API_BASE}/storage/disks`, {
         headers: { 'Authorization': token || '' }
     });
 
@@ -857,7 +866,7 @@ async function showCreatePoolDialog() {
             createBtn.textContent = 'Creating Pool...';
             createBtn.style.opacity = '0.7';
 
-            const response = await fetch(`${API_BASE}/storage/pools`, {
+            const response = await apiFetch(`${API_BASE}/storage/pools`, {
                 method: 'POST',
                 headers: {
                     'Authorization': token || '',
@@ -897,7 +906,7 @@ async function showExpandPoolDialog(poolId, poolName) {
     const token = localStorage.getItem('alvaos_token');
 
     // Fetch available disks
-    const disksResponse = await fetch(`${API_BASE}/storage/disks`, {
+    const disksResponse = await apiFetch(`${API_BASE}/storage/disks`, {
         headers: { 'Authorization': token || '' }
     });
 
@@ -968,7 +977,7 @@ async function showExpandPoolDialog(poolId, poolName) {
         }
 
         try {
-            const response = await fetch(`${API_BASE}/storage/pools/${poolId}/expand`, {
+            const response = await apiFetch(`${API_BASE}/storage/pools/${poolId}/expand`, {
                 method: 'POST',
                 headers: {
                     'Authorization': token || '',
@@ -997,7 +1006,7 @@ async function deletePool(poolId, poolName) {
 
     try {
         const token = localStorage.getItem('alvaos_token');
-        const response = await fetch(`${API_BASE}/storage/pools`, {
+        const response = await apiFetch(`${API_BASE}/storage/pools`, {
             method: 'DELETE',
             headers: {
                 'Authorization': token || '',
@@ -1022,7 +1031,7 @@ async function deletePool(poolId, poolName) {
 // Manage Subvolumes
 async function manageSubvolumes(poolId) {
     const token = localStorage.getItem('alvaos_token');
-    const response = await fetch(`${API_BASE}/storage/pools/${poolId}/subvolumes`, {
+    const response = await apiFetch(`${API_BASE}/storage/pools/${poolId}/subvolumes`, {
         headers: { 'Authorization': token || '' }
     });
 
@@ -1113,7 +1122,7 @@ async function manageSubvolumes(poolId) {
         }
 
         try {
-            const createResponse = await fetch(`${API_BASE}/storage/pools/${poolId}/subvolumes`, {
+            const createResponse = await apiFetch(`${API_BASE}/storage/pools/${poolId}/subvolumes`, {
                 method: 'POST',
                 headers: {
                     'Authorization': token || '',
@@ -1145,7 +1154,7 @@ async function deleteSubvolume(poolId, subvolName) {
 
     try {
         const token = localStorage.getItem('alvaos_token');
-        const response = await fetch(`${API_BASE}/storage/pools/${poolId}/subvolumes`, {
+        const response = await apiFetch(`${API_BASE}/storage/pools/${poolId}/subvolumes`, {
             method: 'DELETE',
             headers: {
                 'Authorization': token || '',
@@ -1179,7 +1188,7 @@ async function showCreateShareDialog() {
     // Get available paths from backend
     let availablePaths = [];
     try {
-        const pathsRes = await fetch(`${API_BASE}/storage/available-paths`, {
+        const pathsRes = await apiFetch(`${API_BASE}/storage/available-paths`, {
             headers: { 'Authorization': token || '' }
         });
         if (pathsRes.ok) {
@@ -1198,7 +1207,7 @@ async function showCreateShareDialog() {
     // Get users for SMB permissions
     let users = [];
     try {
-        const usersRes = await fetch(`${API_BASE}/users`, {
+        const usersRes = await apiFetch(`${API_BASE}/users`, {
             headers: { 'Authorization': token || '' }
         });
         if (usersRes.ok) {
@@ -1401,7 +1410,7 @@ async function showCreateShareDialog() {
         }
 
         try {
-            const response = await fetch(`${API_BASE}/storage/shares`, {
+            const response = await apiFetch(`${API_BASE}/storage/shares`, {
                 method: 'POST',
                 headers: {
                     'Authorization': token || '',
@@ -1441,7 +1450,7 @@ async function deleteShare(shareId, shareName) {
 
     try {
         const token = localStorage.getItem('alvaos_token');
-        const response = await fetch(`${API_BASE}/storage/shares`, {
+        const response = await apiFetch(`${API_BASE}/storage/shares`, {
             method: 'DELETE',
             headers: {
                 'Authorization': token || '',
@@ -1467,7 +1476,7 @@ async function deleteShare(shareId, shareName) {
 async function showSmbPermissions(shareId) {
     const token = localStorage.getItem('alvaos_token');
 
-    const shareResponse = await fetch(`${API_BASE}/storage/shares`, {
+    const shareResponse = await apiFetch(`${API_BASE}/storage/shares`, {
         headers: { 'Authorization': token || '' }
     });
     if (!shareResponse.ok) {
@@ -1481,7 +1490,7 @@ async function showSmbPermissions(shareId) {
         return;
     }
 
-    const usersResponse = await fetch(`${API_BASE}/users`, {
+    const usersResponse = await apiFetch(`${API_BASE}/users`, {
         headers: { 'Authorization': token || '' }
     });
     if (!usersResponse.ok) {
@@ -1559,7 +1568,7 @@ async function showSmbPermissions(shareId) {
         });
 
         try {
-            const response = await fetch(`${API_BASE}/storage/shares/permissions`, {
+            const response = await apiFetch(`${API_BASE}/storage/shares/permissions`, {
                 method: 'PUT',
                 headers: {
                     'Authorization': token || '',
@@ -1581,7 +1590,7 @@ async function showSmbPermissions(shareId) {
 // Show Connection Info
 async function showConnectionInfo(shareId) {
     const token = localStorage.getItem('alvaos_token');
-    const response = await fetch(`${API_BASE}/storage/shares`, {
+    const response = await apiFetch(`${API_BASE}/storage/shares`, {
         headers: { 'Authorization': token || '' }
     });
 
@@ -1712,4 +1721,5 @@ async function showConnectionInfo(shareId) {
         modal.remove();
     });
 }
+
 

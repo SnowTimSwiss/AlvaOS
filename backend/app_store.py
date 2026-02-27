@@ -25,7 +25,7 @@ class AppStore:
         
         # Status tracking
         import threading
-        self._status_lock = threading.Lock()
+        self._status_lock = threading.RLock()
         self._active_install_status = None
         self._last_status_write = 0
         
@@ -97,8 +97,15 @@ class AppStore:
                 if self._active_install_status:
                     logs = self._active_install_status.get('logs', [])
                 else:
-                    # Try to get from last known status if we just started
-                    current = self.get_install_status()
+                    # Try to get from last known status if we just started.
+                    # Read from disk directly here to avoid nested lock acquisition.
+                    current = {}
+                    try:
+                        if os.path.exists(self.install_status_file):
+                            with open(self.install_status_file, 'r') as f:
+                                current = json.load(f) or {}
+                    except Exception:
+                        current = {}
                     logs = current.get('logs', [])
             
             # Keep only last 100 log lines
@@ -322,10 +329,13 @@ class AppStore:
         if app_id in apps_state:
             return False, f"App '{app_id}' is already installed"
 
-        # Check if an installation is already in progress
+        # Check if any installation is already in progress
         current_status = self.get_install_status()
-        if current_status.get('status') == 'installing' and current_status.get('app_id') == app_id:
-            return False, f"Installation of '{app_id}' is already in progress"
+        if current_status.get('status') in ('starting', 'installing'):
+            active_app_id = current_status.get('app_id')
+            if active_app_id:
+                return False, f"Installation of '{active_app_id}' is already in progress"
+            return False, "Another installation is already in progress"
 
         # Start installation in a thread
         import threading

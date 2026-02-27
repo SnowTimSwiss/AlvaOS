@@ -4580,7 +4580,19 @@ def install_app():
     
     # Convert port mappings to int keys
     if port_mappings:
-        port_mappings = {int(k): int(v) for k, v in port_mappings.items()}
+        if not isinstance(port_mappings, dict):
+            return jsonify({'error': 'port_mappings must be an object of source:target ports'}), 400
+        try:
+            normalized_port_mappings = {}
+            for k, v in port_mappings.items():
+                src = int(str(k).strip())
+                dst = int(str(v).strip())
+                if src <= 0 or dst <= 0:
+                    raise ValueError("ports must be positive integers")
+                normalized_port_mappings[src] = dst
+            port_mappings = normalized_port_mappings
+        except Exception:
+            return jsonify({'error': 'Invalid port_mappings format. Use positive integer source/target ports.'}), 400
     
     success, error = app_store.install_app(
         app_id=app_id,
