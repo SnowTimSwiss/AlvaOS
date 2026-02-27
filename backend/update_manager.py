@@ -418,7 +418,7 @@ class UpdateManager:
         })
         return {"path": dest_path, "sha256": checksum}
 
-    def run_command(self, cmd, timeout=60, extra_env=None):
+    def run_command(self, cmd, timeout=60, extra_env=None, use_sudo=True):
         if not cmd:
             return None, "Empty command"
         
@@ -428,7 +428,7 @@ class UpdateManager:
              # Use absolute path for sudo -n if we're doing it manually or trust build_privileged style
              # But here we stick to the simpler logic of this module for now, just adding -n
              final_cmd = ['sudo', '-n'] + cmd[1:]
-        elif platform.system() == "Linux" and not self.is_root_user():
+        elif use_sudo and platform.system() == "Linux" and not self.is_root_user():
             final_cmd = ["sudo", "-n"] + cmd
         else:
             final_cmd = cmd
@@ -442,6 +442,16 @@ class UpdateManager:
                 stderr_text = (result.stderr or "").strip()
                 stdout_text = (result.stdout or "").strip()
                 stderr_low = stderr_text.lower()
+                combined_low = f"{stderr_text}\n{stdout_text}".lower()
+                if "/etc/sudoers.d/alvaos" in combined_low and (
+                    "is owned by uid" in combined_low
+                    or "is world writable" in combined_low
+                    or "bad permissions" in combined_low
+                ):
+                    return None, (
+                        "System permission error: /etc/sudoers.d/alvaos has invalid ownership or permissions. "
+                        "Run as root: chown root:root /etc/sudoers.d/alvaos && chmod 440 /etc/sudoers.d/alvaos"
+                    )
                 if "password is required" in stderr_low or "a password is required" in stderr_low:
                     cmd_str = " ".join(final_cmd)
                     return None, f"System permission error: Passwordless sudo is not configured for command: {cmd_str}"
@@ -465,7 +475,8 @@ class UpdateManager:
             return False, "Invalid package path"
         if not os.path.exists(package_path):
             return False, "Package not found"
-        res, err = self.run_command([CMD['DPKG_DEB'], "--info", package_path], timeout=30)
+        # Package metadata inspection does not require root.
+        res, err = self.run_command([CMD['DPKG_DEB'], "--info", package_path], timeout=30, use_sudo=False)
         if err or not res or res.returncode != 0:
             return False, err or (res.stderr if res else "dpkg-deb failed")
         return True, None
@@ -556,7 +567,8 @@ class UpdateManager:
         if platform.system() != "Linux":
             return {"error": "Debian updates are only supported on Linux"}
         self.set_update_state("checking", "Checking Debian updates")
-        res, err = self.run_command([CMD['APT'], "list", "--upgradable"], timeout=60)
+        # Read-only query; avoid sudo dependency for the check itself.
+        res, err = self.run_command([CMD['APT'], "list", "--upgradable"], timeout=60, use_sudo=False)
         if err or not res or res.returncode != 0:
             self.set_update_state("error", "Debian update check failed", {"error": err or res.stderr})
             return {"error": err or (res.stderr if res else "apt failed")}
