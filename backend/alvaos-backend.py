@@ -1191,6 +1191,14 @@ def index():
     """Serve the Web UI with version replacement"""
     return serve_frontend('index.html')
 
+@app.route('/apps/icons/<path:filename>')
+def serve_app_icons(filename):
+    """Serve app store icons from production or development catalog directories."""
+    prod_icons_dir = '/opt/alvaos/apps/icons'
+    dev_icons_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'apps', 'icons'))
+    icons_dir = prod_icons_dir if os.path.exists(prod_icons_dir) else dev_icons_dir
+    return send_from_directory(icons_dir, filename)
+
 def serve_frontend(filename):
     """Helper to serve frontend files with version replacement"""
     try:

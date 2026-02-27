@@ -139,7 +139,7 @@ function renderAvailableApps() {
 
     container.innerHTML = filteredApps.map((app) => `
         <div class="app-card" onclick="showAppDetails('${escapeHtml(app.id)}')">
-            <div class="app-icon">${getAppIcon(app.category)}</div>
+            <div class="app-icon">${getAppIcon(app)}</div>
             <div class="app-name">${escapeHtml(app.name)}</div>
             <div class="app-description">${escapeHtml(app.description)}</div>
             <div class="app-category">${escapeHtml(app.category)}</div>
@@ -153,7 +153,15 @@ function renderAvailableApps() {
     `).join('');
 }
 
-function getAppIcon(category) {
+function normalizeIconPath(iconPath) {
+    const value = String(iconPath || '').trim();
+    if (!value) return '';
+    if (/^https?:\/\//i.test(value)) return value;
+    if (value.startsWith('/')) return value;
+    return `/${value}`;
+}
+
+function getCategoryIconMarkup(category) {
     const icons = {
         'Productivity': 'briefcase',
         'Media': 'film',
@@ -165,6 +173,26 @@ function getAppIcon(category) {
     };
     const iconName = icons[category] || 'package';
     return window.alvaIcon ? window.alvaIcon(iconName, '', 'aria-hidden="true"') : '';
+}
+
+function getAppIcon(appOrCategory) {
+    if (appOrCategory && typeof appOrCategory === 'object') {
+        const iconUrl = normalizeIconPath(appOrCategory.icon);
+        if (iconUrl) {
+            const appName = String(appOrCategory.name || appOrCategory.id || 'App');
+            return `
+                <img
+                    class="app-icon-image"
+                    src="${escapeHtml(iconUrl)}"
+                    alt="${escapeHtml(appName)} icon"
+                    loading="lazy"
+                    decoding="async">
+            `;
+        }
+        return getCategoryIconMarkup(appOrCategory.category);
+    }
+
+    return getCategoryIconMarkup(appOrCategory);
 }
 
 function setActiveTab(tabName) {
@@ -642,7 +670,7 @@ async function showInstallWizard(appId) {
         document.getElementById('install-app-name').textContent = app.name || appId;
         document.getElementById('install-app-version').textContent = `Version: ${app.version || 'latest'}`;
         document.getElementById('install-app-desc').textContent = app.description || '';
-        document.getElementById('install-app-icon').innerHTML = getAppIcon(app.category);
+        document.getElementById('install-app-icon').innerHTML = getAppIcon(app);
 
         const environmentSchema = Array.isArray(app?.config_schema?.environment)
             ? app.config_schema.environment
