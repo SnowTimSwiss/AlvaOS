@@ -33,6 +33,17 @@ function setStatus(text) {
     if (el) el.textContent = text;
 }
 
+function apiErrorMessage(res, data, fallback) {
+    if (data && typeof data.error === 'string' && data.error.trim()) {
+        return data.error.trim();
+    }
+    if (!res) return fallback;
+    if (res.status === 401) return 'Authentication required. Please log in again.';
+    if (res.status === 403) return 'Admin privileges required for this action.';
+    if (res.status >= 500) return 'Backend update operation failed. Check backend logs.';
+    return fallback;
+}
+
 function setProgress(active, percent = 0) {
     const bar = document.getElementById('alvaos-update-progress');
     if (!bar) return;
@@ -201,7 +212,7 @@ async function checkAlvaosUpdates(forceRefresh = false) {
         if (!res.ok || !data || data.error) {
             renderRelease(null, false, null);
             setStatus('Update check failed');
-            window.showToast(data?.error || 'Update check failed', 'error');
+            window.showToast(apiErrorMessage(res, data, 'Update check failed'), 'error');
             return;
         }
         if (window.setUpdateIndicators) {
@@ -250,7 +261,7 @@ async function applyAlvaosUpdate() {
         if (!res) return;
         const data = (await readJson(res)) || {};
         if (!res.ok || !data.success) {
-            window.showToast(data.error || 'Update failed', 'error');
+            window.showToast(apiErrorMessage(res, data, 'Update failed'), 'error');
             setStatus('Install failed');
             return;
         }
@@ -280,7 +291,7 @@ async function checkDebianUpdates() {
         const data = await readJson(res);
         if (!res.ok || !data || data.error) {
             if (list) list.innerHTML = '<div class="metric-sub">Failed to check updates.</div>';
-            window.showToast(data?.error || 'Debian check failed', 'error');
+            window.showToast(apiErrorMessage(res, data, 'Debian check failed'), 'error');
             return;
         }
 
@@ -326,7 +337,7 @@ async function applyDebianUpdates() {
         if (!res) return;
         const data = (await readJson(res)) || {};
         if (!res.ok || !data.success) {
-            window.showToast(data.error || 'Debian updates failed', 'error');
+            window.showToast(apiErrorMessage(res, data, 'Debian updates failed'), 'error');
             return;
         }
         window.showToast('Debian updates started', 'success');
@@ -349,7 +360,7 @@ async function applyAllDebianUpdates() {
         if (!res) return;
         const data = (await readJson(res)) || {};
         if (!res.ok || !data.success) {
-            window.showToast(data.error || 'Applying all Debian updates failed', 'error');
+            window.showToast(apiErrorMessage(res, data, 'Applying all Debian updates failed'), 'error');
             return;
         }
         window.showToast('All Debian updates started', 'success');
@@ -369,7 +380,7 @@ async function scanOfflineUpdates() {
         const data = await readJson(res);
         if (!res.ok || !data) {
             if (list) list.innerHTML = '<div class="metric-sub">Failed to scan offline updates.</div>';
-            window.showToast('Offline scan failed', 'error');
+            window.showToast(apiErrorMessage(res, data, 'Offline scan failed'), 'error');
             return;
         }
         const packages = data.packages || [];
@@ -416,7 +427,7 @@ async function applyOfflineUpdate(path) {
         if (!res) return;
         const data = (await readJson(res)) || {};
         if (!res.ok || !data.success) {
-            window.showToast(data.error || 'Offline update failed', 'error');
+            window.showToast(apiErrorMessage(res, data, 'Offline update failed'), 'error');
             return;
         }
         window.showToast('Offline update started', 'success');

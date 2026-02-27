@@ -1252,6 +1252,9 @@ def get_setup_status():
 @app.route('/api/v1/setup/complete', methods=['POST'])
 def complete_setup():
     """Complete initial setup with root password change"""
+    if is_setup_complete():
+        return jsonify({'error': 'Setup already completed'}), 409
+
     try:
         data = request.get_json()
         
@@ -1590,9 +1593,21 @@ def manage_users():
             return jsonify({'error': 'User not found'}), 404
         try:
             # Remove SMB user
-            run_sudo_command([CMD['SMBPASSWD'], '-x', username])
+            _, smb_err = run_sudo_command([CMD['SMBPASSWD'], '-x', username])
+            if smb_err:
+                smb_detail = str(smb_err).lower()
+                # Ignore if SMB account does not exist yet.
+                if 'failed to find entry for user' not in smb_detail:
+                    return jsonify({'error': f'Failed to remove SMB user: {smb_err}'}), 500
             # Delete system user (keep home to avoid data loss)
-            run_sudo_command([CMD['USERDEL'], username])
+            userdel_res, userdel_err = run_sudo_command([CMD['USERDEL'], username])
+            if userdel_err or not userdel_res or userdel_res.returncode != 0:
+                userdel_detail = str(userdel_err or '').lower()
+                if (
+                    'does not exist' not in userdel_detail
+                    and 'no such user' not in userdel_detail
+                ):
+                    return jsonify({'error': f'Failed to delete user: {userdel_err or "unknown error"}'}), 500
 
             # Remove user from share permissions
             shares_state = load_shares_state()
@@ -1650,9 +1665,12 @@ def update_user(username):
         role = str(data.get('role', 'user')).lower()
         if role not in ('admin', 'user'):
             role = 'user'
-        if username in users_state:
-            users_state[username]['role'] = role
-            save_users_state(users_state)
+        entry = users_state.get(username, {})
+        entry['username'] = username
+        entry['role'] = role
+        entry['created_at'] = entry.get('created_at') or datetime.now().isoformat()
+        users_state[username] = entry
+        save_users_state(users_state)
 
     if 'password' in data:
         password = data.get('password', '')

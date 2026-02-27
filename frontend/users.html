@@ -12,6 +12,176 @@
         rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="notifications.css">
+    <style>
+        .users-intro {
+            margin-bottom: 24px;
+        }
+
+        .users-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .users-subtitle {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        .users-card-icon {
+            color: var(--text-secondary);
+        }
+
+        .users-create-btn {
+            width: 100%;
+        }
+
+        .users-list-card {
+            grid-column: 1 / -1;
+        }
+
+        .users-loading,
+        .users-empty,
+        .users-error,
+        .users-denied {
+            color: var(--text-secondary);
+        }
+
+        .users-error,
+        .users-denied {
+            color: var(--accent-danger);
+        }
+
+        .user-row {
+            margin-bottom: 12px;
+        }
+
+        .user-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .user-row.is-busy {
+            opacity: 0.7;
+        }
+
+        .user-row-main {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .user-row-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .user-row-name {
+            font-weight: 600;
+            font-size: 1.05rem;
+        }
+
+        .user-role-badge {
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: var(--bg-card);
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .user-role-badge.admin {
+            background: var(--accent-warning);
+        }
+
+        .user-role-badge.user {
+            background: var(--text-secondary);
+        }
+
+        .user-row-state {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            margin-top: 2px;
+        }
+
+        .user-row-created {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            opacity: 0.7;
+        }
+
+        .user-row-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .user-role-select {
+            background: var(--bg-body);
+            color: var(--text-primary);
+            border: 1px solid var(--border-default);
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+
+        .user-delete-btn {
+            border-color: var(--accent-danger);
+            color: var(--accent-danger);
+        }
+
+        .user-modal-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border-default);
+            border-radius: 8px;
+            padding: 1.5rem;
+            max-width: 420px;
+            width: 90%;
+        }
+
+        .user-modal-title {
+            margin-bottom: 0.5rem;
+            color: var(--text-primary);
+        }
+
+        .user-modal-text {
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+        }
+
+        .user-modal-input {
+            width: 100%;
+            margin-bottom: 1.5rem;
+            background: var(--bg-body);
+            color: var(--text-primary);
+            border: 1px solid var(--border-default);
+            padding: 8px;
+            border-radius: 4px;
+        }
+
+        .user-modal-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .user-modal-actions button {
+            flex: 1;
+        }
+
+        @media (max-width: 760px) {
+            .user-row-actions {
+                width: 100%;
+            }
+
+            .user-row-actions .btn-secondary,
+            .user-row-actions .user-role-select {
+                width: 100%;
+            }
+        }
+    </style>
 </head>
 
 <body>
@@ -54,9 +224,9 @@
 
         <div class="content-scroll">
             <div id="update-banner-slot"></div>
-            <div style="margin-bottom: 24px;">
-                <h1 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 4px;">User Management</h1>
-                <p style="color: var(--text-secondary); font-size: 0.95rem;">Create users, assign roles, and manage SMB
+            <div class="users-intro">
+                <h1 class="users-title">User Management</h1>
+                <p class="users-subtitle">Create users, assign roles, and manage SMB
                     access.</p>
             </div>
 
@@ -65,7 +235,7 @@
                 <div class="card">
                     <div class="card-header">
                         <div class="card-title">Create User</div>
-                        <div style="color:var(--text-secondary)"><i data-lucide="user-round"></i></div>
+                        <div class="users-card-icon"><i data-lucide="user-round"></i></div>
                     </div>
 
                     <div class="setting-group">
@@ -86,14 +256,14 @@
                         </select>
                     </div>
 
-                    <button id="create-user-btn" class="btn-primary" style="width:100%;">Create User</button>
+                    <button id="create-user-btn" class="btn-primary users-create-btn">Create User</button>
                 </div>
 
                 <!-- Users List -->
-                <div class="card" style="grid-column: 1 / -1;">
+                <div class="card users-list-card">
                     <div class="card-header">
                         <div class="card-title">Existing Users</div>
-                        <div style="color:var(--text-secondary)"><i data-lucide="clipboard-list"></i></div>
+                        <div class="users-card-icon"><i data-lucide="clipboard-list"></i></div>
                     </div>
                     <div id="users-container" class="list-group">
                         Loading users...

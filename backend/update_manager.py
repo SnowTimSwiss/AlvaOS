@@ -6,6 +6,7 @@ import re
 import subprocess
 import secrets
 import shutil
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -74,14 +75,29 @@ DEFAULT_SETTINGS = {
 class UpdateManager:
     def __init__(self, repo="SnowTimSwiss/AlvaOS"):
         self.repo = repo
-        self.state_file = "/var/lib/alvaos/update_state.json"
-        self.history_file = "/var/lib/alvaos/update_history.json"
-        self.settings_file = "/var/lib/alvaos/update_settings.json"
-        self.cache_dir = "/var/lib/alvaos/updates"
-        self.github_cache_file = "/var/lib/alvaos/github_cache.json"
+        self.state_dir = self._resolve_state_dir()
+        self.state_file = os.path.join(self.state_dir, "update_state.json")
+        self.history_file = os.path.join(self.state_dir, "update_history.json")
+        self.settings_file = os.path.join(self.state_dir, "update_settings.json")
+        self.cache_dir = os.path.join(self.state_dir, "updates")
+        self.github_cache_file = os.path.join(self.state_dir, "github_cache.json")
+
+    def _resolve_state_dir(self):
+        preferred = Path("/var/lib/alvaos")
+        try:
+            preferred.mkdir(parents=True, exist_ok=True)
+            probe = preferred / ".alvaos_write_test"
+            with open(probe, "w") as f:
+                f.write("ok")
+            probe.unlink(missing_ok=True)
+            return str(preferred)
+        except Exception:
+            fallback = (Path(__file__).resolve().parent / ".." / ".alvaos_state").resolve()
+            fallback.mkdir(parents=True, exist_ok=True)
+            return str(fallback)
 
     def ensure_dirs(self):
-        Path("/var/lib/alvaos").mkdir(parents=True, exist_ok=True)
+        Path(self.state_dir).mkdir(parents=True, exist_ok=True)
         Path(self.cache_dir).mkdir(parents=True, exist_ok=True)
 
     def cleanup_cache(self, keep=3):
@@ -115,8 +131,19 @@ class UpdateManager:
 
     def save_json(self, path, payload):
         self.ensure_dirs()
-        with open(path, "w") as f:
-            json.dump(payload, f, indent=2)
+        parent = Path(path).parent
+        parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(prefix=".tmp-", suffix=".json", dir=str(parent))
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(payload, f, indent=2)
+            os.replace(tmp_path, path)
+        finally:
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
 
     def get_settings(self):
         settings = self.load_json(self.settings_file, DEFAULT_SETTINGS.copy())

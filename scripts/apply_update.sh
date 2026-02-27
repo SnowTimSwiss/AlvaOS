@@ -11,6 +11,12 @@ log() {
   echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" | tee -a "$LOG_FILE"
 }
 
+fix_state_permissions() {
+  if id -u alvaos >/dev/null 2>&1; then
+    chown alvaos:alvaos /var/lib/alvaos/update_state.json /var/lib/alvaos/update_history.json 2>/dev/null || true
+  fi
+}
+
 update_state() {
   local status="$1"
   local message="$2"
@@ -28,6 +34,7 @@ payload = {
 with open("/var/lib/alvaos/update_state.json", "w") as f:
     json.dump(payload, f, indent=2)
 PY
+  fix_state_permissions
 }
 
 if [ -z "$PACKAGE_PATH" ]; then
