@@ -45,7 +45,14 @@ async function backupApi(path, options = {}) {
         options.body = JSON.stringify(options.json);
         delete options.json;
     }
-    const response = await fetch(`${API_BASE}${path}`, { ...options, headers });
+    let response;
+    try {
+        response = await fetch(`${API_BASE}${path}`, { ...options, headers });
+    } catch (error) {
+        const detail = String(error?.message || '').trim();
+        backupNotify(detail ? `Network error: ${detail}` : 'Network error while contacting backup API', 'error');
+        return null;
+    }
     if (response.status === 401) {
         window.location.href = '/login.html';
         return null;
@@ -283,6 +290,9 @@ function renderSystemSnapshots(items) {
                                 <button class="btn-secondary backup-system-rollback-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}">
                                     Prepare Rollback
                                 </button>
+                                <button class="btn-secondary backup-system-delete-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}">
+                                    Delete
+                                </button>
                             </div>
                         </td>
                     </tr>
@@ -368,9 +378,44 @@ function fillBuddySettingsUi() {
     const encryptionPasswordEl = document.getElementById('buddy-encryption-password');
     if (encryptionPasswordEl) {
         encryptionPasswordEl.value = '';
-        encryptionPasswordEl.placeholder = buddySettings.encryption_password_set
-            ? 'Password already set (enter to change)'
-            : 'Set encryption password';
+    }
+    updateBuddySecurityUi();
+}
+
+function updateBuddySecurityUi() {
+    const enabledEl = document.getElementById('buddy-encryption-enabled');
+    const enabled = !!enabledEl?.checked;
+    const passwordEl = document.getElementById('buddy-encryption-password');
+    const passwordWrap = document.getElementById('buddy-encryption-settings');
+    const stateEl = document.getElementById('buddy-encryption-state');
+    const helpEl = document.getElementById('buddy-encryption-help');
+    const hasStoredPassword = !!buddySettings?.encryption_password_set;
+
+    if (stateEl) {
+        stateEl.textContent = enabled ? 'Enabled' : 'Disabled';
+        stateEl.classList.toggle('on', enabled);
+        stateEl.classList.toggle('off', !enabled);
+    }
+
+    if (passwordWrap) {
+        passwordWrap.classList.toggle('disabled', !enabled);
+    }
+
+    if (passwordEl) {
+        passwordEl.disabled = !enabled;
+        if (!enabled) {
+            passwordEl.placeholder = 'Enable encryption to set a password';
+        } else {
+            passwordEl.placeholder = hasStoredPassword
+                ? 'Password already set (enter to change)'
+                : 'Set encryption password';
+        }
+    }
+
+    if (helpEl) {
+        helpEl.textContent = enabled
+            ? 'When enabled, the password is required for restore and rollback.'
+            : 'Encryption is disabled. Restores do not require an extra password.';
     }
 }
 
@@ -837,6 +882,25 @@ async function deleteDataSnapshot(snapshotPath) {
     }
     backupNotify('Snapshot deleted', 'success');
     await Promise.all([loadDataSnapshots(), loadBackupStatus()]);
+}
+
+async function deleteSystemSnapshot(snapshotPath) {
+    const snap = String(snapshotPath || '').trim();
+    if (!snap) return;
+    const ok = await window.showConfirm('Delete this system snapshot? This cannot be undone.');
+    if (!ok) return;
+
+    const response = await backupApi('/backup/snapshots', {
+        method: 'DELETE',
+        json: { snapshot_path: snap }
+    });
+    const data = await backupReadJson(response);
+    if (!response || !response.ok || !data) {
+        backupNotify(data?.error || 'Failed to delete system snapshot', 'error');
+        return;
+    }
+    backupNotify('System snapshot deleted', 'success');
+    await Promise.all([loadSystemSnapshots(), loadBackupStatus()]);
 }
 
 async function prepareSystemRollback(snapshotPath) {
@@ -1312,12 +1376,14 @@ async function loadBackupTargets() {
 
     // System Target Select
     const sb = backupSettings.system_backup || {};
-    setSelectOptions('system-target-path', sb.target_path || '', backupTargets);
-    setSelectOptions('system-run-target-path', sb.target_path || '', backupTargets);
+    const systemTargets = backupTargets.filter((target) => String(target?.kind || '').toLowerCase() === 'system');
+    const filteredSystemTargets = systemTargets.length ? systemTargets : backupTargets;
+    setSelectOptions('system-target-path', sb.target_path || '', filteredSystemTargets);
+    setSelectOptions('system-run-target-path', sb.target_path || '', filteredSystemTargets);
 }
 
 async function loadDataSnapshots() {
-    const response = await backupApi('/backup/snapshots');
+    const response = await backupApi('/backup/snapshots?snapshot_class=data');
     const data = await backupReadJson(response);
     if (!response || !response.ok || !data) {
         backupNotify('Failed to load snapshots', 'error');
@@ -1387,6 +1453,11 @@ function initBackupHandlers() {
     });
 
     document.getElementById('system-snapshots-list')?.addEventListener('click', (event) => {
+        const deleteBtn = event.target.closest('.backup-system-delete-btn');
+        if (deleteBtn) {
+            deleteSystemSnapshot(deleteBtn.dataset.snapshotPath || '');
+            return;
+        }
         const btn = event.target.closest('.backup-system-rollback-btn');
         if (!btn) return;
         prepareSystemRollback(btn.dataset.snapshotPath || '');
@@ -1399,6 +1470,7 @@ function initBackupHandlers() {
     document.getElementById('buddy-copy-token-btn')?.addEventListener('click', copyBuddyToken);
     document.getElementById('buddy-validate-token-btn')?.addEventListener('click', validateBuddyToken);
     document.getElementById('buddy-save-settings-btn')?.addEventListener('click', saveBuddySettings);
+    document.getElementById('buddy-encryption-enabled')?.addEventListener('change', updateBuddySecurityUi);
     document.getElementById('buddy-refresh-remote-btn')?.addEventListener('click', loadBuddyRemoteSnapshots);
     document.getElementById('buddy-peers-list')?.addEventListener('click', (event) => {
         const saveBtn = event.target.closest('.buddy-save-peer-policy-btn');

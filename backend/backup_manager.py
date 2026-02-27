@@ -434,6 +434,8 @@ class BackupManager:
         sb["target_path"] = self._normalize_path(sb.get("target_path"))
         if not sb["target_path"]:
             sb["target_path"] = self._normalize_path(DEFAULT_SETTINGS["system_backup"]["target_path"])
+        if platform.system() == "Linux" and sb["target_path"] and not self._same_filesystem("/", sb["target_path"]):
+            sb["target_path"] = self._normalize_path(DEFAULT_SETTINGS["system_backup"]["target_path"])
 
         return merged
 
@@ -505,6 +507,13 @@ class BackupManager:
             return False, {"error": "snapshot_path is required"}
 
         with self._job_lock:
+            status = self.get_status()
+            pending_snapshot = self._normalize_path(status.get("system_pending_snapshot_path"))
+            if status.get("system_pending_reboot") and pending_snapshot and pending_snapshot == snapshot:
+                return False, {
+                    "error": "Snapshot is currently scheduled for rollback and cannot be deleted"
+                }
+
             entries = self._load_json(self.snapshots_file, [])
             if not isinstance(entries, list):
                 entries = []
@@ -873,12 +882,6 @@ class BackupManager:
         failures: Optional[List[Dict]] = None,
     ) -> Tuple[Optional[str], Optional[str]]:
         manifest_dir = os.path.join(self.state_dir, "full-system-manifests")
-        mkdir_cmd = self._mkdir_cmd()
-        if not mkdir_cmd:
-            return None, "mkdir command not found"
-        mk_res, mk_err = self.run_command([mkdir_cmd, "-p", manifest_dir], timeout=30)
-        if mk_err or not mk_res or mk_res.returncode != 0:
-            return None, mk_err or "Failed to prepare manifest directory"
 
         snapshot_name = str(system_snapshot_entry.get("snapshot_name") or "").strip()
         if not snapshot_name:
@@ -888,7 +891,7 @@ class BackupManager:
         if not isinstance(pools_state, dict):
             pools_state = {}
 
-        manifest_path = os.path.join(manifest_dir, f"{snapshot_name}.plan")
+        primary_manifest_path = os.path.join(manifest_dir, f"{snapshot_name}.plan")
         lines = [
             "# AlvaOS Full Backup Manifest v1",
             "META|format|1",
@@ -946,12 +949,26 @@ class BackupManager:
                 )
             )
 
-        try:
-            with open(manifest_path, "w", encoding="utf-8") as f:
-                f.write("\n".join(lines) + "\n")
-            return manifest_path, None
-        except Exception as exc:
-            return None, str(exc)
+        fallback_manifest_dir = os.path.join(self.state_dir, "full-system-manifests-local")
+        candidate_paths = [primary_manifest_path]
+        fallback_manifest_path = os.path.join(fallback_manifest_dir, f"{snapshot_name}.plan")
+        if self._normalize_path(fallback_manifest_path) != self._normalize_path(primary_manifest_path):
+            candidate_paths.append(fallback_manifest_path)
+
+        last_error = None
+        for manifest_path in candidate_paths:
+            try:
+                Path(os.path.dirname(manifest_path)).mkdir(parents=True, exist_ok=True)
+                with open(manifest_path, "w", encoding="utf-8") as f:
+                    f.write("\n".join(lines) + "\n")
+                return manifest_path, None
+            except PermissionError as exc:
+                last_error = str(exc)
+                continue
+            except Exception as exc:
+                return None, str(exc)
+
+        return None, last_error or "Failed to write full-backup manifest"
 
     def _snapshot_direct(self, source_path: str, snapshot_path: str) -> Tuple[bool, str]:
         target_parent = os.path.dirname(snapshot_path)
@@ -1024,6 +1041,12 @@ class BackupManager:
             recv_res, recv_err = self.run_command([bash_cmd, "-lc", receive_cmd], timeout=600)
             if recv_err or not recv_res or recv_res.returncode != 0:
                 return False, recv_err or "Failed to receive snapshot stream"
+
+            received_snapshot = os.path.join(target_parent, os.path.basename(temp_source_snapshot))
+            if self._normalize_path(received_snapshot) != self._normalize_path(snapshot_path):
+                move_ok, move_err = self._move_path_best_effort(received_snapshot, snapshot_path, timeout=60)
+                if not move_ok:
+                    return False, move_err or "Failed to rename received snapshot"
 
             return True, ""
         finally:
@@ -1141,7 +1164,7 @@ class BackupManager:
                 return True, ""
 
             target_ok, target_err = _validate_target(target_base)
-            if (not target_ok) and (not explicit_target) and default_target and default_target != target_base:
+            if (not target_ok) and default_target and default_target != target_base:
                 fallback_ok, fallback_err = _validate_target(default_target)
                 if fallback_ok:
                     target_base = default_target
@@ -1262,6 +1285,17 @@ class BackupManager:
             elif backup_type == "system":
                 # System Backup Logic
                 current_settings = settings.get("system_backup", {})
+                full_data_target_path = self._normalize_path(target_path)
+                if not full_data_target_path:
+                    full_data_target_path = self._normalize_path(
+                        settings.get("pool_backup", {}).get("target_path")
+                    )
+                if (
+                    platform.system() == "Linux"
+                    and full_data_target_path
+                    and self._path_on_system_disk(full_data_target_path)
+                ):
+                    full_data_target_path = None
 
                 ok, payload = self.create_system_snapshot(label=trigger, trigger=trigger, target_path=target_path)
                 if ok:
@@ -1277,7 +1311,7 @@ class BackupManager:
                              source_path=source_path,
                              label=f"{trigger}-full",
                              trigger=trigger,
-                             target_path=target_path,
+                             target_path=full_data_target_path,
                              snapshot_class="full_data",
                          )
                          if data_ok:
@@ -1347,6 +1381,11 @@ class BackupManager:
                     target_source = self._normalize_path(item.get("source_path"))
                     metadata = item
                     break
+        elif target_source:
+            for item in self.list_snapshots(source_path=target_source):
+                if self._normalize_path(item.get("snapshot_path")) == snapshot:
+                    metadata = item
+                    break
 
         if not target_source:
             return False, {"error": "source_path is required"}
@@ -1381,6 +1420,21 @@ class BackupManager:
                     if candidate and self._path_exists_or_is_subvolume(candidate):
                         snapshot = candidate
                         break
+            if metadata and not self._path_exists_or_is_subvolume(snapshot):
+                snapshot_name = str(metadata.get("snapshot_name") or "").strip() or os.path.basename(snapshot)
+                target_root = self._normalize_path(metadata.get("target_root"))
+                legacy_prefix = f".alvaos-send-{self._slugify(snapshot_name)}-"
+                if snapshot_name and target_root and os.path.isdir(target_root):
+                    try:
+                        for entry_name in sorted(os.listdir(target_root), reverse=True):
+                            if not entry_name.startswith(legacy_prefix):
+                                continue
+                            candidate = self._normalize_path(os.path.join(target_root, entry_name))
+                            if candidate and self._path_exists_or_is_subvolume(candidate):
+                                snapshot = candidate
+                                break
+                    except Exception:
+                        pass
 
         if not self._path_exists_or_is_subvolume(snapshot):
             return False, {"error": f"Snapshot not found: {snapshot}"}

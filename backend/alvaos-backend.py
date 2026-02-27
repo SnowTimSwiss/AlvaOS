@@ -3988,7 +3988,10 @@ def backup_snapshots():
 
     if request.method == 'GET':
         source_path = (request.args.get('source_path') or '').strip() or None
-        snapshots = backup_manager.list_snapshots(source_path=source_path)
+        snapshot_class = (request.args.get('snapshot_class') or '').strip().lower() or None
+        if snapshot_class and snapshot_class not in ('data', 'system', 'full_data'):
+            return jsonify({'error': 'Invalid snapshot_class'}), 400
+        snapshots = backup_manager.list_snapshots(source_path=source_path, snapshot_class=snapshot_class)
         return jsonify({'snapshots': snapshots})
 
     if request.method == 'DELETE':

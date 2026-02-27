@@ -9,7 +9,6 @@ Safe (no breaks), Simple (one-click), Automated (auto-rollback), and User-contro
 1. **Base OS (Debian)**: Managed via `apt` through AlvaOS API. Optional auto-security updates.
 2. **AlvaOS System**: Backend, Frontend, and Scripts delivered as versioned `.deb` packages via GitHub.
 3. **Docker Apps**: Standard Compose-based updates; pulls new images while preserving volumes.
-4. **Buddy Backup**: Updated as part of the core AlvaOS package.
 
 ## Process Flow
 1. **Check**: Backend queries GitHub Releases API for new versions.
