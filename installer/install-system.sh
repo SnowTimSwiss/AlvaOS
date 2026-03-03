@@ -826,6 +826,7 @@ alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart smbd
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload nfs-kernel-server
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/apt
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/apt-get
+alvaos ALL=(ALL) NOPASSWD: /usr/bin/python3 -m pip
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/dpkg
 alvaos ALL=(ALL) NOPASSWD: /usr/bin/dpkg-deb
 alvaos ALL=(ALL) NOPASSWD: /usr/sbin/smartctl

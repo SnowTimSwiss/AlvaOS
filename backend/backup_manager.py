@@ -261,18 +261,6 @@ class BackupManager:
                 continue
             pool_name = pools.get(pool_id, {}).get("name") or pool_id
 
-            if mount_norm not in seen_paths:
-                seen_paths.add(mount_norm)
-                sources.append(
-                    {
-                        "pool_id": pool_id,
-                        "pool_name": pool_name,
-                        "name": f"Pool: {pool_name}",
-                        "path": mount_norm,
-                        "kind": "pool"
-                    }
-                )
-
             if platform.system() == "Linux":
                 subvolumes = self._list_subvolumes(mount_point)
                 for sub in subvolumes:
@@ -1068,6 +1056,12 @@ class BackupManager:
         source = self._normalize_path(source_path)
         if not source:
             return False, {"error": "source_path is required"}
+        if platform.system() == "Linux":
+            pool_mount_points = {self._normalize_path(mp) for _, mp in self._list_pool_mounts()}
+            if source in pool_mount_points:
+                return False, {
+                    "error": "Pool root snapshots are not supported for restore. Select a subvolume source."
+                }
         if platform.system() == "Linux" and self._path_on_system_disk(source):
             return False, {"error": f"Source path is on the system disk and is not allowed: {source}"}
         if platform.system() == "Linux":
@@ -1493,7 +1487,13 @@ class BackupManager:
             return False, {"error": f"Snapshot not found: {snapshot}"}
 
         if not self._same_filesystem("/", snapshot):
-            return False, {"error": "Snapshot is not on root filesystem. Use installer rollback."}
+            return False, {
+                "error": (
+                    "Snapshot is not on the root filesystem and cannot be activated by default-subvolume switch. "
+                    "Use installer rollback: reboot from the AlvaOS installer media, open Recovery -> Rollback, "
+                    "select this snapshot, apply rollback, then reboot from disk."
+                )
+            }
 
         snapshot_subvol_id = self._get_subvolume_id(snapshot)
         if snapshot_subvol_id is None:
