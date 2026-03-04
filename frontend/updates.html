@@ -122,10 +122,14 @@
                         <div class="card-title">Debian Package Updates</div>
                         <div style="color:var(--text-secondary)"><i data-lucide="package"></i></div>
                     </div>
-                    <div style="display:flex; gap:8px; align-items:center; margin-bottom: 12px;">
+                    <div id="debian-os-upgrade-status" class="metric-sub" style="margin-bottom: 12px;">
+                        Debian OS release status unknown.
+                    </div>
+                    <div style="display:flex; flex-wrap: wrap; gap:8px; align-items:center; margin-bottom: 12px;">
                         <button id="debian-check-btn" class="btn-primary">Check for Updates</button>
                         <button id="debian-apply-btn" class="btn-secondary">Apply Selected Updates</button>
                         <button id="debian-apply-all-btn" class="btn-secondary">Apply All Updates</button>
+                        <button id="debian-os-upgrade-btn" class="btn-secondary" disabled>Upgrade OS Release</button>
                     </div>
                     <div id="debian-updates-list" class="list-box">
                         <div class="metric-sub">No data yet.</div>

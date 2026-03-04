@@ -608,7 +608,7 @@ fi
     fi
 
     update_progress "Installing base system (debootstrap)..."
-    debootstrap --arch=amd64 bookworm /mnt http://deb.debian.org/debian >> "$INSTALL_LOG" 2>&1
+    debootstrap --arch=amd64 trixie /mnt http://deb.debian.org/debian >> "$INSTALL_LOG" 2>&1
 
     update_progress "Configuring system..."
     echo "alvaos" > /mnt/etc/hostname
@@ -682,9 +682,9 @@ NM_EOF
 
     update_progress "Configuring apt sources..."
     cat > /mnt/etc/apt/sources.list << SOURCES_EOF
-deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
-deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
-deb http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
+deb http://deb.debian.org/debian trixie main contrib non-free non-free-firmware
+deb http://deb.debian.org/debian trixie-updates main contrib non-free non-free-firmware
+deb http://security.debian.org/debian-security trixie-security main contrib non-free non-free-firmware
 SOURCES_EOF
 
     update_progress "Configuring fstab..."

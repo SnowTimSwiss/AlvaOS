@@ -81,7 +81,7 @@ Release strategy: "Iterate fast, stabilize often."
 - [x] **Custom Icons**: Replace Emojis with custom Icons. (we now use icons from https://lucide.dev/)
 
 ## v0.12.0 - Debian 13
-- [ ] **Debian 13**: Update to Debian 13 from Debian 12.
+- [x] **Debian 13**: Update to Debian 13 from Debian 12.
 
 ## v1.0.0 - Stable Release 🚀
 - [ ] **Feature Complete**: All planned features implemented and stable.

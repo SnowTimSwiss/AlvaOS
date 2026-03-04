@@ -5,6 +5,7 @@ let statusPoll = null;
 let reconnectPoll = null;
 let updateTransitionActive = false;
 let updateTransitionDisconnected = false;
+let debianOsUpgradeState = null;
 
 function getToken() {
     return localStorage.getItem('alvaos_token') || '';
@@ -59,6 +60,45 @@ function setProgress(active, percent = 0) {
 function setCurrentVersion(version) {
     const el = document.getElementById('current-version');
     if (el) el.textContent = version || '-';
+}
+
+function formatDebianRelease(info) {
+    const version = String(info && info.version ? info.version : '').trim();
+    const codename = String(info && info.codename ? info.codename : '').trim();
+    if (version && codename) return `Debian ${version} (${codename})`;
+    if (version) return `Debian ${version}`;
+    if (codename) return codename;
+    return 'unknown';
+}
+
+function renderDebianOsUpgrade(osUpgrade) {
+    debianOsUpgradeState = osUpgrade || null;
+    const statusEl = document.getElementById('debian-os-upgrade-status');
+    const btn = document.getElementById('debian-os-upgrade-btn');
+    if (!statusEl || !btn) return;
+
+    if (!osUpgrade || osUpgrade.error) {
+        statusEl.textContent = osUpgrade && osUpgrade.error
+            ? `OS release upgrade check failed: ${osUpgrade.error}`
+            : 'OS release upgrade status unavailable.';
+        btn.disabled = true;
+        btn.textContent = 'Upgrade OS Release';
+        return;
+    }
+
+    const currentLabel = formatDebianRelease(osUpgrade.current || {});
+    const target = osUpgrade.target || {};
+    const targetLabel = formatDebianRelease(target);
+    if (osUpgrade.available && target.codename) {
+        const stepwiseNote = osUpgrade.stepwise ? ' Stepwise upgrade required.' : '';
+        statusEl.textContent = `OS release upgrade available: ${currentLabel} -> ${targetLabel}.${stepwiseNote}`;
+        btn.disabled = false;
+        btn.textContent = `Upgrade to ${targetLabel}`;
+    } else {
+        statusEl.textContent = `Current OS release: ${currentLabel}. No release upgrade available.`;
+        btn.disabled = true;
+        btn.textContent = 'Upgrade OS Release';
+    }
 }
 
 function ensureUpdateTransitionOverlay() {
@@ -291,10 +331,12 @@ async function checkDebianUpdates() {
         const data = await readJson(res);
         if (!res.ok || !data || data.error) {
             if (list) list.innerHTML = '<div class="metric-sub">Failed to check updates.</div>';
+            renderDebianOsUpgrade(null);
             window.showToast(apiErrorMessage(res, data, 'Debian check failed'), 'error');
             return;
         }
 
+        renderDebianOsUpgrade(data.os_upgrade || null);
         const updates = data.updates || [];
         if (!updates.length) {
             if (list) list.innerHTML = '<div class="metric-sub">No updates available.</div>';
@@ -315,6 +357,7 @@ async function checkDebianUpdates() {
         });
     } catch (err) {
         if (list) list.innerHTML = '<div class="metric-sub">Failed to check updates.</div>';
+        renderDebianOsUpgrade(null);
         window.showToast('Debian check failed', 'error');
     }
 }
@@ -368,6 +411,41 @@ async function applyAllDebianUpdates() {
         await Promise.all([checkDebianUpdates(), loadUpdateHistory()]);
     } catch (err) {
         window.showToast('Applying all Debian updates failed', 'error');
+    }
+}
+
+async function applyDebianOsUpgrade() {
+    const osUpgrade = debianOsUpgradeState;
+    const target = osUpgrade && osUpgrade.target ? osUpgrade.target : null;
+    if (!osUpgrade || !osUpgrade.available || !target || !target.codename) {
+        window.showToast('No Debian OS release upgrade available.', 'warning');
+        return;
+    }
+
+    const currentLabel = formatDebianRelease(osUpgrade.current || {});
+    const targetLabel = formatDebianRelease(target);
+    const ok = await window.showConfirm(
+        `Upgrade Debian OS release?\n${currentLabel} -> ${targetLabel}\n\nThis may take a long time and can require a reboot.`
+    );
+    if (!ok) return;
+
+    setStatus(`Upgrading OS to ${targetLabel}...`);
+    try {
+        const res = await apiFetch('/updates/debian/os-upgrade', {
+            method: 'POST',
+            json: { target_codename: target.codename }
+        });
+        if (!res) return;
+        const data = (await readJson(res)) || {};
+        if (!res.ok || !data.success) {
+            window.showToast(apiErrorMessage(res, data, 'Debian OS upgrade failed'), 'error');
+            return;
+        }
+        window.showToast('Debian OS upgrade completed. Reboot recommended.', 'success');
+        pollUpdateStatus();
+        await Promise.all([checkDebianUpdates(), loadUpdateHistory()]);
+    } catch (err) {
+        window.showToast('Debian OS upgrade failed', 'error');
     }
 }
 
@@ -589,6 +667,7 @@ function initHandlers() {
     document.getElementById('debian-check-btn')?.addEventListener('click', checkDebianUpdates);
     document.getElementById('debian-apply-btn')?.addEventListener('click', applyDebianUpdates);
     document.getElementById('debian-apply-all-btn')?.addEventListener('click', applyAllDebianUpdates);
+    document.getElementById('debian-os-upgrade-btn')?.addEventListener('click', applyDebianOsUpgrade);
     document.getElementById('offline-scan-btn')?.addEventListener('click', scanOfflineUpdates);
     document.getElementById('settings-save-btn')?.addEventListener('click', saveSettings);
 }
@@ -598,6 +677,7 @@ async function init() {
     initHandlers();
     await loadSettings();
     await checkAlvaosUpdates();
+    await checkDebianUpdates();
     await loadUpdateHistory();
 }
 

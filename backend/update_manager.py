@@ -71,6 +71,17 @@ DEFAULT_SETTINGS = {
     "channel": "stable"
 }
 
+DEBIAN_RELEASES = [
+    {"version": "11", "codename": "bullseye"},
+    {"version": "12", "codename": "bookworm"},
+    {"version": "13", "codename": "trixie"},
+    {"version": "14", "codename": "forky"},
+]
+DEBIAN_CODENAME_TO_VERSION = {r["codename"]: r["version"] for r in DEBIAN_RELEASES}
+DEBIAN_VERSION_TO_CODENAME = {r["version"]: r["codename"] for r in DEBIAN_RELEASES}
+DEFAULT_DEBIAN_TARGET_CODENAME = "trixie"
+DEFAULT_DEBIAN_TARGET_VERSION = DEBIAN_CODENAME_TO_VERSION.get(DEFAULT_DEBIAN_TARGET_CODENAME, "13")
+
 
 class UpdateManager:
     def __init__(self, repo="SnowTimSwiss/AlvaOS"):
@@ -201,6 +212,163 @@ class UpdateManager:
     def get_update_history(self):
         data = self.load_json(self.history_file, [])
         return data if isinstance(data, list) else []
+
+    def _read_os_release(self):
+        data = {}
+        path = "/etc/os-release"
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                for raw_line in f:
+                    line = raw_line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    key, value = line.split("=", 1)
+                    value = value.strip().strip('"').strip("'")
+                    data[key.strip()] = value
+        except Exception:
+            return {}
+        return data
+
+    def get_debian_os_info(self):
+        info = self._read_os_release()
+        distro_id = str(info.get("ID", "") or "").strip().lower()
+        version = str(info.get("VERSION_ID", "") or "").strip()
+        codename = str(info.get("VERSION_CODENAME", "") or info.get("DEBIAN_CODENAME", "") or "").strip().lower()
+
+        # Normalize version like "13.1" -> "13"
+        major_match = re.match(r"^(\d+)", version)
+        if major_match:
+            version = major_match.group(1)
+
+        if not version and codename in DEBIAN_CODENAME_TO_VERSION:
+            version = DEBIAN_CODENAME_TO_VERSION[codename]
+        if not codename and version in DEBIAN_VERSION_TO_CODENAME:
+            codename = DEBIAN_VERSION_TO_CODENAME[version]
+
+        return {
+            "id": distro_id,
+            "version": version,
+            "codename": codename
+        }
+
+    def _fetch_debian_stable_codename(self):
+        url = "https://deb.debian.org/debian/dists/stable/Release"
+        try:
+            resp = requests.get(url, timeout=6)
+            resp.raise_for_status()
+            for line in (resp.text or "").splitlines():
+                if line.lower().startswith("codename:"):
+                    value = line.split(":", 1)[1].strip().lower()
+                    if re.match(r"^[a-z][a-z0-9-]*$", value):
+                        return value
+        except Exception:
+            return None
+        return None
+
+    def _release_index(self, codename):
+        if not codename:
+            return -1
+        codename = str(codename).strip().lower()
+        for idx, rel in enumerate(DEBIAN_RELEASES):
+            if rel["codename"] == codename:
+                return idx
+        return -1
+
+    def _determine_debian_upgrade_target(self, current):
+        current = current or {}
+        current_codename = str(current.get("codename", "") or "").strip().lower()
+        current_version = str(current.get("version", "") or "").strip()
+
+        if not current_codename and current_version in DEBIAN_VERSION_TO_CODENAME:
+            current_codename = DEBIAN_VERSION_TO_CODENAME[current_version]
+        if not current_version and current_codename in DEBIAN_CODENAME_TO_VERSION:
+            current_version = DEBIAN_CODENAME_TO_VERSION[current_codename]
+
+        stable_codename = self._fetch_debian_stable_codename() or DEFAULT_DEBIAN_TARGET_CODENAME
+        stable_version = DEBIAN_CODENAME_TO_VERSION.get(stable_codename, "")
+
+        current_idx = self._release_index(current_codename)
+        stable_idx = self._release_index(stable_codename)
+
+        target_codename = ""
+        target_version = ""
+        stepwise = False
+        reason = "up_to_date"
+
+        if current_codename and stable_codename and current_codename == stable_codename:
+            reason = "up_to_date"
+        elif current_idx >= 0 and stable_idx >= 0 and current_idx < stable_idx:
+            if (stable_idx - current_idx) > 1:
+                target_rel = DEBIAN_RELEASES[current_idx + 1]
+                target_codename = target_rel["codename"]
+                target_version = target_rel["version"]
+                stepwise = True
+                reason = "stepwise_upgrade_required"
+            else:
+                target_codename = stable_codename
+                target_version = stable_version
+                reason = "stable_upgrade_available"
+        elif current_idx >= 0 and stable_idx >= 0 and current_idx > stable_idx:
+            # Current release is newer than known stable (or mixed sources). Do not downgrade automatically.
+            reason = "current_newer_than_stable"
+        elif stable_codename and current_codename and current_codename != stable_codename:
+            target_codename = stable_codename
+            target_version = stable_version
+            reason = "stable_upgrade_available"
+        elif not current_codename and stable_codename:
+            target_codename = stable_codename
+            target_version = stable_version
+            reason = "stable_upgrade_available"
+
+        available = bool(target_codename and target_codename != current_codename)
+
+        return {
+            "available": available,
+            "reason": reason,
+            "stepwise": stepwise,
+            "current": {
+                "version": current_version,
+                "codename": current_codename
+            },
+            "target": {
+                "version": target_version,
+                "codename": target_codename
+            },
+            "stable": {
+                "version": stable_version,
+                "codename": stable_codename
+            }
+        }
+
+    def check_debian_os_upgrade(self):
+        if platform.system() != "Linux":
+            return {"available": False, "error": "Debian OS upgrades are only supported on Linux"}
+        current = self.get_debian_os_info()
+        distro_id = str(current.get("id", "") or "").strip().lower()
+        if distro_id and distro_id != "debian":
+            return {"available": False, "error": f"Unsupported distribution for Debian OS upgrade: {distro_id}"}
+        result = self._determine_debian_upgrade_target(current)
+        return result
+
+    def _build_debian_sources(self, target_codename):
+        codename = str(target_codename or "").strip().lower()
+        if not re.match(r"^[a-z][a-z0-9-]*$", codename):
+            raise ValueError(f"Invalid Debian codename: {target_codename}")
+        lines = [
+            f"deb http://deb.debian.org/debian {codename} main contrib non-free non-free-firmware",
+            f"deb http://deb.debian.org/debian {codename}-updates main contrib non-free non-free-firmware",
+            f"deb http://security.debian.org/debian-security {codename}-security main contrib non-free non-free-firmware",
+            ""
+        ]
+        return "\n".join(lines)
+
+    def _set_debian_sources(self, target_codename):
+        content = self._build_debian_sources(target_codename)
+        script = f"cat > /etc/apt/sources.list <<'EOF'\n{content}EOF"
+        res, err = self.run_command([CMD['BASH'], "-lc", script], timeout=30)
+        if err or not res or res.returncode != 0:
+            return False, err or (res.stderr if res else "failed to write /etc/apt/sources.list")
+        return True, None
 
     def get_current_version(self):
         prod_path = "/etc/alvaos/VERSION"
@@ -584,8 +752,16 @@ class UpdateManager:
                     "version": match.group(2)
                 })
 
-        self.set_update_state("idle", "Debian check complete", {"count": len(updates)})
-        return {"updates": updates}
+        os_upgrade = self.check_debian_os_upgrade()
+
+        self.set_update_state("idle", "Debian check complete", {
+            "count": len(updates),
+            "os_upgrade_available": bool(os_upgrade.get("available"))
+        })
+        return {
+            "updates": updates,
+            "os_upgrade": os_upgrade
+        }
 
     def apply_debian_updates(self, packages=None):
         if platform.system() != "Linux":
@@ -641,6 +817,136 @@ class UpdateManager:
         self.append_history(entry)
         self.set_update_state("idle", "Debian updates complete")
         return {"success": True}
+
+    def apply_debian_os_upgrade(self, target_codename=None):
+        if platform.system() != "Linux":
+            return {"success": False, "error": "Debian OS upgrades are only supported on Linux"}
+
+        plan = self.check_debian_os_upgrade()
+        if plan.get("error"):
+            self.set_update_state("error", "Debian OS upgrade failed", {"error": plan.get("error")})
+            return {"success": False, "error": plan.get("error")}
+        if not plan.get("available"):
+            return {"success": False, "error": "No Debian OS release upgrade available"}
+
+        planned_target = str((plan.get("target") or {}).get("codename") or "").strip().lower()
+        requested_target = str(target_codename or "").strip().lower()
+        final_target = requested_target or planned_target
+
+        if not final_target:
+            return {"success": False, "error": "Could not determine Debian target codename"}
+        if requested_target and requested_target != planned_target:
+            return {
+                "success": False,
+                "error": f"Requested target '{requested_target}' does not match planned target '{planned_target}'"
+            }
+        if not re.match(r"^[a-z][a-z0-9-]*$", final_target):
+            return {"success": False, "error": f"Invalid Debian target codename: {final_target}"}
+
+        apt_env = {"DEBIAN_FRONTEND": "noninteractive"}
+        apt_base = [
+            CMD['APT_GET'],
+            "-o", "Dpkg::Lock::Timeout=120",
+            "--allow-releaseinfo-change"
+        ]
+        self.set_update_state("installing", f"Upgrading Debian OS to {final_target}", {
+            "from": plan.get("current"),
+            "to": {"codename": final_target, "version": DEBIAN_CODENAME_TO_VERSION.get(final_target, "")}
+        })
+        self.update_progress("installing", "Preparing Debian OS upgrade", 5, {"target": final_target})
+
+        sources_path = f"/tmp/alvaos-debian-upgrade-{secrets.token_hex(4)}.list"
+        sources_content = self._build_debian_sources(final_target)
+        try:
+            with open(sources_path, "w", encoding="utf-8") as f:
+                f.write(sources_content)
+        except Exception as e:
+            error_msg = f"Failed to prepare temporary apt sources: {e}"
+            self.set_update_state("error", "Debian OS upgrade failed", {"error": error_msg})
+            return {"success": False, "error": error_msg}
+
+        source_opts = [
+            "-o", f"Dir::Etc::sourcelist={sources_path}",
+            "-o", "Dir::Etc::sourceparts=-"
+        ]
+
+        try:
+            self.update_progress("installing", "Refreshing package indexes", 20, {"target": final_target})
+            res, err = self.run_command(apt_base + source_opts + ["update"], timeout=300, extra_env=apt_env)
+            if err or not res or res.returncode != 0:
+                error_msg = err or (res.stderr if res else "apt-get update failed")
+                self.set_update_state("error", "Debian OS upgrade failed", {"error": error_msg})
+                return {"success": False, "error": error_msg}
+
+            # Follow Debian release notes: first a minimal upgrade, then full-upgrade.
+            self.update_progress("installing", "Applying minimal system upgrade", 45, {"target": final_target})
+            res, err = self.run_command(
+                apt_base + source_opts + ["upgrade", "--without-new-pkgs", "-y"],
+                timeout=3600,
+                extra_env=apt_env
+            )
+            if err or not res or res.returncode != 0:
+                error_msg = err or (res.stderr if res else "apt-get upgrade failed")
+                self.set_update_state("error", "Debian OS upgrade failed", {"error": error_msg})
+                return {"success": False, "error": error_msg}
+
+            self.update_progress("installing", "Applying full distribution upgrade", 75, {"target": final_target})
+            res, err = self.run_command(
+                apt_base + source_opts + ["full-upgrade", "-y"],
+                timeout=7200,
+                extra_env=apt_env
+            )
+            if err or not res or res.returncode != 0:
+                error_msg = err or (res.stderr if res else "apt-get full-upgrade failed")
+                self.set_update_state("error", "Debian OS upgrade failed", {"error": error_msg})
+                return {"success": False, "error": error_msg}
+
+            self.update_progress("installing", "Persisting Debian package sources", 90, {"target": final_target})
+            ok, source_err = self._set_debian_sources(final_target)
+            if not ok:
+                self.set_update_state("error", "Debian OS upgrade failed", {"error": source_err})
+                return {"success": False, "error": source_err}
+
+            self.update_progress("installing", "Refreshing package indexes", 95, {"target": final_target})
+            res, err = self.run_command(apt_base + ["update"], timeout=300, extra_env=apt_env)
+            if err or not res or res.returncode != 0:
+                error_msg = err or (res.stderr if res else "apt-get update failed after source switch")
+                self.set_update_state("error", "Debian OS upgrade failed", {"error": error_msg})
+                return {"success": False, "error": error_msg}
+
+            res, err = self.run_command(apt_base + ["autoremove", "-y"], timeout=900, extra_env=apt_env)
+            if err or not res or res.returncode != 0:
+                # Do not fail whole upgrade on autoremove issues.
+                print(f"Debian OS upgrade warning: apt-get autoremove failed: {err}")
+
+            final_info = self.get_debian_os_info()
+            entry = {
+                "type": "debian-os",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "from": plan.get("current"),
+                "to": final_info,
+                "target": final_target
+            }
+            self.append_history(entry)
+            self.set_update_state("idle", "Debian OS upgrade complete", {
+                "from": plan.get("current"),
+                "to": final_info,
+                "target": final_target,
+                "reboot_required": True
+            })
+            return {
+                "success": True,
+                "from": plan.get("current"),
+                "to": final_info,
+                "target_codename": final_target,
+                "reboot_required": True
+            }
+        finally:
+            try:
+                if os.path.exists(sources_path):
+                    os.remove(sources_path)
+            except Exception:
+                pass
 
     def scan_offline_packages(self, root_path=None):
 

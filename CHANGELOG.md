@@ -2,6 +2,19 @@
 
 All notable changes to AlvaOS will be documented in this file.
 
+## [0.12.0] - 04.03.26
+
+### Added
+- **Debian OS release upgrades via Web UI**:
+  - New Debian major-release upgrade detection in Update checks.
+  - New admin API endpoint to run Debian OS upgrades from the Updates page.
+  - Supports step-wise upgrades (for example Debian 12 -> Debian 13, and later Debian 13 -> Debian 14 when stable changes).
+
+### Changed
+- **Installer base updated to Debian 13 (Trixie)**:
+  - `live-build` now builds with `--distribution trixie`.
+  - Installer bootstrap and default apt sources now target `trixie`.
+
 ## [0.10.0] - 20.02.26
 
 ### Added - Security & Reliability

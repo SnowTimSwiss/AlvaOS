@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# AlvaOS Installer Build Script (live-build, Debian Bookworm)
+# AlvaOS Installer Build Script (live-build, Debian Trixie)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/live-build-work"
@@ -41,7 +41,7 @@ cd "${BUILD_DIR}"
 log "Configuring live-build..."
 
 lb config \
-  --distribution bookworm \
+  --distribution trixie \
   --mode debian \
   --initramfs live-boot \
   --keyring-packages debian-archive-keyring \

@@ -2408,6 +2408,15 @@ def apply_debian_updates():
     status = 200 if result.get('success') else 500
     return jsonify(result), status
 
+@app.route('/api/v1/updates/debian/os-upgrade', methods=['POST'])
+@require_auth(require_admin=True)
+def apply_debian_os_upgrade():
+    data = request.get_json() or {}
+    target_codename = data.get('target_codename')
+    result = update_manager.apply_debian_os_upgrade(target_codename=target_codename)
+    status = 200 if result.get('success') else 500
+    return jsonify(result), status
+
 @app.route('/api/v1/updates/offline/scan', methods=['POST'])
 @require_auth
 def scan_offline_updates():
