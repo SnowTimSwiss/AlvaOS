@@ -4614,6 +4614,15 @@ def get_app_install_status():
     """Get the current app installation status"""
     return jsonify(app_store.get_install_status())
 
+@app.route('/api/v1/apps/<app_id>/update', methods=['POST'])
+@require_auth(require_admin=True)
+def update_app(app_id):
+    """Update an installed app"""
+    success, error = app_store.update_app(app_id)
+    if not success:
+        return jsonify({'error': error}), 500
+    return jsonify({'success': True, 'message': f'Update of "{app_id}" started'})
+
 @app.route('/api/v1/apps/<app_id>', methods=['DELETE'])
 @require_auth(require_admin=True)
 def uninstall_app(app_id):

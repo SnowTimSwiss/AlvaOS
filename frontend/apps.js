@@ -407,6 +407,7 @@ async function renderInspector() {
 
             <div class="inspector-actions">
                 ${webUiUrl ? `<a class="btn-link" href="${escapeHtml(webUiUrl)}" target="_blank" rel="noopener noreferrer">Open Web UI</a>` : '<button class="btn-secondary" disabled style="opacity:0.6; cursor:not-allowed;">No Web UI detected</button>'}
+                <button class="btn-icon" onclick="updateApp('${escapeHtml(selected.app_id)}')">Update</button>
                 <button class="btn-icon btn-danger" onclick="uninstallApp('${escapeHtml(selected.app_id)}')">Uninstall</button>
             </div>
 
@@ -859,6 +860,82 @@ async function uninstallApp(appId) {
     } catch (error) {
         console.error('Uninstallation error:', error);
         showNotification(`Uninstallation failed: ${error.message}`, 'error');
+    }
+}
+
+function wait(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForAppOperation(appId, expectedAction = 'update', timeoutSeconds = 900) {
+    const started = Date.now();
+
+    while (true) {
+        if ((Date.now() - started) / 1000 > timeoutSeconds) {
+            throw new Error('Timed out while waiting for app operation status');
+        }
+
+        const response = await apiFetch(`${API_BASE}/apps/install/status`, {
+            headers: { 'Authorization': authToken }
+        });
+
+        if (!response.ok) {
+            await wait(2000);
+            continue;
+        }
+
+        const data = await response.json();
+        const statusAppId = String(data?.app_id || '');
+        const status = String(data?.status || '').toLowerCase();
+        const action = String(data?.action || 'install').toLowerCase();
+
+        if (statusAppId !== appId) {
+            await wait(1500);
+            continue;
+        }
+
+        if (expectedAction && action !== String(expectedAction).toLowerCase()) {
+            await wait(1500);
+            continue;
+        }
+
+        if (status === 'success') {
+            return data;
+        }
+
+        if (status === 'error') {
+            throw new Error(data?.message || 'Operation failed');
+        }
+
+        await wait(1500);
+    }
+}
+
+async function updateApp(appId) {
+    const ok = window.confirm(`Update "${appId}" now?\nThis pulls new images and recreates app containers.`);
+    if (!ok) return;
+
+    try {
+        const response = await apiFetch(`${API_BASE}/apps/${appId}/update`, {
+            method: 'POST',
+            headers: {
+                'Authorization': authToken,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const payload = await response.json();
+        if (!response.ok) {
+            throw new Error(payload?.error || 'Failed to start update');
+        }
+
+        showNotification(`Update started for "${appId}"`, 'info');
+        await waitForAppOperation(appId, 'update', 1800);
+        showNotification(`App "${appId}" updated successfully`, 'success');
+        await loadInstalledWorkspace(true);
+    } catch (error) {
+        console.error('Update error:', error);
+        showNotification(`Update failed: ${error.message}`, 'error');
     }
 }
 

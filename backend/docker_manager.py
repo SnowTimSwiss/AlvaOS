@@ -357,6 +357,103 @@ class DockerManager:
             
         except Exception as e:
             return False, str(e)
+
+    def update_container_from_compose(
+        self,
+        compose_dict: Dict,
+        app_name: str,
+        pool_path: str,
+        project_name: Optional[str] = None,
+        callback: Optional[callable] = None
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Update containers from a Docker Compose configuration.
+        Pulls new images first, then recreates containers while preserving volumes.
+
+        Args:
+            compose_dict: Docker Compose configuration as dict
+            app_name: Name of the app
+            pool_path: Path to the app storage
+            project_name: Optional project name (defaults to app_name)
+            callback: Optional function(line: str) for real-time output
+
+        Returns:
+            Tuple of (success bool, error message)
+        """
+        import yaml
+        import tempfile
+
+        if project_name is None:
+            project_name = app_name
+
+        try:
+            compose_str = yaml.dump(compose_dict)
+            compose_str = compose_str.replace('${POOL_PATH}', pool_path)
+
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.yml', delete=False) as f:
+                f.write(compose_str)
+                compose_file = f.name
+
+            if os.geteuid() != 0:
+                base_cmd = ['sudo', '-n', self.compose_cmd, '-f', compose_file, '-p', project_name]
+            else:
+                base_cmd = [self.compose_cmd, '-f', compose_file, '-p', project_name]
+
+            compose_env = {'LC_ALL': 'C', 'COMPOSE_INTERACTIVE_NO_CLI': '1'}
+
+            def run_step(step_args: List[str], timeout: int = 600) -> Tuple[bool, Optional[str]]:
+                cmd = base_cmd + step_args
+                if callback:
+                    process = subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        env=compose_env
+                    )
+                    output = []
+                    while True:
+                        line = process.stdout.readline()
+                        if not line and process.poll() is not None:
+                            break
+                        if line:
+                            line_stripped = line.strip()
+                            output.append(line_stripped)
+                            callback(line_stripped)
+                    returncode = process.poll()
+                    if returncode != 0:
+                        return False, "\n".join(output)
+                    return True, None
+
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                    env=compose_env
+                )
+                if result.returncode != 0:
+                    error = result.stderr or result.stdout or f"Command failed: {' '.join(step_args)}"
+                    return False, error
+                return True, None
+
+            ok, err = run_step(['pull'], timeout=900)
+            if not ok:
+                return False, f"Failed to pull images: {err}"
+
+            ok, err = run_step(['up', '-d'], timeout=900)
+            if not ok:
+                return False, f"Failed to recreate containers: {err}"
+
+            return True, None
+        except Exception as e:
+            return False, str(e)
+        finally:
+            try:
+                if 'compose_file' in locals() and compose_file and os.path.exists(compose_file):
+                    os.unlink(compose_file)
+            except Exception:
+                pass
     
     def pull_image(self, image: str) -> Tuple[bool, Optional[str]]:
         """
