@@ -186,6 +186,63 @@ class DockerManager:
             logs += "\n" + result.stderr
         
         return logs, None
+
+    def exec_in_container(
+        self,
+        container_id: str,
+        command: str,
+        timeout: int = 60,
+        user: Optional[str] = None,
+        workdir: Optional[str] = None
+    ) -> Tuple[Optional[Dict], Optional[str]]:
+        """
+        Execute a shell command inside a running container.
+
+        Args:
+            container_id: Container ID or name
+            command: Shell command to execute
+            timeout: Timeout in seconds
+            user: Optional user to run as inside container
+            workdir: Optional working directory inside container
+
+        Returns:
+            Tuple of (result dict, error message)
+        """
+        try:
+            cmd = ['exec']
+            if user:
+                cmd.extend(['-u', user])
+            if workdir:
+                cmd.extend(['-w', workdir])
+            cmd.extend([container_id, '/bin/sh', '-lc', command])
+
+            if os.geteuid() != 0:
+                docker_cmd = ['sudo', '-n', self.docker_cmd] + cmd
+            else:
+                docker_cmd = [self.docker_cmd] + cmd
+
+            result = subprocess.run(
+                docker_cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                env={'LC_ALL': 'C'}
+            )
+
+            stdout = result.stdout or ""
+            stderr = result.stderr or ""
+            output = stdout
+            if stderr:
+                output = f"{output}\n{stderr}" if output else stderr
+
+            return {
+                "output": output.strip(),
+                "exit_code": int(result.returncode)
+            }, None
+        except subprocess.TimeoutExpired:
+            return None, "Command timed out"
+        except Exception as e:
+            return None, str(e)
     
     def get_container_stats(self, container_id: str) -> Tuple[Optional[Dict], Optional[str]]:
         """

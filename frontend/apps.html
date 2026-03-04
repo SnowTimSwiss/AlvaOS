@@ -421,6 +421,38 @@
             color: #78f5a5;
             flex: 1;
         }
+
+        .terminal-toolbar {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .terminal-command-row {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 10px;
+            padding: 12px 16px;
+            border-top: 1px solid var(--border-default);
+            background: var(--bg-body);
+        }
+
+        .terminal-command-input {
+            width: 100%;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: #0a111d;
+            color: #eaf2ff;
+            padding: 10px 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+        }
+
+        .terminal-command-input:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 2px rgba(50, 120, 245, 0.2);
+        }
     </style>
 </head>
 
@@ -616,6 +648,28 @@
                 </div>
             </div>
             <pre id="container-logs-content" class="logs-output">Loading logs...</pre>
+        </div>
+    </div>
+
+    <!-- Container Terminal Modal -->
+    <div id="container-terminal-modal" class="logs-modal" aria-hidden="true">
+        <div class="logs-modal-card">
+            <div class="logs-modal-header">
+                <div>
+                    <h2 id="container-terminal-title" style="font-size: 1.1rem; margin: 0;">Container Terminal</h2>
+                    <div id="container-terminal-meta" class="logs-meta">Ready</div>
+                </div>
+                <div class="terminal-toolbar">
+                    <button id="container-terminal-clear-btn" class="btn-secondary">Clear</button>
+                    <button id="container-terminal-close-btn" class="btn-secondary">Close</button>
+                </div>
+            </div>
+            <pre id="container-terminal-output" class="logs-output"></pre>
+            <div class="terminal-command-row">
+                <input id="container-terminal-input" class="terminal-command-input" type="text"
+                    placeholder="Enter command, e.g. ls -la /">
+                <button id="container-terminal-run-btn" class="btn-primary">Run</button>
+            </div>
         </div>
     </div>
 

@@ -17,6 +17,7 @@ let selectedAppId = null;
 const appDetailsCache = {};
 let activeLogsContainerId = null;
 let activeLogsRequestId = 0;
+let activeTerminalContainerId = null;
 let containersLoaded = false;
 let containersLoading = false;
 let installedLoadRequestId = 0;
@@ -178,6 +179,9 @@ function getCategoryIconMarkup(category) {
         'Smart Home': 'house',
         'Network': 'globe',
         'Security': 'shield-check',
+        'Monitoring': 'activity',
+        'Search': 'search',
+        'AI': 'bot',
         'Other': 'package'
     };
     const iconName = icons[category] || 'package';
@@ -476,6 +480,7 @@ function renderContainerTable(containers) {
                                     ${isRunning
                                         ? `<button class="btn-icon" onclick="stopContainer('${escapeHtml(container.ID)}')">Stop</button>`
                                         : `<button class="btn-icon" onclick="startContainer('${escapeHtml(container.ID)}')">Start</button>`}
+                                    <button class="btn-icon" onclick="openTerminalModal('${escapeHtml(container.ID)}')">Terminal</button>
                                     <button class="btn-icon" onclick="viewLogs('${escapeHtml(container.ID)}')">Logs</button>
                                     <button class="btn-icon btn-danger" onclick="deleteContainer('${escapeHtml(container.ID)}')">Delete</button>
                                 </div>
@@ -953,6 +958,100 @@ function closeLogsModal() {
     activeLogsContainerId = null;
 }
 
+function openTerminalModal(containerId) {
+    const modal = document.getElementById('container-terminal-modal');
+    const titleEl = document.getElementById('container-terminal-title');
+    const metaEl = document.getElementById('container-terminal-meta');
+    const outputEl = document.getElementById('container-terminal-output');
+    const inputEl = document.getElementById('container-terminal-input');
+
+    if (!modal || !titleEl || !metaEl || !outputEl || !inputEl) {
+        showNotification('Terminal modal not available', 'error');
+        return;
+    }
+
+    activeTerminalContainerId = containerId;
+    const container = findContainerById(containerId);
+    const displayName = container?.Names || containerId;
+
+    titleEl.textContent = `Container Terminal: ${displayName}`;
+    metaEl.textContent = `Container ID: ${containerId}`;
+    outputEl.textContent = '# Connected. Enter a shell command and press Run.\n';
+    inputEl.value = '';
+
+    modal.style.display = 'flex';
+    modal.setAttribute('aria-hidden', 'false');
+    inputEl.focus();
+}
+
+function closeTerminalModal() {
+    const modal = document.getElementById('container-terminal-modal');
+    if (!modal) return;
+
+    modal.style.display = 'none';
+    modal.setAttribute('aria-hidden', 'true');
+    activeTerminalContainerId = null;
+}
+
+function appendTerminalOutput(text) {
+    const outputEl = document.getElementById('container-terminal-output');
+    if (!outputEl) return;
+    outputEl.textContent += `${text}\n`;
+    outputEl.scrollTop = outputEl.scrollHeight;
+}
+
+async function runTerminalCommand() {
+    if (!activeTerminalContainerId) return;
+
+    const inputEl = document.getElementById('container-terminal-input');
+    const runBtn = document.getElementById('container-terminal-run-btn');
+    if (!inputEl || !runBtn) return;
+
+    const command = String(inputEl.value || '').trim();
+    if (!command) {
+        showNotification('Please enter a command', 'error');
+        return;
+    }
+
+    runBtn.disabled = true;
+    appendTerminalOutput(`$ ${command}`);
+
+    try {
+        const response = await apiFetch(`${API_BASE}/containers/${activeTerminalContainerId}/exec`, {
+            method: 'POST',
+            headers: {
+                'Authorization': authToken,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                command,
+                timeout: 120
+            })
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data?.error || 'Failed to run command');
+        }
+
+        const output = String(data?.output || '').trim();
+        if (output) appendTerminalOutput(output);
+        appendTerminalOutput(`[exit ${Number(data?.exit_code ?? 1)}]\n`);
+    } catch (error) {
+        appendTerminalOutput(`Error: ${error.message}\n`);
+    } finally {
+        runBtn.disabled = false;
+        inputEl.focus();
+        inputEl.select();
+    }
+}
+
+function clearTerminalOutput() {
+    const outputEl = document.getElementById('container-terminal-output');
+    if (!outputEl) return;
+    outputEl.textContent = '';
+}
+
 async function loadContainerLogs(containerId, scrollToBottom = false) {
     const metaEl = document.getElementById('container-logs-meta');
     const contentEl = document.getElementById('container-logs-content');
@@ -1017,9 +1116,24 @@ document.getElementById('container-logs-modal')?.addEventListener('click', (even
         closeLogsModal();
     }
 });
+document.getElementById('container-terminal-close-btn')?.addEventListener('click', closeTerminalModal);
+document.getElementById('container-terminal-run-btn')?.addEventListener('click', runTerminalCommand);
+document.getElementById('container-terminal-clear-btn')?.addEventListener('click', clearTerminalOutput);
+document.getElementById('container-terminal-input')?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        runTerminalCommand();
+    }
+});
+document.getElementById('container-terminal-modal')?.addEventListener('click', (event) => {
+    if (event.target?.id === 'container-terminal-modal') {
+        closeTerminalModal();
+    }
+});
 document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
         closeLogsModal();
+        closeTerminalModal();
     }
 });
 

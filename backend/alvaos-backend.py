@@ -4690,6 +4690,39 @@ def get_container_logs(container_id):
         return jsonify({'error': error}), 500
     return jsonify({'logs': logs})
 
+@app.route('/api/v1/containers/<container_id>/exec', methods=['POST'])
+@require_auth(require_admin=True)
+def exec_container_command(container_id):
+    """Execute a command inside a container shell."""
+    data = request.get_json() or {}
+    command = str(data.get('command', '')).strip()
+    timeout = data.get('timeout', 60)
+    user = data.get('user')
+    workdir = data.get('workdir')
+
+    if not command:
+        return jsonify({'error': 'Command is required'}), 400
+
+    try:
+        timeout = int(timeout)
+    except Exception:
+        return jsonify({'error': 'timeout must be an integer'}), 400
+
+    if timeout < 1 or timeout > 300:
+        return jsonify({'error': 'timeout must be between 1 and 300 seconds'}), 400
+
+    result, error = docker_manager.exec_in_container(
+        container_id=container_id,
+        command=command,
+        timeout=timeout,
+        user=(str(user).strip() if user is not None else None),
+        workdir=(str(workdir).strip() if workdir is not None else None)
+    )
+    if error:
+        return jsonify({'error': error}), 500
+
+    return jsonify(result)
+
 @app.route('/api/v1/containers/<container_id>', methods=['DELETE'])
 @require_auth(require_admin=True)
 def delete_container(container_id):

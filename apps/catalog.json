@@ -62,6 +62,11 @@
             ],
             "environment": [
                 {
+                    "key": "NEXTCLOUD_TRUSTED_DOMAINS",
+                    "default": "localhost 127.0.0.1",
+                    "description": "Space-separated trusted hostnames or host:port entries"
+                },
+                {
                     "key": "MYSQL_PASSWORD",
                     "default": "nextcloud",
                     "description": "Database password"
@@ -406,6 +411,7 @@
                     ],
                     "environment": {
                         "OWNCLOUD_DOMAIN": "localhost:8082",
+                        "OWNCLOUD_TRUSTED_DOMAINS": "localhost,127.0.0.1",
                         "OWNCLOUD_DB_TYPE": "sqlite",
                         "OWNCLOUD_ADMIN_USERNAME": "admin",
                         "OWNCLOUD_ADMIN_PASSWORD": "admin"
@@ -431,6 +437,16 @@
             ],
             "environment": [
                 {
+                    "key": "OWNCLOUD_DOMAIN",
+                    "default": "localhost:8082",
+                    "description": "Public host:port used to access ownCloud"
+                },
+                {
+                    "key": "OWNCLOUD_TRUSTED_DOMAINS",
+                    "default": "localhost,127.0.0.1",
+                    "description": "Comma-separated trusted domains"
+                },
+                {
                     "key": "OWNCLOUD_ADMIN_PASSWORD",
                     "default": "admin",
                     "description": "Admin password"
@@ -453,6 +469,9 @@
                     "ports": [
                         "8085:8080"
                     ],
+                    "environment": {
+                        "OC_URL": "http://localhost:8085"
+                    },
                     "volumes": [
                         "${POOL_PATH}/data:/var/lib/opencloud"
                     ]
@@ -473,6 +492,13 @@
                     "container_path": "/var/lib/opencloud",
                     "description": "OpenCloud data",
                     "required": true
+                }
+            ],
+            "environment": [
+                {
+                    "key": "OC_URL",
+                    "default": "http://localhost:8085",
+                    "description": "Public URL used by OpenCloud for links and callbacks"
                 }
             ]
         }
@@ -686,6 +712,292 @@
                     "key": "TUNNEL_TOKEN",
                     "default": "",
                     "description": "Cloudflare tunnel token from Zero Trust dashboard"
+                }
+            ]
+        }
+    },
+    "uptimekuma": {
+        "name": "Uptime Kuma",
+        "description": "Self-hosted monitoring with status pages and alerting",
+        "icon": "",
+        "category": "Monitoring",
+        "version": "latest",
+        "docker_compose": {
+            "version": "3",
+            "services": {
+                "uptime-kuma": {
+                    "image": "louislam/uptime-kuma:2",
+                    "restart": "unless-stopped",
+                    "ports": [
+                        "3001:3001"
+                    ],
+                    "environment": {
+                        "TZ": "Europe/Berlin"
+                    },
+                    "volumes": [
+                        "${POOL_PATH}/data:/app/data"
+                    ]
+                }
+            }
+        },
+        "config_schema": {
+            "ports": [
+                {
+                    "internal": 3001,
+                    "external": 3001,
+                    "protocol": "tcp",
+                    "description": "Web UI"
+                }
+            ],
+            "volumes": [
+                {
+                    "container_path": "/app/data",
+                    "description": "Monitor data and settings",
+                    "required": true
+                }
+            ],
+            "environment": [
+                {
+                    "key": "TZ",
+                    "default": "Europe/Berlin",
+                    "description": "Timezone"
+                }
+            ]
+        }
+    },
+    "navidrome": {
+        "name": "Navidrome",
+        "description": "Modern self-hosted music server and streamer",
+        "icon": "",
+        "category": "Media",
+        "version": "latest",
+        "docker_compose": {
+            "version": "3",
+            "services": {
+                "navidrome": {
+                    "image": "deluan/navidrome:latest",
+                    "restart": "unless-stopped",
+                    "ports": [
+                        "4533:4533"
+                    ],
+                    "environment": {
+                        "ND_MUSICFOLDER": "/music",
+                        "ND_DATAFOLDER": "/data",
+                        "ND_BASEURL": "",
+                        "ND_SCANSCHEDULE": "@every 1h"
+                    },
+                    "volumes": [
+                        "${POOL_PATH}/data:/data",
+                        "${POOL_PATH}/music:/music"
+                    ]
+                }
+            }
+        },
+        "config_schema": {
+            "ports": [
+                {
+                    "internal": 4533,
+                    "external": 4533,
+                    "protocol": "tcp",
+                    "description": "Web UI"
+                }
+            ],
+            "volumes": [
+                {
+                    "container_path": "/data",
+                    "description": "Navidrome database and metadata",
+                    "required": true
+                },
+                {
+                    "container_path": "/music",
+                    "description": "Music library folder",
+                    "required": true
+                }
+            ],
+            "environment": [
+                {
+                    "key": "ND_BASEURL",
+                    "default": "",
+                    "description": "Base URL path when served behind a reverse proxy (e.g. /navidrome)"
+                },
+                {
+                    "key": "ND_SCANSCHEDULE",
+                    "default": "@every 1h",
+                    "description": "Automatic music scan schedule"
+                }
+            ]
+        }
+    },
+    "searxng": {
+        "name": "SearXNG",
+        "description": "Privacy-focused metasearch engine",
+        "icon": "",
+        "category": "Search",
+        "version": "latest",
+        "docker_compose": {
+            "version": "3",
+            "services": {
+                "searxng": {
+                    "image": "searxng/searxng:latest",
+                    "restart": "unless-stopped",
+                    "ports": [
+                        "8888:8080"
+                    ],
+                    "environment": {
+                        "SEARXNG_BASE_URL": "http://localhost:8888/",
+                        "SEARXNG_SECRET": "change-this-searxng-secret"
+                    },
+                    "volumes": [
+                        "${POOL_PATH}/config:/etc/searxng"
+                    ]
+                }
+            }
+        },
+        "config_schema": {
+            "ports": [
+                {
+                    "internal": 8080,
+                    "external": 8888,
+                    "protocol": "tcp",
+                    "description": "Web UI"
+                }
+            ],
+            "volumes": [
+                {
+                    "container_path": "/etc/searxng",
+                    "description": "SearXNG settings and runtime config",
+                    "required": true
+                }
+            ],
+            "environment": [
+                {
+                    "key": "SEARXNG_BASE_URL",
+                    "default": "http://localhost:8888/",
+                    "description": "Public base URL used in generated links"
+                },
+                {
+                    "key": "SEARXNG_SECRET",
+                    "default": "change-this-searxng-secret",
+                    "description": "Secret key for internal token/signing"
+                }
+            ]
+        }
+    },
+    "ollama": {
+        "name": "Ollama",
+        "description": "Run local LLM inference with open models",
+        "icon": "",
+        "category": "AI",
+        "version": "latest",
+        "docker_compose": {
+            "version": "3",
+            "services": {
+                "ollama": {
+                    "image": "ollama/ollama:latest",
+                    "restart": "unless-stopped",
+                    "ports": [
+                        "11434:11434"
+                    ],
+                    "environment": {
+                        "OLLAMA_ORIGINS": "*",
+                        "OLLAMA_KEEP_ALIVE": "5m"
+                    },
+                    "volumes": [
+                        "${POOL_PATH}/models:/root/.ollama"
+                    ]
+                }
+            }
+        },
+        "config_schema": {
+            "ports": [
+                {
+                    "internal": 11434,
+                    "external": 11434,
+                    "protocol": "tcp",
+                    "description": "API"
+                }
+            ],
+            "volumes": [
+                {
+                    "container_path": "/root/.ollama",
+                    "description": "Downloaded models and runtime data",
+                    "required": true
+                }
+            ],
+            "environment": [
+                {
+                    "key": "OLLAMA_ORIGINS",
+                    "default": "*",
+                    "description": "Allowed CORS origins for browser-based clients"
+                },
+                {
+                    "key": "OLLAMA_KEEP_ALIVE",
+                    "default": "5m",
+                    "description": "How long models stay loaded in memory"
+                }
+            ]
+        }
+    },
+    "openwebui": {
+        "name": "Open WebUI",
+        "description": "Web interface for Ollama and other LLM backends",
+        "icon": "",
+        "category": "AI",
+        "version": "latest",
+        "docker_compose": {
+            "version": "3",
+            "services": {
+                "open-webui": {
+                    "image": "ghcr.io/open-webui/open-webui:main",
+                    "restart": "unless-stopped",
+                    "ports": [
+                        "3000:8080"
+                    ],
+                    "extra_hosts": [
+                        "host.docker.internal:host-gateway"
+                    ],
+                    "environment": {
+                        "OLLAMA_BASE_URL": "http://host.docker.internal:11434",
+                        "WEBUI_URL": "http://localhost:3000",
+                        "WEBUI_SECRET_KEY": "change-this-openwebui-secret"
+                    },
+                    "volumes": [
+                        "${POOL_PATH}/data:/app/backend/data"
+                    ]
+                }
+            }
+        },
+        "config_schema": {
+            "ports": [
+                {
+                    "internal": 8080,
+                    "external": 3000,
+                    "protocol": "tcp",
+                    "description": "Web UI"
+                }
+            ],
+            "volumes": [
+                {
+                    "container_path": "/app/backend/data",
+                    "description": "Open WebUI database and files",
+                    "required": true
+                }
+            ],
+            "environment": [
+                {
+                    "key": "OLLAMA_BASE_URL",
+                    "default": "http://host.docker.internal:11434",
+                    "description": "URL to Ollama API endpoint"
+                },
+                {
+                    "key": "WEBUI_URL",
+                    "default": "http://localhost:3000",
+                    "description": "Public URL used by Open WebUI"
+                },
+                {
+                    "key": "WEBUI_SECRET_KEY",
+                    "default": "change-this-openwebui-secret",
+                    "description": "Secret key for sessions and signing"
                 }
             ]
         }
