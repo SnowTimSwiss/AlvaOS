@@ -2148,8 +2148,8 @@ def system_time():
 @require_auth(require_admin=True)
 def system_power():
     """Handle Shutdown/Reboot"""
-    data = request.get_json()
-    action = data.get('action')
+    data = request.get_json(silent=True) or {}
+    action = str(data.get('action') or '').strip().lower()
     
     if action not in ['reboot', 'shutdown']:
         return jsonify({'error': 'Invalid action'}), 400
@@ -2157,12 +2157,122 @@ def system_power():
     if platform.system() == 'Linux':
         try:
             cmd_path = CMD['REBOOT'] if action == 'reboot' else CMD['POWEROFF']
-            subprocess.Popen(build_privileged_cmd([cmd_path]))
+            _res, err = run_sudo_command([cmd_path], timeout=15)
+            if err:
+                return jsonify({'error': f'Failed to {action}: {err}'}), 500
             return jsonify({'success': True, 'message': f'System {action} initiated'})
         except Exception as e:
             return jsonify({'error': f'Failed to {action}: {str(e)}'}), 500
     else:
         return jsonify({'success': False, 'message': f'System {action} not supported on {platform.system()}'}), 400
+
+@app.route('/api/v1/system/permissions/check', methods=['GET'])
+@require_auth(require_admin=True)
+def system_permissions_check():
+    """Run a focused diagnostics check for backend privileged command execution."""
+    report = {
+        'success': True,
+        'platform': platform.system(),
+        'sudoers': {},
+        'sudo_rules': {},
+        'privileged_commands': [],
+        'errors': [],
+    }
+
+    sudoers_path = '/etc/sudoers.d/alvaos'
+    sudoers_info = {
+        'path': sudoers_path,
+        'exists': False,
+        'owner_uid': None,
+        'mode_octal': None,
+        'valid_owner': False,
+        'valid_mode': False,
+    }
+    try:
+        if os.path.exists(sudoers_path):
+            st = os.stat(sudoers_path)
+            mode = st.st_mode & 0o777
+            sudoers_info.update({
+                'exists': True,
+                'owner_uid': int(st.st_uid),
+                'mode_octal': oct(mode),
+                'valid_owner': int(st.st_uid) == 0,
+                'valid_mode': mode == 0o440,
+            })
+    except Exception as e:
+        report['errors'].append(f'Failed reading sudoers metadata: {e}')
+    report['sudoers'] = sudoers_info
+
+    if platform.system() != 'Linux':
+        report['success'] = False
+        report['errors'].append('Permission diagnostics are only supported on Linux.')
+        return jsonify(report), 400
+
+    sudo_list = {'ok': False, 'required_rules': {}, 'error': ''}
+    required_rules = [
+        '/usr/bin/systemctl restart docker',
+        '/usr/bin/systemctl restart nfs-kernel-server',
+        '/usr/bin/mv',
+        '/bin/mv',
+    ]
+    try:
+        sudo_probe = subprocess.run(
+            ['sudo', '-n', '-l'],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            env={'LC_ALL': 'C'}
+        )
+        sudo_output = f"{sudo_probe.stdout or ''}\n{sudo_probe.stderr or ''}".strip()
+        if sudo_probe.returncode == 0:
+            sudo_list['ok'] = True
+            for rule in required_rules:
+                sudo_list['required_rules'][rule] = (rule in sudo_output)
+        else:
+            sudo_list['error'] = sudo_output or f"sudo -n -l failed (exit {sudo_probe.returncode})"
+            for rule in required_rules:
+                sudo_list['required_rules'][rule] = False
+    except Exception as e:
+        sudo_list['error'] = str(e)
+        for rule in required_rules:
+            sudo_list['required_rules'][rule] = False
+    report['sudo_rules'] = sudo_list
+
+    command_checks = [
+        {'name': 'timedatectl', 'cmd': [CMD['TIMEDATECTL'], 'show', '--property=Timezone', '--value']},
+        {'name': 'lsblk', 'cmd': [CMD['LSBLK'], '-dn', '-o', 'NAME']},
+        {'name': 'df', 'cmd': [CMD['DF'], '-h', '/']},
+        {'name': 'mountpoint', 'cmd': [CMD['MOUNTPOINT'], '/']},
+    ]
+
+    for item in command_checks:
+        res, err = run_sudo_command(item['cmd'], timeout=10)
+        check = {
+            'name': item['name'],
+            'command': ' '.join(item['cmd']),
+            'ok': (err is None and res is not None and res.returncode == 0),
+            'error': err,
+        }
+        report['privileged_commands'].append(check)
+
+    if not sudoers_info.get('exists'):
+        report['errors'].append('Missing /etc/sudoers.d/alvaos')
+    if sudoers_info.get('exists') and not sudoers_info.get('valid_owner'):
+        report['errors'].append('Invalid sudoers owner (expected root:root)')
+    if sudoers_info.get('exists') and not sudoers_info.get('valid_mode'):
+        report['errors'].append('Invalid sudoers mode (expected 440)')
+    if not sudo_list.get('ok'):
+        report['errors'].append('sudo -n -l failed')
+    for rule, ok in (sudo_list.get('required_rules') or {}).items():
+        if not ok:
+            report['errors'].append(f'Missing sudo rule: {rule}')
+    for check in report['privileged_commands']:
+        if not check.get('ok'):
+            report['errors'].append(f"Command check failed: {check.get('name')}")
+
+    report['success'] = len(report['errors']) == 0
+    status_code = 200 if report['success'] else 500
+    return jsonify(report), status_code
 
 @app.route('/api/v1/system/power/ups', methods=['GET', 'POST'])
 @require_auth(require_admin=True)

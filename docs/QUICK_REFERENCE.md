@@ -24,7 +24,7 @@
 
 ## 🐛 Debug & Troubleshooting
 - **Build Error**: `rm -rf build/` and retry.
-- **Logs**: `sudo journalctl -u alvaos-backend -f`.
+- **Logs**: `sudo journalctl -u alvaos.service -f`.
 - **Manual Rollback**: `sudo apt install alvaos-system=VERSION`.
 
 ## 🔗 Project Links

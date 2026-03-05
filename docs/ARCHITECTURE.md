@@ -84,7 +84,7 @@ NAS-to-NAS encrypted incremental backup.
 ## Service Architecture
 
 **systemd units:**
-- `alvaos-backend.service` - REST API server
+- `alvaos.service` - REST API server + Web UI
 - `alvaos-ui.service` - Web UI (nginx or static server)
 - `alvaos-buddy-backup.service` - Backup daemon
 - Standard Docker service
