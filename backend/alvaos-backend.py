@@ -4779,6 +4779,71 @@ def install_app():
     
     return jsonify({'success': True, 'message': f'Installation of "{app_id}" started'})
 
+@app.route('/api/v1/apps/install/compose', methods=['POST'])
+@require_auth(require_admin=True)
+def install_compose_app():
+    """Install a custom app from a Docker Compose definition."""
+    data = request.get_json() or {}
+
+    app_name = str(data.get('app_name') or '').strip()
+    app_id = str(data.get('app_id') or '').strip()
+    pool_path = str(data.get('pool_path') or '').strip()
+    parent_subvolume = data.get('parent_subvolume')
+    compose_yaml = data.get('compose_yaml')
+    compose_object = data.get('compose')
+
+    if not app_name:
+        return jsonify({'error': 'app_name is required'}), 400
+    if not pool_path:
+        return jsonify({'error': 'pool_path is required'}), 400
+    if parent_subvolume is not None and not isinstance(parent_subvolume, str):
+        return jsonify({'error': 'parent_subvolume must be a string when provided'}), 400
+
+    compose_config = None
+    if compose_object is not None:
+        if not isinstance(compose_object, dict):
+            return jsonify({'error': 'compose must be an object'}), 400
+        compose_config = compose_object
+    elif isinstance(compose_yaml, str):
+        import yaml
+        try:
+            compose_config = yaml.safe_load(compose_yaml)
+        except Exception as e:
+            return jsonify({'error': f'Invalid compose_yaml: {str(e)}'}), 400
+    else:
+        return jsonify({'error': 'Either compose_yaml or compose is required'}), 400
+
+    if not isinstance(compose_config, dict):
+        return jsonify({'error': 'Compose content must evaluate to an object'}), 400
+    services = compose_config.get('services')
+    if not isinstance(services, dict) or not services:
+        return jsonify({'error': 'Compose config must contain at least one service in services'}), 400
+
+    success, error, resolved_app_id = app_store.install_compose_app(
+        app_name=app_name,
+        pool_path=pool_path,
+        compose_config=compose_config,
+        parent_subvolume=(str(parent_subvolume).strip() if isinstance(parent_subvolume, str) else None),
+        app_id=(app_id if app_id else None)
+    )
+    if not success:
+        error_text = str(error or 'Failed to start compose installation')
+        if (
+            'already installed' in error_text.lower()
+            or 'required' in error_text.lower()
+            or 'must be' in error_text.lower()
+            or 'another app operation is already in progress' in error_text.lower()
+            or 'operation for' in error_text.lower()
+        ):
+            return jsonify({'error': error_text}), 400
+        return jsonify({'error': error_text}), 500
+
+    return jsonify({
+        'success': True,
+        'app_id': resolved_app_id,
+        'message': f'Installation of "{app_name}" started'
+    })
+
 @app.route('/api/v1/apps/install/status', methods=['GET'])
 @require_auth
 def get_app_install_status():

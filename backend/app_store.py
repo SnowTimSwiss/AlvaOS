@@ -7,6 +7,7 @@ Manages app catalog and installation
 import json
 import copy
 import os
+import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -139,6 +140,16 @@ class AppStore:
                 service_config['environment'].update(environment_vars)
 
         return compose_config
+
+    def _normalize_custom_app_id(self, value: str) -> str:
+        """Convert a free-form app name/id to a stable app identifier."""
+        normalized = str(value or "").strip().lower()
+        normalized = re.sub(r'[^a-z0-9._-]+', '-', normalized)
+        normalized = re.sub(r'[-_.]{2,}', '-', normalized)
+        normalized = normalized.strip('-_.')
+        if len(normalized) > 64:
+            normalized = normalized[:64].rstrip('-_.')
+        return normalized
 
     def _infer_environment_vars_from_running_containers(self, app_id: str, app_details: Dict) -> Dict[str, str]:
         """
@@ -488,6 +499,80 @@ class AppStore:
         
         return True, None
 
+    def install_compose_app(
+        self,
+        app_name: str,
+        pool_path: str,
+        compose_config: Dict,
+        parent_subvolume: Optional[str] = None,
+        app_id: Optional[str] = None
+    ) -> Tuple[bool, Optional[str], Optional[str]]:
+        """
+        Start installation for a custom app defined via Docker Compose.
+
+        Returns:
+            Tuple of (success bool, error message, resolved app_id)
+        """
+        display_name = str(app_name or '').strip()
+        if not display_name:
+            return False, "app_name is required", None
+
+        resolved_app_id = self._normalize_custom_app_id(app_id or display_name)
+        if not resolved_app_id:
+            return False, "app_name does not contain valid characters for an app id", None
+
+        if not isinstance(compose_config, dict):
+            return False, "compose_config must be an object", None
+        services = compose_config.get('services')
+        if not isinstance(services, dict) or len(services) == 0:
+            return False, "compose configuration must define at least one service", None
+
+        apps_state = self._load_apps_state()
+        if resolved_app_id in apps_state:
+            return False, f"App '{resolved_app_id}' is already installed", None
+
+        op_active, active_app_id = self._is_operation_in_progress()
+        if op_active:
+            if active_app_id:
+                return False, f"Operation for '{active_app_id}' is already in progress", None
+            return False, "Another app operation is already in progress", None
+
+        import threading
+        thread = threading.Thread(
+            target=self._install_compose_app_worker,
+            args=(
+                resolved_app_id,
+                display_name,
+                pool_path,
+                parent_subvolume,
+                copy.deepcopy(compose_config)
+            )
+        )
+        thread.daemon = True
+
+        with self._status_lock:
+            self._active_install_status = {
+                "app_id": resolved_app_id,
+                "action": "install",
+                "status": "starting",
+                "progress": 0,
+                "message": "Initializing...",
+                "logs": [],
+                "updated_at": datetime.now().isoformat()
+            }
+        self._update_install_status(
+            resolved_app_id,
+            "starting",
+            0,
+            "Initializing...",
+            [],
+            force_write=True,
+            action="install"
+        )
+
+        thread.start()
+        return True, None, resolved_app_id
+
     def _install_app_worker(
         self,
         app_id: str,
@@ -575,6 +660,104 @@ class AppStore:
             
         except Exception as e:
             self._update_install_status(app_id, "error", 0, f"Unexpected error during installation: {str(e)}", force_write=True, action="install")
+
+    def _install_compose_app_worker(
+        self,
+        app_id: str,
+        app_name: str,
+        pool_path: str,
+        parent_subvolume: Optional[str],
+        compose_config: Dict
+    ) -> None:
+        """Worker thread for custom compose app installation."""
+        logs: List[str] = []
+        app_storage_path: Optional[str] = None
+        try:
+            self._update_install_status(
+                app_id,
+                "installing",
+                5,
+                f"Starting installation of {app_name}...",
+                logs,
+                action="install"
+            )
+
+            self._update_install_status(app_id, "installing", 10, "Preparing storage...", logs, action="install")
+            app_storage_path, error = self._prepare_app_storage(pool_path, parent_subvolume, app_id)
+            if error:
+                self._update_install_status(app_id, "error", 0, f"Storage preparation failed: {error}", logs, force_write=True, action="install")
+                return
+
+            def docker_callback(line: str):
+                line = str(line or "")
+                lower_line = line.lower()
+                message = "Running Docker Compose..."
+                progress = 50
+
+                if "pulling" in lower_line or "downloading" in lower_line:
+                    message = f"Pulling images: {line}"
+                    progress = 40
+                elif "extracting" in lower_line:
+                    message = f"Extracting layers: {line}"
+                    progress = 45
+                elif "creating" in lower_line or "started" in lower_line or "running" in lower_line:
+                    message = f"Creating containers: {line}"
+                    progress = 70
+
+                logs.append(line)
+                self._update_install_status(app_id, "installing", progress, message, logs, action="install")
+
+            self._update_install_status(app_id, "installing", 30, "Invoking Docker Compose...", logs, action="install")
+            success, compose_error = self.docker_manager.create_container_from_compose(
+                compose_dict=compose_config,
+                app_name=app_id,
+                pool_path=app_storage_path,
+                project_name=f"alvaos-{app_id}",
+                callback=docker_callback
+            )
+            if not success:
+                if app_storage_path:
+                    self._delete_subvolume(app_storage_path)
+                self._update_install_status(
+                    app_id,
+                    "error",
+                    0,
+                    f"Failed to create containers: {compose_error}",
+                    logs,
+                    force_write=True,
+                    action="install"
+                )
+                return
+
+            self._update_install_status(app_id, "installing", 95, "Finalizing installation...", logs, action="install")
+            apps_state = self._load_apps_state()
+            apps_state[app_id] = {
+                'app_id': app_id,
+                'name': app_name,
+                'source': 'custom_compose',
+                'storage_path': app_storage_path,
+                'pool_path': pool_path,
+                'parent_subvolume': parent_subvolume,
+                'port_mappings': {},
+                'volume_mappings': {},
+                'environment_vars': {},
+                'installed_at': datetime.now().isoformat(),
+                'updated_at': datetime.now().isoformat()
+            }
+            self._save_apps_state(apps_state)
+            self._update_install_status(app_id, "success", 100, "Installation completed successfully", logs, force_write=True, action="install")
+        except Exception as e:
+            if app_storage_path:
+                self._delete_subvolume(app_storage_path)
+            self._update_install_status(
+                app_id,
+                "error",
+                0,
+                f"Unexpected error during installation: {str(e)}",
+                logs,
+                force_write=True,
+                action="install"
+            )
 
     def update_app(self, app_id: str) -> Tuple[bool, Optional[str]]:
         """

@@ -314,6 +314,40 @@
             margin-bottom: 12px;
         }
 
+        .compose-quick-add {
+            background: var(--bg-card);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            padding: var(--space-md);
+            margin-bottom: 14px;
+        }
+
+        .compose-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .compose-yaml-input {
+            width: 100%;
+            min-height: 220px;
+            resize: vertical;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: #0a111d;
+            color: #eaf2ff;
+            padding: 10px 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.84rem;
+            line-height: 1.45;
+        }
+
+        .compose-yaml-input:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 2px rgba(50, 120, 245, 0.2);
+        }
+
         @media (max-width: 980px) {
             .apps-workspace {
                 grid-template-columns: 1fr;
@@ -326,6 +360,10 @@
 
         @media (max-width: 760px) {
             .store-tools {
+                grid-template-columns: 1fr;
+            }
+
+            .compose-grid {
                 grid-template-columns: 1fr;
             }
 
@@ -541,6 +579,41 @@
                     <select id="app-category-filter" aria-label="Filter apps by category">
                         <option value="all">All categories</option>
                     </select>
+                </div>
+                <div class="compose-quick-add">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap;">
+                        <h3 style="margin: 0; font-size: 1rem; font-weight: 600;">Add via Docker Compose</h3>
+                        <button id="compose-refresh-pools-btn" class="btn-secondary" style="padding: 4px 10px; font-size: 0.82rem;">Refresh Pools</button>
+                    </div>
+                    <p style="font-size: 0.82rem; color: var(--text-secondary); margin: 0 0 10px 0;">
+                        Paste a Docker Compose file, choose a pool, and deploy as a managed app.
+                    </p>
+                    <div class="compose-grid">
+                        <div class="setting-group" style="margin: 0;">
+                            <label class="setting-label">App Name</label>
+                            <input id="compose-app-name" type="text" placeholder="e.g. my-homelab-app" style="width: 100%; padding: 10px;">
+                        </div>
+                        <div class="setting-group" style="margin: 0;">
+                            <label class="setting-label">Storage Pool</label>
+                            <select id="compose-pool-select" style="width: 100%; padding: 10px;">
+                                <option value="">Loading pools...</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="setting-group" style="margin: 10px 0 0 0;">
+                        <label class="setting-label">Docker Compose YAML</label>
+                        <textarea id="compose-yaml-input" class="compose-yaml-input" spellcheck="false" placeholder="services:
+  app:
+    image: nginx:latest
+    ports:
+      - &quot;8080:80&quot;
+    volumes:
+      - ${POOL_PATH}/data:/data"></textarea>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap;">
+                        <div id="compose-add-meta" class="store-meta" style="margin: 0;">Tip: Use <code>${POOL_PATH}</code> for data paths inside the selected app storage folder.</div>
+                        <button id="compose-deploy-btn" class="btn-primary" disabled>Deploy Compose App</button>
+                    </div>
                 </div>
                 <div id="apps-store-meta" class="store-meta">Loading app catalog...</div>
                 <div id="apps-container" class="apps-grid">
