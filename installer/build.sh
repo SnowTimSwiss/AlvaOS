@@ -139,12 +139,15 @@ if [ -d "${SCRIPT_DIR}/../frontend" ]; then
 fi
 
 # Update scripts (optional)
-if [ -f "${SCRIPT_DIR}/../scripts/update_checker.sh" ]; then
-  mkdir -p config/includes.chroot/opt/alvaos/scripts
-  cp "${SCRIPT_DIR}/../scripts/update_checker.sh" config/includes.chroot/opt/alvaos/scripts/
-  cp "${SCRIPT_DIR}/../scripts/apply_update.sh" config/includes.chroot/opt/alvaos/scripts/
-  chmod +x config/includes.chroot/opt/alvaos/scripts/update_checker.sh
-  chmod +x config/includes.chroot/opt/alvaos/scripts/apply_update.sh
+mkdir -p config/includes.chroot/opt/alvaos/scripts
+for script_name in update_checker.sh apply_update.sh setup_sudoers.sh; do
+  if [ -f "${SCRIPT_DIR}/../scripts/${script_name}" ]; then
+    cp "${SCRIPT_DIR}/../scripts/${script_name}" config/includes.chroot/opt/alvaos/scripts/
+    chmod +x "config/includes.chroot/opt/alvaos/scripts/${script_name}"
+  fi
+done
+if [ -f "${SCRIPT_DIR}/../scripts/sudoers.alvaos" ]; then
+  cp "${SCRIPT_DIR}/../scripts/sudoers.alvaos" config/includes.chroot/opt/alvaos/scripts/
 fi
 
 if [ -f "${SCRIPT_DIR}/../scripts/alvaos-update-checker.service" ]; then

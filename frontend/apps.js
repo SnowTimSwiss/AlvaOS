@@ -25,6 +25,7 @@ let availableAppsLoadPromise = null;
 let availableAppsCache = [];
 let availableSearchQuery = '';
 let availableCategoryFilter = 'all';
+let composePoolsLoadPromise = null;
 
 function showNotification(message, type = 'info') {
     if (window.showToast) {
@@ -75,6 +76,13 @@ function formatDate(value) {
 function setStoreMeta(message) {
     const metaEl = document.getElementById('apps-store-meta');
     if (metaEl) metaEl.textContent = message;
+}
+
+function setComposeMeta(message, isError = false) {
+    const metaEl = document.getElementById('compose-add-meta');
+    if (!metaEl) return;
+    metaEl.textContent = message;
+    metaEl.style.color = isError ? 'var(--accent-danger)' : 'var(--text-secondary)';
 }
 
 function normalizeSearchText(value) {
@@ -222,6 +230,7 @@ function setActiveTab(tabName) {
 
     if (tabName === 'store') {
         loadAvailableApps();
+        loadComposePoolOptions();
     } else {
         loadInstalledWorkspace(true);
     }
@@ -388,6 +397,7 @@ async function renderInspector() {
     const appContainers = containersLoaded ? getContainersForApp(selected.app_id) : [];
     const runningCount = appContainers.filter((c) => c.State === 'running').length;
     const appDetails = await getAppDetails(selected.app_id);
+    const canUpdate = selected.source !== 'custom_compose';
 
     if (selectedAppId !== selectedAtRender) {
         return;
@@ -407,7 +417,9 @@ async function renderInspector() {
 
             <div class="inspector-actions">
                 ${webUiUrl ? `<a class="btn-link" href="${escapeHtml(webUiUrl)}" target="_blank" rel="noopener noreferrer">Open Web UI</a>` : '<button class="btn-secondary" disabled style="opacity:0.6; cursor:not-allowed;">No Web UI detected</button>'}
-                <button class="btn-icon" onclick="updateApp('${escapeHtml(selected.app_id)}')">Update</button>
+                ${canUpdate
+                    ? `<button class="btn-icon" onclick="updateApp('${escapeHtml(selected.app_id)}')">Update</button>`
+                    : '<button class="btn-icon" disabled style="opacity:0.55; cursor:not-allowed;" title="Custom compose apps are not updateable via catalog">Update</button>'}
                 <button class="btn-icon btn-danger" onclick="uninstallApp('${escapeHtml(selected.app_id)}')">Uninstall</button>
             </div>
 
@@ -427,6 +439,10 @@ async function renderInspector() {
                 <div>
                     <div class="inspector-label">Parent Subvolume</div>
                     <div class="inspector-value mono-text">${escapeHtml(selected.parent_subvolume || '-')}</div>
+                </div>
+                <div>
+                    <div class="inspector-label">Source</div>
+                    <div class="inspector-value mono-text">${escapeHtml(selected.source || 'catalog')}</div>
                 </div>
             </div>
 
@@ -638,6 +654,149 @@ async function loadAvailableApps() {
     })();
 
     return availableAppsLoadPromise;
+}
+
+function slugifyAppId(value) {
+    return String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]+/g, '-')
+        .replace(/[-_.]{2,}/g, '-')
+        .replace(/^[-_.]+|[-_.]+$/g, '')
+        .slice(0, 64)
+        .replace(/[-_.]+$/g, '');
+}
+
+function updateComposeDeployButtonState() {
+    const deployBtn = document.getElementById('compose-deploy-btn');
+    const nameInput = document.getElementById('compose-app-name');
+    const poolSelect = document.getElementById('compose-pool-select');
+    const yamlInput = document.getElementById('compose-yaml-input');
+    if (!deployBtn || !nameInput || !poolSelect || !yamlInput) return;
+
+    const hasName = String(nameInput.value || '').trim().length > 0;
+    const hasPool = String(poolSelect.value || '').trim().length > 0;
+    const hasYaml = String(yamlInput.value || '').trim().length > 0;
+    deployBtn.disabled = !(hasName && hasPool && hasYaml) || poolSelect.disabled;
+}
+
+async function loadComposePoolOptions() {
+    const poolSelect = document.getElementById('compose-pool-select');
+    if (!poolSelect) return;
+    if (composePoolsLoadPromise) return composePoolsLoadPromise;
+
+    const previousValue = String(poolSelect.value || '');
+    const deployBtn = document.getElementById('compose-deploy-btn');
+
+    composePoolsLoadPromise = (async () => {
+        poolSelect.disabled = true;
+        poolSelect.innerHTML = '<option value="">Loading pools...</option>';
+        if (deployBtn) deployBtn.disabled = true;
+
+        try {
+            const response = await apiFetch(`${API_BASE}/storage/pools`, {
+                headers: { 'Authorization': authToken }
+            });
+            if (!response.ok) throw new Error('Failed to load storage pools');
+
+            const data = await response.json();
+            const pools = Array.isArray(data?.pools) ? data.pools : [];
+
+            if (pools.length === 0) {
+                poolSelect.innerHTML = '<option value="">No pools available</option>';
+                setComposeMeta('Create a storage pool first to deploy compose apps.', true);
+                return;
+            }
+
+            poolSelect.innerHTML = pools.map((pool) => `
+                <option value="${escapeHtml(pool.mount_point)}">${escapeHtml(pool.name)} (${escapeHtml(pool.total_size)} total, ${escapeHtml(pool.mount_point)})</option>
+            `).join('');
+
+            if (previousValue && pools.some((pool) => String(pool.mount_point) === previousValue)) {
+                poolSelect.value = previousValue;
+            }
+
+            poolSelect.disabled = false;
+            setComposeMeta('Tip: Use ${POOL_PATH} for data paths inside the selected app storage folder.', false);
+        } catch (error) {
+            console.error('Error loading compose pools:', error);
+            poolSelect.innerHTML = '<option value="">Failed to load pools</option>';
+            setComposeMeta(`Failed to load pools: ${error.message}`, true);
+        } finally {
+            composePoolsLoadPromise = null;
+            updateComposeDeployButtonState();
+        }
+    })();
+
+    return composePoolsLoadPromise;
+}
+
+async function deployComposeApp() {
+    const nameInput = document.getElementById('compose-app-name');
+    const poolSelect = document.getElementById('compose-pool-select');
+    const yamlInput = document.getElementById('compose-yaml-input');
+    const deployBtn = document.getElementById('compose-deploy-btn');
+    if (!nameInput || !poolSelect || !yamlInput || !deployBtn) return;
+
+    const appName = String(nameInput.value || '').trim();
+    const poolPath = String(poolSelect.value || '').trim();
+    const composeYaml = String(yamlInput.value || '').trim();
+
+    if (!appName) {
+        showNotification('Please enter an app name', 'error');
+        return;
+    }
+    if (!poolPath) {
+        showNotification('Please select a storage pool', 'error');
+        return;
+    }
+    if (!composeYaml) {
+        showNotification('Please paste a Docker Compose YAML file', 'error');
+        return;
+    }
+
+    const appId = slugifyAppId(appName);
+    if (!appId) {
+        showNotification('App name contains no valid characters', 'error');
+        return;
+    }
+
+    setLoadingButtonState(deployBtn, true, 'Deploying...');
+    try {
+        const response = await apiFetch(`${API_BASE}/apps/install/compose`, {
+            method: 'POST',
+            headers: {
+                'Authorization': authToken,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                app_name: appName,
+                app_id: appId,
+                pool_path: poolPath,
+                compose_yaml: composeYaml
+            })
+        });
+
+        const payload = await response.json();
+        if (!response.ok) {
+            throw new Error(payload?.error || 'Failed to start compose deployment');
+        }
+
+        const resolvedAppId = String(payload?.app_id || appId);
+        showNotification(`Deployment started for "${appName}"`, 'info');
+
+        await waitForAppOperation(resolvedAppId, 'install', 1800);
+
+        showNotification(`App "${appName}" deployed successfully`, 'success');
+        nameInput.value = '';
+        setActiveTab('installed');
+    } catch (error) {
+        console.error('Compose deploy error:', error);
+        showNotification(`Compose deployment failed: ${error.message}`, 'error');
+    } finally {
+        setLoadingButtonState(deployBtn, false);
+        updateComposeDeployButtonState();
+    }
 }
 
 // Keep compatibility for existing calls
@@ -1172,7 +1331,9 @@ function manageApp(appId) {
     }
 }
 
-document.getElementById('refresh-apps-btn')?.addEventListener('click', loadAvailableApps);
+document.getElementById('refresh-apps-btn')?.addEventListener('click', async () => {
+    await Promise.all([loadAvailableApps(), loadComposePoolOptions()]);
+});
 document.getElementById('refresh-installed-btn')?.addEventListener('click', () => loadInstalledWorkspace(true));
 document.getElementById('app-search-input')?.addEventListener('input', (event) => {
     availableSearchQuery = String(event.target?.value || '');
@@ -1202,6 +1363,11 @@ document.getElementById('container-terminal-input')?.addEventListener('keydown',
         runTerminalCommand();
     }
 });
+document.getElementById('compose-app-name')?.addEventListener('input', updateComposeDeployButtonState);
+document.getElementById('compose-pool-select')?.addEventListener('change', updateComposeDeployButtonState);
+document.getElementById('compose-yaml-input')?.addEventListener('input', updateComposeDeployButtonState);
+document.getElementById('compose-deploy-btn')?.addEventListener('click', deployComposeApp);
+document.getElementById('compose-refresh-pools-btn')?.addEventListener('click', loadComposePoolOptions);
 document.getElementById('container-terminal-modal')?.addEventListener('click', (event) => {
     if (event.target?.id === 'container-terminal-modal') {
         closeTerminalModal();

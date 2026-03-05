@@ -10,6 +10,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Progress tracking
 PROGRESS=0
@@ -770,6 +771,7 @@ FSTAB_EOF
         cp /opt/alvaos/scripts/update_checker.sh /mnt/opt/alvaos/scripts/ 2>/dev/null || true
         cp /opt/alvaos/scripts/apply_update.sh /mnt/opt/alvaos/scripts/ 2>/dev/null || true
         cp /opt/alvaos/scripts/setup_sudoers.sh /mnt/opt/alvaos/scripts/ 2>/dev/null || true
+        cp /opt/alvaos/scripts/sudoers.alvaos /mnt/opt/alvaos/scripts/ 2>/dev/null || true
         chmod +x /mnt/opt/alvaos/scripts/*.sh 2>/dev/null || true
         [ -f "/opt/alvaos/scripts/alvaos-update-checker.service" ] && cp /opt/alvaos/scripts/alvaos-update-checker.service /mnt/etc/systemd/system/
     fi
@@ -804,95 +806,23 @@ SERVICE_EOF
 
     # Sudoers
     mkdir -p /mnt/etc/sudoers.d
-    cat > /mnt/etc/sudoers.d/alvaos << 'SUDOERS_EOF'
-# AlvaOS Permissions - Comprehensive List
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/chpasswd
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/useradd
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/userdel
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/smbpasswd
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/groupadd
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/groupdel
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/gpasswd
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/chgrp
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/chmod
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart alvaos.service
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemctl start alvaos.service
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop alvaos.service
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemctl status alvaos.service
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemd-run
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart ssh
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemctl status docker.service
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart smbd
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload nfs-kernel-server
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/apt
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/apt-get
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/python3 -m pip
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/dpkg
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/dpkg-deb
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/smartctl
-alvaos ALL=(ALL) NOPASSWD: /sbin/smartctl
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/lsblk
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/btrfs
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/btrfs
-alvaos ALL=(ALL) NOPASSWD: /sbin/btrfs
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/wipefs
-alvaos ALL=(ALL) NOPASSWD: /sbin/wipefs
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/partprobe
-alvaos ALL=(ALL) NOPASSWD: /sbin/partprobe
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/umount
-alvaos ALL=(ALL) NOPASSWD: /bin/umount
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/mount
-alvaos ALL=(ALL) NOPASSWD: /bin/mount
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/mkdir
-alvaos ALL=(ALL) NOPASSWD: /bin/mkdir
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/mv
-alvaos ALL=(ALL) NOPASSWD: /bin/mv
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/rmdir
-alvaos ALL=(ALL) NOPASSWD: /bin/rmdir
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/mkfs.btrfs
-alvaos ALL=(ALL) NOPASSWD: /sbin/mkfs.btrfs
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/mkfs.ext4
-alvaos ALL=(ALL) NOPASSWD: /sbin/mkfs.ext4
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/blkid
-alvaos ALL=(ALL) NOPASSWD: /sbin/blkid
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/cat
-alvaos ALL=(ALL) NOPASSWD: /bin/cat
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/hostnamectl
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/timedatectl
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/journalctl
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/tail
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/reboot
-alvaos ALL=(ALL) NOPASSWD: /sbin/reboot
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/poweroff
-alvaos ALL=(ALL) NOPASSWD: /sbin/poweroff
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/hosts
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/sed
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/exportfs
-alvaos ALL=(ALL) NOPASSWD: /sbin/exportfs
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/cat /etc/exports
-alvaos ALL=(ALL) NOPASSWD: /bin/cat /etc/exports
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/cat /etc/samba/smb.conf
-alvaos ALL=(ALL) NOPASSWD: /bin/cat /etc/samba/smb.conf
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/exports
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee -a /etc/exports
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/samba/smb.conf
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/tee -a /etc/samba/smb.conf
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/mountpoint
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/docker
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/docker-compose
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/ip
-alvaos ALL=(ALL) NOPASSWD: /sbin/ip
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/id
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/df
-alvaos ALL=(ALL) NOPASSWD: /bin/df
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/getent
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/nohup
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/bash
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/wg
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/wg
-alvaos ALL=(ALL) NOPASSWD: /usr/bin/wg-quick
-alvaos ALL=(ALL) NOPASSWD: /usr/sbin/wg-quick
-SUDOERS_EOF
+    SUDOERS_SOURCE=""
+    for candidate in \
+        "/opt/alvaos/scripts/sudoers.alvaos" \
+        "$SCRIPT_DIR/scripts/sudoers.alvaos" \
+        "$SCRIPT_DIR/../scripts/sudoers.alvaos"; do
+        if [ -f "$candidate" ]; then
+            SUDOERS_SOURCE="$candidate"
+            break
+        fi
+    done
+
+    if [ -z "$SUDOERS_SOURCE" ]; then
+        msg "Sudoers template not found (scripts/sudoers.alvaos)."
+        exit 1
+    fi
+
+    cp "$SUDOERS_SOURCE" /mnt/etc/sudoers.d/alvaos
     chown root:root /mnt/etc/sudoers.d/alvaos
     chmod 440 /mnt/etc/sudoers.d/alvaos
     chroot /mnt visudo -c -f /etc/sudoers.d/alvaos >> "$INSTALL_LOG" 2>&1 || {

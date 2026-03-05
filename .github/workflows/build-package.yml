@@ -34,6 +34,10 @@ jobs:
           sudo apt-get install -y \
             dpkg-dev \
             build-essential
+
+      - name: Validate privileged command mappings
+        run: |
+          python3 scripts/ci/check_privileged_commands.py
       
       # TODO: Build backend when it exists
       # - name: Set up Go

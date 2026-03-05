@@ -162,6 +162,66 @@
                     </div>
                 </div>
 
+                <!-- Battery UPS -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Battery UPS</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="battery-charging"></i></div>
+                    </div>
+                    <p class="metric-sub" style="margin-bottom: 12px;">Use a laptop battery as backup power with an auto-shutdown rule.</p>
+
+                    <div class="setting-group">
+                        <label style="display:flex; align-items:center; cursor:pointer;">
+                            <input type="checkbox" id="ups-enabled-toggle" style="margin-right:8px;">
+                            <span style="font-size:0.85rem; color:var(--text-secondary);">Enable Battery UPS Mode</span>
+                        </label>
+                    </div>
+
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:12px;">
+                        <div>
+                            <label class="setting-label" for="ups-charge-limit-input">Charge Limit (%)</label>
+                            <input type="number" id="ups-charge-limit-input" min="50" max="100" value="80" style="width:100%;">
+                        </div>
+                        <div>
+                            <label class="setting-label" for="ups-shutdown-limit-input">Shutdown At (%)</label>
+                            <input type="number" id="ups-shutdown-limit-input" min="5" max="80" value="20" style="width:100%;">
+                        </div>
+                    </div>
+
+                    <div class="list-box" style="margin-bottom:12px;">
+                        <div class="list-item">
+                            <span>Battery Device</span>
+                            <span id="ups-device" class="mono-text">-</span>
+                        </div>
+                        <div class="list-item">
+                            <span>Power Source</span>
+                            <span id="ups-ac-state" class="mono-text">-</span>
+                        </div>
+                        <div class="list-item">
+                            <span>Battery State</span>
+                            <span id="ups-battery-state" class="mono-text">-</span>
+                        </div>
+                        <div class="list-item">
+                            <span>Current Charge</span>
+                            <span id="ups-capacity" class="mono-text">-</span>
+                        </div>
+                        <div class="list-item">
+                            <span>Charge Limit Support</span>
+                            <span id="ups-charge-support" class="mono-text">-</span>
+                        </div>
+                        <div class="list-item">
+                            <span>Active Charge Threshold</span>
+                            <span id="ups-threshold-current" class="mono-text">-</span>
+                        </div>
+                        <div class="list-item">
+                            <span>Last UPS Action</span>
+                            <span id="ups-last-action" class="mono-text">-</span>
+                        </div>
+                    </div>
+
+                    <button id="ups-save-btn" class="btn-primary">Save UPS Settings</button>
+                </div>
+
                 <!-- Telegram Alerts -->
                 <div class="card">
                     <div class="card-header">

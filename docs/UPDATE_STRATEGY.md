@@ -19,7 +19,7 @@ Safe (no breaks), Simple (one-click), Automated (auto-rollback), and User-contro
 
 ## Rollback & Recovery
 - **Automatic**: Restores config snapshot and downgrades package if health checks fail.
-- **Manual**: `sudo apt install alvaos-system=PREV_VERSION && sudo systemctl restart alvaos-backend`.
+- **Manual**: `sudo apt install alvaos-system=PREV_VERSION && sudo systemctl restart alvaos.service`.
 - **Disaster**: Recovery shell via installer USB or restore from Buddy Backup.
 
 ## Update Channels
