@@ -24,6 +24,7 @@ import importlib
 import sys
 import requests
 import io
+import atexit
 try:
     import pyotp
     import qrcode
@@ -39,6 +40,7 @@ from app_store import AppStore
 from backup_manager import BackupManager
 from buddy_backup_manager import BuddyBackupManager
 from watchdog_manager import WatchdogManager
+from power_ups_manager import PowerUpsManager
 
 
 def is_secure_system_device(device_name):
@@ -178,6 +180,7 @@ app_store = AppStore()
 backup_manager = None
 buddy_backup_manager = None
 watchdog_manager = WatchdogManager()
+power_ups_manager = PowerUpsManager()
 
 # Cache for storage information (TTL in seconds)
 STORAGE_CACHE = {
@@ -2160,6 +2163,55 @@ def system_power():
             return jsonify({'error': f'Failed to {action}: {str(e)}'}), 500
     else:
         return jsonify({'success': False, 'message': f'System {action} not supported on {platform.system()}'}), 400
+
+@app.route('/api/v1/system/power/ups', methods=['GET', 'POST'])
+@require_auth(require_admin=True)
+def system_power_ups():
+    """Get or update battery UPS behavior (charge limit + low-battery shutdown)."""
+    if request.method == 'GET':
+        status = power_ups_manager.run_monitor_check()
+        return jsonify({
+            'success': True,
+            'settings': power_ups_manager.get_settings(),
+            'status': status,
+        })
+
+    data = request.get_json(silent=True) or {}
+    payload = {}
+
+    if 'enabled' in data:
+        payload['enabled'] = bool(data.get('enabled'))
+
+    if 'charge_limit_percent' in data:
+        try:
+            payload['charge_limit_percent'] = int(data.get('charge_limit_percent'))
+        except Exception:
+            return jsonify({'error': 'charge_limit_percent must be an integer'}), 400
+
+    if 'shutdown_percent' in data:
+        try:
+            payload['shutdown_percent'] = int(data.get('shutdown_percent'))
+        except Exception:
+            return jsonify({'error': 'shutdown_percent must be an integer'}), 400
+
+    if 'monitor_interval_seconds' in data:
+        try:
+            payload['monitor_interval_seconds'] = int(data.get('monitor_interval_seconds'))
+        except Exception:
+            return jsonify({'error': 'monitor_interval_seconds must be an integer'}), 400
+
+    preview = power_ups_manager.get_settings().copy()
+    preview.update(payload)
+    if int(preview.get('shutdown_percent', 20)) >= int(preview.get('charge_limit_percent', 80)):
+        return jsonify({'error': 'shutdown_percent must be lower than charge_limit_percent'}), 400
+
+    saved = power_ups_manager.save_settings(payload)
+    status = power_ups_manager.run_monitor_check()
+    return jsonify({
+        'success': True,
+        'settings': saved,
+        'status': status,
+    })
 
 @app.route('/api/v1/system/network', methods=['GET'])
 @require_auth
@@ -4790,6 +4842,12 @@ if __name__ == '__main__':
     
     # Ensure directories exist
     ensure_directories()
+
+    try:
+        power_ups_manager.start()
+        atexit.register(power_ups_manager.stop)
+    except Exception as e:
+        print(f"Warning: Battery UPS monitor startup failed: {e}")
     
     # Mount existing pools on startup (persistence)
     mount_existing_pools()

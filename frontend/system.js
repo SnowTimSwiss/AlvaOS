@@ -11,6 +11,17 @@ const els = {
     netDns: document.getElementById('net-dns'),
     logViewer: document.getElementById('log-viewer'),
     timeDisplay: document.getElementById('system-time-display'),
+    upsEnabledToggle: document.getElementById('ups-enabled-toggle'),
+    upsChargeLimitInput: document.getElementById('ups-charge-limit-input'),
+    upsShutdownLimitInput: document.getElementById('ups-shutdown-limit-input'),
+    upsSaveBtn: document.getElementById('ups-save-btn'),
+    upsDevice: document.getElementById('ups-device'),
+    upsAcState: document.getElementById('ups-ac-state'),
+    upsBatteryState: document.getElementById('ups-battery-state'),
+    upsCapacity: document.getElementById('ups-capacity'),
+    upsChargeSupport: document.getElementById('ups-charge-support'),
+    upsThresholdCurrent: document.getElementById('ups-threshold-current'),
+    upsLastAction: document.getElementById('ups-last-action'),
 
     telegramEnabled: document.getElementById('telegram-enabled-toggle'),
     telegramToken: document.getElementById('telegram-bot-token'),
@@ -40,6 +51,7 @@ let currentTimeSettings = {
 };
 
 let currentAlertSettings = null;
+let currentUpsSettings = null;
 
 function getHeaders() {
     const token = localStorage.getItem('alvaos_token');
@@ -127,9 +139,133 @@ async function fetchSettings() {
         }
     }
 
+    await fetchUpsSettings();
     await fetchAlertSettings();
     await fetch2faStatus();
     await fetchWatchdogStatus();
+}
+
+function renderUpsSettings(data) {
+    const settings = data?.settings || {};
+    const status = data?.status || {};
+    currentUpsSettings = settings;
+
+    if (els.upsEnabledToggle) {
+        els.upsEnabledToggle.checked = !!settings.enabled;
+    }
+    if (els.upsChargeLimitInput) {
+        els.upsChargeLimitInput.value = Number(settings.charge_limit_percent || 80);
+    }
+    if (els.upsShutdownLimitInput) {
+        els.upsShutdownLimitInput.value = Number(settings.shutdown_percent || 20);
+    }
+
+    if (els.upsDevice) {
+        els.upsDevice.textContent = status.battery_present ? (status.battery_name || 'BAT') : 'No battery detected';
+    }
+    if (els.upsAcState) {
+        if (status.on_ac_power === true) {
+            els.upsAcState.textContent = 'AC Online';
+        } else if (status.on_ac_power === false) {
+            els.upsAcState.textContent = 'On Battery';
+        } else {
+            els.upsAcState.textContent = 'Unknown';
+        }
+    }
+    if (els.upsBatteryState) {
+        els.upsBatteryState.textContent = status.battery_status || '-';
+    }
+    if (els.upsCapacity) {
+        els.upsCapacity.textContent = Number.isFinite(status.capacity_percent) ? `${status.capacity_percent}%` : '-';
+    }
+    if (els.upsChargeSupport) {
+        els.upsChargeSupport.textContent = status.charge_limit_supported ? 'Supported' : 'Not supported';
+    }
+    if (els.upsThresholdCurrent) {
+        const end = status?.charge_limit_current?.end_percent;
+        els.upsThresholdCurrent.textContent = Number.isFinite(end) ? `${end}%` : '-';
+    }
+    if (els.upsLastAction) {
+        const action = status?.last_action || {};
+        if (action.type && action.message) {
+            els.upsLastAction.textContent = `${action.type}: ${action.message}`;
+        } else {
+            els.upsLastAction.textContent = '-';
+        }
+    }
+
+    if (els.upsChargeLimitInput) {
+        els.upsChargeLimitInput.disabled = !status.charge_limit_supported;
+        if (!status.charge_limit_supported) {
+            els.upsChargeLimitInput.title = 'This battery does not support configurable charge limits.';
+        } else {
+            els.upsChargeLimitInput.title = '';
+        }
+    }
+}
+
+async function fetchUpsSettings() {
+    try {
+        const res = await fetch(`${API_BASE}/system/power/ups`, { headers: getHeaders() });
+        if (res.status === 401) {
+            window.location.href = '/login.html';
+            return;
+        }
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) {
+            return;
+        }
+        renderUpsSettings(data);
+    } catch (e) {
+        console.warn('UPS settings fetch failed', e);
+    }
+}
+
+async function saveUpsSettings() {
+    const enabled = !!els.upsEnabledToggle?.checked;
+    const chargeLimit = Number(els.upsChargeLimitInput?.value || 80);
+    const shutdownLimit = Number(els.upsShutdownLimitInput?.value || 20);
+
+    if (!Number.isFinite(chargeLimit) || chargeLimit < 50 || chargeLimit > 100) {
+        alert('Charge Limit must be between 50 and 100.');
+        return;
+    }
+    if (!Number.isFinite(shutdownLimit) || shutdownLimit < 5 || shutdownLimit > 80) {
+        alert('Shutdown At must be between 5 and 80.');
+        return;
+    }
+    if (shutdownLimit >= chargeLimit) {
+        alert('Shutdown At must be lower than Charge Limit.');
+        return;
+    }
+
+    const payload = {
+        enabled,
+        charge_limit_percent: chargeLimit,
+        shutdown_percent: shutdownLimit,
+    };
+
+    try {
+        const res = await fetch(`${API_BASE}/system/power/ups`, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) {
+            alert(data.error || 'Failed to save UPS settings');
+            return;
+        }
+        renderUpsSettings(data);
+        if (window.showToast) {
+            window.showToast('Battery UPS settings saved.', 'success');
+        } else {
+            alert('Battery UPS settings saved.');
+        }
+    } catch (e) {
+        console.error(e);
+        alert('Connection failed while saving UPS settings.');
+    }
 }
 
 function renderAlertSettings(settings) {
@@ -678,7 +814,9 @@ document.addEventListener('DOMContentLoaded', () => {
     els.tfaInstallBtn?.addEventListener('click', install2faLibrary);
     els.tfaDisableBtn?.addEventListener('click', disable2fa);
     els.watchdogCheckBtn?.addEventListener('click', runWatchdogCheck);
+    els.upsSaveBtn?.addEventListener('click', saveUpsSettings);
 
     // Poll watchdog status every 30s
     setInterval(fetchWatchdogStatus, 30000);
+    setInterval(fetchUpsSettings, 30000);
 });
