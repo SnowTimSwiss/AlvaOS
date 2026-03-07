@@ -319,6 +319,105 @@ class AppStore:
             return None, f"App '{app_id}' not found in catalog"
         
         return catalog[app_id], None
+
+    def _tokenize_version(self, value: str) -> List[object]:
+        """Split a version string into comparable numeric/text tokens."""
+        cleaned = re.sub(r'^[^0-9a-zA-Z]+', '', str(value or '').strip().lower())
+        if not cleaned:
+            return []
+
+        tokens: List[object] = []
+        for part in re.findall(r'[0-9]+|[a-z]+', cleaned):
+            if part.isdigit():
+                tokens.append(int(part))
+            else:
+                tokens.append(part)
+        return tokens
+
+    def _compare_versions(self, left: str, right: str) -> Optional[int]:
+        """
+        Compare two catalog version strings.
+
+        Returns:
+            -1 if left < right, 0 if equal, 1 if left > right, None if unknown
+        """
+        left_value = str(left or '').strip()
+        right_value = str(right or '').strip()
+        if not left_value or not right_value:
+            return None
+
+        left_lower = left_value.lower()
+        right_lower = right_value.lower()
+        special_values = {'latest', 'stable', 'edge', 'nightly', 'main', 'master'}
+        if left_lower in special_values or right_lower in special_values:
+            if left_lower == right_lower:
+                return 0
+            return None
+
+        left_tokens = self._tokenize_version(left_value)
+        right_tokens = self._tokenize_version(right_value)
+        if not left_tokens or not right_tokens:
+            return None
+
+        max_len = max(len(left_tokens), len(right_tokens))
+        for index in range(max_len):
+            left_token = left_tokens[index] if index < len(left_tokens) else 0
+            right_token = right_tokens[index] if index < len(right_tokens) else 0
+
+            if type(left_token) is type(right_token):
+                if left_token < right_token:
+                    return -1
+                if left_token > right_token:
+                    return 1
+                continue
+
+            left_cmp = str(left_token)
+            right_cmp = str(right_token)
+            if left_cmp < right_cmp:
+                return -1
+            if left_cmp > right_cmp:
+                return 1
+
+        return 0
+
+    def _build_update_metadata(self, app_id: str, app_state: Dict) -> Dict:
+        """Derive installed/catalog version metadata for an installed app."""
+        source = str(app_state.get('source') or 'catalog').strip() or 'catalog'
+        installed_version = str(
+            app_state.get('installed_version')
+            or app_state.get('version')
+            or ''
+        ).strip()
+
+        metadata = {
+            'source': source,
+            'installed_version': installed_version,
+            'catalog_version': '',
+            'update_available': None,
+            'update_status': 'unknown'
+        }
+
+        if source == 'custom_compose':
+            metadata.update({
+                'update_available': False,
+                'update_status': 'unsupported'
+            })
+            return metadata
+
+        app_details, error = self.get_app_details(app_id)
+        if error or not app_details:
+            return metadata
+
+        catalog_version = str(app_details.get('version') or '').strip()
+        metadata['catalog_version'] = catalog_version
+
+        comparison = self._compare_versions(installed_version, catalog_version)
+        if comparison is None:
+            return metadata
+
+        metadata['update_available'] = comparison < 0
+        metadata['update_status'] = 'available' if comparison < 0 else 'up_to_date'
+        return metadata
     
     def _create_subvolume(self, path: str) -> Tuple[bool, Optional[str]]:
         """Create a Btrfs subvolume"""
@@ -645,6 +744,8 @@ class AppStore:
             apps_state[app_id] = {
                 'app_id': app_id,
                 'name': app_details.get('name', app_id),
+                'source': 'catalog',
+                'installed_version': str(app_details.get('version') or '').strip(),
                 'storage_path': app_storage_path,
                 'pool_path': pool_path,
                 'parent_subvolume': parent_subvolume,
@@ -773,6 +874,13 @@ class AppStore:
         if app_id not in apps_state:
             return False, f"App '{app_id}' is not installed"
 
+        app_state = apps_state.get(app_id) or {}
+        update_metadata = self._build_update_metadata(app_id, app_state)
+        if update_metadata.get('source') == 'custom_compose':
+            return False, "Custom compose apps are not updateable via catalog"
+        if update_metadata.get('update_available') is False:
+            return False, f"App '{app_id}' is already up to date"
+
         app_details, error = self.get_app_details(app_id)
         if error:
             return False, error
@@ -783,7 +891,6 @@ class AppStore:
                 return False, f"Operation for '{active_app_id}' is already in progress"
             return False, "Another app operation is already in progress"
 
-        app_state = apps_state.get(app_id) or {}
         storage_path = str(app_state.get('storage_path') or '').strip()
         if not storage_path:
             return False, f"Missing storage path for installed app '{app_id}'"
@@ -913,6 +1020,8 @@ class AppStore:
             app_state = apps_state.get(app_id) or {}
             app_state['app_id'] = app_id
             app_state['name'] = app_details.get('name', app_id)
+            app_state['source'] = str(app_state.get('source') or 'catalog').strip() or 'catalog'
+            app_state['installed_version'] = str(app_details.get('version') or '').strip()
             app_state['storage_path'] = storage_path
             app_state['port_mappings'] = port_mappings or {}
             app_state['volume_mappings'] = volume_mappings or {}
@@ -975,4 +1084,10 @@ class AppStore:
     
     def get_installed_apps(self) -> List[Dict]:
         """Get list of installed apps"""
-        return list(self._load_apps_state().values())
+        installed_apps: List[Dict] = []
+        for app_id, app_state in self._load_apps_state().items():
+            enriched_state = dict(app_state or {})
+            enriched_state['app_id'] = app_id
+            enriched_state.update(self._build_update_metadata(app_id, enriched_state))
+            installed_apps.append(enriched_state)
+        return installed_apps

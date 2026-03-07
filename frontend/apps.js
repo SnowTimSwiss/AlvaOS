@@ -73,6 +73,30 @@ function formatDate(value) {
     return date.toLocaleString();
 }
 
+function getUpdateButtonConfig(app) {
+    if (String(app?.source || 'catalog') === 'custom_compose') {
+        return {
+            disabled: true,
+            label: 'Update',
+            title: 'Custom compose apps are not updateable via catalog'
+        };
+    }
+
+    if (app?.update_available === false) {
+        return {
+            disabled: true,
+            label: 'Up to date',
+            title: 'This app is already on the newest catalog version'
+        };
+    }
+
+    return {
+        disabled: false,
+        label: 'Update',
+        title: ''
+    };
+}
+
 function setStoreMeta(message) {
     const metaEl = document.getElementById('apps-store-meta');
     if (metaEl) metaEl.textContent = message;
@@ -397,7 +421,7 @@ async function renderInspector() {
     const appContainers = containersLoaded ? getContainersForApp(selected.app_id) : [];
     const runningCount = appContainers.filter((c) => c.State === 'running').length;
     const appDetails = await getAppDetails(selected.app_id);
-    const canUpdate = selected.source !== 'custom_compose';
+    const updateButton = getUpdateButtonConfig(selected);
 
     if (selectedAppId !== selectedAtRender) {
         return;
@@ -417,9 +441,7 @@ async function renderInspector() {
 
             <div class="inspector-actions">
                 ${webUiUrl ? `<a class="btn-link" href="${escapeHtml(webUiUrl)}" target="_blank" rel="noopener noreferrer">Open Web UI</a>` : '<button class="btn-secondary" disabled style="opacity:0.6; cursor:not-allowed;">No Web UI detected</button>'}
-                ${canUpdate
-                    ? `<button class="btn-icon" onclick="updateApp('${escapeHtml(selected.app_id)}')">Update</button>`
-                    : '<button class="btn-icon" disabled style="opacity:0.55; cursor:not-allowed;" title="Custom compose apps are not updateable via catalog">Update</button>'}
+                <button class="btn-icon" ${updateButton.disabled ? 'disabled style="opacity:0.55; cursor:not-allowed;"' : `onclick="updateApp('${escapeHtml(selected.app_id)}')"`} ${updateButton.title ? `title="${escapeHtml(updateButton.title)}"` : ''}>${escapeHtml(updateButton.label)}</button>
                 <button class="btn-icon btn-danger" onclick="uninstallApp('${escapeHtml(selected.app_id)}')">Uninstall</button>
             </div>
 
@@ -1071,7 +1093,7 @@ async function waitForAppOperation(appId, expectedAction = 'update', timeoutSeco
 }
 
 async function updateApp(appId) {
-    const ok = window.confirm(`Update "${appId}" now?\nThis pulls new images and recreates app containers.`);
+    const ok = await window.showConfirm(`Update "${appId}" now?\nThis pulls new images and recreates app containers.`);
     if (!ok) return;
 
     try {
