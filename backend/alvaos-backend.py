@@ -1452,7 +1452,7 @@ def setup_2fa():
 @app.route('/api/v1/auth/2fa/install', methods=['POST'])
 @require_auth(require_admin=True)
 def install_2fa_library():
-    """Install missing 2FA dependencies and reload them without a full backend restart."""
+    """Repair/install missing 2FA system packages and reload them without a full backend restart."""
     ready, _err = _refresh_totp_runtime()
     if ready:
         return jsonify({
@@ -1462,19 +1462,28 @@ def install_2fa_library():
             'restart_required': False
         })
 
-    python_bin = sys.executable or 'python3'
-    install_cmd = [python_bin, '-m', 'pip', 'install', '--upgrade', 'pyotp', 'qrcode[pil]']
-    _result, install_err = run_sudo_command(install_cmd, timeout=240)
+    install_cmd = [
+        CMD['APT_GET'],
+        'install',
+        '-y',
+        '--no-install-recommends',
+        'python3-pyotp',
+        'python3-qrcode',
+        'python3-pil'
+    ]
+    _result, install_err = run_sudo_command(install_cmd, timeout=300, extra_env={
+        'DEBIAN_FRONTEND': 'noninteractive'
+    })
     if install_err:
-        return jsonify({'error': f'Failed to install 2FA library: {install_err}'}), 500
+        return jsonify({'error': f'Failed to install 2FA system packages: {install_err}'}), 500
 
     ready, reload_err = _refresh_totp_runtime()
     if not ready:
-        return jsonify({'error': f'2FA library installed but failed to load: {reload_err}'}), 500
+        return jsonify({'error': f'2FA packages installed but failed to load: {reload_err}'}), 500
 
     return jsonify({
         'success': True,
-        'message': '2FA library installed successfully. You can now enable 2FA.',
+        'message': '2FA packages installed successfully. You can now enable 2FA.',
         'totp_available': True,
         'restart_required': False
     })
@@ -4878,6 +4887,16 @@ def get_installed_apps():
     """Get list of installed apps"""
     apps = app_store.get_installed_apps()
     return jsonify({'apps': apps})
+
+@app.route('/api/v1/apps/<app_id>/update-status', methods=['GET'])
+@require_auth
+def get_app_update_status(app_id):
+    """Get update availability for a single installed app."""
+    force_refresh = request.args.get('force_refresh', '').strip().lower() in ('1', 'true', 'yes')
+    status, error = app_store.get_app_update_status(app_id, force_refresh=force_refresh)
+    if error:
+        return jsonify({'error': error}), 500
+    return jsonify(status or {})
 
 # Container Management
 @app.route('/api/v1/containers', methods=['GET'])

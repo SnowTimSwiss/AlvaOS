@@ -6,12 +6,15 @@ Manages app catalog and installation
 
 import json
 import copy
+import hashlib
 import os
 import re
 import subprocess
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
+import requests
 from docker_manager import DockerManager
 
 
@@ -25,10 +28,13 @@ class AppStore:
         self.catalog_file = self._get_catalog_path()
         self.apps_state_file = '/var/lib/alvaos/apps_state.json'
         self.install_status_file = '/var/lib/alvaos/app_install_status.json'
+        self.update_cache_file = '/var/lib/alvaos/app_update_cache.json'
+        self.update_cache_ttl_seconds = 1800
         
         # Status tracking
         import threading
         self._status_lock = threading.RLock()
+        self._update_cache_lock = threading.RLock()
         self._active_install_status = None
         self._last_status_write = 0
         
@@ -57,6 +63,47 @@ class AppStore:
             return None, f"Invalid catalog JSON: {str(e)}"
         except Exception as e:
             return None, str(e)
+
+    def _load_update_cache(self) -> Dict:
+        """Load cached app update probe results from disk."""
+        with self._update_cache_lock:
+            try:
+                if os.path.exists(self.update_cache_file):
+                    with open(self.update_cache_file, 'r') as f:
+                        data = json.load(f)
+                    return data if isinstance(data, dict) else {}
+            except Exception as e:
+                print(f"Error loading app update cache: {e}")
+        return {}
+
+    def _save_update_cache(self, cache: Dict) -> None:
+        """Persist cached app update probe results to disk."""
+        with self._update_cache_lock:
+            try:
+                with open(self.update_cache_file, 'w') as f:
+                    json.dump(cache or {}, f, indent=2)
+            except Exception as e:
+                print(f"Error saving app update cache: {e}")
+
+    def _read_cached_update_status(self, app_id: str, allow_stale: bool = False) -> Optional[Dict]:
+        """Return cached update status for an app if present and fresh enough."""
+        cache = self._load_update_cache()
+        entry = cache.get(str(app_id)) if isinstance(cache, dict) else None
+        if not isinstance(entry, dict):
+            return None
+
+        checked_at = float(entry.get('checked_at_ts') or 0)
+        if not allow_stale:
+            if checked_at <= 0 or (time.time() - checked_at) > self.update_cache_ttl_seconds:
+                return None
+
+        return dict(entry)
+
+    def _write_cached_update_status(self, app_id: str, payload: Dict) -> None:
+        """Store update status metadata for a single app."""
+        cache = self._load_update_cache()
+        cache[str(app_id)] = dict(payload or {})
+        self._save_update_cache(cache)
 
     def _is_operation_in_progress(self) -> Tuple[bool, Optional[str]]:
         """Check whether an app install/update operation is active."""
@@ -350,8 +397,6 @@ class AppStore:
         right_lower = right_value.lower()
         special_values = {'latest', 'stable', 'edge', 'nightly', 'main', 'master'}
         if left_lower in special_values or right_lower in special_values:
-            if left_lower == right_lower:
-                return 0
             return None
 
         left_tokens = self._tokenize_version(left_value)
@@ -380,6 +425,208 @@ class AppStore:
 
         return 0
 
+    def _extract_compose_images(self, app_details: Dict) -> List[str]:
+        """Return unique image references used by an app's compose definition."""
+        images: List[str] = []
+        seen = set()
+        services = ((app_details or {}).get('docker_compose') or {}).get('services') or {}
+        if not isinstance(services, dict):
+            return images
+
+        for service_config in services.values():
+            image = str((service_config or {}).get('image') or '').strip()
+            if not image or image in seen:
+                continue
+            seen.add(image)
+            images.append(image)
+        return images
+
+    def _parse_image_reference(self, image: str) -> Optional[Dict]:
+        """Normalize an image reference into registry/repository/reference parts."""
+        value = str(image or '').strip()
+        if not value:
+            return None
+
+        registry = 'docker.io'
+        remainder = value
+        first_segment = value.split('/', 1)[0]
+        if '.' in first_segment or ':' in first_segment or first_segment == 'localhost':
+            registry, _, remainder = value.partition('/')
+
+        reference = 'latest'
+        repository = remainder
+        if '@' in remainder:
+            repository, reference = remainder.split('@', 1)
+        else:
+            last_slash = remainder.rfind('/')
+            last_colon = remainder.rfind(':')
+            if last_colon > last_slash:
+                repository = remainder[:last_colon]
+                reference = remainder[last_colon + 1:]
+
+        if registry == 'docker.io' and '/' not in repository:
+            repository = f'library/{repository}'
+
+        if not repository:
+            return None
+
+        return {
+            'image': value,
+            'registry': registry,
+            'repository': repository,
+            'reference': reference or 'latest'
+        }
+
+    def _parse_www_authenticate(self, header_value: str) -> Dict[str, str]:
+        """Parse a WWW-Authenticate bearer challenge into key/value pairs."""
+        value = str(header_value or '').strip()
+        if not value.lower().startswith('bearer '):
+            return {}
+
+        attrs: Dict[str, str] = {}
+        for key, attr_value in re.findall(r'([A-Za-z_]+)="([^"]*)"', value):
+            attrs[key.lower()] = attr_value
+        return attrs
+
+    def _registry_request(self, method: str, url: str, headers: Dict[str, str], timeout: int, repository: str) -> requests.Response:
+        """Perform a registry request, following bearer auth challenges when needed."""
+        response = requests.request(method, url, headers=headers, timeout=timeout)
+        if response.status_code != 401:
+            return response
+
+        auth_attrs = self._parse_www_authenticate(response.headers.get('WWW-Authenticate', ''))
+        realm = auth_attrs.get('realm')
+        if not realm:
+            return response
+
+        params = {}
+        if auth_attrs.get('service'):
+            params['service'] = auth_attrs['service']
+        params['scope'] = auth_attrs.get('scope') or f'repository:{repository}:pull'
+
+        token_response = requests.get(realm, params=params, timeout=timeout, headers={
+            'User-Agent': 'AlvaOS-AppStore/1.0'
+        })
+        token_response.raise_for_status()
+        token_payload = token_response.json() if token_response.content else {}
+        token = token_payload.get('token') or token_payload.get('access_token')
+        if not token:
+            return response
+
+        authorized_headers = dict(headers or {})
+        authorized_headers['Authorization'] = f'Bearer {token}'
+        return requests.request(method, url, headers=authorized_headers, timeout=timeout)
+
+    def _get_remote_manifest_digest(self, image: str, timeout: int = 6) -> Tuple[Optional[str], Optional[str]]:
+        """Fetch the current registry manifest digest for an image reference."""
+        image_ref = self._parse_image_reference(image)
+        if not image_ref:
+            return None, "Invalid image reference"
+
+        registry_host = 'registry-1.docker.io' if image_ref['registry'] == 'docker.io' else image_ref['registry']
+        manifest_url = f"https://{registry_host}/v2/{image_ref['repository']}/manifests/{image_ref['reference']}"
+        headers = {
+            'Accept': ', '.join([
+                'application/vnd.oci.image.index.v1+json',
+                'application/vnd.docker.distribution.manifest.list.v2+json',
+                'application/vnd.oci.image.manifest.v1+json',
+                'application/vnd.docker.distribution.manifest.v2+json'
+            ]),
+            'User-Agent': 'AlvaOS-AppStore/1.0'
+        }
+
+        try:
+            response = self._registry_request('HEAD', manifest_url, headers=headers, timeout=timeout, repository=image_ref['repository'])
+            if response.status_code in (404, 405):
+                response = self._registry_request('GET', manifest_url, headers=headers, timeout=timeout, repository=image_ref['repository'])
+            response.raise_for_status()
+
+            digest = str(response.headers.get('Docker-Content-Digest') or '').strip()
+            if digest:
+                return digest, None
+
+            body = response.content or b''
+            if body:
+                return f"sha256:{hashlib.sha256(body).hexdigest()}", None
+            return None, "Registry response did not include a manifest digest"
+        except requests.RequestException as e:
+            return None, f"Registry request failed for {image}: {e}"
+        except Exception as e:
+            return None, f"Failed to inspect registry manifest for {image}: {e}"
+
+    def _probe_registry_update_status(self, app_id: str, app_details: Dict) -> Dict:
+        """Check whether any compose image has a newer remote manifest digest."""
+        images = self._extract_compose_images(app_details)
+        if not images:
+            return {
+                'update_available': None,
+                'update_status': 'unknown',
+                'update_source': 'registry',
+                'update_checked_at': datetime.utcnow().isoformat() + 'Z',
+                'checked_at_ts': time.time(),
+                'images': []
+            }
+
+        image_results: List[Dict] = []
+        any_update_available = False
+        any_known = False
+
+        for image in images:
+            local_digests, local_error = self.docker_manager.get_image_repo_digests(image)
+            if local_error:
+                image_results.append({
+                    'image': image,
+                    'status': 'unknown',
+                    'error': local_error
+                })
+                continue
+
+            remote_digest, remote_error = self._get_remote_manifest_digest(image)
+            if remote_error:
+                image_results.append({
+                    'image': image,
+                    'status': 'unknown',
+                    'error': remote_error
+                })
+                continue
+
+            normalized_local = {
+                digest.split('@', 1)[1]
+                for digest in (local_digests or [])
+                if '@' in str(digest)
+            }
+            if not normalized_local:
+                image_results.append({
+                    'image': image,
+                    'status': 'unknown',
+                    'error': 'Local image digest unavailable'
+                })
+                continue
+
+            any_known = True
+            image_has_update = remote_digest not in normalized_local
+            if image_has_update:
+                any_update_available = True
+
+            image_results.append({
+                'image': image,
+                'status': 'available' if image_has_update else 'up_to_date',
+                'remote_digest': remote_digest,
+                'local_digests': sorted(normalized_local)
+            })
+
+        checked_at_ts = time.time()
+        update_status = 'available' if any_update_available else ('up_to_date' if any_known else 'unknown')
+        return {
+            'app_id': app_id,
+            'update_available': True if any_update_available else (False if any_known else None),
+            'update_status': update_status,
+            'update_source': 'registry',
+            'update_checked_at': datetime.utcnow().isoformat() + 'Z',
+            'checked_at_ts': checked_at_ts,
+            'images': image_results
+        }
+
     def _build_update_metadata(self, app_id: str, app_state: Dict) -> Dict:
         """Derive installed/catalog version metadata for an installed app."""
         source = str(app_state.get('source') or 'catalog').strip() or 'catalog'
@@ -394,7 +641,8 @@ class AppStore:
             'installed_version': installed_version,
             'catalog_version': '',
             'update_available': None,
-            'update_status': 'unknown'
+            'update_status': 'unknown',
+            'update_source': 'catalog'
         }
 
         if source == 'custom_compose':
@@ -412,11 +660,19 @@ class AppStore:
         metadata['catalog_version'] = catalog_version
 
         comparison = self._compare_versions(installed_version, catalog_version)
-        if comparison is None:
-            return metadata
+        if comparison is not None:
+            metadata['update_available'] = comparison < 0
+            metadata['update_status'] = 'available' if comparison < 0 else 'up_to_date'
 
-        metadata['update_available'] = comparison < 0
-        metadata['update_status'] = 'available' if comparison < 0 else 'up_to_date'
+        cached_status = self._read_cached_update_status(app_id, allow_stale=True)
+        if cached_status:
+            metadata.update({
+                'update_available': cached_status.get('update_available'),
+                'update_status': cached_status.get('update_status', metadata['update_status']),
+                'update_source': cached_status.get('update_source', 'registry'),
+                'update_checked_at': cached_status.get('update_checked_at'),
+                'update_check_error': cached_status.get('update_check_error')
+            })
         return metadata
     
     def _create_subvolume(self, path: str) -> Tuple[bool, Optional[str]]:
@@ -875,7 +1131,10 @@ class AppStore:
             return False, f"App '{app_id}' is not installed"
 
         app_state = apps_state.get(app_id) or {}
-        update_metadata = self._build_update_metadata(app_id, app_state)
+        update_metadata, update_error = self.get_app_update_status(app_id, force_refresh=True)
+        if update_error:
+            return False, update_error
+        update_metadata = update_metadata or self._build_update_metadata(app_id, app_state)
         if update_metadata.get('source') == 'custom_compose':
             return False, "Custom compose apps are not updateable via catalog"
         if update_metadata.get('update_available') is False:
@@ -951,6 +1210,54 @@ class AppStore:
 
         thread.start()
         return True, None
+
+    def get_app_update_status(self, app_id: str, force_refresh: bool = False) -> Tuple[Optional[Dict], Optional[str]]:
+        """Return update availability for an installed app, using cached registry probes when possible."""
+        apps_state = self._load_apps_state()
+        if app_id not in apps_state:
+            return None, f"App '{app_id}' is not installed"
+
+        app_state = apps_state.get(app_id) or {}
+        metadata = self._build_update_metadata(app_id, app_state)
+        if metadata.get('source') == 'custom_compose':
+            return metadata, None
+
+        cached_status = None if force_refresh else self._read_cached_update_status(app_id, allow_stale=False)
+        if cached_status:
+            metadata.update({
+                'update_available': cached_status.get('update_available'),
+                'update_status': cached_status.get('update_status', metadata.get('update_status', 'unknown')),
+                'update_source': cached_status.get('update_source', 'registry'),
+                'update_checked_at': cached_status.get('update_checked_at'),
+                'update_check_error': cached_status.get('update_check_error')
+            })
+            return metadata, None
+
+        app_details, error = self.get_app_details(app_id)
+        if error:
+            return metadata, error
+
+        probe = self._probe_registry_update_status(app_id, app_details)
+        cache_payload = dict(probe)
+        cache_payload['update_check_error'] = None
+
+        unknown_errors = [
+            item.get('error')
+            for item in probe.get('images', [])
+            if item.get('status') == 'unknown' and item.get('error')
+        ]
+        if probe.get('update_status') == 'unknown' and unknown_errors:
+            cache_payload['update_check_error'] = unknown_errors[0]
+
+        self._write_cached_update_status(app_id, cache_payload)
+        metadata.update({
+            'update_available': cache_payload.get('update_available'),
+            'update_status': cache_payload.get('update_status', metadata.get('update_status', 'unknown')),
+            'update_source': cache_payload.get('update_source', 'registry'),
+            'update_checked_at': cache_payload.get('update_checked_at'),
+            'update_check_error': cache_payload.get('update_check_error')
+        })
+        return metadata, None
 
     def _update_app_worker(
         self,

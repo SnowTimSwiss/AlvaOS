@@ -677,7 +677,12 @@ async function setup2fa() {
 }
 
 async function disable2fa() {
-    const password = prompt('Please enter your root password to disable 2FA:');
+    const password = await window.showPrompt('Disable 2FA\nPlease enter your root password to continue.', {
+        type: 'password',
+        label: 'Root Password',
+        placeholder: 'Current root password',
+        confirmLabel: 'Disable 2FA'
+    });
     if (!password) return;
 
     try {

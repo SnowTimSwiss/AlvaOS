@@ -423,7 +423,16 @@ function getRollbackPassphraseIfNeeded() {
     if (!buddySettings?.encryption_enabled) {
         return { ok: true, passphrase: '' };
     }
-    const passphrase = window.prompt('Encryption password required for rollback/restore:');
+    return { ok: false, needsPrompt: true, passphrase: '' };
+}
+
+async function requestBackupPassphrase(message, confirmLabel = 'Continue') {
+    const passphrase = await window.showPrompt(message, {
+        type: 'password',
+        label: 'Encryption Password',
+        placeholder: 'Encryption password',
+        confirmLabel
+    });
     if (passphrase === null) return { ok: false, passphrase: '' };
     if (!String(passphrase).trim()) {
         backupNotify('Encryption password is required', 'warning');
@@ -833,7 +842,10 @@ async function restoreDataSnapshot(snapshotPath, sourcePath) {
     if (!snapshotPath) return;
     const ok = await window.showConfirm('Restore this snapshot?\nCurrent data will be replaced and moved to a pre-restore backup path.');
     if (!ok) return;
-    const pass = getRollbackPassphraseIfNeeded();
+    let pass = getRollbackPassphraseIfNeeded();
+    if (pass.needsPrompt) {
+        pass = await requestBackupPassphrase('Restore Snapshot\nEncryption password required for rollback or restore.', 'Start Restore');
+    }
     if (!pass.ok) return;
 
     backupNotify('Restoring snapshot...', 'info');
@@ -907,7 +919,10 @@ async function prepareSystemRollback(snapshotPath) {
     if (!snapshotPath) return;
     const ok = await window.showConfirm('Prepare full system rollback to this snapshot?\nSystem will boot into that snapshot after reboot.');
     if (!ok) return;
-    const pass = getRollbackPassphraseIfNeeded();
+    let pass = getRollbackPassphraseIfNeeded();
+    if (pass.needsPrompt) {
+        pass = await requestBackupPassphrase('System Rollback\nEncryption password required for rollback or restore.', 'Prepare Rollback');
+    }
     if (!pass.ok) return;
 
     const response = await backupApi('/backup/system/rollback', {
@@ -1283,13 +1298,9 @@ async function restoreBuddyRemoteSnapshot(streamId, sourcePath, encrypted) {
 
     let passphrase = '';
     if (encrypted) {
-        const entered = window.prompt('Encryption password required for remote restore:');
-        if (entered === null) return;
-        if (!String(entered).trim()) {
-            backupNotify('Encryption password is required', 'warning');
-            return;
-        }
-        passphrase = String(entered);
+        const entered = await requestBackupPassphrase('Remote Restore\nEncryption password required for remote restore.', 'Start Restore');
+        if (!entered.ok) return;
+        passphrase = entered.passphrase;
     }
 
     const response = await backupApi('/backup/buddy/restore/remote', {

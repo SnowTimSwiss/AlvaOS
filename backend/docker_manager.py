@@ -97,6 +97,34 @@ class DockerManager:
             return None, "Container not found"
         except json.JSONDecodeError as e:
             return None, f"Failed to parse container details: {str(e)}"
+
+    def get_image_repo_digests(self, image: str) -> Tuple[Optional[List[str]], Optional[str]]:
+        """
+        Return the locally known RepoDigests for an image reference.
+
+        Args:
+            image: Image reference such as 'nginx:latest'
+
+        Returns:
+            Tuple of (list of repo digests, error message)
+        """
+        result, error = self._run_docker_command([
+            'image',
+            'inspect',
+            image,
+            '--format',
+            '{{json .RepoDigests}}'
+        ])
+        if error:
+            return None, error
+
+        try:
+            digests = json.loads((result.stdout or '').strip() or '[]')
+            if not isinstance(digests, list):
+                return [], None
+            return [str(item) for item in digests if str(item).strip()], None
+        except json.JSONDecodeError as e:
+            return None, f"Failed to parse image digests: {str(e)}"
     
     def start_container(self, container_id: str) -> Tuple[bool, Optional[str]]:
         """

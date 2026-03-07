@@ -95,6 +95,97 @@ window.confirmModal = function (message, onConfirm, onCancel) {
 
 window.showConfirm = window.confirmModal;
 
+window.promptModal = function (message, options = {}) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+
+    let title = options.title || 'Input Required';
+    let body = String(message || '');
+    if (!options.title && body.includes('\n')) {
+        const parts = body.split('\n');
+        title = parts[0] || title;
+        body = parts.slice(1).join('<br>');
+    }
+
+    const inputType = options.type || 'text';
+    const placeholder = options.placeholder || '';
+    const confirmLabel = options.confirmLabel || 'Continue';
+    const cancelLabel = options.cancelLabel || 'Cancel';
+    const initialValue = options.value || '';
+    const fieldLabel = options.label || '';
+    const required = options.required !== false;
+
+    overlay.innerHTML = `
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="modal-prompt-title">
+            <div class="modal-title" id="modal-prompt-title">${title}</div>
+            <div class="modal-body">
+                ${body}
+                ${fieldLabel ? `<div style="margin-top: 1rem; margin-bottom: 0.4rem; font-weight: 600; text-align: left;">${fieldLabel}</div>` : ''}
+                <input
+                    id="modal-prompt-input"
+                    type="${inputType}"
+                    value="${String(initialValue)
+                        .replace(/&/g, '&amp;')
+                        .replace(/"/g, '&quot;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')}"
+                    placeholder="${String(placeholder)
+                        .replace(/&/g, '&amp;')
+                        .replace(/"/g, '&quot;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')}"
+                    style="width: 100%; margin-top: 1rem; padding: 0.8rem 0.9rem; border-radius: 6px; border: 1px solid var(--bg-border); background: var(--bg-card); color: var(--text-primary);">
+            </div>
+            <div class="modal-actions">
+                <button id="modal-prompt-cancel" class="btn-secondary">${cancelLabel}</button>
+                <button id="modal-prompt-confirm" class="btn-primary">${confirmLabel}</button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector('#modal-prompt-input');
+    const confirmBtn = overlay.querySelector('#modal-prompt-confirm');
+    const cancelBtn = overlay.querySelector('#modal-prompt-cancel');
+
+    const syncState = () => {
+        if (!confirmBtn) return;
+        confirmBtn.disabled = required && !String(input?.value || '').trim();
+    };
+
+    if (input) {
+        input.focus();
+        input.select();
+        input.addEventListener('input', syncState);
+        input.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && !(required && !String(input.value || '').trim())) {
+                event.preventDefault();
+                confirmBtn?.click();
+            }
+        });
+    }
+    syncState();
+
+    return new Promise((resolve) => {
+        cancelBtn.onclick = () => {
+            overlay.remove();
+            resolve(null);
+        };
+
+        confirmBtn.onclick = () => {
+            const value = String(input?.value || '');
+            if (required && !value.trim()) {
+                input?.focus();
+                return;
+            }
+            overlay.remove();
+            resolve(value);
+        };
+    });
+};
+
+window.showPrompt = window.promptModal;
+
 const UPDATE_CACHE_KEYS = {
     lastCheck: 'alvaos_update_last_check',
     available: 'alvaos_update_available',
