@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlvaOS - Welcome Wizard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 1rem;
+            background: var(--bg-body);
+        }
+
+        .setup-container {
+            max-width: 550px;
+            width: 100%;
+            background: var(--bg-card);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-lg);
+            padding: 2.5rem;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+
+        .logo {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .logo h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, var(--accent-primary), #60efff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* Stepper */
+        .stepper {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 2.5rem;
+            position: relative;
+        }
+
+        .stepper::before {
+            content: '';
+            position: absolute;
+            top: 15px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--border-default);
+            z-index: 1;
+        }
+
+        .step {
+            width: 32px;
+            height: 32px;
+            background: var(--bg-card);
+            border: 2px solid var(--border-default);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.8rem;
+            color: var(--text-tertiary);
+            z-index: 2;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .step.active {
+            border-color: var(--accent-primary);
+            color: var(--accent-primary);
+            box-shadow: 0 0 15px rgba(58, 134, 255, 0.4);
+            transform: scale(1.1);
+        }
+
+        .step.completed {
+            background: var(--accent-primary);
+            border-color: var(--accent-primary);
+            color: white;
+        }
+
+        /* Wizard Sections */
+        .wizard-step {
+            display: none;
+            animation: slideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .wizard-step.active {
+            display: block;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .wizard-step h2 {
+            font-size: 1.5rem;
+            margin-bottom: 0.75rem;
+            color: var(--text-primary);
+        }
+
+        .wizard-step p {
+            color: var(--text-secondary);
+            margin-bottom: 1.5rem;
+            line-height: 1.6;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 0.75rem;
+            background: var(--bg-body);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 0.95rem;
+            transition: all 0.2s;
+        }
+
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px rgba(58, 134, 255, 0.1);
+        }
+
+        .password-requirements {
+            margin-top: 0.5rem;
+            padding: 0.75rem;
+            background: var(--bg-hover);
+            border-radius: var(--radius-default);
+            font-size: 0.85rem;
+        }
+
+        .password-requirements ul {
+            margin: 0.5rem 0 0 1.25rem;
+            color: var(--text-secondary);
+            list-style-type: none;
+            padding: 0;
+        }
+
+        .password-requirements li {
+            margin-bottom: 0.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .password-requirements li::before {
+            content: 'o';
+            font-size: 0.8rem;
+        }
+
+        .password-requirements li.valid {
+            color: var(--accent-success);
+        }
+
+        .password-requirements li.valid::before {
+            content: '+';
+        }
+
+        /* Nav Buttons */
+        .wizard-nav {
+            display: flex;
+            justify-content: flex-end;
+            gap: 1rem;
+            margin-top: 2rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--border-default);
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            background: var(--accent-primary);
+            color: white;
+            border: none;
+            border-radius: var(--radius-btn);
+            font-weight: 600;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn:hover:not(:disabled) { 
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+
+        .btn:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-secondary { 
+            background: transparent; 
+            color: var(--text-secondary); 
+            border: 1px solid var(--border-default); 
+        }
+        .btn-secondary:hover:not(:disabled) {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .error-message {
+            background: rgba(248, 81, 73, 0.15);
+            color: var(--accent-danger);
+            border: 1px solid rgba(248, 81, 73, 0.3);
+            padding: 0.875rem;
+            border-radius: var(--radius-default);
+            margin-bottom: 1rem;
+            font-size: 0.875rem;
+        }
+
+        .success-message {
+            background: rgba(35, 134, 54, 0.15);
+            color: var(--accent-success);
+            border: 1px solid rgba(35, 134, 54, 0.3);
+            padding: 1.5rem;
+            border-radius: var(--radius-lg);
+            text-align: center;
+        }
+
+        
+
+        .setup-spinner {
+            width: 2rem;
+            height: 2rem;
+            margin: 1rem auto 0;
+            border: 2px solid var(--border-default);
+            border-top-color: var(--accent-primary);
+            border-radius: 50%;
+            animation: setupSpin 1s linear infinite;
+        }
+
+        @keyframes setupSpin {
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="setup-container">
+        <div class="logo">
+            <h1>AlvaOS</h1>
+        </div>
+
+        <div class="stepper">
+            <div class="step active" data-step="1">1</div>
+            <div class="step" data-step="2">2</div>
+            <div class="step" data-step="3">3</div>
+            <div class="step" data-step="4">4</div>
+        </div>
+
+        <div id="error-container"></div>
+
+        <!-- Step 1: Welcome -->
+        <div class="wizard-step active" id="wizard-step-1">
+            <h2>Welcome to AlvaOS!</h2>
+            <p>Thank you for choosing AlvaOS. This wizard will guide you through the essential initial steps to get your system ready for use.</p>
+            <div class="info-card">
+                <h3 style="font-size: 1rem; margin-bottom: 0.5rem; color: var(--text-primary);">System Status:</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; font-size: 0.85rem;">
+                    <div style="color: var(--text-tertiary);">Status:</div>
+                    <div style="color: var(--accent-success); font-weight: 600;">Ready for Configuration</div>
+                    <div style="color: var(--text-tertiary);">Detected IP:</div>
+                    <div id="detected-ip" style="font-family: 'JetBrains Mono', monospace;">Loading...</div>
+                </div>
+            </div>
+            <p style="margin-top: 1.5rem; font-size: 0.9rem;">Click <strong>Continue</strong> to start the configuration.</p>
+        </div>
+
+        <!-- Step 2: Password -->
+        <div class="wizard-step" id="wizard-step-2">
+            <h2>Security Configuration</h2>
+            <p>Please choose a secure password for the <strong>root</strong> account. This password provides full administrative access to your system.</p>
+            
+            <div class="form-group">
+                <label for="password">New Root Password</label>
+                <input type="password" id="password" required autocomplete="new-password" placeholder="********">
+            </div>
+            <div class="form-group">
+                <label for="password-confirm">Confirm Password</label>
+                <input type="password" id="password-confirm" required autocomplete="new-password" placeholder="********">
+            </div>
+
+            <div class="password-requirements">
+                <strong>Password Requirements:</strong>
+                <ul>
+                    <li id="req-length">At least 8 characters</li>
+                    <li id="req-match">Passwords match</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Step 3: Timezone -->
+        <div class="wizard-step" id="wizard-step-3">
+            <h2>Regional Settings</h2>
+            <p>Specify your preferred timezone to ensure system logs and scheduled tasks use the correct local time.</p>
+            
+            <div class="form-group">
+                <label for="timezone-select">Select Timezone</label>
+                <select id="timezone-select">
+                    <option value="UTC">UTC (Universal Coordinated Time)</option>
+                    <option value="Europe/Berlin">Europe/Berlin</option>
+                    <option value="Europe/London">Europe/London</option>
+                    <option value="Europe/Paris">Europe/Paris</option>
+                    <option value="America/New_York">America/New_York</option>
+                    <option value="America/Chicago">America/Chicago</option>
+                    <option value="America/Denver">America/Denver</option>
+                    <option value="America/Los_Angeles">America/Los_Angeles</option>
+                    <option value="Asia/Tokyo">Asia/Tokyo</option>
+                    <option value="Asia/Shanghai">Asia/Shanghai</option>
+                    <option value="Australia/Sydney">Australia/Sydney</option>
+                </select>
+            </div>
+            <p style="font-size: 0.85rem; color: var(--text-tertiary);">Don't worry, you can easily change this later in the System Settings dashboard.</p>
+        </div>
+
+        <!-- Step 4: Finish -->
+        <div class="wizard-step" id="wizard-step-4">
+            <h2>Review & Finish</h2>
+            <p>Configuration complete! Review your settings before finishing the setup.</p>
+            
+            <div class="info-card">
+                <ul style="list-style: none; padding: 0; font-size: 0.9rem; margin: 0;">
+                    <li style="margin-bottom: 0.75rem; display: flex; justify-content: space-between;">
+                        <span style="color: var(--text-secondary);">Administrator:</span>
+                        <span style="font-weight: 600; color: var(--text-primary);">root</span>
+                    </li>
+                    <li style="display: flex; justify-content: space-between;">
+                        <span style="color: var(--text-secondary);">Timezone:</span>
+                        <span id="finish-tz" style="font-weight: 600; color: var(--text-primary);">-</span>
+                    </li>
+                </ul>
+            </div>
+            <p style="margin-top: 1.5rem; font-size: 0.95rem; font-weight: 600; color: var(--text-primary);">Ready to launch?</p>
+            <p style="font-size: 0.9rem;">Once you click <strong>Complete Setup</strong>, AlvaOS will apply your settings and take you to your new dashboard.</p>
+        </div>
+
+        <div class="wizard-nav">
+            <button class="btn btn-secondary" id="btn-prev" style="display: none;">Back</button>
+            <button class="btn" id="btn-next">Continue</button>
+        </div>
+
+        <div style="margin-top: 2rem; text-align: center; font-size: 0.8rem; color: var(--text-tertiary); font-family: 'JetBrains Mono', monospace;">
+            AlvaOS {{VERSION}}
+        </div>
+    </div>
+
+    <script src="password-toggle.js"></script>
+        <script>
+        const API_BASE = '/api/v1';
+        let currentStep = 1;
+
+        const els = {
+            steps: document.querySelectorAll('.wizard-step'),
+            stepIndicators: document.querySelectorAll('.step'),
+            btnPrev: document.getElementById('btn-prev'),
+            btnNext: document.getElementById('btn-next'),
+            password: document.getElementById('password'),
+            confirm: document.getElementById('password-confirm'),
+            timezone: document.getElementById('timezone-select'),
+            error: document.getElementById('error-container'),
+            detectedIp: document.getElementById('detected-ip'),
+            reviewTz: document.getElementById('finish-tz')
+        };
+
+        function showSetupError(message) {
+            els.error.textContent = '';
+            const box = document.createElement('div');
+            box.className = 'error-message';
+            box.textContent = String(message || 'Setup failed');
+            els.error.appendChild(box);
+        }
+
+        async function init() {
+            try {
+                const statusRes = await fetch(`${API_BASE}/setup/status`);
+                if (statusRes.ok) {
+                    const status = await statusRes.json();
+                    if (status.setup_complete) {
+                        const token = localStorage.getItem('alvaos_token');
+                        window.location.href = token ? '/' : '/login.html';
+                        return false;
+                    }
+                }
+            } catch (_e) {
+                // Continue and show setup UI even if status check fails.
+            }
+
+            try {
+                const res = await fetch(`${API_BASE}/system/info`);
+                if (res.ok) {
+                    const data = await res.json();
+                    els.detectedIp.textContent = data?.network?.ip_address || 'Unavailable';
+                } else {
+                    els.detectedIp.textContent = 'Unavailable';
+                }
+            } catch (_e) {
+                els.detectedIp.textContent = 'Disconnected';
+            }
+            return true;
+        }
+
+        function updateWizardUI() {
+            els.steps.forEach((step, idx) => {
+                step.classList.toggle('active', idx + 1 === currentStep);
+            });
+
+            els.stepIndicators.forEach((ind, idx) => {
+                const stepNum = idx + 1;
+                ind.classList.toggle('active', stepNum === currentStep);
+                ind.classList.toggle('completed', stepNum < currentStep);
+            });
+
+            els.btnPrev.style.display = currentStep > 1 ? 'block' : 'none';
+            els.btnNext.textContent = currentStep === 4 ? 'Complete Setup' : 'Continue';
+
+            if (currentStep === 4) {
+                els.reviewTz.textContent = els.timezone.options[els.timezone.selectedIndex].text;
+            }
+
+            validateCurrentStep();
+        }
+
+        function validateCurrentStep() {
+            let isValid = true;
+            if (currentStep === 2) {
+                const password = els.password.value;
+                const confirm = els.confirm.value;
+                const lengthValid = password.length >= 8;
+                const matchValid = password === confirm && password.length > 0;
+
+                document.getElementById('req-length').className = lengthValid ? 'valid' : '';
+                document.getElementById('req-match').className = matchValid ? 'valid' : '';
+
+                isValid = lengthValid && matchValid;
+            }
+            els.btnNext.disabled = !isValid;
+        }
+
+        els.btnNext.addEventListener('click', async () => {
+            if (currentStep < 4) {
+                currentStep++;
+                updateWizardUI();
+            } else {
+                finishSetup();
+            }
+        });
+
+        els.btnPrev.addEventListener('click', () => {
+            if (currentStep > 1) {
+                currentStep--;
+                updateWizardUI();
+            }
+        });
+
+        async function finishSetup() {
+            els.btnNext.disabled = true;
+            els.btnNext.textContent = 'Applying...';
+            els.error.textContent = '';
+
+            try {
+                const response = await fetch(`${API_BASE}/setup/complete`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        password: els.password.value,
+                        timezone: els.timezone.value
+                    })
+                });
+
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Setup failed');
+
+                localStorage.setItem('alvaos_token', data.token);
+                document.querySelector('.setup-container').innerHTML = `
+                    <div class="logo"><h1>AlvaOS</h1></div>
+                    <div class="success-message">
+                        <h2 style="margin-bottom: 1rem;">Setup Complete!</h2>
+                        <p style="margin-bottom: 1rem; color: var(--text-primary);">Setting up your AlvaOS workspace...</p>
+                        <div class="setup-spinner"></div>
+                    </div>
+                `;
+
+                setTimeout(() => window.location.href = '/', 2000);
+            } catch (error) {
+                showSetupError(error.message);
+                els.btnNext.disabled = false;
+                els.btnNext.textContent = 'Complete Setup';
+            }
+        }
+
+        [els.password, els.confirm].forEach((input) => {
+            input.addEventListener('input', validateCurrentStep);
+        });
+
+        init().then((shouldRender) => {
+            if (shouldRender) updateWizardUI();
+        });
+    </script>
+</body>
+</html>

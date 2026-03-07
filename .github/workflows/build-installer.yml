@@ -1,0 +1,103 @@
+name: Build AlvaOS Installer
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  build-installer:
+    runs-on: ubuntu-latest
+    container: 
+      image: debian:bookworm
+      options: --privileged
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "release" ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+          else
+            VERSION="0.0.0-dev${{ github.sha }}"
+            # Shorten SHA for cleaner version
+            VERSION="0.0.0-dev$(echo ${{ github.sha }} | cut -c1-7)"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Building AlvaOS version: ${VERSION}"
+      
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          apt-get install -y \
+            python3 \
+            sudo \
+            git \
+            live-build \
+            syslinux-utils \
+            xorriso \
+            mtools \
+            dosfstools \
+            isolinux \
+            shim-signed \
+            grub-common \
+            grub-efi-amd64-bin \
+            grub-pc-bin \
+            squashfs-tools \
+            apt-file
+
+      - name: Validate privileged command mappings
+        run: |
+          python3 scripts/ci/check_privileged_commands.py
+      
+      - name: Build installer image
+        run: |
+          cd installer
+          chmod +x build.sh
+          sudo ./build.sh
+        env:
+          ALVAOS_VERSION: ${{ steps.version.outputs.version }}
+      
+      - name: Generate checksums
+        run: |
+          cd installer/build
+          # Ensure ISO and checksums are owned by the current user
+          sudo chown $USER:$USER *.iso checksums.txt 2>/dev/null || true
+          sudo sha256sum alvaos-installer-*.iso | sudo tee checksums.txt > /dev/null
+          sudo chown $USER:$USER checksums.txt
+          cat checksums.txt
+      
+      - name: Upload installer artifact (for non-release builds)
+        if: github.event_name != 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: alvaos-installer-${{ steps.version.outputs.version }}
+          path: |
+            installer/build/[Aa][Ll][Vv][Aa][Oo][Ss]-installer-*.iso
+            installer/build/checksums.txt
+          retention-days: 30
+      
+      - name: Upload installer to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            installer/build/[Aa][Ll][Vv][Aa][Oo][Ss]-installer-*.iso
+            installer/build/checksums.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Display build info
+        run: |
+          echo "✅ Build completed successfully!"
+          echo "Version: ${{ steps.version.outputs.version }}"
+          echo "Event: ${{ github.event_name }}"
+          ls -lh installer/build/
+          echo ""
+          echo "Checksums:"
+          cat installer/build/checksums.txt

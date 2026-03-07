@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlvaOS - Users</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="notifications.css">
+    <style>
+        .users-intro {
+            margin-bottom: 24px;
+        }
+
+        .users-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .users-subtitle {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        .users-card-icon {
+            color: var(--text-secondary);
+        }
+
+        .users-create-btn {
+            width: 100%;
+        }
+
+        .users-list-card {
+            grid-column: 1 / -1;
+        }
+
+        .users-loading,
+        .users-empty,
+        .users-error,
+        .users-denied {
+            color: var(--text-secondary);
+        }
+
+        .users-error,
+        .users-denied {
+            color: var(--accent-danger);
+        }
+
+        .user-row {
+            margin-bottom: 12px;
+        }
+
+        .user-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .user-row.is-busy {
+            opacity: 0.7;
+        }
+
+        .user-row-main {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .user-row-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .user-row-name {
+            font-weight: 600;
+            font-size: 1.05rem;
+        }
+
+        .user-role-badge {
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: var(--bg-card);
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .user-role-badge.admin {
+            background: var(--accent-warning);
+        }
+
+        .user-role-badge.user {
+            background: var(--text-secondary);
+        }
+
+        .user-row-state {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            margin-top: 2px;
+        }
+
+        .user-row-created {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            opacity: 0.7;
+        }
+
+        .user-row-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .user-role-select {
+            background: var(--bg-body);
+            color: var(--text-primary);
+            border: 1px solid var(--border-default);
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+
+        .user-delete-btn {
+            border-color: var(--accent-danger);
+            color: var(--accent-danger);
+        }
+
+        .user-modal-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border-default);
+            border-radius: 8px;
+            padding: 1.5rem;
+            max-width: 420px;
+            width: 90%;
+        }
+
+        .user-modal-title {
+            margin-bottom: 0.5rem;
+            color: var(--text-primary);
+        }
+
+        .user-modal-text {
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+        }
+
+        .user-modal-input {
+            width: 100%;
+            margin-bottom: 1.5rem;
+            background: var(--bg-body);
+            color: var(--text-primary);
+            border: 1px solid var(--border-default);
+            padding: 8px;
+            border-radius: 4px;
+        }
+
+        .user-modal-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .user-modal-actions button {
+            flex: 1;
+        }
+
+        @media (max-width: 760px) {
+            .user-row-actions {
+                width: 100%;
+            }
+
+            .user-row-actions .btn-secondary,
+            .user-row-actions .user-role-select {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="logo-area">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round"
+                    stroke-linejoin="round" style="color: var(--accent-primary);" />
+            </svg>
+            <div class="logo-text">AlvaOS</div>
+        </div>
+
+        <nav>
+            <a href="index.html" class="nav-link"><i data-lucide="house"></i> Dashboard</a>
+            <a href="storage.html" class="nav-link"><i data-lucide="hard-drive"></i> Storage</a>
+            <a href="apps.html" class="nav-link"><i data-lucide="blocks"></i> Apps</a>
+            <a href="backup.html" class="nav-link"><i data-lucide="refresh-cw"></i> Backup</a>
+            <a href="users.html" class="nav-link active"><i data-lucide="users"></i> Users</a>
+            <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw"></i> Updates <span class="nav-badge"
+                    id="updates-nav-badge" style="display:none;">!</span></a>
+            <div style="flex:1"></div>
+            <a href="system.html" class="nav-link"><i data-lucide="settings"></i> System</a>
+        </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="main">
+        <header class="topbar">
+            <div class="breadcrumbs">
+                Users / <span>Management</span>
+            </div>
+            <div class="status-badge" style="gap:10px;">
+                <div class="status-badge" style="border:none; background:transparent; padding:0;">
+                    <div class="status-dot"></div>
+                    <span>Online</span>
+                </div>
+            </div>
+        </header>
+
+        <div class="content-scroll">
+            <div id="update-banner-slot"></div>
+            <div class="users-intro">
+                <h1 class="users-title">User Management</h1>
+                <p class="users-subtitle">Create users, assign roles, and manage SMB
+                    access.</p>
+            </div>
+
+            <div class="dashboard-grid">
+                <!-- Create User -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Create User</div>
+                        <div class="users-card-icon"><i data-lucide="user-round"></i></div>
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label" for="user-name-input">Username</label>
+                        <input type="text" id="user-name-input" placeholder="e.g., alex" />
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label" for="user-pass-input">Password</label>
+                        <input type="password" id="user-pass-input" placeholder="Minimum 8 characters" />
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label" for="user-role-select">Role</label>
+                        <select id="user-role-select">
+                            <option value="user" selected>User</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
+
+                    <button id="create-user-btn" class="btn-primary users-create-btn">Create User</button>
+                </div>
+
+                <!-- Users List -->
+                <div class="card users-list-card">
+                    <div class="card-header">
+                        <div class="card-title">Existing Users</div>
+                        <div class="users-card-icon"><i data-lucide="clipboard-list"></i></div>
+                    </div>
+                    <div id="users-container" class="list-group">
+                        Loading users...
+                    </div>
+                </div>
+            </div>
+
+            <footer
+                style="margin-top:2rem; padding-top:1rem; border-top:1px solid var(--border-subtle); color:var(--text-secondary); font-size:0.8rem;">
+                AlvaOS {{VERSION}} &bull; <a href="https://github.com/SnowTimSwiss/AlvaOS" target="_blank"
+                    style="color:var(--text-secondary)">GitHub</a>
+            </footer>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script src="icons.js"></script>
+    <script src="notifications.js"></script>
+    <script src="feedback.js"></script>
+    <script src="app.js"></script>
+    <script src="password-toggle.js"></script>
+    <script src="users.js"></script>
+</body>
+
+</html>
+

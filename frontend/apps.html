@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlvaOS - Apps</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="notifications.css">
+    <style>
+        .apps-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: var(--space-md);
+            margin-bottom: var(--space-lg);
+        }
+
+        .app-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            padding: var(--space-md);
+            transition: border-color 0.2s, transform 0.2s;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .app-card:hover {
+            border-color: var(--accent-primary);
+            transform: translateY(-2px);
+        }
+
+        .app-icon {
+            width: 64px;
+            height: 64px;
+            border-radius: var(--radius-default);
+            margin-bottom: var(--space-md);
+            background: var(--bg-body);
+            border: 1px solid var(--border-default);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            overflow: hidden;
+        }
+
+        .app-icon-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .app-name {
+            font-size: 1.05rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+
+        .app-description {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: var(--space-md);
+            flex: 1;
+            line-height: 1.4;
+        }
+
+        .app-category {
+            display: inline-block;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            background: var(--bg-body);
+            padding: 4px 8px;
+            border-radius: 4px;
+            margin-bottom: var(--space-sm);
+        }
+
+        .app-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .containers-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--bg-card);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            overflow: hidden;
+        }
+
+        .table-scroll .containers-table {
+            min-width: 820px;
+        }
+
+        .containers-table th {
+            background: var(--bg-body);
+            padding: 12px;
+            text-align: left;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            border-bottom: 1px solid var(--border-default);
+        }
+
+        .containers-table td {
+            padding: 12px;
+            border-bottom: 1px solid var(--border-default);
+            color: var(--text-primary);
+            font-size: 0.9rem;
+        }
+
+        .containers-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .containers-table tr:hover {
+            background: var(--bg-hover);
+        }
+
+        .container-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .container-status.running {
+            background: rgba(35, 134, 54, 0.15);
+            color: var(--accent-success);
+        }
+
+        .container-status.stopped {
+            background: rgba(139, 148, 158, 0.15);
+            color: var(--text-secondary);
+        }
+
+        .container-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .btn-icon {
+            background: var(--bg-body);
+            border: 1px solid var(--border-default);
+            color: var(--text-primary);
+            padding: 6px 10px;
+            border-radius: var(--radius-btn);
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+
+        .btn-icon:hover {
+            border-color: var(--accent-primary);
+            background: var(--bg-hover);
+        }
+
+        .btn-danger {
+            border-color: var(--accent-danger);
+            color: var(--accent-danger);
+        }
+
+        .btn-danger:hover {
+            background: rgba(248, 81, 73, 0.1);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: var(--text-secondary);
+        }
+
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        .port-badge {
+            display: inline-block;
+            background: var(--bg-body);
+            border: 1px solid var(--border-default);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-secondary);
+            margin-right: 4px;
+        }
+
+        .apps-workspace {
+            display: grid;
+            grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+            gap: var(--space-md);
+        }
+
+        .apps-list {
+            background: var(--bg-card);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+
+        .app-list-item {
+            border: 1px solid var(--border-default);
+            background: var(--bg-body);
+            border-radius: var(--radius-default);
+            padding: 10px;
+            text-align: left;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+        }
+
+        .app-list-item:hover {
+            border-color: var(--accent-primary);
+            background: var(--bg-hover);
+        }
+
+        .app-list-item.active {
+            border-color: var(--accent-primary);
+            background: rgba(88, 166, 255, 0.1);
+        }
+
+        .inspector-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            padding: var(--space-md);
+        }
+
+        .inspector-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 8px 16px;
+            margin: 12px 0 14px;
+        }
+
+        .inspector-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .inspector-value {
+            font-size: 0.9rem;
+            color: var(--text-primary);
+            overflow-wrap: anywhere;
+        }
+
+        .inspector-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+
+        .btn-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            font-weight: 600;
+            padding: 0.5rem 1rem;
+            border-radius: var(--radius-btn);
+            border: none;
+            color: #fff;
+            background: var(--accent-success);
+            font-size: 0.9rem;
+        }
+
+        .app-count {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        .store-tools {
+            display: grid;
+            grid-template-columns: minmax(220px, 1fr) minmax(180px, 240px);
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .store-tools input,
+        .store-tools select {
+            width: 100%;
+        }
+
+        .store-meta {
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+        }
+
+        .compose-quick-add {
+            background: var(--bg-card);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            padding: var(--space-md);
+            margin-bottom: 14px;
+        }
+
+        .compose-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .compose-yaml-input {
+            width: 100%;
+            min-height: 220px;
+            resize: vertical;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: #0a111d;
+            color: #eaf2ff;
+            padding: 10px 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.84rem;
+            line-height: 1.45;
+        }
+
+        .compose-yaml-input:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 2px rgba(50, 120, 245, 0.2);
+        }
+
+        @media (max-width: 980px) {
+            .apps-workspace {
+                grid-template-columns: 1fr;
+            }
+
+            .apps-list {
+                max-height: none;
+            }
+        }
+
+        @media (max-width: 760px) {
+            .store-tools {
+                grid-template-columns: 1fr;
+            }
+
+            .compose-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .app-footer {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .app-footer .btn-primary {
+                width: 100%;
+            }
+
+            .inspector-actions .btn-link,
+            .inspector-actions .btn-icon,
+            .inspector-actions .btn-secondary {
+                width: 100%;
+            }
+
+            .logs-modal {
+                padding: 12px;
+            }
+
+            .logs-modal-header {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .logs-modal-header>div:last-child {
+                width: 100%;
+                display: grid !important;
+                grid-template-columns: 1fr;
+            }
+
+            .logs-modal-header>div:last-child .btn-secondary {
+                width: 100%;
+            }
+
+            #install-app-info {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+
+        .logs-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(4px);
+            z-index: 1200;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+
+        .logs-modal-card {
+            width: min(1100px, 96vw);
+            max-height: 90vh;
+            background: var(--bg-card);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .logs-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 16px;
+            padding: 16px;
+            border-bottom: 1px solid var(--border-default);
+            background: var(--bg-body);
+        }
+
+        .logs-meta {
+            margin-top: 4px;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .logs-output {
+            margin: 0;
+            padding: 16px;
+            overflow: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            line-height: 1.45;
+            white-space: pre-wrap;
+            background: #05090f;
+            color: #78f5a5;
+            flex: 1;
+        }
+
+        .terminal-toolbar {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .terminal-command-row {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 10px;
+            padding: 12px 16px;
+            border-top: 1px solid var(--border-default);
+            background: var(--bg-body);
+        }
+
+        .terminal-command-input {
+            width: 100%;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: #0a111d;
+            color: #eaf2ff;
+            padding: 10px 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+        }
+
+        .terminal-command-input:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 2px rgba(50, 120, 245, 0.2);
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="logo-area">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round"
+                    stroke-linejoin="round" style="color: var(--accent-primary);" />
+            </svg>
+            <div class="logo-text">AlvaOS</div>
+        </div>
+
+        <nav>
+            <a href="index.html" class="nav-link"><i data-lucide="house"></i> Dashboard</a>
+            <a href="storage.html" class="nav-link"><i data-lucide="hard-drive"></i> Storage</a>
+            <a href="apps.html" class="nav-link active"><i data-lucide="blocks"></i> Apps</a>
+            <a href="backup.html" class="nav-link"><i data-lucide="refresh-cw"></i> Backup</a>
+            <a href="users.html" class="nav-link"><i data-lucide="users"></i> Users</a>
+            <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw"></i> Updates <span class="nav-badge"
+                    id="updates-nav-badge" style="display:none;">!</span></a>
+            <div style="flex:1"></div>
+            <a href="system.html" class="nav-link"><i data-lucide="settings"></i> System</a>
+        </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="main">
+        <header class="topbar">
+            <div class="breadcrumbs">
+                System / <span>Apps</span>
+            </div>
+            <div class="status-badge" style="gap:10px;">
+                <div class="status-badge" style="border:none; background:transparent; padding:0;">
+                    <div class="status-dot"></div>
+                    <span>Online</span>
+                </div>
+            </div>
+        </header>
+
+        <div class="content-scroll">
+            <div id="update-banner-slot"></div>
+            <div style="margin-bottom: 24px;">
+                <h1 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 4px;">Apps</h1>
+                <p style="color: var(--text-secondary); font-size: 0.95rem;">Install and manage containerized
+                    applications.</p>
+            </div>
+
+            <!-- Tab Navigation -->
+            <div class="tab-bar">
+                <button class="tab-btn active" data-tab="installed">Installed</button>
+                <button class="tab-btn" data-tab="store">App Store</button>
+            </div>
+
+            <!-- Installed Tab -->
+            <div class="tab-panel active" id="tab-installed">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h2
+                        style="font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em;">
+                        Installed Apps and Containers</h2>
+                    <button id="refresh-installed-btn" class="btn-secondary"
+                        style="padding: 4px 10px; font-size: 0.85rem;">Refresh</button>
+                </div>
+                <div id="installed-container">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">...</div>
+                        <div>Loading installed apps...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- App Store Tab -->
+            <div class="tab-panel" id="tab-store">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h2
+                        style="font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em;">
+                        Available Apps</h2>
+                    <button id="refresh-apps-btn" class="btn-secondary"
+                        style="padding: 4px 10px; font-size: 0.85rem;">Refresh</button>
+                </div>
+                <div class="store-tools">
+                    <input id="app-search-input" type="search" placeholder="Search apps by name or description"
+                        aria-label="Search available apps">
+                    <select id="app-category-filter" aria-label="Filter apps by category">
+                        <option value="all">All categories</option>
+                    </select>
+                </div>
+                <div class="compose-quick-add">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap;">
+                        <h3 style="margin: 0; font-size: 1rem; font-weight: 600;">Add via Docker Compose</h3>
+                        <button id="compose-refresh-pools-btn" class="btn-secondary" style="padding: 4px 10px; font-size: 0.82rem;">Refresh Pools</button>
+                    </div>
+                    <p style="font-size: 0.82rem; color: var(--text-secondary); margin: 0 0 10px 0;">
+                        Paste a Docker Compose file, choose a pool, and deploy as a managed app.
+                    </p>
+                    <div class="compose-grid">
+                        <div class="setting-group" style="margin: 0;">
+                            <label class="setting-label">App Name</label>
+                            <input id="compose-app-name" type="text" placeholder="e.g. my-homelab-app" style="width: 100%; padding: 10px;">
+                        </div>
+                        <div class="setting-group" style="margin: 0;">
+                            <label class="setting-label">Storage Pool</label>
+                            <select id="compose-pool-select" style="width: 100%; padding: 10px;">
+                                <option value="">Loading pools...</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="setting-group" style="margin: 10px 0 0 0;">
+                        <label class="setting-label">Docker Compose YAML</label>
+                        <textarea id="compose-yaml-input" class="compose-yaml-input" spellcheck="false" placeholder="services:
+  app:
+    image: nginx:latest
+    ports:
+      - &quot;8080:80&quot;
+    volumes:
+      - ${POOL_PATH}/data:/data"></textarea>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap;">
+                        <div id="compose-add-meta" class="store-meta" style="margin: 0;">Tip: Use <code>${POOL_PATH}</code> for data paths inside the selected app storage folder.</div>
+                        <button id="compose-deploy-btn" class="btn-primary" disabled>Deploy Compose App</button>
+                    </div>
+                </div>
+                <div id="apps-store-meta" class="store-meta">Loading app catalog...</div>
+                <div id="apps-container" class="apps-grid">
+                    <div class="empty-state" style="grid-column: 1/-1;">
+                        <div class="empty-state-icon">...</div>
+                        <div>Loading apps...</div>
+                    </div>
+                </div>
+            </div>
+
+
+            <footer
+                style="margin-top:2rem; padding-top:1rem; border-top:1px solid var(--border-subtle); color:var(--text-secondary); font-size:0.8rem;">
+                AlvaOS {{VERSION}} &bull; <a href="https://github.com/SnowTimSwiss/AlvaOS" target="_blank"
+                    style="color:var(--text-secondary)">GitHub</a>
+            </footer>
+
+        </div>
+    </div>
+
+    <!-- App Install Modal -->
+    <div id="install-modal" class="modal"
+        style="display:none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(4px); z-index: 1000; align-items: center; justify-content: center;">
+        <div class="modal-content"
+            style="background: var(--bg-card); border: 1px solid var(--border-default); border-radius: var(--radius-default); padding: 24px; max-width: 550px; width: 90%; max-height: 90vh; overflow-y: auto;">
+            <div class="modal-header"
+                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="font-size: 1.25rem; font-weight: 600; margin: 0;">Install Application</h2>
+                <button class="close-modal-btn"
+                    style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">&times;</button>
+            </div>
+
+            <div id="install-app-info"
+                style="display: flex; gap: 16px; margin-bottom: 24px; padding: 16px; background: var(--bg-body); border-radius: var(--radius-default); border: 1px solid var(--border-subtle);">
+                <div id="install-app-icon"
+                    style="font-size: 2.5rem; width: 64px; height: 64px; display: flex; align-items: center; justify-content: center; background: var(--bg-card); border-radius: var(--radius-default); border: 1px solid var(--border-default);">
+                    <i data-lucide="package"></i></div>
+                <div style="flex: 1;">
+                    <h3 id="install-app-name" style="margin: 0 0 4px 0; font-size: 1.1rem;">App Name</h3>
+                    <p id="install-app-version"
+                        style="margin: 0 0 8px 0; font-size: 0.8rem; color: var(--text-secondary);">Version: latest</p>
+                    <p id="install-app-desc"
+                        style="margin: 0; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4;">App
+                        description goes here...</p>
+                </div>
+            </div>
+
+            <div class="setting-group">
+                <label class="setting-label">Storage Pool</label>
+                <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 8px;">Select a pool to host
+                    app data and containers.</p>
+                <select id="install-pool-select" style="width: 100%; padding: 10px;"></select>
+            </div>
+
+            <div id="install-env-fields-group" class="setting-group" style="margin-top: 16px; display: none;">
+                <label class="setting-label">App Settings</label>
+                <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 8px;">
+                    Set credentials and optional environment values for this app.
+                </p>
+                <div id="install-env-fields" style="display: flex; flex-direction: column; gap: 10px;"></div>
+            </div>
+
+            <div id="install-port-warning"
+                style="margin-top: 16px; padding: 12px; background: rgba(248, 81, 73, 0.1); border: 1px solid var(--accent-danger); border-radius: var(--radius-default); display: none;">
+                <p style="font-size: 0.85rem; color: var(--accent-danger); margin: 0;"><i data-lucide="triangle-alert"></i> Some default ports are already
+                    in use. You may need to remap them after installation.</p>
+            </div>
+
+            <div id="install-progress-container" style="display: none; margin-top: 24px;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                    <span id="install-progress-status"
+                        style="font-size: 0.85rem; color: var(--text-secondary);">Installing...</span>
+                    <span id="install-progress-percent" style="font-size: 0.85rem; font-weight: 600;">0%</span>
+                </div>
+                <div class="progress-track"
+                    style="height: 8px; background: var(--bg-body); border-radius: 4px; overflow: hidden;">
+                    <div id="install-progress-bar" class="progress-bar"
+                        style="width: 0%; height: 100%; background: var(--accent-primary); transition: width 0.3s ease;">
+                    </div>
+                </div>
+                <div id="install-log-container"
+                    style="margin-top: 16px; padding: 12px; background: #000; border-radius: var(--radius-default); border: 1px solid var(--border-default); font-family: monospace; font-size: 0.75rem; color: #0f0; max-height: 150px; overflow-y: auto; white-space: pre-wrap;">
+                    <div id="install-log-content"></div>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 12px; margin-top: 32px;">
+                <button class="btn-secondary close-modal-btn" style="flex: 1;">Cancel</button>
+                <button id="confirm-install-btn" class="btn-primary" style="flex: 2;">Install Application</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Container Logs Modal -->
+    <div id="container-logs-modal" class="logs-modal" aria-hidden="true">
+        <div class="logs-modal-card">
+            <div class="logs-modal-header">
+                <div>
+                    <h2 id="container-logs-title" style="font-size: 1.1rem; margin: 0;">Container Logs</h2>
+                    <div id="container-logs-meta" class="logs-meta">Loading...</div>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <button id="container-logs-refresh-btn" class="btn-secondary">Refresh</button>
+                    <button id="container-logs-close-btn" class="btn-secondary">Close</button>
+                </div>
+            </div>
+            <pre id="container-logs-content" class="logs-output">Loading logs...</pre>
+        </div>
+    </div>
+
+    <!-- Container Terminal Modal -->
+    <div id="container-terminal-modal" class="logs-modal" aria-hidden="true">
+        <div class="logs-modal-card">
+            <div class="logs-modal-header">
+                <div>
+                    <h2 id="container-terminal-title" style="font-size: 1.1rem; margin: 0;">Container Terminal</h2>
+                    <div id="container-terminal-meta" class="logs-meta">Ready</div>
+                </div>
+                <div class="terminal-toolbar">
+                    <button id="container-terminal-clear-btn" class="btn-secondary">Clear</button>
+                    <button id="container-terminal-close-btn" class="btn-secondary">Close</button>
+                </div>
+            </div>
+            <pre id="container-terminal-output" class="logs-output"></pre>
+            <div class="terminal-command-row">
+                <input id="container-terminal-input" class="terminal-command-input" type="text"
+                    placeholder="Enter command, e.g. ls -la /">
+                <button id="container-terminal-run-btn" class="btn-primary">Run</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script src="icons.js"></script>
+    <script src="notifications.js"></script>
+    <script src="feedback.js"></script>
+    <script src="app.js"></script>
+    <script src="password-toggle.js"></script>
+    <script src="apps.js"></script>
+</body>
+
+</html>
+

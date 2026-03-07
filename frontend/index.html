@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlvaOS - Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="notifications.css">
+</head>
+
+<body>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="logo-area">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round"
+                    stroke-linejoin="round" style="color: var(--accent-primary);" />
+            </svg>
+            <div class="logo-text">AlvaOS</div>
+        </div>
+
+        <nav>
+            <a href="index.html" class="nav-link active"><i data-lucide="house"></i> Dashboard</a>
+            <a href="storage.html" class="nav-link"><i data-lucide="hard-drive"></i> Storage</a>
+            <a href="apps.html" class="nav-link"><i data-lucide="blocks"></i> Apps</a>
+            <a href="backup.html" class="nav-link"><i data-lucide="refresh-cw"></i> Backup</a>
+            <a href="users.html" class="nav-link"><i data-lucide="users"></i> Users</a>
+            <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw"></i> Updates <span class="nav-badge"
+                    id="updates-nav-badge" style="display:none;">!</span></a>
+            <div style="flex:1"></div>
+            <a href="system.html" class="nav-link"><i data-lucide="settings"></i> System</a>
+        </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="main">
+        <header class="topbar">
+            <div class="breadcrumbs">
+                System / <span>Overview</span>
+            </div>
+            <div class="status-badge" style="gap:10px;">
+                <div class="status-badge" style="border:none; background:transparent; padding:0;">
+                    <div class="status-dot"></div>
+                    <span>Online</span>
+                </div>
+                <div class="mono-text" style="font-size:0.85rem; color:var(--text-secondary);" id="clock">--:--:--</div>
+            </div>
+        </header>
+
+        <div class="content-scroll">
+            <div id="update-banner-slot"></div>
+            <div style="margin-bottom: 24px;">
+                <h1 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 4px;">Dashboard</h1>
+                <p style="color: var(--text-secondary); font-size: 0.95rem;">System health and resource usage.</p>
+            </div>
+
+            <div class="card health-overview-card">
+                <div class="card-header">
+                    <div class="card-title">Health Overview</div>
+                    <div style="color:var(--text-secondary)"><i data-lucide="stethoscope"></i></div>
+                </div>
+                <div class="health-overview-grid">
+                    <div class="health-status-pill healthy" id="health-overall-status">Healthy</div>
+                    <div class="health-overview-stat">
+                        <span class="setting-label">Critical Alerts</span>
+                        <span class="mono-text" id="alert-count-critical">0</span>
+                    </div>
+                    <div class="health-overview-stat">
+                        <span class="setting-label">Warnings</span>
+                        <span class="mono-text" id="alert-count-warning">0</span>
+                    </div>
+                    <div class="health-overview-stat">
+                        <span class="setting-label">Last Alert Scan</span>
+                        <span class="mono-text" id="alerts-last-scan">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="dashboard-grid">
+
+                <!-- CPU Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">CPU Load</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="cpu"></i></div>
+                    </div>
+                    <!-- Using old ID 'cpu-usage' for value -->
+                    <div class="metric-value" id="cpu-usage">0%</div>
+                    <div class="metric-sub">
+                        <span id="cpu-model">Loading...</span>
+                    </div>
+                    <div class="progress-track">
+                        <!-- Using old ID 'cpu-progress' for bar -->
+                        <div class="progress-bar bar-cpu" id="cpu-progress" style="width: 0%"></div>
+                    </div>
+                    <div class="metric-sub" style="margin-top: 8px; justify-content: space-between;">
+                        <!-- Old IDs used by app.js -->
+                        <span id="cpu-freq">- GHz</span>
+                        <div>
+                            <span id="cpu-cores" style="margin-right:8px;">- Cores</span>
+                            <span id="cpu-temp">-°C</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- RAM Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Memory</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="memory-stick"></i></div>
+                    </div>
+                    <!-- Old ID 'mem-usage-percent' -->
+                    <div class="metric-value" id="mem-usage-percent">0%</div>
+                    <div class="metric-sub">
+                        <!-- Old ID 'mem-total' -->
+                        <span id="mem-total">of - GB Total</span>
+                    </div>
+                    <div class="progress-track">
+                        <!-- Old ID 'mem-progress' -->
+                        <div class="progress-bar bar-ram" id="mem-progress" style="width: 0%"></div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px;">
+                        <div
+                            style="background:var(--bg-body); padding:8px; border-radius:4px; border:1px solid var(--border-default);">
+                            <div style="font-size:0.75rem; color:var(--text-secondary);">Used</div>
+                            <!-- Old ID 'mem-used' -->
+                            <div class="mono-text" style="font-size:0.9rem;" id="mem-used">-</div>
+                        </div>
+                        <div
+                            style="background:var(--bg-body); padding:8px; border-radius:4px; border:1px solid var(--border-default);">
+                            <div style="font-size:0.75rem; color:var(--text-secondary);">Available</div>
+                            <!-- Old ID 'mem-available' -->
+                            <div class="mono-text" style="font-size:0.9rem;" id="mem-available">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Storage Summary Card (Note: app.js updates disk-usage-percent) -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Storage Usage</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="database"></i></div>
+                    </div>
+                    <div class="metric-value" id="disk-usage-percent">0%</div>
+                    <div class="metric-sub">
+                        <span id="disk-used">-</span> used of <span id="disk-total" style="margin-left:4px">-</span>
+                    </div>
+
+                    <div class="progress-track">
+                        <div class="progress-bar bar-disk" id="disk-progress" style="width: 0%"></div>
+                    </div>
+
+                    <div style="margin-top: 16px;">
+                        <div
+                            style="background:var(--bg-body); padding:8px; border-radius:4px; border:1px solid var(--border-default);">
+                            <div style="display:flex; justify-content:space-between;">
+                                <div style="font-size:0.75rem; color:var(--text-secondary);">Free Space</div>
+                                <div class="mono-text" style="font-size:0.9rem;" id="disk-free">-</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 12px;">
+                        <div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom: 8px;">Pools</div>
+                        <div id="pool-storage-list" class="list-group">
+                            <div
+                                style="background:var(--bg-body); padding:8px; border-radius:4px; border:1px solid var(--border-default); font-size:0.8rem; color:var(--text-secondary);">
+                                Loading pool usage...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- System Info Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Quick Actions</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="rocket"></i></div>
+                    </div>
+                    <div class="quick-actions-grid">
+                        <a class="quick-action-link" href="storage.html">
+                            <span class="quick-action-title">Storage</span>
+                            <span class="quick-action-sub">Pools, disks, and shares</span>
+                        </a>
+                        <a class="quick-action-link" href="updates.html">
+                            <span class="quick-action-title">Updates</span>
+                            <span class="quick-action-sub">Check and install updates</span>
+                        </a>
+                        <a class="quick-action-link" href="system.html">
+                            <span class="quick-action-title">System</span>
+                            <span class="quick-action-sub">Network, time, and power</span>
+                        </a>
+                        <a class="quick-action-link" href="backup.html">
+                            <span class="quick-action-title">Backup</span>
+                            <span class="quick-action-sub">Snapshots and restore</span>
+                        </a>
+                    </div>
+                </div>
+
+                <div class="card" style="grid-column: 1 / -1;">
+                    <div class="card-header">
+                        <div class="card-title">Smart Alerts</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="siren"></i></div>
+                    </div>
+                    <div id="dashboard-alert-list" class="alerts-list">
+                        <div class="alerts-empty">No active alerts. Your system looks healthy.</div>
+                    </div>
+                </div>
+
+                <div class="card" style="grid-column: 1 / -1;">
+                    <div class="card-header">
+                        <div class="card-title">Usage & Temperature History</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="chart-line"></i></div>
+                    </div>
+                    <div class="metric-sub" style="justify-content: space-between; margin-bottom: 10px;">
+                        <span>Recent trend from dashboard samples</span>
+                        <span class="mono-text" id="history-range-label">Last 10 minutes</span>
+                    </div>
+                    <div class="history-grid">
+                        <div class="history-panel">
+                            <div class="history-panel-head">
+                                <span>CPU Usage</span>
+                                <span id="history-cpu-current" class="mono-text">-</span>
+                            </div>
+                            <svg class="history-chart" viewBox="0 0 100 30" preserveAspectRatio="none">
+                                <path id="history-cpu-path" class="history-line cpu"></path>
+                            </svg>
+                        </div>
+                        <div class="history-panel">
+                            <div class="history-panel-head">
+                                <span>Memory Usage</span>
+                                <span id="history-mem-current" class="mono-text">-</span>
+                            </div>
+                            <svg class="history-chart" viewBox="0 0 100 30" preserveAspectRatio="none">
+                                <path id="history-mem-path" class="history-line mem"></path>
+                            </svg>
+                        </div>
+                        <div class="history-panel">
+                            <div class="history-panel-head">
+                                <span>Storage Usage</span>
+                                <span id="history-disk-current" class="mono-text">-</span>
+                            </div>
+                            <svg class="history-chart" viewBox="0 0 100 30" preserveAspectRatio="none">
+                                <path id="history-disk-path" class="history-line disk"></path>
+                            </svg>
+                        </div>
+                        <div class="history-panel">
+                            <div class="history-panel-head">
+                                <span>CPU Temperature</span>
+                                <span id="history-temp-current" class="mono-text">-</span>
+                            </div>
+                            <svg class="history-chart" viewBox="0 0 100 30" preserveAspectRatio="none">
+                                <path id="history-temp-path" class="history-line temp"></path>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card" style="grid-column: 1 / -1;">
+                    <div class="card-header">
+                        <div class="card-title">System Information</div>
+                    </div>
+
+                    <div
+                        style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 24px 16px;">
+                        <div style="display:flex; flex-direction:column;">
+                            <span
+                                style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:4px; font-weight:500;">Hostname</span>
+                            <!-- Old ID 'hostname' -->
+                            <span class="mono-text" style="font-size:0.95rem; color:var(--text-primary);"
+                                id="hostname">-</span>
+                        </div>
+                        <div style="display:flex; flex-direction:column;">
+                            <span
+                                style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:4px; font-weight:500;">IP
+                                Address</span>
+                            <!-- Old ID 'ip-address' -->
+                            <span class="mono-text" style="font-size:0.95rem; color:var(--text-primary);"
+                                id="ip-address">-</span>
+                        </div>
+                        <div style="display:flex; flex-direction:column;">
+                            <span
+                                style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:4px; font-weight:500;">Uptime</span>
+                            <!-- Old ID 'uptime' -->
+                            <span class="mono-text" style="font-size:0.95rem; color:var(--text-primary);"
+                                id="uptime">-</span>
+                        </div>
+                        <div style="display:flex; flex-direction:column;">
+                            <span
+                                style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:4px; font-weight:500;">OS
+                                Version</span>
+                            <!-- Old ID 'os-version' -->
+                            <span class="mono-text" style="font-size:0.95rem; color:var(--text-primary);"
+                                id="os-version">-</span>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <footer
+                style="margin-top:2rem; padding-top:1rem; border-top:1px solid var(--border-subtle); color:var(--text-secondary); font-size:0.8rem; display:flex; justify-content:space-between;">
+                <div>AlvaOS {{VERSION}} &bull; <a href="https://github.com/SnowTimSwiss/AlvaOS" target="_blank"
+                        style="color:var(--text-secondary)">GitHub</a></div>
+                <div>Last sync: <span id="last-update" class="mono-text">-</span></div>
+            </footer>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script src="icons.js"></script>
+    <script src="notifications.js"></script>
+    <script src="feedback.js"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>
+

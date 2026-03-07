@@ -1,0 +1,61 @@
+# Build outputs
+build/
+installer/build/
+installer/live-build-work/
+installer/.cache/
+*.iso
+*.img
+*.squashfs
+*.sha256
+*.deb
+
+# Backend
+backend/bin/
+backend/dist/
+backend/vendor/
+backend/__pycache__/
+backend/*.pyc
+backend/venv/
+backend/.venv/
+backend/go.sum
+backend/*.exe
+backend/*.dll
+backend/*.so
+backend/*.dylib
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.svelte-kit/
+frontend/.next/
+frontend/.nuxt/
+frontend/.output/
+frontend/package-lock.json
+frontend/yarn.lock
+frontend/pnpm-lock.yaml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Local runtime state (dev fallback)
+.alvaos_state/

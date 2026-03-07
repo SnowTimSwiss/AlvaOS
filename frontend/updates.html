@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlvaOS - Updates</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="notifications.css">
+</head>
+
+<body>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="logo-area">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round"
+                    stroke-linejoin="round" style="color: var(--accent-primary);" />
+            </svg>
+            <div class="logo-text">AlvaOS</div>
+        </div>
+
+        <nav>
+            <a href="index.html" class="nav-link"><i data-lucide="house"></i> Dashboard</a>
+            <a href="storage.html" class="nav-link"><i data-lucide="hard-drive"></i> Storage</a>
+            <a href="apps.html" class="nav-link"><i data-lucide="blocks"></i> Apps</a>
+            <a href="backup.html" class="nav-link"><i data-lucide="refresh-cw"></i> Backup</a>
+            <a href="users.html" class="nav-link"><i data-lucide="users"></i> Users</a>
+            <a href="updates.html" class="nav-link active">
+                <i data-lucide="rotate-cw"></i> Updates
+                <span class="nav-badge" id="updates-nav-badge" style="display:none;">!</span>
+            </a>
+            <div style="flex:1"></div>
+            <a href="system.html" class="nav-link"><i data-lucide="settings"></i> System</a>
+        </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="main">
+        <header class="topbar">
+            <div class="breadcrumbs">
+                System / <span>Updates</span>
+            </div>
+            <div class="status-badge" style="gap:10px;">
+                <div class="status-badge" style="border:none; background:transparent; padding:0;">
+                    <div class="status-dot"></div>
+                    <span>Online</span>
+                </div>
+            </div>
+        </header>
+
+        <div class="content-scroll">
+            <div id="update-banner-slot"></div>
+            <div style="margin-bottom: 24px;">
+                <h1 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 4px;">Update Management</h1>
+                <p style="color: var(--text-secondary); font-size: 0.95rem;">Manage AlvaOS, system, and offline updates.
+                </p>
+            </div>
+
+            <div class="tab-bar">
+                <button class="tab-btn active" data-tab="alvaos">AlvaOS Updates</button>
+                <button class="tab-btn" data-tab="system">System Updates</button>
+                <button class="tab-btn" data-tab="offline">Offline Updates</button>
+                <button class="tab-btn" data-tab="history">Update History</button>
+                <button class="tab-btn" data-tab="settings">Settings</button>
+            </div>
+
+            <div class="tab-panel active" id="tab-alvaos">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">AlvaOS Updates</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="rotate-cw"></i></div>
+                    </div>
+                    <div class="setting-group">
+                        <label class="setting-label">Current Version</label>
+                        <div class="mono-text" id="current-version">-</div>
+                    </div>
+                    <div class="setting-group">
+                        <label class="setting-label" for="update-channel-select">Update Channel</label>
+                        <div style="display:flex; gap:8px; align-items:center;">
+                            <select id="update-channel-select" class="select-input">
+                                <option value="stable">Stable (Releases)</option>
+                                <option value="unstable">Unstable (Pre-releases)</option>
+                            </select>
+                            <button id="check-updates-btn" class="btn-primary">Check for Updates</button>
+                        </div>
+                        <div class="metric-sub" style="margin-top:6px;" id="update-status">Idle</div>
+                    </div>
+                </div>
+
+                <div class="card" id="update-available-card" style="display:none;">
+                    <div class="card-header">
+                        <div class="card-title">Available Update</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="upload"></i></div>
+                    </div>
+                    <div class="setting-group">
+                        <label class="setting-label">Latest Version</label>
+                        <div class="mono-text" id="latest-version">-</div>
+                    </div>
+                    <div class="setting-group">
+                        <label class="setting-label">Changelog</label>
+                        <div class="changelog-box" id="release-notes">-</div>
+                    </div>
+                    <div class="setting-group">
+                        <div class="progress-track" style="margin-bottom: 8px;">
+                            <div class="progress-bar bar-cpu" id="alvaos-update-progress" style="width: 0%;"></div>
+                        </div>
+                        <button id="download-install-btn" class="btn-primary">Download and Install</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-panel" id="tab-system">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Debian Package Updates</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="package"></i></div>
+                    </div>
+                    <div id="debian-os-upgrade-status" class="metric-sub" style="margin-bottom: 12px;">
+                        Debian OS release status unknown.
+                    </div>
+                    <div style="display:flex; flex-wrap: wrap; gap:8px; align-items:center; margin-bottom: 12px;">
+                        <button id="debian-check-btn" class="btn-primary">Check for Updates</button>
+                        <button id="debian-apply-btn" class="btn-secondary">Apply Selected Updates</button>
+                        <button id="debian-apply-all-btn" class="btn-secondary">Apply All Updates</button>
+                        <button id="debian-os-upgrade-btn" class="btn-secondary" disabled>Upgrade OS Release</button>
+                    </div>
+                    <div id="debian-updates-list" class="list-box">
+                        <div class="metric-sub">No data yet.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-panel" id="tab-offline">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Offline Updates</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="hard-drive-download"></i></div>
+                    </div>
+                    <div style="display:flex; gap:8px; align-items:center; margin-bottom: 12px;">
+                        <button id="offline-scan-btn" class="btn-primary">Scan USB Devices</button>
+                    </div>
+                    <div id="offline-list" class="list-box">
+                        <div class="metric-sub">No data yet.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-panel" id="tab-history">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Update History</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="scroll-text"></i></div>
+                    </div>
+                    <div id="history-list" class="list-box">
+                        <div class="metric-sub">No history yet.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-panel" id="tab-settings">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Update Settings</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="settings"></i></div>
+                    </div>
+                    <div class="setting-group">
+                        <label class="setting-label">Automatic update check on startup</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="settings-auto-check">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="setting-group">
+                        <label class="setting-label">Apply AlvaOS updates automatically</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="settings-auto-apply">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="setting-group">
+                        <label class="setting-label" for="settings-channel">Default channel</label>
+                        <select id="settings-channel" class="select-input">
+                            <option value="stable">Stable</option>
+                            <option value="unstable">Unstable</option>
+                        </select>
+                    </div>
+                    <div class="setting-group">
+                        <button id="settings-save-btn" class="btn-primary">Save Settings</button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script src="icons.js"></script>
+    <script src="notifications.js"></script>
+    <script src="feedback.js"></script>
+    <script src="app.js"></script>
+    <script src="updates.js"></script>
+</body>
+
+</html>
+

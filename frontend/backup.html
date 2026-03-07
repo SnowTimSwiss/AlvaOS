@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlvaOS - Backup</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="notifications.css">
+    <style>
+        .backup-page .tab-panel.active {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .backup-page .card {
+            margin-bottom: 0;
+            padding: 12px;
+        }
+
+        .backup-page .card-header {
+            margin-bottom: 10px;
+        }
+
+        .backup-page .page-intro {
+            margin-bottom: 18px;
+        }
+
+        .backup-page .page-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .backup-page .page-subtitle {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        .card-header-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .card-help {
+            margin-bottom: 10px;
+        }
+
+        .table-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .table-actions .btn-secondary {
+            padding: 0.4rem 0.75rem;
+            font-size: 0.82rem;
+        }
+
+        .buddy-pairing-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(280px, 1fr));
+            gap: 12px;
+        }
+
+        .buddy-pairing-grid .setting-group {
+            margin-bottom: 0;
+        }
+
+        .buddy-pairing-grid .setting-group.full {
+            grid-column: 1 / -1;
+        }
+
+        .buddy-pairing-meta {
+            display: grid;
+            grid-template-columns: minmax(190px, 230px) minmax(0, 1fr);
+            gap: 12px;
+            align-items: end;
+        }
+
+        .buddy-pairing-note {
+            margin: 0;
+            color: var(--text-secondary);
+            font-size: 0.82rem;
+            line-height: 1.35;
+        }
+
+        .buddy-pairing-card {
+            padding: 10px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: var(--bg-body);
+        }
+
+        .buddy-pairing-grid .select-input,
+        .buddy-pairing-grid .buddy-token-area {
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .sources-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 10px;
+        }
+
+        .source-item {
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+            padding: 10px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: var(--bg-body);
+        }
+
+        .source-meta {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            gap: 4px;
+        }
+
+        .source-name {
+            font-size: 0.9rem;
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .source-path {
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            font-family: 'JetBrains Mono', monospace;
+            overflow-wrap: anywhere;
+        }
+
+        .snapshots-table {
+            width: 100%;
+            border-collapse: collapse;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            overflow: hidden;
+            background: var(--bg-card);
+        }
+
+        .table-scroll .snapshots-table {
+            min-width: 760px;
+        }
+
+        .snapshots-table th,
+        .snapshots-table td {
+            text-align: left;
+            padding: 10px;
+            border-bottom: 1px solid var(--border-default);
+            vertical-align: top;
+        }
+
+        .snapshots-table th {
+            background: var(--bg-body);
+            color: var(--text-secondary);
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .snapshots-table tr:last-child td {
+            border-bottom: none;
+        }
+        
+        .status-row {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 15px;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+        
+        .status-item strong {
+            color: var(--text-primary);
+        }
+
+        .backup-status-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .backup-status-chip {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: var(--bg-body);
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .backup-info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+            margin-bottom: 10px;
+        }
+
+        .backup-info-item {
+            padding: 10px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: var(--bg-body);
+            min-width: 0;
+        }
+
+        .backup-info-value {
+            margin-top: 4px;
+            color: var(--text-primary);
+            font-size: 0.85rem;
+            overflow-wrap: anywhere;
+        }
+
+        .buddy-status-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .buddy-status-chip {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 10px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: var(--bg-body);
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .buddy-identity-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px;
+            margin-top: 12px;
+        }
+
+        .buddy-identity-item {
+            padding: 10px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: var(--bg-body);
+            min-width: 0;
+        }
+
+        .buddy-identity-value {
+            margin-top: 4px;
+            color: var(--text-primary);
+            font-size: 0.85rem;
+            overflow-wrap: anywhere;
+        }
+
+        .buddy-peers-wrap {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .buddy-peer-card {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 10px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: var(--bg-body);
+        }
+
+        .buddy-peer-main {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            min-width: 0;
+        }
+
+        .buddy-peer-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .buddy-peer-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .buddy-peer-meta-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(180px, 1fr));
+            gap: 4px 10px;
+        }
+
+        .buddy-peer-meta-item {
+            min-width: 0;
+        }
+
+        .buddy-state-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: 999px;
+            border: 1px solid var(--border-default);
+            font-size: 0.75rem;
+            font-weight: 600;
+            background: rgba(139, 148, 158, 0.12);
+            color: var(--text-secondary);
+        }
+
+        .buddy-state-pill.ok {
+            background: rgba(35, 134, 54, 0.16);
+            border-color: rgba(35, 134, 54, 0.45);
+            color: var(--accent-success);
+        }
+
+        .buddy-peer-policy {
+            padding: 8px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: var(--bg-card);
+        }
+
+        .buddy-peer-policy-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+            gap: 8px 10px;
+            align-items: end;
+        }
+
+        .buddy-peer-policy-grid .setting-group {
+            margin-bottom: 0;
+        }
+
+        .buddy-peer-policy-footer {
+            margin-top: 8px;
+        }
+
+        .buddy-peer-actions {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .buddy-token-area {
+            font-family: 'JetBrains Mono', monospace;
+            min-height: 98px;
+            resize: vertical;
+        }
+
+        .buddy-inline-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+        }
+
+        .buddy-peer-sources {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 6px;
+            max-height: 140px;
+            overflow: auto;
+            padding: 8px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: var(--bg-body);
+        }
+
+        .buddy-peer-source-item {
+            display: flex;
+            gap: 8px;
+            align-items: flex-start;
+        }
+
+        .buddy-peer-source-item .source-path {
+            font-size: 0.74rem;
+        }
+
+        .buddy-restore-layout {
+            display: grid;
+            grid-template-columns: 280px minmax(0, 1fr);
+            gap: 12px;
+            align-items: start;
+        }
+
+        .buddy-restore-buddies {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: var(--bg-body);
+            padding: 8px;
+            max-height: 380px;
+            overflow: auto;
+        }
+
+        .buddy-restore-buddy {
+            width: 100%;
+            text-align: left;
+            padding: 8px 10px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: transparent;
+            color: var(--text-primary);
+            cursor: pointer;
+        }
+
+        .buddy-restore-buddy.active {
+            border-color: var(--accent-primary);
+            background: rgba(56, 139, 253, 0.12);
+        }
+
+        .buddy-restore-right {
+            min-height: 220px;
+        }
+
+        .buddy-restore-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .buddy-remote-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .buddy-remote-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 10px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: var(--bg-body);
+        }
+
+        .buddy-remote-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            min-width: 0;
+        }
+
+        .buddy-remote-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            align-items: flex-end;
+            min-width: 140px;
+        }
+
+        .buddy-defaults-layout {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(280px, 1fr));
+            gap: 12px;
+        }
+
+        .buddy-defaults-panel {
+            padding: 10px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: var(--bg-body);
+        }
+
+        .buddy-defaults-heading {
+            margin: 0 0 4px;
+            font-size: 0.92rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .buddy-defaults-note {
+            margin: 0 0 10px;
+            color: var(--text-secondary);
+            font-size: 0.82rem;
+            line-height: 1.4;
+        }
+
+        .buddy-security-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: var(--bg-card);
+            margin-bottom: 10px;
+        }
+
+        .buddy-security-state {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: 999px;
+            border: 1px solid var(--border-default);
+            font-size: 0.75rem;
+            font-weight: 600;
+            background: rgba(139, 148, 158, 0.12);
+            color: var(--text-secondary);
+        }
+
+        .buddy-security-state.on {
+            background: rgba(35, 134, 54, 0.16);
+            border-color: rgba(35, 134, 54, 0.45);
+            color: var(--accent-success);
+        }
+
+        .buddy-security-password.disabled {
+            opacity: 0.65;
+        }
+
+        @media (max-width: 980px) {
+            .buddy-restore-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .buddy-pairing-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .buddy-pairing-meta {
+                grid-template-columns: 1fr;
+                align-items: start;
+            }
+
+            .buddy-defaults-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .buddy-remote-actions {
+                min-width: 0;
+                align-items: stretch;
+                width: 100%;
+            }
+        }
+
+        @media (max-width: 760px) {
+            .backup-page .card-header {
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+
+            .backup-page .card-header .btn-primary,
+            .backup-page .card-header .btn-secondary {
+                width: 100%;
+            }
+
+            .backup-status-chip,
+            .buddy-status-chip {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .table-actions {
+                width: 100%;
+            }
+
+            .table-actions .btn-secondary {
+                width: 100%;
+            }
+
+            .buddy-remote-item {
+                flex-direction: column;
+            }
+
+            .buddy-peer-top {
+                flex-direction: column;
+            }
+
+            .buddy-peer-meta-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .buddy-peer-actions {
+                width: 100%;
+                justify-content: flex-start;
+            }
+
+            .buddy-peer-actions .btn-primary {
+                width: 100%;
+            }
+
+            .buddy-peer-actions .btn-secondary {
+                width: 100%;
+            }
+
+            .buddy-inline-actions .btn-primary,
+            .buddy-inline-actions .btn-secondary {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <aside class="sidebar">
+        <div class="logo-area">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round"
+                    stroke-linejoin="round" style="color: var(--accent-primary);" />
+            </svg>
+            <div class="logo-text">AlvaOS</div>
+        </div>
+
+        <nav>
+            <a href="index.html" class="nav-link"><i data-lucide="house"></i> Dashboard</a>
+            <a href="storage.html" class="nav-link"><i data-lucide="hard-drive"></i> Storage</a>
+            <a href="apps.html" class="nav-link"><i data-lucide="blocks"></i> Apps</a>
+            <a href="backup.html" class="nav-link active"><i data-lucide="refresh-cw"></i> Backup</a>
+            <a href="users.html" class="nav-link"><i data-lucide="users"></i> Users</a>
+            <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw"></i> Updates <span class="nav-badge"
+                    id="updates-nav-badge" style="display:none;">!</span></a>
+            <div style="flex:1"></div>
+            <a href="system.html" class="nav-link"><i data-lucide="settings"></i> System</a>
+        </nav>
+    </aside>
+
+    <div class="main">
+        <header class="topbar">
+            <div class="breadcrumbs">System / <span>Backup</span></div>
+            <div class="status-badge" style="gap:10px;">
+                <div class="status-badge" style="border:none; background:transparent; padding:0;">
+                    <div class="status-dot"></div>
+                    <span>Online</span>
+                </div>
+            </div>
+        </header>
+
+        <div class="content-scroll backup-page">
+            <div id="update-banner-slot"></div>
+            <div class="page-intro">
+                <h1 class="page-title">Local Backup</h1>
+                <p class="page-subtitle">
+                    Manage data and system backups.
+                </p>
+            </div>
+
+            <div class="tab-bar">
+                <button class="tab-btn active" data-tab="pool-backup">Pool</button>
+                <button class="tab-btn" data-tab="system-backup">System</button>
+                <button class="tab-btn" data-tab="buddy-backup">Buddy</button>
+            </div>
+
+            <!-- POOL BACKUP TAB -->
+            <div class="tab-panel active" id="tab-pool-backup">
+                
+                <!-- Status & Manual Run -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Status & Run</div>
+                        <button id="pool-run-btn" class="btn-primary">Backup Now</button>
+                    </div>
+                    <div class="backup-status-row">
+                        <div class="backup-status-chip">Last run <strong id="pool-last-run">-</strong></div>
+                        <div class="backup-status-chip">Next run <strong id="pool-next-run">-</strong></div>
+                        <div class="backup-status-chip">Status <strong id="pool-last-status">-</strong></div>
+                    </div>
+                    <div id="pool-last-error" class="metric-sub" style="color: var(--error); display: none;"></div>
+                    <div class="setting-group" style="margin-top: 12px;">
+                        <label class="setting-label" for="pool-run-target-path">Save To (Manual Backup)</label>
+                        <select id="pool-run-target-path" class="select-input"></select>
+                    </div>
+                </div>
+
+                <!-- Sources -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Sources</div>
+                        <button id="pool-sources-refresh-btn" class="btn-secondary">Refresh</button>
+                    </div>
+                    <p class="metric-sub card-help">Select pools or subvolumes to include in the backup.</p>
+                    <div id="backup-sources" class="sources-grid">
+                        <div class="metric-sub">Loading sources...</div>
+                    </div>
+                </div>
+
+                <!-- Settings -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Schedule</div>
+                        <button id="pool-save-settings-btn" class="btn-primary">Save Settings</button>
+                    </div>
+                    
+                    <div class="setting-group">
+                        <label class="setting-label">Enable Scheduled Backups</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="pool-enabled">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label" for="pool-interval">Interval</label>
+                        <select id="pool-interval" class="select-input">
+                            <option value="60">Every hour</option>
+                            <option value="360">Every 6 hours</option>
+                            <option value="720">Every 12 hours</option>
+                            <option value="1440">Daily</option>
+                            <option value="10080">Weekly</option>
+                        </select>
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label" for="pool-keep-last">Retention (Keep last)</label>
+                        <input id="pool-keep-last" type="number" min="1" max="200" value="30" class="select-input">
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label" for="pool-target-path">Save Location</label>
+                        <select id="pool-target-path" class="select-input"></select>
+                        <p class="metric-sub">Where pool snapshots are stored.</p>
+                    </div>
+                </div>
+
+                <!-- Snapshots List -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Snapshots</div>
+                        <button id="pool-snapshots-refresh-btn" class="btn-secondary">Refresh List</button>
+                    </div>
+                    <div id="pool-snapshots-list">
+                        <div class="metric-sub">Loading snapshots...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SYSTEM BACKUP TAB -->
+            <div class="tab-panel" id="tab-system-backup">
+                
+                <!-- Status & Manual Run -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Status & Run</div>
+                        <button id="system-run-btn" class="btn-primary">Backup Now</button>
+                    </div>
+                    <div class="backup-status-row">
+                        <div class="backup-status-chip">Last run <strong id="system-last-run">-</strong></div>
+                        <div class="backup-status-chip">Next run <strong id="system-next-run">-</strong></div>
+                        <div class="backup-status-chip">Status <strong id="system-last-status">-</strong></div>
+                    </div>
+                    <div id="system-last-error" class="metric-sub" style="color: var(--error); display: none;"></div>
+
+                    <div class="backup-info-grid">
+                        <div class="backup-info-item">
+                            <div class="setting-label">System Support</div>
+                            <div id="system-support-info" class="backup-info-value">Checking...</div>
+                        </div>
+                        <div class="backup-info-item">
+                            <div class="setting-label">Pending Rollback</div>
+                            <div id="system-pending-rollback" class="backup-info-value">None</div>
+                        </div>
+                    </div>
+                    <div class="setting-group" style="margin-top: 12px;">
+                        <label class="setting-label" for="system-run-target-path">Save To (Manual Backup)</label>
+                        <select id="system-run-target-path" class="select-input"></select>
+                    </div>
+                </div>
+
+                <!-- Settings -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Schedule</div>
+                        <button id="system-save-settings-btn" class="btn-primary">Save Settings</button>
+                    </div>
+                    
+                    <div class="setting-group">
+                        <label class="setting-label">Enable Scheduled System Backups</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="system-enabled">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label" for="system-interval">Interval</label>
+                        <select id="system-interval" class="select-input">
+                            <option value="1440">Daily</option>
+                            <option value="10080">Weekly</option>
+                            <option value="43200">Monthly</option>
+                        </select>
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label" for="system-keep-last">Retention (Keep last)</label>
+                        <input id="system-keep-last" type="number" min="1" max="100" value="10" class="select-input">
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label" for="system-target-path">Save Location</label>
+                        <select id="system-target-path" class="select-input"></select>
+                        <p class="metric-sub">Where system snapshots are stored.</p>
+                    </div>
+                </div>
+
+                <!-- Snapshots List -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Snapshots</div>
+                        <button id="system-snapshots-refresh-btn" class="btn-secondary">Refresh List</button>
+                    </div>
+                    <div id="system-snapshots-list">
+                        <div class="metric-sub">Loading snapshots...</div>
+                    </div>
+                    <p class="metric-sub" style="margin-top:10px;">
+                        Note: Restoring a system snapshot requires a reboot. You can also rollback from the AlvaOS Installer via USB.
+                    </p>
+                </div>
+            </div>
+
+            <!-- BUDDY BACKUP TAB -->
+            <div class="tab-panel" id="tab-buddy-backup">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Status & Connectivity</div>
+                        <div class="card-header-actions">
+                            <button id="buddy-refresh-btn" class="btn-secondary">Refresh</button>
+                            <button id="buddy-restart-tunnel-btn" class="btn-secondary">Restart Tunnel</button>
+                        </div>
+                    </div>
+                    <div class="buddy-status-row">
+                        <div class="buddy-status-chip">Supported <strong id="buddy-support-info">-</strong></div>
+                        <div class="buddy-status-chip">Tunnel <strong id="buddy-tunnel-state">-</strong></div>
+                    </div>
+                    <div class="buddy-identity-grid">
+                        <div class="buddy-identity-item">
+                            <div class="setting-label">Node ID</div>
+                            <div id="buddy-node-id" class="mono-text buddy-identity-value">-</div>
+                        </div>
+                        <div class="buddy-identity-item">
+                            <div class="setting-label">Public Key</div>
+                            <div id="buddy-public-key" class="mono-text buddy-identity-value">-</div>
+                        </div>
+                        <div class="buddy-identity-item">
+                            <div class="setting-label">Tunnel IP</div>
+                            <div id="buddy-tunnel-ip" class="mono-text buddy-identity-value">-</div>
+                        </div>
+                        <div class="buddy-identity-item">
+                            <div class="setting-label">Listen Port</div>
+                            <div id="buddy-listen-port" class="mono-text buddy-identity-value">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Pairing</div>
+                    </div>
+                    <p class="metric-sub card-help">Generate your token or paste your buddy token here. No manual IP setup required.</p>
+                    <div class="buddy-pairing-grid">
+                        <div class="setting-group full buddy-pairing-meta">
+                            <div>
+                                <label class="setting-label" for="buddy-token-expiry">Token Validity (minutes)</label>
+                                <input id="buddy-token-expiry" type="number" min="0" max="43200" value="0" class="select-input">
+                            </div>
+                            <p class="buddy-pairing-note">`0` = valid until one buddy has paired successfully.</p>
+                        </div>
+                        <div class="setting-group buddy-pairing-card">
+                            <label class="setting-label" for="buddy-generated-token">Your Pairing Token</label>
+                            <textarea id="buddy-generated-token" class="select-input buddy-token-area" rows="4" readonly></textarea>
+                            <div class="buddy-inline-actions">
+                                <button id="buddy-generate-token-btn" class="btn-primary">Generate Token</button>
+                                <button id="buddy-copy-token-btn" class="btn-secondary">Copy Token</button>
+                            </div>
+                        </div>
+                        <div class="setting-group buddy-pairing-card">
+                            <label class="setting-label" for="buddy-token-input">Buddy Token</label>
+                            <textarea id="buddy-token-input" class="select-input buddy-token-area" rows="4" placeholder="Paste buddy pairing token"></textarea>
+                            <div class="buddy-inline-actions">
+                                <button id="buddy-validate-token-btn" class="btn-primary">Pair With Buddy</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Paired Buddies</div>
+                    </div>
+                    <div id="buddy-peers-list" class="buddy-peers-wrap">
+                        <div class="metric-sub">No buddies paired yet.</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Buddy Transfer & Restore</div>
+                    </div>
+                    <div class="buddy-restore-layout">
+                        <div>
+                            <div class="setting-label" style="margin-bottom:8px;">Buddies</div>
+                            <div id="buddy-restore-buddy-list" class="buddy-restore-buddies">
+                                <div class="metric-sub">No buddy available.</div>
+                            </div>
+                        </div>
+                        <div class="buddy-restore-right">
+                            <div class="buddy-restore-header">
+                                <div class="setting-label" id="buddy-restore-selected-label">Snapshots</div>
+                                <button id="buddy-refresh-remote-btn" class="btn-secondary">Refresh Snapshots</button>
+                            </div>
+                            <div id="buddy-remote-snapshots-list" class="buddy-remote-list">
+                                <div class="metric-sub">Select a buddy to view snapshots.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Buddy Defaults & Security</div>
+                        <button id="buddy-save-settings-btn" class="btn-primary">Save Settings</button>
+                    </div>
+                    <p class="metric-sub card-help">Per-buddy schedule and source settings are configured inside each buddy card above.</p>
+                    <div class="buddy-defaults-layout">
+                        <section class="buddy-defaults-panel">
+                            <h3 class="buddy-defaults-heading">Storage Defaults</h3>
+                            <p class="buddy-defaults-note">Where incoming buddy data is stored and how much space new peers can use by default.</p>
+                            <div class="setting-group">
+                                <label class="setting-label" for="buddy-incoming-path">Local Incoming Data Path (Subvolume)</label>
+                                <select id="buddy-incoming-path" class="select-input"></select>
+                                <p class="metric-sub">Incoming data from buddy NAS systems will be stored here.</p>
+                            </div>
+                            <div class="setting-group">
+                                <label class="setting-label" for="buddy-incoming-quota">Default Buddy Storage Limit (GB)</label>
+                                <input id="buddy-incoming-quota" type="number" min="1" max="20000" value="200" class="select-input">
+                                <p class="metric-sub">Used as default for newly paired buddies (per buddy customizable).</p>
+                            </div>
+                        </section>
+                        <section class="buddy-defaults-panel">
+                            <h3 class="buddy-defaults-heading">Restore Security</h3>
+                            <p class="buddy-defaults-note">Protect rollback and restore operations with an additional encryption password.</p>
+                            <div class="buddy-security-row">
+                                <label class="setting-label">Encryption Requirement</label>
+                                <div style="display:flex; align-items:center; gap:10px;">
+                                    <span id="buddy-encryption-state" class="buddy-security-state off">Disabled</span>
+                                    <label class="toggle" style="margin:0;">
+                                        <input type="checkbox" id="buddy-encryption-enabled">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="setting-group buddy-security-password" id="buddy-encryption-settings">
+                                <label class="setting-label" for="buddy-encryption-password">Encryption Password</label>
+                                <input id="buddy-encryption-password" type="password" class="select-input" placeholder="Set or change encryption password">
+                                <p id="buddy-encryption-help" class="metric-sub">When enabled, the password is required for restore and rollback.</p>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+            </div>
+
+            <footer
+                style="margin-top:2rem; padding-top:1rem; border-top:1px solid var(--border-subtle); color:var(--text-secondary); font-size:0.8rem;">
+                AlvaOS {{VERSION}} &bull; <a href="https://github.com/SnowTimSwiss/AlvaOS" target="_blank"
+                    style="color:var(--text-secondary)">GitHub</a>
+            </footer>
+        </div>
+    </div>
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script src="icons.js"></script>
+    <script src="notifications.js"></script>
+    <script src="feedback.js"></script>
+    <script src="app.js"></script>
+    <script src="password-toggle.js"></script>
+    <script src="backup.js"></script>
+</body>
+
+</html>
+

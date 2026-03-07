@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlvaOS - Storage</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="notifications.css">
+    <style>
+        .tab-nav {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 24px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border-default);
+            flex-wrap: wrap;
+        }
+
+        .tab-btn {
+            background: transparent;
+            border: none;
+            padding: 8px 16px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 0.95rem;
+            font-weight: 500;
+            border-radius: var(--radius-default);
+            transition: all 0.2s;
+        }
+
+        .tab-btn:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .tab-btn.active {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+            border-bottom: 2px solid var(--accent-primary);
+            border-radius: 4px 4px 0 0;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(5px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media (max-width: 760px) {
+            .tab-nav {
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                padding-bottom: 6px;
+            }
+
+            .tab-btn {
+                white-space: nowrap;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="logo-area">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round"
+                    stroke-linejoin="round" style="color: var(--accent-primary);" />
+            </svg>
+            <div class="logo-text">AlvaOS</div>
+        </div>
+
+        <nav>
+            <a href="index.html" class="nav-link"><i data-lucide="house"></i> Dashboard</a>
+            <a href="storage.html" class="nav-link active"><i data-lucide="hard-drive"></i> Storage</a>
+            <a href="apps.html" class="nav-link"><i data-lucide="blocks"></i> Apps</a>
+            <a href="backup.html" class="nav-link"><i data-lucide="refresh-cw"></i> Backup</a>
+            <a href="users.html" class="nav-link"><i data-lucide="users"></i> Users</a>
+            <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw"></i> Updates <span class="nav-badge"
+                    id="updates-nav-badge" style="display:none;">!</span></a>
+            <div style="flex:1"></div>
+            <a href="system.html" class="nav-link"><i data-lucide="settings"></i> System</a>
+        </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="main">
+        <header class="topbar">
+            <div class="breadcrumbs">
+                System / <span>Storage</span>
+            </div>
+            <div class="status-badge" style="gap:10px;">
+                <div class="status-badge" style="border:none; background:transparent; padding:0;">
+                    <div class="status-dot"></div>
+                    <span>Online</span>
+                </div>
+                <!-- Optional Clock here if needed -->
+            </div>
+        </header>
+
+        <div class="content-scroll">
+            <div id="update-banner-slot"></div>
+            <div style="margin-bottom: 24px;">
+                <h1 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 4px;">Storage Management</h1>
+                <p style="color: var(--text-secondary); font-size: 0.95rem;">Manage disks, create pools, and configure
+                    shares.</p>
+            </div>
+
+            <!-- Tab Navigation (ID preserved for potential logic, usually class based) -->
+            <div class="tab-nav">
+                <button class="tab-btn active" data-tab="disks"><i data-lucide="disc"></i> Disks</button>
+                <button class="tab-btn" data-tab="pools"><i data-lucide="database"></i> Pools</button>
+                <button class="tab-btn" data-tab="shares"><i data-lucide="network"></i> Shares</button>
+            </div>
+
+            <!-- Disks Tab -->
+            <div class="tab-content active" id="tab-disks">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h2
+                        style="font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em;">
+                        Available Disks</h2>
+                    <button id="refresh-disks-btn" class="btn-secondary"
+                        style="padding: 4px 10px; font-size: 0.85rem;"><i data-lucide="refresh-cw"></i> Refresh</button>
+                </div>
+                <div id="disks-container" class="dashboard-grid">
+                    <div style="padding: 2rem; text-align:center; color: var(--text-secondary); grid-column: 1/-1;">
+                        Loading disks...</div>
+                </div>
+            </div>
+
+            <!-- Pools Tab -->
+            <div class="tab-content" id="tab-pools">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h2
+                        style="font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em;">
+                        Storage Pools</h2>
+                    <button id="create-pool-btn" class="btn-primary" style="padding: 4px 10px; font-size: 0.85rem;"><i data-lucide="plus"></i>
+                        Create Pool</button>
+                </div>
+                <div id="pools-container" class="dashboard-grid">
+                    <div style="padding: 2rem; text-align:center; color: var(--text-secondary); grid-column: 1/-1;">
+                        No pools found. <br> <span style="font-size:0.85rem;">Create a pool to start.</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Shares Tab -->
+            <div class="tab-content" id="tab-shares">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h2
+                        style="font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em;">
+                        Network Shares</h2>
+                    <button id="create-share-btn" class="btn-primary" style="padding: 4px 10px; font-size: 0.85rem;"><i data-lucide="plus"></i>
+                        Create Share</button>
+                </div>
+                <div id="shares-container" class="dashboard-grid">
+                    <div style="padding: 2rem; text-align:center; color: var(--text-secondary); grid-column: 1/-1;">
+                        No shares configured.
+                    </div>
+                </div>
+            </div>
+
+            <footer
+                style="margin-top:2rem; padding-top:1rem; border-top:1px solid var(--border-subtle); color:var(--text-secondary); font-size:0.8rem;">
+                AlvaOS {{VERSION}} &bull; <a href="https://github.com/SnowTimSwiss/AlvaOS" target="_blank"
+                    style="color:var(--text-secondary)">GitHub</a>
+            </footer>
+
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script src="icons.js"></script>
+    <script src="notifications.js"></script>
+    <script src="feedback.js"></script>
+    <script src="app.js"></script>
+    <script src="storage.js"></script>
+</body>
+
+</html>
+
