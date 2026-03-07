@@ -15,6 +15,8 @@ let installedAppsCache = [];
 let containersCache = [];
 let selectedAppId = null;
 const appDetailsCache = {};
+const appUpdateStatusCache = {};
+const appUpdateStatusPending = new Set();
 let activeLogsContainerId = null;
 let activeLogsRequestId = 0;
 let activeTerminalContainerId = null;
@@ -82,6 +84,14 @@ function getUpdateButtonConfig(app) {
         };
     }
 
+    if (String(app?.update_status || '') === 'checking') {
+        return {
+            disabled: true,
+            label: 'Checking...',
+            title: 'Checking whether newer container images are available'
+        };
+    }
+
     if (app?.update_available === false) {
         return {
             disabled: true,
@@ -90,11 +100,63 @@ function getUpdateButtonConfig(app) {
         };
     }
 
+    if (app?.update_available == null) {
+        return {
+            disabled: true,
+            label: 'Unavailable',
+            title: app?.update_check_error || 'Update status could not be determined right now'
+        };
+    }
+
     return {
         disabled: false,
         label: 'Update',
         title: ''
     };
+}
+
+async function loadAppUpdateStatus(appId, forceRefresh = false) {
+    if (!appId) return null;
+    if (appUpdateStatusPending.has(appId) && !forceRefresh) {
+        return appUpdateStatusCache[appId] || null;
+    }
+
+    appUpdateStatusPending.add(appId);
+    if (!forceRefresh && !appUpdateStatusCache[appId]) {
+        appUpdateStatusCache[appId] = { update_status: 'checking', update_available: null };
+    }
+
+    try {
+        const url = new URL(`${API_BASE}/apps/${appId}/update-status`, window.location.origin);
+        if (forceRefresh) url.searchParams.set('force_refresh', '1');
+
+        const response = await apiFetch(url.toString(), {
+            headers: { 'Authorization': authToken }
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(payload?.error || 'Failed to load app update status');
+        }
+
+        appUpdateStatusCache[appId] = payload || {};
+        installedAppsCache = installedAppsCache.map((app) => (
+            app.app_id === appId ? { ...app, ...payload } : app
+        ));
+        return payload;
+    } catch (error) {
+        appUpdateStatusCache[appId] = {
+            update_status: 'unknown',
+            update_available: null,
+            update_check_error: error.message || 'Failed to load app update status'
+        };
+        return appUpdateStatusCache[appId];
+    } finally {
+        appUpdateStatusPending.delete(appId);
+        if (selectedAppId === appId) {
+            renderInstalledList();
+            renderInspector();
+        }
+    }
 }
 
 function setStoreMeta(message) {
@@ -421,10 +483,22 @@ async function renderInspector() {
     const appContainers = containersLoaded ? getContainersForApp(selected.app_id) : [];
     const runningCount = appContainers.filter((c) => c.State === 'running').length;
     const appDetails = await getAppDetails(selected.app_id);
-    const updateButton = getUpdateButtonConfig(selected);
+    const cachedUpdateState = appUpdateStatusCache[selected.app_id];
+    const effectiveUpdateState = cachedUpdateState
+        ? { ...selected, ...cachedUpdateState }
+        : (
+            selected.update_status || selected.update_available != null
+                ? selected
+                : { ...selected, update_status: selected.source === 'custom_compose' ? 'unsupported' : 'checking' }
+        );
+    const updateButton = getUpdateButtonConfig(effectiveUpdateState);
 
     if (selectedAppId !== selectedAtRender) {
         return;
+    }
+
+    if (selected.source !== 'custom_compose' && !appUpdateStatusPending.has(selected.app_id) && !cachedUpdateState) {
+        void loadAppUpdateStatus(selected.app_id);
     }
 
     const webUiUrl = buildWebUiUrl(selected.app_id, appDetails, appContainers);
