@@ -3,6 +3,18 @@
 
 const IGNORED_DETECTED_POOLS_KEY = 'alvaos_ignored_detected_pools';
 
+function showNotification(message, type = 'info') {
+    if (window.showToast) {
+        window.showToast(message, type);
+    } else {
+        console.log(`[${type}] ${message}`);
+    }
+}
+
+function showError(message) {
+    showNotification(message, 'error');
+}
+
 async function apiFetch(url, options = {}) {
     const response = await window.fetch(url, options);
     if (response.status === 401) {
@@ -702,7 +714,7 @@ async function showCreatePoolDialog() {
     });
 
     if (!response.ok) {
-        alert('Failed to load disks');
+        showError('Failed to load disks');
         return;
     }
 
@@ -710,7 +722,7 @@ async function showCreatePoolDialog() {
     const availableDisks = data.disks.filter(d => !d.is_system_disk && d.fstype === 'none');
 
     if (availableDisks.length === 0) {
-        alert('No available disks found.\n\nAll disks are either in use or are system disks.');
+        showError('No available disks found.\n\nAll disks are either in use or are system disks.');
         return;
     }
 
@@ -835,29 +847,29 @@ async function showCreatePoolDialog() {
         const raidLevel = raidSelect.value;
 
         if (!poolName) {
-            alert('Please enter a pool name');
+            showError('Please enter a pool name');
             return;
         }
 
         // Validate pool name (alphanumeric, hyphens, underscores, 1-63 chars)
         const poolNamePattern = /^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$/;
         if (!poolNamePattern.test(poolName)) {
-            alert('Invalid pool name. Must be lowercase, start/end with alphanumeric, contain only lowercase letters, numbers, hyphens, and underscores, and be 1-63 characters.');
+            showError('Invalid pool name. Must be lowercase, start/end with alphanumeric, contain only lowercase letters, numbers, hyphens, and underscores, and be 1-63 characters.');
             return;
         }
 
         if (selectedDisks.length === 0) {
-            alert('Please select at least one disk');
+            showError('Please select at least one disk');
             return;
         }
 
         if (raidLevel === 'raid1' && selectedDisks.length < 2) {
-            alert('RAID1 requires at least 2 disks');
+            showError('RAID1 requires at least 2 disks');
             return;
         }
 
         if (raidLevel === 'raid10' && selectedDisks.length < 4) {
-            alert('RAID10 requires at least 4 disks');
+            showError('RAID10 requires at least 4 disks');
             return;
         }
 
@@ -918,7 +930,7 @@ async function showExpandPoolDialog(poolId, poolName) {
     });
 
     if (!disksResponse.ok) {
-        alert('Failed to load disks');
+        showError('Failed to load disks');
         return;
     }
 
@@ -926,7 +938,7 @@ async function showExpandPoolDialog(poolId, poolName) {
     const availableDisks = disksData.disks.filter(d => !d.is_system_disk && d.fstype === 'none');
 
     if (availableDisks.length === 0) {
-        alert('No available disks found to expand the pool.');
+        showError('No available disks found to expand the pool.');
         return;
     }
 
@@ -975,7 +987,7 @@ async function showExpandPoolDialog(poolId, poolName) {
         const selectedDisks = Array.from(dialog.querySelectorAll('.expand-disk-checkbox:checked')).map(cb => cb.value);
 
         if (selectedDisks.length === 0) {
-            alert('Please select at least one disk');
+            showError('Please select at least one disk');
             return;
         }
 
@@ -996,11 +1008,11 @@ async function showExpandPoolDialog(poolId, poolName) {
             const result = await response.json();
             if (!response.ok) throw new Error(result.error || 'Failed to expand pool');
 
-            alert(result.message);
+            showNotification(result.message, 'success');
             modal.remove();
             loadPools();
         } catch (error) {
-            alert(`Error: ${error.message}`);
+            showError(`Error: ${error.message}`);
         }
     };
 }
@@ -1043,7 +1055,7 @@ async function manageSubvolumes(poolId) {
     });
 
     if (!response.ok) {
-        alert('Failed to load subvolumes');
+        showError('Failed to load subvolumes');
         return;
     }
 
@@ -1124,7 +1136,7 @@ async function manageSubvolumes(poolId) {
         const name = panel.querySelector('#new-subvol-name').value.trim();
 
         if (!name) {
-            alert('Please enter a subvolume name');
+            showError('Please enter a subvolume name');
             return;
         }
 
@@ -1397,18 +1409,18 @@ async function showCreateShareDialog() {
                 }
             });
             if (!Object.keys(smbPermissions).length && !guestAccess) {
-                alert('Please allow at least one user or enable guest access for SMB.');
+                showError('Please allow at least one user or enable guest access for SMB.');
                 return;
             }
         }
 
         if (!shareName) {
-            alert('Please enter a share name');
+            showError('Please enter a share name');
             return;
         }
 
         if (!sharePath) {
-            alert('Please enter a share path');
+            showError('Please enter a share path');
             return;
         }
 
@@ -1440,11 +1452,11 @@ async function showCreateShareDialog() {
                 throw new Error(result.error || 'Failed to create share');
             }
 
-            alert(result.message);
+            showNotification(result.message, 'success');
             modal.remove();
             loadShares();
         } catch (error) {
-            alert(`Error: ${error.message}`);
+            showError(`Error: ${error.message}`);
         }
     });
 }
@@ -1487,13 +1499,13 @@ async function showSmbPermissions(shareId) {
         headers: { 'Authorization': token || '' }
     });
     if (!shareResponse.ok) {
-        alert('Failed to load share information');
+        showError('Failed to load share information');
         return;
     }
     const shareData = await shareResponse.json();
     const share = shareData.shares.find(s => s.id === shareId);
     if (!share) {
-        alert('Share not found');
+        showError('Share not found');
         return;
     }
 
@@ -1501,7 +1513,7 @@ async function showSmbPermissions(shareId) {
         headers: { 'Authorization': token || '' }
     });
     if (!usersResponse.ok) {
-        alert('Failed to load users');
+        showError('Failed to load users');
         return;
     }
     const usersData = await usersResponse.json();
@@ -1602,7 +1614,7 @@ async function showConnectionInfo(shareId) {
     });
 
     if (!response.ok) {
-        alert('Failed to load share information');
+        showError('Failed to load share information');
         return;
     }
 
@@ -1610,7 +1622,7 @@ async function showConnectionInfo(shareId) {
     const share = data.shares.find(s => s.id === shareId);
 
     if (!share) {
-        alert('Share not found');
+        showError('Share not found');
         return;
     }
 

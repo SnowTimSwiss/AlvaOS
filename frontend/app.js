@@ -13,6 +13,37 @@ const HISTORY_MAX_SAMPLES = 120;
 let usageHistory = [];
 let csrfToken = null;
 
+// Page Loading Overlay
+function showPageLoading() {
+    const overlay = document.getElementById('page-loading-overlay');
+    if (overlay) {
+        overlay.style.display = 'flex';
+    }
+}
+
+function hidePageLoading() {
+    const overlay = document.getElementById('page-loading-overlay');
+    if (overlay) {
+        overlay.style.display = 'none';
+    }
+}
+
+// Add loading state to navigation links
+document.addEventListener('DOMContentLoaded', function() {
+    const navLinks = document.querySelectorAll('.nav-link');
+    navLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            const href = this.getAttribute('href');
+            if (href && !href.startsWith('#') && href !== window.location.pathname) {
+                showPageLoading();
+            }
+        });
+    });
+    
+    // Hide loading overlay when page is fully loaded
+    window.addEventListener('load', hidePageLoading);
+});
+
 // Fetch CSRF token after login
 async function fetchCsrfToken() {
     try {
