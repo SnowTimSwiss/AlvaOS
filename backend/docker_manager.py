@@ -7,6 +7,7 @@ Manages Docker containers for the app store
 import subprocess
 import json
 import os
+import re
 from typing import List, Dict, Optional, Tuple
 
 
@@ -228,7 +229,7 @@ class DockerManager:
 
         Args:
             container_id: Container ID or name
-            command: Shell command to execute
+            command: Shell command to execute (limited to alphanumeric, spaces, and basic shell operators)
             timeout: Timeout in seconds
             user: Optional user to run as inside container
             workdir: Optional working directory inside container
@@ -237,10 +238,36 @@ class DockerManager:
             Tuple of (result dict, error message)
         """
         try:
+            # Security: Validate container_id to prevent injection
+            if not container_id or not isinstance(container_id, str):
+                return None, "Invalid container ID"
+            # Container IDs should be alphanumeric with optional hyphens/underscores
+            if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_.-]*$', container_id):
+                return None, "Invalid container ID format"
+            
+            # Security: Validate command to prevent shell injection
+            if not command or not isinstance(command, str):
+                return None, "Invalid command"
+            # Allow only safe characters: alphanumeric, spaces, basic shell operators, paths
+            # Block dangerous patterns: $(), ``, ;, |, &, >, <, etc.
+            dangerous_patterns = ['$(', '${', '`', ';', '|', '&', '>', '<', '&&', '||']
+            for pattern in dangerous_patterns:
+                if pattern in command:
+                    return None, f"Command contains forbidden pattern: {pattern}"
+            # Allow only whitelisted characters
+            if not re.match(r'^[a-zA-Z0-9_./\-\s:*]+$', command):
+                return None, "Command contains invalid characters"
+
             cmd = ['exec']
             if user:
+                # Validate user parameter
+                if not re.match(r'^[a-zA-Z0-9_-]+$', user):
+                    return None, "Invalid user format"
                 cmd.extend(['-u', user])
             if workdir:
+                # Validate workdir parameter
+                if not workdir.startswith('/') or '..' in workdir:
+                    return None, "Invalid workdir path"
                 cmd.extend(['-w', workdir])
             cmd.extend([container_id, '/bin/sh', '-lc', command])
 

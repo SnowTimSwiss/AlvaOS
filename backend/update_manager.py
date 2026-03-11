@@ -7,6 +7,7 @@ import subprocess
 import secrets
 import shutil
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -363,10 +364,16 @@ class UpdateManager:
         return "\n".join(lines)
 
     def _set_debian_sources(self, target_codename):
+        # Backup existing sources.list before overwriting
+        backup_path = f"/etc/apt/sources.list.backup.{int(time.time())}"
+        self.run_command([CMD['BASH'], "-lc", f"cp /etc/apt/sources.list {backup_path} 2>/dev/null || true"], timeout=10)
+        
         content = self._build_debian_sources(target_codename)
         script = f"cat > /etc/apt/sources.list <<'EOF'\n{content}EOF"
         res, err = self.run_command([CMD['BASH'], "-lc", script], timeout=30)
         if err or not res or res.returncode != 0:
+            # Restore backup on failure
+            self.run_command([CMD['BASH'], "-lc", f"cp {backup_path} /etc/apt/sources.list 2>/dev/null || true"], timeout=10)
             return False, err or (res.stderr if res else "failed to write /etc/apt/sources.list")
         return True, None
 

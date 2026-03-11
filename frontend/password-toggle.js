@@ -75,9 +75,11 @@
         inputs.forEach(enhancePasswordInput);
     }
 
+    let _passwordObserver = null;
+
     function initObserver() {
         if (!window.MutationObserver) return;
-        const observer = new MutationObserver((mutations) => {
+        _passwordObserver = new MutationObserver((mutations) => {
             mutations.forEach((mutation) => {
                 mutation.addedNodes.forEach((node) => {
                     if (!node || node.nodeType !== 1) return;
@@ -89,8 +91,15 @@
                 });
             });
         });
-        observer.observe(document.body, { childList: true, subtree: true });
+        _passwordObserver.observe(document.body, { childList: true, subtree: true });
     }
+
+    window.disconnectPasswordObserver = function() {
+        if (_passwordObserver) {
+            _passwordObserver.disconnect();
+            _passwordObserver = null;
+        }
+    };
 
     function init() {
         scan(document);

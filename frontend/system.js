@@ -1,6 +1,15 @@
 // AlvaOS System Settings Logic
 // API_BASE is defined in app.js
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 const els = {
     hostnameInput: document.getElementById('hostname-input'),
     saveBtn: document.getElementById('save-hostname-btn'),
@@ -463,10 +472,17 @@ async function updateHostname() {
     const newHostname = els.hostnameInput?.value?.trim();
     if (!newHostname) return;
 
+    // Validate hostname (RFC 1123)
+    const hostnamePattern = /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/;
+    if (!hostnamePattern.test(newHostname)) {
+        alert('Invalid hostname. Must start/end with alphanumeric, contain only letters, numbers, and hyphens, and be 1-63 characters.');
+        return;
+    }
+
     try {
         const res = await fetch(`${API_BASE}/system/hostname`, {
             method: 'PUT',
-            headers: getHeaders(),
+            headers: getHeaders(true),
             body: JSON.stringify({ hostname: newHostname })
         });
 
@@ -639,7 +655,7 @@ async function setup2fa() {
                 <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1.5rem;">
                     Scan this QR code with your authenticator app (Google Authenticator, Authy, Aegis).
                 </p>
-                <img src="${data.qr_code}" style="width: 200px; height: 200px; margin: 0 auto 1.5rem; display: block; background: white; padding: 10px; border-radius: 8px;">
+                <img src="${escapeHtml(String(data.qr_code || ''))}" style="width: 200px; height: 200px; margin: 0 auto 1.5rem; display: block; background: white; padding: 10px; border-radius: 8px;" onerror="this.style.display='none';">
                 <div class="setting-group" style="text-align: left;">
                     <label class="setting-label">Verification Code</label>
                     <input type="text" id="tfa-verify-code" placeholder="6-digit code" style="width: 100%; background: var(--bg-body); border: 1px solid var(--border-default); color: var(--text-primary); padding: 8px; border-radius: 4px;">

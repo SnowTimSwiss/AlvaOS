@@ -839,6 +839,13 @@ async function showCreatePoolDialog() {
             return;
         }
 
+        // Validate pool name (alphanumeric, hyphens, underscores, 1-63 chars)
+        const poolNamePattern = /^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$/;
+        if (!poolNamePattern.test(poolName)) {
+            alert('Invalid pool name. Must be lowercase, start/end with alphanumeric, contain only lowercase letters, numbers, hyphens, and underscores, and be 1-63 characters.');
+            return;
+        }
+
         if (selectedDisks.length === 0) {
             alert('Please select at least one disk');
             return;

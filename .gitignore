@@ -59,3 +59,21 @@ temp/
 
 # Local runtime state (dev fallback)
 .alvaos_state/
+
+# Sensitive data and runtime state
+/var/lib/alvaos/
+/etc/sudoers.d/
+/etc/wireguard/
+*.db
+*.sqlite
+*.sqlite3
+*.key
+*.pem
+*.crt
+*.secret
+*.token
+*.credential
+docker-compose.override.yml
+.env.docker
+backend/secrets/
+installer/config.local*

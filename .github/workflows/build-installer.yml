@@ -16,8 +16,8 @@ jobs:
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
-      
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
       - name: Determine version
         id: version
         run: |
@@ -74,7 +74,7 @@ jobs:
       
       - name: Upload installer artifact (for non-release builds)
         if: github.event_name != 'release'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
         with:
           name: alvaos-installer-${{ steps.version.outputs.version }}
           path: |
@@ -84,7 +84,7 @@ jobs:
       
       - name: Upload installer to release
         if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@9d7c94cfd0a1f3ed45544c887983e9fa900f0564 # v2.0.4
         with:
           files: |
             installer/build/[Aa][Ll][Vv][Aa][Oo][Ss]-installer-*.iso

@@ -33,8 +33,9 @@ to_debian_version() {
         error "Could not derive a Debian version from '${raw}'"
     fi
 
-    if command -v dpkg >/dev/null 2>&1 && ! dpkg --validate-version "${deb_version}" >/dev/null 2>&1; then
-        error "Derived Debian version '${deb_version}' is invalid (from '${raw}')"
+    # Basic version format validation (alphanumeric, dots, colons, plus, tildes, hyphens)
+    if ! [[ "${deb_version}" =~ ^[0-9A-Za-z.+:~_-]+$ ]]; then
+        error "Derived Debian version '${deb_version}' contains invalid characters (from '${raw}')"
     fi
 
     printf '%s\n' "${deb_version}"
