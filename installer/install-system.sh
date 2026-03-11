@@ -33,6 +33,99 @@ input() {
     whiptail --title "AlvaOS Installer" --inputbox "$1" 12 70 "$2" 3>&1 1>&2 2>&3
 }
 
+# Validate IPv4 address format
+validate_ip() {
+    local ip="$1"
+    local IFS='.'
+    local -a octets
+    read -ra octets <<< "$ip"
+    
+    # Must have exactly 4 octets
+    if [[ ${#octets[@]} -ne 4 ]]; then
+        return 1
+    fi
+    
+    for octet in "${octets[@]}"; do
+        # Must be a number
+        if ! [[ "$octet" =~ ^[0-9]+$ ]]; then
+            return 1
+        fi
+        # Must be 0-255
+        if [[ "$octet" -lt 0 || "$octet" -gt 255 ]]; then
+            return 1
+        fi
+    done
+    return 0
+}
+
+# Validate netmask
+validate_netmask() {
+    local mask="$1"
+    local valid_masks=("255.255.255.255" "255.255.255.254" "255.255.255.252" "255.255.255.248" "255.255.255.240" "255.255.255.224" "255.255.255.192" "255.255.255.128" "255.255.255.0" "255.255.254.0" "255.255.252.0" "255.255.248.0" "255.255.240.0" "255.255.224.0" "255.255.192.0" "255.255.128.0" "255.255.0.0" "255.254.0.0" "255.252.0.0" "255.248.0.0" "255.240.0.0" "255.224.0.0" "255.192.0.0" "255.128.0.0" "255.0.0.0" "254.0.0.0" "252.0.0.0" "248.0.0.0" "240.0.0.0" "224.0.0.0" "192.0.0.0" "128.0.0.0" "0.0.0.0")
+    for valid in "${valid_masks[@]}"; do
+        if [[ "$mask" == "$valid" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Get validated IP input with retry
+get_validated_ip() {
+    local prompt="$1"
+    local default="$2"
+    local max_attempts=3
+    local attempt=0
+    
+    while [[ $attempt -lt $max_attempts ]]; do
+        local ip=$(input "$prompt" "$default")
+        if [[ -z "$ip" ]]; then
+            msg "IP address cannot be empty. Please try again."
+            attempt=$((attempt + 1))
+            continue
+        fi
+        if validate_ip "$ip"; then
+            echo "$ip"
+            return 0
+        else
+            msg "Invalid IP address format: $ip\n\nPlease enter a valid IPv4 address (e.g., 192.168.1.50)"
+            attempt=$((attempt + 1))
+        fi
+    done
+    
+    msg "Too many invalid attempts. Using default: $default"
+    echo "$default"
+    return 0
+}
+
+# Get validated netmask with retry
+get_validated_netmask() {
+    local prompt="$1"
+    local default="$2"
+    local max_attempts=3
+    local attempt=0
+    
+    while [[ $attempt -lt $max_attempts ]]; do
+        local mask=$(input "$prompt" "$default")
+        if [[ -z "$mask" ]]; then
+            msg "Netmask cannot be empty. Please try again."
+            attempt=$((attempt + 1))
+            continue
+        fi
+        if validate_netmask "$mask"; then
+            echo "$mask"
+            return 0
+        else
+            msg "Invalid netmask: $mask\n\nPlease enter a valid netmask (e.g., 255.255.255.0)"
+            attempt=$((attempt + 1))
+        fi
+    done
+    
+    msg "Too many invalid attempts. Using default: $default"
+    echo "$default"
+    return 0
+}
+
 menu() {
     title=$1
     shift
@@ -534,10 +627,10 @@ NET_MODE=$(menu "Network Configuration" \
     "STATIC" "Manual (Static IP)")
 
 if [ "$NET_MODE" == "STATIC" ]; then
-    STATIC_IP=$(input "Enter Static IP address (e.g., 192.168.1.50)" "192.168.1.50")
-    STATIC_NETMASK=$(input "Enter Netmask (e.g., 255.255.255.0)" "255.255.255.0")
-    STATIC_GW=$(input "Enter Gateway (e.g., 192.168.1.1)" "192.168.1.1")
-    STATIC_DNS=$(input "Enter DNS Server (e.g., 1.1.1.1)" "1.1.1.1")
+    STATIC_IP=$(get_validated_ip "Enter Static IP address (e.g., 192.168.1.50)" "192.168.1.50")
+    STATIC_NETMASK=$(get_validated_netmask "Enter Netmask (e.g., 255.255.255.0)" "255.255.255.0")
+    STATIC_GW=$(get_validated_ip "Enter Gateway (e.g., 192.168.1.1)" "192.168.1.1")
+    STATIC_DNS=$(get_validated_ip "Enter DNS Server (e.g., 1.1.1.1)" "1.1.1.1")
 fi
 
 # Main Installation Logic wrapped in progress bar

@@ -579,6 +579,8 @@ function renderContainerTable(containers) {
                     const name = container.Names || (container.ID || '').substring(0, 12);
                     const image = container.Image || 'unknown';
                     const ports = container.Ports || 'none';
+                    // Security: Use JSON.stringify to safely embed IDs in onclick handlers
+                    const idJson = JSON.stringify(container.ID || '');
 
                     return `
                         <tr>
@@ -591,11 +593,11 @@ function renderContainerTable(containers) {
                             <td>
                                 <div class="container-actions">
                                     ${isRunning
-                                        ? `<button class="btn-icon" onclick="stopContainer('${escapeHtml(container.ID)}')">Stop</button>`
-                                        : `<button class="btn-icon" onclick="startContainer('${escapeHtml(container.ID)}')">Start</button>`}
-                                    <button class="btn-icon" onclick="openTerminalModal('${escapeHtml(container.ID)}')">Terminal</button>
-                                    <button class="btn-icon" onclick="viewLogs('${escapeHtml(container.ID)}')">Logs</button>
-                                    <button class="btn-icon btn-danger" onclick="deleteContainer('${escapeHtml(container.ID)}')">Delete</button>
+                                        ? `<button class="btn-icon" onclick="stopContainer(${idJson})">Stop</button>`
+                                        : `<button class="btn-icon" onclick="startContainer(${idJson})">Start</button>`}
+                                    <button class="btn-icon" onclick="openTerminalModal(${idJson})">Terminal</button>
+                                    <button class="btn-icon" onclick="viewLogs(${idJson})">Logs</button>
+                                    <button class="btn-icon btn-danger" onclick="deleteContainer(${idJson})">Delete</button>
                                 </div>
                             </td>
                         </tr>

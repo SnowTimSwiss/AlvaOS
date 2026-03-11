@@ -227,6 +227,17 @@
                     setTimeout(() => document.getElementById('totp-code').focus(), 50);
                 } else {
                     localStorage.setItem('alvaos_token', data.token);
+                    // Fetch CSRF token after successful login
+                    fetch('/api/v1/auth/csrf-token', {
+                        headers: { 'Authorization': data.token }
+                    })
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.csrf_token) {
+                            window.csrfToken = d.csrf_token;
+                        }
+                    })
+                    .catch(() => {});
                     window.location.href = '/';
                 }
             } catch (err) {
@@ -258,6 +269,20 @@
                 if (!response.ok) throw new Error(data.error || 'Verification failed');
 
                 localStorage.setItem('alvaos_token', data.token);
+                // Fetch CSRF token after successful login
+                try {
+                    const csrfResponse = await fetch('/api/v1/auth/csrf-token', {
+                        headers: { 'Authorization': data.token }
+                    });
+                    if (csrfResponse.ok) {
+                        const csrfData = await csrfResponse.json();
+                        if (csrfData.csrf_token) {
+                            window.csrfToken = csrfData.csrf_token;
+                        }
+                    }
+                } catch (e) {
+                    console.error('Failed to fetch CSRF token:', e);
+                }
                 window.location.href = '/';
             } catch (err) {
                 showError(err.message);

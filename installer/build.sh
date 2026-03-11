@@ -170,8 +170,11 @@ set -e
 
 if ! id installer >/dev/null 2>&1; then
   useradd -m -s /bin/bash installer
-  # Temporary password for installer environment only
-  echo "installer:installer123" | chpasswd
+  # Generate random temporary password for installer environment only
+  RANDOM_PASS=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9' | head -c12)
+  echo "installer:${RANDOM_PASS}" | chpasswd
+  echo "INSTALLER TEMPORARY PASSWORD: ${RANDOM_PASS}" > /etc/motd.installer
+  echo "This password will be cleared after installation." >> /etc/motd.installer
 fi
 
 echo "installer ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/installer

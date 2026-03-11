@@ -25,6 +25,7 @@ import sys
 import requests
 import io
 import atexit
+import threading
 try:
     import pyotp
     import qrcode
@@ -99,11 +100,43 @@ def is_secure_system_device(device_name):
         return False
 
 
+def _is_safe_path(path):
+    """Validate that a path does not contain malicious patterns like .. or resolve outside allowed roots."""
+    if not path:
+        return False
+    # Normalize and check for path traversal attempts
+    normalized = os.path.normpath(os.path.abspath(str(path)))
+    # Reject paths that contain .. after normalization (traversal attempts)
+    if '..' in os.path.normpath(str(path)).split(os.sep):
+        return False
+    # Ensure path is under allowed roots
+    allowed_roots = ['/mnt/', '/var/lib/alvaos/', '/tmp/', '/home/']
+    for root in allowed_roots:
+        if normalized.startswith(root) or normalized == root.rstrip('/'):
+            return True
+    # Special case: allow root for probing
+    if normalized == '/':
+        return True
+    return False
+
+
 def _existing_probe_path(path):
     target = os.path.normpath(str(path or '').strip())
     if not target:
         return '/'
+    # Security: reject path traversal attempts
+    if not _is_safe_path(target):
+        return '/'
     probe = os.path.realpath(target)
+    # Security: verify realpath is still under allowed roots
+    allowed_roots = ['/mnt/', '/var/lib/alvaos/', '/tmp/', '/home/', '/']
+    probe_allowed = False
+    for root in allowed_roots:
+        if probe.startswith(root) or probe == root.rstrip('/'):
+            probe_allowed = True
+            break
+    if not probe_allowed:
+        return '/'
     while probe != '/' and not os.path.exists(probe):
         next_probe = os.path.dirname(probe)
         if next_probe == probe:
@@ -188,13 +221,15 @@ STORAGE_CACHE = {
     'pools': {'data': None, 'expires': 0}
 }
 CACHE_TTL = 5
+_storage_cache_lock = threading.Lock()
 
 def invalidate_storage_cache(*sections):
     """Invalidate selected storage cache sections."""
-    target_sections = sections or ('disks', 'pools')
-    for section in target_sections:
-        if section in STORAGE_CACHE:
-            STORAGE_CACHE[section]['expires'] = 0
+    with _storage_cache_lock:
+        target_sections = sections or ('disks', 'pools')
+        for section in target_sections:
+            if section in STORAGE_CACHE:
+                STORAGE_CACHE[section]['expires'] = 0
 
 # Version Management
 def get_version():
@@ -437,8 +472,8 @@ def _read_cpu_temperature_c():
                     current = getattr(entry, 'current', None)
                     if isinstance(current, (int, float)):
                         return round(float(current), 1)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Warning: Failed to read CPU temperature: {e}")
     return None
 
 def _build_default_alerts_state():
@@ -1083,8 +1118,9 @@ def _purge_expired_sessions():
 def _create_session(username, role='admin'):
     """Create a new session token, returning the token string."""
     token = secrets.token_hex(32)
+    csrf_token = secrets.token_hex(32)
     expires_at = (_utc_now() + timedelta(hours=SESSION_TTL_HOURS)).isoformat()
-    SESSIONS[token] = {'username': username, 'role': role, 'expires_at': expires_at}
+    SESSIONS[token] = {'username': username, 'role': role, 'expires_at': expires_at, 'csrf_token': csrf_token}
     return token
 
 def _get_session(token):
@@ -1097,6 +1133,26 @@ def _get_session(token):
         del SESSIONS[token]
         return None
     return session
+
+def require_csrf_token(f):
+    """Decorator to require a valid CSRF token for state-changing operations."""
+    @functools.wraps(f)
+    def decorated_function(*args, **kwargs):
+        session = _get_current_session()
+        if not session:
+            return jsonify({'error': 'Authentication required'}), 401
+        
+        # Get CSRF token from header
+        csrf_token = request.headers.get('X-CSRF-Token', '').strip()
+        if not csrf_token:
+            return jsonify({'error': 'CSRF token missing'}), 403
+        
+        # Verify CSRF token matches session
+        if csrf_token != session.get('csrf_token', ''):
+            return jsonify({'error': 'Invalid CSRF token'}), 403
+        
+        return f(*args, **kwargs)
+    return decorated_function
 
 def _get_current_session():
     """Get the session for the current request."""
@@ -1421,6 +1477,15 @@ def get_2fa_status():
     secret = _load_totp_secret()
     return jsonify({'enabled': bool(secret), 'totp_available': TOTP_AVAILABLE})
 
+@app.route('/api/v1/auth/csrf-token', methods=['GET'])
+@require_auth
+def get_csrf_token():
+    """Return the CSRF token for the current session."""
+    session = _get_current_session()
+    if not session:
+        return jsonify({'error': 'Invalid session'}), 401
+    return jsonify({'csrf_token': session.get('csrf_token', '')})
+
 @app.route('/api/v1/auth/2fa/setup', methods=['POST'])
 @require_auth
 def setup_2fa():
@@ -1527,6 +1592,7 @@ def disable_2fa():
 
 @app.route('/api/v1/users', methods=['GET', 'POST', 'DELETE'])
 @require_auth(require_admin=True)
+@require_csrf_token
 def manage_users():
     """Manage system users and Samba users"""
     if request.method == 'GET':
@@ -2155,14 +2221,15 @@ def system_time():
 
 @app.route('/api/v1/system/power', methods=['POST'])
 @require_auth(require_admin=True)
+@require_csrf_token
 def system_power():
     """Handle Shutdown/Reboot"""
     data = request.get_json(silent=True) or {}
     action = str(data.get('action') or '').strip().lower()
-    
+
     if action not in ['reboot', 'shutdown']:
         return jsonify({'error': 'Invalid action'}), 400
-        
+
     if platform.system() == 'Linux':
         try:
             cmd_path = CMD['REBOOT'] if action == 'reboot' else CMD['POWEROFF']
@@ -2942,6 +3009,7 @@ def get_disk_smart(disk_name):
 
 @app.route('/api/v1/storage/disks/<disk_name>/wipe', methods=['POST'])
 @require_auth(require_admin=True)
+@require_csrf_token
 def wipe_disk(disk_name):
     """Wipe disk signatures and partition table to make it available for pools"""
     if not disk_name.isalnum() and not all(c in '._-' for c in disk_name if not c.isalnum()):
@@ -3130,14 +3198,16 @@ if buddy_backup_manager is None:
 
 @app.route('/api/v1/storage/pools', methods=['GET', 'POST', 'DELETE'])
 @require_auth(require_admin=True)
+@require_csrf_token
 def manage_pools():
     """Manage Btrfs pools"""
-    
+
     if request.method == 'GET':
         # Check cache
         current_time = time.time()
-        if STORAGE_CACHE['pools']['expires'] > current_time:
-            return jsonify({'pools': STORAGE_CACHE['pools']['data']})
+        with _storage_cache_lock:
+            if STORAGE_CACHE['pools']['expires'] > current_time:
+                return jsonify({'pools': STORAGE_CACHE['pools']['data']})
 
         pools = []
         
@@ -3263,8 +3333,9 @@ def manage_pools():
                 ]
         except Exception as e:
             print(f"Error in manage_pools GET: {e}")
-            
-        STORAGE_CACHE['pools'] = {'data': pools, 'expires': current_time + CACHE_TTL}
+
+        with _storage_cache_lock:
+            STORAGE_CACHE['pools'] = {'data': pools, 'expires': current_time + CACHE_TTL}
         return jsonify({'pools': pools})
     
     elif request.method == 'POST':

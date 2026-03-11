@@ -11,6 +11,39 @@ const ALERTS_POLL_MS_HIDDEN = 60000;
 const HISTORY_CACHE_KEY = 'alvaos_dashboard_history_v1';
 const HISTORY_MAX_SAMPLES = 120;
 let usageHistory = [];
+let csrfToken = null;
+
+// Fetch CSRF token after login
+async function fetchCsrfToken() {
+    try {
+        const token = localStorage.getItem('alvaos_token');
+        if (!token) return;
+        const response = await fetch(`${API_BASE}/auth/csrf-token`, {
+            headers: { 'Authorization': token }
+        });
+        if (response.ok) {
+            const data = await response.json();
+            csrfToken = data.csrf_token;
+        }
+    } catch (error) {
+        console.error('Failed to fetch CSRF token:', error);
+    }
+}
+
+// Get headers for API requests, including CSRF token for state-changing operations
+function getHeaders(includeCsrf = false) {
+    const token = localStorage.getItem('alvaos_token');
+    const headers = {
+        'Content-Type': 'application/json'
+    };
+    if (token) {
+        headers['Authorization'] = token;
+    }
+    if (includeCsrf && csrfToken) {
+        headers['X-CSRF-Token'] = csrfToken;
+    }
+    return headers;
+}
 
 function escapeHtml(value) {
     return String(value ?? '')
@@ -235,7 +268,13 @@ async function fetchSystemInfo() {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
 
-        const data = await response.json();
+        let data;
+        try {
+            data = await response.json();
+        } catch (jsonError) {
+            console.error('Failed to parse JSON response:', jsonError);
+            throw new Error('Invalid response format from server');
+        }
         updateDashboard(data);
         return data;
     } catch (error) {
@@ -469,7 +508,13 @@ async function fetchAlerts() {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
 
-        const data = await response.json();
+        let data;
+        try {
+            data = await response.json();
+        } catch (jsonError) {
+            console.error('Failed to parse JSON response for alerts:', jsonError);
+            throw new Error('Invalid response format from server');
+        }
         renderAlerts(data);
     } catch (error) {
         console.warn('Error fetching alerts:', error);

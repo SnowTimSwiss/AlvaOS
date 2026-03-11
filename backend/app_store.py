@@ -517,7 +517,7 @@ class AppStore:
         authorized_headers['Authorization'] = f'Bearer {token}'
         return requests.request(method, url, headers=authorized_headers, timeout=timeout)
 
-    def _get_remote_manifest_digest(self, image: str, timeout: int = 6) -> Tuple[Optional[str], Optional[str]]:
+    def _get_remote_manifest_digest(self, image: str, timeout: int = 15) -> Tuple[Optional[str], Optional[str]]:
         """Fetch the current registry manifest digest for an image reference."""
         image_ref = self._parse_image_reference(image)
         if not image_ref:

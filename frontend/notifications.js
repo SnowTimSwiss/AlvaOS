@@ -1,5 +1,14 @@
 // Modern Notification System for AlvaOS
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 const toastContainer = document.createElement('div');
 toastContainer.className = 'toast-container';
 document.body.appendChild(toastContainer);
@@ -117,10 +126,10 @@ window.promptModal = function (message, options = {}) {
 
     overlay.innerHTML = `
         <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="modal-prompt-title">
-            <div class="modal-title" id="modal-prompt-title">${title}</div>
+            <div class="modal-title" id="modal-prompt-title">${escapeHtml(title)}</div>
             <div class="modal-body">
                 ${body}
-                ${fieldLabel ? `<div style="margin-top: 1rem; margin-bottom: 0.4rem; font-weight: 600; text-align: left;">${fieldLabel}</div>` : ''}
+                ${fieldLabel ? `<div style="margin-top: 1rem; margin-bottom: 0.4rem; font-weight: 600; text-align: left;">${escapeHtml(fieldLabel)}</div>` : ''}
                 <input
                     id="modal-prompt-input"
                     type="${inputType}"
@@ -137,8 +146,8 @@ window.promptModal = function (message, options = {}) {
                     style="width: 100%; margin-top: 1rem; padding: 0.8rem 0.9rem; border-radius: 6px; border: 1px solid var(--bg-border); background: var(--bg-card); color: var(--text-primary);">
             </div>
             <div class="modal-actions">
-                <button id="modal-prompt-cancel" class="btn-secondary">${cancelLabel}</button>
-                <button id="modal-prompt-confirm" class="btn-primary">${confirmLabel}</button>
+                <button id="modal-prompt-cancel" class="btn-secondary">${escapeHtml(cancelLabel)}</button>
+                <button id="modal-prompt-confirm" class="btn-primary">${escapeHtml(confirmLabel)}</button>
             </div>
         </div>
     `;

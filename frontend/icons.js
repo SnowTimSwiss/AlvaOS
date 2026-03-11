@@ -40,6 +40,7 @@
 
     let iconRenderScheduled = false;
     let queuedRenderRoot = null;
+    let _iconObserver = null;
 
     function scheduleRender(root) {
         const nextRoot = root || document;
@@ -73,7 +74,7 @@
 
     function initObserver() {
         if (!window.MutationObserver) return;
-        const observer = new MutationObserver((mutations) => {
+        _iconObserver = new MutationObserver((mutations) => {
             for (const mutation of mutations) {
                 for (const node of mutation.addedNodes) {
                     if (!node || node.nodeType !== 1) continue;
@@ -83,8 +84,15 @@
                 }
             }
         });
-        observer.observe(document.body, { childList: true, subtree: true });
+        _iconObserver.observe(document.body, { childList: true, subtree: true });
     }
+
+    window.disconnectIconObserver = function() {
+        if (_iconObserver) {
+            _iconObserver.disconnect();
+            _iconObserver = null;
+        }
+    };
 
     window.alvaIcon = iconSvg;
     window.renderAlvaIcons = render;
