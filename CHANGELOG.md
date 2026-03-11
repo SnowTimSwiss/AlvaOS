@@ -2,6 +2,52 @@
 
 All notable changes to AlvaOS will be documented in this file.
 
+## [1.0.0-rc2] - 11.03.26
+
+**Release Focus:** Security Hardening, UI Polish, and Stability Improvements
+
+### Security
+- **Path Traversal Protection**: Added `_is_safe_path()` validation to prevent directory traversal attacks
+- **Docker Command Injection Prevention**: Input validation for container commands with whitelist approach
+- **XSS Protection**: Replaced unsafe `onclick` handlers with `JSON.stringify()` for safe ID embedding
+- **CSRF Token Implementation**: All state-changing API endpoints now require CSRF tokens
+- **QR Code Validation**: Escaped QR code data-URIs to prevent injection attacks
+- **Modal Content Escaping**: All dynamic modal content is now properly escaped
+
+### Backend Improvements
+- **Thread-Safe Caches**: Added `threading.Lock()` for `STORAGE_CACHE` operations
+- **Registry Timeout Increased**: Docker registry timeout from 6s to 15s for slow connections
+- **CPU Temperature Logging**: Errors now logged instead of silently ignored
+- **Debian Upgrade Backup**: `sources.list` backed up before modifications with auto-restore on failure
+- **New Dependencies**: Added `pyyaml`, `docker`, `cryptography` packages
+
+### Frontend Improvements
+- **Toast Notification System**: Replaced all `alert()` calls with non-blocking toast notifications
+- **Loading States**: Page loading overlay during navigation
+- **Focus States**: Accessibility improvements with visible focus indicators for keyboard navigation
+- **Empty States**: Consistent empty state styling across all pages
+- **Input Validation**: Hostname (RFC 1123) and pool name pattern validation
+- **Error Handling**: Proper JSON parsing error handling for API responses
+
+### Installer & Scripts
+- **Random Installer Password**: Replaced hardcoded `installer123` with cryptographically random password
+- **IP Validation**: Network configuration validates IPv4 addresses and netmasks
+- **Update Script Safety**: Added `trap` handler for cleanup on error with backup restoration
+- **Version Validation**: Fixed `dpkg --validate-version` syntax error
+
+### CI/CD
+- **Action Pinning**: All GitHub Actions pinned to specific commit hashes for supply chain security
+- **Dependencies Updated**: Flask 3.0.3, psutil 6.0.0, qrcode 8.0, and security packages
+
+### Documentation
+- **.gitignore Extended**: Added WireGuard configs, certificates, tokens, and runtime state files
+
+### Known Issues
+- Watchdog service lacks exponential backoff for repeated failures (planned for v1.1)
+- Battery monitoring only checks first battery (sufficient for most NAS systems)
+
+---
+
 ## [0.12.0] - 04.03.26
 
 ### Added
