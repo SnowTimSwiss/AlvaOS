@@ -1,6 +1,18 @@
 // AlvaOS System Settings Logic
 // API_BASE is defined in app.js
 
+function showNotification(message, type = 'info') {
+    if (window.showToast) {
+        window.showToast(message, type);
+    } else {
+        console.log(`[${type}] ${message}`);
+    }
+}
+
+function showError(message) {
+    showNotification(message, 'error');
+}
+
 function escapeHtml(value) {
     return String(value ?? '')
         .replace(/&/g, '&amp;')
@@ -236,15 +248,15 @@ async function saveUpsSettings() {
     const shutdownLimit = Number(els.upsShutdownLimitInput?.value || 20);
 
     if (!Number.isFinite(chargeLimit) || chargeLimit < 50 || chargeLimit > 100) {
-        alert('Charge Limit must be between 50 and 100.');
+        showError('Charge Limit must be between 50 and 100.');
         return;
     }
     if (!Number.isFinite(shutdownLimit) || shutdownLimit < 5 || shutdownLimit > 80) {
-        alert('Shutdown At must be between 5 and 80.');
+        showError('Shutdown At must be between 5 and 80.');
         return;
     }
     if (shutdownLimit >= chargeLimit) {
-        alert('Shutdown At must be lower than Charge Limit.');
+        showError('Shutdown At must be lower than Charge Limit.');
         return;
     }
 
@@ -262,18 +274,14 @@ async function saveUpsSettings() {
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.success) {
-            alert(data.error || 'Failed to save UPS settings');
+            showError(data.error || 'Failed to save UPS settings');
             return;
         }
         renderUpsSettings(data);
-        if (window.showToast) {
-            window.showToast('Battery UPS settings saved.', 'success');
-        } else {
-            alert('Battery UPS settings saved.');
-        }
+        showNotification('Battery UPS settings saved.', 'success');
     } catch (e) {
         console.error(e);
-        alert('Connection failed while saving UPS settings.');
+        showError('Connection failed while saving UPS settings.');
     }
 }
 
@@ -357,16 +365,16 @@ async function saveTelegramSettings() {
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.success) {
-            alert(data.error || 'Failed to save Telegram settings');
+            showError(data.error || 'Failed to save Telegram settings');
             return;
         }
 
         if (els.telegramToken) els.telegramToken.value = '';
         renderAlertSettings(data.settings || {});
-        alert('Telegram settings saved.');
+        showNotification('Telegram settings saved.', 'success');
     } catch (e) {
         console.error(e);
-        alert('Connection failed while saving Telegram settings.');
+        showError('Connection failed while saving Telegram settings.');
     }
 }
 
@@ -379,18 +387,18 @@ async function startTelegramPairing() {
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.success) {
-            alert(data.error || 'Failed to create pairing code');
+            showError(data.error || 'Failed to create pairing code');
             return;
         }
 
         if (data.pairing) {
             renderAlertSettings({ ...(currentAlertSettings || {}), pairing: data.pairing, telegram: currentAlertSettings?.telegram || {} });
         }
-        alert(data.message || 'Pairing code generated.');
+        showNotification(data.message || 'Pairing code generated.', 'info');
         await fetchAlertSettings();
     } catch (e) {
         console.error(e);
-        alert('Connection failed while generating a pairing code.');
+        showError('Connection failed while generating a pairing code.');
     }
 }
 
@@ -403,7 +411,7 @@ async function checkTelegramPairing() {
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.success) {
-            alert(data.error || 'Pairing check failed');
+            showError(data.error || 'Pairing check failed');
             return;
         }
 
@@ -412,13 +420,13 @@ async function checkTelegramPairing() {
         }
 
         if (data.paired) {
-            alert(data.message || 'Telegram pairing complete.');
+            showNotification(data.message || 'Telegram pairing complete.', 'success');
         } else {
-            alert(data.message || 'No matching Telegram pairing message found yet.');
+            showNotification(data.message || 'No matching Telegram pairing message found yet.', 'info');
         }
     } catch (e) {
         console.error(e);
-        alert('Connection failed while checking Telegram pairing.');
+        showError('Connection failed while checking Telegram pairing.');
     }
 }
 
@@ -431,14 +439,14 @@ async function sendTelegramTest() {
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.success) {
-            alert(data.error || 'Failed to send test alert');
+            showError(data.error || 'Failed to send test alert');
             return;
         }
 
-        alert(data.message || 'Test alert sent.');
+        showNotification(data.message || 'Test alert sent.', 'success');
     } catch (e) {
         console.error(e);
-        alert('Connection failed while sending test alert.');
+        showError('Connection failed while sending test alert.');
     }
 }
 
@@ -454,17 +462,17 @@ async function unpairTelegram() {
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.success) {
-            alert(data.error || 'Failed to remove pairing');
+            showError(data.error || 'Failed to remove pairing');
             return;
         }
 
         if (data.settings) {
             renderAlertSettings(data.settings);
         }
-        alert(data.message || 'Telegram pairing removed.');
+        showNotification(data.message || 'Telegram pairing removed.', 'success');
     } catch (e) {
         console.error(e);
-        alert('Connection failed while removing Telegram pairing.');
+        showError('Connection failed while removing Telegram pairing.');
     }
 }
 
@@ -475,7 +483,7 @@ async function updateHostname() {
     // Validate hostname (RFC 1123)
     const hostnamePattern = /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/;
     if (!hostnamePattern.test(newHostname)) {
-        alert('Invalid hostname. Must start/end with alphanumeric, contain only letters, numbers, and hyphens, and be 1-63 characters.');
+        showError('Invalid hostname. Must start/end with alphanumeric, contain only letters, numbers, and hyphens, and be 1-63 characters.');
         return;
     }
 
@@ -487,14 +495,14 @@ async function updateHostname() {
         });
 
         if (res.ok) {
-            alert('Hostname updated! System may need a reboot.');
+            showNotification('Hostname updated! System may need a reboot.', 'success');
             fetchSettings();
         } else {
             const err = await res.json().catch(() => ({}));
-            alert('Failed to update: ' + (err.error || 'Unknown error'));
+            showError('Failed to update: ' + (err.error || 'Unknown error'));
         }
     } catch (error) {
-        alert('Connection failed');
+        showError('Connection failed');
     }
 }
 
@@ -511,7 +519,7 @@ async function updateTimeSettings() {
     }
 
     if (Object.keys(payload).length === 0) {
-        alert('No time settings changed.');
+        showError('No time settings changed.');
         return;
     }
 
@@ -530,16 +538,16 @@ async function updateTimeSettings() {
             }
 
             if (Array.isArray(data.warnings) && data.warnings.length) {
-                alert(`Time settings updated with warnings:\n${data.warnings.join('\n')}`);
+                showNotification(`Time settings updated with warnings:\n${data.warnings.join('\n')}`, 'warning');
             } else {
-                alert(data.message || 'Time settings updated.');
+                showNotification(data.message || 'Time settings updated.', 'success');
             }
         } else {
-            alert(`Failed to update time settings: ${data.error || 'Unknown error'}`);
+            showError(`Failed to update time settings: ${data.error || 'Unknown error'}`);
         }
     } catch (e) {
         console.error(e);
-        alert('Connection failed');
+        showError('Connection failed');
     }
 }
 
@@ -557,11 +565,11 @@ async function sendPowerAction(action) {
             if (window.handleConnectionError) window.handleConnectionError();
         } else {
             const err = await res.json().catch(() => ({}));
-            alert('Power action failed: ' + (err.error || 'Unknown error'));
+            showError('Power action failed: ' + (err.error || 'Unknown error'));
         }
     } catch (e) {
         console.error('Power action error:', e);
-        alert('Connection failed');
+        showError('Connection failed');
     }
 }
 
@@ -620,7 +628,7 @@ async function install2faLibrary() {
         if (window.showToast) window.showToast(data.message || '2FA library installed.', 'success');
         await fetch2faStatus();
     } catch (e) {
-        alert(e.message || 'Failed to install 2FA library');
+        showError(e.message || 'Failed to install 2FA library');
     } finally {
         if (installButton) {
             installButton.disabled = false;
@@ -684,11 +692,11 @@ async function setup2fa() {
                 if (window.showToast) window.showToast('Two-Factor Authentication enabled successfully!', 'success');
                 fetch2faStatus();
             } catch (err) {
-                alert(err.message);
+                showError(err.message);
             }
         };
     } catch (e) {
-        alert(e.message);
+        showError(e.message);
     }
 }
 
@@ -713,7 +721,7 @@ async function disable2fa() {
         if (window.showToast) window.showToast('2FA has been disabled.', 'success');
         fetch2faStatus();
     } catch (e) {
-        alert(e.message);
+        showError(e.message);
     }
 }
 
