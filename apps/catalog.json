@@ -21,7 +21,7 @@
                         "MYSQL_HOST": "db",
                         "MYSQL_DATABASE": "nextcloud",
                         "MYSQL_USER": "nextcloud",
-                        "MYSQL_PASSWORD": "nextcloud"
+                        "MYSQL_PASSWORD": "CHANGEME"
                     }
                 },
                 "db": {
@@ -31,10 +31,10 @@
                         "${POOL_PATH}/database:/var/lib/mysql"
                     ],
                     "environment": {
-                        "MYSQL_ROOT_PASSWORD": "nextcloud",
+                        "MYSQL_ROOT_PASSWORD": "CHANGEME",
                         "MYSQL_DATABASE": "nextcloud",
                         "MYSQL_USER": "nextcloud",
-                        "MYSQL_PASSWORD": "nextcloud"
+                        "MYSQL_PASSWORD": "CHANGEME"
                     }
                 }
             }
@@ -68,8 +68,8 @@
                 },
                 {
                     "key": "MYSQL_PASSWORD",
-                    "default": "nextcloud",
-                    "description": "Database password"
+                    "default": "CHANGEME",
+                    "description": "Database password — change before first use"
                 }
             ]
         }
@@ -95,7 +95,7 @@
                         "${POOL_PATH}/media:/media"
                     ],
                     "environment": {
-                        "TZ": "Europe/Berlin"
+                        "TZ": "UTC"
                     }
                 }
             }
@@ -129,8 +129,8 @@
             "environment": [
                 {
                     "key": "TZ",
-                    "default": "Europe/Berlin",
-                    "description": "Timezone"
+                    "default": "UTC",
+                    "description": "Timezone (e.g. Europe/Berlin, America/New_York)"
                 }
             ]
         }
@@ -152,7 +152,7 @@
                         "${POOL_PATH}/config:/config"
                     ],
                     "environment": {
-                        "TZ": "Europe/Berlin"
+                        "TZ": "UTC"
                     }
                 }
             }
@@ -176,8 +176,8 @@
             "environment": [
                 {
                     "key": "TZ",
-                    "default": "Europe/Berlin",
-                    "description": "Timezone"
+                    "default": "UTC",
+                    "description": "Timezone (e.g. Europe/Berlin, America/New_York)"
                 }
             ]
         }
@@ -204,8 +204,8 @@
                         "${POOL_PATH}/etc-dnsmasq.d:/etc/dnsmasq.d"
                     ],
                     "environment": {
-                        "TZ": "Europe/Berlin",
-                        "WEBPASSWORD": "admin"
+                        "TZ": "UTC",
+                        "WEBPASSWORD": "CHANGEME"
                     }
                 }
             }
@@ -247,13 +247,13 @@
             "environment": [
                 {
                     "key": "WEBPASSWORD",
-                    "default": "admin",
-                    "description": "Web UI password"
+                    "default": "CHANGEME",
+                    "description": "Web UI password — change before first use"
                 },
                 {
                     "key": "TZ",
-                    "default": "Europe/Berlin",
-                    "description": "Timezone"
+                    "default": "UTC",
+                    "description": "Timezone (e.g. Europe/Berlin, America/New_York)"
                 }
             ]
         }
@@ -328,10 +328,10 @@
                     "environment": {
                         "DB_HOSTNAME": "immich-postgres",
                         "DB_USERNAME": "postgres",
-                        "DB_PASSWORD": "postgres",
+                        "DB_PASSWORD": "CHANGEME",
                         "DB_DATABASE_NAME": "immich",
                         "REDIS_HOSTNAME": "immich-redis",
-                        "TZ": "Europe/Berlin"
+                        "TZ": "UTC"
                     },
                     "depends_on": [
                         "immich-redis",
@@ -349,7 +349,7 @@
                         "${POOL_PATH}/postgres:/var/lib/postgresql/data"
                     ],
                     "environment": {
-                        "POSTGRES_PASSWORD": "postgres",
+                        "POSTGRES_PASSWORD": "CHANGEME",
                         "POSTGRES_USER": "postgres",
                         "POSTGRES_DB": "immich"
                     }
@@ -380,13 +380,13 @@
             "environment": [
                 {
                     "key": "DB_PASSWORD",
-                    "default": "postgres",
-                    "description": "Database password"
+                    "default": "CHANGEME",
+                    "description": "Database password — change before first use"
                 },
                 {
                     "key": "TZ",
-                    "default": "Europe/Berlin",
-                    "description": "Timezone"
+                    "default": "UTC",
+                    "description": "Timezone (e.g. Europe/Berlin, America/New_York)"
                 }
             ]
         }
@@ -414,7 +414,7 @@
                         "OWNCLOUD_TRUSTED_DOMAINS": "localhost,127.0.0.1",
                         "OWNCLOUD_DB_TYPE": "sqlite",
                         "OWNCLOUD_ADMIN_USERNAME": "admin",
-                        "OWNCLOUD_ADMIN_PASSWORD": "admin"
+                        "OWNCLOUD_ADMIN_PASSWORD": "CHANGEME"
                     }
                 }
             }
@@ -448,8 +448,8 @@
                 },
                 {
                     "key": "OWNCLOUD_ADMIN_PASSWORD",
-                    "default": "admin",
-                    "description": "Admin password"
+                    "default": "CHANGEME",
+                    "description": "Admin password — change before first use"
                 }
             ]
         }
@@ -517,8 +517,8 @@
                     "restart": "unless-stopped",
                     "environment": {
                         "USER": "admin",
-                        "PASS": "admin",
-                        "TZ": "Europe/Berlin"
+                        "PASS": "CHANGEME",
+                        "TZ": "UTC"
                     },
                     "ports": [
                         "9091:9091",
@@ -557,8 +557,8 @@
             "environment": [
                 {
                     "key": "PASS",
-                    "default": "admin",
-                    "description": "Web UI password"
+                    "default": "CHANGEME",
+                    "description": "Web UI password — change before first use"
                 }
             ]
         }
@@ -582,7 +582,7 @@
                     "environment": {
                         "PUID": "1000",
                         "PGID": "1000",
-                        "TZ": "Europe/Berlin",
+                        "TZ": "UTC",
                         "PEERS": "1"
                     },
                     "ports": [
@@ -638,7 +638,7 @@
                     "environment": {
                         "PUID": "1000",
                         "PGID": "1000",
-                        "TZ": "Europe/Berlin"
+                        "TZ": "UTC"
                     },
                     "ports": [
                         "943:943",
@@ -719,7 +719,7 @@
     "uptimekuma": {
         "name": "Uptime Kuma",
         "description": "Self-hosted monitoring with status pages and alerting",
-        "icon": "",
+        "icon": "/apps/icons/uptimekuma.png",
         "category": "Monitoring",
         "version": "latest",
         "docker_compose": {
@@ -732,7 +732,7 @@
                         "3001:3001"
                     ],
                     "environment": {
-                        "TZ": "Europe/Berlin"
+                        "TZ": "UTC"
                     },
                     "volumes": [
                         "${POOL_PATH}/data:/app/data"
@@ -759,8 +759,8 @@
             "environment": [
                 {
                     "key": "TZ",
-                    "default": "Europe/Berlin",
-                    "description": "Timezone"
+                    "default": "UTC",
+                    "description": "Timezone (e.g. Europe/Berlin, America/New_York)"
                 }
             ]
         }
@@ -768,7 +768,7 @@
     "navidrome": {
         "name": "Navidrome",
         "description": "Modern self-hosted music server and streamer",
-        "icon": "",
+        "icon": "/apps/icons/navidrome.png",
         "category": "Media",
         "version": "latest",
         "docker_compose": {
@@ -831,7 +831,7 @@
     "searxng": {
         "name": "SearXNG",
         "description": "Privacy-focused metasearch engine",
-        "icon": "",
+        "icon": "/apps/icons/searxng.png",
         "category": "Search",
         "version": "latest",
         "docker_compose": {
@@ -845,7 +845,7 @@
                     ],
                     "environment": {
                         "SEARXNG_BASE_URL": "http://localhost:8888/",
-                        "SEARXNG_SECRET": "change-this-searxng-secret"
+                        "SEARXNG_SECRET": "CHANGEME"
                     },
                     "volumes": [
                         "${POOL_PATH}/config:/etc/searxng"
@@ -877,8 +877,8 @@
                 },
                 {
                     "key": "SEARXNG_SECRET",
-                    "default": "change-this-searxng-secret",
-                    "description": "Secret key for internal token/signing"
+                    "default": "CHANGEME",
+                    "description": "Secret key for internal token/signing — change before first use"
                 }
             ]
         }
@@ -886,7 +886,7 @@
     "ollama": {
         "name": "Ollama",
         "description": "Run local LLM inference with open models",
-        "icon": "",
+        "icon": "/apps/icons/ollama.png",
         "category": "AI",
         "version": "latest",
         "docker_compose": {
@@ -941,7 +941,7 @@
     "openwebui": {
         "name": "Open WebUI",
         "description": "Web interface for Ollama and other LLM backends",
-        "icon": "",
+        "icon": "/apps/icons/openwebui.png",
         "category": "AI",
         "version": "latest",
         "docker_compose": {
@@ -959,7 +959,7 @@
                     "environment": {
                         "OLLAMA_BASE_URL": "http://host.docker.internal:11434",
                         "WEBUI_URL": "http://localhost:3000",
-                        "WEBUI_SECRET_KEY": "change-this-openwebui-secret"
+                        "WEBUI_SECRET_KEY": "CHANGEME"
                     },
                     "volumes": [
                         "${POOL_PATH}/data:/app/backend/data"
@@ -996,8 +996,8 @@
                 },
                 {
                     "key": "WEBUI_SECRET_KEY",
-                    "default": "change-this-openwebui-secret",
-                    "description": "Secret key for sessions and signing"
+                    "default": "CHANGEME",
+                    "description": "Secret key for sessions and signing — change before first use"
                 }
             ]
         }

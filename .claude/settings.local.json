@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -m py_compile alvaos-backend.py)",
+      "Bash(python3 -m py_compile common.py)"
+    ]
+  }
+}

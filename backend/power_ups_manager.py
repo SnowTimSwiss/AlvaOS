@@ -54,7 +54,7 @@ class PowerUpsManager:
         defaults = self._settings_defaults()
         if not isinstance(payload, dict):
             payload = {}
-        merged = defaults
+        merged = defaults.copy()
         merged.update(payload)
         merged["enabled"] = bool(merged.get("enabled", defaults["enabled"]))
         merged["charge_limit_percent"] = self._clamp_int(merged.get("charge_limit_percent"), 50, 100, defaults["charge_limit_percent"])

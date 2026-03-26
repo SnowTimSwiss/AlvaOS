@@ -257,7 +257,7 @@ function renderUsageHistory() {
     renderHistorySeries('history-temp-path', 'history-temp-current', tempValues, {
         min: tempMin,
         max: tempMax,
-        suffix: ' degC',
+        suffix: ' °C',
         decimals: 1,
     });
 
@@ -339,7 +339,7 @@ function updateDashboard(data) {
     const cpuTempEl = document.getElementById('cpu-temp');
     if (cpuTempEl) {
         cpuTempEl.textContent = (cpuTemp || cpuTemp === 0)
-            ? `${cpuTemp.toFixed(1)} degC`
+            ? `${cpuTemp.toFixed(1)} °C`
             : 'N/A';
     }
 

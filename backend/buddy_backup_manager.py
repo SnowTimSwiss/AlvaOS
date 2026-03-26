@@ -1445,7 +1445,7 @@ class BuddyBackupManager:
                         "X-Buddy-Secret": remote_secret,
                     },
                     timeout=8,
-                    verify=False if url.lower().startswith("https://") else True,
+                    verify=False,  # buddy nodes use self-signed certs
                 )
                 body = {}
                 try:
@@ -1497,7 +1497,7 @@ class BuddyBackupManager:
 
         for url in urls:
             last_url = url
-            verify_tls = False if url.startswith("https://") else True
+            verify_tls = False  # buddy nodes use self-signed certs
             try:
                 response = requests.get(
                     url,
@@ -2269,7 +2269,7 @@ class BuddyBackupManager:
         last_error = "Upload failed"
         headers = {"X-Buddy-Secret": remote_secret}
         for url in urls:
-            verify_tls = False if url.startswith("https://") else True
+            verify_tls = False  # buddy nodes use self-signed certs
             try:
                 with open(payload_path, "rb") as fh:
                     response = requests.post(
@@ -2434,7 +2434,7 @@ class BuddyBackupManager:
 
         last_error = "Failed to fetch remote snapshots"
         for url in urls:
-            verify_tls = False if url.startswith("https://") else True
+            verify_tls = False  # buddy nodes use self-signed certs
             try:
                 response = requests.get(
                     url,
@@ -2485,7 +2485,7 @@ class BuddyBackupManager:
 
         last_error = "Failed to delete remote snapshot"
         for url in urls:
-            verify_tls = False if url.startswith("https://") else True
+            verify_tls = False  # buddy nodes use self-signed certs
             try:
                 response = requests.delete(
                     url,
@@ -2517,7 +2517,7 @@ class BuddyBackupManager:
         params = {"owner_node_id": owner_node_id}
         last_error = "Download failed"
         for url in urls:
-            verify_tls = False if url.startswith("https://") else True
+            verify_tls = False  # buddy nodes use self-signed certs
             try:
                 with requests.get(
                     url,

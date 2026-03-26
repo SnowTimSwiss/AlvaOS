@@ -1,40 +1,83 @@
 #!/usr/bin/env python3
 """
-AlvaOS Backend 0.10.0
-Comprehensive Storage Management Engine
+AlvaOS Backend
+Thin routing layer — all business logic lives in the manager modules.
 """
 
-from flask import Flask, jsonify, send_from_directory, request, Response
-from flask_cors import CORS
-import psutil
-import platform
-import socket
-import os
-import json
-import subprocess
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
+# ── Standard library ──────────────────────────────────────────────────────────
+import base64
 import hashlib
 import hmac
-import secrets
-import functools
-import re
-import time
 import importlib
-import sys
-import requests
 import io
+import json
+import os
+import platform
+import re
+import secrets
+import socket
+import subprocess
+import sys
+import time
 import atexit
 import threading
+import uuid
+from datetime import datetime, timedelta
+
+# ── Third-party ───────────────────────────────────────────────────────────────
+import psutil
+import requests
+from flask import Flask, Response, jsonify, request, send_from_directory
+from flask_cors import CORS
+
 try:
     import pyotp
     import qrcode
     import qrcode.image.pil
-    import base64
     TOTP_AVAILABLE = True
 except ImportError:
     TOTP_AVAILABLE = False
     print("Warning: pyotp/qrcode not installed. 2FA will be unavailable.")
+
+# ── AlvaOS managers ───────────────────────────────────────────────────────────
+from common import (
+    CMD, run_sudo_command, build_privileged_cmd, ensure_directories,
+    is_root_user, parse_size_to_bytes, format_bytes_gib,
+    _utc_now, _now_iso, _parse_iso, _safe_int,
+)
+from auth_manager import (
+    AUTH_FILE,
+    SESSIONS, TEMP_2FA_TOKENS, TEMP_2FA_TTL_SECONDS,
+    is_setup_complete, mark_setup_complete,
+    _create_session, _get_current_session, _purge_expired_sessions,
+    require_auth, require_csrf_token,
+    _check_rate_limit, _reset_rate_limit,
+)
+from storage_manager import (
+    is_secure_system_device, is_path_on_system_disk,
+    STORAGE_CACHE, CACHE_TTL, _storage_cache_lock,
+    invalidate_storage_cache,
+    load_pools_state, save_pools_state,
+    detect_btrfs_pools, mount_existing_pools,
+    sanitize_pool_name, _collect_smart_report,
+)
+from shares_manager import (
+    is_valid_username, system_user_exists, sync_samba_password,
+    ensure_samba_conf_exists, ensure_samba_global_settings,
+    reconcile_samba_guest_settings, normalize_smb_permissions,
+    get_group_members, ensure_group_exists, apply_smb_permissions_to_fs,
+    disable_samba_homes_share, render_smb_share_config, update_samba_share_section,
+    load_shares_state, save_shares_state,
+)
+from alerts_manager import (
+    ALERT_THRESHOLDS,
+    load_alerts_state, save_alerts_state,
+    _collect_system_alerts, _build_alert_summary,
+    _maybe_send_telegram_critical_alerts,
+    _is_pairing_active, _clear_pairing_state, _clear_telegram_chat_binding,
+    _alert_settings_public_payload,
+    _telegram_api_call, _generate_pairing_code,
+)
 from update_manager import UpdateManager
 from docker_manager import DockerManager
 from app_store import AppStore
@@ -43,202 +86,26 @@ from buddy_backup_manager import BuddyBackupManager
 from watchdog_manager import WatchdogManager
 from power_ups_manager import PowerUpsManager
 
-
-def is_secure_system_device(device_name):
-    """
-    Check if a device (e.g. 'sda', 'nvme0n1') holds the root filesystem.
-    This uses /proc/mounts to find the root device and checks if the target
-    device is the same or a parent of the root device.
-    """
-    if platform.system() != 'Linux':
-        return False # Mock environment safety
-
-    try:
-        # 1. Provide a direct lookup for common root partition names if they match
-        # standardized collected info, but rely on /proc/mounts for truth.
-        root_device = None
-        with open('/proc/mounts', 'r') as f:
-            for line in f:
-                parts = line.split()
-                if len(parts) >= 2 and parts[1] == '/':
-                    root_device = parts[0] # e.g. /dev/sda2 or /dev/nvme0n1p3
-                    break
-        
-        if not root_device:
-            return False
-
-        # Resolve symlinks (e.g. /dev/root -> /dev/sda1)
-        if os.path.exists(root_device):
-            root_device = os.path.realpath(root_device)
-
-        # Check if the target device name is part of the root device path
-        # e.g. target='sda', root='/dev/sda2' -> match
-        # e.g. target='nvme0n1', root='/dev/nvme0n1p3' -> match
-        base_root = os.path.basename(root_device)
-        
-        # Exact match
-        if base_root == device_name:
-            return True
-            
-        # Partition match (startswith check is usually enough for sda1 vs sda, but be careful with sdaa vs sda)
-        # For standard sdX: sda is prefix of sda1. sda is NOT prefix of sdb.
-        # For nvme: nvme0n1 is prefix of nvme0n1p1.
-        if base_root.startswith(device_name):
-            # Verify it's actually a partition convention
-            suffix = base_root[len(device_name):]
-            # sda1 -> suffix '1' (digit)
-            # nvme0n1p1 -> suffix 'p1'
-            if suffix and (suffix[0].isdigit() or suffix.startswith('p')):
-                 return True
-                 
-        return False
-
-    except Exception as e:
-        print(f"Error checking system device: {e}")
-        # Fail safe: if we can't determine, assume it MIGHT be system to be safe? 
-        # Or returns false and rely on lsblk? Let's return False to avoid blocking everything if this fails.
-        return False
-
-
-def _is_safe_path(path):
-    """Validate that a path does not contain malicious patterns like .. or resolve outside allowed roots."""
-    if not path:
-        return False
-    # Normalize and check for path traversal attempts
-    normalized = os.path.normpath(os.path.abspath(str(path)))
-    # Reject paths that contain .. after normalization (traversal attempts)
-    if '..' in os.path.normpath(str(path)).split(os.sep):
-        return False
-    # Ensure path is under allowed roots
-    allowed_roots = ['/mnt/', '/var/lib/alvaos/', '/tmp/', '/home/']
-    for root in allowed_roots:
-        if normalized.startswith(root) or normalized == root.rstrip('/'):
-            return True
-    # Special case: allow root for probing
-    if normalized == '/':
-        return True
-    return False
-
-
-def _existing_probe_path(path):
-    target = os.path.normpath(str(path or '').strip())
-    if not target:
-        return '/'
-    # Security: reject path traversal attempts
-    if not _is_safe_path(target):
-        return '/'
-    probe = os.path.realpath(target)
-    # Security: verify realpath is still under allowed roots
-    allowed_roots = ['/mnt/', '/var/lib/alvaos/', '/tmp/', '/home/', '/']
-    probe_allowed = False
-    for root in allowed_roots:
-        if probe.startswith(root) or probe == root.rstrip('/'):
-            probe_allowed = True
-            break
-    if not probe_allowed:
-        return '/'
-    while probe != '/' and not os.path.exists(probe):
-        next_probe = os.path.dirname(probe)
-        if next_probe == probe:
-            break
-        probe = next_probe
-    return probe if probe else '/'
-
-
-def is_path_on_system_disk(path):
-    """Return True when a path resolves to the same filesystem device as root (/)."""
-    if platform.system() != 'Linux':
-        return False
-    candidate = str(path or '').strip()
-    if not candidate:
-        return False
-    try:
-        probe = _existing_probe_path(candidate)
-        return os.stat(probe).st_dev == os.stat('/').st_dev
-    except Exception:
-        return False
-# System Commands Paths for Sudo (must match sudoers configuration in install-system.sh)
-CMD = {
-    'GETENT': '/usr/bin/getent',
-    'CHPASSWD': '/usr/sbin/chpasswd',
-    'USERADD': '/usr/sbin/useradd',
-    'USERDEL': '/usr/sbin/userdel',
-    'SMBPASSWD': '/usr/bin/smbpasswd',
-    'GROUPADD': '/usr/sbin/groupadd',
-    'GROUPDEL': '/usr/sbin/groupdel',
-    'GPASSWD': '/usr/bin/gpasswd',
-    'CHGRP': '/usr/bin/chgrp',
-    'CHMOD': '/usr/bin/chmod',
-    'SYSTEMCTL': '/usr/bin/systemctl',
-    'SYSTEMD_RUN': '/usr/bin/systemd-run',
-    'REBOOT': '/usr/sbin/reboot',
-    'POWEROFF': '/usr/sbin/poweroff',
-    'TIMEDATECTL': '/usr/bin/timedatectl',
-    'HOSTNAMECTL': '/usr/bin/hostnamectl',
-    'APT_GET': '/usr/bin/apt-get',
-    'APT': '/usr/bin/apt',
-    'DPKG': '/usr/bin/dpkg',
-    'TAIL': '/usr/bin/tail',
-    'JOURNALCTL': '/usr/bin/journalctl',
-    'SMARTCTL': '/usr/sbin/smartctl',
-    'LSBLK': '/usr/bin/lsblk',
-    'WIPEFS': '/usr/sbin/wipefs',
-    'PARTPROBE': '/usr/sbin/partprobe',
-    'BTRFS': '/usr/bin/btrfs',
-    'MKFS_BTRFS': '/usr/sbin/mkfs.btrfs',
-    'MKDIR': '/usr/bin/mkdir',
-    'MOUNT': '/usr/bin/mount',
-    'UMOUNT': '/usr/bin/umount',
-    'RMDIR': '/usr/bin/rmdir',
-    'BLKID': '/usr/sbin/blkid',
-    'EXPORTFS': '/usr/sbin/exportfs',
-    'TEE': '/usr/bin/tee',
-    'CAT': '/usr/bin/cat',
-    'IP': '/usr/sbin/ip',
-    'ID': '/usr/bin/id',
-    'DF': '/usr/bin/df',
-    'MOUNTPOINT': '/usr/bin/mountpoint'
-}
-
-app = Flask(__name__, static_folder=None) # Disable default static serving to force version replacement
-# Fallback to current directory for dev if /opt doesn't exist
+# ── App setup ─────────────────────────────────────────────────────────────────
+app = Flask(__name__, static_folder=None)
 WEBUI_ROOT = '/opt/alvaos/webui'
 if not os.path.exists(WEBUI_ROOT):
     WEBUI_ROOT = os.path.join(os.path.dirname(__file__), '..', 'frontend')
 app.static_folder = WEBUI_ROOT
 CORS(app)
+
 update_manager = UpdateManager()
 docker_manager = DockerManager()
 app_store = AppStore()
-backup_manager = None
-buddy_backup_manager = None
 watchdog_manager = WatchdogManager()
 power_ups_manager = PowerUpsManager()
+backup_manager = BackupManager(run_sudo_command, load_pools_state)
+buddy_backup_manager = BuddyBackupManager(run_sudo_command)
 
-# Cache for storage information (TTL in seconds)
-STORAGE_CACHE = {
-    'disks': {'data': None, 'expires': 0},
-    'pools': {'data': None, 'expires': 0}
-}
-CACHE_TTL = 5
-_storage_cache_lock = threading.Lock()
-
-def invalidate_storage_cache(*sections):
-    """Invalidate selected storage cache sections."""
-    with _storage_cache_lock:
-        target_sections = sections or ('disks', 'pools')
-        for section in target_sections:
-            if section in STORAGE_CACHE:
-                STORAGE_CACHE[section]['expires'] = 0
-
-# Version Management
+# ── Version ───────────────────────────────────────────────────────────────────
 def get_version():
-    """Read version from VERSION file"""
-    # Production path
     prod_path = '/etc/alvaos/VERSION'
-    # Development path (relative to backend script)
     dev_path = os.path.join(os.path.dirname(__file__), '..', 'VERSION')
-    
     try:
         if os.path.exists(prod_path):
             with open(prod_path, 'r') as f:
@@ -248,175 +115,14 @@ def get_version():
                 return f.read().strip()
     except Exception as e:
         print(f"Error reading version file: {e}")
-    
     return "unknown"
 
 VERSION = get_version()
 
-# Configuration
-SETUP_STATUS_FILE = '/var/lib/alvaos/setup_complete.json'
-AUTH_FILE = '/var/lib/alvaos/auth.json'
+# ── Users state ───────────────────────────────────────────────────────────────
 USERS_STATE_FILE = '/var/lib/alvaos/users.json'
-ALERTS_STATE_FILE = '/var/lib/alvaos/alerts.json'
-CONFIG_DIR = '/etc/alvaos'
-# SESSIONS: token -> {username, role, expires_at}
-SESSIONS = {}
-SESSION_TTL_HOURS = 24
-# Temporary tokens used during 2FA two-step login: temp_token -> {username, role, expires_at}
-TEMP_2FA_TOKENS = {}
-TEMP_2FA_TTL_SECONDS = 300  # 5 minutes
-# Rate limiting: ip -> {count, window_start}
-LOGIN_RATE_LIMIT = {}
-LOGIN_MAX_ATTEMPTS = 10
-LOGIN_WINDOW_SECONDS = 900  # 15 minutes
-
-ALERT_THRESHOLDS = {
-    'cpu_usage_warning': 85.0,
-    'cpu_usage_critical': 95.0,
-    'cpu_temp_warning': 75.0,
-    'cpu_temp_critical': 85.0,
-    'memory_warning': 85.0,
-    'memory_critical': 93.0,
-    'disk_warning': 90.0,
-    'disk_critical': 95.0,
-    'pool_warning': 85.0,
-    'pool_critical': 95.0,
-}
-
-ALERT_SEVERITY_PRIORITY = {
-    'critical': 0,
-    'warning': 1,
-    'info': 2,
-}
-
-DEFAULT_ALERTS_STATE = {
-    'telegram': {
-        'enabled': False,
-        'bot_token': '',
-        'paired_chat_id': '',
-        'paired_chat_label': '',
-        'paired_at': '',
-        'last_update_id': 0,
-    },
-    'pairing': {
-        'code': '',
-        'started_at': '',
-        'expires_at': '',
-    },
-    'delivery': {
-        'last_critical_fingerprint': '',
-        'last_critical_sent_at': '',
-    }
-}
-
-def is_root_user():
-    try:
-        return hasattr(os, 'geteuid') and os.geteuid() == 0
-    except Exception:
-        return False
-
-def build_privileged_cmd(cmd):
-    """Build a command that runs as root when needed, without requiring sudo if already root."""
-    if is_root_user():
-        return cmd
-    return ['sudo', '-n'] + cmd
-
-def run_sudo_command(cmd, timeout=30):
-    """Helper to run a command with sudo and handle password prompts gracefully"""
-    try:
-        # Prepare the env with LC_ALL=C to ensure English output
-        custom_env = os.environ.copy()
-        custom_env['LC_ALL'] = 'C'
-        
-        final_cmd = []
-        if cmd and cmd[0] == 'sudo':
-            # Remove redundant 'sudo' if present in the cmd list passed to us
-            # build_privileged_cmd will add 'sudo -n' if needed
-            final_cmd = build_privileged_cmd(cmd[1:])
-        else:
-            final_cmd = build_privileged_cmd(cmd)
-        
-        result = subprocess.run(final_cmd, capture_output=True, text=True, timeout=timeout, env=custom_env)
-        
-        if result.returncode != 0:
-            stderr_text = (result.stderr or '').strip()
-            stdout_text = (result.stdout or '').strip()
-            combined_low = f"{stderr_text}\n{stdout_text}".lower()
-            if '/etc/sudoers.d/alvaos' in combined_low and (
-                'is owned by uid' in combined_low
-                or 'is world writable' in combined_low
-                or 'bad permissions' in combined_low
-            ):
-                return result, (
-                    "System permission error: /etc/sudoers.d/alvaos has invalid ownership or permissions. "
-                    "Run as root: chown root:root /etc/sudoers.d/alvaos && chmod 440 /etc/sudoers.d/alvaos"
-                )
-            if 'password is required' in combined_low or 'a password is required' in combined_low:
-                cmd_str = " ".join(final_cmd)
-                return None, f"System permission error: Passwordless sudo is not configured for command: {cmd_str}. Please check the AlvaOS documentation for sudoers setup."
-            cmd_str = " ".join(final_cmd)
-            detail = stderr_text or stdout_text or f"exit code {result.returncode}"
-            return result, f"Command failed ({result.returncode}): {cmd_str}: {detail}"
-            
-        return result, None
-    except subprocess.TimeoutExpired:
-        return None, "Command timed out"
-    except Exception as e:
-        return None, str(e)
-
-def sync_samba_password(username, password):
-    """Synchronize a system user's password with the Samba database"""
-    try:
-        process = subprocess.Popen(
-            build_privileged_cmd([CMD['SMBPASSWD'], '-a', '-s', username]),
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            env={'LC_ALL': 'C'}
-        )
-        stdout, stderr = process.communicate(input=f"{password}\n{password}\n", timeout=5)
-        
-        if process.returncode != 0:
-            print(f"Samba sync warning: {stderr}")
-            return False, stderr
-            
-        return True, None
-    except Exception as e:
-        print(f"Samba sync error: {e}")
-        return False, str(e)
-
-def ensure_directories():
-    """Ensure necessary directories exist"""
-    Path('/var/lib/alvaos').mkdir(parents=True, exist_ok=True)
-    Path('/var/log/alvaos').mkdir(parents=True, exist_ok=True)
-
-def parse_size_to_bytes(size_str):
-    """Parse size strings like '8.00GiB' into bytes."""
-    try:
-        s = size_str.strip()
-        m = re.match(r'^([\d\.]+)\s*([KMGTP]i?B)$', s)
-        if not m:
-            return None
-        value = float(m.group(1))
-        unit = m.group(2)
-        multipliers = {
-            'KB': 1000, 'MB': 1000**2, 'GB': 1000**3, 'TB': 1000**4, 'PB': 1000**5,
-            'KiB': 1024, 'MiB': 1024**2, 'GiB': 1024**3, 'TiB': 1024**4, 'PiB': 1024**5
-        }
-        return int(value * multipliers.get(unit, 1))
-    except Exception:
-        return None
-
-def format_bytes_gib(byte_val):
-    try:
-        gib = byte_val / (1024**3)
-        return f"{gib:.2f}GiB"
-    except Exception:
-        return "Unknown"
 
 def load_users_state():
-    """Load users state from file"""
     try:
         if os.path.exists(USERS_STATE_FILE):
             with open(USERS_STATE_FILE, 'r') as f:
@@ -426,7 +132,6 @@ def load_users_state():
     return {}
 
 def save_users_state(state):
-    """Save users state to file"""
     try:
         ensure_directories()
         with open(USERS_STATE_FILE, 'w') as f:
@@ -434,770 +139,8 @@ def save_users_state(state):
     except Exception as e:
         print(f"Error saving users state: {e}")
 
-def _utc_now():
-    return datetime.now(timezone.utc)
-
-def _now_iso():
-    return _utc_now().isoformat()
-
-def _parse_iso(value):
-    try:
-        raw = str(value or '').strip()
-        if not raw:
-            return None
-        if raw.endswith('Z'):
-            raw = raw[:-1] + '+00:00'
-        return datetime.fromisoformat(raw)
-    except Exception:
-        return None
-
-def _safe_int(value, fallback=0):
-    try:
-        return int(value)
-    except Exception:
-        return fallback
-
-def _read_cpu_temperature_c():
-    try:
-        temps = psutil.sensors_temperatures(fahrenheit=False)
-        if isinstance(temps, dict):
-            for group_name in ('coretemp', 'k10temp', 'cpu_thermal', 'cpu-thermal', 'soc_thermal'):
-                entries = temps.get(group_name, [])
-                for entry in entries:
-                    current = getattr(entry, 'current', None)
-                    if isinstance(current, (int, float)):
-                        return round(float(current), 1)
-            for entries in temps.values():
-                for entry in entries:
-                    current = getattr(entry, 'current', None)
-                    if isinstance(current, (int, float)):
-                        return round(float(current), 1)
-    except Exception as e:
-        print(f"Warning: Failed to read CPU temperature: {e}")
-    return None
-
-def _build_default_alerts_state():
-    return json.loads(json.dumps(DEFAULT_ALERTS_STATE))
-
-def _normalize_alerts_state(payload):
-    defaults = _build_default_alerts_state()
-    if not isinstance(payload, dict):
-        return defaults
-
-    merged = defaults
-    telegram = payload.get('telegram')
-    if isinstance(telegram, dict):
-        merged['telegram'].update(telegram)
-    pairing = payload.get('pairing')
-    if isinstance(pairing, dict):
-        merged['pairing'].update(pairing)
-    delivery = payload.get('delivery')
-    if isinstance(delivery, dict):
-        merged['delivery'].update(delivery)
-
-    merged['telegram']['enabled'] = bool(merged['telegram'].get('enabled', False))
-    merged['telegram']['bot_token'] = str(merged['telegram'].get('bot_token', '')).strip()
-    merged['telegram']['paired_chat_id'] = str(merged['telegram'].get('paired_chat_id', '')).strip()
-    merged['telegram']['paired_chat_label'] = str(merged['telegram'].get('paired_chat_label', '')).strip()
-    merged['telegram']['paired_at'] = str(merged['telegram'].get('paired_at', '')).strip()
-    merged['telegram']['last_update_id'] = _safe_int(merged['telegram'].get('last_update_id', 0), 0)
-
-    merged['pairing']['code'] = str(merged['pairing'].get('code', '')).strip().upper()
-    merged['pairing']['started_at'] = str(merged['pairing'].get('started_at', '')).strip()
-    merged['pairing']['expires_at'] = str(merged['pairing'].get('expires_at', '')).strip()
-
-    merged['delivery']['last_critical_fingerprint'] = str(merged['delivery'].get('last_critical_fingerprint', '')).strip()
-    merged['delivery']['last_critical_sent_at'] = str(merged['delivery'].get('last_critical_sent_at', '')).strip()
-
-    return merged
-
-def load_alerts_state():
-    try:
-        if os.path.exists(ALERTS_STATE_FILE):
-            with open(ALERTS_STATE_FILE, 'r') as f:
-                loaded = json.load(f)
-                normalized = _normalize_alerts_state(loaded)
-                if normalized != loaded:
-                    save_alerts_state(normalized)
-                return normalized
-    except Exception as e:
-        print(f"Error loading alerts state: {e}")
-    return _build_default_alerts_state()
-
-def save_alerts_state(state):
-    try:
-        ensure_directories()
-        normalized = _normalize_alerts_state(state)
-        with open(ALERTS_STATE_FILE, 'w') as f:
-            json.dump(normalized, f, indent=2)
-        return normalized
-    except Exception as e:
-        print(f"Error saving alerts state: {e}")
-        return _normalize_alerts_state(state)
-
-def _clear_pairing_state(state):
-    state['pairing'] = {
-        'code': '',
-        'started_at': '',
-        'expires_at': '',
-    }
-
-def _clear_telegram_chat_binding(state):
-    state['telegram']['paired_chat_id'] = ''
-    state['telegram']['paired_chat_label'] = ''
-    state['telegram']['paired_at'] = ''
-
-def _is_pairing_active(state):
-    pairing = state.get('pairing', {})
-    code = str(pairing.get('code', '')).strip()
-    expires_at = _parse_iso(pairing.get('expires_at'))
-    if not code or not expires_at:
-        return False
-    return expires_at > _utc_now()
-
-def _alert_settings_public_payload(state):
-    telegram = state.get('telegram', {})
-    pairing = state.get('pairing', {})
-    pairing_active = _is_pairing_active(state)
-    pairing_code = str(pairing.get('code', '')).strip() if pairing_active else ''
-    paired_chat = str(telegram.get('paired_chat_label') or telegram.get('paired_chat_id') or '').strip()
-
-    return {
-        'telegram': {
-            'enabled': bool(telegram.get('enabled')),
-            'bot_token_configured': bool(str(telegram.get('bot_token', '')).strip()),
-            'paired': bool(str(telegram.get('paired_chat_id', '')).strip()),
-            'paired_chat': paired_chat,
-            'paired_at': str(telegram.get('paired_at') or '').strip() or None,
-        },
-        'pairing': {
-            'active': pairing_active,
-            'code': pairing_code,
-            'command': f"/pair {pairing_code}" if pairing_code else '',
-            'expires_at': str(pairing.get('expires_at') or '').strip() or None,
-        }
-    }
-
-def _telegram_api_call(bot_token, method, payload=None, params=None, timeout_sec=10):
-    token = str(bot_token or '').strip()
-    if not token:
-        return False, 'Telegram bot token is not configured', None
-
-    url = f"https://api.telegram.org/bot{token}/{method}"
-    try:
-        if payload is not None:
-            response = requests.post(url, json=payload, timeout=timeout_sec)
-        else:
-            response = requests.get(url, params=params, timeout=timeout_sec)
-    except Exception as e:
-        return False, f'Telegram request failed: {e}', None
-
-    try:
-        data = response.json()
-    except Exception:
-        data = {}
-
-    if response.status_code != 200 or not isinstance(data, dict) or not data.get('ok'):
-        description = ''
-        if isinstance(data, dict):
-            description = str(data.get('description') or '').strip()
-        detail = description or f'HTTP {response.status_code}'
-        return False, f'Telegram API error: {detail}', data
-
-    return True, '', data.get('result')
-
-def _generate_pairing_code(length=6):
-    alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-    return ''.join(secrets.choice(alphabet) for _ in range(length))
-
-def _build_alert_item(alert_id, severity, title, message, route='', action_label='Open'):
-    return {
-        'id': alert_id,
-        'severity': severity,
-        'title': title,
-        'message': message,
-        'route': route,
-        'action_label': action_label if route else '',
-        'created_at': _now_iso(),
-    }
-
-def _collect_system_alerts():
-    alerts = []
-
-    try:
-        cpu_usage = float(psutil.cpu_percent(interval=0.15))
-        if cpu_usage >= ALERT_THRESHOLDS['cpu_usage_critical']:
-            alerts.append(_build_alert_item(
-                alert_id='cpu-usage-critical',
-                severity='critical',
-                title='CPU usage is critical',
-                message=f'CPU load is at {cpu_usage:.1f}%.',
-                route='index.html',
-                action_label='Open Dashboard'
-            ))
-        elif cpu_usage >= ALERT_THRESHOLDS['cpu_usage_warning']:
-            alerts.append(_build_alert_item(
-                alert_id='cpu-usage-warning',
-                severity='warning',
-                title='CPU usage is high',
-                message=f'CPU load is at {cpu_usage:.1f}%.',
-                route='index.html',
-                action_label='Open Dashboard'
-            ))
-    except Exception:
-        pass
-
-    cpu_temp_c = _read_cpu_temperature_c()
-    if isinstance(cpu_temp_c, (int, float)):
-        if cpu_temp_c >= ALERT_THRESHOLDS['cpu_temp_critical']:
-            alerts.append(_build_alert_item(
-                alert_id='cpu-temp-critical',
-                severity='critical',
-                title='CPU temperature is critical',
-                message=f'CPU temperature reached {cpu_temp_c:.1f} degC.',
-                route='index.html',
-                action_label='Open Dashboard'
-            ))
-        elif cpu_temp_c >= ALERT_THRESHOLDS['cpu_temp_warning']:
-            alerts.append(_build_alert_item(
-                alert_id='cpu-temp-warning',
-                severity='warning',
-                title='CPU temperature is elevated',
-                message=f'CPU temperature is {cpu_temp_c:.1f} degC.',
-                route='index.html',
-                action_label='Open Dashboard'
-            ))
-
-    try:
-        memory_percent = float(psutil.virtual_memory().percent)
-        if memory_percent >= ALERT_THRESHOLDS['memory_critical']:
-            alerts.append(_build_alert_item(
-                alert_id='memory-critical',
-                severity='critical',
-                title='Memory pressure is critical',
-                message=f'RAM usage is at {memory_percent:.1f}%.',
-                route='index.html',
-                action_label='Open Dashboard'
-            ))
-        elif memory_percent >= ALERT_THRESHOLDS['memory_warning']:
-            alerts.append(_build_alert_item(
-                alert_id='memory-warning',
-                severity='warning',
-                title='Memory usage is high',
-                message=f'RAM usage is at {memory_percent:.1f}%.',
-                route='index.html',
-                action_label='Open Dashboard'
-            ))
-    except Exception:
-        pass
-
-    try:
-        root_disk_percent = float(psutil.disk_usage('/').percent)
-        if root_disk_percent >= ALERT_THRESHOLDS['disk_critical']:
-            alerts.append(_build_alert_item(
-                alert_id='root-disk-critical',
-                severity='critical',
-                title='Root filesystem is almost full',
-                message=f'Root filesystem usage is at {root_disk_percent:.1f}%.',
-                route='storage.html',
-                action_label='Open Storage'
-            ))
-        elif root_disk_percent >= ALERT_THRESHOLDS['disk_warning']:
-            alerts.append(_build_alert_item(
-                alert_id='root-disk-warning',
-                severity='warning',
-                title='Root filesystem usage is high',
-                message=f'Root filesystem usage is at {root_disk_percent:.1f}%.',
-                route='storage.html',
-                action_label='Open Storage'
-            ))
-    except Exception:
-        pass
-
-    try:
-        pools_state = load_pools_state()
-        if isinstance(pools_state, dict):
-            for pool_id, pool_data in pools_state.items():
-                mount_point = str((pool_data or {}).get('mount_point') or '').strip()
-                if not mount_point:
-                    continue
-                pool_name = str((pool_data or {}).get('name') or pool_id)
-                if not os.path.ismount(mount_point):
-                    alerts.append(_build_alert_item(
-                        alert_id=f'pool-{pool_id}-unmounted',
-                        severity='critical',
-                        title='Pool is not mounted',
-                        message=f'Pool "{pool_name}" is configured but not mounted.',
-                        route='storage.html',
-                        action_label='Open Storage'
-                    ))
-                    continue
-                try:
-                    pool_percent = float(psutil.disk_usage(mount_point).percent)
-                    if pool_percent >= ALERT_THRESHOLDS['pool_critical']:
-                        alerts.append(_build_alert_item(
-                            alert_id=f'pool-{pool_id}-critical',
-                            severity='critical',
-                            title='Pool capacity is critical',
-                            message=f'Pool "{pool_name}" is at {pool_percent:.1f}% usage.',
-                            route='storage.html',
-                            action_label='Open Storage'
-                        ))
-                    elif pool_percent >= ALERT_THRESHOLDS['pool_warning']:
-                        alerts.append(_build_alert_item(
-                            alert_id=f'pool-{pool_id}-warning',
-                            severity='warning',
-                            title='Pool capacity is high',
-                            message=f'Pool "{pool_name}" is at {pool_percent:.1f}% usage.',
-                            route='storage.html',
-                            action_label='Open Storage'
-                        ))
-                except Exception:
-                    pass
-    except Exception:
-        pass
-
-    alerts.sort(key=lambda item: (
-        ALERT_SEVERITY_PRIORITY.get(str(item.get('severity', 'info')).lower(), 9),
-        str(item.get('title', ''))
-    ))
-    return alerts
-
-def _build_alert_summary(alerts):
-    summary = {'critical': 0, 'warning': 0, 'info': 0, 'total': 0}
-    for item in alerts:
-        sev = str(item.get('severity', 'info')).lower()
-        if sev not in summary:
-            continue
-        summary[sev] += 1
-        summary['total'] += 1
-    return summary
-
-def _critical_fingerprint(alerts):
-    critical = [
-        f"{item.get('id', '')}:{item.get('message', '')}"
-        for item in alerts
-        if str(item.get('severity', '')).lower() == 'critical'
-    ]
-    if not critical:
-        return ''
-    digest_input = '|'.join(sorted(critical))
-    return hashlib.sha256(digest_input.encode('utf-8')).hexdigest()
-
-def _maybe_send_telegram_critical_alerts(alerts, state):
-    telegram = state.get('telegram', {})
-    delivery = state.get('delivery', {})
-    token = str(telegram.get('bot_token', '')).strip()
-    chat_id = str(telegram.get('paired_chat_id', '')).strip()
-    enabled = bool(telegram.get('enabled', False))
-    if not enabled or not token or not chat_id:
-        return
-
-    fingerprint = _critical_fingerprint(alerts)
-    if not fingerprint:
-        if delivery.get('last_critical_fingerprint'):
-            state['delivery']['last_critical_fingerprint'] = ''
-            save_alerts_state(state)
-        return
-
-    if fingerprint == str(delivery.get('last_critical_fingerprint', '')).strip():
-        return
-
-    critical_alerts = [item for item in alerts if str(item.get('severity', '')).lower() == 'critical']
-    if not critical_alerts:
-        return
-
-    lines = ['AlvaOS critical alerts detected:']
-    for item in critical_alerts[:8]:
-        lines.append(f"- {item.get('title')}: {item.get('message')}")
-    if len(critical_alerts) > 8:
-        lines.append(f"- ... and {len(critical_alerts) - 8} more")
-    lines.append('')
-    lines.append(f"Generated at {_utc_now().strftime('%Y-%m-%d %H:%M:%S UTC')}")
-
-    ok, error, _result = _telegram_api_call(
-        token,
-        'sendMessage',
-        payload={
-            'chat_id': chat_id,
-            'text': '\n'.join(lines),
-            'disable_web_page_preview': True,
-        },
-        timeout_sec=12
-    )
-    if not ok:
-        print(f"Telegram critical alert delivery failed: {error}")
-        return
-
-    state['delivery']['last_critical_fingerprint'] = fingerprint
-    state['delivery']['last_critical_sent_at'] = _now_iso()
-    save_alerts_state(state)
-
-def is_valid_username(username):
-    return bool(re.match(r'^[a-z_][a-z0-9_-]{1,31}$', username))
-
-def system_user_exists(username):
-    try:
-        result = subprocess.run([CMD['ID'], '-u', username], capture_output=True, text=True)
-        return result.returncode == 0
-    except Exception:
-        return False
-
-def ensure_samba_conf_exists():
-    """Ensure /etc/samba/smb.conf exists with a basic [global] section."""
-    if platform.system() != 'Linux':
-        return
-    try:
-        if not os.path.exists('/etc/samba/smb.conf'):
-            base_conf = "[global]\n   workgroup = WORKGROUP\n   server string = AlvaOS\n   security = user\n"
-            cmd = build_privileged_cmd([CMD['TEE'], '/etc/samba/smb.conf'])
-            subprocess.run(cmd, input=base_conf, text=True, check=True, env={'LC_ALL': 'C'})
-    except Exception as e:
-        print(f"Error ensuring smb.conf exists: {e}")
-
-def ensure_samba_global_settings(guest_access):
-    """Ensure global Samba settings needed for guest access."""
-    if platform.system() != 'Linux' or not guest_access:
-        return
-    try:
-        res, err = run_sudo_command(['sudo', CMD['CAT'], '/etc/samba/smb.conf'])
-        if err or not res:
-            return
-        content = res.stdout
-        if '[global]' not in content:
-            content = "[global]\n   workgroup = WORKGROUP\n   server string = AlvaOS\n   security = user\n\n" + content
-        if 'map to guest = Bad User' not in content:
-            content = re.sub(r'\[global\]\n', '[global]\n   map to guest = Bad User\n', content, count=1)
-        if 'guest account = nobody' not in content:
-            content = re.sub(r'\[global\]\n', '[global]\n   guest account = nobody\n', content, count=1)
-        process = subprocess.Popen(
-            build_privileged_cmd([CMD['TEE'], '/etc/samba/smb.conf']),
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            env={'LC_ALL': 'C'}
-        )
-        process.communicate(input=content)
-    except Exception as e:
-        print(f"Error ensuring global Samba settings: {e}")
-
-def reconcile_samba_guest_settings(shares_state):
-    """Ensure global guest settings are present only when needed."""
-    if platform.system() != 'Linux':
-        return
-    try:
-        guest_needed = any(
-            s.get('protocol') == 'smb' and s.get('guest_access', False)
-            for s in shares_state.values()
-        )
-        res, err = run_sudo_command(['sudo', CMD['CAT'], '/etc/samba/smb.conf'])
-        if err or not res:
-            return
-        content = res.stdout
-        if '[global]' not in content:
-            content = "[global]\n   workgroup = WORKGROUP\n   server string = AlvaOS\n   security = user\n\n" + content
-        if guest_needed:
-            if 'map to guest = Bad User' not in content:
-                content = re.sub(r'\[global\]\n', '[global]\n   map to guest = Bad User\n', content, count=1)
-            if 'guest account = nobody' not in content:
-                content = re.sub(r'\[global\]\n', '[global]\n   guest account = nobody\n', content, count=1)
-        else:
-            content = re.sub(r'^\s*map to guest\s*=.*$\n?', '', content, flags=re.MULTILINE)
-            content = re.sub(r'^\s*guest account\s*=.*$\n?', '', content, flags=re.MULTILINE)
-
-        process = subprocess.Popen(
-            build_privileged_cmd([CMD['TEE'], '/etc/samba/smb.conf']),
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            env={'LC_ALL': 'C'}
-        )
-        process.communicate(input=content)
-    except Exception as e:
-        print(f"Error reconciling Samba guest settings: {e}")
-
-def normalize_smb_permissions(permissions):
-    """Normalize SMB permissions dict -> {user: role} with role in read/write/deny."""
-    if not isinstance(permissions, dict):
-        return {}
-    normalized = {}
-    for user, role in permissions.items():
-        if not isinstance(user, str) or not user:
-            continue
-        role_val = str(role).lower().strip()
-        if role_val not in ('read', 'write', 'deny'):
-            continue
-        normalized[user] = role_val
-    return normalized
-
-def get_group_members(group_name):
-    try:
-        result = subprocess.run([CMD['GETENT'], 'group', group_name], capture_output=True, text=True)
-        if result.returncode != 0:
-            return []
-        parts = result.stdout.strip().split(':')
-        if len(parts) < 4:
-            return []
-        members = parts[3].strip()
-        if not members:
-            return []
-        return [m for m in members.split(',') if m]
-    except Exception:
-        return []
-
-def ensure_group_exists(group_name):
-    try:
-        run_sudo_command([CMD['GROUPADD'], '-f', group_name])
-    except Exception as e:
-        print(f"Error ensuring group exists: {e}")
-
-def apply_smb_permissions_to_fs(share_path, group_name, smb_permissions, guest_access):
-    """Apply filesystem permissions for SMB share."""
-    if platform.system() != 'Linux':
-        return
-    try:
-        ensure_group_exists(group_name)
-        allowed_users = [u for u, r in smb_permissions.items() if r in ('read', 'write')]
-        write_users = [u for u, r in smb_permissions.items() if r == 'write']
-
-        # Include guest account if enabled
-        if guest_access:
-            allowed_users.append('nobody')
-
-        # Add allowed users to group
-        for user in sorted(set(allowed_users)):
-            if not user:
-                continue
-            run_sudo_command([CMD['GPASSWD'], '-a', user, group_name])
-
-        # Remove users that are no longer allowed
-        current_members = get_group_members(group_name)
-        for user in current_members:
-            if user not in allowed_users:
-                run_sudo_command([CMD['GPASSWD'], '-d', user, group_name])
-
-        # Set group ownership and permissions on path
-        run_sudo_command([CMD['CHGRP'], '-R', group_name, share_path])
-
-        # Determine permission mode
-        if guest_access and not smb_permissions:
-            # Guest-only: open permissions
-            mode = '0777'
-        else:
-            # Setgid for group inheritance, grant write if any write users
-            mode = '2770' if write_users else '2750'
-        run_sudo_command([CMD['CHMOD'], '-R', mode, share_path])
-    except Exception as e:
-        print(f"Error applying SMB permissions to filesystem: {e}")
-
-def disable_samba_homes_share():
-    """Remove the default [homes] share if present to avoid user-named shares."""
-    if platform.system() != 'Linux':
-        return
-    try:
-        res, err = run_sudo_command([CMD['CAT'], '/etc/samba/smb.conf'])
-        if err or not res:
-            return
-        content = res.stdout
-        pattern = r'\[homes\].*?(?=\n\[|\Z)'
-        new_content = re.sub(pattern, '', content, flags=re.DOTALL)
-        if new_content != content:
-            process = subprocess.Popen(
-                build_privileged_cmd([CMD['TEE'], '/etc/samba/smb.conf']),
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                env={'LC_ALL': 'C'}
-            )
-            process.communicate(input=new_content)
-    except Exception as e:
-        print(f"Error disabling Samba homes share: {e}")
-
-def render_smb_share_config(share_name, share_path, read_only, guest_access, permissions):
-    """Render Samba share config with optional per-user permissions."""
-    permissions = normalize_smb_permissions(permissions)
-    allowed_users = [u for u, r in permissions.items() if r in ('read', 'write')]
-    write_users = [u for u, r in permissions.items() if r == 'write']
-    has_read_only = any(r == 'read' for r in permissions.values())
-
-    # If permissions are provided, enforce them via valid users/write list
-    use_permissions = len(permissions) > 0
-
-    # Determine read only behavior
-    if use_permissions:
-        read_only = True if (read_only or has_read_only) else False
-
-    lines = [
-        f'# AlvaOS Share: {share_name}',
-        f'[{share_name}]',
-        f'    path = {share_path}',
-        '    browseable = yes',
-        f'    read only = {"yes" if read_only else "no"}',
-        f'    guest ok = {"yes" if guest_access else "no"}',
-        '    create mask = 0644',
-        '    directory mask = 0755'
-    ]
-
-    if use_permissions:
-        # Add guest account when enabled
-        if guest_access:
-            allowed_users.append('nobody')
-        if allowed_users:
-            lines.append(f'    valid users = {" ".join(sorted(set(allowed_users)))}')
-        if read_only and write_users:
-            lines.append(f'    write list = {" ".join(sorted(set(write_users)))}')
-
-    return "\n" + "\n".join(lines) + "\n"
-
-def update_samba_share_section(share_name, new_config):
-    """Replace an existing share section with new config."""
-    if platform.system() != 'Linux':
-        return
-    ensure_samba_conf_exists()
-    try:
-        res, err = run_sudo_command([CMD['CAT'], '/etc/samba/smb.conf'])
-        if err or not res:
-            raise Exception(err or "Could not read smb.conf")
-        content = res.stdout
-        pattern = rf'# AlvaOS Share: {re.escape(share_name)}\n\[{re.escape(share_name)}\].*?(?=\n\[|\n# AlvaOS Share:|\Z)'
-        content = re.sub(pattern, '', content, flags=re.DOTALL)
-        content = content.rstrip() + "\n" + new_config
-        process = subprocess.Popen(
-            build_privileged_cmd([CMD['TEE'], '/etc/samba/smb.conf']),
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            env={'LC_ALL': 'C'}
-        )
-        process.communicate(input=content)
-    except Exception as e:
-        print(f"Error updating SMB share section: {e}")
-
-def is_setup_complete():
-    """Check if initial setup has been completed"""
-    return os.path.exists(SETUP_STATUS_FILE)
-
-def mark_setup_complete(password):
-    """Mark the initial setup as complete and store password hash"""
-    ensure_directories()
-    
-    # Simple hash for 0.1
-    salt = secrets.token_hex(8)
-    h = hashlib.sha256((password + salt).encode()).hexdigest()
-    
-    auth_data = {
-        'password_hash': h,
-        'salt': salt
-    }
-    
-    with open(AUTH_FILE, 'w') as f:
-        json.dump(auth_data, f)
-
-    setup_data = {
-        'setup_completed': True,
-        'completed_at': datetime.now().isoformat(),
-        'version': VERSION
-    }
-    with open(SETUP_STATUS_FILE, 'w') as f:
-        json.dump(setup_data, f, indent=2)
-
-def _purge_expired_sessions():
-    """Remove sessions that have passed their expiry time."""
-    now = _utc_now()
-    expired = [t for t, s in SESSIONS.items() if _parse_iso(s.get('expires_at')) and _parse_iso(s['expires_at']) < now]
-    for t in expired:
-        del SESSIONS[t]
-    expired_temp = [t for t, s in TEMP_2FA_TOKENS.items() if _parse_iso(s.get('expires_at')) and _parse_iso(s['expires_at']) < now]
-    for t in expired_temp:
-        del TEMP_2FA_TOKENS[t]
-
-def _create_session(username, role='admin'):
-    """Create a new session token, returning the token string."""
-    token = secrets.token_hex(32)
-    csrf_token = secrets.token_hex(32)
-    expires_at = (_utc_now() + timedelta(hours=SESSION_TTL_HOURS)).isoformat()
-    SESSIONS[token] = {'username': username, 'role': role, 'expires_at': expires_at, 'csrf_token': csrf_token}
-    return token
-
-def _get_session(token):
-    """Return session dict if valid and not expired, else None."""
-    if not token or token not in SESSIONS:
-        return None
-    session = SESSIONS[token]
-    expires = _parse_iso(session.get('expires_at'))
-    if expires and expires < _utc_now():
-        del SESSIONS[token]
-        return None
-    return session
-
-def require_csrf_token(f):
-    """Decorator to require a valid CSRF token for state-changing operations."""
-    @functools.wraps(f)
-    def decorated_function(*args, **kwargs):
-        session = _get_current_session()
-        if not session:
-            return jsonify({'error': 'Authentication required'}), 401
-        
-        # Get CSRF token from header
-        csrf_token = request.headers.get('X-CSRF-Token', '').strip()
-        if not csrf_token:
-            return jsonify({'error': 'CSRF token missing'}), 403
-        
-        # Verify CSRF token matches session
-        if csrf_token != session.get('csrf_token', ''):
-            return jsonify({'error': 'Invalid CSRF token'}), 403
-        
-        return f(*args, **kwargs)
-    return decorated_function
-
-def _get_current_session():
-    """Get the session for the current request."""
-    token = request.headers.get('Authorization', '').strip()
-    return _get_session(token)
-
-def require_auth(f=None, require_admin=False):
-    """Decorator to require authentication. Optionally enforce admin role."""
-    def decorator(fn):
-        @functools.wraps(fn)
-        def decorated_function(*args, **kwargs):
-            if not is_setup_complete():
-                return fn(*args, **kwargs)
-            _purge_expired_sessions()
-            session = _get_current_session()
-            if not session:
-                return jsonify({'error': 'Authentication required'}), 401
-            if require_admin and session.get('role') != 'admin':
-                return jsonify({'error': 'Admin privileges required'}), 403
-            return fn(*args, **kwargs)
-        return decorated_function
-    # Support both @require_auth and @require_auth(require_admin=True)
-    if f is not None:
-        return decorator(f)
-    return decorator
-
-def _check_rate_limit(ip):
-    """Returns (allowed, retry_after_seconds). Updates rate limit state."""
-    now = time.time()
-    entry = LOGIN_RATE_LIMIT.get(ip)
-    if entry is None or now - entry['window_start'] > LOGIN_WINDOW_SECONDS:
-        LOGIN_RATE_LIMIT[ip] = {'count': 0, 'window_start': now}
-        entry = LOGIN_RATE_LIMIT[ip]
-    entry['count'] += 1
-    if entry['count'] > LOGIN_MAX_ATTEMPTS:
-        retry_after = int(LOGIN_WINDOW_SECONDS - (now - entry['window_start'])) + 1
-        return False, retry_after
-    return True, 0
-
-def _reset_rate_limit(ip):
-    LOGIN_RATE_LIMIT.pop(ip, None)
-
-# ── 2FA helpers ──────────────────────────────────────────────────────────
+# ── 2FA helpers ───────────────────────────────────────────────────────────────
 def _load_totp_secret():
-    """Return the TOTP secret from auth.json, or None if 2FA is disabled."""
     try:
         with open(AUTH_FILE, 'r') as f:
             data = json.load(f)
@@ -1206,7 +149,6 @@ def _load_totp_secret():
         return None
 
 def _save_totp_secret(secret):
-    """Persist a TOTP secret into auth.json."""
     try:
         with open(AUTH_FILE, 'r') as f:
             data = json.load(f)
@@ -1222,7 +164,6 @@ def _save_totp_secret(secret):
         return False
 
 def _verify_totp(secret, code):
-    """Verify a TOTP code against the given secret. Returns bool."""
     if not TOTP_AVAILABLE or not secret or not code:
         return False
     try:
@@ -1232,7 +173,6 @@ def _verify_totp(secret, code):
         return False
 
 def _refresh_totp_runtime():
-    """Reload 2FA libraries at runtime after installation."""
     global pyotp, qrcode, base64, TOTP_AVAILABLE
     try:
         pyotp = importlib.import_module('pyotp')
@@ -1244,6 +184,27 @@ def _refresh_totp_runtime():
     except Exception as e:
         TOTP_AVAILABLE = False
         return False, str(e)
+
+# ── Frontend serving ──────────────────────────────────────────────────────────
+def serve_frontend(filename):
+    try:
+        if filename.endswith(('.html', '.css', '.js')):
+            with open(os.path.join(app.static_folder, filename), 'r') as f:
+                content = f.read()
+            clean_version = VERSION.strip('() ')
+            content = content.replace('{{VERSION}}', clean_version)
+            if filename.endswith('.html'):
+                mimetype = 'text/html'
+            elif filename.endswith('.css'):
+                mimetype = 'text/css'
+            else:
+                mimetype = 'application/javascript'
+            return Response(content, mimetype=mimetype)
+        return send_from_directory(app.static_folder, filename)
+    except Exception as e:
+        print(f"Error serving {filename}: {e}")
+        return f"File not found: {filename}", 404
+
 
 @app.route('/')
 def index():
@@ -1258,47 +219,11 @@ def serve_app_icons(filename):
     icons_dir = prod_icons_dir if os.path.exists(prod_icons_dir) else dev_icons_dir
     return send_from_directory(icons_dir, filename)
 
-def serve_frontend(filename):
-    """Helper to serve frontend files with version replacement"""
-    try:
-        # Check if it's an HTML, CSS, or JS file that might need replacement
-        if filename.endswith(('.html', '.css', '.js')):
-            content = ""
-            with open(os.path.join(app.static_folder, filename), 'r') as f:
-                content = f.read()
-            
-            # Replace placeholder
-            clean_version = VERSION.strip('() ')
-            content = content.replace('{{VERSION}}', clean_version)
-            
-            # Create a response with correct mimetype
-            from flask import Response
-            if filename.endswith('.html'):
-                mimetype = 'text/html'
-            elif filename.endswith('.css'):
-                mimetype = 'text/css'
-            else:  # .js
-                mimetype = 'application/javascript'
-            return Response(content, mimetype=mimetype)
-        
-        return send_from_directory(app.static_folder, filename)
-    except Exception as e:
-        print(f"Error serving {filename}: {e}")
-        return f"File not found: {filename}", 404
-        
-    return send_from_directory(app.static_folder, filename)
 
 @app.route('/<path:filename>')
 def serve_static_files(filename):
     """Catch-all for static files to ensure version replacement"""
     return serve_frontend(filename)
-
-@app.route('/<path:path>')
-def serve_static(path):
-    """Serve static files"""
-    if path.endswith(('.html', '.css')):
-        return serve_frontend(path)
-    return send_from_directory(app.static_folder, path)
 
 @app.route('/api/v1/setup/status', methods=['GET'])
 def get_setup_status():
@@ -1375,7 +300,7 @@ def complete_setup():
                 print(f"Warning: Could not set timezone during setup: {e}")
         
         # Mark setup as complete
-        mark_setup_complete(password)
+        mark_setup_complete(password, VERSION)
         
         # Auto-login for the setup session
         token = _create_session('root', role='admin')
@@ -1423,7 +348,7 @@ def login():
 
         h = hashlib.sha256((password + auth_data['salt']).encode()).hexdigest()
 
-        if h != auth_data['password_hash']:
+        if not hmac.compare_digest(h, auth_data['password_hash']):
             return jsonify({'error': 'Invalid password'}), 401
 
         _reset_rate_limit(client_ip)
@@ -1582,7 +507,7 @@ def disable_2fa():
         with open(AUTH_FILE, 'r') as f:
             auth_data = json.load(f)
         h = hashlib.sha256((password + auth_data['salt']).encode()).hexdigest()
-        if h != auth_data['password_hash']:
+        if not hmac.compare_digest(h, auth_data['password_hash']):
             return jsonify({'error': 'Incorrect password'}), 401
     except Exception:
         return jsonify({'error': 'Authentication failed'}), 500
@@ -1592,7 +517,6 @@ def disable_2fa():
 
 @app.route('/api/v1/users', methods=['GET', 'POST', 'DELETE'])
 @require_auth(require_admin=True)
-@require_csrf_token
 def manage_users():
     """Manage system users and Samba users"""
     if request.method == 'GET':
@@ -1607,6 +531,12 @@ def manage_users():
             })
         users.sort(key=lambda u: u['username'])
         return jsonify({'users': users})
+
+    # CSRF required for state-changing operations
+    session = _get_current_session()
+    csrf_token = request.headers.get('X-CSRF-Token', '').strip()
+    if not csrf_token or csrf_token != (session or {}).get('csrf_token', ''):
+        return jsonify({'error': 'CSRF token missing or invalid'}), 403
 
     data = request.get_json() or {}
     username = data.get('username', '').strip()
@@ -2496,8 +1426,8 @@ def set_hostname():
     
     new_hostname = data['hostname']
     
-    # Validation
-    if not new_hostname.replace('-', '').isalnum():
+    # Validation: allow letters, digits, hyphens, and dots (for FQDNs like nas.home.local)
+    if not re.match(r'^[a-zA-Z0-9]([a-zA-Z0-9\-.]*[a-zA-Z0-9])?$', new_hostname) or '..' in new_hostname or len(new_hostname) > 253:
         return jsonify({'error': 'Invalid hostname format'}), 400
 
     if platform.system() == 'Linux':
@@ -2705,101 +1635,6 @@ def save_update_settings():
 # ============================================================================
 # STORAGE MANAGEMENT ENDPOINTS (v0.2.0)
 # ============================================================================
-
-def _json_or_none(raw_text):
-    try:
-        text = str(raw_text or "").strip()
-        if not text:
-            return None
-        return json.loads(text)
-    except Exception:
-        return None
-
-def _smartctl_messages(payload):
-    if not isinstance(payload, dict):
-        return []
-    messages = []
-    smartctl_meta = payload.get('smartctl', {})
-    if isinstance(smartctl_meta, dict):
-        for item in smartctl_meta.get('messages', []) if isinstance(smartctl_meta.get('messages'), list) else []:
-            if not isinstance(item, dict):
-                continue
-            message = str(item.get('string') or '').strip()
-            if message:
-                messages.append(message)
-    return messages
-
-def _smartctl_has_payload(payload):
-    if not isinstance(payload, dict):
-        return False
-    if isinstance(payload.get('smart_status'), dict):
-        return True
-    if payload.get('ata_smart_attributes'):
-        return True
-    if payload.get('nvme_smart_health_information_log'):
-        return True
-    if payload.get('scsi_grown_defect_list'):
-        return True
-    if payload.get('scsi_error_counter_log'):
-        return True
-    if payload.get('power_on_time'):
-        return True
-    return False
-
-def _compact_smart_error(error_text):
-    text = str(error_text or '').strip()
-    if not text:
-        return ''
-    if ': {' in text:
-        text = text.split(': {', 1)[0].strip()
-    if len(text) > 320:
-        text = text[:320].rstrip() + '...'
-    return text
-
-def _collect_smart_report(disk_name, detailed=False, timeout=6):
-    disk = str(disk_name or '').strip()
-    if not disk:
-        return None, '', 'Invalid disk name'
-    disk_path = f'/dev/{disk}'
-
-    base_args = ['-a'] if detailed else ['-H', '-A']
-    attempts = [list(base_args)]
-    if not disk.startswith('nvme'):
-        attempts.append(list(base_args) + ['-d', 'sat'])
-        attempts.append(list(base_args) + ['-d', 'scsi'])
-
-    saw_unknown_bridge = False
-    last_error = ''
-
-    for args in attempts:
-        cmd = [CMD['SMARTCTL']] + args + ['-j', disk_path]
-        result, err = run_sudo_command(cmd, timeout=timeout)
-        payload = _json_or_none((result.stdout if result else '') or '')
-        messages = _smartctl_messages(payload)
-
-        msg_text = ' '.join(messages).lower()
-        err_text = str(err or '').lower()
-        if 'unknown usb bridge' in msg_text or 'unknown usb bridge' in err_text:
-            saw_unknown_bridge = True
-            if payload and _smartctl_has_payload(payload):
-                return payload, '', ''
-            continue
-
-        if payload and (_smartctl_has_payload(payload) or payload.get('smart_support', {}).get('available') is False):
-            return payload, '', ''
-
-        if err:
-            last_error = _compact_smart_error(err)
-        elif result and result.stderr:
-            last_error = _compact_smart_error(result.stderr)
-
-    if saw_unknown_bridge:
-        return None, (
-            'SMART monitoring unavailable: unsupported USB-SATA bridge. '
-            'Try direct SATA/NVMe connection or a supported USB bridge.'
-        ), ''
-
-    return None, '', (last_error or 'Device did not return SMART data')
 
 @app.route('/api/v1/storage/disks', methods=['GET'])
 @require_auth
@@ -3094,111 +1929,8 @@ def wipe_disk(disk_name):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# Pool state file
-POOLS_STATE_FILE = '/var/lib/alvaos/pools.json'
-
-def load_pools_state():
-    """Load pools state from file"""
-    try:
-        if os.path.exists(POOLS_STATE_FILE):
-            with open(POOLS_STATE_FILE, 'r') as f:
-                return json.load(f)
-    except:
-        pass
-    return {}
-
-def save_pools_state(state):
-    """Save pools state to file"""
-    try:
-        ensure_directories()
-        with open(POOLS_STATE_FILE, 'w') as f:
-            json.dump(state, f, indent=2)
-    except Exception as e:
-        print(f"Error saving pools state: {e}")
-
-def sanitize_pool_name(name: str, fallback: str = "") -> str:
-    base = re.sub(r'[^a-zA-Z0-9._-]+', '-', (name or '').strip()).strip('-')
-    if base:
-        return base
-    if fallback:
-        return f"pool-{fallback[:8]}"
-    return "pool-imported"
-
-def detect_btrfs_pools():
-    pools = []
-    root_btrfs_uuid = None
-    if platform.system() != 'Linux':
-        return pools, root_btrfs_uuid
-
-    try:
-        root_res, root_err = run_sudo_command([CMD['BTRFS'], 'filesystem', 'show', '/'])
-        if root_res and root_res.returncode == 0 and not root_err:
-            root_match = re.search(r"uuid:\s+([A-Fa-f0-9-]+)", root_res.stdout, re.IGNORECASE)
-            if root_match:
-                root_btrfs_uuid = root_match.group(1).lower()
-    except Exception as e:
-        print(f"Warning: Could not detect root Btrfs UUID: {e}")
-
-    result, err = run_sudo_command([CMD['BTRFS'], 'filesystem', 'show'])
-    if not result or result.returncode != 0:
-        return pools, root_btrfs_uuid
-
-    output = result.stdout or ""
-    fs_blocks = re.split(r'Label:', output)
-    for block in fs_blocks:
-        if not block.strip():
-            continue
-
-        uuid_match = re.search(r"uuid:\s+([A-Fa-f0-9-]+)", block, re.IGNORECASE)
-        if not uuid_match:
-            continue
-        uuid_val = uuid_match.group(1)
-
-        label_match = re.match(r"\s*('(.*?)'|\S+)", block)
-        label = 'none'
-        if label_match:
-            label = (label_match.group(2) or label_match.group(1)).strip("'")
-            if label == 'none':
-                label = 'Unlabeled'
-
-        pool = {
-            'id': uuid_val,
-            'name': label,
-            'uuid': uuid_val,
-            'devices': [],
-            'device_sizes_bytes': [],
-            'total_size': 'Unknown',
-            'used_size': 'Unknown',
-            'raid_level': 'Single',
-            'status': 'healthy',
-            'is_system_pool': bool(root_btrfs_uuid and uuid_val.lower() == root_btrfs_uuid)
-        }
-
-        dev_lines = re.findall(r"path\s+(\S+)", block)
-        pool['devices'] = [d.strip() for d in dev_lines]
-
-        size_matches = re.findall(r"devid\s+\d+\s+size\s+(\d+\.?\d*[TiGkMBP]i?B)", block)
-        for sm in size_matches:
-            b = parse_size_to_bytes(sm)
-            if b:
-                pool['device_sizes_bytes'].append(b)
-
-        if 'missing' in block.lower():
-            pool['status'] = 'degraded'
-
-        pools.append(pool)
-
-    return pools, root_btrfs_uuid
-
-# Initialize backup manager after pool helpers are available
-if backup_manager is None:
-    backup_manager = BackupManager(run_sudo_command, load_pools_state)
-if buddy_backup_manager is None:
-    buddy_backup_manager = BuddyBackupManager(run_sudo_command)
-
 @app.route('/api/v1/storage/pools', methods=['GET', 'POST', 'DELETE'])
 @require_auth(require_admin=True)
-@require_csrf_token
 def manage_pools():
     """Manage Btrfs pools"""
 
@@ -3337,7 +2069,13 @@ def manage_pools():
         with _storage_cache_lock:
             STORAGE_CACHE['pools'] = {'data': pools, 'expires': current_time + CACHE_TTL}
         return jsonify({'pools': pools})
-    
+
+    # CSRF required for state-changing operations
+    session = _get_current_session()
+    csrf_token = request.headers.get('X-CSRF-Token', '').strip()
+    if not csrf_token or csrf_token != (session or {}).get('csrf_token', ''):
+        return jsonify({'error': 'CSRF token missing or invalid'}), 403
+
     elif request.method == 'POST':
         # Create new pool
         data = request.get_json()
@@ -3467,7 +2205,7 @@ def manage_pools():
                     run_sudo_command([CMD['UMOUNT'], mount_point], timeout=5)
                     
                     try:
-                        run_sudo_command(['sudo', CMD['RMDIR'], mount_point])
+                        run_sudo_command([CMD['RMDIR'], mount_point])
                     except:
                         pass
                 
@@ -3799,31 +2537,6 @@ def expand_pool(pool_id):
         return jsonify({'error': f'Failed to expand pool: {str(e)}'}), 500
 
 # ============================================================================
-# NETWORK SHARES ENDPOINTS (v0.2.0 Phase 3)
-# ============================================================================
-
-# Shares state file
-SHARES_STATE_FILE = '/var/lib/alvaos/shares.json'
-
-def load_shares_state():
-    """Load shares state from file"""
-    try:
-        if os.path.exists(SHARES_STATE_FILE):
-            with open(SHARES_STATE_FILE, 'r') as f:
-                return json.load(f)
-    except:
-        pass
-    return {}
-
-def save_shares_state(state):
-    """Save shares state to file"""
-    try:
-        ensure_directories()
-        with open(SHARES_STATE_FILE, 'w') as f:
-            json.dump(state, f, indent=2)
-    except Exception as e:
-        print(f"Error saving shares state: {e}")
-
 @app.route('/api/v1/storage/available-paths', methods=['GET'])
 @require_auth
 def get_available_paths():
@@ -4177,60 +2890,6 @@ def update_share_permissions():
 
     return jsonify({'success': True, 'message': 'SMB permissions updated'})
 
-def mount_existing_pools():
-    """Mount all known pools on startup"""
-    if platform.system() != 'Linux':
-        return
-
-    print("Checking and mounting storage pools...")
-    pools = load_pools_state()
-    
-    for pool_id, pool_info in pools.items():
-        name = pool_info.get('name')
-        mount_point = pool_info.get('mount_point')
-        devices = pool_info.get('devices', [])
-        
-        if not name or not mount_point:
-            continue
-            
-        try:
-            # 1. Ensure mount point exists
-            if not os.path.exists(mount_point):
-                print(f"Creating mount point for {name}: {mount_point}")
-                run_sudo_command([CMD['MKDIR'], '-p', mount_point])
-            
-            # 2. Check if already mounted
-            is_mounted = subprocess.run([CMD['MOUNTPOINT'], '-q', mount_point], check=False).returncode == 0
-            
-            if not is_mounted:
-                print(f"Mounting pool {name}...")
-                mounted = False
-                
-                # STRATEGY 1: Mount by UUID (Robust against device changes)
-                # The pool_id key is stored as the UUID during creation
-                if pool_id and len(pool_id) > 20:
-                    res, err = run_sudo_command([CMD['MOUNT'], '-U', pool_id, mount_point])
-                    if res and res.returncode == 0:
-                        print(f"Successfully mounted {name} using UUID: {pool_id}")
-                        mounted = True
-                
-                # STRATEGY 2: Fallback to device path
-                if not mounted and devices:
-                    print(f"UUID mount not possible/failed for {name}, trying device path: {devices[0]}")
-                    res, err = run_sudo_command([CMD['MOUNT'], devices[0], mount_point])
-                    if err:
-                        print(f"Error mounting {name}: {err}")
-                    else:
-                        print(f"Successfully mounted {name} using device path")
-            else:
-                print(f"Pool {name} is already mounted.")
-                
-        except Exception as e:
-            print(f"Failed to process pool {name}: {e}")
-
-# ============================================================================
-# LOCAL BACKUP API (v0.6.0)
-# ============================================================================
 
 @app.route('/api/v1/backup/sources', methods=['GET'])
 @require_auth
