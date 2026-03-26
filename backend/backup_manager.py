@@ -1534,10 +1534,10 @@ class BackupManager:
             except Exception as e:
                 scheduler_error = f"Scheduler error: {e}"
                 self._save_status({
+                    "pool_last_status": "error",
                     "pool_last_error": scheduler_error,
+                    "system_last_status": "error",
                     "system_last_error": scheduler_error,
-                    "last_status": "error",
-                    "last_error": str(e),
                 })
             self._stop_event.wait(30)
 
