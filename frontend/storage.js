@@ -611,7 +611,7 @@ async function viewDiskDetails(diskName) {
                     <button id="close-modal-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">${window.alvaIcon ? window.alvaIcon('x', '', 'aria-hidden="true"') : 'x'}</button>
                 </div>
                 <div style="padding: 2rem; text-align: center; background: var(--bg-primary); border-radius: 8px; border-left: 4px solid var(--accent-warning);">
-                    <div style="font-size: 3rem; margin-bottom: 1rem;">â„¹ï¸</div>
+                    <div style="font-size: 3rem; margin-bottom: 1rem;">${window.alvaIcon ? window.alvaIcon('info', '', 'aria-hidden="true"') : 'i'}</div>
                     <h3 style="margin-bottom: 0.5rem;">SMART Monitoring Unavailable</h3>
                     <p style="color: var(--text-secondary);">${data.error}</p>
                 </div>
@@ -1740,5 +1740,3 @@ async function showConnectionInfo(shareId) {
         modal.remove();
     });
 }
-
-
