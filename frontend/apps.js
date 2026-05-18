@@ -39,7 +39,6 @@ function showNotification(message, type = 'info') {
     } else {
         console.log(message);
     }
-    if (window.alert) window.alert(message);
 }
 
 function escapeHtml(value) {
@@ -1233,7 +1232,10 @@ async function stopContainer(containerId) {
 }
 
 async function deleteContainer(containerId) {
-    if (!confirm('Are you sure you want to delete this container?')) return;
+    const ok = typeof window.showConfirm === 'function'
+        ? await window.showConfirm(`Delete container "${containerId}"?\n\nThis force-removes the Docker container. App data volumes are not deleted.`)
+        : false;
+    if (!ok) return;
 
     try {
         const response = await apiFetch(`${API_BASE}/containers/${containerId}?force=true`, {
@@ -1545,5 +1547,3 @@ async function pollInstallStatus(appId) {
 
 // Default view: installed apps + containers
 setActiveTab('installed');
-
-

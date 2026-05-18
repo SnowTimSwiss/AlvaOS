@@ -5,11 +5,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AlvaOS - Apps</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
-        rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="notifications.css">
     <style>
@@ -198,7 +193,7 @@
             padding: 2px 8px;
             border-radius: 4px;
             font-size: 0.8rem;
-            font-family: 'JetBrains Mono', monospace;
+            font-family: var(--font-mono);
             color: var(--text-secondary);
             margin-right: 4px;
         }
@@ -337,7 +332,7 @@
             background: #0a111d;
             color: #eaf2ff;
             padding: 10px 12px;
-            font-family: 'JetBrains Mono', monospace;
+            font-family: var(--font-mono);
             font-size: 0.84rem;
             line-height: 1.45;
         }
@@ -444,14 +439,14 @@
             margin-top: 4px;
             font-size: 0.8rem;
             color: var(--text-secondary);
-            font-family: 'JetBrains Mono', monospace;
+            font-family: var(--font-mono);
         }
 
         .logs-output {
             margin: 0;
             padding: 16px;
             overflow: auto;
-            font-family: 'JetBrains Mono', monospace;
+            font-family: var(--font-mono);
             font-size: 0.8rem;
             line-height: 1.45;
             white-space: pre-wrap;
@@ -482,7 +477,7 @@
             background: #0a111d;
             color: #eaf2ff;
             padding: 10px 12px;
-            font-family: 'JetBrains Mono', monospace;
+            font-family: var(--font-mono);
             font-size: 0.85rem;
         }
 
@@ -747,7 +742,7 @@
     </div>
 
     <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lucide@0.468.0/dist/umd/lucide.min.js"></script>
     <script src="icons.js"></script>
     <script src="notifications.js"></script>
     <script src="feedback.js"></script>

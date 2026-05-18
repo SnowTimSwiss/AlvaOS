@@ -25,7 +25,7 @@ async function usersConfirm(message) {
     if (typeof window.showConfirm === 'function') {
         return await window.showConfirm(message);
     }
-    return window.confirm(message);
+    return false;
 }
 
 async function usersReadJson(response) {
