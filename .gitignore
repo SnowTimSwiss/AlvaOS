@@ -77,3 +77,4 @@ docker-compose.override.yml
 .env.docker
 backend/secrets/
 installer/config.local*
+.claude
