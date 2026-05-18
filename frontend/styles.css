@@ -47,6 +47,10 @@
     --radius-default: 6px;
     --radius-btn: 6px;
     --radius-lg: 8px;
+
+    /* Local-first font stacks. The UI should stay fully usable without internet access. */
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
 }
 
 /* Focus States for Accessibility */
@@ -107,7 +111,7 @@ textarea:focus-visible {
 }
 
 body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-family: var(--font-sans);
     background-color: var(--bg-body);
     color: var(--text-primary);
     height: 100vh;
@@ -357,7 +361,7 @@ body {
 
 /* Typography Helpers used in JS */
 .metric-value {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 2rem;
     font-weight: 500;
     color: var(--text-primary);
@@ -374,7 +378,7 @@ body {
 }
 
 .mono-text {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
 }
 
 .lucide {
@@ -661,7 +665,7 @@ body {
 
 /* Buttons (Generic Override) */
 button {
-    font-family: 'Inter', sans-serif;
+    font-family: var(--font-sans);
 }
 
 .btn-primary {
@@ -695,7 +699,7 @@ textarea {
     color: var(--text-primary);
     padding: 8px 12px;
     border-radius: var(--radius-default);
-    font-family: 'Inter', sans-serif;
+    font-family: var(--font-sans);
     transition: border-color 0.2s, box-shadow 0.2s;
 }
 
@@ -738,7 +742,7 @@ option {
 }
 
 .setting-val {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 0.9rem;
     color: var(--text-primary);
     display: block;
@@ -1117,4 +1121,3 @@ option {
         width: 100%;
     }
 }
-

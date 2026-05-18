@@ -47,58 +47,116 @@ window.showToast = function (message, type = 'info') {
     }, 5000);
 };
 
-window.originalAlert = window.alert;
-window.alert = function (message) {
-    let type = 'info';
-    const lowerMsg = String(message).toLowerCase();
-    if (lowerMsg.includes('error') || lowerMsg.includes('failed')) type = 'error';
-    if (lowerMsg.includes('success') || lowerMsg.includes('created') || lowerMsg.includes('updated') || lowerMsg.includes('deleted')) type = 'success';
-    if (lowerMsg.includes('warning')) type = 'warning';
-
-    window.showToast(message, type);
-};
-
-window.confirmModal = function (message, onConfirm, onCancel) {
+window.confirmModal = function (message, optionsOrOnConfirm, onCancel) {
+    const options = (optionsOrOnConfirm && typeof optionsOrOnConfirm === 'object') ? optionsOrOnConfirm : {};
+    const onConfirm = (typeof optionsOrOnConfirm === 'function') ? optionsOrOnConfirm : options.onConfirm;
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
 
     let title = 'Confirmation';
-    let body = message;
+    let body = escapeHtml(message);
     if (message.includes('\n')) {
         const parts = message.split('\n');
         title = parts[0];
-        body = parts.slice(1).join('<br>');
+        body = parts.slice(1).map((part) => escapeHtml(part)).join('<br>');
     }
 
-    const isDanger = message.toLowerCase().includes('delete') || message.toLowerCase().includes('erase') || message.toLowerCase().includes('wipe');
+    const isDanger = options.danger === true
+        || message.toLowerCase().includes('delete')
+        || message.toLowerCase().includes('erase')
+        || message.toLowerCase().includes('wipe')
+        || message.toLowerCase().includes('rollback')
+        || message.toLowerCase().includes('restore');
     const confirmBtnColor = isDanger ? 'var(--accent-danger)' : 'var(--accent-primary)';
+    const requireText = String(options.requireText || '').trim();
+    const confirmLabel = options.confirmLabel || (isDanger ? 'Confirm' : 'Confirm');
+    const cancelLabel = options.cancelLabel || 'Cancel';
+    const details = Array.isArray(options.details) ? options.details.filter(Boolean) : [];
+    const warning = options.warning || '';
 
     overlay.innerHTML = `
-        <div class="modal-content">
-            <div class="modal-title">${title}</div>
-            <div class="modal-body">${body}</div>
+        <div class="modal-content${isDanger ? ' modal-danger' : ''}" role="dialog" aria-modal="true" aria-labelledby="modal-confirm-title">
+            <div class="modal-title" id="modal-confirm-title">${escapeHtml(title)}</div>
+            <div class="modal-body">
+                <div>${body}</div>
+                ${details.length ? `
+                    <dl class="modal-detail-list">
+                        ${details.map((item) => `
+                            <div>
+                                <dt>${escapeHtml(item.label || '')}</dt>
+                                <dd>${escapeHtml(item.value || '-')}</dd>
+                            </div>
+                        `).join('')}
+                    </dl>
+                ` : ''}
+                ${warning ? `<div class="modal-warning">${escapeHtml(warning)}</div>` : ''}
+                ${requireText ? `
+                    <label class="modal-confirm-label" for="modal-confirm-input">
+                        Type <strong>${escapeHtml(requireText)}</strong> to continue
+                    </label>
+                    <input id="modal-confirm-input" class="modal-confirm-input" autocomplete="off" spellcheck="false">
+                ` : ''}
+            </div>
             <div class="modal-actions">
-                <button id="modal-cancel" style="padding: 0.75rem 1.5rem; background: transparent; border: 1px solid var(--bg-border); color: var(--text-primary); border-radius: 6px; cursor: pointer; font-weight: 600;">Cancel</button>
-                <button id="modal-confirm" style="padding: 0.75rem 1.5rem; background: ${confirmBtnColor}; border: none; color: white; border-radius: 6px; cursor: pointer; font-weight: 600;">Confirm</button>
+                <button id="modal-cancel" class="btn-secondary">${escapeHtml(cancelLabel)}</button>
+                <button id="modal-confirm" class="btn-primary" style="background: ${confirmBtnColor};">${escapeHtml(confirmLabel)}</button>
             </div>
         </div>
     `;
 
     document.body.appendChild(overlay);
-    overlay.querySelector('#modal-confirm').focus();
+    const confirmBtn = overlay.querySelector('#modal-confirm');
+    const cancelBtn = overlay.querySelector('#modal-cancel');
+    const input = overlay.querySelector('#modal-confirm-input');
+
+    const close = (value) => {
+        overlay.remove();
+        resolveOnce(value);
+    };
+
+    let resolveOnce = () => {};
+    const syncConfirmState = () => {
+        if (!confirmBtn || !requireText) return;
+        confirmBtn.disabled = String(input?.value || '').trim() !== requireText;
+    };
+
+    if (input) {
+        input.focus();
+        input.addEventListener('input', syncConfirmState);
+        input.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && !confirmBtn.disabled) {
+                event.preventDefault();
+                confirmBtn.click();
+            }
+        });
+    } else {
+        confirmBtn.focus();
+    }
+    syncConfirmState();
 
     return new Promise((resolve) => {
-        overlay.querySelector('#modal-cancel').onclick = () => {
-            overlay.remove();
+        resolveOnce = resolve;
+
+        cancelBtn.onclick = () => {
             if (onCancel) onCancel();
-            resolve(false);
+            close(false);
         };
 
-        overlay.querySelector('#modal-confirm').onclick = () => {
-            overlay.remove();
+        confirmBtn.onclick = () => {
+            if (requireText && String(input?.value || '').trim() !== requireText) {
+                input?.focus();
+                return;
+            }
             if (onConfirm) onConfirm();
-            resolve(true);
+            close(true);
         };
+
+        overlay.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                cancelBtn.click();
+            }
+        });
     });
 };
 

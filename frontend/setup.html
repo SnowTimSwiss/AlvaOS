@@ -5,10 +5,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AlvaOS - Welcome Wizard</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono&display=swap"
-        rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
     <style>
         body {
@@ -292,7 +288,7 @@
                     <div style="color: var(--text-tertiary);">Status:</div>
                     <div style="color: var(--accent-success); font-weight: 600;">Ready for Configuration</div>
                     <div style="color: var(--text-tertiary);">Detected IP:</div>
-                    <div id="detected-ip" style="font-family: 'JetBrains Mono', monospace;">Loading...</div>
+                    <div id="detected-ip" style="font-family: var(--font-mono);">Loading...</div>
                 </div>
             </div>
             <p style="margin-top: 1.5rem; font-size: 0.9rem;">Click <strong>Continue</strong> to start the configuration.</p>
@@ -415,7 +411,7 @@
             <button class="btn" id="btn-next">Continue</button>
         </div>
 
-        <div style="margin-top: 2rem; text-align: center; font-size: 0.8rem; color: var(--text-tertiary); font-family: 'JetBrains Mono', monospace;">
+        <div style="margin-top: 2rem; text-align: center; font-size: 0.8rem; color: var(--text-tertiary); font-family: var(--font-mono);">
             AlvaOS {{VERSION}}
         </div>
     </div>

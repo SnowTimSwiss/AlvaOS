@@ -2,6 +2,7 @@
 // API_BASE is defined in app.js
 
 const IGNORED_DETECTED_POOLS_KEY = 'alvaos_ignored_detected_pools';
+let storageDisksCache = [];
 
 function showNotification(message, type = 'info') {
     if (window.showToast) {
@@ -13,6 +14,33 @@ function showNotification(message, type = 'info') {
 
 function showError(message) {
     showNotification(message, 'error');
+}
+
+function showSuccess(message) {
+    showNotification(message, 'success');
+}
+
+function diskDetailsForConfirm(diskName) {
+    const disk = storageDisksCache.find((item) => item.name === diskName || item.path === `/dev/${diskName}`) || {};
+    return [
+        { label: 'Device', value: disk.path || `/dev/${diskName}` },
+        { label: 'Size', value: disk.size || 'Unknown' },
+        { label: 'Model', value: disk.model || 'Unknown' },
+        { label: 'Serial', value: disk.serial || 'Unknown' }
+    ];
+}
+
+async function confirmDanger(message, requireText, options = {}) {
+    if (typeof window.showConfirm === 'function') {
+        return await window.showConfirm(message, {
+            danger: true,
+            requireText,
+            confirmLabel: options.confirmLabel || 'Confirm',
+            warning: options.warning || 'This operation cannot be undone.',
+            details: options.details || []
+        });
+    }
+    return false;
 }
 
 async function apiFetch(url, options = {}) {
@@ -97,7 +125,7 @@ async function importDetectedPool(poolId, poolName) {
         if (window.showToast) window.showToast(result.message || 'Pool imported', 'success');
         await loadPools();
     } catch (error) {
-        alert(`Error: ${error.message}`);
+        showError(`Error: ${error.message}`);
     }
 }
 
@@ -172,6 +200,7 @@ async function loadDisks() {
 
 // Display Disks
 function displayDisks(disks) {
+    storageDisksCache = Array.isArray(disks) ? disks : [];
     const container = document.getElementById('disks-container');
 
     if (!disks || disks.length === 0) {
@@ -542,7 +571,10 @@ function formatSmbPermissions(share) {
 
 // Initialize Disk
 async function initializeDisk(diskName) {
-    if (!await showConfirm(`Are you sure you want to initialize /dev/${diskName}?\n\nThis will erase all data on the disk!`)) {
+    if (!await confirmDanger(`Initialize /dev/${diskName}?\n\nThis will erase all data on the disk.`, diskName, {
+        confirmLabel: 'Initialize Disk',
+        details: diskDetailsForConfirm(diskName)
+    })) {
         return;
     }
 
@@ -551,7 +583,10 @@ async function initializeDisk(diskName) {
 
 // Wipe Disk
 async function wipeDisk(diskName) {
-    if (!await showConfirm(`Are you sure you want to WIPE /dev/${diskName}?\n\n[WARNING] ALL DATA, partitions and file systems will be PERMANENTLY ERASED.\nThis cannot be undone.`)) {
+    if (!await confirmDanger(`Wipe /dev/${diskName}?\n\nAll data, partitions, and file systems will be permanently erased.`, diskName, {
+        confirmLabel: 'Wipe Disk',
+        details: diskDetailsForConfirm(diskName)
+    })) {
         return;
     }
 
@@ -565,10 +600,10 @@ async function wipeDisk(diskName) {
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'Failed to wipe disk');
 
-        alert(result.message);
+        showSuccess(result.message);
         loadDisks();
     } catch (error) {
-        alert(`Error: ${error.message}`);
+        showError(`Error: ${error.message}`);
     }
 }
 
@@ -649,7 +684,7 @@ async function viewDiskDetails(diskName) {
                 </div>
                 <div style="background: var(--bg-primary); padding: 1rem; border-radius: 6px; text-align: center;">
                     <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase;">Temperature</div>
-                    <div style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary);">${temp}Â°C</div>
+                    <div style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary);">${temp}&deg;C</div>
                 </div>
                 <div style="background: var(--bg-primary); padding: 1rem; border-radius: 6px; text-align: center;">
                     <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase;">Power On</div>
@@ -873,7 +908,14 @@ async function showCreatePoolDialog() {
             return;
         }
 
-        if (!await showConfirm(`Create pool "${poolName}" with ${selectedDisks.length} disk(s) in ${raidLevel.toUpperCase()} mode?\n\n[WARNING] This will ERASE all data on the selected disks!`)) {
+        if (!await confirmDanger(`Create pool "${poolName}"?\n\nThis will erase all data on the selected disk(s).`, poolName, {
+            confirmLabel: 'Create Pool',
+            details: [
+                { label: 'Pool', value: poolName },
+                { label: 'RAID', value: raidLevel.toUpperCase() },
+                { label: 'Disks', value: selectedDisks.join(', ') }
+            ]
+        })) {
             return;
         }
 
@@ -904,11 +946,11 @@ async function showCreatePoolDialog() {
                 throw new Error(result.error || 'Failed to create pool');
             }
 
-            alert(result.message);
+            showSuccess(result.message);
             modal.remove();
             loadPools();
         } catch (error) {
-            alert(`Error: ${error.message}`);
+            showError(`Error: ${error.message}`);
             // Reset button state on error
             const createBtn = wizard.querySelector('#create-pool-confirm-btn');
             if (createBtn) {
@@ -991,7 +1033,13 @@ async function showExpandPoolDialog(poolId, poolName) {
             return;
         }
 
-        if (!await showConfirm(`Add ${selectedDisks.length} disk(s) to pool "${poolName}"?\n\n[WARNING] DATA ON SELECTED DISKS WILL BE ERASED!`)) {
+        if (!await confirmDanger(`Add disk(s) to pool "${poolName}"?\n\nData on the selected disk(s) will be erased.`, poolName, {
+            confirmLabel: 'Add Disks',
+            details: [
+                { label: 'Pool', value: poolName },
+                { label: 'Disks', value: selectedDisks.join(', ') }
+            ]
+        })) {
             return;
         }
 
@@ -1019,7 +1067,14 @@ async function showExpandPoolDialog(poolId, poolName) {
 
 // Delete Pool
 async function deletePool(poolId, poolName) {
-    if (!await showConfirm(`Delete pool "${poolName}"?\n\n[WARNING] This will unmount the pool but NOT erase the data.`)) {
+    if (!await confirmDanger(`Delete pool "${poolName}"?\n\nThis will unmount the pool from AlvaOS management. It will not erase the pool data.`, poolName, {
+        confirmLabel: 'Delete Pool',
+        warning: 'Make sure no active shares, apps, or backup jobs depend on this pool.',
+        details: [
+            { label: 'Pool', value: poolName },
+            { label: 'Pool ID', value: poolId }
+        ]
+    })) {
         return;
     }
 
@@ -1040,10 +1095,10 @@ async function deletePool(poolId, poolName) {
             throw new Error(result.error || 'Failed to delete pool');
         }
 
-        alert(result.message);
+        showSuccess(result.message);
         loadPools();
     } catch (error) {
-        alert(`Error: ${error.message}`);
+        showError(`Error: ${error.message}`);
     }
 }
 
@@ -1113,7 +1168,7 @@ async function manageSubvolumes(poolId) {
                     <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; border: 1px solid var(--bg-border); border-radius: 4px; margin-bottom: 0.5rem;">
                         <div>
                             <div style="font-weight: 600;">${sv.name}</div>
-                            <div style="font-size: 0.875rem; color: var(--text-secondary); font-family: 'JetBrains Mono', monospace;">${sv.path}</div>
+                            <div style="font-size: 0.875rem; color: var(--text-secondary); font-family: var(--font-mono);">${sv.path}</div>
                         </div>
                         <button onclick="deleteSubvolume('${poolId}', '${sv.name}')" 
                             style="background: var(--accent-danger); color: white; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; font-size: 0.875rem;">
@@ -1156,18 +1211,24 @@ async function manageSubvolumes(poolId) {
                 throw new Error(result.error || 'Failed to create subvolume');
             }
 
-            alert(result.message);
+            showSuccess(result.message);
             modal.remove();
             manageSubvolumes(poolId);
         } catch (error) {
-            alert(`Error: ${error.message}`);
+            showError(`Error: ${error.message}`);
         }
     });
 }
 
 // Delete Subvolume
 async function deleteSubvolume(poolId, subvolName) {
-    if (!await showConfirm(`Delete subvolume "${subvolName}"?\n\n[WARNING] This will delete all data in the subvolume!`)) {
+    if (!await confirmDanger(`Delete subvolume "${subvolName}"?\n\nThis will delete all data in the subvolume.`, subvolName, {
+        confirmLabel: 'Delete Subvolume',
+        details: [
+            { label: 'Subvolume', value: subvolName },
+            { label: 'Pool ID', value: poolId }
+        ]
+    })) {
         return;
     }
 
@@ -1188,7 +1249,7 @@ async function deleteSubvolume(poolId, subvolName) {
             throw new Error(result.error || 'Failed to delete subvolume');
         }
 
-        alert(result.message);
+        showSuccess(result.message);
 
         const modal = document.getElementById('subvolume-modal');
         if (modal) {
@@ -1196,7 +1257,7 @@ async function deleteSubvolume(poolId, subvolName) {
             manageSubvolumes(poolId);
         }
     } catch (error) {
-        alert(`Error: ${error.message}`);
+        showError(`Error: ${error.message}`);
     }
 }
 
@@ -1219,7 +1280,7 @@ async function showCreateShareDialog() {
     }
 
     if (availablePaths.length === 0) {
-        alert('No eligible storage paths available. Create or mount a non-system pool/subvolume first.');
+        showError('No eligible storage paths available. Create or mount a non-system pool/subvolume first.');
         return;
     }
 
@@ -1463,7 +1524,7 @@ async function showCreateShareDialog() {
 
 // Delete Share
 async function deleteShare(shareId, shareName) {
-    if (!await showConfirm(`Delete share "${shareName}"?\n\n[WARNING] This will remove the share configuration.`)) {
+    if (!await showConfirm(`Delete share "${shareName}"?\n\nThis will remove the share configuration.`)) {
         return;
     }
 
@@ -1484,10 +1545,10 @@ async function deleteShare(shareId, shareName) {
             throw new Error(result.error || 'Failed to delete share');
         }
 
-        alert(result.message);
+        showSuccess(result.message);
         loadShares();
     } catch (error) {
-        alert(`Error: ${error.message}`);
+        showError(`Error: ${error.message}`);
     }
 }
 

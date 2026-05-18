@@ -92,6 +92,10 @@
     animation: zoomIn 0.2s ease-out forwards;
 }
 
+.modal-danger {
+    border-color: color-mix(in srgb, var(--accent-danger) 65%, var(--bg-border));
+}
+
 @keyframes fadeIn {
     from {
         opacity: 0;
@@ -119,6 +123,64 @@
     color: var(--text-secondary);
     margin-bottom: 2rem;
     line-height: 1.6;
+}
+
+.modal-detail-list {
+    display: grid;
+    gap: 0.5rem;
+    margin: 1rem 0;
+    padding: 0.85rem;
+    border: 1px solid var(--bg-border);
+    border-radius: 8px;
+    background: var(--bg-primary);
+}
+
+.modal-detail-list div {
+    display: grid;
+    grid-template-columns: minmax(90px, 0.35fr) 1fr;
+    gap: 0.75rem;
+}
+
+.modal-detail-list dt {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.modal-detail-list dd {
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    overflow-wrap: anywhere;
+}
+
+.modal-warning {
+    margin-top: 1rem;
+    padding: 0.85rem;
+    border: 1px solid color-mix(in srgb, var(--accent-danger) 60%, transparent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--accent-danger) 12%, transparent);
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.modal-confirm-label {
+    display: block;
+    margin-top: 1rem;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.modal-confirm-input {
+    width: 100%;
+    margin-top: 0.5rem;
+    padding: 0.75rem 0.85rem;
+    border: 1px solid var(--bg-border);
+    border-radius: 6px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
 }
 
 .modal-actions {

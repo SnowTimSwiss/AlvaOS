@@ -9,7 +9,11 @@
             window.showToast(message, type);
             return;
         }
-        if (window.alert) window.alert(message);
+        if (type === 'error') {
+            console.error(message);
+        } else {
+            console.log(message);
+        }
     }
 
     function buildPayload() {

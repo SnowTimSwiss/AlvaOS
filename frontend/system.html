@@ -5,11 +5,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AlvaOS - System</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
-        rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="notifications.css">
 </head>
@@ -335,7 +330,7 @@
                         <div style="color:var(--text-secondary)"><i data-lucide="scroll-text"></i></div>
                     </div>
                     <div id="log-viewer"
-                        style="flex:1; background: #0d1117; border: 1px solid var(--border-default); border-radius: 4px; padding: 12px; overflow-y: scroll; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--text-secondary); white-space: pre-wrap;">
+                        style="flex:1; background: #0d1117; border: 1px solid var(--border-default); border-radius: 4px; padding: 12px; overflow-y: scroll; font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-secondary); white-space: pre-wrap;">
                         Loading logs...</div>
                 </div>
 
@@ -351,7 +346,7 @@
     </div>
 
     <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lucide@0.468.0/dist/umd/lucide.min.js"></script>
     <script src="icons.js"></script>
     <script src="notifications.js"></script>
     <script src="feedback.js"></script>
