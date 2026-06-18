@@ -22,5 +22,5 @@ Join us in making self-hosting simple, stable, and transparent.
 - **Current**: Manual verification during early dev.
 - **Questions**: Open an issue for bugs or start a discussion for ideas.
 
-*Contributions are licensed under Apache 2.0. Thank you for helping simplify NAS management!* 🚀
+*Contributions are licensed under the same license as AlvaOS as a whole. Thank you for helping simplify NAS management!* 🚀
 
