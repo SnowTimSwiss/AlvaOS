@@ -69,6 +69,7 @@ window.confirmModal = function (message, optionsOrOnConfirm, onCancel) {
         || message.toLowerCase().includes('restore');
     const confirmBtnColor = isDanger ? 'var(--accent-danger)' : 'var(--accent-primary)';
     const requireText = String(options.requireText || '').trim();
+    const requireCheckbox = String(options.requireCheckbox || '').trim();
     const confirmLabel = options.confirmLabel || (isDanger ? 'Confirm' : 'Confirm');
     const cancelLabel = options.cancelLabel || 'Cancel';
     const details = Array.isArray(options.details) ? options.details.filter(Boolean) : [];
@@ -96,6 +97,12 @@ window.confirmModal = function (message, optionsOrOnConfirm, onCancel) {
                     </label>
                     <input id="modal-confirm-input" class="modal-confirm-input" autocomplete="off" spellcheck="false">
                 ` : ''}
+                ${requireCheckbox ? `
+                    <label class="modal-confirm-label" style="display:flex; align-items:center; gap:10px; cursor:pointer; margin-top: 1rem; text-align: left;">
+                        <input type="checkbox" id="modal-confirm-checkbox" style="width:auto; margin:0; accent-color: var(--accent-primary);">
+                        <span>${escapeHtml(requireCheckbox)}</span>
+                    </label>
+                ` : ''}
             </div>
             <div class="modal-actions">
                 <button id="modal-cancel" class="btn-secondary">${escapeHtml(cancelLabel)}</button>
@@ -108,6 +115,7 @@ window.confirmModal = function (message, optionsOrOnConfirm, onCancel) {
     const confirmBtn = overlay.querySelector('#modal-confirm');
     const cancelBtn = overlay.querySelector('#modal-cancel');
     const input = overlay.querySelector('#modal-confirm-input');
+    const checkboxEl = overlay.querySelector('#modal-confirm-checkbox');
 
     const close = (value) => {
         overlay.remove();
@@ -116,8 +124,15 @@ window.confirmModal = function (message, optionsOrOnConfirm, onCancel) {
 
     let resolveOnce = () => {};
     const syncConfirmState = () => {
-        if (!confirmBtn || !requireText) return;
-        confirmBtn.disabled = String(input?.value || '').trim() !== requireText;
+        if (!confirmBtn) return;
+        let isValid = true;
+        if (requireText) {
+            isValid = isValid && String(input?.value || '').trim() === requireText;
+        }
+        if (requireCheckbox) {
+            isValid = isValid && !!checkboxEl?.checked;
+        }
+        confirmBtn.disabled = !isValid;
     };
 
     if (input) {
@@ -129,9 +144,16 @@ window.confirmModal = function (message, optionsOrOnConfirm, onCancel) {
                 confirmBtn.click();
             }
         });
+    } else if (checkboxEl) {
+        checkboxEl.focus();
     } else {
         confirmBtn.focus();
     }
+    
+    if (checkboxEl) {
+        checkboxEl.addEventListener('change', syncConfirmState);
+    }
+    
     syncConfirmState();
 
     return new Promise((resolve) => {

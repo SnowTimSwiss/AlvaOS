@@ -34,7 +34,8 @@ async function confirmDanger(message, requireText, options = {}) {
     if (typeof window.showConfirm === 'function') {
         return await window.showConfirm(message, {
             danger: true,
-            requireText,
+            requireText: options.requireCheckbox ? undefined : requireText,
+            requireCheckbox: options.requireCheckbox,
             confirmLabel: options.confirmLabel || 'Confirm',
             warning: options.warning || 'This operation cannot be undone.',
             details: options.details || []
@@ -583,8 +584,9 @@ async function initializeDisk(diskName) {
 
 // Wipe Disk
 async function wipeDisk(diskName) {
-    if (!await confirmDanger(`Wipe /dev/${diskName}?\n\nAll data, partitions, and file systems will be permanently erased.`, diskName, {
+    if (!await confirmDanger(`Wipe /dev/${diskName}?\n\nAll data, partitions, and file systems will be permanently erased.`, null, {
         confirmLabel: 'Wipe Disk',
+        requireCheckbox: `I confirm that I want to wipe /dev/${diskName} and understand this erases all data.`,
         details: diskDetailsForConfirm(diskName)
     })) {
         return;
@@ -796,6 +798,7 @@ async function showCreatePoolDialog() {
             <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Pool Name</label>
             <input type="text" id="pool-name-input" placeholder="e.g., storage-pool" 
                 style="width: 100%; padding: 0.75rem;">
+            <div id="pool-name-error" style="color: var(--accent-danger); font-size: 0.8rem; margin-top: 4px; display: none;"></div>
         </div>
 
         <div style="margin-bottom: 1.5rem;">
@@ -821,13 +824,8 @@ async function showCreatePoolDialog() {
             <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">RAID Level</label>
             <select id="raid-level-select" 
                 style="width: 100%; padding: 0.75rem;">
-                <option value="single">Single (No Redundancy)</option>
-                <option value="raid0">RAID0 (Striping)</option>
-                <option value="raid1">RAID1 (Mirroring - 2+ disks)</option>
-                <option value="raid10">RAID10 (Striping + Mirroring - 4+ disks)</option>
             </select>
             <p style="font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.5rem;" id="raid-description">
-                [WARNING] High Risk. No data protection. If the disk dies, data is lost. Full capacity (100%).
             </p>
         </div>
 
@@ -836,8 +834,8 @@ async function showCreatePoolDialog() {
                 style="flex: 1; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--bg-border); padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600;">
                 Cancel
             </button>
-            <button id="create-pool-confirm-btn" 
-                style="flex: 1; background: var(--accent-primary); color: white; border: none; padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600;">
+            <button id="create-pool-confirm-btn" disabled
+                style="flex: 1; background: var(--accent-primary); color: white; border: none; padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600; opacity: 0.55;">
                 Create Pool
             </button>
         </div>
@@ -846,29 +844,114 @@ async function showCreatePoolDialog() {
     modal.appendChild(wizard);
     document.body.appendChild(modal);
 
-    // Update selected count
+    const poolNameInput = wizard.querySelector('#pool-name-input');
+    const poolNameError = wizard.querySelector('#pool-name-error');
+    const createBtn = wizard.querySelector('#create-pool-confirm-btn');
     const checkboxes = wizard.querySelectorAll('.disk-checkbox');
     const selectedCount = wizard.querySelector('#selected-count');
+    const raidSelect = wizard.querySelector('#raid-level-select');
+    const raidDesc = wizard.querySelector('#raid-description');
+
+    const raidDescriptions = {
+        'single': '[WARNING] High Risk. No data protection. If the disk dies, data is lost. Full capacity (100%).',
+        'raid0': '[WARNING] Very High Risk. High speed, but NO protection. If ONE disk fails, ALL data is lost. Capacity: 100%.',
+        'raid1': '[RECOMMENDED] Mirrors data for safety. Survives 1 disk failure. Capacity: 50%.',
+        'raid5': 'Single-disk parity protection. Survives 1 disk failure. Capacity: (N-1)*DiskSize.',
+        'raid1c3': 'Mirrors data across 3 disks. Survives 2 disk failures. Capacity: 33%.',
+        'raid6': 'Double-disk parity protection. Survives 2 disk failures. Capacity: (N-2)*DiskSize.',
+        'raid1c4': 'Mirrors data across 4 disks. Survives 3 disk failures. Capacity: 25%.',
+        'raid10': '[HIGH PERFORMANCE] Combines speed of RAID0 with safety of RAID1. Capacity: 50%.'
+    };
+
+    const updateRaidOptions = () => {
+        const count = wizard.querySelectorAll('.disk-checkbox:checked').length;
+        const currentVal = raidSelect.value;
+
+        const options = [
+            { value: 'single', label: 'Single (No Redundancy)', min: 1 },
+            { value: 'raid0', label: 'RAID0 (Striping)', min: 1 },
+            { value: 'raid1', label: 'RAID1 (Mirroring - 2+ disks)', min: 2 },
+            { value: 'raid5', label: 'RAID5 (Parity - 3+ disks)', min: 3 },
+            { value: 'raid1c3', label: 'RAID1c3 (3-way Mirroring - 3+ disks)', min: 3 },
+            { value: 'raid6', label: 'RAID6 (Double Parity - 4+ disks)', min: 4 },
+            { value: 'raid1c4', label: 'RAID1c4 (4-way Mirroring - 4+ disks)', min: 4 },
+            { value: 'raid10', label: 'RAID10 (Striping + Mirroring - 4+ disks)', min: 4 }
+        ];
+
+        const allowed = options.filter(opt => count >= opt.min);
+        raidSelect.innerHTML = allowed.map(opt => `
+            <option value="${opt.value}">${opt.label}</option>
+        `).join('');
+
+        if (allowed.some(opt => opt.value === currentVal)) {
+            raidSelect.value = currentVal;
+        } else if (allowed.length > 0) {
+            const hasRaid1 = allowed.some(opt => opt.value === 'raid1');
+            raidSelect.value = hasRaid1 ? 'raid1' : allowed[0].value;
+        }
+
+        updateRaidDescription();
+    };
+
+    const updateRaidDescription = () => {
+        const val = raidSelect.value;
+        raidDesc.textContent = raidDescriptions[val] || '';
+    };
+
+    const validateForm = () => {
+        const poolName = poolNameInput.value.trim();
+        const selectedDisksCount = wizard.querySelectorAll('.disk-checkbox:checked').length;
+        const raidLevel = raidSelect.value;
+        const poolNamePattern = /^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$/;
+        
+        let isValid = true;
+
+        if (!poolName) {
+            poolNameError.textContent = '';
+            poolNameError.style.display = 'none';
+            isValid = false;
+        } else if (!poolNamePattern.test(poolName)) {
+            poolNameError.textContent = 'Invalid pool name. Must be lowercase, start/end with alphanumeric, contain only lowercase letters, numbers, hyphens, and underscores, and be 1-63 characters.';
+            poolNameError.style.display = 'block';
+            isValid = false;
+        } else {
+            poolNameError.textContent = '';
+            poolNameError.style.display = 'none';
+        }
+
+        if (selectedDisksCount === 0) {
+            isValid = false;
+        }
+
+        if (raidLevel === 'raid1' && selectedDisksCount < 2) isValid = false;
+        if (raidLevel === 'raid5' && selectedDisksCount < 3) isValid = false;
+        if (raidLevel === 'raid1c3' && selectedDisksCount < 3) isValid = false;
+        if (raidLevel === 'raid6' && selectedDisksCount < 4) isValid = false;
+        if (raidLevel === 'raid1c4' && selectedDisksCount < 4) isValid = false;
+        if (raidLevel === 'raid10' && selectedDisksCount < 4) isValid = false;
+
+        createBtn.disabled = !isValid;
+        createBtn.style.opacity = isValid ? '1' : '0.55';
+    };
+
     checkboxes.forEach(cb => {
         cb.addEventListener('change', () => {
             const count = wizard.querySelectorAll('.disk-checkbox:checked').length;
             selectedCount.textContent = count;
+            updateRaidOptions();
+            validateForm();
         });
     });
 
-    // RAID level descriptions
-    const raidSelect = wizard.querySelector('#raid-level-select');
-    const raidDesc = wizard.querySelector('#raid-description');
-    const raidDescriptions = {
-        'single': '[WARNING] High Risk. No data protection. If the disk dies, data is lost. Full capacity (100%).',
-        'raid0': '[WARNING] Very High Risk. High speed, but NO protection. If ONE disk fails, ALL data is lost. Capacity: 100%.',
-        'raid1': '[RECOMMENDED] Mirrors data for safety. Survives 1 disk failure. Capacity: 50% (requires 2+ disks).',
-        'raid10': '[HIGH PERFORMANCE] Combines speed of RAID0 with safety of RAID1. Requires 4+ disks. Capacity: 50%.'
-    };
-
     raidSelect.addEventListener('change', () => {
-        raidDesc.textContent = raidDescriptions[raidSelect.value];
+        updateRaidDescription();
+        validateForm();
     });
+
+    poolNameInput.addEventListener('input', validateForm);
+
+    updateRaidOptions();
+    validateForm();
 
     // Cancel button
     wizard.querySelector('#cancel-pool-btn').addEventListener('click', () => {
@@ -876,40 +959,14 @@ async function showCreatePoolDialog() {
     });
 
     // Create button
-    wizard.querySelector('#create-pool-confirm-btn').addEventListener('click', async () => {
-        const poolName = wizard.querySelector('#pool-name-input').value.trim();
+    createBtn.addEventListener('click', async () => {
+        const poolName = poolNameInput.value.trim();
         const selectedDisks = Array.from(wizard.querySelectorAll('.disk-checkbox:checked')).map(cb => cb.value);
         const raidLevel = raidSelect.value;
 
-        if (!poolName) {
-            showError('Please enter a pool name');
-            return;
-        }
-
-        // Validate pool name (alphanumeric, hyphens, underscores, 1-63 chars)
-        const poolNamePattern = /^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$/;
-        if (!poolNamePattern.test(poolName)) {
-            showError('Invalid pool name. Must be lowercase, start/end with alphanumeric, contain only lowercase letters, numbers, hyphens, and underscores, and be 1-63 characters.');
-            return;
-        }
-
-        if (selectedDisks.length === 0) {
-            showError('Please select at least one disk');
-            return;
-        }
-
-        if (raidLevel === 'raid1' && selectedDisks.length < 2) {
-            showError('RAID1 requires at least 2 disks');
-            return;
-        }
-
-        if (raidLevel === 'raid10' && selectedDisks.length < 4) {
-            showError('RAID10 requires at least 4 disks');
-            return;
-        }
-
-        if (!await confirmDanger(`Create pool "${poolName}"?\n\nThis will erase all data on the selected disk(s).`, poolName, {
+        if (!await confirmDanger(`Create pool "${poolName}"?\n\nThis will erase all data on the selected disk(s).`, null, {
             confirmLabel: 'Create Pool',
+            requireCheckbox: `I understand that creating this pool will erase all data on the selected disk(s).`,
             details: [
                 { label: 'Pool', value: poolName },
                 { label: 'RAID', value: raidLevel.toUpperCase() },
@@ -920,9 +977,6 @@ async function showCreatePoolDialog() {
         }
 
         try {
-            // Show loading state
-            const createBtn = wizard.querySelector('#create-pool-confirm-btn');
-            const originalText = createBtn.textContent;
             createBtn.disabled = true;
             createBtn.textContent = 'Creating Pool...';
             createBtn.style.opacity = '0.7';
@@ -951,13 +1005,9 @@ async function showCreatePoolDialog() {
             loadPools();
         } catch (error) {
             showError(`Error: ${error.message}`);
-            // Reset button state on error
-            const createBtn = wizard.querySelector('#create-pool-confirm-btn');
-            if (createBtn) {
-                createBtn.disabled = false;
-                createBtn.textContent = 'Create Pool';
-                createBtn.style.opacity = '1';
-            }
+            createBtn.disabled = false;
+            createBtn.textContent = 'Create Pool';
+            createBtn.style.opacity = '1';
         }
     });
 }
@@ -1033,8 +1083,9 @@ async function showExpandPoolDialog(poolId, poolName) {
             return;
         }
 
-        if (!await confirmDanger(`Add disk(s) to pool "${poolName}"?\n\nData on the selected disk(s) will be erased.`, poolName, {
+        if (!await confirmDanger(`Add disk(s) to pool "${poolName}"?\n\nData on the selected disk(s) will be erased.`, null, {
             confirmLabel: 'Add Disks',
+            requireCheckbox: `I understand that data on the selected disk(s) will be erased.`,
             details: [
                 { label: 'Pool', value: poolName },
                 { label: 'Disks', value: selectedDisks.join(', ') }
@@ -1067,8 +1118,9 @@ async function showExpandPoolDialog(poolId, poolName) {
 
 // Delete Pool
 async function deletePool(poolId, poolName) {
-    if (!await confirmDanger(`Delete pool "${poolName}"?\n\nThis will unmount the pool from AlvaOS management. It will not erase the pool data.`, poolName, {
+    if (!await confirmDanger(`Delete pool "${poolName}"?\n\nThis will unmount the pool from AlvaOS management. It will not erase the pool data.`, null, {
         confirmLabel: 'Delete Pool',
+        requireCheckbox: `I confirm that I want to delete pool "${poolName}".`,
         warning: 'Make sure no active shares, apps, or backup jobs depend on this pool.',
         details: [
             { label: 'Pool', value: poolName },
@@ -1222,8 +1274,9 @@ async function manageSubvolumes(poolId) {
 
 // Delete Subvolume
 async function deleteSubvolume(poolId, subvolName) {
-    if (!await confirmDanger(`Delete subvolume "${subvolName}"?\n\nThis will delete all data in the subvolume.`, subvolName, {
+    if (!await confirmDanger(`Delete subvolume "${subvolName}"?\n\nThis will delete all data in the subvolume.`, null, {
         confirmLabel: 'Delete Subvolume',
+        requireCheckbox: `I confirm that I want to permanently delete subvolume "${subvolName}" and all its data.`,
         details: [
             { label: 'Subvolume', value: subvolName },
             { label: 'Pool ID', value: poolId }
