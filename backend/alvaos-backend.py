@@ -308,7 +308,8 @@ def complete_setup():
         return jsonify({
             'success': True,
             'message': 'Setup completed successfully',
-            'token': token
+            'token': token,
+            'csrf_token': SESSIONS.get(token, {}).get('csrf_token', '')
         })
         
     except Exception as e:
@@ -363,7 +364,11 @@ def login():
             return jsonify({'require_2fa': True, 'temp_token': temp_token})
 
         token = _create_session('root', role='admin')
-        return jsonify({'token': token, 'success': True})
+        return jsonify({
+            'token': token,
+            'csrf_token': SESSIONS.get(token, {}).get('csrf_token', ''),
+            'success': True
+        })
 
     except Exception as e:
         print(f"Login error: {e}")
@@ -393,7 +398,11 @@ def complete_2fa_login():
 
     del TEMP_2FA_TOKENS[temp_token]
     token = _create_session(pending['username'], role=pending.get('role', 'admin'))
-    return jsonify({'token': token, 'success': True})
+    return jsonify({
+        'token': token,
+        'csrf_token': SESSIONS.get(token, {}).get('csrf_token', ''),
+        'success': True
+    })
 
 @app.route('/api/v1/auth/2fa/status', methods=['GET'])
 @require_auth
