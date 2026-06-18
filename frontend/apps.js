@@ -315,7 +315,6 @@ function setActiveTab(tabName) {
 
     if (tabName === 'store') {
         loadAvailableApps();
-        loadComposePoolOptions();
     } else {
         loadInstalledWorkspace(true);
     }
@@ -1432,7 +1431,13 @@ function manageApp(appId) {
 }
 
 document.getElementById('refresh-apps-btn')?.addEventListener('click', async () => {
-    await Promise.all([loadAvailableApps(), loadComposePoolOptions()]);
+    const composeEl = document.querySelector('.compose-quick-add');
+    const isComposeVisible = composeEl && window.getComputedStyle(composeEl).display !== 'none';
+    const promises = [loadAvailableApps()];
+    if (isComposeVisible) {
+        promises.push(loadComposePoolOptions());
+    }
+    await Promise.all(promises);
 });
 document.getElementById('refresh-installed-btn')?.addEventListener('click', () => loadInstalledWorkspace(true));
 document.getElementById('app-search-input')?.addEventListener('input', (event) => {
@@ -1468,6 +1473,21 @@ document.getElementById('compose-pool-select')?.addEventListener('change', updat
 document.getElementById('compose-yaml-input')?.addEventListener('input', updateComposeDeployButtonState);
 document.getElementById('compose-deploy-btn')?.addEventListener('click', deployComposeApp);
 document.getElementById('compose-refresh-pools-btn')?.addEventListener('click', loadComposePoolOptions);
+document.getElementById('toggle-compose-btn')?.addEventListener('click', () => {
+    const composeEl = document.querySelector('.compose-quick-add');
+    if (!composeEl) return;
+    const isHidden = window.getComputedStyle(composeEl).display === 'none';
+    composeEl.style.display = isHidden ? 'block' : 'none';
+
+    const toggleBtn = document.getElementById('toggle-compose-btn');
+    if (toggleBtn) {
+        toggleBtn.classList.toggle('active', isHidden);
+    }
+
+    if (isHidden) {
+        loadComposePoolOptions();
+    }
+});
 document.getElementById('container-terminal-modal')?.addEventListener('click', (event) => {
     if (event.target?.id === 'container-terminal-modal') {
         closeTerminalModal();

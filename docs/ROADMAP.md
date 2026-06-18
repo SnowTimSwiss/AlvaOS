@@ -34,7 +34,7 @@ confusing first, then continue with deeper feature testing.
 
 ### Authentication and API Reliability
 
-- [ ] Fix `Error: CSRF token missing`.
+- [x] Fix `Error: CSRF token missing`.
   - Reproduced after reboot and in another browser.
   - This blocks normal use and should be treated as a top-priority bug.
 - [ ] Clarify user roles.
@@ -84,9 +84,9 @@ confusing first, then continue with deeper feature testing.
 
 ### Apps
 
-- [ ] Keep the app menu and app store direction; testing feedback was positive.
-- [ ] Move Docker Compose / custom app install behind a `Custom app` button.
-- [ ] Keep power-user options available, but hidden until needed.
+- [x] Keep the app menu and app store direction; testing feedback was positive.
+- [x] Move Docker Compose / custom app install behind a `Custom app` button.
+- [x] Keep power-user options available, but hidden until needed.
 
 ### Backup and Buddy Backup
 
@@ -111,6 +111,10 @@ confusing first, then continue with deeper feature testing.
 - [ ] Keep the current update direction; testing feedback was positive.
 - [ ] Move offline updates into the AlvaOS updates area as a clear button/action.
 - [ ] Keep offline update handling visible but not mixed into unrelated system settings.
+- [x] Fix offline update regression that sent the user back into first-time setup.
+  - Test result: after an offline update, AlvaOS opened setup again.
+  - Setup then failed with `sudo: /usr/bin/sudo is owned by uid 1001, should be 0` and `sudo: a password is required`.
+  - Fix: build `.deb` packages with root-owned metadata, keep `/var/lib/alvaos` out of the package payload, preserve setup/auth state during updates, and repair critical sudo ownership during package install/update.
 
 ### System Settings
 
@@ -128,6 +132,9 @@ confusing first, then continue with deeper feature testing.
 - [ ] Avoid placing raw settings forms directly in the middle of the page.
   - Use status summaries and action buttons first.
 
+
+### Other things:
+- [ ] add factory reset
 ## Forward after testing fixes
 
 everything will be tested again and again until we go to stable

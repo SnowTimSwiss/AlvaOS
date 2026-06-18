@@ -6,6 +6,8 @@ LOG_FILE="/var/log/alvaos/update-apply.log"
 SERVICES=("alvaos.service" "alvaos-backend.service" "alvaos-ui.service")
 BACKUP_DIR="/var/lib/alvaos.bak"
 BACKUP_CREATED=0
+SETUP_STATUS_FILE="/var/lib/alvaos/setup_complete.json"
+AUTH_FILE="/var/lib/alvaos/auth.json"
 
 mkdir -p /var/log/alvaos /var/lib/alvaos || true
 
@@ -17,6 +19,39 @@ fix_state_permissions() {
   if id -u alvaos >/dev/null 2>&1; then
     chown alvaos:alvaos /var/lib/alvaos/update_state.json /var/lib/alvaos/update_history.json 2>/dev/null || true
   fi
+}
+
+fix_alvaos_state_permissions() {
+  if id -u alvaos >/dev/null 2>&1; then
+    chown -R alvaos:alvaos /var/lib/alvaos /var/log/alvaos 2>/dev/null || true
+  fi
+}
+
+repair_core_permissions() {
+  if [ -e /usr/bin/sudo ]; then
+    chown root:root /usr/bin/sudo 2>/dev/null || true
+    chmod 4755 /usr/bin/sudo 2>/dev/null || true
+  fi
+  if [ -e /etc/sudoers.d/alvaos ]; then
+    chown root:root /etc/sudoers.d/alvaos 2>/dev/null || true
+    chmod 440 /etc/sudoers.d/alvaos 2>/dev/null || true
+  fi
+}
+
+restore_setup_state_if_missing() {
+  if [ "$BACKUP_CREATED" -ne 1 ] || [ ! -d "$BACKUP_DIR" ]; then
+    return 0
+  fi
+
+  for state_path in "$SETUP_STATUS_FILE" "$AUTH_FILE"; do
+    state_file="$(basename "$state_path")"
+    if [ ! -e "$state_path" ] && [ -e "${BACKUP_DIR}/${state_file}" ]; then
+      log "Restoring missing ${state_file} from pre-update backup"
+      cp -a "${BACKUP_DIR}/${state_file}" "$state_path"
+    fi
+  done
+
+  fix_alvaos_state_permissions
 }
 
 update_state() {
@@ -60,7 +95,10 @@ cleanup() {
     
     # Restart services on failure
     log "Restarting services after failure..."
-    start_services
+    repair_core_permissions
+    if declare -F start_services >/dev/null 2>&1; then
+      start_services
+    fi
   fi
 }
 
@@ -85,6 +123,8 @@ if [ -z "$PACKAGE_PATH" ]; then
   log "ERROR: package path required"
   exit 1
 fi
+
+repair_core_permissions
 
 if [ ! -f "$PACKAGE_PATH" ]; then
   log "ERROR: package not found: $PACKAGE_PATH"
@@ -155,6 +195,9 @@ if ! dpkg -i "$PACKAGE_PATH" >> "$LOG_FILE" 2>&1; then
   update_state "error" "Install failed" 75
   log "ERROR: dpkg install failed"
 fi
+
+repair_core_permissions
+restore_setup_state_if_missing
 
 update_state "installing" "Running migrations" 85
 log "Running migrations (if any)"

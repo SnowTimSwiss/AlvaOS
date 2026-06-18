@@ -101,6 +101,11 @@ def run_sudo_command(cmd, timeout=30, extra_env=None):
                     "System permission error: /etc/sudoers.d/alvaos has invalid ownership or permissions. "
                     "Run as root: chown root:root /etc/sudoers.d/alvaos && chmod 440 /etc/sudoers.d/alvaos"
                 )
+            if '/usr/bin/sudo' in combined_low and 'owned by uid' in combined_low:
+                return result, (
+                    "System permission error: /usr/bin/sudo has invalid ownership. "
+                    "Run as root: chown root:root /usr/bin/sudo && chmod 4755 /usr/bin/sudo"
+                )
             if 'password is required' in combined_low or 'a password is required' in combined_low:
                 cmd_str = " ".join(final_cmd)
                 return None, f"System permission error: Passwordless sudo is not configured for command: {cmd_str}. Please check the AlvaOS documentation for sudoers setup."
