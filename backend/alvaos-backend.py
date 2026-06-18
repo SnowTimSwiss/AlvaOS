@@ -1979,8 +1979,12 @@ def manage_pools():
                             usage_res, _ = run_sudo_command([CMD['BTRFS'], 'filesystem', 'usage', pool['devices'][0]], timeout=5)
                             if usage_res and usage_res.returncode == 0:
                                 u_out = usage_res.stdout
-                                if 'RAID1' in u_out: pool['raid_level'] = 'RAID1'
+                                if 'RAID1C3' in u_out: pool['raid_level'] = 'RAID1C3'
+                                elif 'RAID1C4' in u_out: pool['raid_level'] = 'RAID1C4'
                                 elif 'RAID10' in u_out: pool['raid_level'] = 'RAID10'
+                                elif 'RAID1' in u_out: pool['raid_level'] = 'RAID1'
+                                elif 'RAID5' in u_out: pool['raid_level'] = 'RAID5'
+                                elif 'RAID6' in u_out: pool['raid_level'] = 'RAID6'
                                 elif 'RAID0' in u_out: pool['raid_level'] = 'RAID0'
 
                                 # Prefer explicit sizes when present
@@ -2006,6 +2010,31 @@ def manage_pools():
                                 total_bytes = sum(pool['device_sizes_bytes'])
                                 max_bytes = max(pool['device_sizes_bytes'])
                                 usable_bytes = max(0, total_bytes - max_bytes)
+                                if usable_bytes > 0:
+                                    pool['total_size'] = format_bytes_gib(usable_bytes)
+                            elif pool['raid_level'] == 'RAID1C3' and pool['device_sizes_bytes']:
+                                total_bytes = sum(pool['device_sizes_bytes'])
+                                usable_bytes = total_bytes // 3
+                                if usable_bytes > 0:
+                                    pool['total_size'] = format_bytes_gib(usable_bytes)
+                            elif pool['raid_level'] == 'RAID1C4' and pool['device_sizes_bytes']:
+                                total_bytes = sum(pool['device_sizes_bytes'])
+                                usable_bytes = total_bytes // 4
+                                if usable_bytes > 0:
+                                    pool['total_size'] = format_bytes_gib(usable_bytes)
+                            elif pool['raid_level'] == 'RAID5' and pool['device_sizes_bytes']:
+                                total_bytes = sum(pool['device_sizes_bytes'])
+                                max_bytes = max(pool['device_sizes_bytes'])
+                                usable_bytes = max(0, total_bytes - max_bytes)
+                                if usable_bytes > 0:
+                                    pool['total_size'] = format_bytes_gib(usable_bytes)
+                            elif pool['raid_level'] == 'RAID6' and pool['device_sizes_bytes']:
+                                total_bytes = sum(pool['device_sizes_bytes'])
+                                sorted_devs = sorted(pool['device_sizes_bytes'], reverse=True)
+                                if len(sorted_devs) >= 2:
+                                    usable_bytes = max(0, total_bytes - sum(sorted_devs[:2]))
+                                else:
+                                    usable_bytes = total_bytes // 2
                                 if usable_bytes > 0:
                                     pool['total_size'] = format_bytes_gib(usable_bytes)
                             elif pool['raid_level'] == 'RAID10' and pool['device_sizes_bytes']:
@@ -2107,6 +2136,18 @@ def manage_pools():
         if raid_level == 'raid1' and len(devices) < 2:
             return jsonify({'error': 'RAID1 requires at least 2 devices'}), 400
         
+        if raid_level == 'raid5' and len(devices) < 3:
+            return jsonify({'error': 'RAID5 requires at least 3 devices'}), 400
+
+        if raid_level == 'raid1c3' and len(devices) < 3:
+            return jsonify({'error': 'RAID1c3 requires at least 3 devices'}), 400
+
+        if raid_level == 'raid6' and len(devices) < 4:
+            return jsonify({'error': 'RAID6 requires at least 4 devices'}), 400
+
+        if raid_level == 'raid1c4' and len(devices) < 4:
+            return jsonify({'error': 'RAID1c4 requires at least 4 devices'}), 400
+
         if raid_level == 'raid10' and len(devices) < 4:
             return jsonify({'error': 'RAID10 requires at least 4 devices'}), 400
         

@@ -74,9 +74,9 @@ confusing first, then continue with deeper feature testing.
 
 ### Storage and Disks
 
-- [ ] Keep the disk page direction; testing feedback was positive.
-- [ ] Change disk wipe confirmation from typed disk name to a checkbox confirmation.
-- [ ] Improve pool creation.
+- [x] Keep the disk page direction; testing feedback was positive.
+- [x] Change disk wipe confirmation from typed disk name to a checkbox confirmation.
+- [x] Improve pool creation.
   - Show only RAID levels possible with the selected disks.
   - Add more RAID level options where supported.
   - Put pool name validation inside the form.
