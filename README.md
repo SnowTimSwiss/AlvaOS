@@ -2,8 +2,6 @@
 
 **AlvaOS** is an ultra-stable, lightweight NAS operating system focused on simplicity, reliability, and effortless backups between trusted peers.
 
-> Simple storage. Simple apps. Simple backups.
-
 ---
 
 ## Key Features
@@ -24,7 +22,7 @@
   * Full system restore on a fresh install
 
 * **Clean Web UI**
-  * Inspired by Unraid and TrueNAS UX
+  * Inspired by UmbrelOS, ZimaOS Unraid and TrueNAS UX (Taking the best of all)
   * Dark mode first with option for light mode
   * API-driven, minimal clicks
 
@@ -84,7 +82,7 @@ This keeps builds reproducible, small, and easy to automate.
 
 ## License
 
-AlvaOS is licensed under the **Apache License 2.0**.
+AlvaOS is licensed under the **GPLv3-license**.
 
 You are free to use, modify, and distribute this software, including for commercial purposes.
 
@@ -95,10 +93,6 @@ You are free to use, modify, and distribute this software, including for commerc
 AlvaOS is in active development.
 
 APIs, formats, and behavior may change until the first stable release.
-
-* **Repository Structure:** See [docs/STRUCTURE.md](docs/STRUCTURE.md) for project organization and development guidance.
-* **Roadmap:** See [docs/ROADMAP.md](docs/ROADMAP.md) for current progress and planned milestones.
-
 ---
 
 ## Contributing
