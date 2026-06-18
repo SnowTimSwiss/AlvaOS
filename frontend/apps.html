@@ -293,7 +293,7 @@
 
         .store-tools {
             display: grid;
-            grid-template-columns: minmax(220px, 1fr) minmax(180px, 240px);
+            grid-template-columns: minmax(220px, 1fr) minmax(180px, 240px) auto;
             gap: 10px;
             margin-bottom: 10px;
         }
@@ -310,11 +310,18 @@
         }
 
         .compose-quick-add {
+            display: none;
             background: var(--bg-card);
             border: 1px solid var(--border-default);
             border-radius: var(--radius-default);
             padding: var(--space-md);
             margin-bottom: 14px;
+        }
+
+        .btn-secondary.active {
+            background: rgba(88, 166, 255, 0.15);
+            border-color: var(--accent-primary);
+            color: var(--text-primary);
         }
 
         .compose-grid {
@@ -574,6 +581,9 @@
                     <select id="app-category-filter" aria-label="Filter apps by category">
                         <option value="all">All categories</option>
                     </select>
+                    <button id="toggle-compose-btn" class="btn-secondary" style="display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; justify-content: center;">
+                        <i data-lucide="plus"></i> Custom App
+                    </button>
                 </div>
                 <div class="compose-quick-add">
                     <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap;">

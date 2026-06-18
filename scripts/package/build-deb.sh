@@ -83,17 +83,11 @@ mkdir -p "${PKG_DIR}/opt/alvaos/webui"
 mkdir -p "${PKG_DIR}/opt/alvaos/scripts"
 mkdir -p "${PKG_DIR}/etc/alvaos"
 mkdir -p "${PKG_DIR}/etc/systemd/system"
-mkdir -p "${PKG_DIR}/var/lib/alvaos"
 
 log "Copying backend and frontend..."
-# Copy backend
-cp "${REPO_ROOT}/backend/alvaos-backend.py" "${PKG_DIR}/opt/alvaos/bin/"
+# Copy backend modules
+cp "${REPO_ROOT}/backend/"*.py "${PKG_DIR}/opt/alvaos/bin/"
 chmod +x "${PKG_DIR}/opt/alvaos/bin/alvaos-backend.py"
-cp "${REPO_ROOT}/backend/update_manager.py" "${PKG_DIR}/opt/alvaos/bin/"
-cp "${REPO_ROOT}/backend/docker_manager.py" "${PKG_DIR}/opt/alvaos/bin/"
-cp "${REPO_ROOT}/backend/app_store.py" "${PKG_DIR}/opt/alvaos/bin/"
-cp "${REPO_ROOT}/backend/backup_manager.py" "${PKG_DIR}/opt/alvaos/bin/"
-cp "${REPO_ROOT}/backend/buddy_backup_manager.py" "${PKG_DIR}/opt/alvaos/bin/"
 
 # Copy frontend
 cp -r "${REPO_ROOT}/frontend/"* "${PKG_DIR}/opt/alvaos/webui/"
@@ -187,6 +181,14 @@ mkdir -p /var/lib/alvaos
 mkdir -p /etc/alvaos
 mkdir -p /mnt/alvaos
 
+# Repair critical root-owned system files if a previous broken package/update
+# left the system unable to use sudo. postinst runs as root, so this is the
+# safest place to recover.
+if [ -e /usr/bin/sudo ]; then
+    chown root:root /usr/bin/sudo
+    chmod 4755 /usr/bin/sudo
+fi
+
 # Set permissions
 chown -R alvaos:alvaos /opt/alvaos
 chown -R alvaos:alvaos /var/lib/alvaos
@@ -232,7 +234,7 @@ EOF
 chmod +x "${PKG_DIR}/DEBIAN/prerm"
 
 log "Building .deb package..."
-dpkg-deb --build "${PKG_DIR}"
+dpkg-deb --root-owner-group --build "${PKG_DIR}"
 
 DEB_FILE="${BUILD_DIR}/alvaos-system_${DEB_VERSION}_amd64.deb"
 log "Package created: ${DEB_FILE}"
