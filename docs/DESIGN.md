@@ -2,10 +2,11 @@
 
 This document defines the visual language, interaction principles, and UX philosophy of **AlvaOS**.
 
-AlvaOS positions itself **between TrueNAS and Unraid**:
-- more capable and structured than Unraid
+AlvaOS positions itself **between TrueNAS, ZimaOS, UmbrelOS and Unraid**:
+- more capable and structured than Unraid, ZimaOS and Umbrel
 - far less intimidating than TrueNAS
 - focused on calm, reliable daily operation
+- Perfect for set and forget beginners as well as power users.
 
 ---
 
@@ -19,7 +20,7 @@ The UI must feel:
 - trustworthy
 - never rushed or noisy
 
-Users should feel confident leaving AlvaOS running unattended for months.
+Users should feel confident leaving AlvaOS running unattended for months to years.
 
 ### Core Principles
 
@@ -35,11 +36,14 @@ Users should feel confident leaving AlvaOS running unattended for months.
 3. **Context Over Configuration**
    - Show relevant actions when they matter
    - Hide complexity unless explicitly requested
+   - just show things that are needed
 
 4. **No Fear UX**
    - No alarming dashboards
    - No red warnings unless action is required
    - Problems are explained calmly, with guidance
+   - no warnings without links to the page where it can be fixed
+   - no error codes without clear meaning
 
 5. **Resilient by Design**
    - Long-running tasks must feel normal
@@ -57,6 +61,7 @@ Users should feel confident leaving AlvaOS running unattended for months.
 - Minimal animations
 - Information density similar to Unraid
 - Structural clarity inspired by TrueNAS
+- looking modern like UmbrelOS or ZimaOS
 
 ---
 
@@ -84,7 +89,7 @@ Color usage rules:
 - Green is informational, not celebratory
 
 ### Interaction States
-- **Hover:** Subtle border color change (e.g. to `#8b949e`).
+- **Hover:** Subtle border color change.
 - **Forbidden:** No glowing borders, no box-shadow spread, no "neon" effects.
 
 ---
@@ -122,6 +127,8 @@ Cards should:
 - Never feel cramped
 - Avoid unnecessary icons
 - Clearly separate status from actions
+
+**Do we realy want it this way? is there a better way?**
 
 ---
 
@@ -175,7 +182,7 @@ AlvaOS assumes:
 - 20% want full control
 
 Rules:
-- Advanced settings are hidden by default
+- Advanced settings are hidden by default but accessible
 - Advanced views must still be readable
 - Never punish users for opening advanced options
 
@@ -237,6 +244,8 @@ Top-level sections:
 - Users
 - System
 
+
+**Do we really want it like that? is there a better way?**
 ---
 
 ### Top Bar
@@ -247,6 +256,9 @@ Top-level sections:
 - Quick search
 
 No notifications spam.
+
+**Do we really want it like that? is there a better way?**
+
 
 ---
 
@@ -264,6 +276,9 @@ Rules:
 - Readable without scrolling horizontally
 - Actions grouped, not scattered
 
+**Do we really want it like that? is there a better way?**
+
+
 ---
 
 ## Identity Summary
@@ -273,9 +288,10 @@ AlvaOS UI should feel like:
 - **Unraid**, when doing everyday tasks  
 - **TrueNAS**, when you need reliability  
 - **Neither**, when it comes to complexity
+- **ZimaOS/UmbrelOS**, when looking at accessibility
 
 If a user says:
-> “This feels calm and obvious.”
+> “yeah it was really easy but my advanced configs worked just fine too.”
 
 Then the design is correct.
 
