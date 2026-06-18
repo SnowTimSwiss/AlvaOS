@@ -11,7 +11,57 @@ const ALERTS_POLL_MS_HIDDEN = 60000;
 const HISTORY_CACHE_KEY = 'alvaos_dashboard_history_v1';
 const HISTORY_MAX_SAMPLES = 120;
 let usageHistory = [];
-let csrfToken = null;
+let csrfToken = localStorage.getItem('alvaos_csrf_token') || null;
+let csrfTokenPromise = null;
+
+function isApiRequest(resource) {
+    const url = typeof resource === 'string' ? resource : resource?.url;
+    if (!url) return false;
+    try {
+        const parsed = new URL(url, window.location.origin);
+        return parsed.origin === window.location.origin && parsed.pathname.startsWith('/api/v1/');
+    } catch {
+        return false;
+    }
+}
+
+function getRequestMethod(resource, options = {}) {
+    return String(options.method || resource?.method || 'GET').toUpperCase();
+}
+
+function isStateChangingMethod(method) {
+    return ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
+}
+
+function headersToObject(headers) {
+    const result = {};
+    if (!headers) return result;
+
+    if (headers instanceof Headers) {
+        headers.forEach((value, key) => {
+            result[key] = value;
+        });
+        return result;
+    }
+
+    if (Array.isArray(headers)) {
+        headers.forEach(([key, value]) => {
+            result[key] = value;
+        });
+        return result;
+    }
+
+    return { ...headers };
+}
+
+function storeCsrfToken(token) {
+    csrfToken = token || null;
+    if (csrfToken) {
+        localStorage.setItem('alvaos_csrf_token', csrfToken);
+    } else {
+        localStorage.removeItem('alvaos_csrf_token');
+    }
+}
 
 // Page Loading Overlay
 function showPageLoading() {
@@ -46,18 +96,30 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Fetch CSRF token after login
 async function fetchCsrfToken() {
-    try {
+    if (csrfToken) return csrfToken;
+    if (csrfTokenPromise) return csrfTokenPromise;
+
+    csrfTokenPromise = (async () => {
         const token = localStorage.getItem('alvaos_token');
-        if (!token) return;
-        const response = await fetch(`${API_BASE}/auth/csrf-token`, {
+        if (!token) return null;
+
+        const response = await window.__alvaosNativeFetch(`${API_BASE}/auth/csrf-token`, {
             headers: { 'Authorization': token }
         });
-        if (response.ok) {
-            const data = await response.json();
-            csrfToken = data.csrf_token;
-        }
+        if (!response.ok) return null;
+
+        const data = await response.json();
+        storeCsrfToken(data.csrf_token || null);
+        return csrfToken;
+    })();
+
+    try {
+        return await csrfTokenPromise;
     } catch (error) {
         console.error('Failed to fetch CSRF token:', error);
+        return null;
+    } finally {
+        csrfTokenPromise = null;
     }
 }
 
@@ -75,6 +137,37 @@ function getHeaders(includeCsrf = false) {
     }
     return headers;
 }
+
+function installAuthenticatedFetch() {
+    if (window.__alvaosNativeFetch) return;
+
+    window.__alvaosNativeFetch = window.fetch.bind(window);
+    window.fetch = async function alvaosFetch(resource, options = {}) {
+        if (!isApiRequest(resource)) {
+            return window.__alvaosNativeFetch(resource, options);
+        }
+
+        const token = localStorage.getItem('alvaos_token') || '';
+        const method = getRequestMethod(resource, options);
+        const headers = headersToObject(options.headers || resource?.headers);
+
+        if (token && !headers.Authorization && !headers.authorization) {
+            headers.Authorization = token;
+        }
+
+        if (token && isStateChangingMethod(method) && !headers['X-CSRF-Token'] && !headers['x-csrf-token']) {
+            const freshToken = await fetchCsrfToken();
+            if (freshToken) headers['X-CSRF-Token'] = freshToken;
+        }
+
+        return window.__alvaosNativeFetch(resource, { ...options, headers });
+    };
+}
+
+window.alvaosStoreCsrfToken = storeCsrfToken;
+window.alvaosFetchCsrfToken = fetchCsrfToken;
+window.alvaosGetHeaders = getHeaders;
+installAuthenticatedFetch();
 
 function escapeHtml(value) {
     return String(value ?? '')

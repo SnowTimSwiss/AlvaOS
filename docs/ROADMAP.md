@@ -2,134 +2,132 @@
 
 AlvaOS is a calm NAS OS for storage, apps, and offsite backup.
 
-This is a simple to-do roadmap. Items are checked off when shipped.
+This roadmap is intentionally practical: fix the things that made real testing
+confusing first, then continue with deeper feature testing.
 
-## Core
+## Now: Fixes from live testing
 
-- [ ] Installer & First-Time Setup
-  - [ ] Minimal bootable installer image
-  - [ ] Guided first install flow
-  - [ ] First-time setup for admin access
-  - [ ] Clear setup-required state after install
+### Installer
 
-- [ ] Authentication & Security
-  - [ ] Login flow
-  - [ ] CSRF and session handling
-  - [ ] 2FA setup, verify, and disable
-  - [ ] Admin-only actions clearly separated
+- [ ] Mark default choices clearly in the TUI, for example `DHCP (default)`.
+- [ ] Make `Cancel`, `Back`, and escape-style exits return one step back instead of throwing an error.
+- [ ] After installation, explain exactly when the USB installer medium can be removed.
+  - Current testing shows it must stay inserted until shutdown is complete.
+  - The final message should say something like: "Press Enter to shut down, wait until the machine is off, then remove the USB stick."
+- [ ] Show the final access URL after install for both static IP and DHCP installs.
+  - Include the port explicitly: `http://<ip>:8080`.
+  - For DHCP, detect and print the assigned IP when possible.
+- [ ] Review installation duration.
+  - Test result: around 10 minutes on NVMe SSD with Intel N100.
+  - Decide whether this is expected, or add better progress information for long phases.
 
-- [ ] Dashboard
-  - [ ] Storage, backup, alerts, and updates in one clear overview
-  - [ ] Quick access to the most common actions
-  - [ ] Calm, low-noise status presentation
+### First-Time Web Setup
 
-- [ ] Storage
-  - [ ] Pool overview, disk health, and capacity visibility
-  - [ ] Create, import, expand, and inspect pools
-  - [ ] Shares and permissions tied cleanly to storage
+- [ ] Simplify `setup.html`.
+  - Remove low-value status noise such as detected IP and "ready for configuration".
+  - Keep password configuration and password requirements.
+  - Keep time settings.
+  - Remove or heavily simplify the review and finish page if it adds no real decision.
+- [ ] Decide which setup options are actually needed on first boot.
+  - Remove unnecessary config fields.
+  - Add only settings that are needed before the main UI is usable.
 
-- [ ] Apps
-  - [ ] App catalog with install flow
-  - [ ] Compose-based installs for advanced users
-  - [ ] Installed app management, updates, and removal
+### Authentication and API Reliability
 
-- [ ] Backup
-  - [ ] Local snapshots and restore points
-  - [ ] Restore flow that is easy to understand
-  - [ ] Retention and scheduling controls
+- [ ] Fix `Error: CSRF token missing`.
+  - Reproduced after reboot and in another browser.
+  - This blocks normal use and should be treated as a top-priority bug.
+- [ ] Clarify user roles.
+  - If login uses the root password, the purpose of separate admin/user accounts is unclear.
+  - Decide whether AlvaOS should use local Web UI users, system users, or a clear bridge between both.
 
-- [ ] Buddy Backup
-  - [ ] Pair two AlvaOS nodes
-  - [ ] Encrypted offsite transfer
-  - [ ] Remote snapshots, restore, and peer policies
+### Main UI: Global UX Rules
 
-- [ ] Alerts
-  - [ ] Health alerts for disks, pools, memory, CPU, and backup state
-  - [ ] Clear links from an alert to the place where it can be resolved
-  - [ ] Calm wording, no noisy alarm style
-  - [ ] Telegram critical alerts
-  - [ ] Telegram pairing, test, and unpair flow
-  - [ ] Better alert notifications for remote monitoring
+- [ ] Make every modal and dialog close consistently.
+  - `Cancel` must work everywhere.
+  - The `X` close button must work everywhere.
+  - Closing a dialog should not leave broken state behind.
+- [ ] Use one consistent modal/dialog design across the UI.
+- [ ] Avoid opening advanced forms by default.
+  - Prefer a calm status view with clear action buttons.
+  - Advanced or dangerous controls should appear only after the user asks for them.
+- [ ] Move validation errors into the form where they belong.
+  - Example: pool name errors should appear next to the pool name field, not as a global notification.
+- [ ] Replace typed destructive confirmations with explicit checkboxes where appropriate.
+  - Example: disk wiping should not require typing `sda`.
+  - Example: pool creation should not require typing the pool name again.
+- [ ] Refresh the top-left AlvaOS logo treatment.
+  - Current version feels too glossy/liquid-glass and does not match the desired direction.
 
-- [ ] Notifications
-  - [ ] In-app alert summary
-  - [ ] Telegram as a notification channel
-  - [ ] Critical alert delivery for remote monitoring
-  - [ ] Better notification settings and status feedback
+### Dashboard
 
-- [ ] Watchdog
-  - [ ] Watchdog status overview
-  - [ ] Manual watchdog check
-  - [ ] Background health supervision
-  - [ ] Clear failure reporting when services degrade
+- [ ] Reduce dashboard overwhelm.
+- [ ] Remove or rethink the `Quick Actions` tile.
+- [ ] Make the dashboard a calm overview, not a control wall.
+- [ ] Prioritize storage health, backup state, alerts, and updates.
 
-## System
+### Feedback Flow
 
-- [ ] Users
-  - [ ] First-run setup
-  - [ ] Admin and user management
-  - [ ] Optional 2FA
+- [ ] Make `Send feedback` feel like sending feedback, not opening a GitHub issue directly.
+- [ ] Add a clear close button to the feedback window.
+- [ ] Decide whether GitHub issue creation should be hidden behind an advanced/developer action.
 
-- [ ] System
-  - [ ] Time, hostname, network, logs, and power controls
-  - [ ] Better diagnostics and permission checks
-  - [ ] UPS / power monitoring and actions
-  - [ ] Better system readiness and permission diagnostics
+### Storage and Disks
 
-- [ ] Installer & Updates
-  - [ ] Deterministic install flow
-  - [ ] Safer update handling and rollback thinking
-  - [ ] Clear status during long-running operations
-  - [ ] Update history and current status
-  - [ ] Offline update scan and apply
-  - [ ] Debian package updates and OS upgrades
-  - [ ] Clear update notifications in the UI
+- [ ] Keep the disk page direction; testing feedback was positive.
+- [ ] Change disk wipe confirmation from typed disk name to a checkbox confirmation.
+- [ ] Improve pool creation.
+  - Show only RAID levels possible with the selected disks.
+  - Add more RAID level options where supported.
+  - Put pool name validation inside the form.
+  - Replace typed pool-name confirmation with a checkbox or clear final confirmation step.
 
-## Polish
+### Apps
 
-- [ ] Better dashboard hierarchy
-- [ ] Stronger mobile view for remote checks
-- [ ] Better restore selection and snapshot browsing
-- [ ] Smoother progress reporting for long jobs
-- [ ] Better pairing feedback and connection status
-- [ ] More predictable restore behavior
-- [ ] Full UI redesign
-- [ ] New design system and consistent component styles
-- [ ] Redo the dashboard visual language
-- [ ] Make the UI feel more modern and less technical
-- [ ] Redesign the backup and storage pages
-- [ ] Tighten spacing, hierarchy, and component consistency
-- [ ] Make destructive actions more clearly explained
+- [ ] Keep the app menu and app store direction; testing feedback was positive.
+- [ ] Move Docker Compose / custom app install behind a `Custom app` button.
+- [ ] Keep power-user options available, but hidden until needed.
 
-## Platform
+### Backup and Buddy Backup
 
-- [ ] Split the backend into smaller modules
-- [ ] Reduce the size of `backend/alvaos-backend.py`
-- [ ] Keep route handlers thin and feature-specific
-- [ ] Separate API, business logic, and system access more cleanly
-- [ ] Make the codebase easier to maintain and extend
-- [ ] Improve how frontend and backend contract together
-- [ ] Split API routes by domain
-- [ ] Move storage, backup, alerts, and updates into smaller services
-- [ ] Keep UI state logic out of route handlers
+- [ ] Simplify the backup page.
+  - Show status first.
+  - Show setup actions as buttons.
+  - Do not expose token generation and internal mechanics by default.
+- [ ] Make Buddy Backup setup a clear `Set up Buddy Backup` flow.
+- [ ] Keep same-system pairing blocked.
+  - Testing confirmed that pairing with the same system does not work, which is good.
+- [ ] Improve wording around pairing status, errors, and next steps.
 
-## Apps & Containers
+### Users
 
-- [ ] App catalog browsing
-- [ ] App install flow
-- [ ] Compose-based installs
-- [ ] Installed app overview
-- [ ] App update flow
-- [ ] App uninstall flow
-- [ ] Container logs
-- [ ] Container exec shell
-- [ ] Container start, stop, restart, and delete
+- [ ] Do not show the create-user form open by default.
+- [ ] Replace it with a `Create user` button.
+- [ ] Clarify what admin and user accounts can actually do.
+- [ ] Align user management with the real login model.
 
-## Later
+### Updates
 
-- [ ] Plugin system
-- [ ] Optional VM support
-- [ ] Alternative storage backends such as ZFS
-- [ ] Multi-peer Buddy Backup
-- [ ] More advanced alert routing
-- [ ] Better remote access and mobile-first views
+- [ ] Keep the current update direction; testing feedback was positive.
+- [ ] Move offline updates into the AlvaOS updates area as a clear button/action.
+- [ ] Keep offline update handling visible but not mixed into unrelated system settings.
+
+### System Settings
+
+- [ ] Redesign the system tab.
+- [ ] Split mixed settings into clear areas, for example:
+  - Alerts
+  - Security
+  - Time
+  - Network
+  - Power
+  - Logs / Diagnostics
+- [ ] Do not show Telegram settings open by default.
+  - Put alert delivery under `Alerts`.
+  - Put 2FA under `Security`.
+- [ ] Avoid placing raw settings forms directly in the middle of the page.
+  - Use status summaries and action buttons first.
+
+## Forward after testing fixes
+
+everything will be tested again and again until we go to stable
