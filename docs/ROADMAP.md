@@ -138,3 +138,19 @@ confusing first, then continue with deeper feature testing.
 ## Forward after testing fixes
 
 everything will be tested again and again until we go to stable
+
+## Additional items from recent testing
+
+- [ ] Installed apps are good but ports list is confusing; improve UI for ports under system/apps.
+- [ ] Snapshot restore fails: error `Could not statfs: No such file or directory`. Investigate and fix.
+- [ ] Backup UI not user-friendly; streamline workflow.
+- [ ] Overall design inconsistent; audit UI components.
+- [ ] Top-left AlvaOS control panel visual redesign needed.
+
+## Wizards
+
+- [ ] Add an **Installation Wizard** that guides users through partitioning, network setup, and optional features with visual progress bars.
+- [ ] Implement a **Backup & Restore Wizard** offering step‑by‑step selection of snapshots, destination pools, and validation of restore paths.
+- [ ] Create a **First‑Time Setup Wizard** consolidating the initial web UI configuration (admin credentials, network, storage) into a guided flow.
+- [ ] Provide a **App Installation Wizard** for custom Docker‑Compose apps, including form validation and dependency checks.
+- [ ] Add a **System Settings Wizard** to help users configure alerts, security, time, network, and power options in a linear, user‑friendly manner.
