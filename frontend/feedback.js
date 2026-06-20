@@ -1,7 +1,14 @@
 (function () {
+    const FEEDBACK_EMAIL = 'feedback-alvaos@timserver.uk';
+    const DISMISS_FOREVER_KEY = 'alvaos_feedback_fab_dismissed_forever';
+    const DISMISS_SESSION_KEY = 'alvaos_feedback_fab_dismissed_session';
+
     function shouldInit() {
         const path = window.location.pathname || '';
-        return !path.includes('login.html') && !path.includes('setup.html');
+        if (path.includes('login.html') || path.includes('setup.html')) return false;
+        if (localStorage.getItem(DISMISS_FOREVER_KEY) === 'true') return false;
+        if (sessionStorage.getItem(DISMISS_SESSION_KEY) === 'true') return false;
+        return true;
     }
 
     function notify(message, type = 'info') {
@@ -74,6 +81,13 @@
         window.open(url, '_blank', 'noopener,noreferrer');
     }
 
+    function sendByEmail(payload) {
+        const subject = `[AlvaOS Feedback] ${payload.category}`;
+        const body = payloadText(payload);
+        const url = `mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        window.location.href = url;
+    }
+
     function closeModal() {
         document.getElementById('feedback-overlay')?.remove();
     }
@@ -117,8 +131,9 @@
 
                 <div class="feedback-actions">
                     <button id="feedback-copy-btn" class="btn-secondary">Copy Feedback</button>
-                    <button id="feedback-github-btn" class="btn-primary">Open GitHub Issue</button>
+                    <button id="feedback-email-btn" class="btn-primary">Send via Email</button>
                 </div>
+                <button id="feedback-github-link" class="feedback-github-link" type="button">Prefer GitHub? Open an issue instead</button>
             </div>
         `;
         document.body.appendChild(overlay);
@@ -144,7 +159,16 @@
             }
         });
 
-        overlay.querySelector('#feedback-github-btn')?.addEventListener('click', () => {
+        overlay.querySelector('#feedback-email-btn')?.addEventListener('click', () => {
+            const payload = buildPayload();
+            if (!payload.message) {
+                notify('Please add a feedback message first.', 'warning');
+                return;
+            }
+            sendByEmail(payload);
+        });
+
+        overlay.querySelector('#feedback-github-link')?.addEventListener('click', () => {
             const payload = buildPayload();
             if (!payload.message) {
                 notify('Please add a feedback message first.', 'warning');
@@ -156,21 +180,68 @@
         overlay.querySelector('#feedback-message')?.focus();
     }
 
+    function closeFabDismissMenu() {
+        document.getElementById('feedback-fab-dismiss-menu')?.remove();
+    }
+
+    function openFabDismissMenu(wrap) {
+        if (document.getElementById('feedback-fab-dismiss-menu')) {
+            closeFabDismissMenu();
+            return;
+        }
+
+        const menu = document.createElement('div');
+        menu.id = 'feedback-fab-dismiss-menu';
+        menu.className = 'feedback-fab-dismiss-menu';
+        menu.innerHTML = `
+            <button type="button" class="feedback-fab-dismiss-option" data-action="session">Hide for now</button>
+            <button type="button" class="feedback-fab-dismiss-option" data-action="forever">Don't show again</button>
+        `;
+        wrap.appendChild(menu);
+
+        menu.querySelector('[data-action="session"]')?.addEventListener('click', () => {
+            sessionStorage.setItem(DISMISS_SESSION_KEY, 'true');
+            wrap.remove();
+        });
+        menu.querySelector('[data-action="forever"]')?.addEventListener('click', () => {
+            localStorage.setItem(DISMISS_FOREVER_KEY, 'true');
+            wrap.remove();
+        });
+
+        setTimeout(() => {
+            document.addEventListener('click', function handleOutside(event) {
+                if (!menu.contains(event.target) && event.target.id !== 'feedback-fab-close') {
+                    closeFabDismissMenu();
+                    document.removeEventListener('click', handleOutside);
+                }
+            });
+        }, 0);
+    }
+
     function init() {
         if (!shouldInit()) return;
-        if (document.getElementById('feedback-fab')) return;
+        if (document.getElementById('feedback-fab-wrap')) return;
 
-        const button = document.createElement('button');
-        button.id = 'feedback-fab';
-        button.className = 'feedback-fab';
-        button.type = 'button';
-        button.innerHTML = `
-            ${window.alvaIcon ? window.alvaIcon('message-square', '', 'aria-hidden="true"') : ''}
-            <span>Feedback</span>
+        const wrap = document.createElement('div');
+        wrap.id = 'feedback-fab-wrap';
+        wrap.className = 'feedback-fab-wrap';
+        wrap.innerHTML = `
+            <button id="feedback-fab-close" class="feedback-fab-close" type="button" aria-label="Dismiss feedback button">
+                ${window.alvaIcon ? window.alvaIcon('x', '', 'aria-hidden="true"') : 'x'}
+            </button>
+            <button id="feedback-fab" class="feedback-fab" type="button">
+                ${window.alvaIcon ? window.alvaIcon('message-square', '', 'aria-hidden="true"') : ''}
+                <span>Feedback</span>
+            </button>
         `;
-        button.addEventListener('click', openModal);
-        document.body.appendChild(button);
-        if (window.renderAlvaIcons) window.renderAlvaIcons(button);
+        document.body.appendChild(wrap);
+        if (window.renderAlvaIcons) window.renderAlvaIcons(wrap);
+
+        wrap.querySelector('#feedback-fab')?.addEventListener('click', openModal);
+        wrap.querySelector('#feedback-fab-close')?.addEventListener('click', (event) => {
+            event.stopPropagation();
+            openFabDismissMenu(wrap);
+        });
     }
 
     if (document.readyState === 'loading') {

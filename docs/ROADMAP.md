@@ -69,9 +69,12 @@ Its more of a TODO than a ROADMAP in the traditional way.
 
 ### Feedback Flow
 
-- [ ] Make `Send feedback` feel like sending feedback, not opening a GitHub issue directly.
-- [ ] Add a clear close button to the feedback popup
-- [ ] Decide whether GitHub issue creation should be hidden behind an advanced/developer action.
+- [x] Make `Send feedback` feel like sending feedback, not opening a GitHub issue directly.
+  - The modal's primary action is now `Send via Email` (mailto: to feedback-alvaos@timserver.uk, prefilled with category/message/page/timestamp). GitHub issue creation is demoted to a small secondary text link below the actions.
+- [x] Add a clear close button to the feedback popup.
+  - The modal already had a working `X` close button; additionally, the floating `Feedback` button itself now has its own small close control. Clicking it offers `Hide for now` (reappears next session) or `Don't show again` (persisted via localStorage).
+- [x] Decide whether GitHub issue creation should be hidden behind an advanced/developer action.
+  - Kept as a small secondary link (`Prefer GitHub? Open an issue instead`) rather than removed entirely, since some users will still want public issue tracking, but it's no longer the default/primary action.
 
 ### Storage and Disks
 
