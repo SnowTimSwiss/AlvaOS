@@ -70,15 +70,19 @@ validate_netmask() {
     return 1
 }
 
-# Get validated IP input with retry
+# Get validated IP input with retry.
+# Return codes: 0 = got a valid value (printed to stdout), 2 = user cancelled/escaped (caller should go back a step)
 get_validated_ip() {
     local prompt="$1"
     local default="$2"
     local max_attempts=3
     local attempt=0
-    
+    local ip
+
     while [[ $attempt -lt $max_attempts ]]; do
-        local ip=$(input "$prompt" "$default")
+        if ! ip=$(input "$prompt" "$default"); then
+            return 2
+        fi
         if [[ -z "$ip" ]]; then
             msg "IP address cannot be empty. Please try again."
             attempt=$((attempt + 1))
@@ -92,21 +96,25 @@ get_validated_ip() {
             attempt=$((attempt + 1))
         fi
     done
-    
+
     msg "Too many invalid attempts. Using default: $default"
     echo "$default"
     return 0
 }
 
-# Get validated netmask with retry
+# Get validated netmask with retry.
+# Return codes: 0 = got a valid value (printed to stdout), 2 = user cancelled/escaped (caller should go back a step)
 get_validated_netmask() {
     local prompt="$1"
     local default="$2"
     local max_attempts=3
     local attempt=0
-    
+    local mask
+
     while [[ $attempt -lt $max_attempts ]]; do
-        local mask=$(input "$prompt" "$default")
+        if ! mask=$(input "$prompt" "$default"); then
+            return 2
+        fi
         if [[ -z "$mask" ]]; then
             msg "Netmask cannot be empty. Please try again."
             attempt=$((attempt + 1))
@@ -120,7 +128,7 @@ get_validated_netmask() {
             attempt=$((attempt + 1))
         fi
     done
-    
+
     msg "Too many invalid attempts. Using default: $default"
     echo "$default"
     return 0
@@ -582,56 +590,113 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# Action Selection
-ACTION_MODE=$(menu "Select Action" \
-    "INSTALL" "Install AlvaOS" \
-    "ROLLBACK" "Rollback system from snapshot")
+# Wizard steps. Cancel/Back/Escape in any dialog moves one step back instead of
+# crashing the installer. Pressing Cancel/Escape on the very first step exits cleanly.
+STEP=0
+while [ "$STEP" -lt 6 ]; do
+    case "$STEP" in
+        0)
+            # Action Selection
+            if ACTION_MODE=$(menu "Select Action" \
+                "INSTALL" "Install AlvaOS (default)" \
+                "ROLLBACK" "Rollback system from snapshot"); then
+                if [ "$ACTION_MODE" == "ROLLBACK" ]; then
+                    rollback_from_snapshot
+                    exit $?
+                fi
+                STEP=1
+            else
+                exit 0
+            fi
+            ;;
+        1)
+            # Mode Selection
+            if INSTALL_MODE=$(menu "Select Installation Mode" \
+                "SINGLE" "Install on a single disk (default)" \
+                "MIRROR" "Mirror (RAID1) on two disks"); then
+                STEP=2
+            else
+                STEP=0
+            fi
+            ;;
+        2)
+            # Disk Selection
+            AVAILABLE_DISKS=$(lsblk -d -o NAME,SIZE,TYPE | grep disk | awk '{print $1 " (" $2 ") off"}')
+            if [ "$INSTALL_MODE" == "SINGLE" ]; then
+                if TARGET_DISKS=$(checklist "Select target disk" $AVAILABLE_DISKS); then
+                    TOTAL_DISKS=$(echo $TARGET_DISKS | wc -w)
+                    if [ "$TOTAL_DISKS" -ne 1 ]; then
+                        msg "Please select exactly ONE disk for Single mode."
+                        continue
+                    fi
+                    TARGET_DISKS=$(echo $TARGET_DISKS | tr -d '"')
+                    STEP=3
+                else
+                    STEP=1
+                fi
+            else
+                if TARGET_DISKS=$(checklist "Select TWO target disks for Mirror" $AVAILABLE_DISKS); then
+                    TOTAL_DISKS=$(echo $TARGET_DISKS | wc -w)
+                    if [ "$TOTAL_DISKS" -ne 2 ]; then
+                        msg "Please select exactly TWO disks for Mirror mode."
+                        continue
+                    fi
+                    TARGET_DISKS=$(echo $TARGET_DISKS | tr -d '"')
+                    STEP=3
+                else
+                    STEP=1
+                fi
+            fi
+            ;;
+        3)
+            # Confirm disk wipe
+            if confirm "WARNING: This will ERASE ALL DATA on: $TARGET_DISKS\n\nAre you sure you want to continue?"; then
+                STEP=4
+            else
+                STEP=2
+            fi
+            ;;
+        4)
+            # Network Selection
+            if NET_MODE=$(menu "Network Configuration" \
+                "DHCP" "Automatic, DHCP (default)" \
+                "STATIC" "Manual (Static IP)"); then
+                if [ "$NET_MODE" == "STATIC" ]; then
+                    STEP=5
+                else
+                    STEP=6
+                fi
+            else
+                STEP=3
+            fi
+            ;;
+        5)
+            # Static network details. Cancelling any field goes back to network mode selection.
+            if ! STATIC_IP=$(get_validated_ip "Enter Static IP address (e.g., 192.168.1.50)" "192.168.1.50"); then
+                STEP=4
+                continue
+            fi
+            if ! STATIC_NETMASK=$(get_validated_netmask "Enter Netmask (e.g., 255.255.255.0)" "255.255.255.0"); then
+                STEP=4
+                continue
+            fi
+            if ! STATIC_GW=$(get_validated_ip "Enter Gateway (e.g., 192.168.1.1)" "192.168.1.1"); then
+                STEP=4
+                continue
+            fi
+            if ! STATIC_DNS=$(get_validated_ip "Enter DNS Server (e.g., 1.1.1.1)" "1.1.1.1"); then
+                STEP=4
+                continue
+            fi
+            STEP=6
+            ;;
+    esac
+done
 
-if [ "$ACTION_MODE" == "ROLLBACK" ]; then
-    rollback_from_snapshot
-    exit $?
-fi
-
-# Mode Selection
-INSTALL_MODE=$(menu "Select Installation Mode" \
-    "SINGLE" "Install on a single disk" \
-    "MIRROR" "Mirror (RAID1) on two disks")
-
-AVAILABLE_DISKS=$(lsblk -d -o NAME,SIZE,TYPE | grep disk | awk '{print $1 " (" $2 ") off"}')
-if [ "$INSTALL_MODE" == "SINGLE" ]; then
-    TARGET_DISKS=$(checklist "Select target disk" $AVAILABLE_DISKS)
-    TOTAL_DISKS=$(echo $TARGET_DISKS | wc -w)
-    if [ "$TOTAL_DISKS" -ne 1 ]; then
-        msg "Please select exactly ONE disk for Single mode."
-        exit 1
-    fi
-else
-    TARGET_DISKS=$(checklist "Select TWO target disks for Mirror" $AVAILABLE_DISKS)
-    TOTAL_DISKS=$(echo $TARGET_DISKS | wc -w)
-    if [ "$TOTAL_DISKS" -ne 2 ]; then
-        msg "Please select exactly TWO disks for Mirror mode."
-        exit 1
-    fi
-fi
-
-# Remove quotes from disks
-TARGET_DISKS=$(echo $TARGET_DISKS | tr -d '"')
-
-if ! confirm "WARNING: This will ERASE ALL DATA on: $TARGET_DISKS\n\nAre you sure you want to continue?"; then
-    exit 0
-fi
-
-# Network Selection
-NET_MODE=$(menu "Network Configuration" \
-    "DHCP" "Automatic (default, DHCP)" \
-    "STATIC" "Manual (Static IP)")
-
-if [ "$NET_MODE" == "STATIC" ]; then
-    STATIC_IP=$(get_validated_ip "Enter Static IP address (e.g., 192.168.1.50)" "192.168.1.50")
-    STATIC_NETMASK=$(get_validated_netmask "Enter Netmask (e.g., 255.255.255.0)" "255.255.255.0")
-    STATIC_GW=$(get_validated_ip "Enter Gateway (e.g., 192.168.1.1)" "192.168.1.1")
-    STATIC_DNS=$(get_validated_ip "Enter DNS Server (e.g., 1.1.1.1)" "1.1.1.1")
-fi
+# Detected here (not inside the gauge pipe block below) so it survives into the final
+# access-URL message: the gauge block runs in a subshell because it's piped to whiptail.
+INTERFACE=$(ip -o link show | awk -F': ' '{print $2}' | grep -v lo | head -n1)
+[ -z "$INTERFACE" ] && INTERFACE="eth0"
 
 # Main Installation Logic wrapped in progress bar
 {
@@ -713,9 +778,6 @@ fi
 HOSTS_EOF
 
     update_progress "Configuring networking..."
-    INTERFACE=$(ip -o link show | awk -F': ' '{print $2}' | grep -v lo | head -n1)
-    [ -z "$INTERFACE" ] && INTERFACE="eth0"
-
     mkdir -p /mnt/etc/NetworkManager
     cat > /mnt/etc/NetworkManager/NetworkManager.conf << 'NMCONF_EOF'
 [main]
@@ -831,10 +893,25 @@ FSTAB_EOF
     if [ -d /sys/firmware/efi ]; then
         chroot /mnt env DEBIAN_FRONTEND=noninteractive apt-get install -y \
             -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" \
-            grub-efi-amd64 >> "$INSTALL_LOG" 2>&1
+            grub-efi-amd64 efibootmgr >> "$INSTALL_LOG" 2>&1
+        FIRST_EFI_DISK=1
         for disk in $TARGET_DISKS; do
             chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=AlvaOS --recheck --removable >> "$INSTALL_LOG" 2>&1
+            if [ "$FIRST_EFI_DISK" -eq 1 ]; then
+                # Also register a real NVRAM boot entry (not just the removable fallback path),
+                # so we can point the firmware at it directly below instead of relying on BootOrder.
+                chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=AlvaOS --recheck >> "$INSTALL_LOG" 2>&1 || true
+                FIRST_EFI_DISK=0
+            fi
         done
+
+        # Force the very next boot to the installed system regardless of current BootOrder
+        # (the USB installer is often listed first). This lets EFI users just reboot and
+        # remove the stick whenever convenient instead of shutting down and restarting by hand.
+        ALVAOS_BOOTNUM=$(chroot /mnt efibootmgr 2>/dev/null | grep -m1 "AlvaOS" | sed -n 's/^Boot\([0-9A-Fa-f]\{4\}\).*/\1/p')
+        if [ -n "$ALVAOS_BOOTNUM" ] && chroot /mnt efibootmgr --bootnext "$ALVAOS_BOOTNUM" >> "$INSTALL_LOG" 2>&1; then
+            touch /tmp/alvaos-bootnext-set
+        fi
     else
         chroot /mnt env DEBIAN_FRONTEND=noninteractive apt-get install -y \
             -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" \
@@ -954,12 +1031,28 @@ VERSION_EOF
     umount -l /mnt/sys /mnt/proc /mnt/dev/pts /mnt/dev /mnt/boot/efi /mnt >> "$INSTALL_LOG" 2>&1 || true
 
     echo "100"
-} | whiptail --title "Installing AlvaOS" --gauge "Please wait..." 10 70 0
+} | whiptail --title "Installing AlvaOS" --gauge "This usually takes 10-15 minutes depending on your hardware and internet speed. Please wait..." 10 70 0
 
 # Final Message
 if [ "$NET_MODE" == "STATIC" ]; then
-    msg "Installation Successful!\n\nPlease remove installation media and press Enter to reboot.\n\nAfter reboot, visit http://$STATIC_IP:8080 to complete setup."
+    ACCESS_LINE="Access AlvaOS at: http://$STATIC_IP:8080"
 else
-    msg "Installation Successful!\n\nPlease remove installation media and press Enter to reboot.\n\nAfter reboot, find the server IP in your router (DHCP) or run 'ip a' on the server.\nThen visit http://<ip>:8080 to complete setup."
+    DETECTED_IP=$(ip -4 -o addr show "$INTERFACE" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)
+    if [ -n "$DETECTED_IP" ]; then
+        ACCESS_LINE="Detected IP (DHCP): http://$DETECTED_IP:8080\nIf the address differs after the next boot, check your router's DHCP client list or run 'ip a' on the server."
+    else
+        ACCESS_LINE="Find the server IP in your router's DHCP client list or run 'ip a' on the server, then visit http://<ip>:8080 to complete setup."
+    fi
 fi
-reboot
+
+if [ -f /tmp/alvaos-bootnext-set ]; then
+    # EFI firmware was told to boot straight into AlvaOS next, regardless of BootOrder, so it's
+    # safe to reboot immediately. The USB stick can be removed any time, before or after.
+    msg "Installation Successful!\n\nPress Enter to reboot into AlvaOS. The USB installer stick can be removed at any time, but not before the system fully shut down.\n\n$ACCESS_LINE"
+    reboot
+else
+    # Legacy BIOS (or EFI bootnext could not be set): we can't reliably control boot order from
+    # software, so shut down instead of reboot to give an unambiguous point to pull the USB stick.
+    msg "Installation Successful!\n\nPress Enter to shut down. Wait until the machine is completely off, then remove the USB installer stick before powering it back on.\n\n$ACCESS_LINE"
+    shutdown -h now
+fi
