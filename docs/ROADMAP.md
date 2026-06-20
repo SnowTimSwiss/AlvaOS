@@ -39,9 +39,8 @@ Its more of a TODO than a ROADMAP in the traditional way.
 - [x] Fix `Error: CSRF token missing`.
   - Reproduced after reboot and in another browser.
   - This blocks normal use and should be treated as a top-priority bug.
-- [ ] Clarify user roles.
-  - If login uses the root password, the purpose of separate admin/user accounts is unclear.
-  - Decide whether AlvaOS should use local Web UI users, system users, or a clear bridge between both.
+- [x] Clarify user roles.
+  - Decided: AlvaOS keeps a single Web UI admin login (root password, optional 2FA). The "Users" feature is actually system/Samba accounts for SMB/NFS share access, unrelated to Web UI login, so the admin/user role field on those accounts was removed (it had no effect on anything). Per-share access is still controlled by the existing read/write/deny permission dropdowns.
 
 ### Main UI: Global UX Rules
 
@@ -71,7 +70,7 @@ Its more of a TODO than a ROADMAP in the traditional way.
 ### Feedback Flow
 
 - [ ] Make `Send feedback` feel like sending feedback, not opening a GitHub issue directly.
-- [ ] Add a clear close button to the feedback window.
+- [ ] Add a clear close button to the feedback popup
 - [ ] Decide whether GitHub issue creation should be hidden behind an advanced/developer action.
 
 ### Storage and Disks
@@ -103,10 +102,13 @@ Its more of a TODO than a ROADMAP in the traditional way.
 
 ### Users
 
-- [ ] Do not show the create-user form open by default.
-- [ ] Replace it with a `Create user` button.
-- [ ] Clarify what admin and user accounts can actually do.
-- [ ] Align user management with the real login model.
+- [x] Do not show the create-user form open by default.
+- [x] Replace it with a `Create user` button.
+  - Create-user is now a button that opens a modal (same pattern as password reset), instead of an always-open inline form.
+- [x] Clarify what admin and user accounts can actually do.
+- [x] Align user management with the real login model.
+  - Moved out of its own sidebar page into a `Users` tab inside Storage, next to Disks/Pools/Shares, since these accounts only control SMB/NFS share access.
+  - Removed the admin/user role field entirely (it never affected anything: Web UI login is always the single admin session, and per-share access is governed by the separate read/write/deny permission dropdowns).
 
 ### Updates
 
@@ -144,6 +146,7 @@ everything will be tested again and again until we go to stable
 ## Additional items from recent testing
 
 - [ ] Installed apps are good but ports list is confusing; improve UI for ports under system/apps.
+UI and UI by apps is not good. confusing too many options for beginners.
 - [ ] Snapshot restore fails: error `Could not statfs: No such file or directory`. Investigate and fix.
 - [ ] Backup UI not user-friendly; streamline workflow.
 - [ ] Overall design inconsistent; audit UI components.

@@ -1,4 +1,4 @@
-// AlvaOS Users Management
+// AlvaOS Share Users (SMB/NFS access accounts, separate from the AlvaOS admin login)
 // API_BASE is defined in app.js
 
 const USERNAME_PATTERN = /^[a-z_][a-z0-9_-]{1,31}$/;
@@ -81,36 +81,17 @@ function setUsersContainerMessage(message, className) {
     container.innerHTML = `<p class="${className}">${usersEscapeHtml(message)}</p>`;
 }
 
-function setCreateFormBusy(busy) {
-    const fields = [
-        document.getElementById('user-name-input'),
-        document.getElementById('user-pass-input'),
-        document.getElementById('user-role-select'),
-        document.getElementById('create-user-btn')
-    ];
-    fields.forEach((field) => {
-        if (field) field.disabled = !!busy;
-    });
-
-    const button = document.getElementById('create-user-btn');
-    if (button) {
-        if (!button.dataset.defaultLabel) button.dataset.defaultLabel = button.textContent || 'Create User';
-        button.textContent = busy ? 'Creating...' : button.dataset.defaultLabel;
-    }
-}
-
 function setUserRowBusy(row, busy) {
     if (!row) return;
     row.classList.toggle('is-busy', !!busy);
-    row.querySelectorAll('button, select, input').forEach((el) => {
+    row.querySelectorAll('button, input').forEach((el) => {
         el.disabled = !!busy;
     });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
     const createBtn = document.getElementById('create-user-btn');
-    if (createBtn) createBtn.addEventListener('click', createUser);
-    loadUsers();
+    if (createBtn) createBtn.addEventListener('click', showCreateUserModal);
 });
 
 async function loadUsers() {
@@ -142,7 +123,7 @@ function renderUsers(users) {
     if (!container) return;
 
     if (!users.length) {
-        setUsersContainerMessage('No users created yet.', 'users-empty');
+        setUsersContainerMessage('No share users created yet.', 'users-empty');
         return;
     }
 
@@ -150,7 +131,6 @@ function renderUsers(users) {
 
     users.forEach((user) => {
         const username = String(user?.username || '').trim();
-        const role = String(user?.role || 'user').toLowerCase() === 'admin' ? 'admin' : 'user';
         const createdAt = user?.created_at ? new Date(user.created_at) : null;
         const createdLabel = createdAt && !Number.isNaN(createdAt.getTime())
             ? createdAt.toLocaleDateString()
@@ -163,20 +143,13 @@ function renderUsers(users) {
         row.innerHTML = `
             <div class="user-row-main">
                 <div>
-                    <div class="user-row-title">
-                        <span class="user-row-name">${usersEscapeHtml(username)}</span>
-                        <span class="user-role-badge ${role}">${usersEscapeHtml(role)}</span>
-                    </div>
+                    <div class="user-row-name">${usersEscapeHtml(username)}</div>
                     <div class="user-row-state">
                         ${user.system_exists ? 'System user synchronization: Active' : 'System user: Missing (Manual intervention required)'}
                     </div>
                     <div class="user-row-created">Created: ${usersEscapeHtml(createdLabel)}</div>
                 </div>
                 <div class="user-row-actions">
-                    <select data-user="${usersEscapeHtml(username)}" data-previous-role="${usersEscapeHtml(role)}" class="role-select user-role-select">
-                        <option value="user" ${role === 'user' ? 'selected' : ''}>User</option>
-                        <option value="admin" ${role === 'admin' ? 'selected' : ''}>Admin</option>
-                    </select>
                     <button class="btn-secondary reset-pass-btn" data-user="${usersEscapeHtml(username)}">Reset Password</button>
                     <button class="btn-secondary delete-user-btn user-delete-btn" data-user="${usersEscapeHtml(username)}">Delete</button>
                 </div>
@@ -187,7 +160,6 @@ function renderUsers(users) {
 
         const deleteBtn = row.querySelector('.delete-user-btn');
         const resetBtn = row.querySelector('.reset-pass-btn');
-        const roleSelect = row.querySelector('.role-select');
 
         if (deleteBtn) {
             deleteBtn.addEventListener('click', () => deleteUser(username, row));
@@ -196,76 +168,93 @@ function renderUsers(users) {
         if (resetBtn) {
             resetBtn.addEventListener('click', () => showPasswordResetModal(username, row));
         }
-
-        if (roleSelect) {
-            roleSelect.addEventListener('focus', () => {
-                roleSelect.dataset.previousRole = roleSelect.value;
-            });
-            roleSelect.addEventListener('change', async () => {
-                const previousRole = String(roleSelect.dataset.previousRole || role || 'user');
-                const nextRole = String(roleSelect.value || 'user').toLowerCase() === 'admin' ? 'admin' : 'user';
-                if (nextRole === previousRole) return;
-
-                const label = nextRole === 'admin' ? 'Admin' : 'User';
-                const ok = await usersConfirm(`Change role for "${username}" to ${label}?`);
-                if (!ok) {
-                    roleSelect.value = previousRole;
-                    return;
-                }
-
-                const updated = await updateUserRole(username, nextRole, row);
-                if (!updated) {
-                    roleSelect.value = previousRole;
-                    return;
-                }
-
-                roleSelect.dataset.previousRole = nextRole;
-            });
-        }
     });
 }
 
-async function createUser() {
-    const nameInput = document.getElementById('user-name-input');
-    const passInput = document.getElementById('user-pass-input');
-    const roleSelect = document.getElementById('user-role-select');
+function showCreateUserModal() {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
 
-    const username = String(nameInput?.value || '').trim();
-    const password = String(passInput?.value || '');
-    const role = String(roleSelect?.value || 'user').toLowerCase() === 'admin' ? 'admin' : 'user';
+    const panel = document.createElement('div');
+    panel.className = 'user-modal-panel';
 
-    if (!username || !password) {
-        usersNotify('Username and password are required', 'warning');
-        return;
-    }
-    if (!USERNAME_PATTERN.test(username)) {
-        usersNotify('Invalid username. Use lowercase letters, numbers, _ or -.', 'warning');
-        return;
-    }
-    if (password.length < 8) {
-        usersNotify('Password must be at least 8 characters', 'warning');
-        return;
+    panel.innerHTML = `
+        <h3 class="user-modal-title">Create User</h3>
+        <p class="user-modal-text">Creates a share-access account for SMB/NFS. Separate from the AlvaOS admin login.</p>
+        <input type="text" id="create-user-name-input" class="user-modal-input" placeholder="Username, e.g. alex" />
+        <input type="password" id="create-user-pass-input" class="user-modal-input" placeholder="Minimum 8 characters" />
+        <div class="user-modal-actions">
+            <button id="cancel-create-btn" class="btn-secondary">Cancel</button>
+            <button id="confirm-create-btn" class="btn-primary">Create</button>
+        </div>
+    `;
+
+    modal.appendChild(panel);
+    document.body.appendChild(modal);
+
+    const cancelBtn = panel.querySelector('#cancel-create-btn');
+    const confirmBtn = panel.querySelector('#confirm-create-btn');
+    const nameInput = panel.querySelector('#create-user-name-input');
+    const passInput = panel.querySelector('#create-user-pass-input');
+
+    if (nameInput) nameInput.focus();
+
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => modal.remove());
     }
 
-    setCreateFormBusy(true);
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) modal.remove();
+    });
+
+    if (confirmBtn) {
+        confirmBtn.addEventListener('click', async () => {
+            const username = String(nameInput?.value || '').trim();
+            const password = String(passInput?.value || '');
+
+            if (!username || !password) {
+                usersNotify('Username and password are required', 'warning');
+                return;
+            }
+            if (!USERNAME_PATTERN.test(username)) {
+                usersNotify('Invalid username. Use lowercase letters, numbers, _ or -.', 'warning');
+                return;
+            }
+            if (password.length < 8) {
+                usersNotify('Password must be at least 8 characters', 'warning');
+                return;
+            }
+
+            confirmBtn.disabled = true;
+            if (!confirmBtn.dataset.defaultLabel) confirmBtn.dataset.defaultLabel = confirmBtn.textContent || 'Create';
+            confirmBtn.textContent = 'Creating...';
+            const created = await createUser(username, password);
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = confirmBtn.dataset.defaultLabel;
+
+            if (created) {
+                modal.remove();
+            }
+        });
+    }
+}
+
+async function createUser(username, password) {
     const response = await usersApi('/users', {
         method: 'POST',
-        json: { username, password, role }
+        json: { username, password }
     });
     const result = await usersReadJson(response);
-    setCreateFormBusy(false);
 
-    if (!response) return;
+    if (!response) return false;
     if (!response.ok) {
         usersNotify(usersApiError(response, result, 'Failed to create user', 'Permission denied: Only admins can create users.'), 'error');
-        return;
+        return false;
     }
 
     usersNotify(result?.message || 'User created', 'success');
-    if (nameInput) nameInput.value = '';
-    if (passInput) passInput.value = '';
-    if (roleSelect) roleSelect.value = 'user';
     await loadUsers();
+    return true;
 }
 
 async function deleteUser(username, row) {
@@ -288,27 +277,6 @@ async function deleteUser(username, row) {
 
     usersNotify(result?.message || 'User deleted', 'success');
     await loadUsers();
-}
-
-async function updateUserRole(username, role, row) {
-    setUserRowBusy(row, true);
-    const response = await usersApi(`/users/${encodeURIComponent(username)}`, {
-        method: 'PATCH',
-        json: { role }
-    });
-    const result = await usersReadJson(response);
-    setUserRowBusy(row, false);
-
-    if (!response) return false;
-    if (!response.ok) {
-        usersNotify(usersApiError(response, result, 'Failed to update role', 'Permission denied: Only admins can change roles.'), 'error');
-        await loadUsers();
-        return false;
-    }
-
-    usersNotify(`Role updated for ${username}`, 'success');
-    await loadUsers();
-    return true;
 }
 
 function showPasswordResetModal(username, row) {
@@ -341,11 +309,9 @@ function showPasswordResetModal(username, row) {
         cancelBtn.addEventListener('click', () => modal.remove());
     }
 
-    if (modal) {
-        modal.addEventListener('click', (event) => {
-            if (event.target === modal) modal.remove();
-        });
-    }
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) modal.remove();
+    });
 
     if (confirmBtn) {
         confirmBtn.addEventListener('click', async () => {

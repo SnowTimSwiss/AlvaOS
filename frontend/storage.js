@@ -153,6 +153,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 loadPools();
             } else if (tabName === 'shares') {
                 loadShares();
+            } else if (tabName === 'users' && typeof loadUsers === 'function') {
+                loadUsers();
             }
         });
     });
