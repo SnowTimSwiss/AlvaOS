@@ -5,21 +5,23 @@ AlvaOS is a calm NAS OS for storage, apps, and offsite backup.
 This roadmap is intentionally practical: fix the things that made real testing
 confusing first, then continue with deeper feature testing.
 
+Its more of a TODO than a ROADMAP in the traditional way.
+
 ## Now: Fixes from live testing
 
 ### Installer
 
-- [ ] Mark default choices clearly in the TUI, for example `DHCP (default)`.
-- [ ] Make `Cancel`, `Back`, and escape-style exits return one step back instead of throwing an error.
-- [ ] After installation, explain exactly when the USB installer medium can be removed.
-  - Current testing shows it must stay inserted until shutdown is complete.
-  - The final message should say something like: "Press Enter to shut down, wait until the machine is off, then remove the USB stick."
-- [ ] Show the final access URL after install for both static IP and DHCP installs.
-  - Include the port explicitly: `http://<ip>:8080`.
-  - For DHCP, detect and print the assigned IP when possible.
-- [ ] Review installation duration.
-  - Test result: around 10 minutes on NVMe SSD with Intel N100.
-  - Decide whether this is expected, or add better progress information for long phases.
+- [x] Mark default choices clearly in the TUI, for example `DHCP (default)`.
+- [x] Make `Cancel`, `Back`, and escape-style exits return one step back instead of throwing an error.
+  - Implemented as a step-based wizard loop in `install-system.sh`; cancelling steps back instead of crashing the script.
+- [x] After installation, explain exactly when the USB installer medium can be removed.
+  - On EFI hardware, the installer now sets a one-shot `efibootmgr --bootnext` to the installed AlvaOS entry, so the next boot goes straight to the installed system regardless of BootOrder; the final message then says the stick can be removed any time and the installer reboots automatically.
+  - On legacy BIOS (or if EFI bootnext could not be set), boot order can't be controlled from software, so the installer still shows "Press Enter to shut down, wait until the machine is completely off, then remove the USB installer stick" and powers off (`shutdown -h now`) instead of rebooting.
+- [x] Show the final access URL after install for both static IP and DHCP installs.
+  - Includes the port explicitly: `http://<ip>:8080`.
+  - For DHCP, the installer detects the live network interface's IP and prints it, with a fallback hint if it's not available.
+- [x] Review installation duration.
+  - Added an explicit "10-15 minutes" expectation to the progress dialog so it's not perceived as stuck on slower hardware/links.
 
 ### First-Time Web Setup
 
