@@ -292,7 +292,34 @@ function removeUpdateBanner() {
     if (existing) existing.remove();
 }
 
+function renderDashboardUpdatesCard(available, versionLabel) {
+    const card = document.getElementById('dashboard-updates-card');
+    if (!card) return;
+
+    const pill = document.getElementById('dashboard-updates-pill');
+    const value = document.getElementById('dashboard-updates-value');
+    const sub = document.getElementById('dashboard-updates-sub');
+
+    card.classList.toggle('attention', !!available);
+    if (pill) {
+        pill.className = `pill ${available ? 'warn' : 'ok'}`;
+        pill.textContent = available ? '1 available' : 'Up to date';
+    }
+    if (value) {
+        value.textContent = available ? `AlvaOS ${versionLabel} is ready` : 'AlvaOS is up to date';
+    }
+    if (sub) {
+        sub.textContent = available
+            ? 'Open Updates to review release notes and install.'
+            : 'No updates available right now.';
+    }
+
+    if (window.alvaosSetFocusAttention) window.alvaosSetFocusAttention('updates', !!available);
+}
+
 function renderUpdateBanner(versionLabel, versionKey) {
+    if (document.getElementById('dashboard-updates-card')) return;
+
     const existing = document.getElementById('update-banner');
     if (existing) {
         const sub = existing.querySelector('.banner-sub');
@@ -350,11 +377,13 @@ function setUpdateIndicators({ available, version, checkedAt } = {}) {
         localStorage.removeItem(UPDATE_CACHE_KEYS.dismissed);
         removeUpdateBanner();
         setUpdateBadge(false);
+        renderDashboardUpdatesCard(false, '');
         return;
     }
 
     const versionLabel = storedVersion || 'Update';
     const versionKey = storedVersion || 'unknown';
+    renderDashboardUpdatesCard(true, versionLabel);
     const dismissedVersion = localStorage.getItem(UPDATE_CACHE_KEYS.dismissed) || '';
     const show = versionKey !== dismissedVersion;
     if (show) {
