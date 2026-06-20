@@ -534,7 +534,6 @@ def manage_users():
         for username, info in users_state.items():
             users.append({
                 'username': username,
-                'role': info.get('role', 'user'),
                 'created_at': info.get('created_at'),
                 'system_exists': system_user_exists(username)
             })
@@ -560,9 +559,6 @@ def manage_users():
 
     if request.method == 'POST':
         password = data.get('password', '')
-        role = data.get('role', 'user').strip().lower()
-        if role not in ('admin', 'user'):
-            role = 'user'
         if len(password) < 8:
             return jsonify({'error': 'Password must be at least 8 characters'}), 400
         if username in users_state or system_user_exists(username):
@@ -596,7 +592,6 @@ def manage_users():
 
             users_state[username] = {
                 'username': username,
-                'role': role,
                 'created_at': datetime.now().isoformat()
             }
             save_users_state(users_state)
@@ -666,7 +661,7 @@ def manage_users():
 @app.route('/api/v1/users/<username>', methods=['PATCH'])
 @require_auth(require_admin=True)
 def update_user(username):
-    """Update user password or role"""
+    """Update a share user's password"""
     username = username.strip()
     if not username or not is_valid_username(username):
         return jsonify({'error': 'Invalid username'}), 400
@@ -677,17 +672,6 @@ def update_user(username):
     users_state = load_users_state()
     if username not in users_state and not system_user_exists(username):
         return jsonify({'error': 'User not found'}), 404
-
-    if 'role' in data:
-        role = str(data.get('role', 'user')).lower()
-        if role not in ('admin', 'user'):
-            role = 'user'
-        entry = users_state.get(username, {})
-        entry['username'] = username
-        entry['role'] = role
-        entry['created_at'] = entry.get('created_at') or datetime.now().isoformat()
-        users_state[username] = entry
-        save_users_state(users_state)
 
     if 'password' in data:
         password = data.get('password', '')

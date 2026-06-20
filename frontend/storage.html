@@ -73,6 +73,104 @@
                 white-space: nowrap;
             }
         }
+
+        .user-row {
+            grid-column: 1 / -1;
+            margin-bottom: 12px;
+        }
+
+        .user-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .user-row.is-busy {
+            opacity: 0.7;
+        }
+
+        .user-row-main {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .user-row-name {
+            font-weight: 600;
+            font-size: 1.05rem;
+        }
+
+        .user-row-state {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            margin-top: 2px;
+        }
+
+        .user-row-created {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            opacity: 0.7;
+        }
+
+        .user-row-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .user-delete-btn {
+            border-color: var(--accent-danger);
+            color: var(--accent-danger);
+        }
+
+        .user-modal-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border-default);
+            border-radius: 8px;
+            padding: 1.5rem;
+            max-width: 420px;
+            width: 90%;
+        }
+
+        .user-modal-title {
+            margin-bottom: 0.5rem;
+            color: var(--text-primary);
+        }
+
+        .user-modal-text {
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+        }
+
+        .user-modal-input {
+            width: 100%;
+            margin-bottom: 1.5rem;
+            background: var(--bg-body);
+            color: var(--text-primary);
+            border: 1px solid var(--border-default);
+            padding: 8px;
+            border-radius: 4px;
+        }
+
+        .user-modal-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .user-modal-actions button {
+            flex: 1;
+        }
+
+        @media (max-width: 760px) {
+            .user-row-actions {
+                width: 100%;
+            }
+
+            .user-row-actions .btn-secondary {
+                width: 100%;
+            }
+        }
     </style>
 </head>
 
@@ -93,7 +191,6 @@
             <a href="storage.html" class="nav-link active"><i data-lucide="hard-drive"></i> Storage</a>
             <a href="apps.html" class="nav-link"><i data-lucide="blocks"></i> Apps</a>
             <a href="backup.html" class="nav-link"><i data-lucide="refresh-cw"></i> Backup</a>
-            <a href="users.html" class="nav-link"><i data-lucide="users"></i> Users</a>
             <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw"></i> Updates <span class="nav-badge"
                     id="updates-nav-badge" style="display:none;">!</span></a>
             <div style="flex:1"></div>
@@ -129,6 +226,7 @@
                 <button class="tab-btn active" data-tab="disks"><i data-lucide="disc"></i> Disks</button>
                 <button class="tab-btn" data-tab="pools"><i data-lucide="database"></i> Pools</button>
                 <button class="tab-btn" data-tab="shares"><i data-lucide="network"></i> Shares</button>
+                <button class="tab-btn" data-tab="users"><i data-lucide="users"></i> Users</button>
             </div>
 
             <!-- Disks Tab -->
@@ -178,6 +276,26 @@
                 </div>
             </div>
 
+            <!-- Users Tab -->
+            <div class="tab-content" id="tab-users">
+                <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 16px;">
+                    These accounts control access to your network shares (SMB/NFS). They are separate from the
+                    AlvaOS admin login.
+                </p>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h2
+                        style="font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em;">
+                        Share Users</h2>
+                    <button id="create-user-btn" class="btn-primary" style="padding: 4px 10px; font-size: 0.85rem;"><i data-lucide="plus"></i>
+                        Create User</button>
+                </div>
+                <div id="users-container" class="dashboard-grid">
+                    <div style="padding: 2rem; text-align:center; color: var(--text-secondary); grid-column: 1/-1;">
+                        Loading users...
+                    </div>
+                </div>
+            </div>
+
             <footer
                 style="margin-top:2rem; padding-top:1rem; border-top:1px solid var(--border-subtle); color:var(--text-secondary); font-size:0.8rem;">
                 AlvaOS {{VERSION}} &bull; <a href="https://github.com/SnowTimSwiss/AlvaOS" target="_blank"
@@ -193,7 +311,9 @@
     <script src="notifications.js"></script>
     <script src="feedback.js"></script>
     <script src="app.js"></script>
+    <script src="password-toggle.js"></script>
     <script src="storage.js"></script>
+    <script src="users.js"></script>
 </body>
 
 </html>
