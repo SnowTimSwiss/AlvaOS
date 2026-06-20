@@ -222,6 +222,75 @@ function toFiniteNumber(value) {
     return Number.isFinite(parsed) ? parsed : null;
 }
 
+function formatUptime(hours) {
+    const totalHours = Math.max(0, Number(hours) || 0);
+    const days = Math.floor(totalHours / 24);
+    const remHours = Math.floor(totalHours % 24);
+    if (days > 0) return `${days} day${days === 1 ? '' : 's'}, ${remHours} hour${remHours === 1 ? '' : 's'}`;
+    if (remHours > 0) return `${remHours} hour${remHours === 1 ? '' : 's'}`;
+    return 'less than an hour';
+}
+
+function formatStorageSize(gb) {
+    const value = Number(gb) || 0;
+    if (value >= 1024) return `${(value / 1024).toFixed(2)} TB`;
+    return `${value.toFixed(2)} GB`;
+}
+
+function setPill(id, state, text) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.className = `pill ${state}`;
+    el.textContent = text;
+}
+
+function setCardAttention(id, isAttention) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.toggle('attention', !!isAttention);
+}
+
+const focusAttention = { storage: false, backup: false, alerts: false, updates: false, apps: false };
+
+function renderHero() {
+    const titleEl = document.getElementById('dashboard-hero-title');
+    if (!titleEl) return;
+
+    const subEl = document.getElementById('dashboard-hero-sub');
+    const iconWrap = document.getElementById('dashboard-hero-icon');
+    const count = Object.values(focusAttention).filter(Boolean).length;
+
+    if (count === 0) {
+        titleEl.textContent = 'Everything looks healthy';
+        if (iconWrap) {
+            iconWrap.classList.remove('attention');
+            iconWrap.innerHTML = window.alvaIcon ? window.alvaIcon('check-circle-2', '', 'aria-hidden="true"') : '';
+        }
+    } else {
+        titleEl.textContent = `${count} thing${count === 1 ? '' : 's'} want${count === 1 ? 's' : ''} your attention`;
+        if (iconWrap) {
+            iconWrap.classList.add('attention');
+            iconWrap.innerHTML = window.alvaIcon ? window.alvaIcon('triangle-alert', '', 'aria-hidden="true"') : '';
+        }
+    }
+    if (window.renderAlvaIcons && iconWrap) window.renderAlvaIcons(iconWrap);
+
+    if (subEl) {
+        const hostname = document.getElementById('hostname')?.textContent || 'AlvaOS';
+        const uptime = document.getElementById('uptime')?.textContent || '-';
+        subEl.textContent = count === 0
+            ? `${hostname} • up ${uptime} • everything is healthy`
+            : `${hostname} • up ${uptime} • everything else is healthy`;
+    }
+}
+
+function setFocusAttention(key, isAttention) {
+    focusAttention[key] = !!isAttention;
+    renderHero();
+}
+
+window.alvaosSetFocusAttention = setFocusAttention;
+
 function getLastFinite(values) {
     for (let i = values.length - 1; i >= 0; i -= 1) {
         if (Number.isFinite(values[i])) return values[i];
@@ -452,71 +521,15 @@ function updateDashboard(data) {
         && typeof pool.used_gb === 'number'
         && typeof pool.free_gb === 'number'
     );
-    let historyDiskPercent = Number(disk.percent) || 0;
 
+    let historyDiskPercent = Number(disk.percent) || 0;
     if (mountedPools.length > 0) {
         const poolTotal = mountedPools.reduce((sum, pool) => sum + pool.total_gb, 0);
         const poolUsed = mountedPools.reduce((sum, pool) => sum + pool.used_gb, 0);
-        const poolFree = mountedPools.reduce((sum, pool) => sum + pool.free_gb, 0);
-        const poolPercent = poolTotal > 0 ? (poolUsed / poolTotal) * 100 : 0;
-        historyDiskPercent = poolPercent;
-
-        setText('disk-total', `${poolTotal.toFixed(2)} GB`);
-        setText('disk-used', `${poolUsed.toFixed(2)} GB`);
-        setText('disk-free', `${poolFree.toFixed(2)} GB`);
-        setText('disk-usage-percent', `${poolPercent.toFixed(1)}%`);
-        setWidth('disk-progress', `${Math.max(0, Math.min(100, poolPercent))}%`);
-    } else {
-        const diskPercent = Number(disk.percent) || 0;
-        historyDiskPercent = diskPercent;
-        setText('disk-total', `${Number(disk.total_gb || 0).toFixed(2)} GB`);
-        setText('disk-used', `${Number(disk.used_gb || 0).toFixed(2)} GB`);
-        setText('disk-free', `${Number(disk.free_gb || 0).toFixed(2)} GB`);
-        setText('disk-usage-percent', `${diskPercent.toFixed(1)}%`);
-        setWidth('disk-progress', `${Math.max(0, Math.min(100, diskPercent))}%`);
+        historyDiskPercent = poolTotal > 0 ? (poolUsed / poolTotal) * 100 : 0;
     }
 
-    const poolStorageListEl = document.getElementById('pool-storage-list');
-    if (poolStorageListEl) {
-        if (allPools.length === 0) {
-            poolStorageListEl.innerHTML = `
-                <div style="background:var(--bg-body); padding:8px; border-radius:4px; border:1px solid var(--border-default); font-size:0.8rem; color:var(--text-secondary);">
-                    No pools configured
-                </div>
-            `;
-        } else {
-            poolStorageListEl.innerHTML = allPools.map((pool) => {
-                if (!pool.mounted || typeof pool.percent !== 'number') {
-                    return `
-                        <div style="background:var(--bg-body); padding:8px; border-radius:4px; border:1px solid var(--border-default);">
-                            <div style="display:flex; justify-content:space-between; font-size:0.8rem;">
-                                <span>${escapeHtml(pool.name)}</span>
-                                <span style="color:var(--text-secondary);">Not mounted</span>
-                            </div>
-                            <div class="mono-text" style="font-size:0.75rem; color:var(--text-secondary); margin-top:4px;">
-                                ${escapeHtml(pool.mount_point || '')}
-                            </div>
-                        </div>
-                    `;
-                }
-
-                return `
-                    <div style="background:var(--bg-body); padding:8px; border-radius:4px; border:1px solid var(--border-default);">
-                        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-                            <span style="font-size:0.8rem;">${escapeHtml(pool.name)}</span>
-                            <span class="mono-text" style="font-size:0.8rem;">${Number(pool.percent || 0).toFixed(1)}%</span>
-                        </div>
-                        <div class="progress-track" style="margin-top:8px; height:5px;">
-                            <div class="progress-bar bar-disk" style="width:${Number(pool.percent || 0)}%"></div>
-                        </div>
-                        <div class="mono-text" style="font-size:0.75rem; color:var(--text-secondary); margin-top:6px;">
-                            ${Number(pool.used_gb || 0).toFixed(2)} GB / ${Number(pool.total_gb || 0).toFixed(2)} GB
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-    }
+    renderStorageFocus(allPools, mountedPools);
 
     const network = data.network || {};
     const system = data.system || {};
@@ -524,8 +537,9 @@ function updateDashboard(data) {
     setText('hostname', network.hostname || '-');
     setText('ip-address', network.ip_address || '-');
     setText('os-version', `${system.os || '-'} ${system.os_version || ''}`.trim());
-    setText('uptime', `${Number(system.uptime_hours || 0).toFixed(1)} hours`);
+    setText('uptime', formatUptime(system.uptime_hours));
     setText('last-update', new Date().toLocaleTimeString());
+    renderHero();
 
     appendUsageSample({
         ts: Date.now(),
@@ -541,26 +555,80 @@ function updateDashboard(data) {
     }
 }
 
+function renderStorageFocus(allPools, mountedPools) {
+    const poolsEl = document.getElementById('dashboard-storage-pools');
+    const valueEl = document.getElementById('dashboard-storage-value');
+    const subEl = document.getElementById('dashboard-storage-sub');
+    if (!poolsEl && !valueEl && !subEl) return;
+
+    if (allPools.length === 0) {
+        if (valueEl) valueEl.textContent = 'No storage pools yet';
+        if (subEl) subEl.textContent = 'Create a pool to start using storage.';
+        if (poolsEl) poolsEl.innerHTML = '';
+        setPill('dashboard-storage-pill', 'warn', 'No pools');
+        setCardAttention('dashboard-storage-card', true);
+        setFocusAttention('storage', true);
+        return;
+    }
+
+    const poolTotal = mountedPools.reduce((sum, pool) => sum + pool.total_gb, 0);
+    const poolFree = mountedPools.reduce((sum, pool) => sum + pool.free_gb, 0);
+    const hasUnmounted = allPools.some((pool) => !pool.mounted);
+    const maxPercent = mountedPools.reduce((max, pool) => Math.max(max, Number(pool.percent) || 0), 0);
+
+    let state = 'ok';
+    let pillText = 'Healthy';
+    if (hasUnmounted) {
+        state = 'warn';
+        pillText = 'Pool issue';
+    } else if (maxPercent >= 90) {
+        state = 'bad';
+        pillText = 'Nearly full';
+    } else if (maxPercent >= 75) {
+        state = 'warn';
+        pillText = 'Getting full';
+    }
+
+    if (valueEl) {
+        valueEl.textContent = mountedPools.length > 0
+            ? `${formatStorageSize(poolFree)} free of ${formatStorageSize(poolTotal)}`
+            : 'No mounted pools';
+    }
+    if (subEl) {
+        subEl.textContent = `${mountedPools.length} of ${allPools.length} pool${allPools.length === 1 ? '' : 's'} online`;
+    }
+
+    if (poolsEl) {
+        poolsEl.innerHTML = allPools.map((pool) => {
+            const name = escapeHtml(pool.name || 'pool');
+            if (!pool.mounted || typeof pool.percent !== 'number') {
+                return `
+                    <div class="pool-item">
+                        <div class="pool-item-top"><span class="name">${name}</span><span class="pct">not mounted</span></div>
+                        <div class="pool-bar"><span class="warn" style="width:100%"></span></div>
+                    </div>
+                `;
+            }
+
+            const percent = Math.max(0, Math.min(100, Number(pool.percent) || 0));
+            const barState = percent >= 90 ? 'bad' : (percent >= 75 ? 'warn' : '');
+            return `
+                <div class="pool-item">
+                    <div class="pool-item-top"><span class="name">${name}</span><span class="pct">${percent.toFixed(0)}%</span></div>
+                    <div class="pool-bar"><span class="${barState}" style="width:${percent}%"></span></div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    setPill('dashboard-storage-pill', state, pillText);
+    setCardAttention('dashboard-storage-card', state !== 'ok');
+    setFocusAttention('storage', state !== 'ok');
+}
+
 function updateAlertSummary(summary) {
     const critical = Number(summary?.critical) || 0;
     const warning = Number(summary?.warning) || 0;
-
-    setText('alert-count-critical', String(critical));
-    setText('alert-count-warning', String(warning));
-
-    const statusEl = document.getElementById('health-overall-status');
-    if (statusEl) {
-        if (critical > 0) {
-            statusEl.className = 'health-status-pill critical';
-            statusEl.textContent = 'Critical';
-        } else if (warning > 0) {
-            statusEl.className = 'health-status-pill warning';
-            statusEl.textContent = 'Warning';
-        } else {
-            statusEl.className = 'health-status-pill healthy';
-            statusEl.textContent = 'Healthy';
-        }
-    }
 
     if (critical > 0) {
         setStatusDot('critical');
@@ -569,51 +637,57 @@ function updateAlertSummary(summary) {
     } else {
         setStatusDot('online');
     }
+
+    return { critical, warning };
 }
 
 function renderAlerts(payload) {
-    const listEl = document.getElementById('dashboard-alert-list');
-    if (!listEl) return;
+    const card = document.getElementById('dashboard-alerts-card');
+    if (!card) return;
 
     const alerts = Array.isArray(payload?.alerts) ? payload.alerts : [];
+    const { critical, warning } = updateAlertSummary(payload?.summary || { critical: 0, warning: 0 });
+    const scanTime = (payload?.generated_at ? new Date(payload.generated_at) : new Date()).toLocaleTimeString();
+
+    const valueEl = document.getElementById('dashboard-alerts-value');
+    const subEl = document.getElementById('dashboard-alerts-sub');
+    const footEl = document.getElementById('dashboard-alerts-foot');
+    const linkEl = document.getElementById('dashboard-alerts-link');
+
     if (alerts.length === 0) {
-        listEl.innerHTML = '<div class="alerts-empty">No active alerts. Your system looks healthy.</div>';
-        updateAlertSummary(payload?.summary || { critical: 0, warning: 0 });
-        setText('alerts-last-scan', new Date().toLocaleTimeString());
+        if (valueEl) valueEl.textContent = 'No active alerts';
+        if (subEl) subEl.textContent = `Last scan ${scanTime} • 0 critical, 0 warnings`;
+        setPill('dashboard-alerts-pill', 'ok', 'All clear');
+        if (footEl) footEl.style.display = 'none';
+        setCardAttention('dashboard-alerts-card', false);
+        setFocusAttention('alerts', false);
         return;
     }
 
-    const html = alerts.slice(0, 12).map((alert) => {
-        const severity = String(alert?.severity || 'info').toLowerCase();
-        const route = safeRoute(alert?.route);
-        const clickable = Boolean(route);
-        const tag = clickable ? 'a' : 'div';
-        const actionLabel = clickable
-            ? escapeHtml(String(alert?.action_label || 'Open'))
-            : '';
+    const top = alerts[0] || {};
+    if (valueEl) valueEl.textContent = String(top.title || 'Active alert');
+    if (subEl) {
+        subEl.textContent = `${alerts.length} alert${alerts.length === 1 ? '' : 's'} • last scan ${scanTime} • ${critical} critical, ${warning} warning`;
+    }
 
-        return `
-            <${tag} class="alert-row ${escapeHtml(severity)} ${clickable ? 'clickable' : ''}" ${clickable ? `href="${escapeHtml(route)}"` : ''}>
-                <div class="alert-severity-chip">${escapeHtml(severity)}</div>
-                <div class="alert-content">
-                    <div class="alert-title">${escapeHtml(alert?.title || 'Alert')}</div>
-                    <div class="alert-message">${escapeHtml(alert?.message || '')}</div>
-                </div>
-                ${clickable ? `<div class="alert-action">${actionLabel}</div>` : ''}
-            </${tag}>
-        `;
-    }).join('');
+    setPill('dashboard-alerts-pill', critical > 0 ? 'bad' : 'warn', `${alerts.length} alert${alerts.length === 1 ? '' : 's'}`);
+    setCardAttention('dashboard-alerts-card', true);
+    setFocusAttention('alerts', true);
 
-    listEl.innerHTML = html;
-    updateAlertSummary(payload?.summary || {});
-
-    const scanTime = payload?.generated_at ? new Date(payload.generated_at) : new Date();
-    setText('alerts-last-scan', scanTime.toLocaleTimeString());
+    const route = safeRoute(top.route);
+    if (footEl && linkEl) {
+        if (route) {
+            linkEl.setAttribute('href', route);
+            footEl.style.display = 'flex';
+        } else {
+            footEl.style.display = 'none';
+        }
+    }
 }
 
 async function fetchAlerts() {
-    const listEl = document.getElementById('dashboard-alert-list');
-    if (!listEl) return;
+    const card = document.getElementById('dashboard-alerts-card');
+    if (!card) return;
 
     try {
         const token = localStorage.getItem('alvaos_token');
@@ -642,13 +716,114 @@ async function fetchAlerts() {
         renderAlerts(data);
     } catch (error) {
         console.warn('Error fetching alerts:', error);
-        setText('alerts-last-scan', 'Failed');
     }
 }
 
 async function refreshDashboardData() {
     await runSystemFetch();
     await runAlertsFetch();
+}
+
+async function fetchDashboardJson(path) {
+    try {
+        const token = localStorage.getItem('alvaos_token');
+        const response = await fetch(`${API_BASE}${path}`, {
+            headers: { Authorization: token || '' }
+        });
+        if (!response.ok) return null;
+        return await response.json();
+    } catch (_error) {
+        return null;
+    }
+}
+
+function renderBackupFocus(statusPayload, buddyPayload) {
+    const card = document.getElementById('dashboard-backup-card');
+    if (!card) return;
+
+    const valueEl = document.getElementById('dashboard-backup-value');
+    const subEl = document.getElementById('dashboard-backup-sub');
+    const status = statusPayload?.status || {};
+    const peers = Array.isArray(buddyPayload?.peers) ? buddyPayload.peers : [];
+
+    const lastRunAt = status.pool_last_run_at;
+    const nextRunAt = status.pool_next_run_at;
+    const hasError = !!status.pool_last_error;
+
+    let state = 'ok';
+    let pillText = 'Up to date';
+    if (hasError) {
+        state = 'bad';
+        pillText = 'Backup failed';
+    } else if (!lastRunAt) {
+        state = 'warn';
+        pillText = 'Not set up';
+    }
+
+    if (valueEl) {
+        valueEl.textContent = lastRunAt
+            ? `Last backup ${new Date(lastRunAt).toLocaleString()}`
+            : 'No backup has run yet';
+    }
+    if (subEl) {
+        const nextRunText = nextRunAt ? `next run ${new Date(nextRunAt).toLocaleString()}` : 'no schedule set';
+        const peerText = peers.length > 0
+            ? `${peers.length} buddy peer${peers.length === 1 ? '' : 's'} paired`
+            : 'no buddy paired yet';
+        subEl.textContent = `${nextRunText} • ${peerText}`;
+    }
+
+    setPill('dashboard-backup-pill', state, pillText);
+    setCardAttention('dashboard-backup-card', state !== 'ok');
+    setFocusAttention('backup', state !== 'ok');
+}
+
+function renderAppsFocus(apps, containers) {
+    const card = document.getElementById('dashboard-apps-card');
+    if (!card) return;
+
+    const valueEl = document.getElementById('dashboard-apps-value');
+    const subEl = document.getElementById('dashboard-apps-sub');
+    const linkEl = document.getElementById('dashboard-apps-link');
+    const totalApps = Array.isArray(apps) ? apps.length : 0;
+
+    if (totalApps === 0) {
+        if (valueEl) valueEl.textContent = 'No apps installed yet';
+        if (subEl) subEl.textContent = 'Browse the app store to get started.';
+        if (linkEl) linkEl.textContent = 'Open app store →';
+        setPill('dashboard-apps-pill', 'ok', 'None installed');
+        setCardAttention('dashboard-apps-card', false);
+        setFocusAttention('apps', false);
+        return;
+    }
+
+    const containerList = Array.isArray(containers) ? containers : [];
+    const runningCount = containerList.filter((c) => c?.State === 'running').length;
+    const totalContainers = containerList.length;
+    const allRunning = totalContainers > 0 && runningCount === totalContainers;
+
+    if (valueEl) valueEl.textContent = `${totalApps} app${totalApps === 1 ? '' : 's'} installed`;
+    if (subEl) subEl.textContent = `${runningCount} of ${totalContainers} container${totalContainers === 1 ? '' : 's'} running`;
+    if (linkEl) linkEl.textContent = 'Manage apps →';
+
+    const state = allRunning ? 'ok' : 'warn';
+    setPill('dashboard-apps-pill', state, allRunning ? 'All running' : `${totalContainers - runningCount} stopped`);
+    setCardAttention('dashboard-apps-card', !allRunning);
+    setFocusAttention('apps', !allRunning);
+}
+
+async function loadDashboardExtras() {
+    if (!document.getElementById('dashboard-backup-card') && !document.getElementById('dashboard-apps-card')) return;
+
+    const [statusPayload, buddyPayload, appsPayload, containersPayload] = await Promise.all([
+        fetchDashboardJson('/backup/status'),
+        fetchDashboardJson('/backup/pairing/status'),
+        fetchDashboardJson('/apps/installed'),
+        fetchDashboardJson('/containers')
+    ]);
+
+    renderBackupFocus(statusPayload, buddyPayload);
+    renderAppsFocus(appsPayload?.apps, containersPayload?.containers);
 }
 
 // Show error message (using Toast or overlay for critical)
@@ -799,6 +974,7 @@ async function init() {
         loadUsageHistory();
         renderUsageHistory();
         await refreshDashboardData();
+        loadDashboardExtras();
         scheduleSystemPoll();
         scheduleAlertsPoll();
         document.addEventListener('visibilitychange', () => {

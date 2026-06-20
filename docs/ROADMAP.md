@@ -62,10 +62,14 @@ Its more of a TODO than a ROADMAP in the traditional way.
 
 ### Dashboard
 
-- [ ] Reduce dashboard overwhelm.
-- [ ] Remove or rethink the `Quick Actions` tile.
-- [ ] Make the dashboard a calm overview, not a control wall.
-- [ ] Prioritize storage health, backup state, alerts, and updates.
+- [x] Reduce dashboard overwhelm.
+- [x] Remove or rethink the `Quick Actions` tile.
+  - Removed entirely. Each priority card now links directly to its own page instead of duplicating sidebar navigation.
+- [x] Make the dashboard a calm overview, not a control wall.
+  - Replaced the CPU/RAM/Storage/Quick-Actions grid + raw alert list + history charts + system-info block with: a one-line health hero, 5 priority cards (Storage, Backup, Alerts, Updates, Apps), a compact CPU/Memory resource strip, and a collapsed "System information" panel.
+- [x] Prioritize storage health, backup state, alerts, and updates.
+  - Storage card shows a free/total summary plus one usage bar per pool (not just one combined bar). Backup, Alerts, Updates, and Apps each get their own card with a status pill (Healthy/Attention) and a one-line summary; the hero banner reports "N things want your attention" or "Everything looks healthy" based on those cards.
+  - Network throughput was left out of the resource strip since the backend doesn't currently expose it; the CPU/Temperature history chart was dropped (the old per-card data is still collected into localStorage but no longer rendered) in favor of the calmer priority-card view.
 
 ### Feedback Flow
 
