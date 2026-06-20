@@ -121,6 +121,7 @@
 
         .form-group {
             margin-bottom: 1.5rem;
+            position: relative;
         }
 
         .form-group label {
@@ -184,6 +185,48 @@
             content: '+';
         }
 
+        /* Searchable timezone combobox */
+        .timezone-dropdown {
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            right: 0;
+            max-height: 260px;
+            overflow-y: auto;
+            background: var(--bg-card);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+            z-index: 10;
+        }
+
+        .timezone-group-label {
+            padding: 0.4rem 0.75rem;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            color: var(--text-tertiary);
+        }
+
+        .timezone-option {
+            padding: 0.6rem 0.75rem;
+            font-size: 0.9rem;
+            color: var(--text-primary);
+            cursor: pointer;
+        }
+
+        .timezone-option:hover,
+        .timezone-option.highlighted {
+            background: var(--bg-hover);
+        }
+
+        .timezone-empty {
+            padding: 0.75rem;
+            font-size: 0.85rem;
+            color: var(--text-tertiary);
+        }
+
         /* Nav Buttons */
         .wizard-nav {
             display: flex;
@@ -206,7 +249,7 @@
             transition: all 0.2s;
         }
 
-        .btn:hover:not(:disabled) { 
+        .btn:hover:not(:disabled) {
             opacity: 0.9;
             transform: translateY(-1px);
         }
@@ -216,10 +259,10 @@
         }
 
         .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .btn-secondary { 
-            background: transparent; 
-            color: var(--text-secondary); 
-            border: 1px solid var(--border-default); 
+        .btn-secondary {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--border-default);
         }
         .btn-secondary:hover:not(:disabled) {
             background: var(--bg-hover);
@@ -244,8 +287,6 @@
             border-radius: var(--radius-lg);
             text-align: center;
         }
-
-        
 
         .setup-spinner {
             width: 2rem;
@@ -273,7 +314,6 @@
             <div class="step active" data-step="1">1</div>
             <div class="step" data-step="2">2</div>
             <div class="step" data-step="3">3</div>
-            <div class="step" data-step="4">4</div>
         </div>
 
         <div id="error-container"></div>
@@ -281,24 +321,14 @@
         <!-- Step 1: Welcome -->
         <div class="wizard-step active" id="wizard-step-1">
             <h2>Welcome to AlvaOS!</h2>
-            <p>Thank you for choosing AlvaOS. This wizard will guide you through the essential initial steps to get your system ready for use.</p>
-            <div class="info-card">
-                <h3 style="font-size: 1rem; margin-bottom: 0.5rem; color: var(--text-primary);">System Status:</h3>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; font-size: 0.85rem;">
-                    <div style="color: var(--text-tertiary);">Status:</div>
-                    <div style="color: var(--accent-success); font-weight: 600;">Ready for Configuration</div>
-                    <div style="color: var(--text-tertiary);">Detected IP:</div>
-                    <div id="detected-ip" style="font-family: var(--font-mono);">Loading...</div>
-                </div>
-            </div>
-            <p style="margin-top: 1.5rem; font-size: 0.9rem;">Click <strong>Continue</strong> to start the configuration.</p>
+            <p>Let's get your system secured and ready to use. This will only take a minute.</p>
         </div>
 
         <!-- Step 2: Password -->
         <div class="wizard-step" id="wizard-step-2">
             <h2>Security Configuration</h2>
             <p>Please choose a secure password for the <strong>root</strong> account. This password provides full administrative access to your system.</p>
-            
+
             <div class="form-group">
                 <label for="password">New Root Password</label>
                 <input type="password" id="password" required autocomplete="new-password" placeholder="********">
@@ -317,93 +347,17 @@
             </div>
         </div>
 
-        <!-- Step 3: Timezone -->
+        <!-- Step 3: Timezone & Finish -->
         <div class="wizard-step" id="wizard-step-3">
             <h2>Regional Settings</h2>
-            <p>Specify your preferred timezone to ensure system logs and scheduled tasks use the correct local time.</p>
-            
-            <div class="form-group">
-                <label for="timezone-select">Select Timezone</label>
-                <select id="timezone-select">
-                    <option value="UTC">UTC (Universal Coordinated Time)</option>
-                    <optgroup label="Europe">
-                        <option value="Europe/London">Europe/London (GMT/BST)</option>
-                        <option value="Europe/Lisbon">Europe/Lisbon (WET/WEST)</option>
-                        <option value="Europe/Paris">Europe/Paris (CET/CEST)</option>
-                        <option value="Europe/Berlin">Europe/Berlin (CET/CEST)</option>
-                        <option value="Europe/Rome">Europe/Rome (CET/CEST)</option>
-                        <option value="Europe/Madrid">Europe/Madrid (CET/CEST)</option>
-                        <option value="Europe/Amsterdam">Europe/Amsterdam (CET/CEST)</option>
-                        <option value="Europe/Zurich">Europe/Zurich (CET/CEST)</option>
-                        <option value="Europe/Stockholm">Europe/Stockholm (CET/CEST)</option>
-                        <option value="Europe/Warsaw">Europe/Warsaw (CET/CEST)</option>
-                        <option value="Europe/Helsinki">Europe/Helsinki (EET/EEST)</option>
-                        <option value="Europe/Athens">Europe/Athens (EET/EEST)</option>
-                        <option value="Europe/Istanbul">Europe/Istanbul (TRT)</option>
-                        <option value="Europe/Moscow">Europe/Moscow (MSK)</option>
-                    </optgroup>
-                    <optgroup label="Americas">
-                        <option value="America/New_York">America/New_York (EST/EDT)</option>
-                        <option value="America/Chicago">America/Chicago (CST/CDT)</option>
-                        <option value="America/Denver">America/Denver (MST/MDT)</option>
-                        <option value="America/Los_Angeles">America/Los_Angeles (PST/PDT)</option>
-                        <option value="America/Anchorage">America/Anchorage (AKST/AKDT)</option>
-                        <option value="America/Toronto">America/Toronto (EST/EDT)</option>
-                        <option value="America/Vancouver">America/Vancouver (PST/PDT)</option>
-                        <option value="America/Sao_Paulo">America/Sao_Paulo (BRT)</option>
-                        <option value="America/Argentina/Buenos_Aires">America/Buenos_Aires (ART)</option>
-                        <option value="America/Mexico_City">America/Mexico_City (CST/CDT)</option>
-                        <option value="America/Bogota">America/Bogota (COT)</option>
-                        <option value="Pacific/Honolulu">Pacific/Honolulu (HST)</option>
-                    </optgroup>
-                    <optgroup label="Asia & Pacific">
-                        <option value="Asia/Dubai">Asia/Dubai (GST)</option>
-                        <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
-                        <option value="Asia/Dhaka">Asia/Dhaka (BST)</option>
-                        <option value="Asia/Bangkok">Asia/Bangkok (ICT)</option>
-                        <option value="Asia/Singapore">Asia/Singapore (SGT)</option>
-                        <option value="Asia/Shanghai">Asia/Shanghai (CST)</option>
-                        <option value="Asia/Hong_Kong">Asia/Hong_Kong (HKT)</option>
-                        <option value="Asia/Taipei">Asia/Taipei (CST)</option>
-                        <option value="Asia/Seoul">Asia/Seoul (KST)</option>
-                        <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
-                        <option value="Australia/Perth">Australia/Perth (AWST)</option>
-                        <option value="Australia/Adelaide">Australia/Adelaide (ACST/ACDT)</option>
-                        <option value="Australia/Sydney">Australia/Sydney (AEST/AEDT)</option>
-                        <option value="Pacific/Auckland">Pacific/Auckland (NZST/NZDT)</option>
-                    </optgroup>
-                    <optgroup label="Africa & Middle East">
-                        <option value="Africa/Cairo">Africa/Cairo (EET)</option>
-                        <option value="Africa/Johannesburg">Africa/Johannesburg (SAST)</option>
-                        <option value="Africa/Lagos">Africa/Lagos (WAT)</option>
-                        <option value="Africa/Nairobi">Africa/Nairobi (EAT)</option>
-                        <option value="Asia/Jerusalem">Asia/Jerusalem (IST/IDT)</option>
-                        <option value="Asia/Riyadh">Asia/Riyadh (AST)</option>
-                    </optgroup>
-                </select>
-            </div>
-            <p style="font-size: 0.85rem; color: var(--text-tertiary);">Don't worry, you can easily change this later in the System Settings dashboard.</p>
-        </div>
+            <p>Specify your preferred timezone to ensure system logs and scheduled tasks use the correct local time. You can change this later in System Settings.</p>
 
-        <!-- Step 4: Finish -->
-        <div class="wizard-step" id="wizard-step-4">
-            <h2>Review & Finish</h2>
-            <p>Configuration complete! Review your settings before finishing the setup.</p>
-            
-            <div class="info-card">
-                <ul style="list-style: none; padding: 0; font-size: 0.9rem; margin: 0;">
-                    <li style="margin-bottom: 0.75rem; display: flex; justify-content: space-between;">
-                        <span style="color: var(--text-secondary);">Administrator:</span>
-                        <span style="font-weight: 600; color: var(--text-primary);">root</span>
-                    </li>
-                    <li style="display: flex; justify-content: space-between;">
-                        <span style="color: var(--text-secondary);">Timezone:</span>
-                        <span id="finish-tz" style="font-weight: 600; color: var(--text-primary);">-</span>
-                    </li>
-                </ul>
+            <div class="form-group">
+                <label for="timezone-input">Timezone</label>
+                <input type="text" id="timezone-input" autocomplete="off" placeholder="Search timezone...">
+                <input type="hidden" id="timezone-value" value="UTC">
+                <div id="timezone-dropdown" class="timezone-dropdown" style="display:none;"></div>
             </div>
-            <p style="margin-top: 1.5rem; font-size: 0.95rem; font-weight: 600; color: var(--text-primary);">Ready to launch?</p>
-            <p style="font-size: 0.9rem;">Once you click <strong>Complete Setup</strong>, AlvaOS will apply your settings and take you to your new dashboard.</p>
         </div>
 
         <div class="wizard-nav">
@@ -419,7 +373,58 @@
     <script src="password-toggle.js"></script>
         <script>
         const API_BASE = '/api/v1';
+        const TOTAL_STEPS = 3;
         let currentStep = 1;
+
+        const TIMEZONES = [
+            { region: 'UTC', value: 'UTC', label: 'UTC (Universal Coordinated Time)' },
+            { region: 'Europe', value: 'Europe/London', label: 'Europe/London (GMT/BST)' },
+            { region: 'Europe', value: 'Europe/Lisbon', label: 'Europe/Lisbon (WET/WEST)' },
+            { region: 'Europe', value: 'Europe/Paris', label: 'Europe/Paris (CET/CEST)' },
+            { region: 'Europe', value: 'Europe/Berlin', label: 'Europe/Berlin (CET/CEST)' },
+            { region: 'Europe', value: 'Europe/Rome', label: 'Europe/Rome (CET/CEST)' },
+            { region: 'Europe', value: 'Europe/Madrid', label: 'Europe/Madrid (CET/CEST)' },
+            { region: 'Europe', value: 'Europe/Amsterdam', label: 'Europe/Amsterdam (CET/CEST)' },
+            { region: 'Europe', value: 'Europe/Zurich', label: 'Europe/Zurich (CET/CEST)' },
+            { region: 'Europe', value: 'Europe/Stockholm', label: 'Europe/Stockholm (CET/CEST)' },
+            { region: 'Europe', value: 'Europe/Warsaw', label: 'Europe/Warsaw (CET/CEST)' },
+            { region: 'Europe', value: 'Europe/Helsinki', label: 'Europe/Helsinki (EET/EEST)' },
+            { region: 'Europe', value: 'Europe/Athens', label: 'Europe/Athens (EET/EEST)' },
+            { region: 'Europe', value: 'Europe/Istanbul', label: 'Europe/Istanbul (TRT)' },
+            { region: 'Europe', value: 'Europe/Moscow', label: 'Europe/Moscow (MSK)' },
+            { region: 'Americas', value: 'America/New_York', label: 'America/New_York (EST/EDT)' },
+            { region: 'Americas', value: 'America/Chicago', label: 'America/Chicago (CST/CDT)' },
+            { region: 'Americas', value: 'America/Denver', label: 'America/Denver (MST/MDT)' },
+            { region: 'Americas', value: 'America/Los_Angeles', label: 'America/Los_Angeles (PST/PDT)' },
+            { region: 'Americas', value: 'America/Anchorage', label: 'America/Anchorage (AKST/AKDT)' },
+            { region: 'Americas', value: 'America/Toronto', label: 'America/Toronto (EST/EDT)' },
+            { region: 'Americas', value: 'America/Vancouver', label: 'America/Vancouver (PST/PDT)' },
+            { region: 'Americas', value: 'America/Sao_Paulo', label: 'America/Sao_Paulo (BRT)' },
+            { region: 'Americas', value: 'America/Argentina/Buenos_Aires', label: 'America/Buenos_Aires (ART)' },
+            { region: 'Americas', value: 'America/Mexico_City', label: 'America/Mexico_City (CST/CDT)' },
+            { region: 'Americas', value: 'America/Bogota', label: 'America/Bogota (COT)' },
+            { region: 'Americas', value: 'Pacific/Honolulu', label: 'Pacific/Honolulu (HST)' },
+            { region: 'Asia & Pacific', value: 'Asia/Dubai', label: 'Asia/Dubai (GST)' },
+            { region: 'Asia & Pacific', value: 'Asia/Kolkata', label: 'Asia/Kolkata (IST)' },
+            { region: 'Asia & Pacific', value: 'Asia/Dhaka', label: 'Asia/Dhaka (BST)' },
+            { region: 'Asia & Pacific', value: 'Asia/Bangkok', label: 'Asia/Bangkok (ICT)' },
+            { region: 'Asia & Pacific', value: 'Asia/Singapore', label: 'Asia/Singapore (SGT)' },
+            { region: 'Asia & Pacific', value: 'Asia/Shanghai', label: 'Asia/Shanghai (CST)' },
+            { region: 'Asia & Pacific', value: 'Asia/Hong_Kong', label: 'Asia/Hong_Kong (HKT)' },
+            { region: 'Asia & Pacific', value: 'Asia/Taipei', label: 'Asia/Taipei (CST)' },
+            { region: 'Asia & Pacific', value: 'Asia/Seoul', label: 'Asia/Seoul (KST)' },
+            { region: 'Asia & Pacific', value: 'Asia/Tokyo', label: 'Asia/Tokyo (JST)' },
+            { region: 'Asia & Pacific', value: 'Australia/Perth', label: 'Australia/Perth (AWST)' },
+            { region: 'Asia & Pacific', value: 'Australia/Adelaide', label: 'Australia/Adelaide (ACST/ACDT)' },
+            { region: 'Asia & Pacific', value: 'Australia/Sydney', label: 'Australia/Sydney (AEST/AEDT)' },
+            { region: 'Asia & Pacific', value: 'Pacific/Auckland', label: 'Pacific/Auckland (NZST/NZDT)' },
+            { region: 'Africa & Middle East', value: 'Africa/Cairo', label: 'Africa/Cairo (EET)' },
+            { region: 'Africa & Middle East', value: 'Africa/Johannesburg', label: 'Africa/Johannesburg (SAST)' },
+            { region: 'Africa & Middle East', value: 'Africa/Lagos', label: 'Africa/Lagos (WAT)' },
+            { region: 'Africa & Middle East', value: 'Africa/Nairobi', label: 'Africa/Nairobi (EAT)' },
+            { region: 'Africa & Middle East', value: 'Asia/Jerusalem', label: 'Asia/Jerusalem (IST/IDT)' },
+            { region: 'Africa & Middle East', value: 'Asia/Riyadh', label: 'Asia/Riyadh (AST)' }
+        ];
 
         const els = {
             steps: document.querySelectorAll('.wizard-step'),
@@ -428,10 +433,10 @@
             btnNext: document.getElementById('btn-next'),
             password: document.getElementById('password'),
             confirm: document.getElementById('password-confirm'),
-            timezone: document.getElementById('timezone-select'),
-            error: document.getElementById('error-container'),
-            detectedIp: document.getElementById('detected-ip'),
-            reviewTz: document.getElementById('finish-tz')
+            tzInput: document.getElementById('timezone-input'),
+            tzValue: document.getElementById('timezone-value'),
+            tzDropdown: document.getElementById('timezone-dropdown'),
+            error: document.getElementById('error-container')
         };
 
         function showSetupError(message) {
@@ -456,18 +461,6 @@
             } catch (_e) {
                 // Continue and show setup UI even if status check fails.
             }
-
-            try {
-                const res = await fetch(`${API_BASE}/system/info`);
-                if (res.ok) {
-                    const data = await res.json();
-                    els.detectedIp.textContent = data?.network?.ip_address || 'Unavailable';
-                } else {
-                    els.detectedIp.textContent = 'Unavailable';
-                }
-            } catch (_e) {
-                els.detectedIp.textContent = 'Disconnected';
-            }
             return true;
         }
 
@@ -483,11 +476,7 @@
             });
 
             els.btnPrev.style.display = currentStep > 1 ? 'block' : 'none';
-            els.btnNext.textContent = currentStep === 4 ? 'Complete Setup' : 'Continue';
-
-            if (currentStep === 4) {
-                els.reviewTz.textContent = els.timezone.options[els.timezone.selectedIndex].text;
-            }
+            els.btnNext.textContent = currentStep === TOTAL_STEPS ? 'Complete Setup' : 'Continue';
 
             validateCurrentStep();
         }
@@ -509,7 +498,7 @@
         }
 
         els.btnNext.addEventListener('click', async () => {
-            if (currentStep < 4) {
+            if (currentStep < TOTAL_STEPS) {
                 currentStep++;
                 updateWizardUI();
             } else {
@@ -535,7 +524,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         password: els.password.value,
-                        timezone: els.timezone.value
+                        timezone: els.tzValue.value
                     })
                 });
 
@@ -568,6 +557,110 @@
         [els.password, els.confirm].forEach((input) => {
             input.addEventListener('input', validateCurrentStep);
         });
+
+        // ── Searchable timezone combobox ──────────────────────────────────
+        let tzHighlightIndex = -1;
+        let tzVisibleItems = [];
+
+        function selectTimezone(tz) {
+            els.tzValue.value = tz.value;
+            els.tzInput.value = tz.label;
+            closeTzDropdown();
+        }
+
+        function closeTzDropdown() {
+            els.tzDropdown.style.display = 'none';
+            tzHighlightIndex = -1;
+        }
+
+        function renderTzDropdown(filterText) {
+            const query = filterText.trim().toLowerCase();
+            const matches = query
+                ? TIMEZONES.filter((tz) => tz.label.toLowerCase().includes(query) || tz.value.toLowerCase().includes(query))
+                : TIMEZONES;
+
+            tzVisibleItems = matches;
+            tzHighlightIndex = -1;
+            els.tzDropdown.innerHTML = '';
+
+            if (!matches.length) {
+                const empty = document.createElement('div');
+                empty.className = 'timezone-empty';
+                empty.textContent = 'No matching timezone';
+                els.tzDropdown.appendChild(empty);
+                els.tzDropdown.style.display = 'block';
+                return;
+            }
+
+            let lastRegion = null;
+            matches.forEach((tz) => {
+                if (!query && tz.region !== lastRegion) {
+                    const groupLabel = document.createElement('div');
+                    groupLabel.className = 'timezone-group-label';
+                    groupLabel.textContent = tz.region;
+                    els.tzDropdown.appendChild(groupLabel);
+                    lastRegion = tz.region;
+                }
+
+                const option = document.createElement('div');
+                option.className = 'timezone-option';
+                option.textContent = tz.label;
+                option.addEventListener('mousedown', (event) => {
+                    event.preventDefault();
+                    selectTimezone(tz);
+                });
+                els.tzDropdown.appendChild(option);
+            });
+
+            els.tzDropdown.style.display = 'block';
+        }
+
+        function highlightTzOption(index) {
+            const options = els.tzDropdown.querySelectorAll('.timezone-option');
+            options.forEach((opt) => opt.classList.remove('highlighted'));
+            if (index >= 0 && options[index]) {
+                options[index].classList.add('highlighted');
+                options[index].scrollIntoView({ block: 'nearest' });
+            }
+        }
+
+        els.tzInput.addEventListener('focus', () => renderTzDropdown(els.tzInput.value === defaultTzLabel() ? '' : els.tzInput.value));
+        els.tzInput.addEventListener('input', () => renderTzDropdown(els.tzInput.value));
+
+        els.tzInput.addEventListener('keydown', (event) => {
+            if (els.tzDropdown.style.display === 'none') return;
+            if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                tzHighlightIndex = Math.min(tzHighlightIndex + 1, tzVisibleItems.length - 1);
+                highlightTzOption(tzHighlightIndex);
+            } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                tzHighlightIndex = Math.max(tzHighlightIndex - 1, 0);
+                highlightTzOption(tzHighlightIndex);
+            } else if (event.key === 'Enter') {
+                event.preventDefault();
+                if (tzHighlightIndex >= 0 && tzVisibleItems[tzHighlightIndex]) {
+                    selectTimezone(tzVisibleItems[tzHighlightIndex]);
+                } else if (tzVisibleItems.length === 1) {
+                    selectTimezone(tzVisibleItems[0]);
+                }
+            } else if (event.key === 'Escape') {
+                closeTzDropdown();
+            }
+        });
+
+        document.addEventListener('click', (event) => {
+            if (!els.tzDropdown.contains(event.target) && event.target !== els.tzInput) {
+                closeTzDropdown();
+            }
+        });
+
+        function defaultTzLabel() {
+            return TIMEZONES[0].label;
+        }
+
+        // Default to UTC until the user picks something else.
+        els.tzInput.value = defaultTzLabel();
 
         init().then((shouldRender) => {
             if (shouldRender) updateWizardUI();

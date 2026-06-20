@@ -25,14 +25,14 @@ Its more of a TODO than a ROADMAP in the traditional way.
 
 ### First-Time Web Setup
 
-- [ ] Simplify `setup.html`.
-  - Remove low-value status noise such as detected IP and "ready for configuration".
-  - Keep password configuration and password requirements.
-  - Keep time settings.
-  - Remove or heavily simplify the review and finish page if it adds no real decision.
-- [ ] Decide which setup options are actually needed on first boot.
-  - Remove unnecessary config fields.
-  - Add only settings that are needed before the main UI is usable.
+- [x] Simplify `setup.html`.
+  - Removed the detected-IP / "Ready for Configuration" status noise from the Welcome step (no decision there, just decoration).
+  - Kept password configuration and the live password requirements checklist as-is.
+  - Kept timezone settings, and made the picker searchable (type-to-filter combobox) instead of a long flat `<select>`.
+  - Removed the separate Review & Finish step entirely; the timezone step's "Complete Setup" button finishes setup directly, since review added no real decision (it just re-displayed the password's existence and the just-picked timezone).
+- [x] Decide which setup options are actually needed on first boot.
+  - Kept to exactly what the backend (`/api/v1/setup/complete`) actually uses: root password and timezone. Everything else (network, storage pools, share users, 2FA, apps) stays out of first-time setup and lives in the main UI after login.
+  - Considered also folding storage pool creation into setup, but decided against it: it's a destructive, RAID-dependent decision that's safer to make after authenticating, inside the main UI, where a failure doesn't block getting into AlvaOS at all.
 
 ### Authentication and API Reliability
 
@@ -159,3 +159,9 @@ UI and UI by apps is not good. confusing too many options for beginners.
 - [ ] Create a **First‑Time Setup Wizard** consolidating the initial web UI configuration (admin credentials, network, storage) into a guided flow.
 - [ ] Provide a **App Installation Wizard** for custom Docker‑Compose apps, including form validation and dependency checks.
 - [ ] Add a **System Settings Wizard** to help users configure alerts, security, time, network, and power options in a linear, user‑friendly manner.
+
+## Notifications
+- sollte man anklicken können (nicht alle aber die bei denen es hilft)
+- so wie bei truenas ein symbol wo alle letzten fast wie ein log gespeichert sind
+- design verbessern
+- verschiedene stufen: die die automatisch weggehen und solche die man dismiss muss befor sie einem in ruhe lassen.
