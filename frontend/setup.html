@@ -624,8 +624,24 @@
             }
         }
 
-        els.tzInput.addEventListener('focus', () => renderTzDropdown(els.tzInput.value === defaultTzLabel() ? '' : els.tzInput.value));
+        els.tzInput.addEventListener('focus', () => {
+            // The field shows the default ("UTC") label until the user picks something
+            // else. Clear it on focus so the first keystroke replaces it directly,
+            // instead of requiring the user to delete "UTC" themselves first.
+            if (els.tzInput.value === defaultTzLabel()) {
+                els.tzInput.value = '';
+            }
+            renderTzDropdown(els.tzInput.value);
+        });
         els.tzInput.addEventListener('input', () => renderTzDropdown(els.tzInput.value));
+        els.tzInput.addEventListener('blur', () => {
+            // If the user left the field empty without picking anything, restore the
+            // default label for display; the hidden value already still holds the
+            // fallback (UTC) timezone that will be submitted.
+            if (els.tzInput.value.trim() === '') {
+                els.tzInput.value = defaultTzLabel();
+            }
+        });
 
         els.tzInput.addEventListener('keydown', (event) => {
             if (els.tzDropdown.style.display === 'none') return;

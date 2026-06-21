@@ -69,6 +69,7 @@ CMD = {
 DEFAULT_SETTINGS = {
     "auto_check": True,
     "auto_apply": False,
+    "auto_apply_debian": False,
     "channel": "stable"
 }
 
@@ -161,7 +162,7 @@ class UpdateManager:
 
     def get_settings(self):
         settings = self.load_json(self.settings_file, DEFAULT_SETTINGS.copy())
-        if "auto_check" not in settings or "auto_apply" not in settings or "channel" not in settings:
+        if any(key not in settings for key in DEFAULT_SETTINGS):
             merged = DEFAULT_SETTINGS.copy()
             merged.update(settings or {})
             settings = merged
@@ -175,6 +176,7 @@ class UpdateManager:
             merged["channel"] = "stable"
         merged["auto_check"] = bool(merged.get("auto_check", True))
         merged["auto_apply"] = bool(merged.get("auto_apply", False))
+        merged["auto_apply_debian"] = bool(merged.get("auto_apply_debian", False))
         self.save_json(self.settings_file, merged)
         return merged
 

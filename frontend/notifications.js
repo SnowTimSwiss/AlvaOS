@@ -20,20 +20,39 @@ function getToastIconName(type) {
     return 'info';
 }
 
-window.showToast = function (message, type = 'info') {
+function severityBucket(severity) {
+    const s = String(severity || 'info').toLowerCase();
+    if (s === 'critical' || s === 'error') return 'danger';
+    if (s === 'warning') return 'warning';
+    if (s === 'success') return 'success';
+    return 'info';
+}
+
+function severityIconName(severity) {
+    const bucket = severityBucket(severity);
+    if (bucket === 'danger') return 'circle-x';
+    if (bucket === 'warning') return 'triangle-alert';
+    if (bucket === 'success') return 'circle-check-big';
+    return 'info';
+}
+
+window.showToast = function (message, type = 'info', options = {}) {
+    if (typeof options !== 'object' || options === null) options = {};
     const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
+    const sticky = options.sticky === true || type === 'warning' || type === 'error';
+    const link = options.link || null;
+    toast.className = `toast ${type}${sticky ? ' sticky' : ''}`;
 
     const iconHtml = window.alvaIcon
         ? window.alvaIcon(getToastIconName(type), 'toast-type-icon', 'aria-hidden="true"')
         : '';
 
     toast.innerHTML = `
-        <div style="display:flex; align-items:center; gap:12px;">
-            <span style="display:inline-flex; font-size:1.1rem;">${iconHtml}</span>
-            <span>${message}</span>
+        <div class="toast-body"${link ? ' style="cursor:pointer;"' : ''}>
+            <span class="toast-type-icon-wrap">${iconHtml}</span>
+            <span class="toast-message">${message}</span>
         </div>
-        <button class="toast-close" onclick="this.parentElement.remove()" aria-label="Close notification">
+        <button class="toast-close" aria-label="Close notification">
             ${window.alvaIcon ? window.alvaIcon('x', '', 'aria-hidden="true"') : 'x'}
         </button>
     `;
@@ -41,10 +60,36 @@ window.showToast = function (message, type = 'info') {
     toastContainer.appendChild(toast);
     if (window.renderAlvaIcons) window.renderAlvaIcons(toast);
 
-    setTimeout(() => {
+    const closeToast = () => {
         toast.style.animation = 'fadeOut 0.3s ease-out forwards';
         setTimeout(() => toast.remove(), 300);
-    }, 5000);
+    };
+
+    toast.querySelector('.toast-close').addEventListener('click', (event) => {
+        event.stopPropagation();
+        closeToast();
+    });
+
+    if (link) {
+        toast.querySelector('.toast-body').addEventListener('click', () => {
+            window.location.href = link;
+        });
+    }
+
+    if (!sticky) {
+        setTimeout(closeToast, 5000);
+    }
+
+    if (window.notificationCenter && options.record !== false) {
+        window.notificationCenter.pushLocal({
+            severity: type,
+            title: options.title || (String(type).charAt(0).toUpperCase() + String(type).slice(1)),
+            message: typeof message === 'string' ? message.replace(/<[^>]+>/g, '') : String(message),
+            link,
+        });
+    }
+
+    return toast;
 };
 
 window.attachModalDismiss = function (overlay, closeFn) {
@@ -463,3 +508,284 @@ function triggerUpdateCheck() {
 
 window.triggerUpdateCheck = triggerUpdateCheck;
 triggerUpdateCheck();
+
+// ── Notification Center (bell icon, feed, A1-A3) ───────────────────────────────
+
+const NOTIF_LOCAL_KEY = 'alvaos_local_notifications';
+const NOTIF_LOCAL_MAX = 50;
+const NOTIF_POLL_MS = 60 * 1000;
+
+function getAuthToken() {
+    return localStorage.getItem('alvaos_token');
+}
+
+function loadLocalNotifications() {
+    try {
+        const raw = localStorage.getItem(NOTIF_LOCAL_KEY);
+        const list = raw ? JSON.parse(raw) : [];
+        return Array.isArray(list) ? list : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function saveLocalNotifications(list) {
+    try {
+        localStorage.setItem(NOTIF_LOCAL_KEY, JSON.stringify(list.slice(0, NOTIF_LOCAL_MAX)));
+    } catch (e) { /* storage unavailable */ }
+}
+
+function pushLocalNotification({ severity, title, message, link } = {}) {
+    const list = loadLocalNotifications();
+    list.unshift({
+        id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        ts: new Date().toISOString(),
+        severity: severity || 'info',
+        title: title || '',
+        message: message || '',
+        source: 'ui',
+        read: false,
+        dismissed: false,
+        dismissible: true,
+        link: link || null,
+        local: true,
+    });
+    saveLocalNotifications(list);
+    renderNotificationCenter();
+}
+
+function markLocalRead(id) {
+    const list = loadLocalNotifications();
+    const entry = list.find((n) => n.id === id);
+    if (entry) {
+        entry.read = true;
+        saveLocalNotifications(list);
+    }
+}
+
+function markLocalDismissed(id) {
+    const list = loadLocalNotifications();
+    const entry = list.find((n) => n.id === id);
+    if (entry) {
+        entry.read = true;
+        entry.dismissed = true;
+        saveLocalNotifications(list);
+    }
+}
+
+function markAllLocalRead() {
+    const list = loadLocalNotifications();
+    list.forEach((n) => { n.read = true; });
+    saveLocalNotifications(list);
+}
+
+let serverNotifications = [];
+let notifPanelEl = null;
+let notifBadgeEl = null;
+
+function timeAgo(iso) {
+    const then = new Date(iso).getTime();
+    if (Number.isNaN(then)) return '';
+    const diffSec = Math.max(0, Math.floor((Date.now() - then) / 1000));
+    if (diffSec < 60) return 'just now';
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHour = Math.floor(diffMin / 60);
+    if (diffHour < 24) return `${diffHour}h ago`;
+    const diffDay = Math.floor(diffHour / 24);
+    return `${diffDay}d ago`;
+}
+
+function mergedNotificationFeed() {
+    const local = loadLocalNotifications().filter((n) => !n.dismissed);
+    const server = serverNotifications.filter((n) => !n.dismissed);
+    return [...local, ...server].sort((a, b) => new Date(b.ts) - new Date(a.ts));
+}
+
+function notifUnreadCount() {
+    return mergedNotificationFeed().filter((n) => !n.read).length;
+}
+
+function notifMarkRead(id, isLocal) {
+    if (isLocal) {
+        markLocalRead(id);
+        renderNotificationCenter();
+        return;
+    }
+    const token = getAuthToken();
+    if (token) {
+        fetch(`/api/v1/notifications/${encodeURIComponent(id)}/read`, {
+            method: 'POST',
+            headers: { Authorization: token }
+        }).catch(() => { });
+    }
+    const entry = serverNotifications.find((n) => n.id === id);
+    if (entry) entry.read = true;
+    renderNotificationCenter();
+}
+
+function notifDismiss(id, isLocal) {
+    if (isLocal) {
+        markLocalDismissed(id);
+        renderNotificationCenter();
+        return;
+    }
+    const token = getAuthToken();
+    if (token) {
+        fetch(`/api/v1/notifications/${encodeURIComponent(id)}/dismiss`, {
+            method: 'POST',
+            headers: { Authorization: token }
+        }).catch(() => { });
+    }
+    serverNotifications = serverNotifications.filter((n) => n.id !== id);
+    renderNotificationCenter();
+}
+
+function notifMarkAllRead() {
+    markAllLocalRead();
+    const token = getAuthToken();
+    if (token) {
+        fetch('/api/v1/notifications/read-all', {
+            method: 'POST',
+            headers: { Authorization: token }
+        }).catch(() => { });
+    }
+    serverNotifications.forEach((n) => { n.read = true; });
+    renderNotificationCenter();
+}
+
+function fetchServerNotifications() {
+    const token = getAuthToken();
+    if (!token) return;
+    fetch('/api/v1/notifications', { headers: { Authorization: token } })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+            if (!data) return;
+            serverNotifications = Array.isArray(data.notifications) ? data.notifications : [];
+            renderNotificationCenter();
+        })
+        .catch(() => { });
+}
+
+function renderNotificationCenter() {
+    if (!notifBadgeEl || !notifPanelEl) return;
+    const count = notifUnreadCount();
+    notifBadgeEl.textContent = count > 99 ? '99+' : String(count);
+    notifBadgeEl.style.display = count > 0 ? 'inline-flex' : 'none';
+
+    const listEl = notifPanelEl.querySelector('#notif-panel-list');
+    if (!listEl) return;
+
+    const list = mergedNotificationFeed().slice(0, 50);
+    if (list.length === 0) {
+        listEl.innerHTML = `<div class="notif-empty">No notifications yet.</div>`;
+        return;
+    }
+
+    listEl.innerHTML = list.map((n) => {
+        const bucket = severityBucket(n.severity);
+        const isLocal = !!n.local;
+        const link = n.link || '';
+        return `
+        <div class="notif-item severity-${bucket}${n.read ? '' : ' unread'}${link ? ' clickable' : ''}" data-id="${escapeHtml(n.id)}" data-local="${isLocal ? '1' : '0'}" data-link="${escapeHtml(link)}">
+            <span class="notif-item-icon">${window.alvaIcon ? window.alvaIcon(severityIconName(n.severity), '', 'aria-hidden="true"') : ''}</span>
+            <div class="notif-item-body">
+                <div class="notif-item-title">${escapeHtml(n.title)}</div>
+                <div class="notif-item-message">${escapeHtml(n.message)}</div>
+                <div class="notif-item-time">${timeAgo(n.ts)}</div>
+            </div>
+            ${n.dismissible !== false ? `<button type="button" class="notif-item-dismiss" aria-label="Dismiss" data-dismiss="${escapeHtml(n.id)}" data-local="${isLocal ? '1' : '0'}">${window.alvaIcon ? window.alvaIcon('x', '', 'aria-hidden="true"') : '&times;'}</button>` : ''}
+        </div>`;
+    }).join('');
+
+    if (window.renderAlvaIcons) window.renderAlvaIcons(listEl);
+
+    listEl.querySelectorAll('.notif-item-dismiss').forEach((btn) => {
+        btn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            notifDismiss(btn.dataset.dismiss, btn.dataset.local === '1');
+        });
+    });
+
+    listEl.querySelectorAll('.notif-item.clickable').forEach((item) => {
+        item.addEventListener('click', () => {
+            notifMarkRead(item.dataset.id, item.dataset.local === '1');
+            const link = item.dataset.link;
+            if (link) window.location.href = link;
+        });
+    });
+
+    listEl.querySelectorAll('.notif-item:not(.clickable)').forEach((item) => {
+        item.addEventListener('click', () => {
+            notifMarkRead(item.dataset.id, item.dataset.local === '1');
+        });
+    });
+}
+
+function injectNotificationCenter() {
+    const path = window.location.pathname;
+    if (path.includes('login.html') || path.includes('setup.html')) return;
+    if (!getAuthToken()) return;
+    const statusBadge = document.querySelector('.topbar .status-badge');
+    if (!statusBadge || !statusBadge.parentNode || document.getElementById('notif-bell')) return;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'notif-bell-wrap';
+    wrap.innerHTML = `
+        <button type="button" id="notif-bell" class="notif-bell-btn" aria-label="Notifications">
+            ${window.alvaIcon ? window.alvaIcon('bell', 'notif-bell-icon', 'aria-hidden="true"') : ''}
+            <span id="notif-bell-badge" class="notif-bell-badge" style="display:none;">0</span>
+        </button>
+        <div id="notif-panel" class="notif-panel" style="display:none;">
+            <div class="notif-panel-header">
+                <span>Notifications</span>
+                <button type="button" id="notif-mark-all" class="notif-mark-all">Mark all read</button>
+            </div>
+            <div id="notif-panel-list" class="notif-panel-list"></div>
+        </div>
+    `;
+    statusBadge.parentNode.insertBefore(wrap, statusBadge);
+
+    const notifBellEl = wrap.querySelector('#notif-bell');
+    notifPanelEl = wrap.querySelector('#notif-panel');
+    notifBadgeEl = wrap.querySelector('#notif-bell-badge');
+
+    notifBellEl.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const isOpen = notifPanelEl.style.display !== 'none';
+        notifPanelEl.style.display = isOpen ? 'none' : 'block';
+        if (!isOpen) renderNotificationCenter();
+    });
+    document.addEventListener('click', (event) => {
+        if (notifPanelEl && notifPanelEl.style.display !== 'none' && !wrap.contains(event.target)) {
+            notifPanelEl.style.display = 'none';
+        }
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && notifPanelEl) notifPanelEl.style.display = 'none';
+    });
+    wrap.querySelector('#notif-mark-all').addEventListener('click', (event) => {
+        event.stopPropagation();
+        notifMarkAllRead();
+    });
+
+    if (window.renderAlvaIcons) window.renderAlvaIcons(wrap);
+    renderNotificationCenter();
+}
+
+window.notificationCenter = {
+    refresh: fetchServerNotifications,
+    pushLocal: pushLocalNotification,
+};
+
+function initNotificationCenter() {
+    injectNotificationCenter();
+    fetchServerNotifications();
+    setInterval(fetchServerNotifications, NOTIF_POLL_MS);
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initNotificationCenter);
+} else {
+    initNotificationCenter();
+}

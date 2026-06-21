@@ -127,6 +127,46 @@ def _existing_probe_path(path):
     return probe if probe else '/'
 
 
+def _base_disk_name_from_partition(path_or_name):
+    """Strip a partition suffix from a device path/name, e.g. '/dev/nvme0n1p2' -> 'nvme0n1',
+    '/dev/sda2' -> 'sda'."""
+    name = os.path.basename(str(path_or_name or '').strip())
+    if not name:
+        return ''
+    match = re.match(r'^(nvme\d+n\d+)p\d+$', name)
+    if match:
+        return match.group(1)
+    match = re.match(r'^(mmcblk\d+)p\d+$', name)
+    if match:
+        return match.group(1)
+    match = re.match(r'^([a-zA-Z]+)\d+$', name)
+    if match:
+        return match.group(1)
+    return name
+
+
+def get_system_disk_names():
+    """Return the set of base disk names (e.g. {'sda', 'sdb'}) backing the system btrfs
+    pool. Covers multi-device system installs (RAID1/mirror) where /proc/mounts only
+    exposes the single device the kernel mounted root from, so checks based purely on
+    the active root device miss the other mirror leg."""
+    names = set()
+    try:
+        pools, root_btrfs_uuid = detect_btrfs_pools()
+        if not root_btrfs_uuid:
+            return names
+        for pool in pools:
+            if not pool.get('is_system_pool'):
+                continue
+            for device_path in pool.get('devices', []):
+                base = _base_disk_name_from_partition(device_path)
+                if base:
+                    names.add(base)
+    except Exception as e:
+        print(f"Error resolving system disk names: {e}")
+    return names
+
+
 def is_path_on_system_disk(path):
     """Return True when a path resolves to the same filesystem device as root (/)."""
     if platform.system() != 'Linux':

@@ -60,6 +60,7 @@ from storage_manager import (
     load_pools_state, save_pools_state,
     detect_btrfs_pools, mount_existing_pools,
     sanitize_pool_name, _collect_smart_report,
+    get_system_disk_names,
 )
 from shares_manager import (
     is_valid_username, system_user_exists, sync_samba_password,
@@ -77,6 +78,8 @@ from alerts_manager import (
     _is_pairing_active, _clear_pairing_state, _clear_telegram_chat_binding,
     _alert_settings_public_payload,
     _telegram_api_call, _generate_pairing_code,
+    push_notification, mark_notification_read, mark_notification_dismissed,
+    mark_all_notifications_read, get_notifications_feed,
 )
 from update_manager import UpdateManager
 from docker_manager import DockerManager
@@ -864,6 +867,33 @@ def get_alerts():
         'generated_at': _now_iso(),
     })
 
+@app.route('/api/v1/notifications', methods=['GET'])
+@require_auth
+def api_get_notifications():
+    return jsonify(get_notifications_feed())
+
+@app.route('/api/v1/notifications/<notification_id>/read', methods=['POST'])
+@require_auth
+def api_mark_notification_read(notification_id):
+    found = mark_notification_read(notification_id)
+    if not found:
+        return jsonify({'error': 'Notification not found'}), 404
+    return jsonify({'success': True})
+
+@app.route('/api/v1/notifications/<notification_id>/dismiss', methods=['POST'])
+@require_auth
+def api_dismiss_notification(notification_id):
+    found = mark_notification_dismissed(notification_id)
+    if not found:
+        return jsonify({'error': 'Notification not found'}), 404
+    return jsonify({'success': True})
+
+@app.route('/api/v1/notifications/read-all', methods=['POST'])
+@require_auth
+def api_mark_all_notifications_read():
+    count = mark_all_notifications_read()
+    return jsonify({'success': True, 'count': count})
+
 @app.route('/api/v1/alerts/settings', methods=['GET', 'POST'])
 @require_auth(require_admin=True)
 def alerts_settings():
@@ -1623,6 +1653,7 @@ def save_update_settings():
     settings = {
         "auto_check": bool(data.get("auto_check", True)),
         "auto_apply": bool(data.get("auto_apply", False)),
+        "auto_apply_debian": bool(data.get("auto_apply_debian", False)),
         "channel": data.get("channel", "stable")
     }
     saved = update_manager.save_settings(settings)
@@ -1649,7 +1680,8 @@ def get_disks():
             
             if result.returncode == 0:
                 lsblk_data = json.loads(result.stdout)
-                
+                system_disk_names = get_system_disk_names()
+
                 # Filter for disk devices (not partitions or loops)
                 for device in lsblk_data.get('blockdevices', []):
                     if device.get('type') == 'disk':
@@ -1669,6 +1701,12 @@ def get_disks():
                         if not is_system_disk and platform.system() == 'Linux':
                             if is_secure_system_device(device['name']):
                                 is_system_disk = True
+
+                        # Strategy 3: Other legs of a multi-device system pool (RAID/mirror
+                        # installs) — /proc/mounts only exposes the device the kernel mounted
+                        # root from, not its mirror siblings.
+                        if not is_system_disk and device['name'] in system_disk_names:
+                            is_system_disk = True
                         
                         # Get SMART data
                         smart_status = 'unknown'
@@ -1846,10 +1884,10 @@ def wipe_disk(disk_name):
     if not disk_name.isalnum() and not all(c in '._-' for c in disk_name if not c.isalnum()):
         return jsonify({'error': 'Invalid disk name'}), 400
     
-    # SYSTEM DISK PROTECTION
-    if is_secure_system_device(disk_name):
+    # SYSTEM DISK PROTECTION (covers both legs of a RAID/mirror system install)
+    if is_secure_system_device(disk_name) or disk_name in get_system_disk_names():
         return jsonify({'error': 'Operation denied: Cannot wipe the system disk.'}), 403
-        
+
     try:
         if platform.system() == 'Linux':
             disk_path = f'/dev/{disk_name}'
@@ -1963,7 +2001,14 @@ def manage_pools():
 
                     if pool['devices']:
                         try:
-                            usage_res, _ = run_sudo_command([CMD['BTRFS'], 'filesystem', 'usage', pool['devices'][0]], timeout=5)
+                            # Prefer the mount point when known: it is guaranteed to reflect the
+                            # live, mounted filesystem, whereas a raw device path can point at a
+                            # btrfs member that btrfs-progs refuses to introspect directly (e.g.
+                            # right after a device add/remove, or for the non-primary leg of a
+                            # mirror), which previously caused multi-device system pools to be
+                            # misreported as raid_level "single".
+                            usage_target = mount_point if mount_point else pool['devices'][0]
+                            usage_res, _ = run_sudo_command([CMD['BTRFS'], 'filesystem', 'usage', usage_target], timeout=5)
                             if usage_res and usage_res.returncode == 0:
                                 u_out = usage_res.stdout
                                 if 'RAID1C3' in u_out: pool['raid_level'] = 'RAID1C3'
@@ -2139,10 +2184,11 @@ def manage_pools():
             return jsonify({'error': 'RAID10 requires at least 4 devices'}), 400
         
         # SYSTEM DISK PROTECTION
+        system_disk_names = get_system_disk_names()
         for dev_path in devices:
             # dev_path is like /dev/sda
             dev_name = os.path.basename(dev_path)
-            if is_secure_system_device(dev_name):
+            if is_secure_system_device(dev_name) or dev_name in system_disk_names:
                 return jsonify({'error': f'Operation denied: Device {dev_name} is the system disk.'}), 403
         
         try:
@@ -2518,50 +2564,97 @@ def expand_pool(pool_id):
     """Add new devices to an existing pool"""
     data = request.get_json()
     devices = data.get('devices', [])
-    
+    target_raid_level = str(data.get('raid_level') or '').strip().lower()
+
     if not devices:
         return jsonify({'error': 'No devices provided'}), 400
-    
+
     # SYSTEM DISK PROTECTION
+    system_disk_names = get_system_disk_names()
     for dev_path in devices:
         dev_name = os.path.basename(dev_path)
-        if is_secure_system_device(dev_name):
+        if is_secure_system_device(dev_name) or dev_name in system_disk_names:
             return jsonify({'error': f'Operation denied: Device {dev_name} is the system disk.'}), 403
-        
+
     pools_state = load_pools_state()
-    if pool_id not in pools_state:
+    pool_info = pools_state.get(pool_id)
+    is_system_pool_entry = False
+
+    # The system/root pool is created by the installer, not through this app's "create pool"
+    # flow, so it normally has no entry in pools.json. To allow replacing a failed mirror leg
+    # on a redundant (raid1) system install, fall back to the live btrfs detection when the
+    # pool_id matches the currently-mounted root pool.
+    if pool_info is None:
+        live_pools, root_btrfs_uuid = detect_btrfs_pools()
+        if root_btrfs_uuid and pool_id.lower() == root_btrfs_uuid.lower():
+            live_pool = next((p for p in live_pools if p.get('is_system_pool')), None)
+            if live_pool:
+                if str(live_pool.get('raid_level', 'single')).strip().lower() == 'single':
+                    return jsonify({'error': 'Operation denied: the system pool is not redundant (raid1), so it cannot be expanded. Reinstall to set up a mirrored system disk.'}), 403
+                pool_info = {
+                    'name': live_pool.get('name') or 'system',
+                    'devices': list(live_pool.get('devices', [])),
+                    'raid_level': str(live_pool.get('raid_level', 'single')).strip().lower(),
+                    'mount_point': '/',
+                }
+                is_system_pool_entry = True
+
+    if pool_info is None:
         return jsonify({'error': 'Pool not found'}), 404
-        
-    pool_info = pools_state[pool_id]
+
     mount_point = pool_info.get('mount_point')
-    
+
     try:
         if platform.system() == 'Linux':
             if not mount_point:
                 return jsonify({'error': 'Pool not mounted'}), 400
-                
+
+            # Drop bookkeeping for any device that already went missing (e.g. a previously
+            # failed/removed disk in a degraded pool) so the pool can leave "degraded" state
+            # once the replacement below is balanced in.
+            run_sudo_command([CMD['BTRFS'], 'device', 'remove', 'missing', mount_point], timeout=30)
+
             # Add devices to pool
             # cmd: sudo btrfs device add /dev/sdX /mnt/alvaos/poolname
             cmd = [CMD['BTRFS'], 'device', 'add'] + devices + [mount_point]
             res, err = run_sudo_command(cmd, timeout=60)
-            
+
             if err:
                 return jsonify({'error': f'Failed to add devices: {err}'}), 500
-                
-            # Start a balance in background to redistribute data
-            subprocess.Popen(
-                build_privileged_cmd([CMD['BTRFS'], 'balance', 'start', mount_point]),
-                env={'LC_ALL': 'C'}
-            )
-            
+
+            # Decide the data/metadata profile to balance into. An explicit raid_level wins;
+            # otherwise default newly-redundant pools (now >=2 devices) to raid1 so a plain
+            # "add a disk" expand on a single-profile pool actually becomes redundant instead
+            # of silently staying single with two devices.
+            balance_level = target_raid_level
+            if not balance_level:
+                current_devices = len(pool_info.get('devices', [])) + len(devices)
+                current_raid = str(pool_info.get('raid_level', 'single')).strip().lower()
+                if current_devices >= 2 and current_raid == 'single':
+                    balance_level = 'raid1'
+
+            if balance_level:
+                balance_cmd = [
+                    CMD['BTRFS'], 'balance', 'start',
+                    f'-dconvert={balance_level}', f'-mconvert={balance_level}',
+                    mount_point
+                ]
+                pool_info['raid_level'] = balance_level
+            else:
+                balance_cmd = [CMD['BTRFS'], 'balance', 'start', mount_point]
+
+            # Start the balance in the background to redistribute/convert data without
+            # blocking the request.
+            subprocess.Popen(build_privileged_cmd(balance_cmd), env={'LC_ALL': 'C'})
+
             # Update state
             pool_info['devices'].extend(devices)
             pools_state[pool_id] = pool_info
             save_pools_state(pools_state)
             invalidate_storage_cache('pools', 'disks')
-            
+
             return jsonify({
-                'success': True, 
+                'success': True,
                 'message': f'Added {len(devices)} device(s) to pool "{pool_info["name"]}"'
             })
         else:

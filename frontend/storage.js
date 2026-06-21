@@ -347,24 +347,36 @@ function displayPools(pools) {
             poolCard.style.borderLeft = '3px solid var(--accent-warning)';
         }
 
+        const raidLevel = String(pool.raid_level || 'single').toLowerCase();
+        const isRedundantRaid = ['raid1', 'raid1c3', 'raid1c4', 'raid10', 'raid5', 'raid6'].includes(raidLevel);
         const isDegraded = pool.status === 'degraded';
         const statusColor = !isManaged && !isSystemPool
             ? 'var(--accent-warning)'
+            : isDegraded
+            ? 'var(--accent-danger)'
             : isSystemPool
             ? 'var(--accent-warning)'
-            : (isDegraded ? 'var(--accent-danger)' : 'var(--accent-success)');
+            : 'var(--accent-success)';
         const statusText = !isManaged && !isSystemPool
             ? 'DETECTED (NOT IMPORTED)'
-            : (isSystemPool ? 'SYSTEM POOL' : (isDegraded ? 'DEGRADED' : 'Active'));
+            : isDegraded
+            ? (isSystemPool ? 'SYSTEM POOL - DEGRADED' : 'DEGRADED')
+            : (isSystemPool ? 'SYSTEM POOL' : 'Active');
         const actionsHtml = isSystemPool
             ? `
                 <div style="display: flex; gap: 8px; margin-top: auto; flex-wrap: wrap;">
                     <button class="btn-secondary" disabled style="flex: 1; min-width: 100px; font-size: 0.85rem; opacity: 0.6; cursor: not-allowed;">Subvolumes</button>
-                    <button class="btn-secondary" disabled style="flex: 1; min-width: 100px; font-size: 0.85rem; opacity: 0.6; cursor: not-allowed;">Expand</button>
+                    ${isRedundantRaid
+                        ? `<button onclick="showExpandPoolDialog('${pool.id}', '${pool.name}')" class="btn-secondary"
+                        style="flex: 1; min-width: 100px; font-size: 0.85rem; border-color: ${isDegraded ? 'var(--accent-danger)' : 'var(--accent-success)'}; color: ${isDegraded ? 'var(--accent-danger)' : 'var(--accent-success)'}; ${isDegraded ? 'background: rgba(248, 81, 73, 0.1); font-weight: 700;' : ''}">
+                        ${isDegraded ? 'Replace Mirror Disk' : 'Expand'}
+                    </button>`
+                        : `<button class="btn-secondary" disabled style="flex: 1; min-width: 100px; font-size: 0.85rem; opacity: 0.6; cursor: not-allowed;">Expand</button>`
+                    }
                     <button class="btn-secondary" disabled style="flex: 1; min-width: 100px; font-size: 0.85rem; opacity: 0.6; cursor: not-allowed;">Delete</button>
                 </div>
                 <div style="margin-top: 12px; font-size: 0.75rem; color: var(--accent-warning); display: flex; align-items: center; gap: 4px;">
-                    <span>!</span> System Pool - Restricted Actions
+                    <span>!</span> ${isRedundantRaid ? 'System Pool - mirrored. You may replace a failed mirror disk.' : 'System Pool - Restricted Actions'}
                 </div>
             `
             : (!isManaged
@@ -408,12 +420,12 @@ function displayPools(pools) {
             <div class="card-header">
                 <div class="card-title">${pool.name}</div>
                 <div style="font-size: 0.8rem; font-weight: 600; color: ${statusColor}; display: flex; align-items: center; gap: 4px;">
-                    <div class="status-dot ${isDegraded && !isSystemPool ? 'danger pulse-danger' : ''}" style="background: ${statusColor};"></div>
+                    <div class="status-dot ${isDegraded ? 'danger pulse-danger' : ''}" style="background: ${statusColor};"></div>
                     ${statusText}
                 </div>
             </div>
-            
-            ${isDegraded && !isSystemPool ? `
+
+            ${isDegraded ? (isRedundantRaid ? `
                 <div class="degraded-banner">
                     <span style="font-size: 1.5rem;">${window.alvaIcon ? window.alvaIcon('triangle-alert', '', 'aria-hidden="true"') : '!'}</span>
                     <div>
@@ -422,7 +434,16 @@ function displayPools(pools) {
                         <br><strong>Action required:</strong> Please add a replacement disk immediately.
                     </div>
                 </div>
-            ` : ''}
+            ` : `
+                <div class="degraded-banner">
+                    <span style="font-size: 1.5rem;">${window.alvaIcon ? window.alvaIcon('triangle-alert', '', 'aria-hidden="true"') : '!'}</span>
+                    <div>
+                        <strong style="display: block; margin-bottom: 2px;">DISK MISSING - NOT REDUNDANT</strong>
+                        This pool uses "${pool.raid_level}", which has no redundancy. A disk has failed or disappeared, and any data stored only on it is likely already lost.
+                        <br><strong>Action required:</strong> Adding a disk will not repair missing data. Restore affected files from a backup, then recreate this pool.
+                    </div>
+                </div>
+            `) : ''}
             
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
                 <div>
@@ -623,8 +644,6 @@ async function viewDiskDetails(diskName) {
     const panel = document.createElement('div');
     panel.className = 'modal-content';
     panel.style.maxWidth = '800px';
-    panel.style.maxHeight = '90vh';
-    panel.style.overflowY = 'auto';
 
     panel.innerHTML = `<h2 style="color: var(--text-secondary); text-align: center;">Loading SMART data for ${diskName}...</h2>`;
     modal.appendChild(panel);
@@ -642,16 +661,18 @@ async function viewDiskDetails(diskName) {
         // Handle case where SMART is not supported but returned 200 (common for USB)
         if (data.error) {
             panel.innerHTML = `
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-shrink: 0;">
                     <h2 style="margin: 0; color: var(--text-primary);">Disk Health: /dev/${diskName}</h2>
                     <button id="close-modal-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">${window.alvaIcon ? window.alvaIcon('x', '', 'aria-hidden="true"') : 'x'}</button>
                 </div>
+                <div style="overflow-y: auto; min-height: 0; flex: 1 1 auto;">
                 <div style="padding: 2rem; text-align: center; background: var(--bg-primary); border-radius: 8px; border-left: 4px solid var(--accent-warning);">
                     <div style="font-size: 3rem; margin-bottom: 1rem;">${window.alvaIcon ? window.alvaIcon('info', '', 'aria-hidden="true"') : 'i'}</div>
                     <h3 style="margin-bottom: 0.5rem;">SMART Monitoring Unavailable</h3>
                     <p style="color: var(--text-secondary);">${data.error}</p>
                 </div>
-                <button id="close-btn" style="width: 100%; margin-top: 2rem; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--bg-border); padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600;">Close</button>
+                </div>
+                <button id="close-btn" style="width: 100%; margin-top: 2rem; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--bg-border); padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600; flex-shrink: 0;">Close</button>
              `;
             const close = () => modal.remove();
             panel.querySelector('#close-modal-btn').onclick = close;
@@ -673,10 +694,12 @@ async function viewDiskDetails(diskName) {
         const attributes = data.ata_smart_attributes?.table || [];
 
         panel.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-shrink: 0;">
                 <h2 style="margin: 0; color: var(--text-primary);">Disk Health: /dev/${diskName}</h2>
                 <button id="close-modal-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">${window.alvaIcon ? window.alvaIcon('x', '', 'aria-hidden="true"') : 'x'}</button>
             </div>
+
+            <div style="overflow-y: auto; min-height: 0; flex: 1 1 auto;">
 
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
                 <div style="background: var(--bg-primary); padding: 1rem; border-radius: 6px; text-align: center; border-bottom: 3px solid ${color};">
@@ -723,7 +746,9 @@ async function viewDiskDetails(diskName) {
                 </div>
             `}
 
-            <button id="close-btn" style="width: 100%; margin-top: 2rem; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--bg-border); padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600;">
+            </div>
+
+            <button id="close-btn" style="width: 100%; margin-top: 2rem; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--bg-border); padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600; flex-shrink: 0;">
                 Close
             </button>
         `;
@@ -770,14 +795,14 @@ async function showCreatePoolDialog() {
     const wizard = document.createElement('div');
     wizard.className = 'modal-content';
     wizard.style.maxWidth = '600px';
-    wizard.style.maxHeight = '80vh';
-    wizard.style.overflowY = 'auto';
 
     wizard.innerHTML = `
         <div class="modal-title">
             <span>Create Storage Pool</span>
             <button type="button" class="modal-close-x" id="close-pool-wizard-x" aria-label="Close">&times;</button>
         </div>
+
+        <div style="overflow-y: auto; min-height: 0; flex: 1 1 auto;">
 
         <div style="margin-bottom: 1.5rem;">
             <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Pool Name</label>
@@ -814,8 +839,10 @@ async function showCreatePoolDialog() {
             </p>
         </div>
 
-        <div style="display: flex; gap: 0.75rem; margin-top: 2rem;">
-            <button id="cancel-pool-btn" 
+        </div>
+
+        <div style="display: flex; gap: 0.75rem; margin-top: 2rem; flex-shrink: 0;">
+            <button id="cancel-pool-btn"
                 style="flex: 1; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--bg-border); padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600;">
                 Cancel
             </button>
@@ -1178,21 +1205,24 @@ async function manageSubvolumes(poolId) {
         padding: 2rem;
         max-width: 600px;
         width: 90%;
-        max-height: 80vh;
-        overflow-y: auto;
+        max-height: min(80vh, 640px);
+        display: flex;
+        flex-direction: column;
     `;
 
     panel.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-shrink: 0;">
             <h2 style="margin: 0; color: var(--text-primary);">Manage Subvolumes</h2>
             <button id="close-subvol-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">${window.alvaIcon ? window.alvaIcon('x', '', 'aria-hidden="true"') : 'x'}</button>
         </div>
 
+        <div style="overflow-y: auto; min-height: 0; flex: 1 1 auto;">
+
         <div style="margin-bottom: 1.5rem;">
             <div style="display: flex; gap: 0.5rem;">
-                <input type="text" id="new-subvol-name" placeholder="Subvolume name" 
+                <input type="text" id="new-subvol-name" placeholder="Subvolume name"
                     style="flex: 1; padding: 0.75rem;">
-                <button id="create-subvol-btn" 
+                <button id="create-subvol-btn"
                     style="background: var(--accent-primary); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; cursor: pointer; font-weight: 600;">
                     Create
                 </button>
@@ -1208,13 +1238,15 @@ async function manageSubvolumes(poolId) {
                             <div style="font-weight: 600;">${sv.name}</div>
                             <div style="font-size: 0.875rem; color: var(--text-secondary); font-family: var(--font-mono);">${sv.path}</div>
                         </div>
-                        <button onclick="deleteSubvolume('${poolId}', '${sv.name}')" 
+                        <button onclick="deleteSubvolume('${poolId}', '${sv.name}')"
                             style="background: var(--accent-danger); color: white; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; font-size: 0.875rem;">
                             Delete
                         </button>
                     </div>
                 `).join('')
         }
+        </div>
+
         </div>
     `;
 
@@ -1361,13 +1393,16 @@ async function showCreateShareDialog() {
         padding: 2rem;
         max-width: 600px;
         width: 90%;
-        max-height: 80vh;
-        overflow-y: auto;
+        max-height: min(80vh, 640px);
+        display: flex;
+        flex-direction: column;
     `;
 
     wizard.innerHTML = `
-        <h2 style="margin: 0 0 1.5rem 0; color: var(--text-primary);">Create Network Share</h2>
-        
+        <h2 style="margin: 0 0 1.5rem 0; color: var(--text-primary); flex-shrink: 0;">Create Network Share</h2>
+
+        <div style="overflow-y: auto; min-height: 0; flex: 1 1 auto;">
+
         <div style="margin-bottom: 1.5rem;">
             <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Share Name</label>
             <input type="text" id="share-name-input" placeholder="e.g., documents" 
@@ -1440,12 +1475,14 @@ async function showCreateShareDialog() {
             </div>
         </div>
 
-        <div style="display: flex; gap: 0.75rem; margin-top: 2rem;">
-            <button id="cancel-share-btn" 
+        </div>
+
+        <div style="display: flex; gap: 0.75rem; margin-top: 2rem; flex-shrink: 0;">
+            <button id="cancel-share-btn"
                 style="flex: 1; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--bg-border); padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600;">
                 Cancel
             </button>
-            <button id="create-share-confirm-btn" 
+            <button id="create-share-confirm-btn"
                 style="flex: 1; background: var(--accent-primary); color: white; border: none; padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600;">
                 Create Share
             </button>
@@ -1630,7 +1667,7 @@ async function showSmbPermissions(shareId) {
     panel.style.cssText = `
         background: var(--bg-surface); border: 1px solid var(--bg-border);
         border-radius: 8px; padding: 2rem; max-width: 700px; width: 90%;
-        max-height: 80vh; overflow-y: auto;
+        max-height: min(80vh, 640px); display: flex; flex-direction: column;
     `;
 
     const permissions = share.smb_permissions || {};
@@ -1654,15 +1691,17 @@ async function showSmbPermissions(shareId) {
     }
 
     panel.innerHTML = `
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1rem;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1rem; flex-shrink: 0;">
             <h2 style="margin: 0;">SMB Permissions: ${share.name}</h2>
             <button id="close-perm-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">${window.alvaIcon ? window.alvaIcon('x', '', 'aria-hidden="true"') : 'x'}</button>
         </div>
+        <div style="overflow-y: auto; min-height: 0; flex: 1 1 auto;">
         <div style="margin-bottom: 1rem; color: var(--text-secondary); font-size: 0.9rem;">
             Set per-user access for this SMB share.
         </div>
         <div>${rowsHtml}</div>
-        <div style="display:flex; gap:10px; margin-top: 1.5rem;">
+        </div>
+        <div style="display:flex; gap:10px; margin-top: 1.5rem; flex-shrink: 0;">
             <button id="cancel-perm-btn" class="btn-secondary" style="flex:1;">Cancel</button>
             <button id="save-perm-btn" class="btn-primary" style="flex:1;">Save</button>
         </div>
@@ -1801,15 +1840,18 @@ async function showConnectionInfo(shareId) {
         padding: 2rem;
         max-width: 700px;
         width: 90%;
-        max-height: 80vh;
-        overflow-y: auto;
+        max-height: min(80vh, 640px);
+        display: flex;
+        flex-direction: column;
     `;
 
     panel.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-shrink: 0;">
             <h2 style="margin: 0; color: var(--text-primary);">Connection Info: ${share.name}</h2>
             <button id="close-info-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">${window.alvaIcon ? window.alvaIcon('x', '', 'aria-hidden="true"') : 'x'}</button>
         </div>
+
+        <div style="overflow-y: auto; min-height: 0; flex: 1 1 auto;">
 
         <div style="background: var(--bg-primary); border: 1px solid var(--bg-border); border-radius: 6px; padding: 1.5rem;">
             ${instructionsHtml}
@@ -1823,8 +1865,10 @@ async function showConnectionInfo(shareId) {
             ${share.protocol === 'smb' && share.guest_access ? 'Guest Access: Enabled<br>' : ''}
         </div>
 
-        <button id="close-btn" 
-            style="width: 100%; margin-top: 1.5rem; background: var(--accent-primary); color: white; border: none; padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600;">
+        </div>
+
+        <button id="close-btn"
+            style="width: 100%; margin-top: 1.5rem; background: var(--accent-primary); color: white; border: none; padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600; flex-shrink: 0;">
             Close
         </button>
     `;

@@ -17,6 +17,7 @@ let selectedAppId = null;
 const appDetailsCache = {};
 const appUpdateStatusCache = {};
 const appUpdateStatusPending = new Set();
+const appTogglePending = new Set();
 let activeLogsContainerId = null;
 let activeLogsRequestId = 0;
 let activeTerminalContainerId = null;
@@ -475,12 +476,26 @@ function renderInstalledList() {
         const statusText = containersLoaded
             ? `${running}/${total} containers running`
             : (containersLoading ? 'Loading containers...' : 'Container status unavailable');
+        const isRunning = running > 0;
+        const canToggle = containersLoaded && total > 0;
+        const toggling = appTogglePending.has(app.app_id);
 
         return `
-            <button class="app-list-item ${selectedAppId === app.app_id ? 'active' : ''}" onclick="selectInstalledApp('${escapeHtml(app.app_id)}')">
-                <div style="font-weight: 600;">${escapeHtml(app.name || app.app_id)}</div>
-                <div class="app-count">${statusText}</div>
-            </button>
+            <div class="app-list-item ${selectedAppId === app.app_id ? 'active' : ''}" role="button" tabindex="0"
+                onclick="selectInstalledApp('${escapeHtml(app.app_id)}')"
+                onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectInstalledApp('${escapeHtml(app.app_id)}'); }">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                    <div style="font-weight: 600;">${escapeHtml(app.name || app.app_id)}</div>
+                    ${containersLoaded ? `<span class="container-status ${isRunning ? 'running' : 'stopped'}" style="flex-shrink:0;">${isRunning ? 'Running' : 'Stopped'}</span>` : ''}
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:4px;">
+                    <div class="app-count">${statusText}</div>
+                    ${canToggle ? `
+                        <button class="btn-icon" ${toggling ? 'disabled style="opacity:0.6; cursor:not-allowed;"' : ''}
+                            onclick="event.stopPropagation(); toggleAppRunning('${escapeHtml(app.app_id)}')">${toggling ? '...' : (isRunning ? 'Stop' : 'Start')}</button>
+                    ` : ''}
+                </div>
+            </div>
         `;
     }).join('');
 }
@@ -533,7 +548,13 @@ async function renderInspector() {
                     <div style="font-size:1.2rem; font-weight:600;">${escapeHtml(selected.name || selected.app_id)}</div>
                     <div class="inspector-value" style="color: var(--text-secondary);">${escapeHtml(selected.app_id)}</div>
                 </div>
-                <span class="container-status ${runningCount > 0 ? 'running' : 'stopped'}">${runningCount > 0 ? 'Running' : 'Stopped'}</span>
+                <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+                    <span class="container-status ${runningCount > 0 ? 'running' : 'stopped'}">${runningCount > 0 ? 'Running' : 'Stopped'}</span>
+                    ${appContainers.length > 0 ? `
+                        <button class="btn-icon ${runningCount > 0 ? 'btn-danger' : ''}" ${appTogglePending.has(selected.app_id) ? 'disabled style="opacity:0.6; cursor:not-allowed;"' : ''}
+                            onclick="toggleAppRunning('${escapeHtml(selected.app_id)}')">${appTogglePending.has(selected.app_id) ? '...' : (runningCount > 0 ? 'Stop' : 'Start')}</button>
+                    ` : ''}
+                </div>
             </div>
 
             <div class="inspector-actions">
@@ -602,8 +623,12 @@ function renderContainerTable(containers) {
                     const name = container.Names || (container.ID || '').substring(0, 12);
                     const image = container.Image || 'unknown';
                     const portBadges = formatPortBadges(container.Ports);
-                    // Security: Use JSON.stringify to safely embed IDs in onclick handlers
-                    const idJson = JSON.stringify(container.ID || '');
+                    // Security: Use JSON.stringify to safely embed IDs as a JS string literal,
+                    // then HTML-escape the result so its double quotes don't terminate the
+                    // (also double-quoted) onclick="..." attribute they sit inside - without
+                    // this, the browser truncated the handler at the literal's opening quote
+                    // and every container action button below silently did nothing.
+                    const idJson = escapeHtml(JSON.stringify(container.ID || ''));
 
                     return `
                         <tr>
@@ -1231,6 +1256,46 @@ async function updateApp(appId) {
     } catch (error) {
         console.error('Update error:', error);
         showNotification(`Update failed: ${error.message}`, 'error');
+    }
+}
+
+async function toggleAppRunning(appId) {
+    if (appTogglePending.has(appId)) return;
+    const appContainers = getContainersForApp(appId);
+    if (appContainers.length === 0) return;
+
+    const anyRunning = appContainers.some((c) => c.State === 'running');
+    const action = anyRunning ? 'stop' : 'start';
+    const targets = anyRunning
+        ? appContainers.filter((c) => c.State === 'running')
+        : appContainers.filter((c) => c.State !== 'running');
+
+    appTogglePending.add(appId);
+    renderInstalledList();
+    if (selectedAppId === appId) await renderInspector();
+
+    try {
+        const results = await Promise.allSettled(targets.map((c) =>
+            apiFetch(`${API_BASE}/containers/${c.ID}/${action}`, {
+                method: 'POST',
+                headers: { 'Authorization': authToken }
+            }).then((res) => {
+                if (!res.ok) throw new Error(`Failed to ${action} ${c.Names || c.ID}`);
+            })
+        ));
+
+        const failedCount = results.filter((r) => r.status === 'rejected').length;
+        if (failedCount > 0) {
+            showNotification(`Failed to ${action} ${failedCount} container(s)`, 'error');
+        } else {
+            showNotification(`App ${action === 'stop' ? 'stopped' : 'started'}`, 'success');
+        }
+    } catch (error) {
+        console.error('Toggle app running error:', error);
+        showNotification(`Failed to ${action} app: ${error.message}`, 'error');
+    } finally {
+        appTogglePending.delete(appId);
+        await loadInstalledWorkspace(true);
     }
 }
 
