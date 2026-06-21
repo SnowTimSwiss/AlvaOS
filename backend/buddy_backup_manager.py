@@ -26,6 +26,11 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import requests
 
+# Marker source path for a full-system (root subvolume) buddy transfer. A stream whose
+# source_path is "/" is restored as a full system rollback (set-default + reboot) rather
+# than a data subvolume replace.
+SYSTEM_SOURCE_PATH = "/"
+
 DEFAULT_BUDDY_SETTINGS = {
     "enabled": False,
     "incoming_path": "",
@@ -2294,7 +2299,12 @@ class BuddyBackupManager:
                 last_error = str(exc)
         return False, {"error": last_error}
 
-    def sync_to_peer(self, node_id: str, sources: Optional[List[str]] = None) -> Tuple[bool, Dict]:
+    def sync_to_peer(
+        self,
+        node_id: str,
+        sources: Optional[List[str]] = None,
+        include_system: bool = False,
+    ) -> Tuple[bool, Dict]:
         target = str(node_id or "").strip()
         if not target:
             return False, {"error": "node_id is required"}
@@ -2319,6 +2329,12 @@ class BuddyBackupManager:
             else:
                 selected_sources = [str(path or "").strip() for path in settings.get("outgoing_sources", []) if str(path or "").strip().startswith("/")]
 
+            # Full-system transfer is an explicit, manual choice only. Scheduled/policy
+            # sources stay data-only (system paths are stripped when saved), so a full
+            # root copy is never sent automatically without the user asking for it.
+            if include_system:
+                selected_sources = [SYSTEM_SOURCE_PATH] + selected_sources
+
             deduped = []
             seen = set()
             for path in selected_sources:
@@ -2330,6 +2346,9 @@ class BuddyBackupManager:
 
             if not selected_sources:
                 return False, {"error": "No outgoing sources configured for this peer"}
+
+            if SYSTEM_SOURCE_PATH in selected_sources and not self._path_is_btrfs_subvolume(SYSTEM_SOURCE_PATH):
+                return False, {"error": "Full system transfer requires a Btrfs root subvolume"}
 
             identity = self._identity_public()
             local_node_id = str(identity.get("node_id") or "")

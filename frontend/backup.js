@@ -225,36 +225,23 @@ function renderDataSnapshots(items) {
     }
 
     container.innerHTML = `
-        <div class="table-scroll">
-        <table class="snapshots-table">
-            <thead>
-                <tr>
-                    <th>Created</th>
-                    <th>Source</th>
-                    <th>Name</th>
-                    <th>Action</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${snapshots.map((entry) => `
-                    <tr>
-                        <td class="mono-text">${backupEscapeHtml(backupFormatDate(entry.created_at))}</td>
-                        <td><div class="source-path" title="${backupEscapeHtml(entry.source_path)}">${backupEscapeHtml(entry.source_path || '-')}</div></td>
-                        <td>${backupEscapeHtml(entry.snapshot_name || '-')}</td>
-                        <td>
-                            <div class="table-actions">
-                                <button class="btn-secondary backup-restore-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}" data-source-path="${backupEscapeHtml(entry.source_path || '')}">
-                                    Restore
-                                </button>
-                                <button class="btn-secondary backup-delete-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}">
-                                    Delete
-                                </button>
-                            </div>
-                        </td>
-                    </tr>
-                `).join('')}
-            </tbody>
-        </table>
+        <div class="snap-list">
+            ${snapshots.map((entry) => `
+                <div class="snap-row">
+                    <div class="snap-info">
+                        <div class="snap-when">${backupEscapeHtml(backupFormatDate(entry.created_at))}</div>
+                        <div class="snap-meta" title="${backupEscapeHtml(entry.source_path)}">${backupEscapeHtml(entry.source_path || '-')} &bull; ${backupEscapeHtml(entry.snapshot_name || '-')}</div>
+                    </div>
+                    <div class="snap-actions">
+                        <button class="btn-secondary backup-restore-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}" data-source-path="${backupEscapeHtml(entry.source_path || '')}">
+                            Restore
+                        </button>
+                        <button class="btn-secondary backup-delete-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}">
+                            Delete
+                        </button>
+                    </div>
+                </div>
+            `).join('')}
         </div>
     `;
 }
@@ -269,38 +256,55 @@ function renderSystemSnapshots(items) {
     }
 
     container.innerHTML = `
-        <div class="table-scroll">
-        <table class="snapshots-table">
-            <thead>
-                <tr>
-                    <th>Created</th>
-                    <th>Name</th>
-                    <th>Path</th>
-                    <th>Action</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${snapshots.map((entry) => `
-                    <tr>
-                        <td class="mono-text">${backupEscapeHtml(backupFormatDate(entry.created_at))}</td>
-                        <td>${backupEscapeHtml(entry.snapshot_name || '-')}</td>
-                        <td><div class="source-path">${backupEscapeHtml(entry.snapshot_path || '-')}</div></td>
-                        <td>
-                            <div class="table-actions">
-                                <button class="btn-secondary backup-system-rollback-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}">
-                                    Prepare Rollback
-                                </button>
-                                <button class="btn-secondary backup-system-delete-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}">
-                                    Delete
-                                </button>
-                            </div>
-                        </td>
-                    </tr>
-                `).join('')}
-            </tbody>
-        </table>
+        <div class="snap-list">
+            ${snapshots.map((entry) => `
+                <div class="snap-row">
+                    <div class="snap-info">
+                        <div class="snap-when">${backupEscapeHtml(backupFormatDate(entry.created_at))}</div>
+                        <div class="snap-meta" title="${backupEscapeHtml(entry.snapshot_path)}">${backupEscapeHtml(entry.snapshot_name || '-')}</div>
+                    </div>
+                    <div class="snap-actions">
+                        <button class="btn-secondary backup-system-rollback-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}">
+                            Prepare rollback
+                        </button>
+                        <button class="btn-secondary backup-system-delete-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}">
+                            Delete
+                        </button>
+                    </div>
+                </div>
+            `).join('')}
         </div>
     `;
+}
+
+// Map a backup run status into a calm pill (Healthy / Attention / Ready) and tint the
+// status icon to match. Used by the status-first cards on each tab.
+function setStatusPill(pillId, icId, status, error) {
+    const pill = document.getElementById(pillId);
+    const ic = document.getElementById(icId);
+    const value = String(status || '').toLowerCase();
+    let cls = 'ok';
+    let label = 'Healthy';
+    if (error || value === 'error') {
+        cls = 'bad';
+        label = 'Attention';
+    } else if (value === 'partial') {
+        cls = 'warn';
+        label = 'Attention';
+    } else if (value === 'success') {
+        cls = 'ok';
+        label = 'Healthy';
+    } else {
+        cls = 'ok';
+        label = 'Ready';
+    }
+    if (pill) {
+        pill.className = `pill ${cls}`;
+        pill.textContent = label;
+    }
+    if (ic) {
+        ic.classList.toggle('warn', cls !== 'ok');
+    }
 }
 
 function updateStatusUi() {
@@ -308,6 +312,7 @@ function updateStatusUi() {
     document.getElementById('pool-last-run').textContent = backupFormatDate(backupStatus.pool_last_run_at);
     document.getElementById('pool-next-run').textContent = backupFormatDate(backupStatus.pool_next_run_at);
     document.getElementById('pool-last-status').textContent = backupStatus.pool_last_status || 'idle';
+    setStatusPill('pool-status-pill', 'pool-status-ic', backupStatus.pool_last_status, backupStatus.pool_last_error);
 
     const poolError = document.getElementById('pool-last-error');
     if (backupStatus.pool_last_error) {
@@ -321,6 +326,7 @@ function updateStatusUi() {
     document.getElementById('system-last-run').textContent = backupFormatDate(backupStatus.system_last_run_at);
     document.getElementById('system-next-run').textContent = backupFormatDate(backupStatus.system_next_run_at);
     document.getElementById('system-last-status').textContent = backupStatus.system_last_status || 'idle';
+    setStatusPill('system-status-pill', 'system-status-ic', backupStatus.system_last_status, backupStatus.system_last_error);
 
     const sysError = document.getElementById('system-last-error');
     if (backupStatus.system_last_error) {
@@ -546,10 +552,15 @@ function renderBuddyRemoteSnapshotsList() {
         container.innerHTML = '<div class="metric-sub">No remote backups available for this buddy.</div>';
         return;
     }
-    container.innerHTML = buddyRemoteSnapshots.map((item) => `
+    container.innerHTML = buddyRemoteSnapshots.map((item) => {
+        const isFullSystem = String(item.source_path || '').trim() === '/';
+        const title = isFullSystem
+            ? `Full system <span class="snap-badge">Reboot required</span>`
+            : backupEscapeHtml(item.source_path || '-');
+        return `
         <div class="buddy-remote-item">
             <div class="buddy-remote-meta">
-                <div><strong>${backupEscapeHtml(item.source_path || '-')}</strong></div>
+                <div><strong>${title}</strong></div>
                 <div class="metric-sub">Snapshot: ${backupEscapeHtml(item.snapshot_name || '-')}</div>
                 <div class="metric-sub">Created: ${backupEscapeHtml(backupFormatDate(item.created_at))}</div>
                 <div class="metric-sub">Encrypted: ${item.encrypted ? 'Yes' : 'No'} | Size: ${backupEscapeHtml(String(item.size_bytes || 0))} bytes</div>
@@ -571,7 +582,8 @@ function renderBuddyRemoteSnapshotsList() {
                 </button>
             </div>
         </div>
-    `).join('');
+    `;
+    }).join('');
 }
 
 function renderBuddyStatus() {
@@ -603,6 +615,31 @@ function renderBuddyStatus() {
     if (keyEl) keyEl.textContent = identity.public_key || '-';
     if (ipEl) ipEl.textContent = identity.tunnel_ip || '-';
     if (portEl) portEl.textContent = String(identity.listen_port || '-');
+
+    // Calm status pill for the Buddy tab header.
+    const buddyPill = document.getElementById('buddy-status-pill');
+    const buddyIc = document.getElementById('buddy-status-ic');
+    const tunnelUp = String(tunnel.state || '').toLowerCase() === 'up';
+    let buddyCls = 'ok';
+    let buddyLabel = 'Connected';
+    if (!buddyState.supported) {
+        buddyCls = 'warn';
+        buddyLabel = 'Setup only';
+    } else if (!peers.length) {
+        buddyCls = 'warn';
+        buddyLabel = 'Not paired';
+    } else if (tunnelUp) {
+        buddyCls = 'ok';
+        buddyLabel = `Connected (${peers.length})`;
+    } else {
+        buddyCls = 'warn';
+        buddyLabel = 'Attention';
+    }
+    if (buddyPill) {
+        buddyPill.className = `pill ${buddyCls}`;
+        buddyPill.textContent = buddyLabel;
+    }
+    if (buddyIc) buddyIc.classList.toggle('warn', buddyCls !== 'ok');
 
     if (tunnelEl && identity.key_error && !buddyState.supported) {
         tunnelEl.title = identity.key_error;
@@ -645,8 +682,9 @@ function renderBuddyStatus() {
                         <div class="metric-sub mono-text">${backupEscapeHtml(peer.node_id || '-')}</div>
                     </div>
                     <div class="buddy-peer-actions">
-                        <button class="btn-primary buddy-backup-now-peer-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Backup Now</button>
-                        <button class="btn-secondary buddy-test-peer-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Test Connection</button>
+                        <button class="btn-primary buddy-backup-now-peer-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Send pools now</button>
+                        <button class="btn-secondary buddy-send-system-peer-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Send full system</button>
+                        <button class="btn-secondary buddy-test-peer-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Test connection</button>
                         <button class="btn-secondary buddy-remove-peer-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Remove</button>
                     </div>
                 </div>
@@ -1228,7 +1266,22 @@ async function testBuddyPeerConnection(nodeId) {
     await loadBuddyStatus();
 }
 
-async function syncBuddyNow(preferredNodeId = '', preferredSources = null) {
+async function sendFullSystemToBuddy(nodeId) {
+    const target = String(nodeId || '').trim();
+    if (!target) {
+        backupNotify('Select a buddy first', 'warning');
+        return;
+    }
+    const ok = await window.showConfirm(
+        'Send a full system copy to this buddy?\n\n'
+        + 'This sends an encrypted snapshot of the whole system (root), which can be large. '
+        + 'It lets you later restore the entire system from this buddy (a reboot is required for that restore).'
+    );
+    if (!ok) return;
+    await syncBuddyNow(target, null, { system: true });
+}
+
+async function syncBuddyNow(preferredNodeId = '', preferredSources = null, options = {}) {
     const requestedNodeId = String(preferredNodeId || '').trim();
     const nodeId = requestedNodeId || getBuddyTransferPeerId();
     if (!nodeId) {
@@ -1236,12 +1289,14 @@ async function syncBuddyNow(preferredNodeId = '', preferredSources = null) {
         return;
     }
     if (requestedNodeId) selectedBuddyRestorePeerId = requestedNodeId;
+    const fullSystem = !!options.system;
     const sourceList = Array.isArray(preferredSources)
         ? preferredSources.map((p) => String(p || '').trim()).filter((p) => p.startsWith('/'))
         : null;
     const payload = { node_id: nodeId };
     if (sourceList && sourceList.length) payload.sources = sourceList;
-    backupNotify('Starting buddy backup...', 'info');
+    if (fullSystem) payload.system = true;
+    backupNotify(fullSystem ? 'Starting full system backup to buddy...' : 'Starting buddy backup...', 'info');
     const response = await backupApi('/backup/buddy/sync', {
         method: 'POST',
         json: payload
@@ -1293,7 +1348,11 @@ async function restoreBuddyRemoteSnapshot(streamId, sourcePath, encrypted) {
         backupNotify('Select a buddy and snapshot first', 'warning');
         return;
     }
-    const ok = await window.showConfirm('Restore this remote snapshot to the local source path? Current local data will be moved to a pre-restore backup path.');
+    const isFullSystem = String(sourcePath || '').trim() === '/';
+    const confirmMessage = isFullSystem
+        ? 'Restore the FULL SYSTEM from this buddy?\n\nThis prepares a rollback of the entire system to the buddy\'s copy and requires a reboot to take effect. The current system is kept until you reboot.'
+        : 'Restore this remote snapshot to the local source path? Current local data will be moved to a pre-restore backup path.';
+    const ok = await window.showConfirm(confirmMessage);
     if (!ok) return;
 
     let passphrase = '';
@@ -1494,6 +1553,12 @@ function initBackupHandlers() {
             const nodeId = String(backupBtn.dataset.nodeId || '').trim();
             const selectedNow = selectedBuddyPeerSources(nodeId);
             syncBuddyNow(nodeId, selectedNow);
+            return;
+        }
+        const sendSystemBtn = event.target.closest('.buddy-send-system-peer-btn');
+        if (sendSystemBtn) {
+            const nodeId = String(sendSystemBtn.dataset.nodeId || '').trim();
+            sendFullSystemToBuddy(nodeId);
             return;
         }
         const testBtn = event.target.closest('.buddy-test-peer-btn');
