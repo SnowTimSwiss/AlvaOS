@@ -558,9 +558,11 @@ async function loadSettings() {
     if (!res.ok || !data) return;
     const auto = document.getElementById('settings-auto-check');
     const autoApply = document.getElementById('settings-auto-apply');
+    const autoApplyDebian = document.getElementById('settings-auto-apply-debian');
     const channel = document.getElementById('settings-channel');
     if (auto) auto.checked = !!data.auto_check;
     if (autoApply) autoApply.checked = !!data.auto_apply;
+    if (autoApplyDebian) autoApplyDebian.checked = !!data.auto_apply_debian;
     if (channel) channel.value = data.channel || 'stable';
     const channelSelect = document.getElementById('update-channel-select');
     if (channelSelect) channelSelect.value = data.channel || 'stable';
@@ -569,10 +571,11 @@ async function loadSettings() {
 async function saveSettings() {
     const auto = document.getElementById('settings-auto-check')?.checked || false;
     const autoApply = document.getElementById('settings-auto-apply')?.checked || false;
+    const autoApplyDebian = document.getElementById('settings-auto-apply-debian')?.checked || false;
     const channel = document.getElementById('settings-channel')?.value || 'stable';
     const res = await apiFetch('/updates/settings', {
         method: 'POST',
-        json: { auto_check: auto, auto_apply: autoApply, channel }
+        json: { auto_check: auto, auto_apply: autoApply, auto_apply_debian: autoApplyDebian, channel }
     });
     if (!res) return;
     if (!res.ok) {

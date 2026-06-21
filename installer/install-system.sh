@@ -750,6 +750,17 @@ INTERFACE=$(ip -o link show | awk -F': ' '{print $2}' | grep -v lo | head -n1)
         # Create Btrfs RAID1
         mkfs.btrfs -f -d raid1 -m raid1 "${ROOT_PARTS[@]}" >> "$INSTALL_LOG" 2>&1
         mount "${ROOT_PARTS[0]}" /mnt >> "$INSTALL_LOG" 2>&1
+
+        # Safety net: verify the filesystem actually came up as raid1 data+metadata.
+        # If mkfs ever fell back to "single" (e.g. older btrfs-progs ignoring -d/-m on
+        # some block layouts), force a real conversion now rather than silently leaving
+        # a 2-disk system install with no redundancy.
+        usage_out=$(btrfs filesystem usage /mnt 2>>"$INSTALL_LOG")
+        if ! echo "$usage_out" | grep -qi "RAID1"; then
+            echo "[$(date +%T)] WARNING: btrfs did not report raid1 after mkfs, forcing balance convert to raid1." >> "$INSTALL_LOG"
+            btrfs balance start -dconvert=raid1 -mconvert=raid1 -f /mnt >> "$INSTALL_LOG" 2>&1
+        fi
+
         btrfs subvolume create /mnt/@ >> "$INSTALL_LOG" 2>&1
         btrfs subvolume create /mnt/system-snapshots >> "$INSTALL_LOG" 2>&1
         umount /mnt >> "$INSTALL_LOG" 2>&1
@@ -835,6 +846,17 @@ method=ignore
 NM_EOF
     fi
     chmod 600 "$NM_CONN_DIR/alvaos.nmconnection"
+
+    # Show the live IP address on the console login screen (every boot), not just a
+    # one-time install-time snapshot. agetty resolves \4/\6 at the moment the login
+    # prompt is rendered, so this always reflects the IP actually in use post-boot,
+    # which matters most for DHCP where the installer-time IP can differ from later boots.
+    if ! grep -q "AlvaOS network" /mnt/etc/issue 2>/dev/null; then
+        {
+            echo ""
+            echo "AlvaOS network: \\4{$INTERFACE} (web UI: http://\\4{$INTERFACE}:8080)"
+        } >> /mnt/etc/issue
+    fi
 
     update_progress "Configuring apt sources..."
     cat > /mnt/etc/apt/sources.list << SOURCES_EOF
@@ -1037,12 +1059,7 @@ VERSION_EOF
 if [ "$NET_MODE" == "STATIC" ]; then
     ACCESS_LINE="Access AlvaOS at: http://$STATIC_IP:8080"
 else
-    DETECTED_IP=$(ip -4 -o addr show "$INTERFACE" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)
-    if [ -n "$DETECTED_IP" ]; then
-        ACCESS_LINE="Detected IP (DHCP): http://$DETECTED_IP:8080\nIf the address differs after the next boot, check your router's DHCP client list or run 'ip a' on the server."
-    else
-        ACCESS_LINE="Find the server IP in your router's DHCP client list or run 'ip a' on the server, then visit http://<ip>:8080 to complete setup."
-    fi
+    ACCESS_LINE="Network mode: DHCP. The IP address is assigned automatically by your router and is NOT fixed yet, so it will be shown on the console login screen after boot (and via 'ip a'). Visit http://<that-ip>:8080 to complete setup."
 fi
 
 if [ -f /tmp/alvaos-bootnext-set ]; then

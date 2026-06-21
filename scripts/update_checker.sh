@@ -30,10 +30,17 @@ from datetime import datetime, timezone
 sys.path.insert(0, "${module_path}")
 from update_manager import UpdateManager
 
+try:
+    from alerts_manager import push_notification
+except Exception:
+    def push_notification(*args, **kwargs):
+        pass
+
 um = UpdateManager()
 settings = um.get_settings()
 auto_check = bool(settings.get("auto_check", True))
 auto_apply = bool(settings.get("auto_apply", False))
+auto_apply_debian = bool(settings.get("auto_apply_debian", False))
 channel = settings.get("channel", "stable")
 
 if not auto_check:
@@ -57,14 +64,14 @@ if auto_apply and alvaos.get("update_available"):
     assets = release.get("assets", [])
     # Find .deb asset
     deb_url = next((a["browser_download_url"] for a in assets if a["browser_download_url"].endswith(".deb")), None)
-    
+
     if deb_url:
         print(f"Auto-applying update: {release.get('tag_name')}")
         try:
             # Download
             dl_res = um.download_update(release.get("tag_name"), deb_url)
             pkg_path = dl_res.get("path")
-            
+
             # Apply
             if pkg_path:
                 um.apply_alvaos_update(pkg_path)
@@ -72,6 +79,55 @@ if auto_apply and alvaos.get("update_available"):
         except Exception as e:
             print(f"Auto-apply failed: {e}")
             details["auto_apply_error"] = str(e)
+
+debian_updates = debian.get("updates") if isinstance(debian, dict) else None
+if isinstance(debian_updates, list) and debian_updates:
+    package_names = ", ".join(u.get("package", "") for u in debian_updates[:5] if u.get("package"))
+    more = f" and {len(debian_updates) - 5} more" if len(debian_updates) > 5 else ""
+    push_notification(
+        severity="info",
+        title="Debian updates available",
+        message=f"{len(debian_updates)} Debian package update(s) available: {package_names}{more}.",
+        source="updates",
+        dismissible=True,
+        link="updates.html",
+        fingerprint="debian-updates-available",
+    )
+
+    if auto_apply_debian:
+        print(f"Auto-applying {len(debian_updates)} Debian update(s)")
+        try:
+            apply_res = um.apply_debian_updates()
+            details["debian_auto_applied"] = bool(apply_res.get("success"))
+            if apply_res.get("success"):
+                push_notification(
+                    severity="success",
+                    title="Debian updates applied",
+                    message=f"{len(debian_updates)} Debian package update(s) were applied automatically.",
+                    source="updates",
+                    dismissible=True,
+                    link="updates.html",
+                )
+            else:
+                push_notification(
+                    severity="critical",
+                    title="Debian auto-update failed",
+                    message=apply_res.get("error", "Failed to apply Debian updates automatically."),
+                    source="updates",
+                    dismissible=True,
+                    link="updates.html",
+                )
+        except Exception as e:
+            print(f"Debian auto-apply failed: {e}")
+            details["debian_auto_apply_error"] = str(e)
+            push_notification(
+                severity="critical",
+                title="Debian auto-update failed",
+                message=str(e),
+                source="updates",
+                dismissible=True,
+                link="updates.html",
+            )
 
 current_state = um.get_update_state()
 if current_state.get("status") in ("installing", "downloading"):

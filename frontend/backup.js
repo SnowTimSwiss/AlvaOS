@@ -700,7 +700,7 @@ function renderBuddyStatus() {
                         <div class="setting-group">
                             <label class="setting-label">Send To This Buddy</label>
                             <label class="toggle">
-                                <input type="checkbox" class="buddy-peer-enabled" data-node-id="${backupEscapeHtml(peer.node_id || '')}" ${peer.policy?.enabled !== false ? 'checked' : ''}>
+                                <input type="checkbox" class="buddy-peer-enabled" data-node-id="${backupEscapeHtml(peer.node_id || '')}" ${peer.policy?.enabled === true ? 'checked' : ''}>
                                 <span class="toggle-slider"></span>
                             </label>
                         </div>

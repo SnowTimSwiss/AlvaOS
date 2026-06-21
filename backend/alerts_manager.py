@@ -9,6 +9,8 @@ import json
 import os
 import re
 import secrets
+import threading
+import uuid
 
 import psutil
 import requests
@@ -17,6 +19,9 @@ from common import _utc_now, _now_iso, _parse_iso, _safe_int, _read_cpu_temperat
 
 # ── State file ────────────────────────────────────────────────────────────────
 ALERTS_STATE_FILE = '/var/lib/alvaos/alerts.json'
+NOTIFICATIONS_STATE_FILE = '/var/lib/alvaos/notifications.json'
+NOTIFICATIONS_MAX_ENTRIES = 200
+_notifications_lock = threading.Lock()
 
 # ── Thresholds ────────────────────────────────────────────────────────────────
 ALERT_THRESHOLDS = {
@@ -223,7 +228,7 @@ def _build_alert_item(alert_id, severity, title, message, route='', action_label
 
 def _collect_system_alerts():
     # Import here to avoid circular dependency at module load time
-    from storage_manager import load_pools_state
+    from storage_manager import load_pools_state, detect_btrfs_pools
 
     alerts = []
 
@@ -314,6 +319,35 @@ def _collect_system_alerts():
                 route='storage.html',
                 action_label='Open Storage'
             ))
+    except Exception:
+        pass
+
+    try:
+        live_pools, _ = detect_btrfs_pools()
+        pools_state_for_names = load_pools_state()
+        for live_pool in live_pools:
+            if live_pool.get('status') != 'degraded':
+                continue
+            pool_id = str(live_pool.get('id', ''))
+            state_entry = pools_state_for_names.get(pool_id) if isinstance(pools_state_for_names, dict) else None
+            pool_name = str((state_entry or {}).get('name') or live_pool.get('name') or pool_id)
+            alerts.append(_build_alert_item(
+                alert_id=f'pool-{pool_id}-degraded',
+                severity='critical',
+                title='Storage pool is degraded',
+                message=f'Pool "{pool_name}" is missing one or more disks. Replace the failed disk immediately.',
+                route='storage.html',
+                action_label='Open Storage'
+            ))
+            push_notification(
+                severity='critical',
+                title='Storage pool is degraded',
+                message=f'Pool "{pool_name}" is missing one or more disks. Replace the failed disk immediately.',
+                source='storage',
+                dismissible=True,
+                link='storage.html',
+                fingerprint=f'pool-degraded-{pool_id}',
+            )
     except Exception:
         pass
 
@@ -438,3 +472,117 @@ def _maybe_send_telegram_critical_alerts(alerts, state):
     state['delivery']['last_critical_fingerprint'] = fingerprint
     state['delivery']['last_critical_sent_at'] = _now_iso()
     save_alerts_state(state)
+
+
+# ── Notification feed ──────────────────────────────────────────────────────────
+
+def _load_notifications_raw():
+    try:
+        if os.path.exists(NOTIFICATIONS_STATE_FILE):
+            with open(NOTIFICATIONS_STATE_FILE, 'r') as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    return data
+    except Exception as e:
+        print(f"Error loading notifications: {e}")
+    return []
+
+
+def _save_notifications_raw(notifications):
+    try:
+        ensure_directories()
+        with open(NOTIFICATIONS_STATE_FILE, 'w') as f:
+            json.dump(notifications, f, indent=2)
+    except Exception as e:
+        print(f"Error saving notifications: {e}")
+
+
+def load_notifications():
+    with _notifications_lock:
+        return _load_notifications_raw()
+
+
+def push_notification(severity, title, message, source='system', dismissible=True, link=None, fingerprint=None):
+    """Create a persisted notification feed entry. Returns the created entry.
+
+    `fingerprint`, if given, dedupes against the most recent unread entry with the
+    same fingerprint so repeated polling (e.g. degraded pool checks) does not spam
+    the feed every refresh cycle.
+    """
+    severity = str(severity or 'info').lower()
+    if severity not in ALERT_SEVERITY_PRIORITY:
+        severity = 'info'
+
+    with _notifications_lock:
+        notifications = _load_notifications_raw()
+
+        if fingerprint:
+            for existing in notifications:
+                if existing.get('fingerprint') == fingerprint and not existing.get('dismissed'):
+                    return existing
+
+        entry = {
+            'id': uuid.uuid4().hex,
+            'ts': _now_iso(),
+            'severity': severity,
+            'title': str(title or ''),
+            'message': str(message or ''),
+            'source': str(source or 'system'),
+            'read': False,
+            'dismissed': False,
+            'dismissible': bool(dismissible),
+            'link': link,
+            'fingerprint': fingerprint,
+        }
+        notifications.insert(0, entry)
+        notifications = notifications[:NOTIFICATIONS_MAX_ENTRIES]
+        _save_notifications_raw(notifications)
+        return entry
+
+
+def mark_notification_read(notification_id):
+    with _notifications_lock:
+        notifications = _load_notifications_raw()
+        found = False
+        for entry in notifications:
+            if entry.get('id') == notification_id:
+                entry['read'] = True
+                found = True
+                break
+        if found:
+            _save_notifications_raw(notifications)
+        return found
+
+
+def mark_notification_dismissed(notification_id):
+    with _notifications_lock:
+        notifications = _load_notifications_raw()
+        found = False
+        for entry in notifications:
+            if entry.get('id') == notification_id:
+                entry['read'] = True
+                entry['dismissed'] = True
+                found = True
+                break
+        if found:
+            _save_notifications_raw(notifications)
+        return found
+
+
+def mark_all_notifications_read():
+    with _notifications_lock:
+        notifications = _load_notifications_raw()
+        for entry in notifications:
+            entry['read'] = True
+        _save_notifications_raw(notifications)
+        return len(notifications)
+
+
+def get_notifications_feed(limit=200):
+    notifications = load_notifications()
+    visible = [n for n in notifications if not n.get('dismissed')]
+    unread_count = sum(1 for n in visible if not n.get('read'))
+    return {
+        'notifications': visible[:limit],
+        'unread_count': unread_count,
+    }

@@ -26,6 +26,8 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import requests
 
+from alerts_manager import push_notification
+
 # Marker source path for a full-system (root subvolume) buddy transfer. A stream whose
 # source_path is "/" is restored as a full system rollback (set-default + reboot) rather
 # than a data subvolume replace.
@@ -680,7 +682,7 @@ class BuddyBackupManager:
                     unique_sources.append(path)
 
             normalized[nid] = {
-                "enabled": bool(item.get("enabled", True)),
+                "enabled": bool(item.get("enabled", False)),
                 "interval_minutes": interval,
                 "send_time": self._normalize_time_hhmm(item.get("send_time", "02:00")),
                 "max_storage_gb": quota,
@@ -868,7 +870,7 @@ class BuddyBackupManager:
 
         normalized = self._normalize_peer_policies({nid: candidate})
         policies[nid] = normalized.get(nid, {
-            "enabled": True,
+            "enabled": False,
             "interval_minutes": int(DEFAULT_BUDDY_SETTINGS["interval_minutes"]),
             "send_time": "02:00",
             "max_storage_gb": int(DEFAULT_BUDDY_SETTINGS["incoming_quota_gb"]),
@@ -891,7 +893,7 @@ class BuddyBackupManager:
         settings = self.get_settings(include_secret=True)
         policies = settings.get("peer_policies", {})
         policy = self._normalize_peer_policies({nid: policies.get(nid, {})}).get(nid, {
-            "enabled": True,
+            "enabled": False,
             "interval_minutes": int(settings.get("interval_minutes", DEFAULT_BUDDY_SETTINGS["interval_minutes"])),
             "send_time": "02:00",
             "max_storage_gb": int(settings.get("incoming_quota_gb", DEFAULT_BUDDY_SETTINGS["incoming_quota_gb"])),
@@ -1346,13 +1348,18 @@ class BuddyBackupManager:
         if not owner:
             return None, None, "owner_node_id is required"
 
+        # An unset incoming_path must not block receiving: fall back to the
+        # service-owned state dir so a buddy can receive streams even before
+        # the receiving node has explicitly configured a local incoming path.
         preferred_root = self._stream_root_path()
-        if not preferred_root:
-            return None, None, "Local incoming path is not configured or not allowed"
         fallback_root = self._fallback_stream_root_path()
-        candidates = [preferred_root]
-        if fallback_root and fallback_root != preferred_root:
+        candidates = []
+        if preferred_root:
+            candidates.append(preferred_root)
+        if fallback_root and fallback_root not in candidates:
             candidates.append(fallback_root)
+        if not candidates:
+            return None, None, "Local incoming path is not configured or not allowed"
 
         last_error = "No writable stream directory available"
         for root in candidates:
@@ -1994,7 +2001,7 @@ class BuddyBackupManager:
             policies = {}
         if peer["node_id"] not in policies:
             policies[peer["node_id"]] = {
-                "enabled": True,
+                "enabled": False,
                 "interval_minutes": int(settings.get("interval_minutes", DEFAULT_BUDDY_SETTINGS["interval_minutes"])),
                 "send_time": "02:00",
                 "max_storage_gb": int(settings.get("incoming_quota_gb", DEFAULT_BUDDY_SETTINGS["incoming_quota_gb"])),
@@ -2112,6 +2119,19 @@ class BuddyBackupManager:
         entries.append(entry)
         self._save_stream_entries(entries)
         self._enforce_stream_quota(owner)
+
+        peers = self._load_peers()
+        sender_peer = peers.get(sender) if isinstance(peers, dict) else None
+        sender_name = str((sender_peer or {}).get("name") or sender)
+        push_notification(
+            severity="info",
+            title="Buddy backup received",
+            message=f'Received a backup snapshot from buddy "{sender_name}" ({snap_name}).',
+            source="backup",
+            dismissible=True,
+            link="backup.html",
+        )
+
         return True, {"stream": self._public_stream_entry(entry)}
 
     def list_peer_streams(self, owner_node_id: str, limit: int = 100) -> Tuple[bool, Dict]:
@@ -2423,6 +2443,26 @@ class BuddyBackupManager:
                 },
                 node_id=target,
             )
+
+            peer_name = str(peer.get("name") or target)
+            if status == "success":
+                push_notification(
+                    severity="success",
+                    title="Buddy backup completed",
+                    message=f'Backup to buddy "{peer_name}" completed successfully ({len(created)} source(s) sent).',
+                    source="backup",
+                    dismissible=True,
+                    link="backup.html",
+                )
+            else:
+                push_notification(
+                    severity="critical" if status == "error" else "warning",
+                    title="Buddy backup failed" if status == "error" else "Buddy backup partially failed",
+                    message=f'Backup to buddy "{peer_name}" {"failed" if status == "error" else "partially failed"}: {sync_error or "unknown error"}',
+                    source="backup",
+                    dismissible=True,
+                    link="backup.html",
+                )
 
             return True, {
                 "node_id": target,
@@ -2993,7 +3033,7 @@ class BuddyBackupManager:
             policy = self._normalize_peer_policies({node_id: policies.get(node_id, {})}).get(node_id, {})
             if not policy:
                 policy = {
-                    "enabled": True,
+                    "enabled": False,
                     "interval_minutes": int(settings_full.get("interval_minutes", DEFAULT_BUDDY_SETTINGS["interval_minutes"])),
                     "send_time": "02:00",
                     "max_storage_gb": int(settings_full.get("incoming_quota_gb", DEFAULT_BUDDY_SETTINGS["incoming_quota_gb"])),
