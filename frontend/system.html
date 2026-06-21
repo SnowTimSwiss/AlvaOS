@@ -7,6 +7,95 @@
     <title>AlvaOS - System</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="notifications.css">
+    <style>
+        /* Calm status rows used across the System tabs */
+        .status-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .status-row:last-child {
+            border-bottom: none;
+        }
+
+        .status-row .status-row-label {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+
+        .status-row .status-row-value {
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+            color: var(--text-primary);
+            text-align: right;
+            overflow-wrap: anywhere;
+        }
+
+        .card-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 16px;
+        }
+
+        /* Reusable modal panel (matches the user-management modal pattern) */
+        .sys-modal-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border-default);
+            border-radius: 8px;
+            padding: 1.5rem;
+            max-width: 460px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .sys-modal-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+
+        .sys-modal-title {
+            color: var(--text-primary);
+            margin: 0;
+        }
+
+        .sys-modal-x {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.6rem;
+            line-height: 1;
+            cursor: pointer;
+            padding: 0 4px;
+        }
+
+        .sys-modal-x:hover {
+            color: var(--text-primary);
+        }
+
+        .sys-modal-text {
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+
+        .sys-modal-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 1.25rem;
+        }
+
+        .sys-modal-actions button {
+            flex: 1;
+        }
+    </style>
 </head>
 
 <body>
@@ -51,288 +140,283 @@
             <div id="update-banner-slot"></div>
             <div style="margin-bottom: 24px;">
                 <h1 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 4px;">System Settings</h1>
-                <p style="color: var(--text-secondary); font-size: 0.95rem;">Network configuration, power management,
-                    and logs.</p>
+                <p style="color: var(--text-secondary); font-size: 0.95rem;">Network, time, security, alerts, power, and
+                    diagnostics.</p>
             </div>
 
-            <div class="dashboard-grid">
+            <!-- Tab navigation -->
+            <div class="tab-bar">
+                <button class="tab-btn active" data-tab="network"><i data-lucide="globe"></i> Network</button>
+                <button class="tab-btn" data-tab="time"><i data-lucide="clock-3"></i> Time</button>
+                <button class="tab-btn" data-tab="security"><i data-lucide="shield-check"></i> Security</button>
+                <button class="tab-btn" data-tab="alerts"><i data-lucide="megaphone"></i> Alerts</button>
+                <button class="tab-btn" data-tab="power"><i data-lucide="power"></i> Power</button>
+                <button class="tab-btn" data-tab="logs"><i data-lucide="scroll-text"></i> Logs &amp; Diagnostics</button>
+            </div>
 
-                <!-- General Settings -->
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">General</div>
-                        <div style="color:var(--text-secondary)"><i data-lucide="settings"></i></div>
-                    </div>
+            <!-- ============ NETWORK ============ -->
+            <div class="tab-panel active" id="tab-network">
+                <div class="dashboard-grid">
 
-                    <div class="setting-group">
-                        <label class="setting-label" for="hostname-input">Hostname</label>
-                        <div style="display:flex; gap:8px;">
-                            <input type="text" id="hostname-input" class="mono-text" style="flex:1;" value="loading...">
-                            <button id="save-hostname-btn" class="btn-primary"
-                                style="padding: 6px 12px; font-size: 0.85rem;">Save</button>
+                    <!-- Network Interface (read-only) -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Network Interface</div>
+                            <div style="color:var(--text-secondary)"><i data-lucide="globe"></i></div>
+                        </div>
+
+                        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:16px;">
+                            <div>
+                                <span class="setting-label">Interface</span>
+                                <span class="setting-val" id="net-interface">-</span>
+                            </div>
+                            <div>
+                                <span class="setting-label">IP Address</span>
+                                <span class="setting-val" id="net-ip">-</span>
+                            </div>
+                            <div>
+                                <span class="setting-label">Subnet Mask</span>
+                                <span class="setting-val" id="net-mask">-</span>
+                            </div>
+                            <div>
+                                <span class="setting-label">Gateway</span>
+                                <span class="setting-val" id="net-gateway">-</span>
+                            </div>
+                            <div style="grid-column: 1 / -1;">
+                                <span class="setting-label">DNS</span>
+                                <span class="setting-val" id="net-dns" style="white-space: pre-line;">-</span>
+                            </div>
                         </div>
                     </div>
 
-                    <div class="setting-group">
-                        <label class="setting-label">System Time</label>
-                        <div class="mono-text" id="system-time-display">-</div>
+                    <!-- Hostname -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Hostname</div>
+                            <div style="color:var(--text-secondary)"><i data-lucide="server"></i></div>
+                        </div>
+                        <p class="metric-sub" style="margin-bottom: 12px;">The name this server shows on the network.</p>
+
+                        <div class="status-row">
+                            <span class="status-row-label">Current hostname</span>
+                            <span class="status-row-value" id="current-hostname-display">-</span>
+                        </div>
+
+                        <div class="card-actions">
+                            <button id="change-hostname-btn" class="btn-secondary">Change hostname</button>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- ============ TIME ============ -->
+            <div class="tab-panel" id="tab-time">
+                <div class="dashboard-grid">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Date &amp; Time</div>
+                            <div style="color:var(--text-secondary)"><i data-lucide="clock-3"></i></div>
+                        </div>
+
+                        <div class="status-row">
+                            <span class="status-row-label">System time</span>
+                            <span class="status-row-value" id="system-time-display">-</span>
+                        </div>
+                        <div class="status-row">
+                            <span class="status-row-label">Timezone</span>
+                            <span class="status-row-value" id="timezone-display">-</span>
+                        </div>
+                        <div class="status-row">
+                            <span class="status-row-label">NTP sync</span>
+                            <span class="status-row-value" id="ntp-display">-</span>
+                        </div>
+
+                        <div class="card-actions">
+                            <button id="change-time-btn" class="btn-secondary">Change time settings</button>
+                        </div>
                     </div>
                 </div>
+            </div>
 
-                <!-- Network Settings -->
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">Network Interface</div>
-                        <div style="color:var(--text-secondary)"><i data-lucide="globe"></i></div>
-                    </div>
-
-                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:16px;">
-                        <div>
-                            <span class="setting-label">Interface</span>
-                            <span class="setting-val" id="net-interface">-</span>
+            <!-- ============ SECURITY ============ -->
+            <div class="tab-panel" id="tab-security">
+                <div class="dashboard-grid">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Two-Factor Authentication</div>
+                            <div style="color:var(--text-secondary)"><i data-lucide="key-round"></i></div>
                         </div>
-                        <div>
-                            <span class="setting-label">IP Address</span>
-                            <span class="setting-val" id="net-ip">-</span>
-                        </div>
-                        <div>
-                            <span class="setting-label">Subnet Mask</span>
-                            <span class="setting-val" id="net-mask">-</span>
-                        </div>
-                        <div>
-                            <span class="setting-label">Gateway</span>
-                            <span class="setting-val" id="net-gateway">-</span>
-                        </div>
-                        <div style="grid-column: 1 / -1;">
-                            <span class="setting-label">DNS</span>
-                            <span class="setting-val" id="net-dns" style="white-space: pre-line;">-</span>
-                        </div>
-                    </div>
+                        <p class="metric-sub" style="margin-bottom: 12px;">Protect login with a TOTP authenticator app
+                            (Google Authenticator, Aegis, etc.)</p>
 
-                </div>
-
-                <!-- Date & Time -->
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">Date & Time</div>
-                        <div style="color:var(--text-secondary)"><i data-lucide="clock-3"></i></div>
-                    </div>
-
-                    <div class="setting-group">
-                        <label class="setting-label">Timezone</label>
-                        <select id="timezone-select" style="width:100%;">
-                            <option value="UTC">UTC</option>
-                            <option value="Europe/Berlin">Europe/Berlin</option>
-                            <option value="America/New_York">America/New_York</option>
-                            <option value="Asia/Tokyo">Asia/Tokyo</option>
-                        </select>
-                    </div>
-
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px;">
-                        <label style="display: flex; align-items: center; cursor: pointer;">
-                            <input type="checkbox" id="ntp-toggle" checked style="margin-right:8px;">
-                            <span style="font-size:0.85rem; color:var(--text-secondary);">Enable NTP Sync</span>
-                        </label>
-                        <button id="save-time-btn" class="btn-primary"
-                            style="padding: 6px 12px; font-size: 0.85rem;">Save</button>
-                    </div>
-                </div>
-
-                <!-- Power Controls -->
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title" style="color: var(--accent-danger);">Power Controls</div>
-                        <div style="color:var(--accent-danger)"><i data-lucide="triangle-alert"></i></div>
-                    </div>
-                    <div class="setting-group">
-                        <span class="setting-label">Current State</span>
-                        <span class="setting-val" style="color:var(--accent-success)">Running</span>
-                    </div>
-                    <div style="display:flex; gap:12px; margin-top:16px;">
-                        <button id="reboot-btn" class="btn-secondary"
-                            style="flex:1; border-color:var(--accent-warning); color:var(--accent-warning);">Reboot</button>
-                        <button id="shutdown-btn" class="btn-primary"
-                            style="flex:1; background:var(--accent-danger);">Shutdown</button>
-                    </div>
-                </div>
-
-                <!-- Battery UPS -->
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">Battery UPS</div>
-                        <div style="color:var(--text-secondary)"><i data-lucide="battery-charging"></i></div>
-                    </div>
-                    <p class="metric-sub" style="margin-bottom: 12px;">Use a laptop battery as backup power with an auto-shutdown rule.</p>
-
-                    <div class="setting-group">
-                        <label style="display:flex; align-items:center; cursor:pointer;">
-                            <input type="checkbox" id="ups-enabled-toggle" style="margin-right:8px;">
-                            <span style="font-size:0.85rem; color:var(--text-secondary);">Enable Battery UPS Mode</span>
-                        </label>
-                    </div>
-
-                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:12px;">
-                        <div>
-                            <label class="setting-label" for="ups-charge-limit-input">Charge Limit (%)</label>
-                            <input type="number" id="ups-charge-limit-input" min="50" max="100" value="80" style="width:100%;">
-                        </div>
-                        <div>
-                            <label class="setting-label" for="ups-shutdown-limit-input">Shutdown At (%)</label>
-                            <input type="number" id="ups-shutdown-limit-input" min="5" max="80" value="20" style="width:100%;">
-                        </div>
-                    </div>
-
-                    <div class="list-box" style="margin-bottom:12px;">
-                        <div class="list-item">
-                            <span>Battery Device</span>
-                            <span id="ups-device" class="mono-text">-</span>
-                        </div>
-                        <div class="list-item">
-                            <span>Power Source</span>
-                            <span id="ups-ac-state" class="mono-text">-</span>
-                        </div>
-                        <div class="list-item">
-                            <span>Battery State</span>
-                            <span id="ups-battery-state" class="mono-text">-</span>
-                        </div>
-                        <div class="list-item">
-                            <span>Current Charge</span>
-                            <span id="ups-capacity" class="mono-text">-</span>
-                        </div>
-                        <div class="list-item">
-                            <span>Charge Limit Support</span>
-                            <span id="ups-charge-support" class="mono-text">-</span>
-                        </div>
-                        <div class="list-item">
-                            <span>Active Charge Threshold</span>
-                            <span id="ups-threshold-current" class="mono-text">-</span>
-                        </div>
-                        <div class="list-item">
-                            <span>Last UPS Action</span>
-                            <span id="ups-last-action" class="mono-text">-</span>
-                        </div>
-                    </div>
-
-                    <button id="ups-save-btn" class="btn-primary">Save UPS Settings</button>
-                </div>
-
-                <!-- Telegram Alerts -->
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">Telegram Critical Alerts</div>
-                        <div style="color:var(--text-secondary)"><i data-lucide="megaphone"></i></div>
-                    </div>
-                    <p class="metric-sub" style="margin-bottom: 12px;">Pair a Telegram bot to receive critical system
-                        alerts.</p>
-
-                    <div class="setting-group">
-                        <label style="display: flex; align-items: center; cursor: pointer;">
-                            <input type="checkbox" id="telegram-enabled-toggle" style="margin-right:8px;">
-                            <span style="font-size:0.85rem; color:var(--text-secondary);">Enable Telegram
-                                delivery</span>
-                        </label>
-                    </div>
-
-                    <div class="setting-group">
-                        <label class="setting-label" for="telegram-bot-token">Bot Token</label>
-                        <input type="password" id="telegram-bot-token" placeholder="123456789:AA..." autocomplete="off"
-                            style="width:100%;">
-                        <div class="metric-sub" id="telegram-token-status" style="margin-top:6px;">No token saved.</div>
-                    </div>
-
-                    <div style="display:flex; gap:10px; flex-wrap: wrap; margin-bottom: 12px;">
-                        <button id="telegram-save-btn" class="btn-primary">Save Settings</button>
-                        <button id="telegram-start-pairing-btn" class="btn-secondary">Generate Pairing Code</button>
-                    </div>
-
-                    <div class="list-box" style="margin-bottom: 12px;">
-                        <div class="list-item">
-                            <span>Pairing Status</span>
-                            <span id="telegram-pairing-status" class="mono-text">Not paired</span>
-                        </div>
-                        <div class="list-item">
-                            <span>Pairing Command</span>
-                            <span id="telegram-pairing-command" class="mono-text">-</span>
-                        </div>
-                        <div class="list-item">
-                            <span>Paired Chat</span>
-                            <span id="telegram-paired-chat" class="mono-text">-</span>
-                        </div>
-                    </div>
-
-                    <div style="display:flex; gap:10px; flex-wrap: wrap;">
-                        <button id="telegram-check-pairing-btn" class="btn-secondary">Check Pairing</button>
-                        <button id="telegram-test-btn" class="btn-secondary">Send Test Alert</button>
-                        <button id="telegram-unpair-btn" class="btn-secondary"
-                            style="border-color:var(--accent-danger); color:var(--accent-danger);">Unpair</button>
-                    </div>
-                </div>
-
-                <!-- Two-Factor Authentication -->
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">Two-Factor Authentication</div>
-                        <div style="color:var(--text-secondary)"><i data-lucide="key-round"></i></div>
-                    </div>
-                    <p class="metric-sub" style="margin-bottom: 12px;">Protect login with a TOTP authenticator app
-                        (Google Authenticator, Aegis, etc.)</p>
-
-                    <div class="list-box" style="margin-bottom:14px;">
-                        <div class="list-item">
-                            <span>Status</span>
-                            <span id="tfa-status-badge" class="status-badge"
-                                style="border:none; background:transparent; padding:0;">
+                        <div class="status-row">
+                            <span class="status-row-label">Status</span>
+                            <span class="status-badge" style="border:none; background:transparent; padding:0;">
                                 <span class="status-dot" id="tfa-status-dot"
                                     style="background:var(--text-secondary);"></span>
                                 <span id="tfa-status-text">Checking...</span>
                             </span>
                         </div>
-                    </div>
 
-                    <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                        <button id="tfa-enable-btn" class="btn-primary" style="display:none;">Enable 2FA</button>
-                        <button id="tfa-install-btn" class="btn-secondary" style="display:none;">Install 2FA Library</button>
-                        <button id="tfa-disable-btn" class="btn-secondary"
-                            style="display:none; border-color:var(--accent-danger); color:var(--accent-danger);">Disable
-                            2FA</button>
-                    </div>
-                </div>
-
-                <!-- Auto-Healing Services -->
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">Auto-Healing Services</div>
-                        <div style="color:var(--text-secondary)"><i data-lucide="shield-plus"></i></div>
-                    </div>
-                    <p class="metric-sub" style="margin-bottom: 12px;">Monitors critical services and automatically
-                        restarts them if they crash.</p>
-
-                    <div id="watchdog-service-list" class="list-box" style="margin-bottom:14px;">
-                        <div style="color:var(--text-secondary); font-size:0.85rem; padding:8px;">Loading...</div>
-                    </div>
-
-                    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-                        <button id="watchdog-check-btn" class="btn-primary">Run Check Now</button>
-                        <span id="watchdog-last-run" style="font-size:0.8rem; color:var(--text-secondary);"></span>
-                    </div>
-
-                    <div id="watchdog-recovery-log" style="margin-top:14px; display:none;">
-                        <div class="setting-label" style="margin-bottom:6px;">Recent Recoveries</div>
-                        <div id="watchdog-recovery-items" class="list-box"></div>
+                        <div class="card-actions">
+                            <button id="tfa-enable-btn" class="btn-primary" style="display:none;">Enable 2FA</button>
+                            <button id="tfa-install-btn" class="btn-secondary" style="display:none;">Install 2FA
+                                Library</button>
+                            <button id="tfa-disable-btn" class="btn-secondary"
+                                style="display:none; border-color:var(--accent-danger); color:var(--accent-danger);">Disable
+                                2FA</button>
+                        </div>
                     </div>
                 </div>
+            </div>
 
-                <!-- Logs (Full Width) -->
-                <div class="card" style="grid-column: 1 / -1; height: 400px; display:flex; flex-direction:column;">
-                    <div class="card-header">
-                        <div class="card-title">System Logs</div>
-                        <div style="color:var(--text-secondary)"><i data-lucide="scroll-text"></i></div>
+            <!-- ============ ALERTS ============ -->
+            <div class="tab-panel" id="tab-alerts">
+                <div class="dashboard-grid">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Telegram Critical Alerts</div>
+                            <div style="color:var(--text-secondary)"><i data-lucide="megaphone"></i></div>
+                        </div>
+                        <p class="metric-sub" style="margin-bottom: 12px;">Deliver critical system alerts to a paired
+                            Telegram chat.</p>
+
+                        <div class="status-row">
+                            <span class="status-row-label">Delivery</span>
+                            <span class="status-badge" style="border:none; background:transparent; padding:0;">
+                                <span class="status-dot" id="telegram-summary-dot"
+                                    style="background:var(--text-secondary);"></span>
+                                <span id="telegram-summary-status">Checking...</span>
+                            </span>
+                        </div>
+                        <div class="status-row">
+                            <span class="status-row-label">Paired chat</span>
+                            <span class="status-row-value" id="telegram-summary-chat">-</span>
+                        </div>
+
+                        <div class="card-actions">
+                            <button id="configure-telegram-btn" class="btn-secondary">Configure Telegram</button>
+                        </div>
                     </div>
-                    <div id="log-viewer"
-                        style="flex:1; background: #0d1117; border: 1px solid var(--border-default); border-radius: 4px; padding: 12px; overflow-y: scroll; font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-secondary); white-space: pre-wrap;">
-                        Loading logs...</div>
                 </div>
+            </div>
 
+            <!-- ============ POWER ============ -->
+            <div class="tab-panel" id="tab-power">
+                <div class="dashboard-grid">
+
+                    <!-- Power Controls -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title" style="color: var(--accent-danger);">Power Controls</div>
+                            <div style="color:var(--accent-danger)"><i data-lucide="triangle-alert"></i></div>
+                        </div>
+                        <div class="status-row">
+                            <span class="status-row-label">Current state</span>
+                            <span class="status-row-value" style="color:var(--accent-success)">Running</span>
+                        </div>
+                        <div class="card-actions">
+                            <button id="reboot-btn" class="btn-secondary"
+                                style="flex:1; border-color:var(--accent-warning); color:var(--accent-warning);">Reboot</button>
+                            <button id="shutdown-btn" class="btn-primary"
+                                style="flex:1; background:var(--accent-danger);">Shutdown</button>
+                        </div>
+                    </div>
+
+                    <!-- Battery UPS -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Battery UPS</div>
+                            <div style="color:var(--text-secondary)"><i data-lucide="battery-charging"></i></div>
+                        </div>
+                        <p class="metric-sub" style="margin-bottom: 12px;">Use a laptop battery as backup power with an
+                            auto-shutdown rule.</p>
+
+                        <div class="status-row">
+                            <span class="status-row-label">Mode</span>
+                            <span class="status-row-value" id="ups-summary">-</span>
+                        </div>
+
+                        <div class="list-box" style="margin:12px 0;">
+                            <div class="list-item">
+                                <span>Battery Device</span>
+                                <span id="ups-device" class="mono-text">-</span>
+                            </div>
+                            <div class="list-item">
+                                <span>Power Source</span>
+                                <span id="ups-ac-state" class="mono-text">-</span>
+                            </div>
+                            <div class="list-item">
+                                <span>Battery State</span>
+                                <span id="ups-battery-state" class="mono-text">-</span>
+                            </div>
+                            <div class="list-item">
+                                <span>Current Charge</span>
+                                <span id="ups-capacity" class="mono-text">-</span>
+                            </div>
+                            <div class="list-item">
+                                <span>Charge Limit Support</span>
+                                <span id="ups-charge-support" class="mono-text">-</span>
+                            </div>
+                            <div class="list-item">
+                                <span>Active Charge Threshold</span>
+                                <span id="ups-threshold-current" class="mono-text">-</span>
+                            </div>
+                            <div class="list-item">
+                                <span>Last UPS Action</span>
+                                <span id="ups-last-action" class="mono-text">-</span>
+                            </div>
+                        </div>
+
+                        <div class="card-actions">
+                            <button id="configure-ups-btn" class="btn-secondary">Configure UPS</button>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- ============ LOGS & DIAGNOSTICS ============ -->
+            <div class="tab-panel" id="tab-logs">
+                <div class="dashboard-grid">
+
+                    <!-- Auto-Healing Services -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Auto-Healing Services</div>
+                            <div style="color:var(--text-secondary)"><i data-lucide="shield-plus"></i></div>
+                        </div>
+                        <p class="metric-sub" style="margin-bottom: 12px;">Monitors critical services and automatically
+                            restarts them if they crash.</p>
+
+                        <div id="watchdog-service-list" class="list-box" style="margin-bottom:14px;">
+                            <div style="color:var(--text-secondary); font-size:0.85rem; padding:8px;">Loading...</div>
+                        </div>
+
+                        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+                            <button id="watchdog-check-btn" class="btn-primary">Run Check Now</button>
+                            <span id="watchdog-last-run" style="font-size:0.8rem; color:var(--text-secondary);"></span>
+                        </div>
+
+                        <div id="watchdog-recovery-log" style="margin-top:14px; display:none;">
+                            <div class="setting-label" style="margin-bottom:6px;">Recent Recoveries</div>
+                            <div id="watchdog-recovery-items" class="list-box"></div>
+                        </div>
+                    </div>
+
+                    <!-- Logs (Full Width) -->
+                    <div class="card" style="grid-column: 1 / -1; height: 400px; display:flex; flex-direction:column;">
+                        <div class="card-header">
+                            <div class="card-title">System Logs</div>
+                            <div style="color:var(--text-secondary)"><i data-lucide="scroll-text"></i></div>
+                        </div>
+                        <div id="log-viewer"
+                            style="flex:1; background: #0d1117; border: 1px solid var(--border-default); border-radius: 4px; padding: 12px; overflow-y: scroll; font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-secondary); white-space: pre-wrap;">
+                            Loading logs...</div>
+                    </div>
+
+                </div>
             </div>
 
             <footer
@@ -355,4 +439,3 @@
 </body>
 
 </html>
-

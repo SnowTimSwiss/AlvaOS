@@ -22,20 +22,26 @@ function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
+// Persistent page elements (status views; forms live inside modals built on demand)
 const els = {
-    hostnameInput: document.getElementById('hostname-input'),
-    saveBtn: document.getElementById('save-hostname-btn'),
+    // Network
     netInterface: document.getElementById('net-interface'),
     netIp: document.getElementById('net-ip'),
     netMask: document.getElementById('net-mask'),
     netGateway: document.getElementById('net-gateway'),
     netDns: document.getElementById('net-dns'),
-    logViewer: document.getElementById('log-viewer'),
+    hostnameDisplay: document.getElementById('current-hostname-display'),
+
+    // Time
     timeDisplay: document.getElementById('system-time-display'),
-    upsEnabledToggle: document.getElementById('ups-enabled-toggle'),
-    upsChargeLimitInput: document.getElementById('ups-charge-limit-input'),
-    upsShutdownLimitInput: document.getElementById('ups-shutdown-limit-input'),
-    upsSaveBtn: document.getElementById('ups-save-btn'),
+    timezoneDisplay: document.getElementById('timezone-display'),
+    ntpDisplay: document.getElementById('ntp-display'),
+
+    // Logs
+    logViewer: document.getElementById('log-viewer'),
+
+    // UPS (read-only status)
+    upsSummary: document.getElementById('ups-summary'),
     upsDevice: document.getElementById('ups-device'),
     upsAcState: document.getElementById('ups-ac-state'),
     upsBatteryState: document.getElementById('ups-battery-state'),
@@ -44,12 +50,10 @@ const els = {
     upsThresholdCurrent: document.getElementById('ups-threshold-current'),
     upsLastAction: document.getElementById('ups-last-action'),
 
-    telegramEnabled: document.getElementById('telegram-enabled-toggle'),
-    telegramToken: document.getElementById('telegram-bot-token'),
-    telegramTokenStatus: document.getElementById('telegram-token-status'),
-    telegramPairingStatus: document.getElementById('telegram-pairing-status'),
-    telegramPairingCommand: document.getElementById('telegram-pairing-command'),
-    telegramPairedChat: document.getElementById('telegram-paired-chat'),
+    // Alerts summary
+    telegramSummaryDot: document.getElementById('telegram-summary-dot'),
+    telegramSummaryStatus: document.getElementById('telegram-summary-status'),
+    telegramSummaryChat: document.getElementById('telegram-summary-chat'),
 
     // 2FA
     tfaStatusText: document.getElementById('tfa-status-text'),
@@ -66,6 +70,7 @@ const els = {
     watchdogRecoveryItems: document.getElementById('watchdog-recovery-items'),
 };
 
+let currentHostname = '';
 let currentTimeSettings = {
     timezone: null,
     ntp: null
@@ -73,6 +78,10 @@ let currentTimeSettings = {
 
 let currentAlertSettings = null;
 let currentUpsSettings = null;
+let currentUpsStatus = null;
+
+// Modal element references, only set while a modal is open
+let telegramModalEls = null;
 
 function getHeaders() {
     const token = localStorage.getItem('alvaos_token');
@@ -81,6 +90,55 @@ function getHeaders() {
         'Content-Type': 'application/json'
     };
 }
+
+// --- Reusable modal helper (matches the user-management modal pattern) ---
+
+function openSysModal({ title, description = '', bodyHtml = '', confirmLabel = 'Save', cancelLabel = 'Cancel', onConfirm = null, onClose = null }) {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+
+    const panel = document.createElement('div');
+    panel.className = 'sys-modal-panel';
+    panel.innerHTML = `
+        <div class="sys-modal-head">
+            <h3 class="sys-modal-title">${escapeHtml(title)}</h3>
+            <button class="sys-modal-x" type="button" aria-label="Close">&times;</button>
+        </div>
+        ${description ? `<p class="sys-modal-text">${description}</p>` : ''}
+        <div class="sys-modal-body">${bodyHtml}</div>
+        <div class="sys-modal-actions">
+            <button type="button" class="btn-secondary sys-modal-cancel">${escapeHtml(cancelLabel)}</button>
+            ${onConfirm ? `<button type="button" class="btn-primary sys-modal-confirm">${escapeHtml(confirmLabel)}</button>` : ''}
+        </div>
+    `;
+
+    modal.appendChild(panel);
+    document.body.appendChild(modal);
+    if (window.lucide) window.lucide.createIcons();
+
+    let closed = false;
+    const close = () => {
+        if (closed) return;
+        closed = true;
+        modal.remove();
+        if (onClose) onClose();
+    };
+
+    panel.querySelector('.sys-modal-x').addEventListener('click', close);
+    panel.querySelector('.sys-modal-cancel').addEventListener('click', close);
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) close();
+    });
+
+    const confirmBtn = panel.querySelector('.sys-modal-confirm');
+    if (confirmBtn && onConfirm) {
+        confirmBtn.addEventListener('click', () => onConfirm({ panel, modal, close, confirmBtn }));
+    }
+
+    return { panel, modal, close };
+}
+
+// --- Data loading ---
 
 async function fetchSettings() {
     try {
@@ -101,12 +159,8 @@ async function fetchSettings() {
                 els.netDns.textContent = (netData.dns && netData.dns.length > 0) ? netData.dns.join('\n') : 'N/A';
             }
 
-            if (els.hostnameInput) {
-                const hostnameVal = netData.hostname || '';
-                els.hostnameInput.value = hostnameVal;
-                const displayElem = document.getElementById('current-hostname-display');
-                if (displayElem) displayElem.textContent = hostnameVal;
-            }
+            currentHostname = netData.hostname || '';
+            if (els.hostnameDisplay) els.hostnameDisplay.textContent = currentHostname || '-';
         } else {
             console.warn('Network fetch failed with status:', netRes.status);
         }
@@ -118,25 +172,9 @@ async function fetchSettings() {
         const timeRes = await fetch(`${API_BASE}/system/time`, { headers: getHeaders() });
         if (timeRes.ok) {
             const timeData = await timeRes.json();
-            const tzSelect = document.getElementById('timezone-select');
-            const ntpToggle = document.getElementById('ntp-toggle');
-
             currentTimeSettings.timezone = timeData.timezone || 'UTC';
             currentTimeSettings.ntp = !!timeData.ntp_enabled;
-
-            if (tzSelect) {
-                const tzValue = currentTimeSettings.timezone;
-                const hasOption = Array.from(tzSelect.options).some(opt => opt.value === tzValue);
-                if (!hasOption) {
-                    const opt = document.createElement('option');
-                    opt.value = tzValue;
-                    opt.textContent = tzValue;
-                    tzSelect.appendChild(opt);
-                }
-                tzSelect.value = tzValue;
-            }
-
-            if (ntpToggle) ntpToggle.checked = timeData.ntp_enabled;
+            renderTimeSummary();
         }
     } catch (e) {
         console.warn('Time fetch error', e);
@@ -166,19 +204,192 @@ async function fetchSettings() {
     await fetchWatchdogStatus();
 }
 
-function renderUpsSettings(data) {
-    const settings = data?.settings || {};
-    const status = data?.status || {};
-    currentUpsSettings = settings;
+// --- Network / Hostname ---
 
-    if (els.upsEnabledToggle) {
-        els.upsEnabledToggle.checked = !!settings.enabled;
+function openHostnameModal() {
+    const { panel, close } = openSysModal({
+        title: 'Change hostname',
+        description: 'The name this server shows on the network. A reboot may be required to apply everywhere.',
+        confirmLabel: 'Save hostname',
+        bodyHtml: `
+            <label class="setting-label" for="m-hostname-input">Hostname</label>
+            <input type="text" id="m-hostname-input" class="mono-text" style="width:100%;"
+                value="${escapeHtml(currentHostname)}" placeholder="e.g. alvaos">
+        `,
+        onConfirm: async ({ confirmBtn }) => {
+            const input = panel.querySelector('#m-hostname-input');
+            const ok = await updateHostname(String(input?.value || '').trim(), confirmBtn);
+            if (ok) close();
+        }
+    });
+    panel.querySelector('#m-hostname-input')?.focus();
+}
+
+async function updateHostname(newHostname, confirmBtn) {
+    if (!newHostname) {
+        showError('Hostname cannot be empty.');
+        return false;
     }
-    if (els.upsChargeLimitInput) {
-        els.upsChargeLimitInput.value = Number(settings.charge_limit_percent || 80);
+
+    // Validate hostname (RFC 1123)
+    const hostnamePattern = /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/;
+    if (!hostnamePattern.test(newHostname)) {
+        showError('Invalid hostname. Must start/end with alphanumeric, contain only letters, numbers, and hyphens, and be 1-63 characters.');
+        return false;
     }
-    if (els.upsShutdownLimitInput) {
-        els.upsShutdownLimitInput.value = Number(settings.shutdown_percent || 20);
+
+    if (confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Saving...';
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/system/hostname`, {
+            method: 'PUT',
+            headers: getHeaders(),
+            body: JSON.stringify({ hostname: newHostname })
+        });
+
+        if (res.ok) {
+            showNotification('Hostname updated! System may need a reboot.', 'success');
+            currentHostname = newHostname;
+            if (els.hostnameDisplay) els.hostnameDisplay.textContent = newHostname;
+            return true;
+        }
+
+        const err = await res.json().catch(() => ({}));
+        showError('Failed to update: ' + (err.error || 'Unknown error'));
+        return false;
+    } catch (error) {
+        showError('Connection failed');
+        return false;
+    } finally {
+        if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = 'Save hostname';
+        }
+    }
+}
+
+// --- Time ---
+
+function renderTimeSummary() {
+    if (els.timezoneDisplay) els.timezoneDisplay.textContent = currentTimeSettings.timezone || '-';
+    if (els.ntpDisplay) {
+        if (currentTimeSettings.ntp === null) {
+            els.ntpDisplay.textContent = '-';
+        } else {
+            els.ntpDisplay.textContent = currentTimeSettings.ntp ? 'Enabled' : 'Disabled';
+        }
+    }
+}
+
+function openTimeModal() {
+    const baseZones = ['UTC', 'Europe/Berlin', 'America/New_York', 'Asia/Tokyo'];
+    const zones = [...baseZones];
+    if (currentTimeSettings.timezone && !zones.includes(currentTimeSettings.timezone)) {
+        zones.unshift(currentTimeSettings.timezone);
+    }
+    const options = zones.map(z =>
+        `<option value="${escapeHtml(z)}" ${z === currentTimeSettings.timezone ? 'selected' : ''}>${escapeHtml(z)}</option>`
+    ).join('');
+
+    const { panel, close } = openSysModal({
+        title: 'Change time settings',
+        description: 'Set the timezone and whether the clock syncs automatically over NTP.',
+        confirmLabel: 'Save time settings',
+        bodyHtml: `
+            <div class="setting-group">
+                <label class="setting-label" for="m-timezone-select">Timezone</label>
+                <select id="m-timezone-select" style="width:100%;">${options}</select>
+            </div>
+            <label style="display:flex; align-items:center; cursor:pointer; margin-top:8px;">
+                <input type="checkbox" id="m-ntp-toggle" style="margin-right:8px;" ${currentTimeSettings.ntp ? 'checked' : ''}>
+                <span style="font-size:0.85rem; color:var(--text-secondary);">Enable NTP Sync</span>
+            </label>
+        `,
+        onConfirm: async ({ confirmBtn }) => {
+            const tz = panel.querySelector('#m-timezone-select')?.value;
+            const ntp = !!panel.querySelector('#m-ntp-toggle')?.checked;
+            const ok = await updateTimeSettings(tz, ntp, confirmBtn);
+            if (ok) close();
+        }
+    });
+}
+
+async function updateTimeSettings(timezone, ntp, confirmBtn) {
+    const payload = {};
+
+    if (timezone && timezone !== currentTimeSettings.timezone) {
+        payload.timezone = timezone;
+    }
+    if (currentTimeSettings.ntp === null || ntp !== currentTimeSettings.ntp) {
+        payload.ntp = ntp;
+    }
+
+    if (Object.keys(payload).length === 0) {
+        showError('No time settings changed.');
+        return false;
+    }
+
+    if (confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Saving...';
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/system/time`, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json().catch(() => ({}));
+
+        if (res.ok) {
+            currentTimeSettings.timezone = payload.timezone ?? currentTimeSettings.timezone;
+            if (Object.prototype.hasOwnProperty.call(payload, 'ntp')) {
+                currentTimeSettings.ntp = payload.ntp;
+            }
+            renderTimeSummary();
+
+            if (Array.isArray(data.warnings) && data.warnings.length) {
+                showNotification(`Time settings updated with warnings:\n${data.warnings.join('\n')}`, 'warning');
+            } else {
+                showNotification(data.message || 'Time settings updated.', 'success');
+            }
+            return true;
+        }
+
+        showError(`Failed to update time settings: ${data.error || 'Unknown error'}`);
+        return false;
+    } catch (e) {
+        console.error(e);
+        showError('Connection failed');
+        return false;
+    } finally {
+        if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = 'Save time settings';
+        }
+    }
+}
+
+// --- Battery UPS ---
+
+function renderUpsSettings(data) {
+    const settings = data?.settings || currentUpsSettings || {};
+    const status = data?.status || currentUpsStatus || {};
+    currentUpsSettings = settings;
+    currentUpsStatus = status;
+
+    if (els.upsSummary) {
+        if (settings.enabled) {
+            els.upsSummary.textContent = `Enabled — shutdown at ${Number(settings.shutdown_percent || 20)}%`;
+            els.upsSummary.style.color = 'var(--accent-success)';
+        } else {
+            els.upsSummary.textContent = 'Disabled';
+            els.upsSummary.style.color = 'var(--text-secondary)';
+        }
     }
 
     if (els.upsDevice) {
@@ -214,15 +425,6 @@ function renderUpsSettings(data) {
             els.upsLastAction.textContent = '-';
         }
     }
-
-    if (els.upsChargeLimitInput) {
-        els.upsChargeLimitInput.disabled = !status.charge_limit_supported;
-        if (!status.charge_limit_supported) {
-            els.upsChargeLimitInput.title = 'This battery does not support configurable charge limits.';
-        } else {
-            els.upsChargeLimitInput.title = '';
-        }
-    }
 }
 
 async function fetchUpsSettings() {
@@ -242,89 +444,161 @@ async function fetchUpsSettings() {
     }
 }
 
-async function saveUpsSettings() {
-    const enabled = !!els.upsEnabledToggle?.checked;
-    const chargeLimit = Number(els.upsChargeLimitInput?.value || 80);
-    const shutdownLimit = Number(els.upsShutdownLimitInput?.value || 20);
+function openUpsModal() {
+    const settings = currentUpsSettings || {};
+    const status = currentUpsStatus || {};
+    const chargeSupported = !!status.charge_limit_supported;
 
+    const { panel, close } = openSysModal({
+        title: 'Configure Battery UPS',
+        description: 'Use a laptop battery as backup power and shut down safely before it runs out.',
+        confirmLabel: 'Save UPS settings',
+        bodyHtml: `
+            <label style="display:flex; align-items:center; cursor:pointer; margin-bottom:14px;">
+                <input type="checkbox" id="m-ups-enabled" style="margin-right:8px;" ${settings.enabled ? 'checked' : ''}>
+                <span style="font-size:0.85rem; color:var(--text-secondary);">Enable Battery UPS Mode</span>
+            </label>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+                <div>
+                    <label class="setting-label" for="m-ups-charge">Charge Limit (%)</label>
+                    <input type="number" id="m-ups-charge" min="50" max="100" style="width:100%;"
+                        value="${Number(settings.charge_limit_percent || 80)}" ${chargeSupported ? '' : 'disabled title="This battery does not support configurable charge limits."'}>
+                </div>
+                <div>
+                    <label class="setting-label" for="m-ups-shutdown">Shutdown At (%)</label>
+                    <input type="number" id="m-ups-shutdown" min="5" max="80" style="width:100%;"
+                        value="${Number(settings.shutdown_percent || 20)}">
+                </div>
+            </div>
+            ${chargeSupported ? '' : '<p class="metric-sub" style="margin-top:10px;">This battery does not support configurable charge limits.</p>'}
+        `,
+        onConfirm: async ({ confirmBtn }) => {
+            const enabled = !!panel.querySelector('#m-ups-enabled')?.checked;
+            const chargeLimit = Number(panel.querySelector('#m-ups-charge')?.value || 80);
+            const shutdownLimit = Number(panel.querySelector('#m-ups-shutdown')?.value || 20);
+            const ok = await saveUpsSettings(enabled, chargeLimit, shutdownLimit, confirmBtn);
+            if (ok) close();
+        }
+    });
+}
+
+async function saveUpsSettings(enabled, chargeLimit, shutdownLimit, confirmBtn) {
     if (!Number.isFinite(chargeLimit) || chargeLimit < 50 || chargeLimit > 100) {
         showError('Charge Limit must be between 50 and 100.');
-        return;
+        return false;
     }
     if (!Number.isFinite(shutdownLimit) || shutdownLimit < 5 || shutdownLimit > 80) {
         showError('Shutdown At must be between 5 and 80.');
-        return;
+        return false;
     }
     if (shutdownLimit >= chargeLimit) {
         showError('Shutdown At must be lower than Charge Limit.');
-        return;
+        return false;
     }
 
-    const payload = {
-        enabled,
-        charge_limit_percent: chargeLimit,
-        shutdown_percent: shutdownLimit,
-    };
+    if (confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Saving...';
+    }
 
     try {
         const res = await fetch(`${API_BASE}/system/power/ups`, {
             method: 'POST',
             headers: getHeaders(),
-            body: JSON.stringify(payload)
+            body: JSON.stringify({
+                enabled,
+                charge_limit_percent: chargeLimit,
+                shutdown_percent: shutdownLimit,
+            })
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.success) {
             showError(data.error || 'Failed to save UPS settings');
-            return;
+            return false;
         }
         renderUpsSettings(data);
         showNotification('Battery UPS settings saved.', 'success');
+        return true;
     } catch (e) {
         console.error(e);
         showError('Connection failed while saving UPS settings.');
+        return false;
+    } finally {
+        if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = 'Save UPS settings';
+        }
+    }
+}
+
+// --- Alerts / Telegram ---
+
+function renderAlertsSummary() {
+    const settings = currentAlertSettings || {};
+    const telegram = settings.telegram || {};
+    const pairing = settings.pairing || {};
+
+    if (els.telegramSummaryStatus) {
+        let text = 'Not configured';
+        let color = 'var(--text-secondary)';
+        if (telegram.enabled && telegram.paired) {
+            text = 'Active — alerts will be delivered';
+            color = 'var(--accent-success)';
+        } else if (telegram.paired) {
+            text = 'Paired, delivery disabled';
+            color = 'var(--accent-warning)';
+        } else if (pairing.active) {
+            text = 'Pairing pending';
+            color = 'var(--accent-warning)';
+        }
+        els.telegramSummaryStatus.textContent = text;
+        if (els.telegramSummaryDot) els.telegramSummaryDot.style.background = color;
+    }
+
+    if (els.telegramSummaryChat) {
+        els.telegramSummaryChat.textContent = telegram.paired_chat || '-';
+    }
+}
+
+function renderTelegramModal() {
+    if (!telegramModalEls) return;
+    const settings = currentAlertSettings || {};
+    const telegram = settings.telegram || {};
+    const pairing = settings.pairing || {};
+
+    if (telegramModalEls.enabled) telegramModalEls.enabled.checked = !!telegram.enabled;
+
+    if (telegramModalEls.tokenStatus) {
+        telegramModalEls.tokenStatus.textContent = telegram.bot_token_configured
+            ? 'Token is configured. Leave the field empty to keep it unchanged.'
+            : 'No token saved.';
+    }
+
+    if (telegramModalEls.pairingStatus) {
+        if (telegram.paired) {
+            telegramModalEls.pairingStatus.textContent = 'Paired';
+            telegramModalEls.pairingStatus.style.color = 'var(--accent-success)';
+        } else if (pairing.active) {
+            telegramModalEls.pairingStatus.textContent = 'Pairing pending';
+            telegramModalEls.pairingStatus.style.color = 'var(--accent-warning)';
+        } else {
+            telegramModalEls.pairingStatus.textContent = 'Not paired';
+            telegramModalEls.pairingStatus.style.color = 'var(--text-secondary)';
+        }
+    }
+
+    if (telegramModalEls.pairingCommand) {
+        telegramModalEls.pairingCommand.textContent = (pairing.active && pairing.command) ? pairing.command : '-';
+    }
+    if (telegramModalEls.pairedChat) {
+        telegramModalEls.pairedChat.textContent = telegram.paired_chat || '-';
     }
 }
 
 function renderAlertSettings(settings) {
     currentAlertSettings = settings || null;
-
-    const telegram = settings?.telegram || {};
-    const pairing = settings?.pairing || {};
-
-    if (els.telegramEnabled) {
-        els.telegramEnabled.checked = !!telegram.enabled;
-    }
-
-    if (els.telegramTokenStatus) {
-        els.telegramTokenStatus.textContent = telegram.bot_token_configured
-            ? 'Token is configured. Leave the field empty to keep it unchanged.'
-            : 'No token saved.';
-    }
-
-    if (els.telegramPairingStatus) {
-        if (telegram.paired) {
-            els.telegramPairingStatus.textContent = 'Paired';
-            els.telegramPairingStatus.style.color = 'var(--accent-success)';
-        } else if (pairing.active) {
-            els.telegramPairingStatus.textContent = 'Pairing pending';
-            els.telegramPairingStatus.style.color = 'var(--accent-warning)';
-        } else {
-            els.telegramPairingStatus.textContent = 'Not paired';
-            els.telegramPairingStatus.style.color = 'var(--text-secondary)';
-        }
-    }
-
-    if (els.telegramPairingCommand) {
-        if (pairing.active && pairing.command) {
-            els.telegramPairingCommand.textContent = pairing.command;
-        } else {
-            els.telegramPairingCommand.textContent = '-';
-        }
-    }
-
-    if (els.telegramPairedChat) {
-        els.telegramPairedChat.textContent = telegram.paired_chat || '-';
-    }
+    renderAlertsSummary();
+    renderTelegramModal();
 }
 
 async function fetchAlertSettings() {
@@ -345,14 +619,83 @@ async function fetchAlertSettings() {
     }
 }
 
+function openTelegramModal() {
+    const { panel, close } = openSysModal({
+        title: 'Configure Telegram',
+        description: 'Pair a Telegram bot to receive critical system alerts.',
+        cancelLabel: 'Close',
+        onConfirm: null,
+        onClose: () => { telegramModalEls = null; },
+        bodyHtml: `
+            <div class="setting-group">
+                <label style="display: flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" id="telegram-enabled-toggle" style="margin-right:8px;">
+                    <span style="font-size:0.85rem; color:var(--text-secondary);">Enable Telegram delivery</span>
+                </label>
+            </div>
+
+            <div class="setting-group">
+                <label class="setting-label" for="telegram-bot-token">Bot Token</label>
+                <input type="password" id="telegram-bot-token" placeholder="123456789:AA..." autocomplete="off" style="width:100%;">
+                <div class="metric-sub" id="telegram-token-status" style="margin-top:6px;">No token saved.</div>
+            </div>
+
+            <div style="display:flex; gap:10px; flex-wrap: wrap; margin-bottom: 12px;">
+                <button type="button" id="telegram-save-btn" class="btn-primary">Save Settings</button>
+                <button type="button" id="telegram-start-pairing-btn" class="btn-secondary">Generate Pairing Code</button>
+            </div>
+
+            <div class="list-box" style="margin-bottom: 12px;">
+                <div class="list-item">
+                    <span>Pairing Status</span>
+                    <span id="telegram-pairing-status" class="mono-text">Not paired</span>
+                </div>
+                <div class="list-item">
+                    <span>Pairing Command</span>
+                    <span id="telegram-pairing-command" class="mono-text">-</span>
+                </div>
+                <div class="list-item">
+                    <span>Paired Chat</span>
+                    <span id="telegram-paired-chat" class="mono-text">-</span>
+                </div>
+            </div>
+
+            <div style="display:flex; gap:10px; flex-wrap: wrap;">
+                <button type="button" id="telegram-check-pairing-btn" class="btn-secondary">Check Pairing</button>
+                <button type="button" id="telegram-test-btn" class="btn-secondary">Send Test Alert</button>
+                <button type="button" id="telegram-unpair-btn" class="btn-secondary"
+                    style="border-color:var(--accent-danger); color:var(--accent-danger);">Unpair</button>
+            </div>
+        `
+    });
+
+    telegramModalEls = {
+        enabled: panel.querySelector('#telegram-enabled-toggle'),
+        token: panel.querySelector('#telegram-bot-token'),
+        tokenStatus: panel.querySelector('#telegram-token-status'),
+        pairingStatus: panel.querySelector('#telegram-pairing-status'),
+        pairingCommand: panel.querySelector('#telegram-pairing-command'),
+        pairedChat: panel.querySelector('#telegram-paired-chat'),
+    };
+
+    panel.querySelector('#telegram-save-btn')?.addEventListener('click', saveTelegramSettings);
+    panel.querySelector('#telegram-start-pairing-btn')?.addEventListener('click', startTelegramPairing);
+    panel.querySelector('#telegram-check-pairing-btn')?.addEventListener('click', checkTelegramPairing);
+    panel.querySelector('#telegram-test-btn')?.addEventListener('click', sendTelegramTest);
+    panel.querySelector('#telegram-unpair-btn')?.addEventListener('click', unpairTelegram);
+
+    renderTelegramModal();
+}
+
 async function saveTelegramSettings() {
+    if (!telegramModalEls) return;
     const payload = {
         telegram: {
-            enabled: !!els.telegramEnabled?.checked,
+            enabled: !!telegramModalEls.enabled?.checked,
         }
     };
 
-    const tokenValue = String(els.telegramToken?.value || '').trim();
+    const tokenValue = String(telegramModalEls.token?.value || '').trim();
     if (tokenValue) {
         payload.telegram.bot_token = tokenValue;
     }
@@ -369,7 +712,7 @@ async function saveTelegramSettings() {
             return;
         }
 
-        if (els.telegramToken) els.telegramToken.value = '';
+        if (telegramModalEls.token) telegramModalEls.token.value = '';
         renderAlertSettings(data.settings || {});
         showNotification('Telegram settings saved.', 'success');
     } catch (e) {
@@ -476,80 +819,7 @@ async function unpairTelegram() {
     }
 }
 
-async function updateHostname() {
-    const newHostname = els.hostnameInput?.value?.trim();
-    if (!newHostname) return;
-
-    // Validate hostname (RFC 1123)
-    const hostnamePattern = /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/;
-    if (!hostnamePattern.test(newHostname)) {
-        showError('Invalid hostname. Must start/end with alphanumeric, contain only letters, numbers, and hyphens, and be 1-63 characters.');
-        return;
-    }
-
-    try {
-        const res = await fetch(`${API_BASE}/system/hostname`, {
-            method: 'PUT',
-            headers: getHeaders(true),
-            body: JSON.stringify({ hostname: newHostname })
-        });
-
-        if (res.ok) {
-            showNotification('Hostname updated! System may need a reboot.', 'success');
-            fetchSettings();
-        } else {
-            const err = await res.json().catch(() => ({}));
-            showError('Failed to update: ' + (err.error || 'Unknown error'));
-        }
-    } catch (error) {
-        showError('Connection failed');
-    }
-}
-
-async function updateTimeSettings() {
-    const timezone = document.getElementById('timezone-select')?.value;
-    const ntp = !!document.getElementById('ntp-toggle')?.checked;
-    const payload = {};
-
-    if (timezone && timezone !== currentTimeSettings.timezone) {
-        payload.timezone = timezone;
-    }
-    if (currentTimeSettings.ntp === null || ntp !== currentTimeSettings.ntp) {
-        payload.ntp = ntp;
-    }
-
-    if (Object.keys(payload).length === 0) {
-        showError('No time settings changed.');
-        return;
-    }
-
-    try {
-        const res = await fetch(`${API_BASE}/system/time`, {
-            method: 'POST',
-            headers: getHeaders(),
-            body: JSON.stringify(payload)
-        });
-        const data = await res.json().catch(() => ({}));
-
-        if (res.ok) {
-            currentTimeSettings.timezone = payload.timezone ?? currentTimeSettings.timezone;
-            if (Object.prototype.hasOwnProperty.call(payload, 'ntp')) {
-                currentTimeSettings.ntp = payload.ntp;
-            }
-
-            if (Array.isArray(data.warnings) && data.warnings.length) {
-                showNotification(`Time settings updated with warnings:\n${data.warnings.join('\n')}`, 'warning');
-            } else {
-                showNotification(data.message || 'Time settings updated.', 'success');
-            }
-        } else {
-            showError(`Failed to update time settings: ${data.error || 'Unknown error'}`);
-        }
-    } catch (e) {
-        console.error(e);
-        showError('Connection failed');
-    }
-}
+// --- Power actions ---
 
 async function sendPowerAction(action) {
     if (!await showConfirm(`Are you sure you want to ${action} the system?`)) return;
@@ -649,52 +919,41 @@ async function setup2fa() {
         const setupSecret = String(data.secret || '').trim();
         if (!setupSecret) throw new Error('Setup failed: missing secret from server');
 
-        // Create a simple modal div for setup
-        const modal = document.createElement('div');
-        modal.className = 'setup-modal';
-        modal.style = `
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.8); display: flex; align-items: center;
-            justify-content: center; z-index: 9999; padding: 20px;
-        `;
-        modal.innerHTML = `
-            <div class="card" style="max-width: 400px; width: 100%; text-align: center; border: 1px solid var(--border-default); background: var(--bg-card); padding: 24px; border-radius: 8px;">
-                <h2 style="margin-bottom: 1rem; color: var(--text-primary);">Setup 2FA</h2>
-                <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1.5rem;">
-                    Scan this QR code with your authenticator app (Google Authenticator, Authy, Aegis).
-                </p>
+        const { panel, close } = openSysModal({
+            title: 'Setup 2FA',
+            description: 'Scan this QR code with your authenticator app (Google Authenticator, Authy, Aegis).',
+            confirmLabel: 'Verify & Enable',
+            bodyHtml: `
                 <img src="${escapeHtml(String(data.qr_code || ''))}" style="width: 200px; height: 200px; margin: 0 auto 1.5rem; display: block; background: white; padding: 10px; border-radius: 8px;" onerror="this.style.display='none';">
                 <div class="setting-group" style="text-align: left;">
-                    <label class="setting-label">Verification Code</label>
-                    <input type="text" id="tfa-verify-code" placeholder="6-digit code" style="width: 100%; background: var(--bg-body); border: 1px solid var(--border-default); color: var(--text-primary); padding: 8px; border-radius: 4px;">
+                    <label class="setting-label" for="tfa-verify-code">Verification Code</label>
+                    <input type="text" id="tfa-verify-code" placeholder="6-digit code" style="width: 100%;">
                 </div>
-                <div style="display: flex; gap: 10px; margin-top: 1.5rem;">
-                    <button id="tfa-cancel-setup" class="btn-secondary" style="flex:1;">Cancel</button>
-                    <button id="tfa-confirm-setup" class="btn-primary" style="flex:1;">Verify & Enable</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(modal);
+            `,
+            onConfirm: async ({ confirmBtn }) => {
+                const code = panel.querySelector('#tfa-verify-code')?.value;
+                confirmBtn.disabled = true;
+                confirmBtn.textContent = 'Verifying...';
+                try {
+                    const verifyRes = await fetch(`${API_BASE}/auth/2fa/verify-setup`, {
+                        method: 'POST',
+                        headers: getHeaders(),
+                        body: JSON.stringify({ secret: setupSecret, code })
+                    });
+                    const vData = await verifyRes.json();
+                    if (!verifyRes.ok) throw new Error(vData.error || 'Verification failed');
 
-        document.getElementById('tfa-cancel-setup').onclick = () => modal.remove();
-        document.getElementById('tfa-confirm-setup').onclick = async () => {
-            const code = document.getElementById('tfa-verify-code').value;
-            try {
-                const verifyRes = await fetch(`${API_BASE}/auth/2fa/verify-setup`, {
-                    method: 'POST',
-                    headers: getHeaders(),
-                    body: JSON.stringify({ secret: setupSecret, code })
-                });
-                const vData = await verifyRes.json();
-                if (!verifyRes.ok) throw new Error(vData.error || 'Verification failed');
-
-                modal.remove();
-                if (window.showToast) window.showToast('Two-Factor Authentication enabled successfully!', 'success');
-                fetch2faStatus();
-            } catch (err) {
-                showError(err.message);
+                    close();
+                    if (window.showToast) window.showToast('Two-Factor Authentication enabled successfully!', 'success');
+                    fetch2faStatus();
+                } catch (err) {
+                    showError(err.message);
+                    confirmBtn.disabled = false;
+                    confirmBtn.textContent = 'Verify & Enable';
+                }
             }
-        };
+        });
+        panel.querySelector('#tfa-verify-code')?.focus();
     } catch (e) {
         showError(e.message);
     }
@@ -815,37 +1074,46 @@ async function runWatchdogCheck() {
     }
 }
 
+// --- Tab switching ---
+
+function setupTabs() {
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabPanels = document.querySelectorAll('.tab-panel');
+
+    tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tabName = btn.dataset.tab;
+            tabBtns.forEach(b => b.classList.remove('active'));
+            tabPanels.forEach(p => p.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById(`tab-${tabName}`)?.classList.add('active');
+        });
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+    setupTabs();
+
     setInterval(() => {
         if (els.timeDisplay) els.timeDisplay.textContent = new Date().toLocaleString();
     }, 1000);
 
     fetchSettings();
 
-    if (els.saveBtn) els.saveBtn.addEventListener('click', updateHostname);
+    document.getElementById('change-hostname-btn')?.addEventListener('click', openHostnameModal);
+    document.getElementById('change-time-btn')?.addEventListener('click', openTimeModal);
+    document.getElementById('configure-telegram-btn')?.addEventListener('click', openTelegramModal);
+    document.getElementById('configure-ups-btn')?.addEventListener('click', openUpsModal);
 
-    const saveTimeBtn = document.getElementById('save-time-btn');
-    if (saveTimeBtn) saveTimeBtn.addEventListener('click', updateTimeSettings);
-
-    const rebootBtn = document.getElementById('reboot-btn');
-    if (rebootBtn) rebootBtn.addEventListener('click', () => sendPowerAction('reboot'));
-
-    const shutdownBtn = document.getElementById('shutdown-btn');
-    if (shutdownBtn) shutdownBtn.addEventListener('click', () => sendPowerAction('shutdown'));
-
-    document.getElementById('telegram-save-btn')?.addEventListener('click', saveTelegramSettings);
-    document.getElementById('telegram-start-pairing-btn')?.addEventListener('click', startTelegramPairing);
-    document.getElementById('telegram-check-pairing-btn')?.addEventListener('click', checkTelegramPairing);
-    document.getElementById('telegram-test-btn')?.addEventListener('click', sendTelegramTest);
-    document.getElementById('telegram-unpair-btn')?.addEventListener('click', unpairTelegram);
+    document.getElementById('reboot-btn')?.addEventListener('click', () => sendPowerAction('reboot'));
+    document.getElementById('shutdown-btn')?.addEventListener('click', () => sendPowerAction('shutdown'));
 
     els.tfaEnableBtn?.addEventListener('click', setup2fa);
     els.tfaInstallBtn?.addEventListener('click', install2faLibrary);
     els.tfaDisableBtn?.addEventListener('click', disable2fa);
     els.watchdogCheckBtn?.addEventListener('click', runWatchdogCheck);
-    els.upsSaveBtn?.addEventListener('click', saveUpsSettings);
 
-    // Poll watchdog status every 30s
+    // Poll watchdog and UPS status periodically
     setInterval(fetchWatchdogStatus, 30000);
     setInterval(fetchUpsSettings, 30000);
 });
