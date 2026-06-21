@@ -139,7 +139,7 @@ Its more of a TODO than a ROADMAP in the traditional way.
   - Network
   - Power
   - Logs / Diagnostics
-- [ ] Do not show Telegram settings open by default.
+- [ ] Do not show Telegram settings open by default. und allgemein einfach die settings und so nicht offen anzeigen
   - Put alert delivery under `Alerts`.
   - Put 2FA under `Security`.
 - [ ] Avoid placing raw settings forms directly in the middle of the page.
