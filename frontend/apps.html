@@ -596,12 +596,14 @@
                         <div class="setting-group" style="margin: 0;">
                             <label class="setting-label">App Name</label>
                             <input id="compose-app-name" type="text" placeholder="e.g. my-homelab-app" style="width: 100%; padding: 10px;">
+                            <div id="compose-app-name-error" class="field-error" style="display:none;"></div>
                         </div>
                         <div class="setting-group" style="margin: 0;">
                             <label class="setting-label">Storage Pool</label>
                             <select id="compose-pool-select" style="width: 100%; padding: 10px;">
                                 <option value="">Loading pools...</option>
                             </select>
+                            <div id="compose-pool-select-error" class="field-error" style="display:none;"></div>
                         </div>
                     </div>
                     <div class="setting-group" style="margin: 10px 0 0 0;">
@@ -613,6 +615,7 @@
       - &quot;8080:80&quot;
     volumes:
       - ${POOL_PATH}/data:/data"></textarea>
+                        <div id="compose-yaml-input-error" class="field-error" style="display:none;"></div>
                     </div>
                     <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap;">
                         <div id="compose-add-meta" class="store-meta" style="margin: 0;">Tip: Use <code>${POOL_PATH}</code> for data paths inside the selected app storage folder.</div>
@@ -722,6 +725,7 @@
                 <div style="display: flex; gap: 8px; align-items: center;">
                     <button id="container-logs-refresh-btn" class="btn-secondary">Refresh</button>
                     <button id="container-logs-close-btn" class="btn-secondary">Close</button>
+                    <button id="container-logs-close-x" class="modal-close-x" aria-label="Close">&times;</button>
                 </div>
             </div>
             <pre id="container-logs-content" class="logs-output">Loading logs...</pre>
@@ -739,6 +743,7 @@
                 <div class="terminal-toolbar">
                     <button id="container-terminal-clear-btn" class="btn-secondary">Clear</button>
                     <button id="container-terminal-close-btn" class="btn-secondary">Close</button>
+                    <button id="container-terminal-close-x" class="modal-close-x" aria-label="Close">&times;</button>
                 </div>
             </div>
             <pre id="container-terminal-output" class="logs-output"></pre>

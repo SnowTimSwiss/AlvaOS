@@ -574,8 +574,9 @@ function formatSmbPermissions(share) {
 
 // Initialize Disk
 async function initializeDisk(diskName) {
-    if (!await confirmDanger(`Initialize /dev/${diskName}?\n\nThis will erase all data on the disk.`, diskName, {
+    if (!await confirmDanger(`Initialize /dev/${diskName}?\n\nThis will erase all data on the disk.`, null, {
         confirmLabel: 'Initialize Disk',
+        requireCheckbox: `I confirm that I want to initialize /dev/${diskName} and understand this erases all data.`,
         details: diskDetailsForConfirm(diskName)
     })) {
         return;
@@ -617,22 +618,18 @@ async function viewDiskDetails(diskName) {
 
     // Create modal immediately for loading state
     const modal = document.createElement('div');
-    modal.style.cssText = `
-        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-        background: rgba(0, 0, 0, 0.85); display: flex;
-        align-items: center; justify-content: center; z-index: 10000;
-    `;
+    modal.className = 'modal-overlay';
 
     const panel = document.createElement('div');
-    panel.style.cssText = `
-        background: var(--bg-surface); border: 1px solid var(--bg-border);
-        border-radius: 8px; padding: 2rem; max-width: 800px; width: 90%;
-        max-height: 90vh; overflow-y: auto;
-    `;
+    panel.className = 'modal-content';
+    panel.style.maxWidth = '800px';
+    panel.style.maxHeight = '90vh';
+    panel.style.overflowY = 'auto';
 
     panel.innerHTML = `<h2 style="color: var(--text-secondary); text-align: center;">Loading SMART data for ${diskName}...</h2>`;
     modal.appendChild(panel);
     document.body.appendChild(modal);
+    attachModalDismiss(modal, () => modal.remove());
 
     try {
         const response = await apiFetch(`${API_BASE}/storage/disks/${diskName}/smart`, {
@@ -768,34 +765,20 @@ async function showCreatePoolDialog() {
     // Create modal
     const modal = document.createElement('div');
     modal.id = 'pool-wizard-modal';
-    modal.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: rgba(0, 0, 0, 0.8);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 10000;
-    `;
+    modal.className = 'modal-overlay';
 
     const wizard = document.createElement('div');
-    wizard.style.cssText = `
-        background: var(--bg-surface);
-        border: 1px solid var(--border-hover);
-        border-radius: 8px;
-        padding: 2rem;
-        max-width: 600px;
-        width: 90%;
-        max-height: 80vh;
-        overflow-y: auto;
-    `;
+    wizard.className = 'modal-content';
+    wizard.style.maxWidth = '600px';
+    wizard.style.maxHeight = '80vh';
+    wizard.style.overflowY = 'auto';
 
     wizard.innerHTML = `
-        <h2 style="margin: 0 0 1.5rem 0; color: var(--text-primary);">Create Storage Pool</h2>
-        
+        <div class="modal-title">
+            <span>Create Storage Pool</span>
+            <button type="button" class="modal-close-x" id="close-pool-wizard-x" aria-label="Close">&times;</button>
+        </div>
+
         <div style="margin-bottom: 1.5rem;">
             <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Pool Name</label>
             <input type="text" id="pool-name-input" placeholder="e.g., storage-pool" 
@@ -959,6 +942,8 @@ async function showCreatePoolDialog() {
     wizard.querySelector('#cancel-pool-btn').addEventListener('click', () => {
         modal.remove();
     });
+    wizard.querySelector('#close-pool-wizard-x').addEventListener('click', () => modal.remove());
+    attachModalDismiss(modal, () => modal.remove());
 
     // Create button
     createBtn.addEventListener('click', async () => {
@@ -1037,24 +1022,21 @@ async function showExpandPoolDialog(poolId, poolName) {
     }
 
     const modal = document.createElement('div');
-    modal.style.cssText = `
-        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-        background: rgba(0, 0, 0, 0.8); display: flex;
-        align-items: center; justify-content: center; z-index: 10000;
-    `;
+    modal.className = 'modal-overlay';
 
     const dialog = document.createElement('div');
-    dialog.style.cssText = `
-        background: var(--bg-surface); border: 1px solid var(--bg-border);
-        border-radius: 8px; padding: 2rem; max-width: 500px; width: 90%;
-    `;
+    dialog.className = 'modal-content';
+    dialog.style.maxWidth = '500px';
 
     dialog.innerHTML = `
-        <h2 style="margin-top: 0; color: var(--text-primary);">Expand Pool: ${poolName}</h2>
+        <div class="modal-title">
+            <span>Expand Pool: ${poolName}</span>
+            <button type="button" class="modal-close-x" id="close-expand-pool-x" aria-label="Close">&times;</button>
+        </div>
         <p style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 1.5rem;">
             Select one or more disks to add to this pool. Btrfs will immediately increase the total capacity.
         </p>
-        
+
         <div style="max-height: 200px; overflow-y: auto; border: 1px solid var(--bg-border); border-radius: 4px; padding: 0.5rem; margin-bottom: 1.5rem;">
             ${availableDisks.map(disk => `
                 <label style="display: flex; align-items: center; padding: 0.5rem; cursor: pointer;">
@@ -1077,6 +1059,8 @@ async function showExpandPoolDialog(poolId, poolName) {
     document.body.appendChild(modal);
 
     dialog.querySelector('#cancel-expand-btn').onclick = () => modal.remove();
+    dialog.querySelector('#close-expand-pool-x').onclick = () => modal.remove();
+    attachModalDismiss(modal, () => modal.remove());
     dialog.querySelector('#confirm-expand-btn').onclick = async () => {
         const selectedDisks = Array.from(dialog.querySelectorAll('.expand-disk-checkbox:checked')).map(cb => cb.value);
 

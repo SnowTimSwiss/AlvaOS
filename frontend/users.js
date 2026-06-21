@@ -179,10 +179,15 @@ function showCreateUserModal() {
     panel.className = 'user-modal-panel';
 
     panel.innerHTML = `
-        <h3 class="user-modal-title">Create User</h3>
+        <h3 class="user-modal-title">
+            <span>Create User</span>
+            <button type="button" class="modal-close-x" id="close-create-user-x" aria-label="Close">&times;</button>
+        </h3>
         <p class="user-modal-text">Creates a share-access account for SMB/NFS. Separate from the AlvaOS admin login.</p>
         <input type="text" id="create-user-name-input" class="user-modal-input" placeholder="Username, e.g. alex" />
+        <div id="create-user-name-error" class="user-modal-error" style="display:none;"></div>
         <input type="password" id="create-user-pass-input" class="user-modal-input" placeholder="Minimum 8 characters" />
+        <div id="create-user-pass-error" class="user-modal-error" style="display:none;"></div>
         <div class="user-modal-actions">
             <button id="cancel-create-btn" class="btn-secondary">Cancel</button>
             <button id="confirm-create-btn" class="btn-primary">Create</button>
@@ -194,34 +199,42 @@ function showCreateUserModal() {
 
     const cancelBtn = panel.querySelector('#cancel-create-btn');
     const confirmBtn = panel.querySelector('#confirm-create-btn');
+    const closeXBtn = panel.querySelector('#close-create-user-x');
     const nameInput = panel.querySelector('#create-user-name-input');
     const passInput = panel.querySelector('#create-user-pass-input');
+    const nameError = panel.querySelector('#create-user-name-error');
+    const passError = panel.querySelector('#create-user-pass-error');
+
+    const setFieldError = (el, message) => {
+        if (!el) return;
+        el.textContent = message || '';
+        el.style.display = message ? 'block' : 'none';
+    };
 
     if (nameInput) nameInput.focus();
 
-    if (cancelBtn) {
-        cancelBtn.addEventListener('click', () => modal.remove());
-    }
-
-    modal.addEventListener('click', (event) => {
-        if (event.target === modal) modal.remove();
-    });
+    const close = () => modal.remove();
+    if (cancelBtn) cancelBtn.addEventListener('click', close);
+    if (closeXBtn) closeXBtn.addEventListener('click', close);
+    attachModalDismiss(modal, close);
 
     if (confirmBtn) {
         confirmBtn.addEventListener('click', async () => {
             const username = String(nameInput?.value || '').trim();
             const password = String(passInput?.value || '');
+            setFieldError(nameError, '');
+            setFieldError(passError, '');
 
-            if (!username || !password) {
-                usersNotify('Username and password are required', 'warning');
+            if (!username) {
+                setFieldError(nameError, 'Username is required');
                 return;
             }
             if (!USERNAME_PATTERN.test(username)) {
-                usersNotify('Invalid username. Use lowercase letters, numbers, _ or -.', 'warning');
+                setFieldError(nameError, 'Use lowercase letters, numbers, _ or -.');
                 return;
             }
-            if (password.length < 8) {
-                usersNotify('Password must be at least 8 characters', 'warning');
+            if (!password || password.length < 8) {
+                setFieldError(passError, 'Password must be at least 8 characters');
                 return;
             }
 
@@ -287,9 +300,13 @@ function showPasswordResetModal(username, row) {
     panel.className = 'user-modal-panel';
 
     panel.innerHTML = `
-        <h3 class="user-modal-title">Reset Password</h3>
+        <h3 class="user-modal-title">
+            <span>Reset Password</span>
+            <button type="button" class="modal-close-x" id="close-reset-pass-x" aria-label="Close">&times;</button>
+        </h3>
         <p class="user-modal-text">Set a new password for <strong>${usersEscapeHtml(username)}</strong>.</p>
         <input type="password" id="reset-pass-input" class="user-modal-input" placeholder="Minimum 8 characters" />
+        <div id="reset-pass-error" class="user-modal-error" style="display:none;"></div>
         <div class="user-modal-actions">
             <button id="cancel-reset-btn" class="btn-secondary">Cancel</button>
             <button id="confirm-reset-btn" class="btn-primary">Update</button>
@@ -301,25 +318,27 @@ function showPasswordResetModal(username, row) {
 
     const cancelBtn = panel.querySelector('#cancel-reset-btn');
     const confirmBtn = panel.querySelector('#confirm-reset-btn');
+    const closeXBtn = panel.querySelector('#close-reset-pass-x');
     const passwordInput = panel.querySelector('#reset-pass-input');
+    const passError = panel.querySelector('#reset-pass-error');
 
     if (passwordInput) passwordInput.focus();
 
-    if (cancelBtn) {
-        cancelBtn.addEventListener('click', () => modal.remove());
-    }
-
-    modal.addEventListener('click', (event) => {
-        if (event.target === modal) modal.remove();
-    });
+    const close = () => modal.remove();
+    if (cancelBtn) cancelBtn.addEventListener('click', close);
+    if (closeXBtn) closeXBtn.addEventListener('click', close);
+    attachModalDismiss(modal, close);
 
     if (confirmBtn) {
         confirmBtn.addEventListener('click', async () => {
             const newPassword = String(passwordInput?.value || '');
             if (newPassword.length < 8) {
-                usersNotify('Password must be at least 8 characters', 'warning');
+                passError.textContent = 'Password must be at least 8 characters';
+                passError.style.display = 'block';
                 return;
             }
+            passError.textContent = '';
+            passError.style.display = 'none';
 
             confirmBtn.disabled = true;
             if (!confirmBtn.dataset.defaultLabel) confirmBtn.dataset.defaultLabel = confirmBtn.textContent || 'Update';

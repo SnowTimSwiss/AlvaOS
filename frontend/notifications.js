@@ -47,6 +47,18 @@ window.showToast = function (message, type = 'info') {
     }, 5000);
 };
 
+window.attachModalDismiss = function (overlay, closeFn) {
+    overlay.addEventListener('click', (event) => {
+        if (event.target === overlay) closeFn();
+    });
+    overlay.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            closeFn();
+        }
+    });
+};
+
 window.confirmModal = function (message, optionsOrOnConfirm, onCancel) {
     const options = (optionsOrOnConfirm && typeof optionsOrOnConfirm === 'object') ? optionsOrOnConfirm : {};
     const onConfirm = (typeof optionsOrOnConfirm === 'function') ? optionsOrOnConfirm : options.onConfirm;
@@ -77,7 +89,10 @@ window.confirmModal = function (message, optionsOrOnConfirm, onCancel) {
 
     overlay.innerHTML = `
         <div class="modal-content${isDanger ? ' modal-danger' : ''}" role="dialog" aria-modal="true" aria-labelledby="modal-confirm-title">
-            <div class="modal-title" id="modal-confirm-title">${escapeHtml(title)}</div>
+            <div class="modal-title" id="modal-confirm-title">
+                <span>${escapeHtml(title)}</span>
+                <button type="button" class="modal-close-x" id="modal-confirm-x" aria-label="Close">&times;</button>
+            </div>
             <div class="modal-body">
                 <div>${body}</div>
                 ${details.length ? `
@@ -114,6 +129,7 @@ window.confirmModal = function (message, optionsOrOnConfirm, onCancel) {
     document.body.appendChild(overlay);
     const confirmBtn = overlay.querySelector('#modal-confirm');
     const cancelBtn = overlay.querySelector('#modal-cancel');
+    const closeXBtn = overlay.querySelector('#modal-confirm-x');
     const input = overlay.querySelector('#modal-confirm-input');
     const checkboxEl = overlay.querySelector('#modal-confirm-checkbox');
 
@@ -164,6 +180,8 @@ window.confirmModal = function (message, optionsOrOnConfirm, onCancel) {
             close(false);
         };
 
+        if (closeXBtn) closeXBtn.onclick = () => cancelBtn.click();
+
         confirmBtn.onclick = () => {
             if (requireText && String(input?.value || '').trim() !== requireText) {
                 input?.focus();
@@ -173,12 +191,7 @@ window.confirmModal = function (message, optionsOrOnConfirm, onCancel) {
             close(true);
         };
 
-        overlay.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape') {
-                event.preventDefault();
-                cancelBtn.click();
-            }
-        });
+        attachModalDismiss(overlay, () => cancelBtn.click());
     });
 };
 
@@ -206,7 +219,10 @@ window.promptModal = function (message, options = {}) {
 
     overlay.innerHTML = `
         <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="modal-prompt-title">
-            <div class="modal-title" id="modal-prompt-title">${escapeHtml(title)}</div>
+            <div class="modal-title" id="modal-prompt-title">
+                <span>${escapeHtml(title)}</span>
+                <button type="button" class="modal-close-x" id="modal-prompt-x" aria-label="Close">&times;</button>
+            </div>
             <div class="modal-body">
                 ${body}
                 ${fieldLabel ? `<div style="margin-top: 1rem; margin-bottom: 0.4rem; font-weight: 600; text-align: left;">${escapeHtml(fieldLabel)}</div>` : ''}
@@ -236,6 +252,7 @@ window.promptModal = function (message, options = {}) {
     const input = overlay.querySelector('#modal-prompt-input');
     const confirmBtn = overlay.querySelector('#modal-prompt-confirm');
     const cancelBtn = overlay.querySelector('#modal-prompt-cancel');
+    const closeXBtn = overlay.querySelector('#modal-prompt-x');
 
     const syncState = () => {
         if (!confirmBtn) return;
@@ -256,10 +273,13 @@ window.promptModal = function (message, options = {}) {
     syncState();
 
     return new Promise((resolve) => {
-        cancelBtn.onclick = () => {
+        const cancel = () => {
             overlay.remove();
             resolve(null);
         };
+
+        cancelBtn.onclick = cancel;
+        if (closeXBtn) closeXBtn.onclick = cancel;
 
         confirmBtn.onclick = () => {
             const value = String(input?.value || '');
@@ -270,6 +290,8 @@ window.promptModal = function (message, options = {}) {
             overlay.remove();
             resolve(value);
         };
+
+        attachModalDismiss(overlay, cancel);
     });
 };
 
