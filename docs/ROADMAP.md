@@ -119,9 +119,11 @@ Its more of a TODO than a ROADMAP in the traditional way.
 
 ### Updates
 
-- [ ] Keep the current update direction; testing feedback was positive.
-- [ ] Move offline updates into the AlvaOS updates area as a clear button/action.
-- [ ] Keep offline update handling visible but not mixed into unrelated system settings.
+- [x] Keep the current update direction; testing feedback was positive.
+- [x] Move offline updates into the AlvaOS updates area as a clear button/action.
+  - Removed the separate "Offline Updates" tab. The `AlvaOS Updates` tab now has its own "Offline AlvaOS Update" scan/install button, and offline packages are classified by their actual `.deb` package name so it only lists the real `alvaos-system` package there.
+- [x] Keep offline update handling visible but not mixed into unrelated system settings.
+  - Added a matching "Offline System Package" scan/install button inside the `System Updates` tab for non-AlvaOS `.deb` files (e.g. installing a Debian security update from USB when offline). It installs via `dpkg`/`apt --fix-broken` only, without touching AlvaOS services, backups, or migrations, since the previous single offline path always ran the AlvaOS-specific install script (service stop/backup/migrate) regardless of which package was selected.
 - [x] Fix offline update regression that sent the user back into first-time setup.
   - Test result: after an offline update, AlvaOS opened setup again.
   - Setup then failed with `sudo: /usr/bin/sudo is owned by uid 1001, should be 0` and `sudo: a password is required`.

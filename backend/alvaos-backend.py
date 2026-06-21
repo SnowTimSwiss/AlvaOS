@@ -1594,7 +1594,10 @@ def apply_offline_update():
     package_path = data.get('path')
     if not package_path:
         return jsonify({'success': False, 'error': 'path required'}), 400
-    result = update_manager.apply_alvaos_update(package_path)
+    if update_manager.classify_offline_package(package_path) == 'alvaos':
+        result = update_manager.apply_alvaos_update(package_path)
+    else:
+        result = update_manager.apply_offline_system_package(package_path)
     status = 200 if result.get('success') else 500
     return jsonify(result), status
 

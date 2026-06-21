@@ -72,6 +72,8 @@ DEFAULT_SETTINGS = {
     "channel": "stable"
 }
 
+ALVAOS_PACKAGE_NAME = "alvaos-system"
+
 DEBIAN_RELEASES = [
     {"version": "11", "codename": "bullseye"},
     {"version": "12", "codename": "bookworm"},
@@ -645,6 +647,15 @@ class UpdateManager:
         except Exception:
             return False
 
+    def _deb_package_name(self, package_path):
+        res, err = self.run_command([CMD['DPKG_DEB'], "-f", package_path, "Package"], timeout=10, use_sudo=False)
+        if err or not res or res.returncode != 0:
+            return None
+        return (res.stdout or "").strip()
+
+    def classify_offline_package(self, package_path):
+        return "alvaos" if self._deb_package_name(package_path) == ALVAOS_PACKAGE_NAME else "system"
+
     def validate_deb(self, package_path):
         if not package_path or not package_path.endswith(".deb"):
             return False, "Invalid package path"
@@ -733,6 +744,40 @@ class UpdateManager:
             "package": package_path,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "stdout": res.stdout[-2000:] if res.stdout else ""
+        }
+        self.append_history(entry)
+        self.set_update_state("idle", "Install complete", {"package": package_path})
+        return {"success": True}
+
+    def apply_offline_system_package(self, package_path):
+        if platform.system() != "Linux":
+            return {"success": False, "error": "Updates are only supported on Linux"}
+        ok, err = self.validate_deb(package_path)
+        if not ok:
+            self.set_update_state("error", "Package validation failed", {"error": err})
+            return {"success": False, "error": err}
+
+        if self.classify_offline_package(package_path) == "alvaos":
+            return {"success": False, "error": "This is an AlvaOS package; use the AlvaOS update flow instead"}
+
+        self.set_update_state("installing", "Installing offline package", {"package": package_path})
+        res, run_err = self.run_command([CMD['DPKG'], "-i", package_path], timeout=600)
+        if run_err or not res or res.returncode != 0:
+            # Missing dependencies are common for standalone .deb files; try to resolve them.
+            fix_res, fix_err = self.run_command(
+                [CMD['APT_GET'], "-o", "Dpkg::Lock::Timeout=120", "install", "-f", "-y"],
+                timeout=600, extra_env={"DEBIAN_FRONTEND": "noninteractive"}
+            )
+            if fix_err or not fix_res or fix_res.returncode != 0:
+                error_msg = run_err or (res.stderr if res else "dpkg failed")
+                self.set_update_state("error", "Install failed", {"error": error_msg})
+                return {"success": False, "error": error_msg}
+
+        entry = {
+            "type": "offline-system",
+            "package": package_path,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "stdout": res.stdout[-2000:] if res and res.stdout else ""
         }
         self.append_history(entry)
         self.set_update_state("idle", "Install complete", {"package": package_path})
@@ -1029,7 +1074,8 @@ class UpdateManager:
                         packages.append({
                             "path": full_path,
                             "name": name,
-                            "size": os.path.getsize(full_path)
+                            "size": os.path.getsize(full_path),
+                            "type": self.classify_offline_package(full_path)
                         })
                     except OSError:
                         pass

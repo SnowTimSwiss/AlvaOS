@@ -60,7 +60,6 @@
             <div class="tab-bar">
                 <button class="tab-btn active" data-tab="alvaos">AlvaOS Updates</button>
                 <button class="tab-btn" data-tab="system">System Updates</button>
-                <button class="tab-btn" data-tab="offline">Offline Updates</button>
                 <button class="tab-btn" data-tab="history">Update History</button>
                 <button class="tab-btn" data-tab="settings">Settings</button>
             </div>
@@ -108,6 +107,22 @@
                         <button id="download-install-btn" class="btn-primary">Download and Install</button>
                     </div>
                 </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Offline AlvaOS Update</div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="hard-drive-download"></i></div>
+                    </div>
+                    <p class="metric-sub" style="margin-bottom: 12px;">
+                        Install an AlvaOS update from a USB stick instead of downloading it.
+                    </p>
+                    <div style="display:flex; gap:8px; align-items:center; margin-bottom: 12px;">
+                        <button id="offline-alvaos-scan-btn" class="btn-primary">Scan USB Devices</button>
+                    </div>
+                    <div id="offline-alvaos-list" class="list-box">
+                        <div class="metric-sub">No data yet.</div>
+                    </div>
+                </div>
             </div>
 
             <div class="tab-panel" id="tab-system">
@@ -129,18 +144,19 @@
                         <div class="metric-sub">No data yet.</div>
                     </div>
                 </div>
-            </div>
 
-            <div class="tab-panel" id="tab-offline">
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title">Offline Updates</div>
+                        <div class="card-title">Offline System Package</div>
                         <div style="color:var(--text-secondary)"><i data-lucide="hard-drive-download"></i></div>
                     </div>
+                    <p class="metric-sub" style="margin-bottom: 12px;">
+                        Install a system .deb package from a USB stick, for example when there is no internet access.
+                    </p>
                     <div style="display:flex; gap:8px; align-items:center; margin-bottom: 12px;">
-                        <button id="offline-scan-btn" class="btn-primary">Scan USB Devices</button>
+                        <button id="offline-system-scan-btn" class="btn-primary">Scan USB Devices</button>
                     </div>
-                    <div id="offline-list" class="list-box">
+                    <div id="offline-system-list" class="list-box">
                         <div class="metric-sub">No data yet.</div>
                     </div>
                 </div>
