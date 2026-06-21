@@ -98,14 +98,47 @@ Its more of a TODO than a ROADMAP in the traditional way.
 
 ### Backup and Buddy Backup
 
-- [ ] Simplify the backup page.
-  - Show status first.
-  - Show setup actions as buttons.
-  - Do not expose token generation and internal mechanics by default.
-- [ ] Make Buddy Backup setup a clear `Set up Buddy Backup` flow.
+**Design direction (implemented):** kept the existing **Pool / System / Buddy tab
+layout** and the **existing pairing technology** (generate token + paste buddy token,
+Node ID / public key / tunnel IP / listen port, restart tunnel). The change is purely
+presentation: the "calm, status-first" pattern now applies *inside each tab* — each tab
+opens on its current state plus action buttons, and the forms and technical mechanics
+moved into collapsed `Advanced` (`<details>`) sections.
+
+**Structure per tab (as built in `frontend/backup.html` + `backup.js`):**
+
+1. **Top of each tab = status + actions.** A status row with a calm pill
+   (Healthy / Attention / Ready, or for Buddy: Connected / Not paired / Setup only), a
+   one-line summary (last run, next run, status), and a `Back up now` button.
+2. **Snapshots** render as a calm list (`.snap-row`) with per-row Restore/Delete.
+3. **Collapsed `Advanced`** per tab holds schedule, retention, source/pool selection,
+   and save location. The Buddy tab keeps token generation, defaults, and the technical
+   identity (Node ID, public key, tunnel IP, listen port) inside collapsed disclosures.
+
+- [x] Simplify the backup page.
+  - [x] Kept the Pool/System/Buddy tabs; each tab opens on status + `Back up now` instead of stacked forms.
+  - [x] Moved Schedule, Retention, Sources/pool selection, and Save Location into a collapsed `Advanced` block per tab.
+  - [x] Snapshots now render as a calm per-row Restore/Delete list (no wide table dump).
+  - [x] Token generation, Node ID, public key, tunnel IP, and listen port are no longer shown by default — folded into collapsed `Add a buddy (pairing)` and `Technical details` disclosures. Same token mechanism, just out of the default view.
+- [x] Make Buddy Backup setup a clear `Set up Buddy Backup` flow.
+  - [x] Buddy tab opens on connectivity status + paired buddies; pairing (generate/paste token) lives in a clearly labelled, collapsed `Add a buddy` section using the existing token flow.
+  - [x] Pairing is framed with plain wording without changing the underlying token mechanism.
+  - [x] Paired buddies render as cards; restore is a dedicated "Restore from a buddy" picker (buddy → snapshot).
 - [ ] Keep same-system pairing blocked.
   - Testing confirmed that pairing with the same system does not work, which is good.
+  - Backend block is unchanged; the pairing error surfaces in the pairing notification. (A dedicated inline message in the pairing box is still a nice-to-have.)
 - [ ] Improve wording around pairing status, errors, and next steps.
+  - [x] Buddy tab now shows plain status pills (Connected / Not paired / Setup only / Attention) and per-buddy online/connected state.
+  - [ ] Tighten error copy to always include the next step (e.g. "Couldn't reach your buddy. They may be offline — we'll retry automatically. Restart tunnel if this persists.").
+
+**Restore selection — what gets backed up / restored (implemented):**
+
+- [x] **Local pool backups:** choose which pools/subvolumes to include (source toggles in the Pool tab's `Advanced`). Each pool snapshot restores on its own from the Snapshots list.
+- [x] **Local full system:** the System tab backs up and rolls back the whole system (reboot required), separate from pools.
+- [x] **Buddy send — full system OR individual pools:** each buddy card has `Send pools now` (the selected outgoing pool sources) and `Send full system` (an encrypted snapshot of the root subvolume). Full system to a buddy is a **manual** action only — scheduled/policy sources stay data-only so a full root copy is never sent automatically.
+  - Backend: `buddy_backup_manager.sync_to_peer(..., include_system=True)` prepends the `/` root source; `POST /api/v1/backup/buddy/sync` accepts `system: true`.
+- [x] **Buddy restore — choose what to restore:** the "Restore from a buddy" list shows each remote snapshot; pool streams restore that pool, and a `/` stream is labelled **Full system (Reboot required)** and restores the whole system via the existing set-default + reboot rollback path.
+  - Note: full-system-over-buddy reuses the tested btrfs send/receive + `/` set-default rollback primitives rather than a new system-streaming path. **Needs real-hardware testing** (large root transfer, decrypt, receive into `/`, reboot) before relying on it in production.
 
 ### Users
 
@@ -131,23 +164,21 @@ Its more of a TODO than a ROADMAP in the traditional way.
 
 ### System Settings
 
-- [ ] Redesign the system tab.
-- [ ] Split mixed settings into clear areas, for example:
+- [x] Redesign the system tab.
+- [x] Split mixed settings into clear areas, for example:
   - Alerts
   - Security
   - Time
   - Network
   - Power
   - Logs / Diagnostics
-- [ ] Do not show Telegram settings open by default. und allgemein einfach die settings und so nicht offen anzeigen
+- [x] Do not show Telegram settings open by default. und allgemein einfach die settings und so nicht offen anzeigen
   - Put alert delivery under `Alerts`.
   - Put 2FA under `Security`.
-- [ ] Avoid placing raw settings forms directly in the middle of the page.
+- [x] Avoid placing raw settings forms directly in the middle of the page.
   - Use status summaries and action buttons first.
 
 
-### Other things:
-- [ ] add factory reset
 ## Forward after testing fixes
 
 everything will be tested again and again until we go to stable
@@ -160,14 +191,6 @@ UI and UI by apps is not good. confusing too many options for beginners.
 - [ ] Backup UI not user-friendly; streamline workflow.
 - [ ] Overall design inconsistent; audit UI components.
 - [ ] Top-left AlvaOS control panel visual redesign needed.
-
-## Wizards
-
-- [ ] Add an **Installation Wizard** that guides users through partitioning, network setup, and optional features with visual progress bars.
-- [ ] Implement a **Backup & Restore Wizard** offering step‑by‑step selection of snapshots, destination pools, and validation of restore paths.
-- [ ] Create a **First‑Time Setup Wizard** consolidating the initial web UI configuration (admin credentials, network, storage) into a guided flow.
-- [ ] Provide a **App Installation Wizard** for custom Docker‑Compose apps, including form validation and dependency checks.
-- [ ] Add a **System Settings Wizard** to help users configure alerts, security, time, network, and power options in a linear, user‑friendly manner.
 
 ## Notifications
 - sollte man anklicken können (nicht alle aber die bei denen es hilft)

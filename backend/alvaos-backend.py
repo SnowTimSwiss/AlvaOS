@@ -3322,10 +3322,15 @@ def buddy_sync_now():
     data = request.get_json() or {}
     node_id = (data.get('node_id') or '').strip()
     sources = data.get('sources')
+    include_system = bool(data.get('system'))
     if sources is not None and not isinstance(sources, list):
         return jsonify({'error': 'sources must be a list'}), 400
 
-    success, payload = buddy_backup_manager.sync_to_peer(node_id=node_id, sources=sources)
+    success, payload = buddy_backup_manager.sync_to_peer(
+        node_id=node_id,
+        sources=sources,
+        include_system=include_system,
+    )
     if not success:
         return jsonify({'error': payload.get('error', 'Buddy sync failed')}), 400
     return jsonify({'success': True, **payload})
