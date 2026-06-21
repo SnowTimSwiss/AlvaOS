@@ -449,8 +449,8 @@ async function applyDebianOsUpgrade() {
     }
 }
 
-async function scanOfflineUpdates() {
-    const list = document.getElementById('offline-list');
+async function scanOfflinePackages(listId, packageType) {
+    const list = document.getElementById(listId);
     if (list) list.innerHTML = '<div class="metric-sub">Scanning...</div>';
     try {
         const res = await apiFetch('/updates/offline/scan', { method: 'POST', json: {} });
@@ -461,11 +461,11 @@ async function scanOfflineUpdates() {
             window.showToast(apiErrorMessage(res, data, 'Offline scan failed'), 'error');
             return;
         }
-        const packages = data.packages || [];
+        const packages = (data.packages || []).filter(pkg => pkg.type === packageType);
         if (!packages.length) {
             if (list) list.innerHTML = `
                 <div class="metric-sub">
-                    No offline packages found.<br>
+                    No ${packageType === 'alvaos' ? 'AlvaOS' : 'system'} packages found.<br>
                     <small style="opacity:0.8;">Make sure your USB stick uses a supported filesystem (FAT32, NTFS, EXT4, exFAT) and the .deb package is in a top-level directory.</small>
                 </div>
             `;
@@ -486,7 +486,7 @@ async function scanOfflineUpdates() {
         });
 
         list.querySelectorAll('button[data-offline-path]').forEach(btn => {
-            btn.addEventListener('click', () => applyOfflineUpdate(btn.dataset.offlinePath));
+            btn.addEventListener('click', () => applyOfflinePackage(btn.dataset.offlinePath, listId, packageType));
         });
     } catch (err) {
         if (list) list.innerHTML = '<div class="metric-sub">Failed to scan offline updates.</div>';
@@ -494,7 +494,7 @@ async function scanOfflineUpdates() {
     }
 }
 
-async function applyOfflineUpdate(path) {
+async function applyOfflinePackage(path, listId, packageType) {
     const ok = await window.showConfirm('Install offline update?\nThis will install the selected package.');
     if (!ok) return;
     try {
@@ -508,9 +508,14 @@ async function applyOfflineUpdate(path) {
             window.showToast(apiErrorMessage(res, data, 'Offline update failed'), 'error');
             return;
         }
-        window.showToast('Offline update started', 'success');
-        beginUpdateTransition('Offline-Update');
-        pollUpdateStatus();
+        if (packageType === 'alvaos') {
+            window.showToast('Offline update started', 'success');
+            beginUpdateTransition('Offline-Update');
+            pollUpdateStatus();
+        } else {
+            window.showToast('Package installed', 'success');
+            await Promise.all([scanOfflinePackages(listId, packageType), loadUpdateHistory()]);
+        }
     } catch (err) {
         window.showToast('Offline update failed', 'error');
     }
@@ -668,7 +673,8 @@ function initHandlers() {
     document.getElementById('debian-apply-btn')?.addEventListener('click', applyDebianUpdates);
     document.getElementById('debian-apply-all-btn')?.addEventListener('click', applyAllDebianUpdates);
     document.getElementById('debian-os-upgrade-btn')?.addEventListener('click', applyDebianOsUpgrade);
-    document.getElementById('offline-scan-btn')?.addEventListener('click', scanOfflineUpdates);
+    document.getElementById('offline-alvaos-scan-btn')?.addEventListener('click', () => scanOfflinePackages('offline-alvaos-list', 'alvaos'));
+    document.getElementById('offline-system-scan-btn')?.addEventListener('click', () => scanOfflinePackages('offline-system-list', 'system'));
     document.getElementById('settings-save-btn')?.addEventListener('click', saveSettings);
 }
 
