@@ -136,6 +136,10 @@
         .user-modal-title {
             margin-bottom: 0.5rem;
             color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
         }
 
         .user-modal-text {
@@ -145,12 +149,18 @@
 
         .user-modal-input {
             width: 100%;
-            margin-bottom: 1.5rem;
+            margin-bottom: 0.4rem;
             background: var(--bg-body);
             color: var(--text-primary);
             border: 1px solid var(--border-default);
             padding: 8px;
             border-radius: 4px;
+        }
+
+        .user-modal-error {
+            color: var(--accent-danger);
+            font-size: 0.8rem;
+            margin-bottom: 1rem;
         }
 
         .user-modal-actions {

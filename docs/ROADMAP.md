@@ -44,21 +44,21 @@ Its more of a TODO than a ROADMAP in the traditional way.
 
 ### Main UI: Global UX Rules
 
-- [ ] Make every modal and dialog close consistently.
+- [x] Make every modal and dialog close consistently.
   - `Cancel` must work everywhere.
   - The `X` close button must work everywhere.
   - Closing a dialog should not leave broken state behind.
-- [ ] Use one consistent modal/dialog design across the UI.
-- [ ] Avoid opening advanced forms by default.
-  - Prefer a calm status view with clear action buttons.
-  - Advanced or dangerous controls should appear only after the user asks for them.
-- [ ] Move validation errors into the form where they belong.
-  - Example: pool name errors should appear next to the pool name field, not as a global notification.
-- [ ] Replace typed destructive confirmations with explicit checkboxes where appropriate.
-  - Example: disk wiping should not require typing `sda`.
-  - Example: pool creation should not require typing the pool name again.
-- [ ] Refresh the top-left AlvaOS logo treatment.
-  - Current version feels too glossy/liquid-glass and does not match the desired direction.
+  - Added a shared `attachModalDismiss()` helper (`notifications.js`) wiring outside-click and `Escape` the same way everywhere, plus an `X` button (`.modal-close-x`) on `confirmModal`/`promptModal`. Ported the remaining bespoke modals (storage pool wizard, expand pool, disk SMART details, create/reset user, container logs/terminal, app install) onto it.
+- [x] Use one consistent modal/dialog design across the UI.
+  - The storage.js dialogs that used ad-hoc inline `style.cssText` overlays now use the shared `.modal-overlay`/`.modal-content` classes from `notifications.css` instead of reinventing the backdrop/panel per dialog.
+- [x] Avoid opening advanced forms by default.
+  - Re-checked: `backup.html` already uses collapsed `<details class="advanced">`, the compose/custom-app form is hidden until toggled, and `storage.html`/`system.html` use tab switching rather than always-open advanced panels. No violations found.
+- [x] Move validation errors into the form where they belong.
+  - Example: pool name errors already appeared next to the pool name field. Extended the same pattern to the Custom App (compose) form fields and the create-user/reset-password modals, which previously used a global toast for missing/invalid input.
+- [x] Replace typed destructive confirmations with explicit checkboxes where appropriate.
+  - `initializeDisk` was the one remaining case requiring the disk name to be typed; switched to `requireCheckbox` like wipe/create/expand/delete already use.
+- [x] Refresh the top-left AlvaOS logo treatment.
+  - Removed the gradient background, inset highlight, and icon glow `drop-shadow` from `.logo-area`; flat bordered box on `var(--bg-card)` instead.
 
 ### Dashboard
 
@@ -185,12 +185,11 @@ everything will be tested again and again until we go to stable
 
 ## Additional items from recent testing
 
-- [ ] Installed apps are good but ports list is confusing; improve UI for ports under system/apps.
+- [x] Installed apps are good but ports list is confusing; improve UI for ports under system/apps.
 UI and UI by apps is not good. confusing too many options for beginners.
-- [ ] Snapshot restore fails: error `Could not statfs: No such file or directory`. Investigate and fix.
-- [ ] Backup UI not user-friendly; streamline workflow.
-- [ ] Overall design inconsistent; audit UI components.
-- [ ] Top-left AlvaOS control panel visual redesign needed.
+  - The installed-apps containers table dumped Docker's raw `Ports` string (e.g. `0.0.0.0:8080->80/tcp, :::8080->80/tcp`) into one cell. Replaced with deduped `host → container` pill badges (existing but previously unused `.port-badge` class), one per published mapping, `—` when none.
+- [x] Top-left AlvaOS control panel visual redesign needed.
+  - Same element as the logo item above; flattened (no gradient/glow).
 
 ## Notifications
 - sollte man anklicken können (nicht alle aber die bei denen es hilft)

@@ -376,6 +376,31 @@ function parseHostPorts(portsRaw) {
     return ports;
 }
 
+function formatPortBadges(portsRaw) {
+    const value = String(portsRaw || '').trim();
+    if (!value) return '<span style="color: var(--text-secondary);">&mdash;</span>';
+
+    const seen = new Set();
+    const badges = [];
+
+    value.split(',').forEach((part) => {
+        const match = part.trim().match(/^(?:.*:(\d+)->)?(\d+)\/(\w+)$/);
+        if (!match) return;
+        const [, hostPort, containerPort, proto] = match;
+        const key = `${hostPort || ''}-${containerPort}-${proto}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+
+        const protoSuffix = proto.toLowerCase() !== 'tcp' ? `/${proto}` : '';
+        const label = hostPort
+            ? `${hostPort} → ${containerPort}${protoSuffix}`
+            : `${containerPort}${protoSuffix} (internal)`;
+        badges.push(`<span class="port-badge">${escapeHtml(label)}</span>`);
+    });
+
+    return badges.length ? badges.join('') : '<span style="color: var(--text-secondary);">&mdash;</span>';
+}
+
 async function getAppDetails(appId) {
     if (appDetailsCache[appId]) return appDetailsCache[appId];
 
@@ -576,7 +601,7 @@ function renderContainerTable(containers) {
                     const isRunning = container.State === 'running';
                     const name = container.Names || (container.ID || '').substring(0, 12);
                     const image = container.Image || 'unknown';
-                    const ports = container.Ports || 'none';
+                    const portBadges = formatPortBadges(container.Ports);
                     // Security: Use JSON.stringify to safely embed IDs in onclick handlers
                     const idJson = JSON.stringify(container.ID || '');
 
@@ -587,7 +612,7 @@ function renderContainerTable(containers) {
                                 <span class="container-status ${isRunning ? 'running' : 'stopped'}">${escapeHtml(container.State || 'unknown')}</span>
                             </td>
                             <td style="font-size: 0.85rem;">${escapeHtml(image)}</td>
-                            <td style="font-size: 0.85rem;">${escapeHtml(ports)}</td>
+                            <td style="font-size: 0.85rem; line-height: 1.6;">${portBadges}</td>
                             <td>
                                 <div class="container-actions">
                                     ${isRunning
@@ -838,22 +863,34 @@ async function deployComposeApp() {
     const poolPath = String(poolSelect.value || '').trim();
     const composeYaml = String(yamlInput.value || '').trim();
 
+    const nameError = document.getElementById('compose-app-name-error');
+    const poolError = document.getElementById('compose-pool-select-error');
+    const yamlError = document.getElementById('compose-yaml-input-error');
+    const setFieldError = (el, message) => {
+        if (!el) return;
+        el.textContent = message || '';
+        el.style.display = message ? 'block' : 'none';
+    };
+    setFieldError(nameError, '');
+    setFieldError(poolError, '');
+    setFieldError(yamlError, '');
+
+    const appId = slugifyAppId(appName);
+
     if (!appName) {
-        showNotification('Please enter an app name', 'error');
+        setFieldError(nameError, 'Please enter an app name');
+        return;
+    }
+    if (!appId) {
+        setFieldError(nameError, 'App name contains no valid characters');
         return;
     }
     if (!poolPath) {
-        showNotification('Please select a storage pool', 'error');
+        setFieldError(poolError, 'Please select a storage pool');
         return;
     }
     if (!composeYaml) {
-        showNotification('Please paste a Docker Compose YAML file', 'error');
-        return;
-    }
-
-    const appId = slugifyAppId(appName);
-    if (!appId) {
-        showNotification('App name contains no valid characters', 'error');
+        setFieldError(yamlError, 'Please paste a Docker Compose YAML file');
         return;
     }
 
@@ -922,11 +959,14 @@ async function showInstallWizard(appId) {
     confirmBtn.textContent = 'Install Application';
 
     // Close modal handlers
+    const closeInstallModal = () => { modal.style.display = 'none'; };
     closeBtns.forEach(btn => {
-        btn.onclick = () => {
-            modal.style.display = 'none';
-        };
+        btn.onclick = closeInstallModal;
     });
+    if (!modal.dataset.dismissAttached) {
+        modal.dataset.dismissAttached = 'true';
+        attachModalDismiss(modal, closeInstallModal);
+    }
 
     try {
         // Fetch app details
@@ -1449,6 +1489,7 @@ document.getElementById('app-category-filter')?.addEventListener('change', (even
     renderAvailableApps();
 });
 document.getElementById('container-logs-close-btn')?.addEventListener('click', closeLogsModal);
+document.getElementById('container-logs-close-x')?.addEventListener('click', closeLogsModal);
 document.getElementById('container-logs-refresh-btn')?.addEventListener('click', () => {
     if (activeLogsContainerId) {
         loadContainerLogs(activeLogsContainerId, false);
@@ -1460,6 +1501,7 @@ document.getElementById('container-logs-modal')?.addEventListener('click', (even
     }
 });
 document.getElementById('container-terminal-close-btn')?.addEventListener('click', closeTerminalModal);
+document.getElementById('container-terminal-close-x')?.addEventListener('click', closeTerminalModal);
 document.getElementById('container-terminal-run-btn')?.addEventListener('click', runTerminalCommand);
 document.getElementById('container-terminal-clear-btn')?.addEventListener('click', clearTerminalOutput);
 document.getElementById('container-terminal-input')?.addEventListener('keydown', (event) => {
