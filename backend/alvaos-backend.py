@@ -6,8 +6,6 @@ Thin routing layer — all business logic lives in the manager modules.
 
 # ── Standard library ──────────────────────────────────────────────────────────
 import base64
-import hashlib
-import hmac
 import importlib
 import io
 import json
@@ -53,6 +51,7 @@ from auth_manager import (
     require_auth, require_csrf_token,
     _check_rate_limit, _reset_rate_limit,
 )
+from password_utils import hash_password, verify_password
 from storage_manager import (
     is_secure_system_device, is_path_on_system_disk,
     STORAGE_CACHE, CACHE_TTL, _storage_cache_lock,
@@ -350,10 +349,19 @@ def login():
         with open(AUTH_FILE, 'r') as f:
             auth_data = json.load(f)
 
-        h = hashlib.sha256((password + auth_data['salt']).encode()).hexdigest()
-
-        if not hmac.compare_digest(h, auth_data['password_hash']):
+        is_valid, needs_rehash = verify_password(password, auth_data)
+        if not is_valid:
             return jsonify({'error': 'Invalid password'}), 401
+
+        # Transparently upgrade legacy/weaker hashes on successful login,
+        # preserving any existing fields such as the 2FA secret.
+        if needs_rehash:
+            try:
+                auth_data.update(hash_password(password))
+                with open(AUTH_FILE, 'w') as f:
+                    json.dump(auth_data, f)
+            except Exception as e:
+                print(f"Warning: could not upgrade password hash: {e}")
 
         _reset_rate_limit(client_ip)
 
@@ -518,8 +526,8 @@ def disable_2fa():
     try:
         with open(AUTH_FILE, 'r') as f:
             auth_data = json.load(f)
-        h = hashlib.sha256((password + auth_data['salt']).encode()).hexdigest()
-        if not hmac.compare_digest(h, auth_data['password_hash']):
+        is_valid, _ = verify_password(password, auth_data)
+        if not is_valid:
             return jsonify({'error': 'Incorrect password'}), 401
     except Exception:
         return jsonify({'error': 'Authentication failed'}), 500

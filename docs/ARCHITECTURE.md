@@ -56,8 +56,8 @@ NAS-to-NAS encrypted incremental backup.
 - **Scope**: Backs up configs, shares, and app state (not the OS itself).
 
 ### 5. Web UI & API
-- **UI**: Modern, dark-mode first (Svelte/Vue), responsive, Unraid-inspired.
-- **API**: Versioned REST API (Go/Python), uses JSON and JWT. UI never runs shell commands directly.
+- **UI**: Dark-mode first, responsive, Unraid-inspired. Plain HTML/CSS/vanilla JavaScript — no framework and no build step. Files are served as static assets by the backend.
+- **API**: REST API under `/api/v1/`, implemented in Python with Flask. Uses JSON. Authentication is via opaque session tokens (see Security Model), not JWT. The UI never runs shell commands directly — every privileged action goes through the API, which shells out only via an allow-listed sudoers configuration.
 
 ## Distribution & Updates
 - **Installer**: Minimal (<500MB) debootstrap image (BIOS/UEFI).
@@ -66,10 +66,19 @@ NAS-to-NAS encrypted incremental backup.
 ## Security Model
 
 **Authentication:**
-- Local user accounts
-- Web UI login required
-- SSH disabled by default (can be enabled)
-- No default passwords
+- Single local admin account (`root`), configured during first-run setup — there are no default passwords.
+- Web UI login required for all API endpoints once setup is complete.
+- Passwords are stored as PBKDF2-HMAC-SHA256 hashes with a per-install random salt (`/var/lib/alvaos/auth.json`).
+- Sessions use opaque random tokens with a 24h TTL. Tokens are held in memory, so restarting the backend (e.g. after an update) logs sessions out.
+- Optional TOTP two-factor authentication (RFC 6238, via `pyotp`).
+- State-changing requests require a CSRF token bound to the session.
+- Login attempts are rate-limited per IP (10 attempts / 15 min).
+- Security headers (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`) are added to every response.
+- SSH disabled by default (can be enabled).
+
+**Privilege separation:**
+- The backend runs as the unprivileged `alvaos` system user.
+- System-level operations are executed through an explicit sudoers allow-list (`/etc/sudoers.d/alvaos`); the set of permitted commands is validated in CI (`scripts/ci/check_privileged_commands.py`).
 
 **Network:**
 - LAN access by default
@@ -77,22 +86,27 @@ NAS-to-NAS encrypted incremental backup.
 - Buddy Backup uses encrypted tunnels
 
 **Data:**
-- Encryption at rest (optional, user choice)
-- Buddy Backup always encrypted in transit
-- No telemetry or phone-home
+- Buddy Backup payloads are encrypted before transfer (passphrase-derived key) and sent over a WireGuard tunnel.
+- No telemetry or phone-home.
 
 ## Service Architecture
 
-**systemd units:**
-- `alvaos.service` - REST API server + Web UI
-- `alvaos-ui.service` - Web UI (nginx or static server)
-- `alvaos-buddy-backup.service` - Backup daemon
-- Standard Docker service
+The backend is a single Flask process that serves both the REST API and the static Web UI on port `8080`.
 
-**Storage:**
-- `/etc/alvaos/` - Configuration files
-- `/var/lib/alvaos/` - State and databases
-- `/opt/alvaos/` - Application binaries
+**systemd units:**
+- `alvaos.service` — main backend: REST API + Web UI (`python3 /opt/alvaos/bin/alvaos-backend.py`).
+- `alvaos-update-checker.service` — periodic update check.
+- `alvaos-watchdog.timer` / `alvaos-watchdog.service` — health check with auto-restart of failing services (every ~5 min).
+- Standard Docker service for app containers.
+
+**Filesystem layout:**
+- `/opt/alvaos/bin/` - Backend Python modules
+- `/opt/alvaos/webui/` - Frontend static assets (HTML/CSS/JS)
+- `/opt/alvaos/apps/` - App catalog and icons
+- `/opt/alvaos/scripts/` - Update and setup helper scripts
+- `/etc/alvaos/` - Configuration and version files
+- `/var/lib/alvaos/` - State (auth, setup status, pools, backups)
+- `/var/log/alvaos/` - Logs
 - `/srv/` - User data and shares
 
 ## Tech Stack Summary
@@ -100,10 +114,12 @@ NAS-to-NAS encrypted incremental backup.
 |-----------|-----------|-----------|
 | Base OS | Debian Stable | Ultra-stable |
 | Storage | Btrfs | Snapshots, pooling |
-| Containers| Docker | Proven, simple |
-| Backend | Go/Python | Performance/Prototyping |
-| UI | Svelte/Vue | Lightweight, reactive |
-| Backup | WireGuard+rsync| Secure, efficient |
+| Containers| Docker + Compose | Proven, simple |
+| Backend | Python 3 + Flask | Simple, batteries-included, easy to audit |
+| UI | Vanilla HTML/CSS/JS | No framework, no build step, lightweight |
+| Auth | Session tokens + TOTP | Local-first, no external IdP |
+| Backup | WireGuard + encrypted transfer | Secure, efficient |
+| Packaging | Debian `.deb` | Native, predictable upgrades |
 
 ## Non-Goals & Future
 - **No**: VMs (current), Kubernetes, Desktops, Cloud/Telemetry.
