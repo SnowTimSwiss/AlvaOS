@@ -75,46 +75,6 @@ function formatDate(value) {
     return date.toLocaleString();
 }
 
-function getUpdateButtonConfig(app) {
-    if (String(app?.source || 'catalog') === 'custom_compose') {
-        return {
-            disabled: true,
-            label: 'Update',
-            title: 'Custom compose apps are not updateable via catalog'
-        };
-    }
-
-    if (String(app?.update_status || '') === 'checking') {
-        return {
-            disabled: true,
-            label: 'Checking...',
-            title: 'Checking whether newer container images are available'
-        };
-    }
-
-    if (app?.update_available === false) {
-        return {
-            disabled: true,
-            label: 'Up to date',
-            title: 'This app is already on the newest catalog version'
-        };
-    }
-
-    if (app?.update_available == null) {
-        return {
-            disabled: true,
-            label: 'Unavailable',
-            title: app?.update_check_error || 'Update status could not be determined right now'
-        };
-    }
-
-    return {
-        disabled: false,
-        label: 'Update',
-        title: ''
-    };
-}
-
 async function loadAppUpdateStatus(appId, forceRefresh = false) {
     if (!appId) return null;
     if (appUpdateStatusPending.has(appId) && !forceRefresh) {
@@ -529,7 +489,6 @@ async function renderInspector() {
                 ? selected
                 : { ...selected, update_status: selected.source === 'custom_compose' ? 'unsupported' : 'checking' }
         );
-    const updateButton = getUpdateButtonConfig(effectiveUpdateState);
 
     if (selectedAppId !== selectedAtRender) {
         return;
@@ -540,58 +499,104 @@ async function renderInspector() {
     }
 
     const webUiUrl = buildWebUiUrl(selected.app_id, appDetails, appContainers);
+    const appId = selected.app_id;
+    const escId = escapeHtml(appId);
+    const isCustom = String(selected.source || 'catalog') === 'custom_compose';
+    const toggling = appTogglePending.has(appId);
+    const updateAvailable = effectiveUpdateState.update_available === true && !isCustom;
+
+    // Calm sub-status line: installed date + a quiet update hint (never red).
+    const statusBits = [`Installed ${escapeHtml(formatDate(selected.installed_at))}`];
+    if (isCustom) {
+        statusBits.push('Custom app');
+    } else if (String(effectiveUpdateState.update_status || '') === 'checking') {
+        statusBits.push('Checking for updates&hellip;');
+    } else if (effectiveUpdateState.update_available === false) {
+        statusBits.push('Up to date');
+    }
 
     inspector.innerHTML = `
         <div class="inspector-card">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:8px;">
-                <div>
-                    <div style="font-size:1.2rem; font-weight:600;">${escapeHtml(selected.name || selected.app_id)}</div>
-                    <div class="inspector-value" style="color: var(--text-secondary);">${escapeHtml(selected.app_id)}</div>
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:16px;">
+                <div style="min-width:0;">
+                    <div style="font-size:1.2rem; font-weight:600;">${escapeHtml(selected.name || appId)}</div>
+                    <div class="inspector-substatus">
+                        <span class="container-status ${runningCount > 0 ? 'running' : 'stopped'}">${runningCount > 0 ? 'Running' : 'Stopped'}</span>
+                        <span>${statusBits.join(' &middot; ')}</span>
+                    </div>
                 </div>
-                <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
-                    <span class="container-status ${runningCount > 0 ? 'running' : 'stopped'}">${runningCount > 0 ? 'Running' : 'Stopped'}</span>
-                    ${appContainers.length > 0 ? `
-                        <button class="btn-icon ${runningCount > 0 ? 'btn-danger' : ''}" ${appTogglePending.has(selected.app_id) ? 'disabled style="opacity:0.6; cursor:not-allowed;"' : ''}
-                            onclick="toggleAppRunning('${escapeHtml(selected.app_id)}')">${appTogglePending.has(selected.app_id) ? '...' : (runningCount > 0 ? 'Stop' : 'Start')}</button>
-                    ` : ''}
-                </div>
-            </div>
-
-            <div class="inspector-actions">
-                ${webUiUrl ? `<a class="btn-link" href="${escapeHtml(webUiUrl)}" target="_blank" rel="noopener noreferrer">Open Web UI</a>` : '<button class="btn-secondary" disabled style="opacity:0.6; cursor:not-allowed;">No Web UI detected</button>'}
-                <button class="btn-icon" ${updateButton.disabled ? 'disabled style="opacity:0.55; cursor:not-allowed;"' : `onclick="updateApp('${escapeHtml(selected.app_id)}')"`} ${updateButton.title ? `title="${escapeHtml(updateButton.title)}"` : ''}>${escapeHtml(updateButton.label)}</button>
-                <button class="btn-icon btn-danger" onclick="uninstallApp('${escapeHtml(selected.app_id)}')">Uninstall</button>
-            </div>
-
-            <div class="inspector-grid">
-                <div>
-                    <div class="inspector-label">Installed</div>
-                    <div class="inspector-value">${escapeHtml(formatDate(selected.installed_at))}</div>
-                </div>
-                <div>
-                    <div class="inspector-label">Storage Path</div>
-                    <div class="inspector-value mono-text">${escapeHtml(selected.storage_path || '-')}</div>
-                </div>
-                <div>
-                    <div class="inspector-label">Pool</div>
-                    <div class="inspector-value mono-text">${escapeHtml(selected.pool_path || '-')}</div>
-                </div>
-                <div>
-                    <div class="inspector-label">Parent Subvolume</div>
-                    <div class="inspector-value mono-text">${escapeHtml(selected.parent_subvolume || '-')}</div>
-                </div>
-                <div>
-                    <div class="inspector-label">Source</div>
-                    <div class="inspector-value mono-text">${escapeHtml(selected.source || 'catalog')}</div>
+                <div class="menu-wrap">
+                    <button class="menu-btn" aria-label="More actions" onclick="toggleInspectorMenu('app-actions-menu', event)">&#8943;</button>
+                    <div class="menu-pop" id="app-actions-menu">
+                        ${appContainers.length > 0 ? `
+                            <button class="menu-item" onclick="toggleInspectorMenu('app-actions-menu', event); restartApp('${escId}')">
+                                ${window.alvaIcon ? window.alvaIcon('rotate-cw') : ''} Restart app
+                            </button>` : ''}
+                        ${!isCustom ? `
+                            <button class="menu-item" onclick="toggleInspectorMenu('app-actions-menu', event); checkAppForUpdates('${escId}')">
+                                ${window.alvaIcon ? window.alvaIcon('refresh-cw') : ''} Check for updates
+                            </button>` : ''}
+                        <div class="menu-sep"></div>
+                        <button class="menu-item danger" onclick="toggleInspectorMenu('app-actions-menu', event); uninstallApp('${escId}')">
+                            ${window.alvaIcon ? window.alvaIcon('trash-2') : ''} Uninstall app&hellip;
+                        </button>
+                    </div>
                 </div>
             </div>
 
-            <div style="font-size: 0.95rem; font-weight:600; margin: 16px 0 10px;">Containers${containersLoaded ? ` (${appContainers.length})` : ''}</div>
-            ${containersLoaded ? renderContainerTable(appContainers) : `
-                <div class="empty-state" style="padding: 1.5rem 1rem;">
-                    <div>Loading container data...</div>
+            <div class="inspector-actions" style="margin-bottom:0;">
+                ${webUiUrl
+                    ? `<a class="btn-primary-lg" href="${escapeHtml(webUiUrl)}" target="_blank" rel="noopener noreferrer">${window.alvaIcon ? window.alvaIcon('external-link') : ''} Open Web UI</a>`
+                    : '<button class="btn-secondary" disabled style="opacity:0.6; cursor:not-allowed;">No Web UI detected</button>'}
+                ${appContainers.length > 0 ? `
+                    <button class="btn-secondary" ${toggling ? 'disabled style="opacity:0.6; cursor:not-allowed;"' : ''}
+                        onclick="toggleAppRunning('${escId}')">${toggling ? '...' : (runningCount > 0 ? 'Stop' : 'Start')}</button>
+                ` : ''}
+                ${updateAvailable ? `
+                    <button class="btn-update" onclick="updateApp('${escId}')">
+                        ${window.alvaIcon ? window.alvaIcon('arrow-up-circle') : ''} Update
+                    </button>
+                ` : ''}
+            </div>
+
+            <details class="disc">
+                <summary>${window.alvaIcon ? window.alvaIcon('info') : ''} Details &amp; storage <span class="chev">${window.alvaIcon ? window.alvaIcon('chevron-right') : '&rsaquo;'}</span></summary>
+                <div class="disc-body">
+                    <div class="inspector-grid" style="margin:4px 0 0;">
+                        <div>
+                            <div class="inspector-label">App ID</div>
+                            <div class="inspector-value mono-text">${escId}</div>
+                        </div>
+                        <div>
+                            <div class="inspector-label">Storage path</div>
+                            <div class="inspector-value mono-text">${escapeHtml(selected.storage_path || '-')}</div>
+                        </div>
+                        <div>
+                            <div class="inspector-label">Pool</div>
+                            <div class="inspector-value mono-text">${escapeHtml(selected.pool_path || '-')}</div>
+                        </div>
+                        <div>
+                            <div class="inspector-label">Subvolume</div>
+                            <div class="inspector-value mono-text">${escapeHtml(selected.parent_subvolume || '-')}</div>
+                        </div>
+                        <div>
+                            <div class="inspector-label">Source</div>
+                            <div class="inspector-value">${isCustom ? 'Custom compose' : 'App catalog'}</div>
+                        </div>
+                    </div>
                 </div>
-            `}
+            </details>
+
+            <details class="disc">
+                <summary>${window.alvaIcon ? window.alvaIcon('layers') : ''} Advanced &middot; Containers${containersLoaded ? ` (${appContainers.length})` : ''} <span class="chev">${window.alvaIcon ? window.alvaIcon('chevron-right') : '&rsaquo;'}</span></summary>
+                <div class="disc-body">
+                    ${containersLoaded ? renderContainerTable(appContainers) : `
+                        <div class="empty-state" style="padding: 1.5rem 1rem;">
+                            <div>Loading container data...</div>
+                        </div>
+                    `}
+                </div>
+            </details>
         </div>
     `;
 }
@@ -618,7 +623,7 @@ function renderContainerTable(containers) {
                 </tr>
             </thead>
             <tbody>
-                ${containers.map((container) => {
+                ${containers.map((container, i) => {
                     const isRunning = container.State === 'running';
                     const name = container.Names || (container.ID || '').substring(0, 12);
                     const image = container.Image || 'unknown';
@@ -1259,6 +1264,80 @@ async function updateApp(appId) {
     }
 }
 
+// Toggle an inspector overflow (...) menu, closing any other open menu first.
+function toggleInspectorMenu(id, event) {
+    if (event) event.stopPropagation();
+    const pop = document.getElementById(id);
+    if (!pop) return;
+    const willOpen = !pop.classList.contains('open');
+    document.querySelectorAll('.menu-pop.open').forEach((m) => {
+        if (m !== pop) m.classList.remove('open');
+    });
+    pop.classList.toggle('open', willOpen);
+}
+
+function closeAllInspectorMenus() {
+    document.querySelectorAll('.menu-pop.open').forEach((m) => m.classList.remove('open'));
+}
+
+// Force a fresh update check from the (...) menu and report the outcome calmly.
+async function checkAppForUpdates(appId) {
+    showNotification('Checking for updates...', 'info');
+    await loadAppUpdateStatus(appId, true);
+    if (selectedAppId === appId) await renderInspector();
+
+    const state = appUpdateStatusCache[appId] || {};
+    if (state.update_available === true) {
+        showNotification('Update available', 'info');
+    } else if (state.update_available === false) {
+        showNotification('App is up to date', 'success');
+    } else {
+        showNotification(state.update_check_error || 'Update status unavailable right now', 'error');
+    }
+}
+
+// Restart an app: stop any running containers, then start all of them again.
+async function restartApp(appId) {
+    if (appTogglePending.has(appId)) return;
+    const appContainers = getContainersForApp(appId);
+    if (appContainers.length === 0) return;
+
+    appTogglePending.add(appId);
+    renderInstalledList();
+    if (selectedAppId === appId) await renderInspector();
+
+    try {
+        const running = appContainers.filter((c) => c.State === 'running');
+        await Promise.allSettled(running.map((c) =>
+            apiFetch(`${API_BASE}/containers/${c.ID}/stop`, {
+                method: 'POST',
+                headers: { 'Authorization': authToken }
+            })
+        ));
+        const results = await Promise.allSettled(appContainers.map((c) =>
+            apiFetch(`${API_BASE}/containers/${c.ID}/start`, {
+                method: 'POST',
+                headers: { 'Authorization': authToken }
+            }).then((res) => {
+                if (!res.ok) throw new Error(`Failed to start ${c.Names || c.ID}`);
+            })
+        ));
+
+        const failedCount = results.filter((r) => r.status === 'rejected').length;
+        if (failedCount > 0) {
+            showNotification(`Restarted with ${failedCount} container(s) failing to start`, 'error');
+        } else {
+            showNotification('App restarted', 'success');
+        }
+    } catch (error) {
+        console.error('Restart app error:', error);
+        showNotification(`Failed to restart app: ${error.message}`, 'error');
+    } finally {
+        appTogglePending.delete(appId);
+        await loadInstalledWorkspace(true);
+    }
+}
+
 async function toggleAppRunning(appId) {
     if (appTogglePending.has(appId)) return;
     const appContainers = getContainersForApp(appId);
@@ -1604,8 +1683,12 @@ document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
         closeLogsModal();
         closeTerminalModal();
+        closeAllInspectorMenus();
     }
 });
+// Any click outside an open (...) menu dismisses it. Menu buttons/items call
+// stopPropagation, so in-menu clicks never reach this handler.
+document.addEventListener('click', closeAllInspectorMenus);
 
 async function pollInstallStatus(appId) {
     const statusEl = document.getElementById('install-progress-status');
