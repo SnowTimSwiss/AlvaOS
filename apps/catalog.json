@@ -548,6 +548,73 @@
             ]
         }
     },
+    "eurooffice": {
+        "name": "Euro-Office Document Server",
+        "description": "Sovereign European fork of ONLYOFFICE Document Server — collaborative online editing for documents, spreadsheets and presentations (e.g. as a Nextcloud editor backend)",
+        "icon": "/apps/icons/eurooffice.png",
+        "category": "Productivity",
+        "version": "latest",
+        "docker_compose": {
+            "version": "3",
+            "services": {
+                "eurooffice": {
+                    "image": "ghcr.io/euro-office/documentserver:latest",
+                    "restart": "unless-stopped",
+                    "ports": [
+                        "8082:80"
+                    ],
+                    "volumes": [
+                        "${POOL_PATH}/data:/var/www/onlyoffice/Data",
+                        "${POOL_PATH}/log:/var/log/onlyoffice",
+                        "${POOL_PATH}/db:/var/lib/onlyoffice"
+                    ],
+                    "environment": {
+                        "JWT_SECRET": "CHANGEME",
+                        "EXAMPLE_ENABLED": "false"
+                    }
+                }
+            }
+        },
+        "config_schema": {
+            "ports": [
+                {
+                    "internal": 80,
+                    "external": 8082,
+                    "protocol": "tcp",
+                    "description": "Document Server / Web UI"
+                }
+            ],
+            "volumes": [
+                {
+                    "container_path": "/var/www/onlyoffice/Data",
+                    "description": "Document Server certificates and data",
+                    "required": true
+                },
+                {
+                    "container_path": "/var/log/onlyoffice",
+                    "description": "Log files",
+                    "required": false
+                },
+                {
+                    "container_path": "/var/lib/onlyoffice",
+                    "description": "Internal database and cache",
+                    "required": true
+                }
+            ],
+            "environment": [
+                {
+                    "key": "JWT_SECRET",
+                    "default": "CHANGEME",
+                    "description": "Secret used to sign requests between Document Server and connected apps (e.g. Nextcloud) — change before first use"
+                },
+                {
+                    "key": "EXAMPLE_ENABLED",
+                    "default": "false",
+                    "description": "Enable the built-in example/test page"
+                }
+            ]
+        }
+    },
     "openwebui": {
         "name": "Open WebUI",
         "description": "Web interface for Ollama and other LLM backends",
