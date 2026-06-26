@@ -7,13 +7,13 @@ Session management, authentication decorators, rate limiting, and setup state.
 import os
 import json
 import secrets
-import hashlib
 import functools
 import time
 from datetime import datetime, timedelta
 
 from flask import request, jsonify
 from common import _utc_now, _parse_iso, ensure_directories
+from password_utils import hash_password
 
 # ── File paths ────────────────────────────────────────────────────────────────
 SETUP_STATUS_FILE = '/var/lib/alvaos/setup_complete.json'
@@ -46,14 +46,7 @@ def mark_setup_complete(password, version):
     """Mark the initial setup as complete and store password hash"""
     ensure_directories()
 
-    # Simple hash for 0.1
-    salt = secrets.token_hex(8)
-    h = hashlib.sha256((password + salt).encode()).hexdigest()
-
-    auth_data = {
-        'password_hash': h,
-        'salt': salt
-    }
+    auth_data = hash_password(password)
 
     with open(AUTH_FILE, 'w') as f:
         json.dump(auth_data, f)
