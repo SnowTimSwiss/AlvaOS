@@ -615,6 +615,70 @@
             ]
         }
     },
+    "wireguard": {
+        "name": "WireGuard Easy",
+        "description": "Self-hosted WireGuard VPN with a simple web-based admin UI for managing clients",
+        "icon": "/apps/icons/wireguard.png",
+        "category": "Network",
+        "version": "latest",
+        "docker_compose": {
+            "version": "3",
+            "services": {
+                "wireguard": {
+                    "image": "ghcr.io/wg-easy/wg-easy:15",
+                    "restart": "unless-stopped",
+                    "ports": [
+                        "51820:51820/udp",
+                        "51821:51821/tcp"
+                    ],
+                    "volumes": [
+                        "${POOL_PATH}/data:/etc/wireguard"
+                    ],
+                    "environment": {
+                        "WG_HOST": "CHANGEME"
+                    },
+                    "cap_add": [
+                        "NET_ADMIN",
+                        "SYS_MODULE"
+                    ],
+                    "sysctls": {
+                        "net.ipv4.ip_forward": "1",
+                        "net.ipv4.conf.all.src_valid_mark": "1"
+                    }
+                }
+            }
+        },
+        "config_schema": {
+            "ports": [
+                {
+                    "internal": 51821,
+                    "external": 51821,
+                    "protocol": "tcp",
+                    "description": "Web UI"
+                },
+                {
+                    "internal": 51820,
+                    "external": 51820,
+                    "protocol": "udp",
+                    "description": "WireGuard VPN traffic"
+                }
+            ],
+            "volumes": [
+                {
+                    "container_path": "/etc/wireguard",
+                    "description": "VPN configuration, keys and client data",
+                    "required": true
+                }
+            ],
+            "environment": [
+                {
+                    "key": "WG_HOST",
+                    "default": "CHANGEME",
+                    "description": "Public IP address or domain name clients use to reach this server — required for client configs to work"
+                }
+            ]
+        }
+    },
     "openwebui": {
         "name": "Open WebUI",
         "description": "Web interface for Ollama and other LLM backends",
