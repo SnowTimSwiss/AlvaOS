@@ -150,7 +150,7 @@ Package: alvaos-system
 Version: ${DEB_VERSION}
 Architecture: amd64
 Maintainer: AlvaOS Team <dev@alvaos.org>
-Depends: python3, python3-flask, python3-flask-cors, python3-psutil, python3-requests, python3-pyotp, python3-qrcode, python3-pil, docker.io, docker-compose, btrfs-progs, wireguard-tools, systemd, smartmontools, nfs-kernel-server, samba, network-manager
+Depends: python3, python3-flask, python3-waitress, python3-psutil, python3-requests, python3-pyotp, python3-qrcode, python3-pil, docker.io, docker-compose, btrfs-progs, wireguard-tools, systemd, smartmontools, nfs-kernel-server, samba, network-manager
 Section: admin
 Priority: optional
 Homepage: https://github.com/SnowTimSwiss/AlvaOS

@@ -232,6 +232,17 @@ body {
     color: currentColor;
 }
 
+/* Log out is an action, not a destination, so it is a button that has to be
+   talked back into looking like the surrounding navigation links. */
+.nav-logout {
+    width: 100%;
+    background: transparent;
+    border: none;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
 .nav-badge {
     margin-left: auto;
     background: var(--accent-warning);
@@ -277,21 +288,11 @@ body {
     background: var(--accent-danger);
 }
 
+/* A failing disk is serious, but a ring pulsing twice a second for days is the
+   "alarming dashboard" the design guidelines rule out: critical states are red
+   and steady. The state reads as urgent through colour and copy, not motion. */
 .pulse-danger {
-    box-shadow: 0 0 0 0 rgba(248, 81, 73, 0.7);
-    animation: pulse-red 2s infinite;
-}
-
-@keyframes pulse-red {
-    0% {
-        box-shadow: 0 0 0 0 rgba(248, 81, 73, 0.7);
-    }
-    70% {
-        box-shadow: 0 0 0 10px rgba(248, 81, 73, 0);
-    }
-    100% {
-        box-shadow: 0 0 0 0 rgba(248, 81, 73, 0);
-    }
+    background: var(--accent-danger);
 }
 
 @keyframes progress-indeterminate {
@@ -1169,6 +1170,46 @@ option {
     -webkit-overflow-scrolling: touch;
 }
 
+/* ── Shared card components ───────────────────────────────────────────────────
+   These used to be redefined inside individual pages, which is how .status-row
+   ended up meaning two different things depending on which file you opened.
+   They live here so a card looks the same wherever it is built. */
+
+/* A label/value line inside a card. */
+.status-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.status-row:last-child {
+    border-bottom: none;
+}
+
+.status-row .status-row-label {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.status-row .status-row-value {
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    text-align: right;
+    overflow-wrap: anywhere;
+}
+
+/* Action row at the bottom of a card. */
+.card-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: var(--space-md);
+}
+
 .tab-panel {
     display: none;
 }
@@ -1544,4 +1585,188 @@ option {
     .feedback-actions .btn-secondary {
         width: 100%;
     }
+}
+
+/* ── Mobile ───────────────────────────────────────────────────────────────────
+   AlvaOS is usually checked from a phone, and usually because something needs
+   attention. Status, alerts and backup state have to be readable without
+   pinching; full configuration stays a desktop job. */
+
+@media (max-width: 760px) {
+    .content-scroll {
+        padding: var(--space-md) 12px;
+    }
+
+    /* One column: two cards side by side on a phone means neither is legible. */
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    .card {
+        padding: 14px;
+    }
+
+    /* Tabs scroll sideways instead of wrapping into an unreadable block. */
+    .tab-bar {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        flex-wrap: nowrap;
+    }
+
+    .tab-bar::-webkit-scrollbar {
+        display: none;
+    }
+
+    .tab-btn {
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    /* Label above value: side by side truncates both on a narrow screen. */
+    .status-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+    }
+
+    .status-row .status-row-value {
+        text-align: left;
+    }
+
+    /* Full-width buttons are far easier to hit than a row of small ones. */
+    .card-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .card-actions .btn-primary,
+    .card-actions .btn-secondary {
+        width: 100%;
+    }
+
+    .update-banner {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .update-banner .banner-actions {
+        width: 100%;
+    }
+
+    .update-banner .banner-actions .btn-primary,
+    .update-banner .banner-actions .btn-secondary {
+        flex: 1;
+    }
+
+    /* Modals become near-fullscreen sheets rather than tiny centred boxes. */
+    .modal-overlay > div,
+    .sys-modal-panel {
+        width: 100% !important;
+        max-width: 100% !important;
+        max-height: 92vh;
+    }
+
+    /* Any table wide enough to overflow scrolls in its own box, so the page
+       itself never scrolls sideways. */
+    table {
+        display: block;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        white-space: nowrap;
+    }
+
+    h1 {
+        font-size: 1.25rem !important;
+    }
+}
+
+@media (max-width: 460px) {
+    /* Below this width icon-plus-label navigation no longer fits two across. */
+    .sidebar nav {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .content-scroll {
+        padding: 12px 10px;
+    }
+}
+
+/* Respect a user's reduced-motion preference. The UI is meant to be calm
+   anyway, so there is very little to turn off. */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* ── Accessibility helpers ────────────────────────────────────────────────── */
+
+/* Visible only once focused, so keyboard users can jump past the sidebar
+   without tabbing through every navigation link on every page. */
+.skip-link {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    z-index: 100000;
+    padding: 10px 16px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--accent-primary);
+    border-radius: var(--radius-default);
+    text-decoration: none;
+}
+
+.skip-link:focus {
+    left: 12px;
+    top: 12px;
+}
+
+#main-content:focus {
+    outline: none;
+}
+
+/* Text that only a screen reader needs. Status is conveyed by a coloured dot,
+   which says nothing to someone who cannot see it. */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* A section that failed to load. Deliberately not red: nothing is broken that
+   the user has to fix, and red is reserved for action-required states. */
+.load-failure {
+    text-align: center;
+    padding: 2rem 1rem;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-default);
+    background: var(--bg-card);
+}
+
+.load-failure-title {
+    color: var(--text-primary);
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.load-failure-detail {
+    color: var(--text-secondary);
+    font-size: 0.88rem;
+    margin-bottom: 14px;
+    max-width: 46ch;
+    margin-left: auto;
+    margin-right: auto;
 }

@@ -171,18 +171,6 @@
             border-bottom: none;
         }
         
-        .status-row {
-            display: flex;
-            gap: 20px;
-            margin-bottom: 15px;
-            font-size: 0.9rem;
-            color: var(--text-secondary);
-        }
-        
-        .status-item strong {
-            color: var(--text-primary);
-        }
-
         .backup-status-row {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
@@ -837,24 +825,27 @@
 </head>
 
 <body>
+
+    <a class="skip-link" href="#main-content">Skip to main content</a>
     <aside class="sidebar">
         <div class="logo-area">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false">
                 <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round"
                     stroke-linejoin="round" style="color: var(--accent-primary);" />
             </svg>
             <div class="logo-text">AlvaOS</div>
         </div>
 
-        <nav>
-            <a href="index.html" class="nav-link"><i data-lucide="house"></i> Dashboard</a>
-            <a href="storage.html" class="nav-link"><i data-lucide="hard-drive"></i> Storage</a>
-            <a href="apps.html" class="nav-link"><i data-lucide="blocks"></i> Apps</a>
-            <a href="backup.html" class="nav-link active"><i data-lucide="refresh-cw"></i> Backup</a>
-            <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw"></i> Updates <span class="nav-badge"
+        <nav aria-label="Main">
+            <a href="index.html" class="nav-link"><i data-lucide="house" aria-hidden="true"></i> Dashboard</a>
+            <a href="storage.html" class="nav-link"><i data-lucide="hard-drive" aria-hidden="true"></i> Storage</a>
+            <a href="apps.html" class="nav-link"><i data-lucide="blocks" aria-hidden="true"></i> Apps</a>
+            <a href="backup.html" class="nav-link active" aria-current="page"><i data-lucide="refresh-cw" aria-hidden="true"></i> Backup</a>
+            <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw" aria-hidden="true"></i> Updates <span class="nav-badge"
                     id="updates-nav-badge" style="display:none;">!</span></a>
             <div style="flex:1"></div>
-            <a href="system.html" class="nav-link"><i data-lucide="settings"></i> System</a>
+            <a href="system.html" class="nav-link"><i data-lucide="settings" aria-hidden="true"></i> System</a>
+            <button type="button" class="nav-link nav-logout" onclick="alvaosLogout()"><i data-lucide="log-out" aria-hidden="true"></i> Log out</button>
         </nav>
     </aside>
 
@@ -863,13 +854,13 @@
             <div class="breadcrumbs">System / <span>Backup</span></div>
             <div class="status-badge" style="gap:10px;">
                 <div class="status-badge" style="border:none; background:transparent; padding:0;">
-                    <div class="status-dot"></div>
+                    <div class="status-dot" aria-hidden="true"></div>
                     <span>Online</span>
                 </div>
             </div>
         </header>
 
-        <div class="content-scroll backup-page">
+        <main class="content-scroll backup-page" id="main-content" tabindex="-1">
             <div id="update-banner-slot"></div>
             <div class="page-intro">
                 <h1 class="page-title">Backup</h1>
@@ -890,7 +881,7 @@
                 <!-- Status first -->
                 <div class="card">
                     <div class="status-head">
-                        <div class="status-ic" id="pool-status-ic"><i data-lucide="database"></i></div>
+                        <div class="status-ic" id="pool-status-ic"><i data-lucide="database" aria-hidden="true"></i></div>
                         <div class="status-text">
                             <div class="status-title">Pool data <span class="pill ok" id="pool-status-pill">Loading</span></div>
                             <div class="status-sub">
@@ -920,7 +911,7 @@
 
                 <!-- Advanced: schedule, retention, which pools, location -->
                 <details class="advanced">
-                    <summary><i data-lucide="settings-2"></i> Schedule &amp; sources <i data-lucide="chevron-down" class="chev"></i></summary>
+                    <summary><i data-lucide="settings-2" aria-hidden="true"></i> Schedule &amp; sources <i data-lucide="chevron-down" class="chev" aria-hidden="true"></i></summary>
                     <div class="advanced-body">
                         <div class="setting-group">
                             <label class="setting-label">Enable scheduled backups</label>
@@ -971,7 +962,7 @@
                 <!-- Status first -->
                 <div class="card">
                     <div class="status-head">
-                        <div class="status-ic" id="system-status-ic"><i data-lucide="server-cog"></i></div>
+                        <div class="status-ic" id="system-status-ic"><i data-lucide="server-cog" aria-hidden="true"></i></div>
                         <div class="status-text">
                             <div class="status-title">Full system <span class="pill ok" id="system-status-pill">Loading</span></div>
                             <div class="status-sub">
@@ -1008,14 +999,14 @@
                         <div class="metric-sub">Loading snapshots...</div>
                     </div>
                     <p class="metric-sub" style="margin-top:10px;">
-                        <i data-lucide="info"></i>
+                        <i data-lucide="info" aria-hidden="true"></i>
                         You can also roll back from the AlvaOS installer via USB.
                     </p>
                 </div>
 
                 <!-- Advanced: schedule -->
                 <details class="advanced">
-                    <summary><i data-lucide="settings-2"></i> Schedule <i data-lucide="chevron-down" class="chev"></i></summary>
+                    <summary><i data-lucide="settings-2" aria-hidden="true"></i> Schedule <i data-lucide="chevron-down" class="chev" aria-hidden="true"></i></summary>
                     <div class="advanced-body">
                         <div class="setting-group">
                             <label class="setting-label">Enable scheduled system backups</label>
@@ -1054,7 +1045,7 @@
                 <!-- Status first -->
                 <div class="card">
                     <div class="status-head">
-                        <div class="status-ic" id="buddy-status-ic"><i data-lucide="users"></i></div>
+                        <div class="status-ic" id="buddy-status-ic"><i data-lucide="users" aria-hidden="true"></i></div>
                         <div class="status-text">
                             <div class="status-title">Buddy backup <span class="pill ok" id="buddy-status-pill">Loading</span></div>
                             <div class="status-sub">
@@ -1105,7 +1096,7 @@
 
                 <!-- Advanced: pairing (existing token technology) -->
                 <details class="advanced">
-                    <summary><i data-lucide="link"></i> Add a buddy (pairing) <i data-lucide="chevron-down" class="chev"></i></summary>
+                    <summary><i data-lucide="link" aria-hidden="true"></i> Add a buddy (pairing) <i data-lucide="chevron-down" class="chev" aria-hidden="true"></i></summary>
                     <div class="advanced-body">
                         <p class="metric-sub" style="margin-bottom:12px;">Pair two different AlvaOS machines. Generate a token and send it to your buddy, then paste the token they send you. No manual IP setup needed.</p>
                         <div class="pair-grid">
@@ -1134,7 +1125,7 @@
 
                 <!-- Advanced: defaults & restore security -->
                 <details class="advanced">
-                    <summary><i data-lucide="sliders-horizontal"></i> Buddy defaults &amp; restore security <i data-lucide="chevron-down" class="chev"></i></summary>
+                    <summary><i data-lucide="sliders-horizontal" aria-hidden="true"></i> Buddy defaults &amp; restore security <i data-lucide="chevron-down" class="chev" aria-hidden="true"></i></summary>
                     <div class="advanced-body">
                         <div class="buddy-defaults-layout">
                             <section class="buddy-defaults-panel">
@@ -1179,7 +1170,7 @@
 
                 <!-- Advanced: technical details -->
                 <details class="advanced">
-                    <summary><i data-lucide="wrench"></i> Technical details <i data-lucide="chevron-down" class="chev"></i></summary>
+                    <summary><i data-lucide="wrench" aria-hidden="true"></i> Technical details <i data-lucide="chevron-down" class="chev" aria-hidden="true"></i></summary>
                     <div class="advanced-body">
                         <div class="buddy-identity-grid">
                             <div class="buddy-identity-item">
@@ -1211,10 +1202,10 @@
                 AlvaOS {{VERSION}} &bull; <a href="https://github.com/SnowTimSwiss/AlvaOS" target="_blank"
                     style="color:var(--text-secondary)">GitHub</a>
             </footer>
-        </div>
+        </main>
     </div>
     <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+    <script src="lucide-icons.js"></script>
     <script src="icons.js"></script>
     <script src="notifications.js"></script>
     <script src="feedback.js"></script>

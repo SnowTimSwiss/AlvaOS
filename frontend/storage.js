@@ -195,7 +195,11 @@ async function loadDisks() {
         displayDisks(data.disks);
     } catch (error) {
         console.error('Error loading disks:', error);
-        container.innerHTML = '<p style="text-align: center; color: var(--accent-danger); grid-column: 1/-1; padding: 2rem;">Failed to load disks. Check backend connection.</p>';
+        renderLoadFailure(container, {
+            title: 'Could not read the disks',
+            detail: 'The storage service did not answer. It may still be starting up after a restart or update.',
+            onRetry: loadDisks
+        });
     } finally {
         if (refreshBtn) refreshBtn.disabled = false;
     }
@@ -234,7 +238,7 @@ function displayDisks(disks) {
         diskCard.innerHTML = `
             <div class="card-header">
                 <div class="card-title">
-                    ${window.alvaIcon ? window.alvaIcon(disk.is_removable ? 'plug-zap' : 'disc-3', '', 'aria-hidden="true"') : ''} /dev/${disk.name}
+                    ${window.alvaIcon ? window.alvaIcon(disk.is_removable ? 'plug-zap' : 'disc-3', '', 'aria-hidden="true"') : ''} /dev/${escapeHtml(disk.name)}
                 </div>
                 <div style="font-size: 0.8rem; font-weight: 600; color: ${statusColor}; display: flex; align-items: center; gap: 4px;">
                     <div style="width: 8px; height: 8px; border-radius: 50%; background: ${statusColor};"></div>
@@ -245,35 +249,35 @@ function displayDisks(disks) {
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
                 <div>
                     <span class="setting-label">Model</span>
-                    <span class="setting-val">${disk.model}</span>
+                    <span class="setting-val">${escapeHtml(disk.model)}</span>
                 </div>
                 <div>
                     <span class="setting-label">Size</span>
-                    <span class="setting-val">${disk.size}</span>
+                    <span class="setting-val">${escapeHtml(disk.size)}</span>
                 </div>
                 <div>
                     <span class="setting-label">Serial</span>
-                    <span class="setting-val" style="font-size: 0.8rem;">${disk.serial}</span>
+                    <span class="setting-val" style="font-size: 0.8rem;">${escapeHtml(disk.serial)}</span>
                 </div>
                 <div>
                     <span class="setting-label">Filesystem</span>
-                    <span class="setting-val">${disk.fstype || 'None'}</span>
+                    <span class="setting-val">${escapeHtml(disk.fstype || 'None')}</span>
                 </div>
                 <div style="grid-column: 1 / -1;">
                     <span class="setting-label">Mount Point</span>
-                    <span class="setting-val">${disk.mountpoint || 'Not mounted'}</span>
+                    <span class="setting-val">${escapeHtml(disk.mountpoint || 'Not mounted')}</span>
                 </div>
             </div>
 
             <div style="display: flex; gap: 8px; margin-top: auto;">
                 ${!disk.is_system_disk ? `
-                    <button onclick="wipeDisk('${disk.name}')" class="btn-secondary" 
-                        style="flex: 1; border-color: var(--accent-danger); color: var(--accent-danger); font-size: 0.85rem;" 
+                    <button onclick="wipeDisk('${jsArg(disk.name)}')" class="btn-secondary"
+                        style="flex: 1; border-color: var(--accent-danger); color: var(--accent-danger); font-size: 0.85rem;"
                         title="Completely erase disk">
                         Wipe
                     </button>
                 ` : ''}
-                <button onclick="viewDiskDetails('${disk.name}')" class="btn-secondary" 
+                <button onclick="viewDiskDetails('${jsArg(disk.name)}')" class="btn-secondary"
                     style="flex: 2; font-size: 0.85rem;">
                     Health Details
                 </button>
@@ -315,7 +319,11 @@ async function loadPools() {
         displayPools(visiblePools);
     } catch (error) {
         console.error('Error loading pools:', error);
-        container.innerHTML = '<p style="text-align: center; color: var(--accent-danger); grid-column: 1/-1; padding: 2rem;">Failed to load pools. The storage service might be restarting.</p>';
+        renderLoadFailure(container, {
+            title: 'Could not read the storage pools',
+            detail: 'The storage service did not answer. It may still be starting up after a restart or update. Your data is not affected by this.',
+            onRetry: loadPools
+        });
     }
 }
 
@@ -367,7 +375,7 @@ function displayPools(pools) {
                 <div style="display: flex; gap: 8px; margin-top: auto; flex-wrap: wrap;">
                     <button class="btn-secondary" disabled style="flex: 1; min-width: 100px; font-size: 0.85rem; opacity: 0.6; cursor: not-allowed;">Subvolumes</button>
                     ${isRedundantRaid
-                        ? `<button onclick="showExpandPoolDialog('${pool.id}', '${pool.name}')" class="btn-secondary"
+                        ? `<button onclick="showExpandPoolDialog('${jsArg(pool.id)}', '${jsArg(pool.name)}')" class="btn-secondary"
                         style="flex: 1; min-width: 100px; font-size: 0.85rem; border-color: ${isDegraded ? 'var(--accent-danger)' : 'var(--accent-success)'}; color: ${isDegraded ? 'var(--accent-danger)' : 'var(--accent-success)'}; ${isDegraded ? 'background: rgba(248, 81, 73, 0.1); font-weight: 700;' : ''}">
                         ${isDegraded ? 'Replace Mirror Disk' : 'Expand'}
                     </button>`
@@ -382,7 +390,7 @@ function displayPools(pools) {
             : (!isManaged
                 ? `
                 <div style="display: flex; gap: 8px; margin-top: auto; flex-wrap: wrap;">
-                    <button onclick="importDetectedPool('${pool.id}', '${pool.name}')" class="btn-primary"
+                    <button onclick="importDetectedPool('${jsArg(pool.id)}', '${jsArg(pool.name)}')" class="btn-primary"
                         style="flex: 1; min-width: 120px; font-size: 0.85rem;">
                         Import Pool
                     </button>
@@ -390,7 +398,7 @@ function displayPools(pools) {
                         style="flex: 1; min-width: 120px; font-size: 0.85rem;">
                         Create New
                     </button>
-                    <button onclick="ignoreDetectedPool('${pool.id}')" class="btn-secondary"
+                    <button onclick="ignoreDetectedPool('${jsArg(pool.id)}')" class="btn-secondary"
                         style="flex: 1; min-width: 120px; font-size: 0.85rem;">
                         Ignore
                     </button>
@@ -401,15 +409,15 @@ function displayPools(pools) {
             `
             : `
                 <div style="display: flex; gap: 8px; margin-top: auto; flex-wrap: wrap;">
-                    <button onclick="manageSubvolumes('${pool.id}')" class="btn-primary" 
+                    <button onclick="manageSubvolumes('${jsArg(pool.id)}')" class="btn-primary" 
                         style="flex: 1; min-width: 100px; font-size: 0.85rem;">
                         Subvolumes
                     </button>
-                    <button onclick="showExpandPoolDialog('${pool.id}', '${pool.name}')" class="btn-secondary" 
+                    <button onclick="showExpandPoolDialog('${jsArg(pool.id)}', '${jsArg(pool.name)}')" class="btn-secondary" 
                         style="flex: 1; min-width: 100px; font-size: 0.85rem; border-color: ${isDegraded ? 'var(--accent-danger)' : 'var(--accent-success)'}; color: ${isDegraded ? 'var(--accent-danger)' : 'var(--accent-success)'}; ${isDegraded ? 'background: rgba(248, 81, 73, 0.1); font-weight: 700;' : ''}">
                         ${isDegraded ? 'Replace / Expand' : 'Expand'}
                     </button>
-                    <button onclick="deletePool('${pool.id}', '${pool.name}')" class="btn-secondary" 
+                    <button onclick="deletePool('${jsArg(pool.id)}', '${jsArg(pool.name)}')" class="btn-secondary" 
                         style="flex: 1; min-width: 100px; font-size: 0.85rem; border-color: var(--accent-danger); color: var(--accent-danger);">
                         Delete
                     </button>
@@ -418,7 +426,7 @@ function displayPools(pools) {
 
         poolCard.innerHTML = `
             <div class="card-header">
-                <div class="card-title">${pool.name}</div>
+                <div class="card-title">${escapeHtml(pool.name)}</div>
                 <div style="font-size: 0.8rem; font-weight: 600; color: ${statusColor}; display: flex; align-items: center; gap: 4px;">
                     <div class="status-dot ${isDegraded ? 'danger pulse-danger' : ''}" style="background: ${statusColor};"></div>
                     ${statusText}
@@ -439,7 +447,7 @@ function displayPools(pools) {
                     <span style="font-size: 1.5rem;">${window.alvaIcon ? window.alvaIcon('triangle-alert', '', 'aria-hidden="true"') : '!'}</span>
                     <div>
                         <strong style="display: block; margin-bottom: 2px;">DISK MISSING - NOT REDUNDANT</strong>
-                        This pool uses "${pool.raid_level}", which has no redundancy. A disk has failed or disappeared, and any data stored only on it is likely already lost.
+                        This pool uses "${escapeHtml(pool.raid_level)}", which has no redundancy. A disk has failed or disappeared, and any data stored only on it is likely already lost.
                         <br><strong>Action required:</strong> Adding a disk will not repair missing data. Restore affected files from a backup, then recreate this pool.
                     </div>
                 </div>
@@ -448,23 +456,23 @@ function displayPools(pools) {
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
                 <div>
                     <span class="setting-label">RAID Level</span>
-                    <span class="setting-val">${pool.raid_level}</span>
+                    <span class="setting-val">${escapeHtml(pool.raid_level)}</span>
                 </div>
                 <div>
                     <span class="setting-label">Devices</span>
-                    <span class="setting-val">${devices.length}</span>
+                    <span class="setting-val">${escapeHtml(devices.length)}</span>
                 </div>
                 <div>
                     <span class="setting-label">Total Size</span>
-                    <span class="setting-val">${pool.total_size || 'N/A'}</span>
+                    <span class="setting-val">${escapeHtml(pool.total_size || 'N/A')}</span>
                 </div>
                 <div>
                     <span class="setting-label">Used</span>
-                    <span class="setting-val">${pool.used_size || 'N/A'}</span>
+                    <span class="setting-val">${escapeHtml(pool.used_size || 'N/A')}</span>
                 </div>
                 <div style="grid-column: 1 / -1;">
                     <span class="setting-label">Disk Members</span>
-                    <span class="setting-val" style="font-size: 0.8rem;">${devices.join(', ')}</span>
+                    <span class="setting-val" style="font-size: 0.8rem;">${escapeHtml(devices.join(', '))}</span>
                 </div>
             </div>
 
@@ -494,7 +502,11 @@ async function loadShares() {
         displayShares(data.shares);
     } catch (error) {
         console.error('Error loading shares:', error);
-        container.innerHTML = '<p style="text-align: center; color: var(--accent-danger);">Failed to load shares.</p>';
+        renderLoadFailure(container, {
+            title: 'Could not read the shares',
+            detail: 'The file sharing service did not answer. Existing shares keep working; only this list is unavailable.',
+            onRetry: loadShares
+        });
     }
 }
 
@@ -526,7 +538,7 @@ function displayShares(shares) {
 
         shareCard.innerHTML = `
             <div class="card-header">
-                <div class="card-title">${protocolIcon} ${share.name}</div>
+                <div class="card-title">${protocolIcon} ${escapeHtml(share.name)}</div>
                 <div style="font-size: 0.8rem; font-weight: 600; color: var(--accent-success); display: flex; align-items: center; gap: 4px;">
                     <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--accent-success);"></div>
                     Active
@@ -536,11 +548,11 @@ function displayShares(shares) {
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
                 <div style="grid-column: 1 / -1;">
                     <span class="setting-label">Export Path</span>
-                    <span class="setting-val">${share.path}</span>
+                    <span class="setting-val">${escapeHtml(share.path)}</span>
                 </div>
                 <div>
                     <span class="setting-label">Protocol</span>
-                    <span class="setting-val">${protocolName}</span>
+                    <span class="setting-val">${escapeHtml(protocolName)}</span>
                 </div>
                 <div>
                     <span class="setting-label">Access</span>
@@ -549,33 +561,33 @@ function displayShares(shares) {
                 ${share.protocol === 'nfs' ? `
                     <div style="grid-column: 1 / -1;">
                         <span class="setting-label">Allowed Hosts</span>
-                        <span class="setting-val" style="font-size: 0.8rem;">${share.allowed_hosts}</span>
+                        <span class="setting-val" style="font-size: 0.8rem;">${escapeHtml(share.allowed_hosts)}</span>
                     </div>
                 ` : ''}
                 ${share.protocol === 'smb' ? `
                     <div style="grid-column: 1 / -1;">
                         <span class="setting-label">Guest Access</span>
-                        <span class="setting-val">${share.guest_access ? 'Enabled' : 'Disabled'}</span>
+                        <span class="setting-val">${escapeHtml(share.guest_access ? 'Enabled' : 'Disabled')}</span>
                     </div>
                     <div style="grid-column: 1 / -1;">
                         <span class="setting-label">SMB Permissions</span>
-                        <span class="setting-val" style="font-size: 0.85rem;">${smbPermissionsText}</span>
+                        <span class="setting-val" style="font-size: 0.85rem;">${escapeHtml(smbPermissionsText)}</span>
                     </div>
                 ` : ''}
             </div>
 
             <div style="display: flex; gap: 8px; margin-top: auto;">
-                <button onclick="showConnectionInfo('${share.id}')" class="btn-primary" 
+                <button onclick="showConnectionInfo('${jsArg(share.id)}')" class="btn-primary" 
                     style="flex: 2; font-size: 0.85rem;">
                     Connection Info
                 </button>
                 ${share.protocol === 'smb' ? `
-                <button onclick="showSmbPermissions('${share.id}')" class="btn-secondary" 
+                <button onclick="showSmbPermissions('${jsArg(share.id)}')" class="btn-secondary" 
                     style="flex: 1; font-size: 0.85rem;">
                     Permissions
                 </button>
                 ` : ''}
-                <button onclick="deleteShare('${share.id}', '${share.name}')" class="btn-secondary" 
+                <button onclick="deleteShare('${jsArg(share.id)}', '${jsArg(share.name)}')" class="btn-secondary" 
                     style="flex: 1; font-size: 0.85rem; border-color: var(--accent-danger); color: var(--accent-danger);">
                     Delete
                 </button>
@@ -645,7 +657,7 @@ async function viewDiskDetails(diskName) {
     panel.className = 'modal-content';
     panel.style.maxWidth = '800px';
 
-    panel.innerHTML = `<h2 style="color: var(--text-secondary); text-align: center;">Loading SMART data for ${diskName}...</h2>`;
+    panel.innerHTML = `<h2 style="color: var(--text-secondary); text-align: center;">Loading SMART data for ${escapeHtml(diskName)}...</h2>`;
     modal.appendChild(panel);
     document.body.appendChild(modal);
     attachModalDismiss(modal, () => modal.remove());
@@ -662,14 +674,14 @@ async function viewDiskDetails(diskName) {
         if (data.error) {
             panel.innerHTML = `
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-shrink: 0;">
-                    <h2 style="margin: 0; color: var(--text-primary);">Disk Health: /dev/${diskName}</h2>
+                    <h2 style="margin: 0; color: var(--text-primary);">Disk Health: /dev/${escapeHtml(diskName)}</h2>
                     <button id="close-modal-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">${window.alvaIcon ? window.alvaIcon('x', '', 'aria-hidden="true"') : 'x'}</button>
                 </div>
                 <div style="overflow-y: auto; min-height: 0; flex: 1 1 auto;">
                 <div style="padding: 2rem; text-align: center; background: var(--bg-primary); border-radius: 8px; border-left: 4px solid var(--accent-warning);">
                     <div style="font-size: 3rem; margin-bottom: 1rem;">${window.alvaIcon ? window.alvaIcon('info', '', 'aria-hidden="true"') : 'i'}</div>
                     <h3 style="margin-bottom: 0.5rem;">SMART Monitoring Unavailable</h3>
-                    <p style="color: var(--text-secondary);">${data.error}</p>
+                    <p style="color: var(--text-secondary);">${escapeHtml(data.error)}</p>
                 </div>
                 </div>
                 <button id="close-btn" style="width: 100%; margin-top: 2rem; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--bg-border); padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600; flex-shrink: 0;">Close</button>
@@ -695,7 +707,7 @@ async function viewDiskDetails(diskName) {
 
         panel.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-shrink: 0;">
-                <h2 style="margin: 0; color: var(--text-primary);">Disk Health: /dev/${diskName}</h2>
+                <h2 style="margin: 0; color: var(--text-primary);">Disk Health: /dev/${escapeHtml(diskName)}</h2>
                 <button id="close-modal-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">${window.alvaIcon ? window.alvaIcon('x', '', 'aria-hidden="true"') : 'x'}</button>
             </div>
 
@@ -704,15 +716,15 @@ async function viewDiskDetails(diskName) {
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
                 <div style="background: var(--bg-primary); padding: 1rem; border-radius: 6px; text-align: center; border-bottom: 3px solid ${color};">
                     <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase;">Status</div>
-                    <div style="font-size: 1.25rem; font-weight: 700; color: ${color};">${status}</div>
+                    <div style="font-size: 1.25rem; font-weight: 700; color: ${color};">${escapeHtml(status)}</div>
                 </div>
                 <div style="background: var(--bg-primary); padding: 1rem; border-radius: 6px; text-align: center;">
                     <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase;">Temperature</div>
-                    <div style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary);">${temp}&deg;C</div>
+                    <div style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary);">${escapeHtml(temp)}&deg;C</div>
                 </div>
                 <div style="background: var(--bg-primary); padding: 1rem; border-radius: 6px; text-align: center;">
                     <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase;">Power On</div>
-                    <div style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary);">${hours} hrs</div>
+                    <div style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary);">${escapeHtml(hours)} hrs</div>
                 </div>
             </div>
 
@@ -732,9 +744,9 @@ async function viewDiskDetails(diskName) {
                             ${attributes.map(attr => `
                                 <tr style="border-bottom: 1px solid var(--bg-border);">
                                     <td style="padding: 0.75rem 0.5rem; font-family: monospace;">${attr.id}</td>
-                                    <td style="padding: 0.75rem 0.5rem;">${attr.name}</td>
-                                    <td style="padding: 0.75rem 0.5rem; text-align: right; font-family: monospace;">${attr.raw?.value}</td>
-                                    <td style="padding: 0.75rem 0.5rem; text-align: right; font-family: monospace;">${attr.value}</td>
+                                    <td style="padding: 0.75rem 0.5rem;">${escapeHtml(attr.name)}</td>
+                                    <td style="padding: 0.75rem 0.5rem; text-align: right; font-family: monospace;">${escapeHtml(attr.raw?.value)}</td>
+                                    <td style="padding: 0.75rem 0.5rem; text-align: right; font-family: monospace;">${escapeHtml(attr.value)}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -759,7 +771,7 @@ async function viewDiskDetails(diskName) {
 
     } catch (error) {
         panel.innerHTML = `<div style="text-align:center; padding: 2rem;">
-            <h2 style="color: var(--accent-danger);">Error</h2><p>${error.message}</p>
+            <h2 style="color: var(--accent-danger);">Error</h2><p>${escapeHtml(error.message)}</p>
             <button id="err-close" style="margin-top: 1rem; padding: 0.5rem 1rem; background: var(--accent-danger); color: white; border:none; border-radius:4px; cursor:pointer;">Close</button>
         </div>`;
         panel.querySelector('#err-close').onclick = () => modal.remove();
@@ -816,11 +828,11 @@ async function showCreatePoolDialog() {
             <div id="disk-selection" style="max-height: 200px; overflow-y: auto; border: 1px solid var(--bg-border); border-radius: 4px; padding: 0.5rem;">
                 ${availableDisks.map(disk => `
                     <label style="display: flex; align-items: center; padding: 0.5rem; cursor: pointer; border-radius: 4px;">
-                        <input type="checkbox" value="${disk.path}" class="disk-checkbox" 
+                        <input type="checkbox" value="${escapeHtml(disk.path)}" class="disk-checkbox" 
                             style="margin-right: 0.75rem; accent-color: var(--accent-primary);">
                         <div>
                             <div style="font-weight: 600;">${disk.name} - ${disk.size}</div>
-                            <div style="font-size: 0.875rem; color: var(--text-secondary);">${disk.model}</div>
+                            <div style="font-size: 0.875rem; color: var(--text-secondary);">${escapeHtml(disk.model)}</div>
                         </div>
                     </label>
                 `).join('')}
@@ -892,7 +904,7 @@ async function showCreatePoolDialog() {
 
         const allowed = options.filter(opt => count >= opt.min);
         raidSelect.innerHTML = allowed.map(opt => `
-            <option value="${opt.value}">${opt.label}</option>
+            <option value="${escapeHtml(opt.value)}">${escapeHtml(opt.label)}</option>
         `).join('');
 
         if (allowed.some(opt => opt.value === currentVal)) {
@@ -1057,7 +1069,7 @@ async function showExpandPoolDialog(poolId, poolName) {
 
     dialog.innerHTML = `
         <div class="modal-title">
-            <span>Expand Pool: ${poolName}</span>
+            <span>Expand Pool: ${escapeHtml(poolName)}</span>
             <button type="button" class="modal-close-x" id="close-expand-pool-x" aria-label="Close">&times;</button>
         </div>
         <p style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 1.5rem;">
@@ -1067,10 +1079,10 @@ async function showExpandPoolDialog(poolId, poolName) {
         <div style="max-height: 200px; overflow-y: auto; border: 1px solid var(--bg-border); border-radius: 4px; padding: 0.5rem; margin-bottom: 1.5rem;">
             ${availableDisks.map(disk => `
                 <label style="display: flex; align-items: center; padding: 0.5rem; cursor: pointer;">
-                    <input type="checkbox" value="${disk.path}" class="expand-disk-checkbox" style="margin-right: 0.75rem;">
+                    <input type="checkbox" value="${escapeHtml(disk.path)}" class="expand-disk-checkbox" style="margin-right: 0.75rem;">
                     <div>
                         <div style="font-weight: 600; color: var(--text-primary);">${disk.name} - ${disk.size}</div>
-                        <div style="font-size: 0.75rem; color: var(--text-secondary);">${disk.model}</div>
+                        <div style="font-size: 0.75rem; color: var(--text-secondary);">${escapeHtml(disk.model)}</div>
                     </div>
                 </label>
             `).join('')}
@@ -1235,10 +1247,10 @@ async function manageSubvolumes(poolId) {
             subvolumes.map(sv => `
                     <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; border: 1px solid var(--bg-border); border-radius: 4px; margin-bottom: 0.5rem;">
                         <div>
-                            <div style="font-weight: 600;">${sv.name}</div>
-                            <div style="font-size: 0.875rem; color: var(--text-secondary); font-family: var(--font-mono);">${sv.path}</div>
+                            <div style="font-weight: 600;">${escapeHtml(sv.name)}</div>
+                            <div style="font-size: 0.875rem; color: var(--text-secondary); font-family: var(--font-mono);">${escapeHtml(sv.path)}</div>
                         </div>
-                        <button onclick="deleteSubvolume('${poolId}', '${sv.name}')"
+                        <button onclick="deleteSubvolume('${jsArg(poolId)}', '${jsArg(sv.name)}')"
                             style="background: var(--accent-danger); color: white; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; font-size: 0.875rem;">
                             Delete
                         </button>
@@ -1426,7 +1438,7 @@ async function showCreateShareDialog() {
             <select id="path-select" 
                 style="width: 100%; padding: 0.75rem;">
                 <option value="" selected disabled>Select share path</option>
-                ${availablePaths.map(p => `<option value="${p.path}">${p.name} (${p.path})</option>`).join('')}
+                ${availablePaths.map(p => `<option value="${escapeHtml(p.path)}">${escapeHtml(p.name)} (${escapeHtml(p.path)})</option>`).join('')}
             </select>
         </div>
 
@@ -1463,8 +1475,8 @@ async function showCreateShareDialog() {
                 <div id="smb-permissions-list" style="display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border-subtle); border-radius: 6px; padding: 10px;">
                     ${users.length ? users.map(u => `
                         <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
-                            <div style="font-weight:600;">${u.username}</div>
-                            <select data-user="${u.username}" class="perm-select">
+                            <div style="font-weight:600;">${escapeHtml(u.username)}</div>
+                            <select data-user="${escapeHtml(u.username)}" class="perm-select">
                                 <option value="deny" selected>No Access</option>
                                 <option value="read">Read Only</option>
                                 <option value="write">Read/Write</option>
@@ -1679,8 +1691,8 @@ async function showSmbPermissions(shareId) {
             const role = permissions[u.username] || 'deny';
             return `
                 <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding: 8px 0; border-bottom: 1px solid var(--border-subtle);">
-                    <div style="font-weight:600;">${u.username}</div>
-                    <select data-user="${u.username}" class="perm-select">
+                    <div style="font-weight:600;">${escapeHtml(u.username)}</div>
+                    <select data-user="${escapeHtml(u.username)}" class="perm-select">
                         <option value="deny" ${role === 'deny' ? 'selected' : ''}>No Access</option>
                         <option value="read" ${role === 'read' ? 'selected' : ''}>Read Only</option>
                         <option value="write" ${role === 'write' ? 'selected' : ''}>Read/Write</option>
@@ -1692,7 +1704,7 @@ async function showSmbPermissions(shareId) {
 
     panel.innerHTML = `
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1rem; flex-shrink: 0;">
-            <h2 style="margin: 0;">SMB Permissions: ${share.name}</h2>
+            <h2 style="margin: 0;">SMB Permissions: ${escapeHtml(share.name)}</h2>
             <button id="close-perm-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">${window.alvaIcon ? window.alvaIcon('x', '', 'aria-hidden="true"') : 'x'}</button>
         </div>
         <div style="overflow-y: auto; min-height: 0; flex: 1 1 auto;">
@@ -1781,12 +1793,12 @@ async function showConnectionInfo(shareId) {
                 
                 <p style="margin-bottom: 0.5rem; font-size: 0.9rem;">2. Mount the share:</p>
                 <div class="code-block" style="background: #1e1e1e; padding: 0.75rem; border-radius: 4px; font-family: monospace; color: #d4d4d4; margin-bottom: 1rem;">
-                    sudo mount -t nfs ${serverIP}:${share.path} /mnt/${share.name}
+                    sudo mount -t nfs ${escapeHtml(serverIP)}:${escapeHtml(share.path)} /mnt/${escapeHtml(share.name)}
                 </div>
                 
                 <p style="margin-bottom: 0.5rem; font-size: 0.9rem;">3. Auto-mount (/etc/fstab):</p>
                 <div class="code-block" style="background: #1e1e1e; padding: 0.75rem; border-radius: 4px; font-family: monospace; color: #d4d4d4;">
-                    ${serverIP}:${share.path} /mnt/${share.name} nfs defaults 0 0
+                    ${escapeHtml(serverIP)}:${escapeHtml(share.path)} /mnt/${escapeHtml(share.name)} nfs defaults 0 0
                 </div>
             </div>
         `;
@@ -1847,7 +1859,7 @@ async function showConnectionInfo(shareId) {
 
     panel.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-shrink: 0;">
-            <h2 style="margin: 0; color: var(--text-primary);">Connection Info: ${share.name}</h2>
+            <h2 style="margin: 0; color: var(--text-primary);">Connection Info: ${escapeHtml(share.name)}</h2>
             <button id="close-info-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">${window.alvaIcon ? window.alvaIcon('x', '', 'aria-hidden="true"') : 'x'}</button>
         </div>
 
@@ -1859,9 +1871,9 @@ async function showConnectionInfo(shareId) {
 
         <div style="margin-top: 1.5rem; padding: 1rem; background: var(--bg-primary); border-left: 3px solid var(--accent-primary); border-radius: 4px;">
             <strong>Share Details:</strong><br>
-            Protocol: ${share.protocol.toUpperCase()}<br>
-            Path: ${share.path}<br>
-            Access: ${share.read_only ? 'Read-Only' : 'Read-Write'}<br>
+            Protocol: ${escapeHtml(share.protocol.toUpperCase())}<br>
+            Path: ${escapeHtml(share.path)}<br>
+            Access: ${escapeHtml(share.read_only ? 'Read-Only' : 'Read-Write')}<br>
             ${share.protocol === 'smb' && share.guest_access ? 'Guest Access: Enabled<br>' : ''}
         </div>
 

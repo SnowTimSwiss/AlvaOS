@@ -11,25 +11,28 @@
 
 <body>
 
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
     <!-- Sidebar -->
     <aside class="sidebar">
         <div class="logo-area">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false">
                 <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round"
                     stroke-linejoin="round" style="color: var(--accent-primary);" />
             </svg>
             <div class="logo-text">AlvaOS</div>
         </div>
 
-        <nav>
-            <a href="index.html" class="nav-link active"><i data-lucide="house"></i> Dashboard</a>
-            <a href="storage.html" class="nav-link"><i data-lucide="hard-drive"></i> Storage</a>
-            <a href="apps.html" class="nav-link"><i data-lucide="blocks"></i> Apps</a>
-            <a href="backup.html" class="nav-link"><i data-lucide="refresh-cw"></i> Backup</a>
-            <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw"></i> Updates <span class="nav-badge"
+        <nav aria-label="Main">
+            <a href="index.html" class="nav-link active" aria-current="page"><i data-lucide="house" aria-hidden="true"></i> Dashboard</a>
+            <a href="storage.html" class="nav-link"><i data-lucide="hard-drive" aria-hidden="true"></i> Storage</a>
+            <a href="apps.html" class="nav-link"><i data-lucide="blocks" aria-hidden="true"></i> Apps</a>
+            <a href="backup.html" class="nav-link"><i data-lucide="refresh-cw" aria-hidden="true"></i> Backup</a>
+            <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw" aria-hidden="true"></i> Updates <span class="nav-badge"
                     id="updates-nav-badge" style="display:none;">!</span></a>
             <div style="flex:1"></div>
-            <a href="system.html" class="nav-link"><i data-lucide="settings"></i> System</a>
+            <a href="system.html" class="nav-link"><i data-lucide="settings" aria-hidden="true"></i> System</a>
+            <button type="button" class="nav-link nav-logout" onclick="alvaosLogout()"><i data-lucide="log-out" aria-hidden="true"></i> Log out</button>
         </nav>
     </aside>
 
@@ -41,17 +44,17 @@
             </div>
             <div class="status-badge" style="gap:10px;">
                 <div class="status-badge" style="border:none; background:transparent; padding:0;">
-                    <div class="status-dot"></div>
+                    <div class="status-dot" aria-hidden="true"></div>
                     <span>Online</span>
                 </div>
-                <div class="mono-text" style="font-size:0.85rem; color:var(--text-secondary);" id="clock">--:--:--</div>
+                <div class="mono-text" style="font-size:0.85rem; color:var(--text-secondary);" id="clock" aria-label="System time">--:--:--</div>
             </div>
         </header>
 
-        <div class="content-scroll">
+        <main class="content-scroll" id="main-content" tabindex="-1">
             <div class="hero" id="dashboard-hero">
                 <div class="hero-icon" id="dashboard-hero-icon">
-                    <i data-lucide="loader-circle"></i>
+                    <i data-lucide="loader-circle" aria-hidden="true"></i>
                 </div>
                 <div>
                     <h1 id="dashboard-hero-title">Checking system status...</h1>
@@ -64,7 +67,7 @@
                 <!-- Storage -->
                 <div class="focus-card" id="dashboard-storage-card">
                     <div class="focus-head">
-                        <div class="ic"><i data-lucide="database"></i></div>
+                        <div class="ic"><i data-lucide="database" aria-hidden="true"></i></div>
                         <div class="focus-title">Storage</div>
                         <span class="pill ok" id="dashboard-storage-pill">Loading</span>
                     </div>
@@ -81,7 +84,7 @@
                 <!-- Backup -->
                 <div class="focus-card" id="dashboard-backup-card">
                     <div class="focus-head">
-                        <div class="ic"><i data-lucide="refresh-cw"></i></div>
+                        <div class="ic"><i data-lucide="refresh-cw" aria-hidden="true"></i></div>
                         <div class="focus-title">Backup</div>
                         <span class="pill ok" id="dashboard-backup-pill">Loading</span>
                     </div>
@@ -97,7 +100,7 @@
                 <!-- Alerts -->
                 <div class="focus-card" id="dashboard-alerts-card">
                     <div class="focus-head">
-                        <div class="ic"><i data-lucide="siren"></i></div>
+                        <div class="ic"><i data-lucide="siren" aria-hidden="true"></i></div>
                         <div class="focus-title">Alerts</div>
                         <span class="pill ok" id="dashboard-alerts-pill">Loading</span>
                     </div>
@@ -113,7 +116,7 @@
                 <!-- Updates -->
                 <div class="focus-card" id="dashboard-updates-card">
                     <div class="focus-head">
-                        <div class="ic"><i data-lucide="rotate-cw"></i></div>
+                        <div class="ic"><i data-lucide="rotate-cw" aria-hidden="true"></i></div>
                         <div class="focus-title">Updates</div>
                         <span class="pill ok" id="dashboard-updates-pill">Loading</span>
                     </div>
@@ -129,7 +132,7 @@
                 <!-- Apps (full width: fifth priority) -->
                 <div class="focus-card" id="dashboard-apps-card" style="grid-column: 1 / -1;">
                     <div class="focus-head">
-                        <div class="ic"><i data-lucide="blocks"></i></div>
+                        <div class="ic"><i data-lucide="blocks" aria-hidden="true"></i></div>
                         <div class="focus-title">Apps</div>
                         <span class="pill ok" id="dashboard-apps-pill">Loading</span>
                     </div>
@@ -148,7 +151,7 @@
             <div class="resource-strip">
                 <div class="resource-cell">
                     <div class="resource-top">
-                        <span class="resource-name"><i data-lucide="cpu"></i> CPU</span>
+                        <span class="resource-name"><i data-lucide="cpu" aria-hidden="true"></i> CPU</span>
                         <span class="resource-value" id="cpu-usage">0%</span>
                     </div>
                     <div class="mini-bar"><span id="cpu-progress" style="width: 0%"></span></div>
@@ -156,7 +159,7 @@
                 </div>
                 <div class="resource-cell">
                     <div class="resource-top">
-                        <span class="resource-name"><i data-lucide="memory-stick"></i> Memory</span>
+                        <span class="resource-name"><i data-lucide="memory-stick" aria-hidden="true"></i> Memory</span>
                         <span class="resource-value" id="mem-usage-percent">0%</span>
                     </div>
                     <div class="mini-bar"><span id="mem-progress" style="width: 0%"></span></div>
@@ -173,9 +176,9 @@
 
             <details class="sysinfo">
                 <summary>
-                    <i data-lucide="info"></i>
+                    <i data-lucide="info" aria-hidden="true"></i>
                     System information
-                    <i data-lucide="chevron-down" class="chev"></i>
+                    <i data-lucide="chevron-down" class="chev" aria-hidden="true"></i>
                 </summary>
                 <div class="sysinfo-grid">
                     <div>
@@ -203,7 +206,7 @@
                         style="color:var(--text-secondary)">GitHub</a></div>
                 <div>Last sync: <span id="last-update" class="mono-text">-</span></div>
             </footer>
-        </div>
+        </main>
     </div>
 
     <!-- Page Loading Overlay -->
@@ -215,7 +218,7 @@
     </div>
 
     <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+    <script src="lucide-icons.js"></script>
     <script src="icons.js"></script>
     <script src="notifications.js"></script>
     <script src="feedback.js"></script>

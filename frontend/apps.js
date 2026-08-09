@@ -51,6 +51,19 @@ function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
+// Strong random value for app secrets the user never types by hand (database
+// passwords, signing keys). Uses the browser CSPRNG, not Math.random.
+function generateSecret(length = 28) {
+    const alphabet = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const bytes = new Uint32Array(length);
+    crypto.getRandomValues(bytes);
+    let out = '';
+    for (let i = 0; i < length; i++) {
+        out += alphabet[bytes[i] % alphabet.length];
+    }
+    return out;
+}
+
 function setLoadingButtonState(button, isLoading, loadingLabel = 'Loading...') {
     if (!button) return;
     if (isLoading) {
@@ -229,7 +242,7 @@ function getCategoryIconMarkup(category) {
     const icons = {
         'Productivity': 'briefcase',
         'Media': 'film',
-        'Development': 'code-2',
+        'Development': 'code-xml',
         'Smart Home': 'house',
         'Network': 'globe',
         'Security': 'shield-check',
@@ -554,7 +567,7 @@ async function renderInspector() {
                 ` : ''}
                 ${updateAvailable ? `
                     <button class="btn-update" onclick="updateApp('${escId}')">
-                        ${window.alvaIcon ? window.alvaIcon('arrow-up-circle') : ''} Update
+                        ${window.alvaIcon ? window.alvaIcon('circle-arrow-up') : ''} Update
                     </button>
                 ` : ''}
             </div>
@@ -871,7 +884,7 @@ async function loadComposePoolOptions() {
             setComposeMeta('Tip: Use ${POOL_PATH} for data paths inside the selected app storage folder.', false);
         } catch (error) {
             console.error('Error loading compose pools:', error);
-            poolSelect.innerHTML = '<option value="">Failed to load pools</option>';
+            poolSelect.innerHTML = '<option value="">Storage pools unavailable - try again shortly</option>';
             setComposeMeta(`Failed to load pools: ${error.message}`, true);
         } finally {
             composePoolsLoadPromise = null;
@@ -1021,23 +1034,56 @@ async function showInstallWizard(appId) {
                 const key = String(entry?.key || '').trim();
                 if (!key) return '';
                 const description = String(entry?.description || '');
-                const defaultValue = String(entry?.default ?? '');
-                const isSecretField = /(password|token|secret|key)/i.test(key);
+                const isRequired = entry?.required === true;
+                const isSecretField = entry?.secret === true
+                    || (entry?.secret !== false && /(password|token|secret|key)/i.test(key));
+                // Required fields start empty on purpose: a prefilled placeholder
+                // is exactly how apps used to ship with a known password.
+                const defaultValue = isRequired ? '' : String(entry?.default ?? '');
+                const canGenerate = entry?.generate === true;
 
                 return `
                     <div class="setting-group" style="margin-bottom: 0;">
-                        <label class="setting-label">${escapeHtml(key)}</label>
+                        <label class="setting-label" for="install-env-${idx}">
+                            ${escapeHtml(key)}${isRequired ? ' <span style="color: var(--accent-primary);">*</span>' : ''}
+                        </label>
                         ${description ? `<p style="font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 6px;">${escapeHtml(description)}</p>` : ''}
-                        <input
-                            id="install-env-${idx}"
-                            data-env-key="${escapeHtml(key)}"
-                            type="${isSecretField ? 'password' : 'text'}"
-                            value="${escapeHtml(defaultValue)}"
-                            placeholder="${escapeHtml(defaultValue || key)}"
-                            style="width: 100%; padding: 10px;">
+                        <div style="display: flex; gap: 8px;">
+                            <input
+                                id="install-env-${idx}"
+                                data-env-key="${escapeHtml(key)}"
+                                data-env-required="${isRequired ? 'true' : 'false'}"
+                                type="${isSecretField ? 'password' : 'text'}"
+                                value="${escapeHtml(defaultValue)}"
+                                ${isRequired ? 'required aria-required="true"' : ''}
+                                placeholder="${escapeHtml(isRequired ? 'Required' : (defaultValue || key))}"
+                                style="flex: 1; padding: 10px;">
+                            ${canGenerate ? `<button type="button" class="btn-secondary"
+                                data-generate-for="install-env-${idx}"
+                                style="white-space: nowrap; padding: 10px 12px;">Generate</button>` : ''}
+                        </div>
                     </div>
                 `;
             }).join('');
+
+            // "Generate" fills a strong random value, so the common case is one
+            // click rather than the user inventing a password for a database
+            // they will never log into by hand.
+            envFields.querySelectorAll('[data-generate-for]').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const target = document.getElementById(btn.getAttribute('data-generate-for'));
+                    if (!target) return;
+                    target.value = generateSecret();
+                    target.type = 'text';
+                    target.dispatchEvent(new Event('input', { bubbles: true }));
+                });
+            });
+
+            // Pre-generate where we can, so a careful default is already in place.
+            envFields.querySelectorAll('[data-generate-for]').forEach((btn) => {
+                const target = document.getElementById(btn.getAttribute('data-generate-for'));
+                if (target && !target.value) target.value = generateSecret();
+            });
         }
 
         // Fetch pools
@@ -1061,14 +1107,31 @@ async function showInstallWizard(appId) {
         confirmBtn.onclick = async () => {
             const poolPath = poolSelect.value;
             const environmentVars = {};
+            const missingFields = [];
             document.querySelectorAll('#install-env-fields [data-env-key]').forEach((inputEl) => {
                 const key = inputEl.getAttribute('data-env-key');
                 if (!key) return;
-                const value = inputEl.value;
-                if (value !== null && value !== undefined && value !== '') {
-                    environmentVars[key] = value;
+                const value = (inputEl.value || '').trim();
+                const required = inputEl.getAttribute('data-env-required') === 'true';
+                if (required && (!value || value.toUpperCase() === 'CHANGEME')) {
+                    missingFields.push({ key, el: inputEl });
+                    return;
+                }
+                if (value !== '') {
+                    environmentVars[key] = inputEl.value;
                 }
             });
+
+            if (missingFields.length > 0) {
+                missingFields.forEach(({ el }) => { el.style.borderColor = 'var(--accent-warning)'; });
+                missingFields[0].el.focus();
+                showNotification(
+                    `Still needed: ${missingFields.map(f => f.key).join(', ')}. ` +
+                    'Use Generate if you do not have a value in mind.',
+                    'warning'
+                );
+                return;
+            }
 
             if (!poolPath) {
                 showNotification('Please select a storage pool', 'error');
@@ -1598,7 +1661,7 @@ async function loadContainerLogs(containerId, scrollToBottom = false) {
     } catch (error) {
         if (requestId !== activeLogsRequestId || activeLogsContainerId !== containerId) return;
         console.error('Logs error:', error);
-        contentEl.textContent = `Failed to fetch logs:\n${error.message}`;
+        contentEl.textContent = `Could not read this app's logs.\n\nThe app itself keeps running - only the log view is unavailable.\n\nDetails: ${error.message}`;
         metaEl.textContent = `Container ID: ${containerId} | Error`;
     }
 }

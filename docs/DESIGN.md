@@ -67,7 +67,10 @@ Users should feel confident leaving AlvaOS running unattended for months to year
 
 ### Color Palette
 
-Dark mode is the default and primary experience.
+Dark mode is the default and, at present, the **only** experience. A light
+theme is planned but not implemented; the palette below is defined as CSS
+custom properties on `:root` in `frontend/styles.css` so adding one later is a
+matter of redefining tokens rather than editing components.
 
 - **Background:** `#0d1117`  
 - **Surface:** `#161b22`  
@@ -91,13 +94,23 @@ Color usage rules:
 ### Interaction States
 - **Hover:** Subtle border color change.
 - **Forbidden:** No glowing borders, no box-shadow spread, no "neon" effects.
+- Drop shadows for elevation (modals, toasts) and the focus ring are not "glow"
+  and remain allowed.
+- Motion is suppressed entirely for users who set `prefers-reduced-motion`.
 
 ---
 
 ### Typography
 
-- **Primary:** `Inter`, system-ui, sans-serif  
-- **Monospace:** `JetBrains Mono`, `Fira Code`, monospace  
+- **Primary:** the platform UI stack — `-apple-system`, `BlinkMacSystemFont`,
+  `Segoe UI`, `Helvetica`, `Arial`, sans-serif
+- **Monospace:** `SFMono-Regular`, `Consolas`, `Liberation Mono`, `Menlo`, monospace
+
+These are deliberately **local fonts only**. A webfont such as Inter or JetBrains
+Mono would have to be downloaded, and AlvaOS is routinely run on a LAN with no
+internet access — the UI must never depend on a request that cannot complete.
+The same rule applies to every other runtime asset, including icons, and is
+enforced in CI by `scripts/ci/check_no_external_assets.py`.
 
 Typography goals:
 - High readability

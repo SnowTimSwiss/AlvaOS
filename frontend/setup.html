@@ -79,11 +79,11 @@
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
+        /* Border and colour mark the active step. No glow: the design
+           guidelines rule out neon effects and box-shadow spread. */
         .step.active {
             border-color: var(--accent-primary);
             color: var(--accent-primary);
-            box-shadow: 0 0 15px rgba(58, 134, 255, 0.4);
-            transform: scale(1.1);
         }
 
         .step.completed {

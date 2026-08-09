@@ -26,7 +26,6 @@ from datetime import datetime, timedelta
 import psutil
 import requests
 from flask import Flask, Response, jsonify, request, send_from_directory
-from flask_cors import CORS
 
 try:
     import pyotp
@@ -48,6 +47,7 @@ from auth_manager import (
     SESSIONS, TEMP_2FA_TOKENS, TEMP_2FA_TTL_SECONDS,
     is_setup_complete, mark_setup_complete,
     _create_session, _get_current_session, _purge_expired_sessions,
+    _destroy_session, _destroy_all_sessions, _load_sessions,
     require_auth, require_csrf_token,
     _check_rate_limit, _reset_rate_limit,
 )
@@ -94,7 +94,10 @@ WEBUI_ROOT = '/opt/alvaos/webui'
 if not os.path.exists(WEBUI_ROOT):
     WEBUI_ROOT = os.path.join(os.path.dirname(__file__), '..', 'frontend')
 app.static_folder = WEBUI_ROOT
-CORS(app)
+
+# No CORS: the Web UI is served by this very process on the same origin, so
+# cross-origin access is never legitimate. A permissive policy here would let any
+# website a LAN user visits talk to the NAS API from their browser.
 
 update_manager = UpdateManager()
 docker_manager = DockerManager()
@@ -273,24 +276,10 @@ def complete_setup():
         except Exception as e:
             return jsonify({'error': f'Password change failed: {str(e)}'}), 500
         
-        # Re-enable SSH root login now that password is set
-        try:
-            ssh_config_file = '/etc/ssh/sshd_config.d/00-alvaos-security.conf'
-            if os.path.exists(ssh_config_file):
-                # Update SSH config to allow root login with password
-                with open(ssh_config_file, 'w') as f:
-                    f.write('# AlvaOS Security Configuration\n')
-                    f.write('# Root login enabled after setup completion\n')
-                    f.write('PermitRootLogin yes\n')
-                    f.write('PasswordAuthentication yes\n')
-                    f.write('PermitEmptyPasswords no\n')
-                
-                # Restart SSH service
-                run_sudo_command([CMD['SYSTEMCTL'], 'restart', 'ssh'])
-        except Exception as e:
-            # Don't fail setup if SSH config update fails
-            print(f"Warning: Could not update SSH config: {e}")
-        
+        # SSH root login stays disabled after setup. It is opt-in through
+        # System → Remote Access (/api/v1/system/ssh), so a fresh box never ends
+        # up reachable over SSH without the admin explicitly asking for it.
+
         # Sync to Samba
         sync_samba_password('root', password)
 
@@ -303,7 +292,11 @@ def complete_setup():
         
         # Mark setup as complete
         mark_setup_complete(password, VERSION)
-        
+
+        # A freshly provisioned box must not carry any session from before it
+        # had an owner.
+        _destroy_all_sessions()
+
         # Auto-login for the setup session
         token = _create_session('root', role='admin')
         
@@ -317,12 +310,94 @@ def complete_setup():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# API paths reachable before first-run setup is complete. Everything else is
+# refused until an admin password exists, so an unconfigured box on the network
+# cannot be inventoried or taken over through the browser of anyone on the LAN.
+PRE_SETUP_ALLOWLIST = frozenset({
+    '/api/v1/setup/status',
+    '/api/v1/setup/complete',
+})
+
+
+# State-changing API calls that legitimately carry no browser session, and so
+# cannot present a session-bound CSRF token:
+#   - the setup/login handshakes, which run before a session exists
+#   - buddy peer-to-peer traffic, authenticated by X-Buddy-Secret or a pairing
+#     token in the body rather than by an operator session
+CSRF_EXEMPT_PATHS = frozenset({
+    '/api/v1/setup/complete',
+    '/api/v1/auth/login',
+    '/api/v1/auth/2fa/complete',
+    '/api/v1/backup/pairing/accept',
+    '/api/v1/backup/pairing/remove/accept',
+})
+CSRF_EXEMPT_PREFIXES = ('/api/v1/backup/buddy/peer/',)
+
+SAFE_HTTP_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS'})
+
+
+@app.before_request
+def enforce_csrf_token():
+    """Require a session-bound CSRF token on every state-changing API request.
+
+    Enforced centrally rather than per-route so that a newly added endpoint is
+    protected by default instead of silently opting out.
+    """
+    if request.method in SAFE_HTTP_METHODS:
+        return None
+    path = request.path or ''
+    if not path.startswith('/api/'):
+        return None
+
+    normalized = path.rstrip('/')
+    if normalized in CSRF_EXEMPT_PATHS:
+        return None
+    if any(path.startswith(prefix) for prefix in CSRF_EXEMPT_PREFIXES):
+        return None
+
+    session = _get_current_session()
+    if not session:
+        # Unauthenticated: let the route's own @require_auth answer with a 401
+        # so clients get "log in" rather than a confusing CSRF error.
+        return None
+
+    presented = request.headers.get('X-CSRF-Token', '').strip()
+    expected = session.get('csrf_token', '')
+    if not presented or not expected or not secrets.compare_digest(presented, expected):
+        return jsonify({'error': 'Invalid or missing CSRF token'}), 403
+    return None
+
+
+@app.before_request
+def guard_pre_setup_surface():
+    """Refuse API access before setup, except for the setup handshake itself."""
+    path = request.path or ''
+    if not path.startswith('/api/'):
+        # Static Web UI assets stay reachable; the setup page has to load.
+        return None
+    if is_setup_complete():
+        return None
+    if path.rstrip('/') in PRE_SETUP_ALLOWLIST:
+        return None
+    return jsonify({
+        'error': 'AlvaOS is not set up yet. Finish first-run setup in the Web UI.',
+        'setup_required': True,
+    }), 403
+
+
 @app.after_request
 def add_security_headers(response):
     """Add security hardening headers to every response."""
     response.headers.setdefault('X-Content-Type-Options', 'nosniff')
     response.headers.setdefault('X-Frame-Options', 'SAMEORIGIN')
     response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+    # The UI ships entirely self-hosted assets (no CDN), so a strict policy holds.
+    response.headers.setdefault(
+        'Content-Security-Policy',
+        "default-src 'self'; img-src 'self' data:; "
+        "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
+        "frame-ancestors 'self'; base-uri 'self'; form-action 'self'"
+    )
     return response
 
 @app.route('/api/v1/auth/login', methods=['POST'])
@@ -414,6 +489,18 @@ def complete_2fa_login():
         'csrf_token': SESSIONS.get(token, {}).get('csrf_token', ''),
         'success': True
     })
+
+@app.route('/api/v1/auth/logout', methods=['POST'])
+@require_auth
+def logout():
+    """Revoke the current session token.
+
+    Sessions survive a backend restart, so clearing the browser's copy of the
+    token is no longer enough to end a session - the server has to forget it.
+    """
+    token = request.headers.get('Authorization', '').strip()
+    _destroy_session(token)
+    return jsonify({'success': True})
 
 @app.route('/api/v1/auth/2fa/status', methods=['GET'])
 @require_auth
@@ -1447,6 +1534,86 @@ def get_network_details():
         'dns': dns_servers
     })
 
+SSH_CONFIG_FILE = '/etc/ssh/sshd_config.d/00-alvaos-security.conf'
+
+
+def _read_ssh_access_state():
+    """Return the currently configured SSH access state."""
+    state = {'enabled': False, 'permit_root_login': False, 'available': True}
+    if platform.system() != 'Linux':
+        state['available'] = False
+        return state
+    try:
+        res, err = run_sudo_command([CMD['CAT'], SSH_CONFIG_FILE])
+        if err or not res or res.returncode != 0:
+            return state
+        for raw in (res.stdout or '').splitlines():
+            line = raw.strip().lower()
+            if line.startswith('permitrootlogin'):
+                state['permit_root_login'] = line.split()[-1] == 'yes'
+        # Root login is the only SSH account AlvaOS manages, so it is the switch.
+        state['enabled'] = state['permit_root_login']
+    except Exception as e:
+        print(f"Error reading SSH config: {e}")
+    return state
+
+
+@app.route('/api/v1/system/ssh', methods=['GET', 'POST'])
+@require_auth(require_admin=True)
+def system_ssh_access():
+    """Read or change SSH remote access. Disabled by default; opt-in only."""
+    if request.method == 'GET':
+        return jsonify(_read_ssh_access_state())
+
+    data = request.get_json() or {}
+    if 'enabled' not in data:
+        return jsonify({'error': 'Field "enabled" is required'}), 400
+    enabled = bool(data['enabled'])
+
+    if platform.system() != 'Linux':
+        return jsonify({'error': 'SSH access can only be changed on the NAS itself'}), 400
+
+    if enabled:
+        config = (
+            '# AlvaOS Security Configuration\n'
+            '# Managed by AlvaOS - System > Remote Access\n'
+            'PermitRootLogin yes\n'
+            'PasswordAuthentication yes\n'
+            'PermitEmptyPasswords no\n'
+        )
+    else:
+        config = (
+            '# AlvaOS Security Configuration\n'
+            '# Managed by AlvaOS - System > Remote Access\n'
+            'PermitRootLogin no\n'
+            'PasswordAuthentication yes\n'
+            'PermitEmptyPasswords no\n'
+        )
+
+    try:
+        process = subprocess.Popen(
+            build_privileged_cmd([CMD['TEE'], SSH_CONFIG_FILE]),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env={'LC_ALL': 'C'}
+        )
+        _, stderr = process.communicate(input=config, timeout=10)
+        if process.returncode != 0:
+            return jsonify({'error': 'Could not update the SSH configuration.',
+                            'detail': (stderr or '').strip()}), 500
+    except Exception as e:
+        return jsonify({'error': f'Could not update the SSH configuration: {e}'}), 500
+
+    res, err = run_sudo_command([CMD['SYSTEMCTL'], 'restart', 'ssh'])
+    if err:
+        return jsonify({'error': 'SSH configuration saved, but the SSH service '
+                                 'could not be restarted.', 'detail': err}), 500
+
+    return jsonify({'success': True, **_read_ssh_access_state()})
+
+
 @app.route('/api/v1/system/hostname', methods=['PUT'])
 @require_auth(require_admin=True)
 def set_hostname():
@@ -2134,13 +2301,10 @@ def manage_pools():
                             pass
                     pools.append(pool_entry)
             else:
-                pools = [
-                    {
-                        'id': 'mock-pool-1', 'name': 'storage-pool', 'uuid': 'abc-123',
-                        'devices': ['/dev/sdb'], 'total_size': '4.0TiB', 'used_size': '1.2TiB',
-                        'raid_level': 'RAID1', 'status': 'healthy', 'is_managed': True
-                    }
-                ]
+                # Not Linux: report honestly that storage cannot be inspected
+                # here. Returning invented pools made dev runs look like real
+                # hardware and turned every test into a guess.
+                pools = []
         except Exception as e:
             print(f"Error in manage_pools GET: {e}")
 
@@ -2262,12 +2426,13 @@ def manage_pools():
                     'mount_point': mount_point
                 })
             else:
-                # Mock response for development
+                # Never pretend a pool was created. A fake success here is worse
+                # than an error: the UI would show a pool that does not exist.
                 return jsonify({
-                    'success': True,
-                    'message': f'Mock: Pool "{pool_name}" would be created with {len(devices)} devices in {raid_level} mode',
-                    'pool_id': 'mock-pool-new'
-                })
+                    'error': 'Storage pools can only be created on the NAS itself '
+                             '(Linux with btrfs). This system is not supported.',
+                    'unsupported_platform': True,
+                }), 400
         
         except subprocess.TimeoutExpired:
             return jsonify({'error': 'Pool creation timed out'}), 500
@@ -2734,9 +2899,8 @@ def get_available_paths():
                             })
             except Exception as e:
                 print(f"Error listing subvolumes for path: {e}")
-        else:
-            # Mock subvolumes for dev
-            paths.append({'name': "  -> Subvolume: mock-subvol", 'path': f"{mount_point}/mock-subvol"})
+        # On non-Linux systems there are no btrfs subvolumes to list; the pool
+        # mount point on its own is the honest answer.
 
     return jsonify({'paths': paths})
 
@@ -3910,6 +4074,9 @@ if __name__ == '__main__':
     # Ensure directories exist
     ensure_directories()
 
+    # Restore sessions so an update or restart does not log everyone out.
+    _load_sessions()
+
     try:
         power_ups_manager.start()
         atexit.register(power_ups_manager.stop)
@@ -3921,6 +4088,18 @@ if __name__ == '__main__':
     
     if not is_setup_complete():
         print("\n⚠️  SETUP REQUIRED: Access the Web UI to complete initial setup")
-    
-    app.run(host='0.0.0.0', port=8080, debug=False)
+
+    # Serve through waitress: a NAS is expected to run unattended for years, and
+    # the Werkzeug development server is explicitly not built for that.
+    try:
+        from waitress import serve
+    except ImportError:
+        serve = None
+
+    if serve is not None:
+        serve(app, host='0.0.0.0', port=8080, threads=8, ident='AlvaOS')
+    else:
+        print("Warning: waitress is not installed, falling back to the Flask "
+              "development server. Install python3-waitress for production use.")
+        app.run(host='0.0.0.0', port=8080, debug=False)
 

@@ -330,7 +330,7 @@ async function checkDebianUpdates() {
         if (!res) return;
         const data = await readJson(res);
         if (!res.ok || !data || data.error) {
-            if (list) list.innerHTML = '<div class="metric-sub">Failed to check updates.</div>';
+            if (list) list.innerHTML = '<div class="metric-sub">Could not check for updates right now. Your system is unchanged - try again in a moment.</div>';
             renderDebianOsUpgrade(null);
             window.showToast(apiErrorMessage(res, data, 'Debian check failed'), 'error');
             return;
@@ -348,15 +348,15 @@ async function checkDebianUpdates() {
             row.className = 'list-item';
             row.innerHTML = `
                 <label style="display:flex; gap:8px; align-items:center;">
-                    <input type="checkbox" class="debian-package" value="${pkg.package}">
-                    <span>${pkg.package}</span>
+                    <input type="checkbox" class="debian-package" value="${escapeHtml(pkg.package)}">
+                    <span>${escapeHtml(pkg.package)}</span>
                 </label>
-                <span class="mono-text">${pkg.version}</span>
+                <span class="mono-text">${escapeHtml(pkg.version)}</span>
             `;
             list.appendChild(row);
         });
     } catch (err) {
-        if (list) list.innerHTML = '<div class="metric-sub">Failed to check updates.</div>';
+        if (list) list.innerHTML = '<div class="metric-sub">Could not check for updates right now. Your system is unchanged - try again in a moment.</div>';
         renderDebianOsUpgrade(null);
         window.showToast('Debian check failed', 'error');
     }
@@ -457,7 +457,7 @@ async function scanOfflinePackages(listId, packageType) {
         if (!res) return;
         const data = await readJson(res);
         if (!res.ok || !data) {
-            if (list) list.innerHTML = '<div class="metric-sub">Failed to scan offline updates.</div>';
+            if (list) list.innerHTML = '<div class="metric-sub">Could not read the USB stick. Check that it is plugged in and uses FAT32, NTFS, EXT4 or exFAT.</div>';
             window.showToast(apiErrorMessage(res, data, 'Offline scan failed'), 'error');
             return;
         }
@@ -477,10 +477,10 @@ async function scanOfflinePackages(listId, packageType) {
             row.className = 'list-item';
             row.innerHTML = `
                 <div style="display:flex; flex-direction:column;">
-                    <span>${pkg.name}</span>
-                    <span class="metric-sub">${pkg.path}</span>
+                    <span>${escapeHtml(pkg.name)}</span>
+                    <span class="metric-sub">${escapeHtml(pkg.path)}</span>
                 </div>
-                <button class="btn-secondary" data-offline-path="${pkg.path}">Install</button>
+                <button class="btn-secondary" data-offline-path="${escapeHtml(pkg.path)}">Install</button>
             `;
             list.appendChild(row);
         });
@@ -489,7 +489,7 @@ async function scanOfflinePackages(listId, packageType) {
             btn.addEventListener('click', () => applyOfflinePackage(btn.dataset.offlinePath, listId, packageType));
         });
     } catch (err) {
-        if (list) list.innerHTML = '<div class="metric-sub">Failed to scan offline updates.</div>';
+        if (list) list.innerHTML = '<div class="metric-sub">Could not read the USB stick. Check that it is plugged in and uses FAT32, NTFS, EXT4 or exFAT.</div>';
         window.showToast('Offline scan failed', 'error');
     }
 }
@@ -542,10 +542,10 @@ async function loadUpdateHistory() {
         row.className = 'list-item';
         row.innerHTML = `
             <div style="display:flex; flex-direction:column;">
-                <span>${entry.type || 'update'} ${entry.package ? `- ${entry.package}` : ''}</span>
-                <span class="metric-sub">${entry.timestamp || ''}</span>
+                <span>${escapeHtml(entry.type || 'update')} ${entry.package ? `- ${escapeHtml(entry.package)}` : ''}</span>
+                <span class="metric-sub">${escapeHtml(entry.timestamp || '')}</span>
             </div>
-            <span class="mono-text">${entry.packages ? entry.packages.length + ' pkgs' : ''}</span>
+            <span class="mono-text">${escapeHtml(entry.packages ? entry.packages.length + ' pkgs' : '')}</span>
         `;
         list.appendChild(row);
     });
