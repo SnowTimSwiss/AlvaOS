@@ -186,7 +186,64 @@ class AppStore:
                     service_config['environment'] = env_dict
                 service_config['environment'].update(environment_vars)
 
+        # Last line of defence: nothing leaves this function still holding a
+        # placeholder secret, whichever install path built it.
+        leftover = self._find_placeholder_secrets(compose_config)
+        if leftover:
+            raise ValueError(
+                "Refusing to build a container configuration with placeholder "
+                f"secrets: {', '.join(leftover)}"
+            )
+
         return compose_config
+
+    PLACEHOLDER_SECRETS = frozenset({'CHANGEME', 'CHANGE_ME', 'CHANGEME!', 'PLEASE_CHANGE'})
+
+    def _validate_required_environment(
+        self,
+        app_details: Dict,
+        environment_vars: Optional[Dict[str, str]]
+    ) -> Optional[str]:
+        """Return an error message if a required env field is missing or still a placeholder.
+
+        Apps used to ship with a literal CHANGEME as their database and admin
+        passwords, and nothing stopped that value from reaching a running
+        container. Required fields must now carry a real value before install.
+        """
+        schema = ((app_details or {}).get('config_schema') or {})
+        environment_schema = schema.get('environment') or []
+        provided = {str(k): str(v) for k, v in (environment_vars or {}).items()}
+
+        missing = []
+        for entry in environment_schema:
+            key = str(entry.get('key', '')).strip()
+            if not key or not entry.get('required'):
+                continue
+            value = provided.get(key, '').strip()
+            if not value or value.upper() in self.PLACEHOLDER_SECRETS:
+                missing.append((key, entry.get('description') or key))
+
+        if missing:
+            names = ', '.join(key for key, _ in missing)
+            return (
+                f"This app needs a value for: {names}. "
+                "Fill these in before installing - leaving the placeholder would "
+                "start the app with a publicly known password."
+            )
+        return None
+
+    def _find_placeholder_secrets(self, compose_config: Dict) -> list:
+        """List env keys in a built compose config that still hold a placeholder."""
+        found = []
+        for service_name, service_config in (compose_config.get('services') or {}).items():
+            env = (service_config or {}).get('environment') or {}
+            pairs = env.items() if isinstance(env, dict) else (
+                str(item).split('=', 1) for item in env if '=' in str(item)
+            )
+            for key, value in pairs:
+                if str(value).strip().upper() in self.PLACEHOLDER_SECRETS:
+                    found.append(f"{service_name}.{key}")
+        return found
 
     def _normalize_custom_app_id(self, value: str) -> str:
         """Convert a free-form app name/id to a stable app identifier."""
@@ -816,7 +873,12 @@ class AppStore:
         app_details, error = self.get_app_details(app_id)
         if error:
             return False, error
-        
+
+        # Refuse to deploy an app that would come up with placeholder secrets.
+        secret_error = self._validate_required_environment(app_details, environment_vars)
+        if secret_error:
+            return False, secret_error
+
         # Check if app is already installed
         apps_state = self._load_apps_state()
         if app_id in apps_state:

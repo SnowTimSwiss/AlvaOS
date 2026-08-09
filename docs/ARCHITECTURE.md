@@ -56,7 +56,7 @@ NAS-to-NAS encrypted incremental backup.
 - **Scope**: Backs up configs, shares, and app state (not the OS itself).
 
 ### 5. Web UI & API
-- **UI**: Dark-mode first, responsive, Unraid-inspired. Plain HTML/CSS/vanilla JavaScript — no framework and no build step. Files are served as static assets by the backend.
+- **UI**: Dark-mode first, responsive, Unraid-inspired. Plain HTML/CSS/vanilla JavaScript — no framework and no build step. Files are served as static assets by the backend. Every runtime asset (including the icon set in `frontend/lucide-icons.js`) is bundled locally, so the UI works on a LAN with no internet access.
 - **API**: REST API under `/api/v1/`, implemented in Python with Flask. Uses JSON. Authentication is via opaque session tokens (see Security Model), not JWT. The UI never runs shell commands directly — every privileged action goes through the API, which shells out only via an allow-listed sudoers configuration.
 
 ## Distribution & Updates
@@ -69,12 +69,14 @@ NAS-to-NAS encrypted incremental backup.
 - Single local admin account (`root`), configured during first-run setup — there are no default passwords.
 - Web UI login required for all API endpoints once setup is complete.
 - Passwords are stored as PBKDF2-HMAC-SHA256 hashes with a per-install random salt (`/var/lib/alvaos/auth.json`).
-- Sessions use opaque random tokens with a 24h TTL. Tokens are held in memory, so restarting the backend (e.g. after an update) logs sessions out.
+- Sessions use opaque random tokens with a 24h TTL. Tokens are persisted to `/var/lib/alvaos/sessions.json` (mode `0600`), so a backend restart or an update does not log everyone out. `POST /api/v1/auth/logout` revokes a token server-side.
 - Optional TOTP two-factor authentication (RFC 6238, via `pyotp`).
-- State-changing requests require a CSRF token bound to the session.
+- State-changing requests require a CSRF token bound to the session. This is enforced centrally in a `before_request` hook rather than per route, so a newly added endpoint is protected by default. The only exemptions are the pre-session handshakes (setup, login, 2FA) and buddy peer-to-peer traffic, which authenticates with `X-Buddy-Secret` instead.
 - Login attempts are rate-limited per IP (10 attempts / 15 min).
-- Security headers (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`) are added to every response.
-- SSH disabled by default (can be enabled).
+- Security headers (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Content-Security-Policy`) are added to every response.
+- Before first-run setup is complete, every API route except `/api/v1/setup/status` and `/api/v1/setup/complete` is refused, so an unconfigured box cannot be inventoried or claimed over the network.
+- No CORS headers are sent: the Web UI is served from the same origin, so cross-origin access is never legitimate.
+- SSH root login is disabled by default and stays disabled after first-run setup. It is opt-in through System → Security → Remote Access (`/api/v1/system/ssh`).
 
 **Privilege separation:**
 - The backend runs as the unprivileged `alvaos` system user.
@@ -91,7 +93,7 @@ NAS-to-NAS encrypted incremental backup.
 
 ## Service Architecture
 
-The backend is a single Flask process that serves both the REST API and the static Web UI on port `8080`.
+The backend is a single Flask process that serves both the REST API and the static Web UI on port `8080`. It runs under **waitress**, a production WSGI server — not the Flask development server, which is not built for the years of unattended operation AlvaOS targets.
 
 **systemd units:**
 - `alvaos.service` — main backend: REST API + Web UI (`python3 /opt/alvaos/bin/alvaos-backend.py`).
@@ -115,7 +117,7 @@ The backend is a single Flask process that serves both the REST API and the stat
 | Base OS | Debian Stable | Ultra-stable |
 | Storage | Btrfs | Snapshots, pooling |
 | Containers| Docker + Compose | Proven, simple |
-| Backend | Python 3 + Flask | Simple, batteries-included, easy to audit |
+| Backend | Python 3 + Flask on waitress | Simple, batteries-included, easy to audit |
 | UI | Vanilla HTML/CSS/JS | No framework, no build step, lightweight |
 | Auth | Session tokens + TOTP | Local-first, no external IdP |
 | Backup | WireGuard + encrypted transfer | Secure, efficient |

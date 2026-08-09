@@ -13,8 +13,8 @@ installer/.cache/
 backend/bin/
 backend/dist/
 backend/vendor/
-backend/__pycache__/
-backend/*.pyc
+__pycache__/
+*.pyc
 backend/venv/
 backend/.venv/
 backend/go.sum

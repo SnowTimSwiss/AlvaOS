@@ -907,7 +907,7 @@ FSTAB_EOF
     chroot /mnt env DEBIAN_FRONTEND=noninteractive apt-get install -y \
         -o Acquire::Retries=3 \
         -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" \
-        linux-image-amd64 python3 python3-flask python3-flask-cors python3-psutil python3-requests python3-packaging python3-yaml \
+        linux-image-amd64 python3 python3-flask python3-waitress python3-psutil python3-requests python3-packaging python3-yaml \
         systemd systemd-timesyncd network-manager openssh-server docker.io docker-compose btrfs-progs wireguard-tools \
         curl wget vim sudo smartmontools nfs-kernel-server samba >> "$INSTALL_LOG" 2>&1
 

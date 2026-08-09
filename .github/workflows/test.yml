@@ -26,3 +26,25 @@ jobs:
 
       - name: Run unit tests
         run: pytest
+
+  guardrails:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Set up Python
+        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
+        with:
+          python-version: '3.11'
+
+      # Previously this only ran on release, so a privileged command missing
+      # from the sudoers allow-list was not caught until the release build.
+      - name: Check privileged commands against sudoers allow-list
+        run: python3 scripts/ci/check_privileged_commands.py
+
+      - name: Check web UI has no external runtime dependencies
+        run: python3 scripts/ci/check_no_external_assets.py
+
+      - name: Check catalog apps ship no placeholder secrets
+        run: python3 scripts/ci/check_catalog_secrets.py

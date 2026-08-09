@@ -178,6 +178,56 @@ function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
+// Escape a value for use inside a quoted JS string in an inline handler, e.g.
+// onclick="doThing('${jsArg(name)}')". The browser HTML-decodes the attribute
+// first and only then parses it as JS, so the value has to survive both: escape
+// for JS, then for HTML. Without this a share or disk name containing a quote
+// breaks the handler outright.
+function escapeJsString(value) {
+    return String(value ?? '')
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '\\"')
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '\\r')
+        .replace(/\u2028/g, '\\u2028')
+        .replace(/\u2029/g, '\\u2029');
+}
+
+function jsArg(value) {
+    return escapeHtml(escapeJsString(value));
+}
+
+window.escapeHtml = escapeHtml;
+window.escapeJsString = escapeJsString;
+window.jsArg = jsArg;
+
+// Ends the session on the server too. Sessions outlive a backend restart, so
+// dropping the local token alone would leave it usable until it expires.
+async function alvaosLogout() {
+    const token = localStorage.getItem('alvaos_token');
+    if (token) {
+        try {
+            await window.__alvaosNativeFetch(`${API_BASE}/auth/logout`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': token,
+                    'X-CSRF-Token': (await fetchCsrfToken()) || ''
+                }
+            });
+        } catch (error) {
+            // Even if the call fails, clear locally and send the user to login.
+            console.error('Logout request failed:', error);
+        }
+    }
+    localStorage.removeItem('alvaos_token');
+    localStorage.removeItem('alvaos_csrf_token');
+    csrfToken = null;
+    window.location.href = 'login.html';
+}
+
+window.alvaosLogout = alvaosLogout;
+
 function updateClock() {
     const clockElement = document.getElementById('clock');
     if (!clockElement) return;
@@ -264,7 +314,7 @@ function renderHero() {
         titleEl.textContent = 'Everything looks healthy';
         if (iconWrap) {
             iconWrap.classList.remove('attention');
-            iconWrap.innerHTML = window.alvaIcon ? window.alvaIcon('check-circle-2', '', 'aria-hidden="true"') : '';
+            iconWrap.innerHTML = window.alvaIcon ? window.alvaIcon('circle-check-big', '', 'aria-hidden="true"') : '';
         }
     } else {
         titleEl.textContent = `${count} thing${count === 1 ? '' : 's'} want${count === 1 ? 's' : ''} your attention`;
@@ -1006,3 +1056,99 @@ if (document.readyState === 'loading') {
 } else {
     init();
 }
+
+// ── Tab accessibility ────────────────────────────────────────────────────────
+// Each page wires its own tab switching. Rather than change five different
+// implementations, this decorates whatever is on the page with the ARIA tab
+// pattern and adds arrow-key navigation, delegating the actual switch back to
+// the page's existing click handler.
+function enhanceTabBars() {
+    document.querySelectorAll('.tab-bar').forEach((bar) => {
+        const tabs = Array.from(bar.querySelectorAll('.tab-btn'));
+        if (tabs.length === 0) return;
+
+        bar.setAttribute('role', 'tablist');
+
+        const syncState = () => {
+            tabs.forEach((tab) => {
+                const isActive = tab.classList.contains('active');
+                tab.setAttribute('role', 'tab');
+                tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+                // Roving tabindex: one stop for the whole tablist.
+                tab.tabIndex = isActive ? 0 : -1;
+
+                const name = tab.getAttribute('data-tab');
+                const panel = name && document.getElementById(`tab-${name}`);
+                if (panel) {
+                    tab.setAttribute('aria-controls', panel.id);
+                    panel.setAttribute('role', 'tabpanel');
+                    if (!panel.getAttribute('aria-label') && tab.textContent.trim()) {
+                        panel.setAttribute('aria-label', tab.textContent.trim());
+                    }
+                }
+            });
+        };
+
+        syncState();
+        // The page toggles .active on click; re-sync right after it does.
+        bar.addEventListener('click', () => setTimeout(syncState, 0));
+
+        bar.addEventListener('keydown', (event) => {
+            const currentIndex = tabs.indexOf(document.activeElement);
+            if (currentIndex === -1) return;
+
+            let nextIndex = null;
+            if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % tabs.length;
+            else if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+            else if (event.key === 'Home') nextIndex = 0;
+            else if (event.key === 'End') nextIndex = tabs.length - 1;
+            if (nextIndex === null) return;
+
+            event.preventDefault();
+            tabs[nextIndex].focus();
+            tabs[nextIndex].click();
+        });
+    });
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', enhanceTabBars);
+} else {
+    enhanceTabBars();
+}
+
+// ── Calm failure states ──────────────────────────────────────────────────────
+// A section that could not load is not an emergency and must not be painted in
+// the colour reserved for "you have to act now". It says what did not work, what
+// it means, and offers a way forward - per the No Fear UX rules in DESIGN.md.
+function renderLoadFailure(container, options = {}) {
+    if (!container) return;
+    const title = options.title || 'Could not load this section';
+    const detail = options.detail
+        || 'The NAS did not answer. It may still be starting up after an update.';
+    const retryId = `retry-${Math.random().toString(36).slice(2, 9)}`;
+
+    container.innerHTML = `
+        <div class="load-failure" style="grid-column: 1/-1;">
+            <div class="load-failure-title">${escapeHtml(title)}</div>
+            <p class="load-failure-detail">${escapeHtml(detail)}</p>
+            ${options.onRetry ? `<button class="btn-secondary" id="${retryId}">Try again</button>` : ''}
+        </div>
+    `;
+
+    if (options.onRetry) {
+        const button = document.getElementById(retryId);
+        if (button) {
+            button.addEventListener('click', () => {
+                button.disabled = true;
+                button.textContent = 'Retrying...';
+                Promise.resolve(options.onRetry()).catch(() => {
+                    button.disabled = false;
+                    button.textContent = 'Try again';
+                });
+            });
+        }
+    }
+}
+
+window.renderLoadFailure = renderLoadFailure;

@@ -13,6 +13,10 @@ function showError(message) {
     showNotification(message, 'error');
 }
 
+function showSuccess(message) {
+    showNotification(message, 'success');
+}
+
 function escapeHtml(value) {
     return String(value ?? '')
         .replace(/&/g, '&amp;')
@@ -61,6 +65,12 @@ const els = {
     tfaEnableBtn: document.getElementById('tfa-enable-btn'),
     tfaInstallBtn: document.getElementById('tfa-install-btn'),
     tfaDisableBtn: document.getElementById('tfa-disable-btn'),
+
+    // SSH remote access
+    sshStatusText: document.getElementById('ssh-status-text'),
+    sshStatusDot: document.getElementById('ssh-status-dot'),
+    sshEnableBtn: document.getElementById('ssh-enable-btn'),
+    sshDisableBtn: document.getElementById('ssh-disable-btn'),
 
     // Watchdog
     watchdogList: document.getElementById('watchdog-service-list'),
@@ -189,7 +199,7 @@ async function fetchSettings() {
                 els.logViewer.scrollTop = els.logViewer.scrollHeight;
             }
         } else if (els.logViewer) {
-            els.logViewer.textContent = 'Failed to load logs.';
+            els.logViewer.textContent = 'Could not read the system log. The log service may be busy; try again in a moment.';
         }
     } catch (e) {
         console.warn('Log fetch error', e);
@@ -201,6 +211,7 @@ async function fetchSettings() {
     await fetchUpsSettings();
     await fetchAlertSettings();
     await fetch2faStatus();
+    await fetchSshStatus();
     await fetchWatchdogStatus();
 }
 
@@ -876,6 +887,77 @@ async function fetch2faStatus() {
     }
 }
 
+// --- SSH remote access ---
+
+async function fetchSshStatus() {
+    if (!els.sshStatusText) return;
+    try {
+        const res = await fetch(`${API_BASE}/system/ssh`, { headers: getHeaders() });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Failed to fetch SSH status');
+
+        const enabled = !!data.enabled;
+        const available = data.available !== false;
+
+        if (!available) {
+            els.sshStatusText.textContent = 'Not available on this system';
+            els.sshStatusDot.style.background = 'var(--text-secondary)';
+            if (els.sshEnableBtn) els.sshEnableBtn.style.display = 'none';
+            if (els.sshDisableBtn) els.sshDisableBtn.style.display = 'none';
+            return;
+        }
+
+        els.sshStatusText.textContent = enabled ? 'Enabled' : 'Disabled';
+        // Enabled SSH is a deliberate choice, not a fault: amber, never red.
+        els.sshStatusDot.style.background = enabled ? 'var(--accent-warning)' : 'var(--text-secondary)';
+        if (els.sshEnableBtn) els.sshEnableBtn.style.display = enabled ? 'none' : 'block';
+        if (els.sshDisableBtn) els.sshDisableBtn.style.display = enabled ? 'block' : 'none';
+    } catch (e) {
+        els.sshStatusText.textContent = 'Unknown';
+        els.sshStatusDot.style.background = 'var(--text-secondary)';
+    }
+}
+
+async function setSshAccess(enabled) {
+    if (enabled) {
+        const confirmed = await showConfirm(
+            'Enable SSH access?\n\n' +
+            'Anyone who knows the root password will be able to log in to this ' +
+            'machine over the network. Leave it off unless you need a command line.'
+        );
+        if (!confirmed) return;
+    }
+
+    const button = enabled ? els.sshEnableBtn : els.sshDisableBtn;
+    const originalText = button?.textContent;
+    if (button) {
+        button.disabled = true;
+        button.textContent = enabled ? 'Enabling...' : 'Disabling...';
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/system/ssh`, {
+            method: 'POST',
+            headers: getHeaders(true),
+            body: JSON.stringify({ enabled })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            showError(data.error || 'Could not change SSH access. Nothing was changed.');
+            return;
+        }
+        showSuccess(enabled ? 'SSH access is now enabled.' : 'SSH access is now disabled.');
+        await fetchSshStatus();
+    } catch (e) {
+        showError('Could not reach the NAS to change SSH access. Nothing was changed.');
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.textContent = originalText;
+        }
+    }
+}
+
 async function install2faLibrary() {
     if (!await showConfirm('Install missing 2FA libraries now?')) return;
 
@@ -1111,6 +1193,8 @@ document.addEventListener('DOMContentLoaded', () => {
     els.tfaEnableBtn?.addEventListener('click', setup2fa);
     els.tfaInstallBtn?.addEventListener('click', install2faLibrary);
     els.tfaDisableBtn?.addEventListener('click', disable2fa);
+    els.sshEnableBtn?.addEventListener('click', () => setSshAccess(true));
+    els.sshDisableBtn?.addEventListener('click', () => setSshAccess(false));
     els.watchdogCheckBtn?.addEventListener('click', runWatchdogCheck);
 
     // Poll watchdog and UPS status periodically

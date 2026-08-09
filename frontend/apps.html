@@ -684,25 +684,28 @@
 
 <body>
 
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
     <!-- Sidebar -->
     <aside class="sidebar">
         <div class="logo-area">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false">
                 <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round"
                     stroke-linejoin="round" style="color: var(--accent-primary);" />
             </svg>
             <div class="logo-text">AlvaOS</div>
         </div>
 
-        <nav>
-            <a href="index.html" class="nav-link"><i data-lucide="house"></i> Dashboard</a>
-            <a href="storage.html" class="nav-link"><i data-lucide="hard-drive"></i> Storage</a>
-            <a href="apps.html" class="nav-link active"><i data-lucide="blocks"></i> Apps</a>
-            <a href="backup.html" class="nav-link"><i data-lucide="refresh-cw"></i> Backup</a>
-            <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw"></i> Updates <span class="nav-badge"
+        <nav aria-label="Main">
+            <a href="index.html" class="nav-link"><i data-lucide="house" aria-hidden="true"></i> Dashboard</a>
+            <a href="storage.html" class="nav-link"><i data-lucide="hard-drive" aria-hidden="true"></i> Storage</a>
+            <a href="apps.html" class="nav-link active" aria-current="page"><i data-lucide="blocks" aria-hidden="true"></i> Apps</a>
+            <a href="backup.html" class="nav-link"><i data-lucide="refresh-cw" aria-hidden="true"></i> Backup</a>
+            <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw" aria-hidden="true"></i> Updates <span class="nav-badge"
                     id="updates-nav-badge" style="display:none;">!</span></a>
             <div style="flex:1"></div>
-            <a href="system.html" class="nav-link"><i data-lucide="settings"></i> System</a>
+            <a href="system.html" class="nav-link"><i data-lucide="settings" aria-hidden="true"></i> System</a>
+            <button type="button" class="nav-link nav-logout" onclick="alvaosLogout()"><i data-lucide="log-out" aria-hidden="true"></i> Log out</button>
         </nav>
     </aside>
 
@@ -714,13 +717,13 @@
             </div>
             <div class="status-badge" style="gap:10px;">
                 <div class="status-badge" style="border:none; background:transparent; padding:0;">
-                    <div class="status-dot"></div>
+                    <div class="status-dot" aria-hidden="true"></div>
                     <span>Online</span>
                 </div>
             </div>
         </header>
 
-        <div class="content-scroll">
+        <main class="content-scroll" id="main-content" tabindex="-1">
             <div id="update-banner-slot"></div>
             <div style="margin-bottom: 24px;">
                 <h1 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 4px;">Apps</h1>
@@ -767,7 +770,7 @@
                         <option value="all">All categories</option>
                     </select>
                     <button id="toggle-compose-btn" class="btn-secondary" style="display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; justify-content: center;">
-                        <i data-lucide="plus"></i> Custom App
+                        <i data-lucide="plus" aria-hidden="true"></i> Custom App
                     </button>
                 </div>
                 <div class="compose-quick-add">
@@ -824,7 +827,7 @@
                     style="color:var(--text-secondary)">GitHub</a>
             </footer>
 
-        </div>
+        </main>
     </div>
 
     <!-- App Install Modal -->
@@ -845,7 +848,7 @@
                 style="display: flex; gap: 16px; margin-bottom: 24px; padding: 16px; background: var(--bg-body); border-radius: var(--radius-default); border: 1px solid var(--border-subtle);">
                 <div id="install-app-icon"
                     style="font-size: 2.5rem; width: 64px; height: 64px; display: flex; align-items: center; justify-content: center; background: var(--bg-card); border-radius: var(--radius-default); border: 1px solid var(--border-default);">
-                    <i data-lucide="package"></i></div>
+                    <i data-lucide="package" aria-hidden="true"></i></div>
                 <div style="flex: 1;">
                     <h3 id="install-app-name" style="margin: 0 0 4px 0; font-size: 1.1rem;">App Name</h3>
                     <p id="install-app-version"
@@ -873,7 +876,7 @@
 
             <div id="install-port-warning"
                 style="margin-top: 16px; padding: 12px; background: rgba(248, 81, 73, 0.1); border: 1px solid var(--accent-danger); border-radius: var(--radius-default); display: none;">
-                <p style="font-size: 0.85rem; color: var(--accent-danger); margin: 0;"><i data-lucide="triangle-alert"></i> Some default ports are already
+                <p style="font-size: 0.85rem; color: var(--accent-danger); margin: 0;"><i data-lucide="triangle-alert" aria-hidden="true"></i> Some default ports are already
                     in use. You may need to remap them after installation.</p>
             </div>
 
@@ -946,7 +949,7 @@
     </div>
 
     <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+    <script src="lucide-icons.js"></script>
     <script src="icons.js"></script>
     <script src="notifications.js"></script>
     <script src="feedback.js"></script>

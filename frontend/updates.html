@@ -11,27 +11,30 @@
 
 <body>
 
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
     <!-- Sidebar -->
     <aside class="sidebar">
         <div class="logo-area">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false">
                 <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round"
                     stroke-linejoin="round" style="color: var(--accent-primary);" />
             </svg>
             <div class="logo-text">AlvaOS</div>
         </div>
 
-        <nav>
-            <a href="index.html" class="nav-link"><i data-lucide="house"></i> Dashboard</a>
-            <a href="storage.html" class="nav-link"><i data-lucide="hard-drive"></i> Storage</a>
-            <a href="apps.html" class="nav-link"><i data-lucide="blocks"></i> Apps</a>
-            <a href="backup.html" class="nav-link"><i data-lucide="refresh-cw"></i> Backup</a>
-            <a href="updates.html" class="nav-link active">
-                <i data-lucide="rotate-cw"></i> Updates
+        <nav aria-label="Main">
+            <a href="index.html" class="nav-link"><i data-lucide="house" aria-hidden="true"></i> Dashboard</a>
+            <a href="storage.html" class="nav-link"><i data-lucide="hard-drive" aria-hidden="true"></i> Storage</a>
+            <a href="apps.html" class="nav-link"><i data-lucide="blocks" aria-hidden="true"></i> Apps</a>
+            <a href="backup.html" class="nav-link"><i data-lucide="refresh-cw" aria-hidden="true"></i> Backup</a>
+            <a href="updates.html" class="nav-link active" aria-current="page">
+                <i data-lucide="rotate-cw" aria-hidden="true"></i> Updates
                 <span class="nav-badge" id="updates-nav-badge" style="display:none;">!</span>
             </a>
             <div style="flex:1"></div>
-            <a href="system.html" class="nav-link"><i data-lucide="settings"></i> System</a>
+            <a href="system.html" class="nav-link"><i data-lucide="settings" aria-hidden="true"></i> System</a>
+            <button type="button" class="nav-link nav-logout" onclick="alvaosLogout()"><i data-lucide="log-out" aria-hidden="true"></i> Log out</button>
         </nav>
     </aside>
 
@@ -43,13 +46,13 @@
             </div>
             <div class="status-badge" style="gap:10px;">
                 <div class="status-badge" style="border:none; background:transparent; padding:0;">
-                    <div class="status-dot"></div>
+                    <div class="status-dot" aria-hidden="true"></div>
                     <span>Online</span>
                 </div>
             </div>
         </header>
 
-        <div class="content-scroll">
+        <main class="content-scroll" id="main-content" tabindex="-1">
             <div id="update-banner-slot"></div>
             <div style="margin-bottom: 24px;">
                 <h1 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 4px;">Update Management</h1>
@@ -68,7 +71,7 @@
                 <div class="card">
                     <div class="card-header">
                         <div class="card-title">AlvaOS Updates</div>
-                        <div style="color:var(--text-secondary)"><i data-lucide="rotate-cw"></i></div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="rotate-cw" aria-hidden="true"></i></div>
                     </div>
                     <div class="setting-group">
                         <label class="setting-label">Current Version</label>
@@ -90,7 +93,7 @@
                 <div class="card" id="update-available-card" style="display:none;">
                     <div class="card-header">
                         <div class="card-title">Available Update</div>
-                        <div style="color:var(--text-secondary)"><i data-lucide="upload"></i></div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="upload" aria-hidden="true"></i></div>
                     </div>
                     <div class="setting-group">
                         <label class="setting-label">Latest Version</label>
@@ -111,7 +114,7 @@
                 <div class="card">
                     <div class="card-header">
                         <div class="card-title">Offline AlvaOS Update</div>
-                        <div style="color:var(--text-secondary)"><i data-lucide="hard-drive-download"></i></div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="hard-drive-download" aria-hidden="true"></i></div>
                     </div>
                     <p class="metric-sub" style="margin-bottom: 12px;">
                         Install an AlvaOS update from a USB stick instead of downloading it.
@@ -129,7 +132,7 @@
                 <div class="card">
                     <div class="card-header">
                         <div class="card-title">Debian Package Updates</div>
-                        <div style="color:var(--text-secondary)"><i data-lucide="package"></i></div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="package" aria-hidden="true"></i></div>
                     </div>
                     <div id="debian-os-upgrade-status" class="metric-sub" style="margin-bottom: 12px;">
                         Debian OS release status unknown.
@@ -148,7 +151,7 @@
                 <div class="card">
                     <div class="card-header">
                         <div class="card-title">Offline System Package</div>
-                        <div style="color:var(--text-secondary)"><i data-lucide="hard-drive-download"></i></div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="hard-drive-download" aria-hidden="true"></i></div>
                     </div>
                     <p class="metric-sub" style="margin-bottom: 12px;">
                         Install a system .deb package from a USB stick, for example when there is no internet access.
@@ -166,7 +169,7 @@
                 <div class="card">
                     <div class="card-header">
                         <div class="card-title">Update History</div>
-                        <div style="color:var(--text-secondary)"><i data-lucide="scroll-text"></i></div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="scroll-text" aria-hidden="true"></i></div>
                     </div>
                     <div id="history-list" class="list-box">
                         <div class="metric-sub">No history yet.</div>
@@ -178,7 +181,7 @@
                 <div class="card">
                     <div class="card-header">
                         <div class="card-title">Update Settings</div>
-                        <div style="color:var(--text-secondary)"><i data-lucide="settings"></i></div>
+                        <div style="color:var(--text-secondary)"><i data-lucide="settings" aria-hidden="true"></i></div>
                     </div>
                     <div class="setting-group">
                         <label class="setting-label">Automatic update check on startup</label>
@@ -214,11 +217,11 @@
                 </div>
             </div>
 
-        </div>
+        </main>
     </div>
 
     <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+    <script src="lucide-icons.js"></script>
     <script src="icons.js"></script>
     <script src="notifications.js"></script>
     <script src="feedback.js"></script>

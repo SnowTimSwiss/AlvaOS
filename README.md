@@ -23,7 +23,7 @@
 
 * **Clean Web UI**
   * Inspired by UmbrelOS, ZimaOS Unraid and TrueNAS UX (Taking the best of all)
-  * Dark mode first with option for light mode
+  * Dark mode (a light theme is planned)
   * API-driven, minimal clicks
 
 * **Ultra Stable Base**

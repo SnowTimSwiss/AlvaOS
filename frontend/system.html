@@ -8,39 +8,8 @@
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="notifications.css">
     <style>
-        /* Calm status rows used across the System tabs */
-        .status-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 12px;
-            padding: 10px 0;
-            border-bottom: 1px solid var(--border-subtle);
-        }
-
-        .status-row:last-child {
-            border-bottom: none;
-        }
-
-        .status-row .status-row-label {
-            color: var(--text-secondary);
-            font-size: 0.85rem;
-        }
-
-        .status-row .status-row-value {
-            font-family: var(--font-mono);
-            font-size: 0.9rem;
-            color: var(--text-primary);
-            text-align: right;
-            overflow-wrap: anywhere;
-        }
-
-        .card-actions {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-            margin-top: 16px;
-        }
+        /* .status-row and .card-actions now live in styles.css so every page
+           renders them identically. */
 
         /* Reusable modal panel (matches the user-management modal pattern) */
         .sys-modal-panel {
@@ -110,25 +79,28 @@
 
 <body>
 
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
     <!-- Sidebar -->
     <aside class="sidebar">
         <div class="logo-area">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false">
                 <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round"
                     stroke-linejoin="round" style="color: var(--accent-primary);" />
             </svg>
             <div class="logo-text">AlvaOS</div>
         </div>
 
-        <nav>
-            <a href="index.html" class="nav-link"><i data-lucide="house"></i> Dashboard</a>
-            <a href="storage.html" class="nav-link"><i data-lucide="hard-drive"></i> Storage</a>
-            <a href="apps.html" class="nav-link"><i data-lucide="blocks"></i> Apps</a>
-            <a href="backup.html" class="nav-link"><i data-lucide="refresh-cw"></i> Backup</a>
-            <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw"></i> Updates <span class="nav-badge"
+        <nav aria-label="Main">
+            <a href="index.html" class="nav-link"><i data-lucide="house" aria-hidden="true"></i> Dashboard</a>
+            <a href="storage.html" class="nav-link"><i data-lucide="hard-drive" aria-hidden="true"></i> Storage</a>
+            <a href="apps.html" class="nav-link"><i data-lucide="blocks" aria-hidden="true"></i> Apps</a>
+            <a href="backup.html" class="nav-link"><i data-lucide="refresh-cw" aria-hidden="true"></i> Backup</a>
+            <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw" aria-hidden="true"></i> Updates <span class="nav-badge"
                     id="updates-nav-badge" style="display:none;">!</span></a>
             <div style="flex:1"></div>
-            <a href="system.html" class="nav-link active"><i data-lucide="settings"></i> System</a>
+            <a href="system.html" class="nav-link active" aria-current="page"><i data-lucide="settings" aria-hidden="true"></i> System</a>
+            <button type="button" class="nav-link nav-logout" onclick="alvaosLogout()"><i data-lucide="log-out" aria-hidden="true"></i> Log out</button>
         </nav>
     </aside>
 
@@ -140,13 +112,13 @@
             </div>
             <div class="status-badge" style="gap:10px;">
                 <div class="status-badge" style="border:none; background:transparent; padding:0;">
-                    <div class="status-dot"></div>
+                    <div class="status-dot" aria-hidden="true"></div>
                     <span>Online</span>
                 </div>
             </div>
         </header>
 
-        <div class="content-scroll">
+        <main class="content-scroll" id="main-content" tabindex="-1">
             <div id="update-banner-slot"></div>
             <div style="margin-bottom: 24px;">
                 <h1 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 4px;">System Settings</h1>
@@ -156,12 +128,12 @@
 
             <!-- Tab navigation -->
             <div class="tab-bar">
-                <button class="tab-btn active" data-tab="network"><i data-lucide="globe"></i> Network</button>
-                <button class="tab-btn" data-tab="time"><i data-lucide="clock-3"></i> Time</button>
-                <button class="tab-btn" data-tab="security"><i data-lucide="shield-check"></i> Security</button>
-                <button class="tab-btn" data-tab="alerts"><i data-lucide="megaphone"></i> Alerts</button>
-                <button class="tab-btn" data-tab="power"><i data-lucide="power"></i> Power</button>
-                <button class="tab-btn" data-tab="logs"><i data-lucide="scroll-text"></i> Logs &amp; Diagnostics</button>
+                <button class="tab-btn active" data-tab="network"><i data-lucide="globe" aria-hidden="true"></i> Network</button>
+                <button class="tab-btn" data-tab="time"><i data-lucide="clock-3" aria-hidden="true"></i> Time</button>
+                <button class="tab-btn" data-tab="security"><i data-lucide="shield-check" aria-hidden="true"></i> Security</button>
+                <button class="tab-btn" data-tab="alerts"><i data-lucide="megaphone" aria-hidden="true"></i> Alerts</button>
+                <button class="tab-btn" data-tab="power"><i data-lucide="power" aria-hidden="true"></i> Power</button>
+                <button class="tab-btn" data-tab="logs"><i data-lucide="scroll-text" aria-hidden="true"></i> Logs &amp; Diagnostics</button>
             </div>
 
             <!-- ============ NETWORK ============ -->
@@ -172,7 +144,7 @@
                     <div class="card">
                         <div class="card-header">
                             <div class="card-title">Network Interface</div>
-                            <div style="color:var(--text-secondary)"><i data-lucide="globe"></i></div>
+                            <div style="color:var(--text-secondary)"><i data-lucide="globe" aria-hidden="true"></i></div>
                         </div>
 
                         <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:16px;">
@@ -203,7 +175,7 @@
                     <div class="card">
                         <div class="card-header">
                             <div class="card-title">Hostname</div>
-                            <div style="color:var(--text-secondary)"><i data-lucide="server"></i></div>
+                            <div style="color:var(--text-secondary)"><i data-lucide="server" aria-hidden="true"></i></div>
                         </div>
                         <p class="metric-sub" style="margin-bottom: 12px;">The name this server shows on the network.</p>
 
@@ -226,7 +198,7 @@
                     <div class="card">
                         <div class="card-header">
                             <div class="card-title">Date &amp; Time</div>
-                            <div style="color:var(--text-secondary)"><i data-lucide="clock-3"></i></div>
+                            <div style="color:var(--text-secondary)"><i data-lucide="clock-3" aria-hidden="true"></i></div>
                         </div>
 
                         <div class="status-row">
@@ -255,7 +227,7 @@
                     <div class="card">
                         <div class="card-header">
                             <div class="card-title">Two-Factor Authentication</div>
-                            <div style="color:var(--text-secondary)"><i data-lucide="key-round"></i></div>
+                            <div style="color:var(--text-secondary)"><i data-lucide="key-round" aria-hidden="true"></i></div>
                         </div>
                         <p class="metric-sub" style="margin-bottom: 12px;">Protect login with a TOTP authenticator app
                             (Google Authenticator, Aegis, etc.)</p>
@@ -264,8 +236,8 @@
                             <span class="status-row-label">Status</span>
                             <span class="status-badge" style="border:none; background:transparent; padding:0;">
                                 <span class="status-dot" id="tfa-status-dot"
-                                    style="background:var(--text-secondary);"></span>
-                                <span id="tfa-status-text">Checking...</span>
+                                    style="background:var(--text-secondary);" aria-hidden="true"></span>
+                                <span id="tfa-status-text" role="status" aria-live="polite">Checking...</span>
                             </span>
                         </div>
 
@@ -278,6 +250,32 @@
                                 2FA</button>
                         </div>
                     </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Remote Access (SSH)</div>
+                            <div style="color:var(--text-secondary)"><i data-lucide="terminal"
+                                    aria-hidden="true"></i></div>
+                        </div>
+                        <p class="metric-sub" style="margin-bottom: 12px;">SSH is off by default. Turn it on only if you
+                            need a command line on this machine; it lets anyone with the root password log in over the
+                            network.</p>
+
+                        <div class="status-row">
+                            <span class="status-row-label">Status</span>
+                            <span class="status-badge" style="border:none; background:transparent; padding:0;">
+                                <span class="status-dot" id="ssh-status-dot"
+                                    style="background:var(--text-secondary);" aria-hidden="true"></span>
+                                <span id="ssh-status-text" role="status" aria-live="polite">Checking...</span>
+                            </span>
+                        </div>
+
+                        <div class="card-actions">
+                            <button id="ssh-enable-btn" class="btn-secondary" style="display:none;">Enable SSH</button>
+                            <button id="ssh-disable-btn" class="btn-secondary" style="display:none;">Disable
+                                SSH</button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -287,7 +285,7 @@
                     <div class="card">
                         <div class="card-header">
                             <div class="card-title">Telegram Critical Alerts</div>
-                            <div style="color:var(--text-secondary)"><i data-lucide="megaphone"></i></div>
+                            <div style="color:var(--text-secondary)"><i data-lucide="megaphone" aria-hidden="true"></i></div>
                         </div>
                         <p class="metric-sub" style="margin-bottom: 12px;">Deliver critical system alerts to a paired
                             Telegram chat.</p>
@@ -296,8 +294,8 @@
                             <span class="status-row-label">Delivery</span>
                             <span class="status-badge" style="border:none; background:transparent; padding:0;">
                                 <span class="status-dot" id="telegram-summary-dot"
-                                    style="background:var(--text-secondary);"></span>
-                                <span id="telegram-summary-status">Checking...</span>
+                                    style="background:var(--text-secondary);" aria-hidden="true"></span>
+                                <span id="telegram-summary-status" role="status" aria-live="polite">Checking...</span>
                             </span>
                         </div>
                         <div class="status-row">
@@ -320,7 +318,7 @@
                     <div class="card">
                         <div class="card-header">
                             <div class="card-title" style="color: var(--accent-danger);">Power Controls</div>
-                            <div style="color:var(--accent-danger)"><i data-lucide="triangle-alert"></i></div>
+                            <div style="color:var(--accent-danger)"><i data-lucide="triangle-alert" aria-hidden="true"></i></div>
                         </div>
                         <div class="status-row">
                             <span class="status-row-label">Current state</span>
@@ -338,7 +336,7 @@
                     <div class="card">
                         <div class="card-header">
                             <div class="card-title">Battery UPS</div>
-                            <div style="color:var(--text-secondary)"><i data-lucide="battery-charging"></i></div>
+                            <div style="color:var(--text-secondary)"><i data-lucide="battery-charging" aria-hidden="true"></i></div>
                         </div>
                         <p class="metric-sub" style="margin-bottom: 12px;">Use a laptop battery as backup power with an
                             auto-shutdown rule.</p>
@@ -395,7 +393,7 @@
                     <div class="card">
                         <div class="card-header">
                             <div class="card-title">Auto-Healing Services</div>
-                            <div style="color:var(--text-secondary)"><i data-lucide="shield-plus"></i></div>
+                            <div style="color:var(--text-secondary)"><i data-lucide="shield-plus" aria-hidden="true"></i></div>
                         </div>
                         <p class="metric-sub" style="margin-bottom: 12px;">Monitors critical services and automatically
                             restarts them if they crash.</p>
@@ -419,7 +417,7 @@
                     <div class="card" style="grid-column: 1 / -1; height: 400px; display:flex; flex-direction:column;">
                         <div class="card-header">
                             <div class="card-title">System Logs</div>
-                            <div style="color:var(--text-secondary)"><i data-lucide="scroll-text"></i></div>
+                            <div style="color:var(--text-secondary)"><i data-lucide="scroll-text" aria-hidden="true"></i></div>
                         </div>
                         <div id="log-viewer"
                             style="flex:1; background: #0d1117; border: 1px solid var(--border-default); border-radius: 4px; padding: 12px; overflow-y: scroll; font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-secondary); white-space: pre-wrap;">
@@ -435,11 +433,11 @@
                     style="color:var(--text-secondary)">GitHub</a>
             </footer>
 
-        </div>
+        </main>
     </div>
 
     <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+    <script src="lucide-icons.js"></script>
     <script src="icons.js"></script>
     <script src="notifications.js"></script>
     <script src="feedback.js"></script>
