@@ -835,8 +835,12 @@ def _rule_btrfs(sys_: System, args):
         _expect(args[1:], '-f', lambda p: writable_path(sys_, p), readable_path)
         return Plan(argv=list(args))
     if group == 'receive':
-        _expect(args[1:], '-f', lambda p: writable_path(sys_, p), lambda p: None)
-        target = _clean_abs_path(args[3])
+        if len(args) == 2:
+            # Stream from stdin: restores pipe the download straight in.
+            target = _clean_abs_path(args[1])
+        else:
+            _expect(args[1:], '-f', lambda p: writable_path(sys_, p), lambda p: None)
+            target = _clean_abs_path(args[3])
         if not (_pool_mountpoint(target, strict=False) or any(_strictly_within(target, r) for r in WRITE_ROOTS)):
             _fail('btrfs receive target not allowed')
         return Plan(argv=list(args))
