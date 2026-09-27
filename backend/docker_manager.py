@@ -10,6 +10,24 @@ import os
 import re
 from typing import List, Dict, Optional, Tuple
 
+from common import build_privileged_cmd, privilege_error_message
+
+# Compose files are written here; the privilege helper only accepts compose
+# files from this directory and checks them before running docker-compose.
+COMPOSE_DIR = '/var/lib/alvaos/compose'
+COMPOSE_ENV = {'LC_ALL': 'C', 'COMPOSE_INTERACTIVE_NO_CLI': '1'}
+
+
+def write_compose_file(compose_str: str, project_name: str) -> str:
+    """Write a compose file where the privilege helper will accept it."""
+    import tempfile
+
+    os.makedirs(COMPOSE_DIR, mode=0o750, exist_ok=True)
+    fd, path = tempfile.mkstemp(prefix=f'{project_name}-', suffix='.yml', dir=COMPOSE_DIR)
+    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+        f.write(compose_str)
+    return path
+
 
 class DockerManager:
     """Manages Docker container lifecycle and operations"""
@@ -26,12 +44,7 @@ class DockerManager:
     def _run_docker_command(self, args: List[str], timeout: int = 30) -> Tuple[Optional[subprocess.CompletedProcess], Optional[str]]:
         """Run a docker command with sudo if needed"""
         try:
-            # Check if we need sudo
-            if os.geteuid() != 0:
-                cmd = ['sudo', '-n', self.docker_cmd] + args
-            else:
-                cmd = [self.docker_cmd] + args
-            
+            cmd = build_privileged_cmd([self.docker_cmd] + args)
             result = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -39,9 +52,9 @@ class DockerManager:
                 timeout=timeout,
                 env={'LC_ALL': 'C'}
             )
-            
+
             if result.returncode != 0:
-                return None, result.stderr
+                return None, privilege_error_message(result, cmd) or result.stderr
             
             return result, None
         except subprocess.TimeoutExpired:
@@ -271,10 +284,7 @@ class DockerManager:
                 cmd.extend(['-w', workdir])
             cmd.extend([container_id, '/bin/sh', '-lc', command])
 
-            if os.geteuid() != 0:
-                docker_cmd = ['sudo', '-n', self.docker_cmd] + cmd
-            else:
-                docker_cmd = [self.docker_cmd] + cmd
+            docker_cmd = build_privileged_cmd([self.docker_cmd] + cmd)
 
             result = subprocess.run(
                 docker_cmd,
@@ -351,26 +361,21 @@ class DockerManager:
             compose_str = yaml.dump(compose_dict)
             compose_str = compose_str.replace('${POOL_PATH}', pool_path)
             
-            # Write to temporary file
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.yml', delete=False) as f:
-                f.write(compose_str)
-                compose_file = f.name
-            
-            # Run docker-compose up
-            if os.geteuid() != 0:
-                cmd = ['sudo', '-n', self.compose_cmd, '-f', compose_file, '-p', project_name, 'up', '-d']
-            else:
-                cmd = [self.compose_cmd, '-f', compose_file, '-p', project_name, 'up', '-d']
-            
+            compose_file = write_compose_file(compose_str, project_name)
+
+            cmd = build_privileged_cmd(
+                [self.compose_cmd, '-f', compose_file, '-p', project_name, 'up', '-d'],
+                env=COMPOSE_ENV,
+            )
+
             if callback:
-                compose_env = {'LC_ALL': 'C', 'COMPOSE_INTERACTIVE_NO_CLI': '1'}
                 # Use Popen for real-time output
                 process = subprocess.Popen(
                     cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
-                    env=compose_env
+                    env=COMPOSE_ENV
                 )
                 
                 output = []
@@ -399,14 +404,14 @@ class DockerManager:
                     capture_output=True,
                     text=True,
                     timeout=600,  # Longer timeout for pulling images
-                    env={'LC_ALL': 'C', 'COMPOSE_INTERACTIVE_NO_CLI': '1'}
+                    env=COMPOSE_ENV
                 )
-                
+
                 # Clean up temp file
                 os.unlink(compose_file)
-                
+
                 if result.returncode != 0:
-                    return False, result.stderr
+                    return False, privilege_error_message(result, cmd) or result.stderr
                 
                 return True, None
             
@@ -445,19 +450,12 @@ class DockerManager:
             compose_str = yaml.dump(compose_dict)
             compose_str = compose_str.replace('${POOL_PATH}', pool_path)
 
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.yml', delete=False) as f:
-                f.write(compose_str)
-                compose_file = f.name
-
-            if os.geteuid() != 0:
-                base_cmd = ['sudo', '-n', self.compose_cmd, '-f', compose_file, '-p', project_name]
-            else:
-                base_cmd = [self.compose_cmd, '-f', compose_file, '-p', project_name]
-
-            compose_env = {'LC_ALL': 'C', 'COMPOSE_INTERACTIVE_NO_CLI': '1'}
+            compose_file = write_compose_file(compose_str, project_name)
+            base_cmd = [self.compose_cmd, '-f', compose_file, '-p', project_name]
+            compose_env = COMPOSE_ENV
 
             def run_step(step_args: List[str], timeout: int = 600) -> Tuple[bool, Optional[str]]:
-                cmd = base_cmd + step_args
+                cmd = build_privileged_cmd(base_cmd + step_args, env=compose_env)
                 if callback:
                     process = subprocess.Popen(
                         cmd,
@@ -488,7 +486,8 @@ class DockerManager:
                     env=compose_env
                 )
                 if result.returncode != 0:
-                    error = result.stderr or result.stdout or f"Command failed: {' '.join(step_args)}"
+                    error = (privilege_error_message(result, cmd) or result.stderr or result.stdout
+                             or f"Command failed: {' '.join(step_args)}")
                     return False, error
                 return True, None
 

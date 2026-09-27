@@ -38,7 +38,7 @@ except ImportError:
 
 # ── AlvaOS managers ───────────────────────────────────────────────────────────
 from common import (
-    CMD, run_sudo_command, build_privileged_cmd, ensure_directories,
+    CMD, PRIV_HELPER, run_sudo_command, build_privileged_cmd, ensure_directories,
     is_root_user, parse_size_to_bytes, format_bytes_gib,
     _utc_now, _now_iso, _parse_iso, _safe_int,
 )
@@ -1333,12 +1333,9 @@ def system_permissions_check():
         return jsonify(report), 400
 
     sudo_list = {'ok': False, 'required_rules': {}, 'error': ''}
-    required_rules = [
-        '/usr/bin/systemctl restart docker',
-        '/usr/bin/systemctl restart nfs-kernel-server',
-        '/usr/bin/mv',
-        '/bin/mv',
-    ]
+    # The backend's only sudo rule is the privilege helper; everything else is
+    # decided by priv_policy.py inside the helper.
+    required_rules = [PRIV_HELPER]
     try:
         sudo_probe = subprocess.run(
             ['sudo', '-n', '-l'],
@@ -2846,19 +2843,6 @@ def get_available_paths():
     """Get list of all potential share paths (pools and subvolumes)"""
     paths = []
 
-    # Add base mount point (Removed as per user request to only allow pools/subvolumes)
-    # base_path = '/mnt/alvaos'
-    # if platform.system() == 'Linux':
-    #     try:
-    #         if not os.path.exists(base_path):
-    #             res, err = run_sudo_command(['sudo', 'mkdir', '-p', base_path])
-    #             if err:
-    #                 raise Exception(err)
-    #     except Exception:
-    #         # Don't include a non-existent path to avoid share creation failures
-    #         base_path = None
-    # if base_path:
-    #     paths.append({'name': 'Default Storage Root', 'path': base_path})
 
     # Add Pools
     pools = load_pools_state()

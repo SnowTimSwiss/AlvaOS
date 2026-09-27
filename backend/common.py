@@ -11,7 +11,8 @@ import platform
 from datetime import datetime, timezone
 from pathlib import Path
 
-# System Commands Paths for Sudo (must match sudoers configuration in install-system.sh)
+# Absolute paths of the system commands the backend runs. Privileged ones go
+# through the alvaos-priv helper, which checks them against priv_policy.py.
 CMD = {
     'GETENT': '/usr/bin/getent',
     'CHPASSWD': '/usr/sbin/chpasswd',
@@ -24,7 +25,6 @@ CMD = {
     'CHGRP': '/usr/bin/chgrp',
     'CHMOD': '/usr/bin/chmod',
     'SYSTEMCTL': '/usr/bin/systemctl',
-    'SYSTEMD_RUN': '/usr/bin/systemd-run',
     'REBOOT': '/usr/sbin/reboot',
     'POWEROFF': '/usr/sbin/poweroff',
     'TIMEDATECTL': '/usr/bin/timedatectl',
@@ -62,53 +62,82 @@ def is_root_user():
         return False
 
 
-def build_privileged_cmd(cmd):
-    """Build a command that runs as root when needed, without requiring sudo if already root."""
+# The only command the alvaos user may run through sudo (see scripts/sudoers.alvaos).
+PRIV_HELPER = '/opt/alvaos/bin/alvaos-priv'
+# Environment variables the helper forwards (everything else is dropped by sudo).
+PRIV_FORWARDED_ENV = ('DEBIAN_FRONTEND', 'COMPOSE_INTERACTIVE_NO_CLI')
+PRIV_DENIED_EXIT = 126
+
+
+def build_privileged_cmd(cmd, env=None):
+    """Wrap a command so it runs as root through the alvaos-priv helper.
+
+    When the backend already runs as root (development, installer) the command
+    is returned unchanged.
+    """
+    if cmd and cmd[0] == 'sudo':
+        cmd = [c for c in cmd[1:] if c != '-n'] if cmd[1:2] == ['-n'] else cmd[1:]
     if is_root_user():
-        return cmd
-    return ['sudo', '-n'] + cmd
+        return list(cmd)
+    wrapped = ['sudo', '-n', PRIV_HELPER]
+    for key in PRIV_FORWARDED_ENV:
+        if env and key in env:
+            wrapped += ['--env', f'{key}={env[key]}']
+    return wrapped + ['--'] + list(cmd)
 
 
-def run_sudo_command(cmd, timeout=30, extra_env=None):
-    """Helper to run a command with sudo and handle password prompts gracefully"""
+def privilege_error_message(result, final_cmd):
+    """Human-readable error for a failed privileged command, or None."""
+    stderr_text = (result.stderr or '').strip() if isinstance(result.stderr, str) else ''
+    stdout_text = (result.stdout or '').strip() if isinstance(result.stdout, str) else ''
+    combined_low = f"{stderr_text}\n{stdout_text}".lower()
+    if result.returncode == PRIV_DENIED_EXIT and 'alvaos-priv: denied' in combined_low:
+        return f"Blocked by the AlvaOS privilege policy: {stderr_text.split('denied:', 1)[-1].strip()}"
+    if '/etc/sudoers.d/alvaos' in combined_low and (
+        'is owned by uid' in combined_low
+        or 'is world writable' in combined_low
+        or 'bad permissions' in combined_low
+    ):
+        return (
+            "System permission error: /etc/sudoers.d/alvaos has invalid ownership or permissions. "
+            "Run as root: chown root:root /etc/sudoers.d/alvaos && chmod 440 /etc/sudoers.d/alvaos"
+        )
+    if '/usr/bin/sudo' in combined_low and 'owned by uid' in combined_low:
+        return (
+            "System permission error: /usr/bin/sudo has invalid ownership. "
+            "Run as root: chown root:root /usr/bin/sudo && chmod 4755 /usr/bin/sudo"
+        )
+    if 'password is required' in combined_low:
+        return (
+            "System permission error: passwordless sudo for the AlvaOS privilege helper is not "
+            "configured. Check /etc/sudoers.d/alvaos."
+        )
+    return None
+
+
+def run_sudo_command(cmd, timeout=30, extra_env=None, input=None):
+    """Run a command as root through the privilege helper.
+
+    Returns (CompletedProcess or None, error message or None).
+    """
     try:
-        # Prepare the env with LC_ALL=C to ensure English output
         custom_env = os.environ.copy()
         custom_env['LC_ALL'] = 'C'
         if extra_env:
             custom_env.update(extra_env)
 
-        final_cmd = []
-        if cmd and cmd[0] == 'sudo':
-            # Remove redundant 'sudo' if present in the cmd list passed to us
-            # build_privileged_cmd will add 'sudo -n' if needed
-            final_cmd = build_privileged_cmd(cmd[1:])
-        else:
-            final_cmd = build_privileged_cmd(cmd)
-
-        result = subprocess.run(final_cmd, capture_output=True, text=True, timeout=timeout, env=custom_env)
+        final_cmd = build_privileged_cmd(cmd, env=extra_env)
+        result = subprocess.run(final_cmd, capture_output=True, text=True, timeout=timeout,
+                                env=custom_env, input=input)
 
         if result.returncode != 0:
+            special = privilege_error_message(result, final_cmd)
+            if special and 'password' in special.lower():
+                return None, special
+            if special:
+                return result, special
             stderr_text = (result.stderr or '').strip()
             stdout_text = (result.stdout or '').strip()
-            combined_low = f"{stderr_text}\n{stdout_text}".lower()
-            if '/etc/sudoers.d/alvaos' in combined_low and (
-                'is owned by uid' in combined_low
-                or 'is world writable' in combined_low
-                or 'bad permissions' in combined_low
-            ):
-                return result, (
-                    "System permission error: /etc/sudoers.d/alvaos has invalid ownership or permissions. "
-                    "Run as root: chown root:root /etc/sudoers.d/alvaos && chmod 440 /etc/sudoers.d/alvaos"
-                )
-            if '/usr/bin/sudo' in combined_low and 'owned by uid' in combined_low:
-                return result, (
-                    "System permission error: /usr/bin/sudo has invalid ownership. "
-                    "Run as root: chown root:root /usr/bin/sudo && chmod 4755 /usr/bin/sudo"
-                )
-            if 'password is required' in combined_low or 'a password is required' in combined_low:
-                cmd_str = " ".join(final_cmd)
-                return None, f"System permission error: Passwordless sudo is not configured for command: {cmd_str}. Please check the AlvaOS documentation for sudoers setup."
             cmd_str = " ".join(final_cmd)
             detail = stderr_text or stdout_text or f"exit code {result.returncode}"
             return result, f"Command failed ({result.returncode}): {cmd_str}: {detail}"

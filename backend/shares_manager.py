@@ -73,7 +73,7 @@ def ensure_samba_global_settings(guest_access):
     if platform.system() != 'Linux' or not guest_access:
         return
     try:
-        res, err = run_sudo_command(['sudo', CMD['CAT'], '/etc/samba/smb.conf'])
+        res, err = run_sudo_command([CMD['CAT'], '/etc/samba/smb.conf'])
         if err or not res:
             return
         content = res.stdout
@@ -105,7 +105,7 @@ def reconcile_samba_guest_settings(shares_state):
             s.get('protocol') == 'smb' and s.get('guest_access', False)
             for s in shares_state.values()
         )
-        res, err = run_sudo_command(['sudo', CMD['CAT'], '/etc/samba/smb.conf'])
+        res, err = run_sudo_command([CMD['CAT'], '/etc/samba/smb.conf'])
         if err or not res:
             return
         content = res.stdout

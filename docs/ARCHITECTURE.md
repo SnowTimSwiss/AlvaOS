@@ -57,7 +57,7 @@ NAS-to-NAS encrypted incremental backup.
 
 ### 5. Web UI & API
 - **UI**: Dark-mode first, responsive, Unraid-inspired. Plain HTML/CSS/vanilla JavaScript — no framework and no build step. Files are served as static assets by the backend. Every runtime asset (including the icon set in `frontend/lucide-icons.js`) is bundled locally, so the UI works on a LAN with no internet access.
-- **API**: REST API under `/api/v1/`, implemented in Python with Flask. Uses JSON. Authentication is via opaque session tokens (see Security Model), not JWT. The UI never runs shell commands directly — every privileged action goes through the API, which shells out only via an allow-listed sudoers configuration.
+- **API**: REST API under `/api/v1/`, implemented in Python with Flask. Uses JSON. Authentication is via opaque session tokens (see Security Model), not JWT. The UI never runs shell commands directly — every privileged action goes through the API, which runs system commands only through the `alvaos-priv` privilege helper.
 
 ## Distribution & Updates
 - **Installer**: Minimal (<500MB) debootstrap image (BIOS/UEFI).
@@ -80,7 +80,14 @@ NAS-to-NAS encrypted incremental backup.
 
 **Privilege separation:**
 - The backend runs as the unprivileged `alvaos` system user.
-- System-level operations are executed through an explicit sudoers allow-list (`/etc/sudoers.d/alvaos`); the set of permitted commands is validated in CI (`scripts/ci/check_privileged_commands.py`).
+- Its single sudo rule is the privilege helper `/opt/alvaos/bin/alvaos-priv`. The helper checks every command against `backend/priv_policy.py` before running it: deny by default, no shells, per-argument rules (which paths, devices, users, subcommands), system disks protected.
+- Files the backend writes and a root process later interprets (compose files, the WireGuard config, packages, apt sources) are copied into root-owned staging and checked there; config files handed to root daemons (`smb.conf`, the sshd drop-in, `/etc/exports`) are checked for command-executing directives.
+- Denied commands exit with status 126 and are logged to `/var/log/alvaos/priv-denied.log`.
+- Code under `/opt/alvaos` is root-owned; only state (`/var/lib/alvaos`), logs and `/etc/alvaos` belong to the service user.
+- CI (`scripts/ci/check_privileged_commands.py`) fails if the sudoers file grows, if backend code builds its own `sudo`/`bash -c` command lines, or if installers hand `/opt/alvaos` to the service user.
+
+**Updates:**
+- AlvaOS packages are signed (Ed25519); the helper verifies the signature against the root-owned public key before installing. See `docs/RELEASE.md`.
 
 **Network:**
 - LAN access by default
