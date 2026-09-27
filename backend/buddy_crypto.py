@@ -312,3 +312,56 @@ def is_encrypted_stream(path: str) -> Optional[str]:
     if magic == MAGIC_V1:
         return "v1"
     return None
+
+
+# ── Small sealed blobs (recovery kit) ────────────────────────────────────────
+# Same primitives as the stream format, for a few kilobytes of JSON:
+#   "ALVAKIT1." + base64url(header || ciphertext)
+#   header = log2_n(1) r(1) p(1) salt(16) nonce(12); aad = b"ALVAKIT1" + header
+
+KIT_PREFIX = "ALVAKIT1."
+_KIT_HEADER = struct.Struct(">BBB16s12s")
+
+
+def seal_json(payload: dict, passphrase: str) -> str:
+    import json
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    salt = secrets.token_bytes(16)
+    nonce = secrets.token_bytes(12)
+    header = _KIT_HEADER.pack(DEFAULT_LOG2_N, DEFAULT_R, DEFAULT_P, salt, nonce)
+    key = derive_master_key(passphrase, salt, DEFAULT_LOG2_N, DEFAULT_R, DEFAULT_P)
+    plaintext = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    sealed = AESGCM(key).encrypt(nonce, plaintext, b"ALVAKIT1" + header)
+    return KIT_PREFIX + base64.urlsafe_b64encode(header + sealed).decode("ascii").rstrip("=")
+
+
+def open_json(blob: str, passphrase: str) -> dict:
+    import binascii
+    import json
+    from cryptography.exceptions import InvalidTag
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    text = "".join(str(blob or "").split())   # tolerate line breaks from copy/paste
+    if not text.startswith(KIT_PREFIX):
+        raise BuddyCryptoError("This is not an AlvaOS recovery kit")
+    body = text[len(KIT_PREFIX):]
+    if len(body) > 256 * 1024:
+        raise BuddyCryptoError("Recovery kit is too large")
+    try:
+        raw = base64.urlsafe_b64decode(body + "=" * (-len(body) % 4))
+    except (binascii.Error, ValueError):
+        raise BuddyCryptoError("Recovery kit is damaged (not valid base64)") from None
+    if len(raw) < _KIT_HEADER.size + 16:
+        raise BuddyCryptoError("Recovery kit is damaged (too short)")
+    header, sealed = raw[:_KIT_HEADER.size], raw[_KIT_HEADER.size:]
+    log2_n, r, p, salt, nonce = _KIT_HEADER.unpack(header)
+    key = derive_master_key(passphrase, salt, log2_n, r, p)
+    try:
+        plaintext = AESGCM(key).decrypt(nonce, sealed, b"ALVAKIT1" + header)
+    except InvalidTag:
+        raise BuddyCryptoError("Wrong password, or the recovery kit was modified") from None
+    data = json.loads(plaintext.decode("utf-8"))
+    if not isinstance(data, dict):
+        raise BuddyCryptoError("Recovery kit has an unexpected format")
+    return data

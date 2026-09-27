@@ -46,6 +46,8 @@ Track this with a written test checklist so runs are reproducible.
   must never be hit in production).
 - ✅ Encrypted snapshots can be restored on a fresh machine with only the
   encryption password (format `ALVAENC2`, scrypt + AES-256-GCM).
+- ✅ Recovery kit: a reinstalled NAS takes over its old buddy identity, so
+  its snapshots on buddies are reachable again.
 - [ ] Full restore onto a fresh machine on real hardware, including a
   deliberate data-loss test.
 

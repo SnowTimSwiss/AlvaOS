@@ -1218,6 +1218,119 @@ async function restartBuddyTunnel() {
     await loadBuddyStatus();
 }
 
+// ----------------------------------------------------------------------------
+// RECOVERY KIT
+// ----------------------------------------------------------------------------
+
+function renderRecoveryKitStatus(status) {
+    const pill = document.getElementById('buddy-kit-pill');
+    const text = document.getElementById('buddy-kit-status');
+    if (!pill || !text) return;
+    if (!status?.exported_at) {
+        pill.textContent = 'Not saved';
+        pill.className = 'pill warn';
+        text.textContent = 'No recovery kit saved yet. Without it, a replacement NAS cannot reach this NAS\'s snapshots on your buddies.';
+    } else if (status.up_to_date) {
+        pill.textContent = 'Up to date';
+        pill.className = 'pill ok';
+        text.textContent = `Last saved ${backupFormatDate(status.exported_at)}.`;
+    } else {
+        pill.textContent = 'Outdated';
+        pill.className = 'pill warn';
+        text.textContent = `Last saved ${backupFormatDate(status.exported_at)}. Your buddies changed since then; download a new kit.`;
+    }
+}
+
+async function loadRecoveryKitStatus() {
+    const response = await backupApi('/backup/buddy/recovery-kit');
+    const data = await backupReadJson(response);
+    if (response && response.ok && data) renderRecoveryKitStatus(data);
+}
+
+function downloadTextFile(filename, content) {
+    const blob = new Blob([content + '\n'], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function exportRecoveryKit() {
+    const first = await window.showPrompt(
+        'Recovery kit password\nThe kit is locked with this password. You need it again to use the kit, and nobody can recover it for you.',
+        { type: 'password', label: 'Password (at least 8 characters)', placeholder: 'Kit password', confirmLabel: 'Next' }
+    );
+    if (first === null) return;
+    if (String(first).length < 8) {
+        backupNotify('The password needs at least 8 characters', 'warning');
+        return;
+    }
+    const second = await window.showPrompt('Repeat the password', {
+        type: 'password', label: 'Password', placeholder: 'Kit password', confirmLabel: 'Download kit'
+    });
+    if (second === null) return;
+    if (second !== first) {
+        backupNotify('The passwords do not match', 'warning');
+        return;
+    }
+
+    const response = await backupApi('/backup/buddy/recovery-kit', { method: 'POST', json: { passphrase: first } });
+    const data = await backupReadJson(response);
+    if (!response || !response.ok || !data?.kit) {
+        backupNotify(data?.error || 'Could not create the recovery kit', 'error');
+        return;
+    }
+    downloadTextFile(data.filename || 'alvaos-buddy-recovery-kit.txt', data.kit);
+    backupNotify('Recovery kit downloaded. Store it somewhere other than this NAS.', 'success');
+    await loadRecoveryKitStatus();
+}
+
+async function readRecoveryKitInput() {
+    const file = document.getElementById('buddy-kit-file')?.files?.[0];
+    if (file) return (await file.text()).trim();
+    return String(document.getElementById('buddy-kit-text')?.value || '').trim();
+}
+
+async function importRecoveryKit() {
+    const kit = await readRecoveryKitInput();
+    if (!kit) {
+        backupNotify('Choose the recovery kit file or paste its contents first', 'warning');
+        return;
+    }
+    const passphrase = await window.showPrompt('Recovery kit password', {
+        type: 'password', label: 'Password', placeholder: 'Kit password', confirmLabel: 'Restore identity'
+    });
+    if (passphrase === null || !String(passphrase)) return;
+
+    let response = await backupApi('/backup/buddy/recovery-kit/import', { method: 'POST', json: { kit, passphrase } });
+    let data = await backupReadJson(response);
+    if (response && response.status === 409 && data?.needs_confirmation) {
+        const ok = await window.showConfirm(
+            'Replace this NAS\'s buddy identity?\nThis NAS is already paired with buddies. Restoring the kit replaces its identity and buddy list with the ones from the kit.'
+        );
+        if (!ok) return;
+        response = await backupApi('/backup/buddy/recovery-kit/import', {
+            method: 'POST', json: { kit, passphrase, replace: true }
+        });
+        data = await backupReadJson(response);
+    }
+    if (!response || !response.ok || !data) {
+        backupNotify(data?.error || 'Could not restore from the recovery kit', 'error');
+        return;
+    }
+    const kitText = document.getElementById('buddy-kit-text');
+    if (kitText) kitText.value = '';
+    const kitFile = document.getElementById('buddy-kit-file');
+    if (kitFile) kitFile.value = '';
+    backupNotify(data.message || 'Identity restored', 'success');
+    await loadBuddyStatus();
+    await loadRecoveryKitStatus();
+}
+
 async function removeBuddyPeer(nodeId) {
     const target = String(nodeId || '').trim();
     if (!target) return;
@@ -1540,6 +1653,8 @@ function initBackupHandlers() {
     document.getElementById('buddy-copy-token-btn')?.addEventListener('click', copyBuddyToken);
     document.getElementById('buddy-validate-token-btn')?.addEventListener('click', validateBuddyToken);
     document.getElementById('buddy-save-settings-btn')?.addEventListener('click', saveBuddySettings);
+    document.getElementById('buddy-kit-export-btn')?.addEventListener('click', exportRecoveryKit);
+    document.getElementById('buddy-kit-import-btn')?.addEventListener('click', importRecoveryKit);
     document.getElementById('buddy-encryption-enabled')?.addEventListener('change', updateBuddySecurityUi);
     document.getElementById('buddy-refresh-remote-btn')?.addEventListener('click', loadBuddyRemoteSnapshots);
     document.getElementById('buddy-peers-list')?.addEventListener('click', (event) => {
@@ -1607,7 +1722,8 @@ async function initBackupPage() {
         loadSystemSnapshots(),
         loadBackupStatus(),
         loadBuddyStatus(),
-        loadBuddySettings()
+        loadBuddySettings(),
+        loadRecoveryKitStatus()
     ]);
 }
 
