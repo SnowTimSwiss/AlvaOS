@@ -13,38 +13,7 @@ import os
 import pytest
 
 import priv_policy as p
-
-
-class FakeSystem(p.System):
-    def __init__(self, users=None, groups=None, files=None, links=None, system_disks=('sda',)):
-        self.users = {'root': 0, 'alvaos': 998, 'nobody': 65534, 'tim': 1000, 'anna': 1001}
-        self.users.update(users or {})
-        self.groups = {'root': 0, 'sudo': 27, 'docker': 999, 'alvaos': 998, 'share_media': 1002}
-        self.groups.update(groups or {})
-        self.files = files or {}
-        self.links = links or {}
-        self._system_disks = set(system_disks)
-
-    def system_disks(self):
-        return self._system_disks
-
-    def uid_of(self, user):
-        return self.users.get(user)
-
-    def gid_of(self, group):
-        return self.groups.get(group)
-
-    def realpath(self, path):
-        for link, target in self.links.items():
-            if path == link or path.startswith(link + '/'):
-                return target + path[len(link):]
-        return os.path.normpath(path)
-
-    def timezone_exists(self, tz):
-        return tz in {'Europe/Zurich', 'UTC'}
-
-    def read_file(self, path):
-        return self.files.get(path, b'')
+from fakes import FakeSystem
 
 
 SYS = FakeSystem()
