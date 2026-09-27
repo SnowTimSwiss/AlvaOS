@@ -449,7 +449,7 @@ def test_wireguard_commands():
     plan = allowed('/usr/bin/wg-quick', 'up', '/var/lib/alvaos/wireguard/buddy0.conf')
     assert plan.stage == {1: 'wg'}
     allowed('/usr/bin/wg', 'show', 'buddy0')
-    allowed('/usr/bin/wg', 'genkey')
+    denied('/usr/bin/wg', 'genkey')   # keys are generated in-process now
     denied('/usr/bin/wg-quick', 'up', '/tmp/evil.conf')
     denied('/usr/bin/wg', 'set', 'buddy0', 'private-key', '/etc/shadow')
 

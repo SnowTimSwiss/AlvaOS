@@ -473,47 +473,31 @@ class BuddyBackupManager:
             value = f"{value}:8080"
         return value, None
 
-    def _placeholder_wg_keypair(self) -> Tuple[str, str]:
-        private_key = base64.b64encode(secrets.token_bytes(32)).decode("ascii")
-        public_key = base64.b64encode(secrets.token_bytes(32)).decode("ascii")
-        return private_key, public_key
-
     def _generate_wg_keypair(self) -> Tuple[Optional[str], Optional[str], Optional[str], str]:
-        if platform.system() != "Linux":
-            priv, pub = self._placeholder_wg_keypair()
-            return priv, pub, None, "placeholder"
+        """Create a WireGuard key pair.
 
-        wg_cmd = self._wg_cmd()
-        if not wg_cmd:
-            priv, pub = self._placeholder_wg_keypair()
-            return priv, pub, "WireGuard command not found (wg). Install wireguard-tools to enable the tunnel.", "placeholder"
-
-        gen_res, gen_err = self.run_command([wg_cmd, "genkey"], timeout=10)
-        if gen_err or not gen_res or gen_res.returncode != 0:
-            priv, pub = self._placeholder_wg_keypair()
-            return priv, pub, gen_err or "Failed to generate WireGuard private key", "placeholder"
-        private_key = (gen_res.stdout or "").strip()
-        if not private_key:
-            priv, pub = self._placeholder_wg_keypair()
-            return priv, pub, "WireGuard private key generation returned empty output", "placeholder"
-
-        # Deriving a public key needs no privileges; feed the key on stdin
-        # instead of putting it on a (world-readable) command line.
+        WireGuard keys are plain X25519 keys, so they are generated in-process
+        with `cryptography`: no wg binary, no root, and never a fake key. (A
+        random "public key" that does not belong to the private key would make
+        pairing look successful while the tunnel can never come up.)
+        """
         try:
-            pub_res = subprocess.run([wg_cmd, "pubkey"], input=private_key + "\n", capture_output=True,
-                                     text=True, timeout=10, env={"LC_ALL": "C"})
-            pub_err = None if pub_res.returncode == 0 else (pub_res.stderr or "wg pubkey failed").strip()
-        except Exception as exc:
-            pub_res, pub_err = None, str(exc)
-        if pub_err or not pub_res or pub_res.returncode != 0:
-            priv, pub = self._placeholder_wg_keypair()
-            return priv, pub, pub_err or "Failed to derive WireGuard public key", "placeholder"
-        public_key = (pub_res.stdout or "").strip()
-        if not public_key:
-            priv, pub = self._placeholder_wg_keypair()
-            return priv, pub, "WireGuard public key generation returned empty output", "placeholder"
+            from cryptography.hazmat.primitives import serialization
+            from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
-        return private_key, public_key, None, "wireguard"
+            key = X25519PrivateKey.generate()
+            private_raw = key.private_bytes(
+                serialization.Encoding.Raw, serialization.PrivateFormat.Raw, serialization.NoEncryption()
+            )
+            public_raw = key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+        except Exception as exc:
+            return None, None, f"Could not generate a WireGuard key pair: {exc}", ""
+        return (
+            base64.b64encode(private_raw).decode("ascii"),
+            base64.b64encode(public_raw).decode("ascii"),
+            None,
+            "wireguard",
+        )
 
     def _create_identity(self) -> Dict:
         node_id = secrets.token_hex(8)
@@ -560,12 +544,10 @@ class BuddyBackupManager:
                 self._save_identity(identity)
 
             needs_regen = not identity.get("public_key") or not identity.get("private_key")
-            can_upgrade_from_placeholder = (
-                key_source != "wireguard"
-                and platform.system() == "Linux"
-                and bool(self._wg_cmd())
-            )
-            if needs_regen or can_upgrade_from_placeholder:
+            # Older versions stored random placeholder keys when wg was missing;
+            # those can never form a tunnel, so replace them with a real pair.
+            has_placeholder_keys = key_source != "wireguard"
+            if needs_regen or has_placeholder_keys:
                 private_key, public_key, key_err, new_source = self._generate_wg_keypair()
                 if private_key and public_key:
                     identity["private_key"] = private_key
