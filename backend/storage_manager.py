@@ -45,7 +45,7 @@ def is_secure_system_device(device_name):
     device is the same or a parent of the root device.
     """
     if platform.system() != 'Linux':
-        return False  # Mock environment safety
+        return False  # no block devices to protect outside Linux
 
     try:
         root_device = None

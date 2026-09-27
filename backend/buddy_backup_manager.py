@@ -1803,7 +1803,7 @@ class BuddyBackupManager:
 
     def apply_tunnel_config(self) -> Tuple[bool, Dict]:
         if platform.system() != "Linux":
-            return True, {"message": "Tunnel config is mocked on non-Linux systems"}
+            return False, {"error": "The Buddy Backup tunnel is only available on the AlvaOS NAS itself (Linux)"}
 
         identity = self._load_identity()
         if not identity.get("private_key"):
@@ -1903,7 +1903,7 @@ class BuddyBackupManager:
 
     def _runtime_status(self) -> Dict:
         if platform.system() != "Linux":
-            return {"state": "mock", "message": "WireGuard runtime status is mocked on non-Linux"}
+            return {"state": "unsupported", "message": "WireGuard is only available on the AlvaOS NAS itself (Linux)"}
 
         wg_cmd = self._wg_cmd()
         if not wg_cmd:
@@ -2648,11 +2648,7 @@ class BuddyBackupManager:
         if not target_source.startswith("/"):
             return False, {"error": "source_path must be an absolute path"}
         if platform.system() != "Linux":
-            return True, {
-                "restored_to": target_source,
-                "previous_backup": None,
-                "message": "Mock restore completed (non-Linux environment)",
-            }
+            return False, {"error": "Restores are only possible on the AlvaOS NAS itself (Linux)"}
         target_is_mount_root = self._is_mounted_path(target_source)
 
         btrfs_cmd = self._btrfs_cmd()
