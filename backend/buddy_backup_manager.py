@@ -27,6 +27,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 import requests
 
 from alerts_manager import push_notification
+import buddy_crypto
 
 WG_KEY_RE = re.compile(r"^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$")
 WG_ENDPOINT_RE = re.compile(r"^(\[[0-9a-fA-F:]{2,39}\]|[A-Za-z0-9.-]{1,253}):\d{1,5}$")
@@ -72,6 +73,9 @@ class BuddyBackupManager:
         self.settings_file = os.path.join(self.state_dir, "buddy_settings.json")
         self.streams_file = os.path.join(self.state_dir, "buddy_streams.json")
         self.runtime_file = os.path.join(self.state_dir, "buddy_runtime.json")
+        # ALVAENC2 key material (scrypt output). Needed to encrypt unattended;
+        # restores derive the key from the passphrase and the stream header.
+        self.encryption_key_file = os.path.join(self.state_dir, "buddy_encryption_key.json")
         self.wg_dir = os.path.join(self.state_dir, "wireguard")
         self.wg_config_path = os.path.join(self.wg_dir, "buddy0.conf")
         self.interface_name = "buddy0"
@@ -828,10 +832,14 @@ class BuddyBackupManager:
 
         password_supplied = "encryption_password" in payload
         encryption_password = str(payload.get("encryption_password", "") or "")
+        new_material = None
         if password_supplied and encryption_password:
+            if len(encryption_password) < 8:
+                return False, {"error": "The encryption password must have at least 8 characters"}
             digest, salt = self._hash_passphrase(encryption_password)
             candidate["encryption_hash"] = digest
             candidate["encryption_salt"] = salt
+            new_material = buddy_crypto.new_key_material(encryption_password)
 
         if candidate.get("encryption_enabled"):
             if not str(candidate.get("encryption_hash", "") or "").strip():
@@ -844,8 +852,102 @@ class BuddyBackupManager:
         if merged.get("enabled") and not str(merged.get("incoming_path") or "").strip():
             return False, {"error": "Local incoming path is required and must be on a non-system disk"}
         merged["updated_at"] = self._now_iso()
+        # Remember the old password's salt so snapshots in the legacy format
+        # stay restorable with the old password after a password change.
+        old_salt = str(current.get("encryption_salt") or "").strip()
+        if old_salt and old_salt != merged.get("encryption_salt"):
+            self._remember_legacy_salt(old_salt)
+        if new_material is not None and merged.get("encryption_enabled"):
+            self._save_encryption_material(new_material)
+        elif not merged.get("encryption_enabled"):
+            self._delete_encryption_material()
         self._save_json(self.settings_file, merged)
         return True, self._public_settings(merged)
+
+    # ── Encryption key material ─────────────────────────────────────────────
+
+    def _load_key_file(self) -> Dict:
+        data = self._load_json(self.encryption_key_file, {})
+        return data if isinstance(data, dict) else {}
+
+    def _write_key_file(self, data: Dict) -> None:
+        tmp = self.encryption_key_file + ".tmp"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp, self.encryption_key_file)
+
+    def _save_encryption_material(self, material: "buddy_crypto.KeyMaterial") -> None:
+        data = self._load_key_file()
+        data["current"] = material.to_json()
+        self._write_key_file(data)
+
+    def _delete_encryption_material(self) -> None:
+        data = self._load_key_file()
+        if "current" in data:
+            data.pop("current", None)
+            self._write_key_file(data)
+
+    def _remember_legacy_salt(self, salt: str) -> None:
+        data = self._load_key_file()
+        salts = [s for s in data.get("legacy_v1_salts", []) if isinstance(s, str)]
+        if salt not in salts:
+            salts.append(salt)
+        data["legacy_v1_salts"] = salts[-20:]
+        self._write_key_file(data)
+
+    def _encryption_material(self) -> Optional["buddy_crypto.KeyMaterial"]:
+        current = self._load_key_file().get("current")
+        if isinstance(current, dict):
+            return buddy_crypto.KeyMaterial.from_json(current)
+        return None
+
+    def _ensure_encryption_material(self, passphrase: str) -> None:
+        """Create ALVAENC2 key material for installs that predate it."""
+        settings = self.get_settings(include_secret=True)
+        if not settings.get("encryption_enabled") or self._encryption_material() is not None:
+            return
+        try:
+            self._save_encryption_material(buddy_crypto.new_key_material(passphrase))
+        except Exception as exc:
+            print(f"Buddy backup: could not create encryption key material: {exc}")
+
+    def _decrypt_stream_with_passphrase(self, encrypted_path: str, plain_path: str,
+                                        passphrase: str) -> Tuple[bool, str]:
+        """Decrypt a downloaded stream using only the passphrase.
+
+        ALVAENC2 streams carry their key-derivation salt, so this works on a
+        freshly installed machine. Legacy ALVAENC1 streams can only be opened
+        with salts this machine has seen (current or earlier passwords).
+        """
+        try:
+            kind = buddy_crypto.is_encrypted_stream(encrypted_path)
+            if kind == "v2":
+                buddy_crypto.decrypt_file(
+                    encrypted_path, plain_path,
+                    lambda h: buddy_crypto.derive_master_key(passphrase, h.kdf_salt, h.log2_n, h.r, h.p),
+                )
+                return True, ""
+            if kind == "v1":
+                settings = self.get_settings(include_secret=True)
+                salts = [str(settings.get("encryption_salt") or "").strip()]
+                salts += list(reversed(self._load_key_file().get("legacy_v1_salts", [])))
+                for salt in [s for s in salts if s]:
+                    digest, _ = self._hash_passphrase(passphrase, salt=salt)
+                    try:
+                        buddy_crypto.decrypt_legacy_v1_file(
+                            encrypted_path, plain_path, buddy_crypto.legacy_v1_key(digest, salt)
+                        )
+                        return True, ""
+                    except buddy_crypto.BuddyCryptoError:
+                        continue
+                return False, ("Wrong encryption password. Snapshots in the old encryption format can "
+                               "only be restored on the machine that created them.")
+            return False, "The downloaded snapshot is not in a known encrypted format"
+        except buddy_crypto.BuddyCryptoError as exc:
+            return False, str(exc)
+        except Exception as exc:
+            return False, f"Failed to decrypt snapshot: {exc}"
 
     def save_peer_policy(self, node_id: str, payload: Dict) -> Tuple[bool, Dict]:
         nid = str(node_id or "").strip()
@@ -912,9 +1014,12 @@ class BuddyBackupManager:
             return True
         try:
             digest, _ = self._hash_passphrase(passphrase, salt=str(settings.get("encryption_salt")))
-            return secrets.compare_digest(digest, str(settings.get("encryption_hash")))
+            ok = secrets.compare_digest(digest, str(settings.get("encryption_hash")))
         except Exception:
             return False
+        if ok:
+            self._ensure_encryption_material(passphrase)
+        return ok
 
     def _identity_private(self) -> Dict:
         identity = self._load_identity()
@@ -1238,89 +1343,27 @@ class BuddyBackupManager:
                 digest.update(chunk)
         return digest.hexdigest()
 
-    def _derive_transfer_key(self) -> Tuple[Optional[bytes], Optional[str]]:
+    def _legacy_transfer_key(self) -> Optional[bytes]:
         settings = self.get_settings(include_secret=True)
-        if not settings.get("encryption_enabled"):
-            return None, None
         enc_hash = str(settings.get("encryption_hash") or "").strip()
         enc_salt = str(settings.get("encryption_salt") or "").strip()
         if not enc_hash or not enc_salt:
-            return None, "Encryption is enabled, but no encryption key material is configured"
-        key = hashlib.sha256(f"{enc_hash}|{enc_salt}|alvaos-buddy-v1".encode("utf-8")).digest()
-        return key, None
+            return None
+        return buddy_crypto.legacy_v1_key(enc_hash, enc_salt)
 
-    def _xor_stream_chunk(self, data: bytes, key: bytes, nonce: bytes, counter_start: int) -> Tuple[bytes, int]:
-        out = bytearray()
-        counter = int(counter_start)
-        cursor = 0
-        while cursor < len(data):
-            block = hmac.new(key, nonce + counter.to_bytes(8, "big"), hashlib.sha256).digest()
-            take = min(len(block), len(data) - cursor)
-            segment = bytes(data[cursor + i] ^ block[i] for i in range(take))
-            out.extend(segment)
-            cursor += take
-            counter += 1
-        return bytes(out), counter
-
-    def _encrypt_stream_file(self, plain_path: str, encrypted_path: str, key: bytes) -> Tuple[bool, str]:
-        magic = b"ALVAENC1"
-        nonce = secrets.token_bytes(16)
-        header = magic + nonce
-        mac_key = hashlib.sha256(key + b":mac").digest()
-        mac = hmac.new(mac_key, digestmod=hashlib.sha256)
-        mac.update(header)
-        counter = 0
+    def _encrypt_stream_file(self, plain_path: str, encrypted_path: str) -> Tuple[bool, str]:
         try:
-            with open(plain_path, "rb") as src, open(encrypted_path, "wb") as dst:
-                dst.write(header)
-                while True:
-                    chunk = src.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    cipher_chunk, counter = self._xor_stream_chunk(chunk, key, nonce, counter)
-                    dst.write(cipher_chunk)
-                    mac.update(cipher_chunk)
-                dst.write(mac.digest())
-            return True, ""
-        except Exception as exc:
-            return False, str(exc)
-
-    def _decrypt_stream_file(self, encrypted_path: str, plain_path: str, key: bytes) -> Tuple[bool, str]:
-        magic = b"ALVAENC1"
-        header_len = len(magic) + 16
-        tag_len = 32
-        mac_key = hashlib.sha256(key + b":mac").digest()
-        try:
-            size = os.path.getsize(encrypted_path)
-            if size < header_len + tag_len:
-                return False, "Encrypted stream is too small"
-            cipher_len = size - header_len - tag_len
-            with open(encrypted_path, "rb") as src, open(plain_path, "wb") as dst:
-                header = src.read(header_len)
-                if len(header) != header_len or not header.startswith(magic):
-                    return False, "Invalid encrypted stream header"
-                nonce = header[len(magic):]
-                mac = hmac.new(mac_key, digestmod=hashlib.sha256)
-                mac.update(header)
-                remaining = cipher_len
-                counter = 0
-                while remaining > 0:
-                    read_len = min(1024 * 1024, remaining)
-                    cipher_chunk = src.read(read_len)
-                    if not cipher_chunk:
-                        return False, "Encrypted stream is truncated"
-                    remaining -= len(cipher_chunk)
-                    mac.update(cipher_chunk)
-                    plain_chunk, counter = self._xor_stream_chunk(cipher_chunk, key, nonce, counter)
-                    dst.write(plain_chunk)
-                expected_tag = src.read(tag_len)
-                actual_tag = mac.digest()
-                if not hmac.compare_digest(expected_tag, actual_tag):
-                    try:
-                        os.remove(plain_path)
-                    except Exception:
-                        pass
-                    return False, "Encrypted stream authentication failed"
+            material = self._encryption_material()
+            if material is not None:
+                buddy_crypto.encrypt_file(plain_path, encrypted_path, material)
+                return True, ""
+            # Installs whose password predates ALVAENC2 keep working in the old
+            # format until the password is entered once (restore, rollback or
+            # settings), which creates the new key material.
+            legacy_key = self._legacy_transfer_key()
+            if legacy_key is None:
+                return False, "Encryption is enabled, but no encryption key material is configured"
+            buddy_crypto.encrypt_legacy_v1_file(plain_path, encrypted_path, legacy_key)
             return True, ""
         except Exception as exc:
             return False, str(exc)
@@ -2371,10 +2414,8 @@ class BuddyBackupManager:
 
             identity = self._identity_public()
             local_node_id = str(identity.get("node_id") or "")
-            transfer_key, key_err = self._derive_transfer_key()
-            if key_err:
-                return False, {"error": key_err}
-            encryption_enabled = bool(transfer_key)
+            settings_now = self.get_settings(include_secret=True)
+            encryption_enabled = bool(settings_now.get("encryption_enabled"))
 
             created = []
             failed = []
@@ -2390,7 +2431,7 @@ class BuddyBackupManager:
                 try:
                     if encryption_enabled:
                         encrypted_path = f"{stream_path}.enc"
-                        enc_ok, enc_err = self._encrypt_stream_file(stream_path, encrypted_path, transfer_key or b"")
+                        enc_ok, enc_err = self._encrypt_stream_file(stream_path, encrypted_path)
                         if not enc_ok:
                             failed.append({"source_path": source_path, "error": enc_err or "Failed to encrypt stream"})
                             continue
@@ -2784,15 +2825,10 @@ class BuddyBackupManager:
                 return False, {"error": "Invalid restore source path in remote snapshot"}
 
             encrypted = bool(stream_entry.get("encrypted"))
-            transfer_key = None
-            if encrypted:
-                if not encryption_passphrase:
-                    return False, {"error": "Encryption password is required for remote restore"}
-                if not self.verify_encryption_passphrase(encryption_passphrase):
-                    return False, {"error": "Invalid encryption password"}
-                transfer_key, key_err = self._derive_transfer_key()
-                if key_err or not transfer_key:
-                    return False, {"error": key_err or "Missing encryption key material"}
+            if encrypted and not encryption_passphrase:
+                return False, {"error": "Encryption password is required for remote restore"}
+            # No local password check here: on a freshly installed machine there
+            # are no local settings yet. Decryption itself proves the password.
 
             identity = self._identity_public()
             owner_node_id = str(identity.get("node_id") or "")
@@ -2808,7 +2844,12 @@ class BuddyBackupManager:
                 if encrypted:
                     fd_plain, plain_tmp = tempfile.mkstemp(prefix="buddy-restore-", suffix=".stream", dir=self.state_dir)
                     os.close(fd_plain)
-                    dec_ok, dec_err = self._decrypt_stream_file(encrypted_tmp, plain_tmp, transfer_key or b"")
+                    dec_ok, dec_err = self._decrypt_stream_with_passphrase(
+                        encrypted_tmp, plain_tmp, encryption_passphrase
+                    )
+                    if dec_ok:
+                        # Upgrades pre-ALVAENC2 installs once the right password is known.
+                        self.verify_encryption_passphrase(encryption_passphrase)
                     if not dec_ok:
                         return False, {"error": dec_err or "Failed to decrypt remote snapshot stream"}
                     stream_for_restore = plain_tmp
