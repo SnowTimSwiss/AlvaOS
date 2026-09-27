@@ -24,6 +24,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from typing import Callable, List, Optional
 
 NAME_RE = re.compile(r"^[a-z0-9]{4,32}$")
@@ -105,6 +106,9 @@ class Host:
             raise VaultError(f"{path} is not a root-owned directory")
         os.chmod(path, 0o700)
 
+    def sleep(self, seconds: float) -> None:
+        time.sleep(seconds)
+
     def is_mounted(self, path: str) -> bool:
         with open("/proc/self/mounts", encoding="utf-8", errors="replace") as f:
             return any(line.split()[1] == path for line in f if len(line.split()) > 1)
@@ -135,20 +139,51 @@ def _check(result: subprocess.CompletedProcess, what: str) -> None:
         raise VaultError(f"{what} failed: {detail or f'exit code {result.returncode}'}")
 
 
-def _free_nbd_device(host: Host) -> str:
+def _device_free(host: Host, index: int) -> bool:
+    sys_dir = f"/sys/block/nbd{index}"
+    if not host.exists(sys_dir) or host.exists(f"{sys_dir}/pid"):
+        return False
+    try:
+        return host.read(f"{sys_dir}/size").strip() in ("", "0")
+    except OSError:
+        return False
+
+
+def _free_nbd_devices(host: Host) -> List[str]:
     if not host.exists("/sys/block/nbd0"):
         _check(host.run([MODPROBE, "nbd", f"nbds_max={NBD_DEVICES}"]), "Loading the nbd module")
-    for i in range(NBD_DEVICES):
-        sys_dir = f"/sys/block/nbd{i}"
-        if not host.exists(sys_dir) or host.exists(f"{sys_dir}/pid"):
-            continue
-        try:
-            if host.read(f"{sys_dir}/size").strip() not in ("", "0"):
-                continue
-        except OSError:
-            continue
-        return f"/dev/nbd{i}"
-    raise VaultError("No free network block device")
+    devices = [f"/dev/nbd{i}" for i in range(NBD_DEVICES) if _device_free(host, i)]
+    if not devices:
+        raise VaultError("No free network block device")
+    return devices
+
+
+def _connect(host: Host, remote: str, export: str) -> str:
+    """Attach the export to a free /dev/nbdN.
+
+    A device that was just disconnected can look free while the kernel is
+    still tearing it down ("Failed to setup device"); then the next one is
+    tried.
+    """
+    last = None
+    for device in _free_nbd_devices(host)[:3]:
+        result = host.run([NBD_CLIENT, remote, NBD_PORT, device, "-N", export, "-b", "4096", "-t", "120"])
+        if result.returncode == 0:
+            return device
+        last = result
+        if b"Failed to setup device" not in (result.stderr or b""):
+            break
+    assert last is not None
+    _check(last, "Connecting to the buddy vault")
+    raise AssertionError("unreachable")
+
+
+def _wait_released(host: Host, device: str, timeout: float = 15.0) -> None:
+    index = int(device[len("/dev/nbd"):])
+    waited = 0.0
+    while not _device_free(host, index) and waited < timeout:
+        host.sleep(0.25)
+        waited += 0.25
 
 
 def close_vault(name: str, host: Host) -> None:
@@ -169,6 +204,7 @@ def close_vault(name: str, host: Host) -> None:
         device = host.read(dev_file).strip()
         if re.match(r"^/dev/nbd\d{1,2}$", device):
             host.run([NBD_CLIENT, "-d", device])
+            _wait_released(host, device)
         host.remove(dev_file)
     if errors:
         raise VaultError("; ".join(errors))
@@ -185,9 +221,7 @@ def open_vault(name: str, remote: str, export: str, mode: str, key: str, host: H
     key_bytes = key.encode("ascii")
     formatted = False
     try:
-        device = _free_nbd_device(host)
-        _check(host.run([NBD_CLIENT, remote, NBD_PORT, device, "-N", export, "-b", "4096", "-t", "120"]),
-               "Connecting to the buddy vault")
+        device = _connect(host, remote, export)
         host.write(dev_file, device)
 
         if host.run([CRYPTSETUP, "isLuks", device]).returncode != 0:

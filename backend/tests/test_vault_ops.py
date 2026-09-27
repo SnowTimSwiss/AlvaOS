@@ -28,6 +28,7 @@ class FakeHost(vo.Host):
         self.mounted = set()
         self.dirs = set()
         self.fail = {}
+        self.stuck = set()
 
     def _run(self, argv, input=None):
         self.commands.append(argv)
@@ -44,6 +45,14 @@ class FakeHost(vo.Host):
             self.files["/dev/mapper/" + argv[-1]] = ""
         elif name == "cryptsetup" and argv[1] == "close":
             self.files.pop("/dev/mapper/" + argv[2], None)
+        elif name == "nbd-client" and argv[1] != "-d":
+            device = argv[3]
+            if device in self.stuck:
+                rc = 1
+                return subprocess.CompletedProcess(argv, rc, b"", b"Error: Failed to setup device, check dmesg")
+            self.files[f"/sys/block/{device[5:]}/pid"] = "1"
+        elif name == "nbd-client" and argv[1] == "-d":
+            self.files.pop(f"/sys/block/{argv[2][5:]}/pid", None)
         elif name == "blkid":
             out = self.fs.encode()
         elif name == "mkfs.btrfs":
@@ -74,6 +83,9 @@ class FakeHost(vo.Host):
 
     def is_mounted(self, path):
         return path in self.mounted
+
+    def sleep(self, seconds):
+        pass
 
     def ran(self, *prefix):
         return [c for c in self.commands if c[:len(prefix)] == list(prefix)]
@@ -181,3 +193,17 @@ def test_policy_allows_btrfs_inside_an_open_vault():
         policy.validate(argv)
     with pytest.raises(policy.PolicyError):
         policy.validate(["/usr/bin/btrfs", "receive", "/run/other"])
+
+
+def test_a_device_still_being_released_is_skipped():
+    host = FakeHost()
+    host.stuck.add("/dev/nbd0")
+    result = vo.open_vault("papa1234", BUDDY, "node-a", "rw", KEY, host)
+    assert result["device"] == "/dev/nbd1"
+
+
+def test_reopening_after_close_works():
+    host = FakeHost()
+    first = vo.open_vault("papa1234", BUDDY, "node-a", "rw", KEY, host)["device"]
+    vo.close_vault("papa1234", host)
+    assert vo.open_vault("papa1234", BUDDY, "node-a", "ro", KEY, host)["device"] == first

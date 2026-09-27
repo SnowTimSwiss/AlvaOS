@@ -60,6 +60,10 @@ jobs:
       - name: Run vault end-to-end test
         run: sudo -E env "PATH=$PATH" ALVAOS_E2E=1 python -m pytest -v backend/tests/test_vault_e2e.py
 
+      - name: Kernel log (on failure)
+        if: failure()
+        run: sudo dmesg | tail -60
+
   lint:
     runs-on: ubuntu-latest
     steps:
