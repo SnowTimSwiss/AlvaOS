@@ -444,3 +444,74 @@ def open_json(blob: str, passphrase: str) -> dict:
     if not isinstance(data, dict):
         raise BuddyCryptoError("Recovery kit has an unexpected format")
     return data
+
+
+# ── Vault key blob ───────────────────────────────────────────────────────────
+# The random key that unlocks a Buddy Backup vault (LUKS) is stored on the buddy
+# next to the vault, sealed with the NAS's encryption key material:
+#   "ALVAVKEY1." + base64url(header || AES-GCM(wrap_key, vault_key))
+#   header = log2_n(1) r(1) p(1) kdf_salt(16) nonce(12)
+# The machine that made it re-seals it without asking for the password (it
+# keeps the scrypt output); a replacement machine derives the same key from
+# the password and the public parameters in the header.
+VAULT_KEY_PREFIX = "ALVAVKEY1."
+_VKEY_HEADER = struct.Struct(">BBB16s12s")
+
+
+def _vault_wrap_key(master_key: bytes) -> bytes:
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+    return HKDF(algorithm=hashes.SHA256(), length=32, salt=None,
+                info=b"alvaos-buddy-vault-key-v1").derive(master_key)
+
+
+def seal_vault_key(vault_key: bytes, material: KeyMaterial) -> str:
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    nonce = secrets.token_bytes(12)
+    header = _VKEY_HEADER.pack(material.log2_n, material.r, material.p, material.kdf_salt, nonce)
+    sealed = AESGCM(_vault_wrap_key(material.master_key)).encrypt(nonce, vault_key, b"ALVAVKEY1" + header)
+    return VAULT_KEY_PREFIX + base64.urlsafe_b64encode(header + sealed).decode("ascii").rstrip("=")
+
+
+def vault_key_salt(blob: str) -> bytes:
+    """The key-derivation salt a blob was sealed with (to notice a password change)."""
+    raw = _vault_blob_bytes(blob)
+    return _VKEY_HEADER.unpack(raw[:_VKEY_HEADER.size])[3]
+
+
+def _vault_blob_bytes(blob: str) -> bytes:
+    import binascii
+
+    text = str(blob or "").strip()
+    if not text.startswith(VAULT_KEY_PREFIX) or len(text) > 4096:
+        raise BuddyCryptoError("The vault key stored on the buddy is not valid")
+    body = text[len(VAULT_KEY_PREFIX):]
+    try:
+        raw = base64.urlsafe_b64decode(body + "=" * (-len(body) % 4))
+    except (binascii.Error, ValueError):
+        raise BuddyCryptoError("The vault key stored on the buddy is damaged") from None
+    if len(raw) < _VKEY_HEADER.size + 16:
+        raise BuddyCryptoError("The vault key stored on the buddy is damaged")
+    return raw
+
+
+def open_vault_key(blob: str, passphrase: str = "", material: Optional[KeyMaterial] = None) -> bytes:
+    """Unseal with the stored key material (same machine) or the password (any machine)."""
+    from cryptography.exceptions import InvalidTag
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    raw = _vault_blob_bytes(blob)
+    header, sealed = raw[:_VKEY_HEADER.size], raw[_VKEY_HEADER.size:]
+    log2_n, r, p, salt, nonce = _VKEY_HEADER.unpack(header)
+    if material is not None and material.kdf_salt == salt:
+        master_key = material.master_key
+    elif passphrase:
+        master_key = derive_master_key(passphrase, salt, log2_n, r, p)
+    else:
+        raise BuddyCryptoError("The encryption password is needed to unlock this vault")
+    try:
+        return AESGCM(_vault_wrap_key(master_key)).decrypt(nonce, sealed, b"ALVAVKEY1" + header)
+    except InvalidTag:
+        raise BuddyCryptoError("Wrong encryption password for this vault") from None

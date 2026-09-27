@@ -5,6 +5,8 @@ alvaos-priv — the only program the AlvaOS backend may run as root.
     sudo -n /opt/alvaos/bin/alvaos-priv [--env KEY=VALUE]... -- /usr/bin/btrfs subvolume create ...
     sudo -n /opt/alvaos/bin/alvaos-priv write-sysfs PATH VALUE
     sudo -n /opt/alvaos/bin/alvaos-priv apply-update PACKAGE
+    sudo -n /opt/alvaos/bin/alvaos-priv vault-open NAME HOST EXPORT MODE   (key on stdin)
+    sudo -n /opt/alvaos/bin/alvaos-priv vault-close NAME
 
 Every command line is checked by priv_policy before it runs. Nothing is ever
 passed to a shell. Denials exit with status 126 and are logged to
@@ -26,6 +28,7 @@ sys.path.insert(0, HERE)
 
 import priv_policy as policy  # noqa: E402
 import update_signing  # noqa: E402
+import vault_ops  # noqa: E402
 
 DENIED_EXIT = 126
 MAX_STDIN = 1024 * 1024
@@ -251,6 +254,10 @@ def main():
         return write_sysfs(args[1:])
     if args[:1] == ['apply-update']:
         return apply_update(args[1:])
+    if args[:1] in (['vault-open'], ['vault-close']):
+        # Buddy Backup vaults: attach, unlock and mount, or the reverse.
+        stdin = sys.stdin.buffer.read(1024) if args[0] == 'vault-open' else b''
+        return vault_ops.main(args, stdin)
     return run_command(args)
 
 

@@ -31,8 +31,34 @@ jobs:
           sudo mkdir -p /var/lib/alvaos /var/log/alvaos
           sudo chown -R "$USER" /var/lib/alvaos /var/log/alvaos
 
+      - name: Install libnbd tools (NBD server interoperability test)
+        run: sudo apt-get install -y --no-install-recommends libnbd-bin
+
       - name: Run unit tests
         run: pytest
+
+  vault-e2e:
+    # Buddy Backup vaults on a real kernel: NBD, LUKS and Btrfs as root.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Set up Python
+        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends nbd-client cryptsetup btrfs-progs
+          pip install pytest flask pyyaml cryptography psutil requests
+          sudo modprobe nbd nbds_max=16 max_part=0
+          sudo modprobe btrfs
+
+      - name: Run vault end-to-end test
+        run: sudo -E env "PATH=$PATH" ALVAOS_E2E=1 python -m pytest -v backend/tests/test_vault_e2e.py
 
   lint:
     runs-on: ubuntu-latest

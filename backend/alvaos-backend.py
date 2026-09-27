@@ -199,6 +199,9 @@ if __name__ == '__main__':
 
     # wg-quick state does not survive a reboot; bring the buddy tunnel back up.
     threading.Thread(target=buddy_backup_manager.start_tunnel_if_paired, daemon=True).start()
+    # Serves the encrypted vaults buddies keep here, on the tunnel address only.
+    threading.Thread(target=buddy_backup_manager.vault_store.serve_forever, name='buddy-vaults',
+                     daemon=True).start()
     
     if not is_setup_complete():
         print("\n⚠️  SETUP REQUIRED: Access the Web UI to complete initial setup")

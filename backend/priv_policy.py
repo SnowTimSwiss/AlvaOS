@@ -40,8 +40,10 @@ class PolicyError(Exception):
 # ── Constants ────────────────────────────────────────────────────────────────
 
 # Directories the backend may modify through the helper. Everything else on the
-# system is read-only from the backend's point of view.
-WRITE_ROOTS = ('/mnt/alvaos', '/srv', '/var/lib/alvaos')
+# system is read-only from the backend's point of view. /run/alvaos-vault holds
+# the unlocked Buddy Backup vaults (see vault_ops.py); it is root-owned, so the
+# backend cannot plant symlinks in it.
+WRITE_ROOTS = ('/mnt/alvaos', '/srv', '/var/lib/alvaos', '/run/alvaos-vault')
 
 # Mount targets: pools are mounted directly below /mnt/alvaos (a root-owned
 # directory, so the backend cannot plant symlinks there), offline-update scans
@@ -793,9 +795,10 @@ def _rule_btrfs(sys_: System, args):
             _fail('Invalid btrfs filesystem reference')
         return Plan(argv=list(args))
     if group == 'filesystem' and action == 'usage':
-        _expect(rest, readable_path)
+        _expect([a for a in rest if a != '-b'], readable_path)
         return Plan(argv=list(args))
-    if group == 'subvolume' and action in ('show', 'get-default'):
+    if group == 'subvolume' and action in ('show', 'get-default', 'sync'):
+        # sync only waits until deleted subvolumes are cleaned up.
         _expect(rest, readable_path)
         return Plan(argv=list(args))
     if group == 'subvolume' and action == 'list':
