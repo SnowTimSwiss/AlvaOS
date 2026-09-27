@@ -1012,8 +1012,6 @@ def _rule_ip(sys_: System, args):
 
 
 def _rule_wg(sys_: System, args):
-    if list(args) == ['genkey']:
-        return Plan(argv=list(args))
     _expect(args, 'show', 'buddy0')
     return Plan(argv=list(args))
 
