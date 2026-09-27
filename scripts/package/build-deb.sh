@@ -88,6 +88,19 @@ log "Copying backend and frontend..."
 # Copy backend modules
 cp "${REPO_ROOT}/backend/"*.py "${PKG_DIR}/opt/alvaos/bin/"
 chmod +x "${PKG_DIR}/opt/alvaos/bin/alvaos-backend.py"
+# Privilege helper: the only command the alvaos user may run via sudo.
+cp "${REPO_ROOT}/backend/alvaos-priv" "${PKG_DIR}/opt/alvaos/bin/alvaos-priv"
+chmod 755 "${PKG_DIR}/opt/alvaos/bin/alvaos-priv"
+
+# Update signing public key (see docs/RELEASE.md). Without it the system
+# refuses to install AlvaOS updates, which is the safe default.
+if [ -f "${REPO_ROOT}/keys/update-signing.pub" ]; then
+    mkdir -p "${PKG_DIR}/opt/alvaos/keys"
+    cp "${REPO_ROOT}/keys/update-signing.pub" "${PKG_DIR}/opt/alvaos/keys/update-signing.pub"
+    chmod 644 "${PKG_DIR}/opt/alvaos/keys/update-signing.pub"
+else
+    log "WARNING: keys/update-signing.pub missing; installed systems will reject updates"
+fi
 
 # Copy frontend
 cp -r "${REPO_ROOT}/frontend/"* "${PKG_DIR}/opt/alvaos/webui/"
@@ -150,7 +163,7 @@ Package: alvaos-system
 Version: ${DEB_VERSION}
 Architecture: amd64
 Maintainer: AlvaOS Team <dev@alvaos.org>
-Depends: python3, python3-flask, python3-waitress, python3-psutil, python3-requests, python3-pyotp, python3-qrcode, python3-pil, docker.io, docker-compose, btrfs-progs, wireguard-tools, systemd, smartmontools, nfs-kernel-server, samba, network-manager
+Depends: python3, python3-yaml, python3-cryptography, python3-flask, python3-waitress, python3-psutil, python3-requests, python3-pyotp, python3-qrcode, python3-pil, docker.io, docker-compose, btrfs-progs, wireguard-tools, systemd, smartmontools, nfs-kernel-server, samba, network-manager
 Section: admin
 Priority: optional
 Homepage: https://github.com/SnowTimSwiss/AlvaOS
@@ -172,7 +185,7 @@ echo "Configuring AlvaOS..."
 
 # Create alvaos system user if it doesn't exist
 if ! id alvaos >/dev/null 2>&1; then
-    useradd -r -s /bin/bash -d /opt/alvaos -M alvaos
+    useradd -r -s /usr/sbin/nologin -d /var/lib/alvaos -M alvaos
 fi
 
 # Create necessary directories
@@ -180,6 +193,10 @@ mkdir -p /var/log/alvaos
 mkdir -p /var/lib/alvaos
 mkdir -p /etc/alvaos
 mkdir -p /mnt/alvaos
+mkdir -p /var/lib/alvaos/compose /var/lib/alvaos/updates
+# VPN apps get the host's WireGuard module instead of CAP_SYS_MODULE.
+echo wireguard > /etc/modules-load.d/alvaos-wireguard.conf
+modprobe wireguard 2>/dev/null || true
 
 # Repair critical root-owned system files if a previous broken package/update
 # left the system unable to use sudo. postinst runs as root, so this is the
@@ -189,8 +206,11 @@ if [ -e /usr/bin/sudo ]; then
     chmod 4755 /usr/bin/sudo
 fi
 
-# Set permissions
-chown -R alvaos:alvaos /opt/alvaos
+# Set permissions. Code is root-owned and read-only for the service user:
+# the watchdog, apply_update.sh and the privilege helper run as root, so a
+# service-writable /opt/alvaos would be a direct path to root.
+chown -R root:root /opt/alvaos
+chmod -R go-w /opt/alvaos
 chown -R alvaos:alvaos /var/lib/alvaos
 chown -R alvaos:alvaos /var/log/alvaos
 chown -R alvaos:alvaos /etc/alvaos

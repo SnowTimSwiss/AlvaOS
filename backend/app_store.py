@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 import requests
+from common import run_sudo_command
 from docker_manager import DockerManager
 
 
@@ -734,77 +735,14 @@ class AppStore:
     
     def _create_subvolume(self, path: str) -> Tuple[bool, Optional[str]]:
         """Create a Btrfs subvolume"""
-        try:
-            # Use absolute path matching AlvaOS sudoers
-            if os.getuid() != 0:
-                cmd = ['sudo', '-n', '/usr/bin/btrfs', 'subvolume', 'create', path]
-            else:
-                cmd = ['/usr/bin/btrfs', 'subvolume', 'create', path]
-            
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=30,
-                env={'LC_ALL': 'C'}
-            )
-            
-            if result.returncode != 0:
-                return False, self._format_privilege_error(cmd, result)
-            
-            return True, None
-        except Exception as e:
-            return False, str(e)
-    
+        _, err = run_sudo_command(['/usr/bin/btrfs', 'subvolume', 'create', path], timeout=30)
+        return (err is None), err
+
     def _delete_subvolume(self, path: str) -> Tuple[bool, Optional[str]]:
         """Delete a Btrfs subvolume"""
-        try:
-            # Use absolute path matching AlvaOS sudoers
-            if os.getuid() != 0:
-                cmd = ['sudo', '-n', '/usr/bin/btrfs', 'subvolume', 'delete', path]
-            else:
-                cmd = ['/usr/bin/btrfs', 'subvolume', 'delete', path]
-            
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=30,
-                env={'LC_ALL': 'C'}
-            )
-            
-            if result.returncode != 0:
-                return False, self._format_privilege_error(cmd, result)
-            
-            return True, None
-        except Exception as e:
-            return False, str(e)
+        _, err = run_sudo_command(['/usr/bin/btrfs', 'subvolume', 'delete', path], timeout=30)
+        return (err is None), err
 
-    def _format_privilege_error(self, cmd: List[str], result: subprocess.CompletedProcess) -> str:
-        stderr_text = str(result.stderr or "").strip()
-        stdout_text = str(result.stdout or "").strip()
-        combined = f"{stderr_text}\n{stdout_text}".strip()
-        lowered = combined.lower()
-        cmd_str = " ".join(str(part) for part in cmd)
-
-        if "/etc/sudoers.d/alvaos" in lowered and (
-            "is owned by uid" in lowered
-            or "is world writable" in lowered
-            or "bad permissions" in lowered
-        ):
-            return (
-                "System permission error: /etc/sudoers.d/alvaos has invalid ownership or mode. "
-                "Run as root: chown root:root /etc/sudoers.d/alvaos && chmod 440 /etc/sudoers.d/alvaos"
-            )
-        if "password is required" in lowered or "a password is required" in lowered:
-            return (
-                "System permission error: Passwordless sudo is not configured for AlvaOS commands. "
-                f"Command: {cmd_str}"
-            )
-
-        detail = stderr_text or stdout_text or f"exit code {result.returncode}"
-        return f"Command failed ({result.returncode}): {cmd_str}: {detail}"
-    
     def _prepare_app_storage(
         self,
         pool_path: str,

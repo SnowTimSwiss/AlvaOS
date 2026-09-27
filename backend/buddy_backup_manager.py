@@ -12,9 +12,9 @@ import os
 import platform
 import re
 import secrets
-import shlex
 import shutil
 import socket
+import subprocess
 import tempfile
 import threading
 import time
@@ -27,6 +27,10 @@ from typing import Callable, Dict, List, Optional, Tuple
 import requests
 
 from alerts_manager import push_notification
+
+WG_KEY_RE = re.compile(r"^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$")
+WG_ENDPOINT_RE = re.compile(r"^(\[[0-9a-fA-F:]{2,39}\]|[A-Za-z0-9.-]{1,253}):\d{1,5}$")
+IPV4_RE = re.compile(r"^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$")
 
 # Marker source path for a full-system (root subvolume) buddy transfer. A stream whose
 # source_path is "/" is restored as a full system rollback (set-default + reboot) rather
@@ -226,12 +230,6 @@ class BuddyBackupManager:
         return self._detect_cmd(
             ["/usr/sbin/ip", "/usr/bin/ip", "/sbin/ip", "/bin/ip"],
             "ip"
-        )
-
-    def _bash_cmd(self) -> Optional[str]:
-        return self._detect_cmd(
-            ["/usr/bin/bash", "/bin/bash"],
-            "bash"
         )
 
     def _ping_cmd(self) -> Optional[str]:
@@ -482,13 +480,9 @@ class BuddyBackupManager:
             return priv, pub, None, "placeholder"
 
         wg_cmd = self._wg_cmd()
-        bash_cmd = self._bash_cmd()
         if not wg_cmd:
             priv, pub = self._placeholder_wg_keypair()
             return priv, pub, "WireGuard command not found (wg). Install wireguard-tools to enable the tunnel.", "placeholder"
-        if not bash_cmd:
-            priv, pub = self._placeholder_wg_keypair()
-            return priv, pub, "Bash command not found. Install bash to enable WireGuard key generation.", "placeholder"
 
         gen_res, gen_err = self.run_command([wg_cmd, "genkey"], timeout=10)
         if gen_err or not gen_res or gen_res.returncode != 0:
@@ -499,8 +493,14 @@ class BuddyBackupManager:
             priv, pub = self._placeholder_wg_keypair()
             return priv, pub, "WireGuard private key generation returned empty output", "placeholder"
 
-        pub_cmd = f"printf '%s' {shlex.quote(private_key)} | {shlex.quote(wg_cmd)} pubkey"
-        pub_res, pub_err = self.run_command([bash_cmd, "-lc", pub_cmd], timeout=10)
+        # Deriving a public key needs no privileges; feed the key on stdin
+        # instead of putting it on a (world-readable) command line.
+        try:
+            pub_res = subprocess.run([wg_cmd, "pubkey"], input=private_key + "\n", capture_output=True,
+                                     text=True, timeout=10, env={"LC_ALL": "C"})
+            pub_err = None if pub_res.returncode == 0 else (pub_res.stderr or "wg pubkey failed").strip()
+        except Exception as exc:
+            pub_res, pub_err = None, str(exc)
         if pub_err or not pub_res or pub_res.returncode != 0:
             priv, pub = self._placeholder_wg_keypair()
             return priv, pub, pub_err or "Failed to derive WireGuard public key", "placeholder"
@@ -1180,13 +1180,6 @@ class BuddyBackupManager:
                 return True, ""
             last_error = mv_err or last_error
 
-        bash_cmd = self._bash_cmd()
-        if bash_cmd:
-            cmd = f"mv {shlex.quote(src)} {shlex.quote(dst)}"
-            bash_res, bash_err = self.run_command([bash_cmd, "-lc", cmd], timeout=timeout)
-            if not bash_err and bash_res and bash_res.returncode == 0:
-                return True, ""
-            last_error = bash_err or last_error
 
         return False, last_error or f"Failed to move {src} -> {dst}"
 
@@ -1747,6 +1740,12 @@ class BuddyBackupManager:
             public_key = str(peer.get("public_key") or "").strip()
             tunnel_ip = str(peer.get("tunnel_ip") or "").strip()
             if not endpoint or not public_key or not tunnel_ip:
+                continue
+            # These values come from the remote buddy. A newline in any of them
+            # would let a peer inject wg-quick directives such as PostUp (a root
+            # shell command), so only accept their exact expected shapes.
+            if not (WG_KEY_RE.match(public_key) and WG_ENDPOINT_RE.match(endpoint)
+                    and IPV4_RE.match(tunnel_ip)):
                 continue
             lines.extend([
                 "[Peer]",
@@ -2616,9 +2615,8 @@ class BuddyBackupManager:
         target_is_mount_root = self._is_mounted_path(target_source)
 
         btrfs_cmd = self._btrfs_cmd()
-        bash_cmd = self._bash_cmd()
-        if not (btrfs_cmd and bash_cmd):
-            return False, {"error": "Missing required system commands (btrfs/bash)"}
+        if not btrfs_cmd:
+            return False, {"error": "Missing required system command (btrfs)"}
 
         target_parent = target_source if target_is_mount_root else (os.path.dirname(target_source.rstrip("/")) or "/")
         if not target_is_mount_root:
@@ -2645,8 +2643,8 @@ class BuddyBackupManager:
 
         before_names = set(self._list_btrfs_subvolume_names_under(target_parent))
 
-        receive_cmd = f"{shlex.quote(btrfs_cmd)} receive {shlex.quote(target_parent)} < {shlex.quote(stream_path)}"
-        recv_res, recv_err = self.run_command([bash_cmd, "-lc", receive_cmd], timeout=1800)
+        receive_cmd = [btrfs_cmd, "receive", "-f", stream_path, target_parent]
+        recv_res, recv_err = self.run_command(receive_cmd, timeout=1800)
         if recv_err or not recv_res or recv_res.returncode != 0:
             # Retry once if receive failed because a subvolume from a previous run already exists.
             collision_name = self._extract_receive_exists_name(recv_err or "")
@@ -2665,7 +2663,7 @@ class BuddyBackupManager:
                     cleanup_ok, cleanup_err, cleaned = self._delete_subvolume_if_exists(collision_path, btrfs_cmd)
                     if cleanup_ok and cleaned:
                         retried = True
-                        recv_res, recv_err = self.run_command([bash_cmd, "-lc", receive_cmd], timeout=1800)
+                        recv_res, recv_err = self.run_command(receive_cmd, timeout=1800)
                     elif not cleanup_ok:
                         return False, {"error": cleanup_err or f"Failed to clear existing receive subvolume: {collision_path}"}
             if (not retried) or recv_err or not recv_res or recv_res.returncode != 0:

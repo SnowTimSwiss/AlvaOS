@@ -22,7 +22,7 @@ jobs:
           python -m pip install --upgrade pip
           # Flask is enough to also run the auth_manager session tests;
           # the heavier runtime deps are not required for the unit suite.
-          pip install pytest flask
+          pip install pytest flask pyyaml cryptography
 
       - name: Run unit tests
         run: pytest

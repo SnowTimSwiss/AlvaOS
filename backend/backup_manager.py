@@ -8,7 +8,6 @@ import json
 import os
 import platform
 import re
-import shlex
 import shutil
 import threading
 from datetime import datetime, timedelta, timezone
@@ -19,7 +18,6 @@ CMD = {
     "BTRFS": "/usr/bin/btrfs",
     "MKDIR": "/usr/bin/mkdir",
     "MV": "/usr/bin/mv",
-    "BASH": "/usr/bin/bash",
 }
 
 DEFAULT_SETTINGS = {
@@ -166,12 +164,6 @@ class BackupManager:
             "mv",
         )
 
-    def _bash_cmd(self) -> Optional[str]:
-        return self._detect_cmd(
-            ["/usr/bin/bash", "/bin/bash", CMD.get("BASH")],
-            "bash",
-        )
-
     def _move_path_best_effort(self, source: str, destination: str, timeout: int = 60) -> Tuple[bool, str]:
         src = self._normalize_path(source)
         dst = self._normalize_path(destination)
@@ -191,14 +183,6 @@ class BackupManager:
                 return True, ""
             last_error = mv_err or last_error
 
-        bash_cmd = self._bash_cmd()
-        if bash_cmd:
-            quoted = f"{shlex.quote(src)} {shlex.quote(dst)}"
-            cmd = f"mv {quoted}"
-            bash_res, bash_err = self.run_command([bash_cmd, "-lc", cmd], timeout=timeout)
-            if not bash_err and bash_res and bash_res.returncode == 0:
-                return True, ""
-            last_error = bash_err or last_error
 
         return False, last_error or f"Failed to move {src} -> {dst}"
 
@@ -982,13 +966,10 @@ class BackupManager:
         name = os.path.basename(snapshot_path)
         mkdir_cmd = self._mkdir_cmd()
         btrfs_cmd = self._btrfs_cmd()
-        bash_cmd = self._bash_cmd()
         if not mkdir_cmd:
             return False, "mkdir command not found"
         if not btrfs_cmd:
             return False, "btrfs command not found"
-        if not bash_cmd:
-            return False, "bash command not found"
         source_parent = self._best_temp_snapshot_parent(source_path)
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
         temp_name = f".alvaos-send-{self._slugify(name)}-{stamp}-{os.getpid()}"
@@ -1022,11 +1003,9 @@ class BackupManager:
             if send_err or not send_res or send_res.returncode != 0:
                 return False, send_err or "Failed to send snapshot stream"
 
-            receive_cmd = (
-                f"{shlex.quote(btrfs_cmd)} receive {shlex.quote(target_parent)} "
-                f"< {shlex.quote(stream_file)}"
+            recv_res, recv_err = self.run_command(
+                [btrfs_cmd, "receive", "-f", stream_file, target_parent], timeout=600
             )
-            recv_res, recv_err = self.run_command([bash_cmd, "-lc", receive_cmd], timeout=600)
             if recv_err or not recv_res or recv_res.returncode != 0:
                 return False, recv_err or "Failed to receive snapshot stream"
 

@@ -6,13 +6,14 @@ Simple battery monitor for laptop-battery-as-UPS behavior.
 
 import json
 import os
-import shlex
 import subprocess
 import tempfile
 import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+
+from common import PRIV_HELPER, build_privileged_cmd
 
 
 DEFAULT_SETTINGS = {
@@ -161,16 +162,8 @@ class PowerUpsManager:
             "end": end if os.path.exists(end) else "",
         }
 
-    def _build_privileged_cmd(self, cmd):
-        try:
-            if hasattr(os, "geteuid") and os.geteuid() == 0:
-                return cmd
-        except Exception:
-            pass
-        return ["sudo", "-n"] + cmd
-
     def _run_privileged(self, cmd, timeout=10):
-        final_cmd = self._build_privileged_cmd(cmd)
+        final_cmd = build_privileged_cmd(cmd)
         return subprocess.run(
             final_cmd,
             capture_output=True,
@@ -190,10 +183,13 @@ class PowerUpsManager:
         except Exception:
             pass
 
-        # Fallback when direct write fails (non-root backend user).
-        shell_line = f"printf '%s' {shlex.quote(value_str)} > {shlex.quote(path)}"
+        # Fallback when direct write fails (non-root backend user): the privilege
+        # helper writes battery charge thresholds and nothing else in /sys.
         try:
-            result = self._run_privileged(["/usr/bin/bash", "-lc", shell_line], timeout=10)
+            result = subprocess.run(
+                ["sudo", "-n", PRIV_HELPER, "write-sysfs", path, value_str],
+                capture_output=True, text=True, timeout=10, env={"LC_ALL": "C"},
+            )
             if result.returncode == 0:
                 return True, None
             err = (result.stderr or result.stdout or f"exit code {result.returncode}").strip()
