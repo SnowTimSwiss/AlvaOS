@@ -98,11 +98,11 @@ def _verify_alvaos_package(staged_deb, original_path):
         staged_sig = _stage_copy(sig_src, policy.UPDATE_CACHE_DIR, os.path.dirname(staged_deb),
                                  name=os.path.basename(staged_deb) + '.sig')
     except FileNotFoundError:
-        raise policy.PolicyError('The AlvaOS package has no signature file (.sig); refusing to install it')
+        raise policy.PolicyError('The AlvaOS package has no signature file (.sig); refusing to install it') from None
     try:
         update_signing.verify_installed_key(staged_deb, staged_sig)
     except update_signing.SignatureError as e:
-        raise policy.PolicyError(f'Update signature check failed: {e}')
+        raise policy.PolicyError(f'Update signature check failed: {e}') from e
 
 
 def stage_files(plan, cleanup):
@@ -152,7 +152,7 @@ def run_command(argv):
         deny(argv, 'expected -- before the command')
     cmd = argv[1:]
 
-    cleanup = []
+    cleanup: list = []
     try:
         env = dict(BASE_ENV)
         env.update(policy.validate_env(env_pairs))
@@ -171,7 +171,7 @@ def run_command(argv):
             try:
                 plan.stdin_check(stdin_data)
             except UnicodeDecodeError:
-                raise policy.PolicyError('Input is not valid UTF-8')
+                raise policy.PolicyError('Input is not valid UTF-8') from None
     except (policy.PolicyError, OSError) as e:
         for path in cleanup:
             shutil.rmtree(path, ignore_errors=True)

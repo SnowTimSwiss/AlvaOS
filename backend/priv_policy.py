@@ -30,7 +30,7 @@ import grp
 import re
 import subprocess
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Iterable, List, Optional, Sequence
+from typing import Callable, Dict, Iterable, List, NoReturn, Optional, Sequence
 
 
 class PolicyError(Exception):
@@ -128,7 +128,7 @@ class System:
             data = json.loads(out or '{}')
         except Exception:
             # If we cannot tell which disk is the system disk, refuse to touch any.
-            raise PolicyError('Cannot determine system disks; refusing destructive disk operation')
+            raise PolicyError('Cannot determine system disks; refusing destructive disk operation') from None
 
         critical = {'/', '/boot', '/boot/efi', '/usr', '/var', '[SWAP]'}
 
@@ -172,7 +172,7 @@ class System:
 
 # ── Small validators ─────────────────────────────────────────────────────────
 
-def _fail(msg: str):
+def _fail(msg: str) -> NoReturn:
     raise PolicyError(msg)
 
 
@@ -268,7 +268,7 @@ def _expect(args: Sequence[str], *patterns) -> None:
     """Match args exactly against literal strings or callables."""
     if len(args) != len(patterns):
         _fail('Unexpected arguments: ' + ' '.join(args))
-    for arg, pat in zip(args, patterns):
+    for arg, pat in zip(args, patterns, strict=True):
         if isinstance(pat, str):
             if arg != pat:
                 _fail(f'Unexpected argument: {arg}')
@@ -297,8 +297,8 @@ def _new_lines(content: bytes, current: bytes) -> List[str]:
     Existing lines were written by root (the distribution or an admin on the
     console), so only what the backend adds or changes needs checking.
     """
-    existing = {l.strip() for l in current.decode('utf-8', 'replace').splitlines()}
-    return [l for l in content.decode('utf-8', 'strict').splitlines() if l.strip() not in existing]
+    existing = {line.strip() for line in current.decode('utf-8', 'replace').splitlines()}
+    return [line for line in content.decode('utf-8', 'strict').splitlines() if line.strip() not in existing]
 
 
 def check_smb_conf(content: bytes, current: bytes = b'') -> None:
@@ -392,7 +392,7 @@ CONFIG_CHECKS = {
 
 
 def check_chpasswd_input(content: bytes) -> None:
-    lines = [l for l in content.decode('utf-8', 'strict').splitlines() if l]
+    lines = [line for line in content.decode('utf-8', 'strict').splitlines() if line]
     if not lines:
         _fail('chpasswd input is empty')
     for line in lines:
@@ -479,7 +479,7 @@ def check_compose(content: bytes) -> None:
             else:
                 _fail(f'Service {name}: invalid volume entry')
 
-    for vname, vol in (doc.get('volumes') or {}).items():
+    for vol in (doc.get('volumes') or {}).values():
         opts = (vol or {}).get('driver_opts') or {} if isinstance(vol, dict) else {}
         if 'device' in opts:
             _check_host_path(str(opts['device']))

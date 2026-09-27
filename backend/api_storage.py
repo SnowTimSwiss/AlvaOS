@@ -324,13 +324,20 @@ def manage_pools():
                             usage_res, _ = run_sudo_command([CMD['BTRFS'], 'filesystem', 'usage', usage_target], timeout=5)
                             if usage_res and usage_res.returncode == 0:
                                 u_out = usage_res.stdout
-                                if 'RAID1C3' in u_out: pool['raid_level'] = 'RAID1C3'
-                                elif 'RAID1C4' in u_out: pool['raid_level'] = 'RAID1C4'
-                                elif 'RAID10' in u_out: pool['raid_level'] = 'RAID10'
-                                elif 'RAID1' in u_out: pool['raid_level'] = 'RAID1'
-                                elif 'RAID5' in u_out: pool['raid_level'] = 'RAID5'
-                                elif 'RAID6' in u_out: pool['raid_level'] = 'RAID6'
-                                elif 'RAID0' in u_out: pool['raid_level'] = 'RAID0'
+                                if 'RAID1C3' in u_out:
+                                    pool['raid_level'] = 'RAID1C3'
+                                elif 'RAID1C4' in u_out:
+                                    pool['raid_level'] = 'RAID1C4'
+                                elif 'RAID10' in u_out:
+                                    pool['raid_level'] = 'RAID10'
+                                elif 'RAID1' in u_out:
+                                    pool['raid_level'] = 'RAID1'
+                                elif 'RAID5' in u_out:
+                                    pool['raid_level'] = 'RAID5'
+                                elif 'RAID6' in u_out:
+                                    pool['raid_level'] = 'RAID6'
+                                elif 'RAID0' in u_out:
+                                    pool['raid_level'] = 'RAID0'
 
                                 # Prefer explicit sizes when present
                                 used_match = re.search(r"Used:\s+(\d+\.?\d*[TiGkMBP]i?B)", u_out)
@@ -400,7 +407,7 @@ def manage_pools():
                                         if len(p_parts) >= 4:
                                             pool['total_size'] = p_parts[1]
                                             pool['used_size'] = p_parts[2]
-                            except:
+                            except Exception:
                                 pass
 
                 # Fallback: include managed pools that were not returned by btrfs detection.
@@ -435,7 +442,7 @@ def manage_pools():
                                     if len(p_parts) >= 4:
                                         pool_entry['total_size'] = p_parts[1]
                                         pool_entry['used_size'] = p_parts[2]
-                        except:
+                        except Exception:
                             pass
                     pools.append(pool_entry)
             else:
@@ -544,7 +551,7 @@ def manage_pools():
                          real_uuid = blkid_res.stdout.strip()
                          if real_uuid:
                              pool_id = real_uuid
-                except:
+                except Exception:
                     pass
 
                 pools_state[pool_id] = {
@@ -600,7 +607,7 @@ def manage_pools():
                     
                     try:
                         run_sudo_command([CMD['RMDIR'], mount_point])
-                    except:
+                    except Exception:
                         pass
                 
                 devices = pool_info.get('devices', [])
@@ -879,7 +886,6 @@ def expand_pool(pool_id):
 
     pools_state = load_pools_state()
     pool_info = pools_state.get(pool_id)
-    is_system_pool_entry = False
 
     # The system/root pool is created by the installer, not through this app's "create pool"
     # flow, so it normally has no entry in pools.json. To allow replacing a failed mirror leg
@@ -898,7 +904,6 @@ def expand_pool(pool_id):
                     'raid_level': str(live_pool.get('raid_level', 'single')).strip().lower(),
                     'mount_point': '/',
                 }
-                is_system_pool_entry = True
 
     if pool_info is None:
         return jsonify({'error': 'Pool not found'}), 404

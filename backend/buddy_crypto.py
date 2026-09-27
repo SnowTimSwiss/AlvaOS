@@ -87,7 +87,7 @@ class KeyMaterial:
                 p=int(data.get("p", DEFAULT_P)),
             )
         except Exception as exc:
-            raise BuddyCryptoError(f"Invalid stored encryption key: {exc}")
+            raise BuddyCryptoError(f"Invalid stored encryption key: {exc}") from exc
 
 
 def derive_master_key(passphrase: str, kdf_salt: bytes, log2_n: int = DEFAULT_LOG2_N,
@@ -206,8 +206,8 @@ def decrypt_file(encrypted_path: str, plain_path: str,
                     dst.write(aead.decrypt(_nonce(header.nonce_prefix, counter, last), sealed, header.raw))
                 except InvalidTag:
                     if counter == 0:
-                        raise BuddyCryptoError("Wrong encryption password, or the stream was modified")
-                    raise BuddyCryptoError("Encrypted stream was modified or truncated")
+                        raise BuddyCryptoError("Wrong encryption password, or the stream was modified") from None
+                    raise BuddyCryptoError("Encrypted stream was modified or truncated") from None
                 if last:
                     break
                 sealed = following

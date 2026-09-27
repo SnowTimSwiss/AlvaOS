@@ -96,7 +96,8 @@ def manage_shares():
                     
                     # Reload NFS exports
                     res, err = run_sudo_command([CMD['EXPORTFS'], '-ra'])
-                    if err: return jsonify({'error': f'Failed to reload NFS: {err}'}), 500
+                    if err:
+                        return jsonify({'error': f'Failed to reload NFS: {err}'}), 500
                     
                 elif protocol == 'smb':
                     # Configure Samba share
@@ -117,7 +118,8 @@ def manage_shares():
                     
                     # Restart Samba
                     res, err = run_sudo_command([CMD['SYSTEMCTL'], 'restart', 'smbd'])
-                    if err: return jsonify({'error': f'Failed to restart Samba: {err}'}), 500
+                    if err:
+                        return jsonify({'error': f'Failed to restart Samba: {err}'}), 500
                     
                     # Ensure root is in Samba database (for non-guest access)
                     # We look up the current password from AUTH_FILE or just wait for next setup/login

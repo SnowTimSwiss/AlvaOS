@@ -3,6 +3,7 @@
 
 # ── Standard library ──────────────────────────────────────────────────────────
 import os
+from typing import Any, Dict
 import platform
 import re
 import socket
@@ -148,7 +149,7 @@ def get_system_info():
                 hostname = socket.gethostname() or 'unknown'
         else:
             hostname = socket.gethostname() or 'unknown'
-    except:
+    except Exception:
         hostname = 'unknown'
         
     ip_address = '127.0.0.1'
@@ -157,13 +158,15 @@ def get_system_info():
         # Better IP detection: find first non-loopback IPv4
         addrs = psutil.net_if_addrs()
         for iface, iface_addrs in addrs.items():
-            if iface.startswith('lo'): continue
+            if iface.startswith('lo'):
+                continue
             for addr in iface_addrs:
                 if addr.family == socket.AF_INET:
                     ip_address = addr.address
                     break
-            if ip_address != '127.0.0.1': break
-    except:
+            if ip_address != '127.0.0.1':
+                break
+    except Exception:
         pass
     
     network_info = {
@@ -479,7 +482,7 @@ def system_time():
                                           capture_output=True, text=True)
                 if ntp_result.returncode == 0:
                     ntp_enabled = ntp_result.stdout.strip() == 'yes'
-            except:
+            except Exception:
                 pass
                 
         return jsonify({
@@ -495,7 +498,8 @@ def system_time():
                 warnings = []
                 if 'timezone' in data:
                     res, err = run_sudo_command([CMD['TIMEDATECTL'], 'set-timezone', data['timezone']])
-                    if err: raise Exception(err)
+                    if err:
+                        raise Exception(err)
                 if 'ntp' in data:
                     ntp_val = 'true' if data['ntp'] else 'false'
                     res, err = run_sudo_command([CMD['TIMEDATECTL'], 'set-ntp', ntp_val])
@@ -542,7 +546,7 @@ def system_power():
 @require_auth(require_admin=True)
 def system_permissions_check():
     """Run a focused diagnostics check for backend privileged command execution."""
-    report = {
+    report: Dict[str, Any] = {
         'success': True,
         'platform': platform.system(),
         'sudoers': {},
@@ -552,7 +556,7 @@ def system_permissions_check():
     }
 
     sudoers_path = '/etc/sudoers.d/alvaos'
-    sudoers_info = {
+    sudoers_info: Dict[str, Any] = {
         'path': sudoers_path,
         'exists': False,
         'owner_uid': None,
@@ -580,7 +584,7 @@ def system_permissions_check():
         report['errors'].append('Permission diagnostics are only supported on Linux.')
         return jsonify(report), 400
 
-    sudo_list = {'ok': False, 'required_rules': {}, 'error': ''}
+    sudo_list: Dict[str, Any] = {'ok': False, 'required_rules': {}, 'error': ''}
     # The backend's only sudo rule is the privilege helper; everything else is
     # decided by priv_policy.py inside the helper.
     required_rules = [PRIV_HELPER]
@@ -656,26 +660,26 @@ def system_power_ups():
         })
 
     data = request.get_json(silent=True) or {}
-    payload = {}
+    payload: Dict[str, Any] = {}
 
     if 'enabled' in data:
         payload['enabled'] = bool(data.get('enabled'))
 
     if 'charge_limit_percent' in data:
         try:
-            payload['charge_limit_percent'] = int(data.get('charge_limit_percent'))
+            payload['charge_limit_percent'] = int(data['charge_limit_percent'])
         except Exception:
             return jsonify({'error': 'charge_limit_percent must be an integer'}), 400
 
     if 'shutdown_percent' in data:
         try:
-            payload['shutdown_percent'] = int(data.get('shutdown_percent'))
+            payload['shutdown_percent'] = int(data['shutdown_percent'])
         except Exception:
             return jsonify({'error': 'shutdown_percent must be an integer'}), 400
 
     if 'monitor_interval_seconds' in data:
         try:
-            payload['monitor_interval_seconds'] = int(data.get('monitor_interval_seconds'))
+            payload['monitor_interval_seconds'] = int(data['monitor_interval_seconds'])
         except Exception:
             return jsonify({'error': 'monitor_interval_seconds must be an integer'}), 400
 
@@ -706,7 +710,7 @@ def get_network_details():
                 hostname = socket.gethostname() or "unknown"
         else:
             hostname = socket.gethostname() or "unknown"
-    except:
+    except Exception:
         pass
         
     ip_address = "127.0.0.1"
@@ -746,7 +750,7 @@ def get_network_details():
                     parts = result.stdout.split()
                     if len(parts) >= 3 and parts[0] == 'default':
                         gateway = parts[2]
-            except:
+            except Exception:
                 pass
             
             # Try to get DNS servers
@@ -758,7 +762,7 @@ def get_network_details():
                                 dns = line.split()[1]
                                 if dns not in dns_servers:
                                     dns_servers.append(dns)
-            except:
+            except Exception:
                 pass
         
         # Fallback DNS if none found

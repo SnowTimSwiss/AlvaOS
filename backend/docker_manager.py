@@ -8,7 +8,7 @@ import subprocess
 import json
 import os
 import re
-from typing import List, Dict, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 from common import build_privileged_cmd, privilege_error_message
 
@@ -54,7 +54,9 @@ class DockerManager:
             )
 
             if result.returncode != 0:
-                return None, privilege_error_message(result, cmd) or result.stderr
+                # Never return an empty error: callers treat "" as success.
+                return None, (privilege_error_message(result, cmd) or (result.stderr or '').strip()
+                              or f"docker exited with status {result.returncode}")
             
             return result, None
         except subprocess.TimeoutExpired:
@@ -77,7 +79,7 @@ class DockerManager:
             args.append('-a')
         
         result, error = self._run_docker_command(args)
-        if error:
+        if error or result is None:
             return None, error
         
         try:
@@ -101,7 +103,7 @@ class DockerManager:
             Tuple of (container details dict, error message)
         """
         result, error = self._run_docker_command(['inspect', container_id])
-        if error:
+        if error or result is None:
             return None, error
         
         try:
@@ -129,7 +131,7 @@ class DockerManager:
             '--format',
             '{{json .RepoDigests}}'
         ])
-        if error:
+        if error or result is None:
             return None, error
 
         try:
@@ -151,7 +153,7 @@ class DockerManager:
             Tuple of (success bool, error message)
         """
         result, error = self._run_docker_command(['start', container_id])
-        if error:
+        if error or result is None:
             return False, error
         return True, None
     
@@ -167,7 +169,7 @@ class DockerManager:
             Tuple of (success bool, error message)
         """
         result, error = self._run_docker_command(['stop', '-t', str(timeout), container_id])
-        if error:
+        if error or result is None:
             return False, error
         return True, None
     
@@ -182,7 +184,7 @@ class DockerManager:
             Tuple of (success bool, error message)
         """
         result, error = self._run_docker_command(['restart', container_id])
-        if error:
+        if error or result is None:
             return False, error
         return True, None
     
@@ -203,7 +205,7 @@ class DockerManager:
         args.append(container_id)
         
         result, error = self._run_docker_command(args)
-        if error:
+        if error or result is None:
             return False, error
         return True, None
     
@@ -219,7 +221,7 @@ class DockerManager:
             Tuple of (logs string, error message)
         """
         result, error = self._run_docker_command(['logs', '--tail', str(lines), container_id])
-        if error:
+        if error or result is None:
             return None, error
         
         # Combine stdout and stderr
@@ -320,7 +322,7 @@ class DockerManager:
             Tuple of (stats dict, error message)
         """
         result, error = self._run_docker_command(['stats', '--no-stream', '--format', '{{json .}}', container_id])
-        if error:
+        if error or result is None:
             return None, error
         
         try:
@@ -335,7 +337,7 @@ class DockerManager:
         app_name: str,
         pool_path: str,
         project_name: Optional[str] = None,
-        callback: Optional[callable] = None
+        callback: Optional[Callable[[str], None]] = None
     ) -> Tuple[bool, Optional[str]]:
         """
         Create and start containers from a Docker Compose configuration
@@ -351,7 +353,6 @@ class DockerManager:
             Tuple of (success bool, error message)
         """
         import yaml
-        import tempfile
         
         if project_name is None:
             project_name = app_name
@@ -379,6 +380,7 @@ class DockerManager:
                 )
                 
                 output = []
+                assert process.stdout is not None  # stdout=PIPE
                 while True:
                     line = process.stdout.readline()
                     if not line and process.poll() is not None:
@@ -424,7 +426,7 @@ class DockerManager:
         app_name: str,
         pool_path: str,
         project_name: Optional[str] = None,
-        callback: Optional[callable] = None
+        callback: Optional[Callable[[str], None]] = None
     ) -> Tuple[bool, Optional[str]]:
         """
         Update containers from a Docker Compose configuration.
@@ -441,7 +443,6 @@ class DockerManager:
             Tuple of (success bool, error message)
         """
         import yaml
-        import tempfile
 
         if project_name is None:
             project_name = app_name
@@ -465,6 +466,7 @@ class DockerManager:
                         env=compose_env
                     )
                     output = []
+                    assert process.stdout is not None  # stdout=PIPE
                     while True:
                         line = process.stdout.readline()
                         if not line and process.poll() is not None:
@@ -520,7 +522,7 @@ class DockerManager:
             Tuple of (success bool, error message)
         """
         result, error = self._run_docker_command(['pull', image], timeout=300)
-        if error:
+        if error or result is None:
             return False, error
         return True, None
     

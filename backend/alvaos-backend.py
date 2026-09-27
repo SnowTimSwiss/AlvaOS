@@ -35,8 +35,14 @@ app.static_folder = WEBUI_ROOT
 # cross-origin access is never legitimate. A permissive policy here would let any
 # website a LAN user visits talk to the NAS API from their browser.
 
-from app_services import VERSION, power_ups_manager  # noqa: E402
-import api_apps, api_auth, api_backup, api_shares, api_storage, api_system, api_updates  # noqa: E402
+from app_services import VERSION, power_ups_manager
+import api_apps
+import api_auth
+import api_backup
+import api_shares
+import api_storage
+import api_system
+import api_updates
 
 for _module in (api_auth, api_system, api_updates, api_storage, api_shares, api_backup, api_apps):
     app.register_blueprint(_module.bp)
@@ -45,7 +51,7 @@ for _module in (api_auth, api_system, api_updates, api_storage, api_shares, api_
 def serve_frontend(filename):
     try:
         if filename.endswith(('.html', '.css', '.js')):
-            with open(os.path.join(app.static_folder, filename), 'r') as f:
+            with open(os.path.join(WEBUI_ROOT, filename), 'r') as f:
                 content = f.read()
             clean_version = VERSION.strip('() ')
             content = content.replace('{{VERSION}}', clean_version)
@@ -56,7 +62,7 @@ def serve_frontend(filename):
             else:
                 mimetype = 'application/javascript'
             return Response(content, mimetype=mimetype)
-        return send_from_directory(app.static_folder, filename)
+        return send_from_directory(WEBUI_ROOT, filename)
     except Exception as e:
         print(f"Error serving {filename}: {e}")
         return f"File not found: {filename}", 404
@@ -196,12 +202,12 @@ if __name__ == '__main__':
     # Serve through waitress: a NAS is expected to run unattended for years, and
     # the Werkzeug development server is explicitly not built for that.
     try:
-        from waitress import serve
+        import waitress
     except ImportError:
-        serve = None
+        waitress = None  # type: ignore[assignment]
 
-    if serve is not None:
-        serve(app, host='0.0.0.0', port=8080, threads=8, ident='AlvaOS')
+    if waitress is not None:
+        waitress.serve(app, host='0.0.0.0', port=8080, threads=8, ident='AlvaOS')
     else:
         print("Warning: waitress is not installed, falling back to the Flask "
               "development server. Install python3-waitress for production use.")

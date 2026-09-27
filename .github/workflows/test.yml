@@ -34,6 +34,27 @@ jobs:
       - name: Run unit tests
         run: pytest
 
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Set up Python
+        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
+        with:
+          python-version: '3.11'
+
+      # Pinned so a new linter release cannot turn CI red on an unrelated change.
+      - name: Install linters
+        run: pip install ruff==0.15.8 mypy==2.3.1 types-requests types-PyYAML types-waitress
+
+      - name: ruff (see ruff.toml)
+        run: ruff check backend scripts
+
+      - name: mypy (see mypy.ini)
+        run: mypy
+
   guardrails:
     runs-on: ubuntu-latest
     steps:
