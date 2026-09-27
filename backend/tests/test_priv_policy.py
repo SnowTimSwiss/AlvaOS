@@ -271,6 +271,7 @@ def test_btrfs_snapshot_and_backup_commands():
             '/mnt/alvaos/main/.snapshots/media-1')
     allowed('/usr/bin/btrfs', 'subvolume', 'delete', '/.alvaos-send-root-20260101')
     allowed('/usr/bin/btrfs', 'send', '-f', '/var/lib/alvaos/buddy-send-x.stream', '/.alvaos-send-root')
+    allowed('/usr/bin/btrfs', 'send', '/mnt/alvaos/main/.alvaos-buddy-media-1')   # to stdout
     allowed('/usr/bin/btrfs', 'receive', '-f', '/var/lib/alvaos/x.stream', '/mnt/alvaos/main/restore')
     allowed('/usr/bin/btrfs', 'subvolume', 'set-default', '256', '/')
     allowed('/usr/bin/btrfs', 'subvolume', 'list', '-o', '/mnt/alvaos/main')
@@ -286,6 +287,8 @@ def test_btrfs_snapshot_and_backup_commands():
     ['/usr/bin/btrfs', 'subvolume', 'snapshot', '/', '/etc/x'],
     ['/usr/bin/btrfs', 'receive', '-f', '/var/lib/alvaos/x', '/etc'],
     ['/usr/bin/btrfs', 'send', '-f', '/etc/x', '/'],
+    ['/usr/bin/btrfs', 'send', '-p', '/x', '/y'],
+    ['/usr/bin/btrfs', 'send', '../x'],
     ['/usr/bin/btrfs', 'property', 'set', '/', 'ro', 'true'],
     ['/usr/bin/btrfs', 'rescue', 'zero-log', '/dev/sda1'],
 ])

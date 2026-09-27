@@ -828,6 +828,10 @@ def _rule_btrfs(sys_: System, args):
             _fail('btrfs set-default target not allowed')
         return Plan(argv=list(args))
     if group == 'send':
+        if len(args) == 2:
+            # Stream to stdout: the backend pipes it straight into the upload.
+            readable_path(args[1])
+            return Plan(argv=list(args))
         _expect(args[1:], '-f', lambda p: writable_path(sys_, p), readable_path)
         return Plan(argv=list(args))
     if group == 'receive':

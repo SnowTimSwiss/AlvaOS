@@ -38,7 +38,7 @@ import os
 import secrets
 import struct
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 MAGIC_V2 = b"ALVAENC2"
 MAGIC_V1 = b"ALVAENC1"
@@ -153,29 +153,127 @@ def read_magic(path: str) -> bytes:
         return f.read(8)
 
 
+class StreamEncryptor:
+    """Incremental ALVAENC2 encryption: feed plaintext, get ciphertext.
+
+    Produces exactly the bytes encrypt_file() writes, without needing the
+    whole plaintext on disk (btrfs send output is piped straight in).
+    """
+
+    def __init__(self, material: KeyMaterial, chunk_size: int = CHUNK_SIZE):
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+        self.chunk_size = chunk_size
+        stream_salt = secrets.token_bytes(32)
+        self._nonce_prefix = secrets.token_bytes(7)
+        self.header = HEADER_STRUCT.pack(
+            MAGIC_V2, KDF_SCRYPT, material.log2_n, material.r, material.p,
+            material.kdf_salt, stream_salt, self._nonce_prefix, chunk_size,
+        )
+        self._aead = AESGCM(_stream_key(material.master_key, stream_salt))
+        self._buffer = bytearray()
+        self._counter = 0
+        self._header_sent = False
+        self._finished = False
+
+    def _prefix(self) -> bytes:
+        if self._header_sent:
+            return b""
+        self._header_sent = True
+        return self.header
+
+    def update(self, data: bytes) -> bytes:
+        if self._finished:
+            raise BuddyCryptoError("Encryptor already finished")
+        self._buffer.extend(data)
+        out = bytearray(self._prefix())
+        # Keep at least one byte back: the final chunk must be sealed as "last".
+        while len(self._buffer) > self.chunk_size:
+            chunk = bytes(self._buffer[:self.chunk_size])
+            del self._buffer[:self.chunk_size]
+            out += self._aead.encrypt(_nonce(self._nonce_prefix, self._counter, False), chunk, self.header)
+            self._counter += 1
+        return bytes(out)
+
+    def finalize(self) -> bytes:
+        if self._finished:
+            return b""
+        self._finished = True
+        out = self._prefix() + self._aead.encrypt(
+            _nonce(self._nonce_prefix, self._counter, True), bytes(self._buffer), self.header
+        )
+        self._buffer.clear()
+        return out
+
+
+class StreamDecryptor:
+    """Incremental ALVAENC2 decryption with the same guarantees as decrypt_file().
+
+    Plaintext is only returned for chunks that authenticated. finalize()
+    raises if the stream ended early, so a truncated download never counts
+    as complete.
+    """
+
+    def __init__(self, master_key_for: Callable[[StreamHeader], bytes]):
+        self._master_key_for = master_key_for
+        self._buffer = bytearray()
+        self._header: Optional[StreamHeader] = None
+        self._aead: Any = None
+        self._counter = 0
+        self._finished = False
+
+    def _decrypt(self, sealed: bytes, last: bool) -> bytes:
+        from cryptography.exceptions import InvalidTag
+
+        assert self._header is not None and self._aead is not None
+        try:
+            return self._aead.decrypt(_nonce(self._header.nonce_prefix, self._counter, last), sealed,
+                                      self._header.raw)
+        except InvalidTag:
+            if self._counter == 0:
+                raise BuddyCryptoError("Wrong encryption password, or the stream was modified") from None
+            raise BuddyCryptoError("Encrypted stream was modified or truncated") from None
+
+    def update(self, data: bytes) -> bytes:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+        self._buffer.extend(data)
+        if self._header is None:
+            if len(self._buffer) < HEADER_LEN:
+                return b""
+            self._header = parse_header(bytes(self._buffer[:HEADER_LEN]))
+            del self._buffer[:HEADER_LEN]
+            self._aead = AESGCM(_stream_key(self._master_key_for(self._header), self._header.stream_salt))
+        sealed_len = self._header.chunk_size + TAG_LEN
+        out = bytearray()
+        # A full sealed chunk followed by more data cannot be the last one.
+        while len(self._buffer) > sealed_len:
+            sealed = bytes(self._buffer[:sealed_len])
+            del self._buffer[:sealed_len]
+            out += self._decrypt(sealed, last=False)
+            self._counter += 1
+        return bytes(out)
+
+    def finalize(self) -> bytes:
+        if self._finished:
+            return b""
+        self._finished = True
+        if self._header is None:
+            raise BuddyCryptoError("Encrypted stream is too small")
+        if len(self._buffer) < TAG_LEN:
+            raise BuddyCryptoError("Encrypted stream is truncated")
+        plain = self._decrypt(bytes(self._buffer), last=True)
+        self._buffer.clear()
+        return plain
+
+
 def encrypt_file(plain_path: str, encrypted_path: str, material: KeyMaterial,
                  chunk_size: int = CHUNK_SIZE) -> None:
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-    stream_salt = secrets.token_bytes(32)
-    nonce_prefix = secrets.token_bytes(7)
-    header = HEADER_STRUCT.pack(
-        MAGIC_V2, KDF_SCRYPT, material.log2_n, material.r, material.p,
-        material.kdf_salt, stream_salt, nonce_prefix, chunk_size,
-    )
-    aead = AESGCM(_stream_key(material.master_key, stream_salt))
-    counter = 0
+    encryptor = StreamEncryptor(material, chunk_size)
     with open(plain_path, "rb") as src, open(encrypted_path, "wb") as dst:
-        dst.write(header)
-        chunk = src.read(chunk_size)
-        while True:
-            following = src.read(chunk_size)
-            last = not following
-            dst.write(aead.encrypt(_nonce(nonce_prefix, counter, last), chunk, header))
-            if last:
-                break
-            chunk = following
-            counter += 1
+        for block in iter(lambda: src.read(chunk_size), b""):
+            dst.write(encryptor.update(block))
+        dst.write(encryptor.finalize())
 
 
 def decrypt_file(encrypted_path: str, plain_path: str,
@@ -187,31 +285,12 @@ def decrypt_file(encrypted_path: str, plain_path: str,
     Raises BuddyCryptoError on a wrong key or any tampering; the partial
     output file is removed in that case.
     """
-    from cryptography.exceptions import InvalidTag
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
+    decryptor = StreamDecryptor(master_key_for)
     try:
         with open(encrypted_path, "rb") as src, open(plain_path, "wb") as dst:
-            header = parse_header(src.read(HEADER_LEN))
-            aead = AESGCM(_stream_key(master_key_for(header), header.stream_salt))
-            sealed_len = header.chunk_size + TAG_LEN
-            counter = 0
-            sealed = src.read(sealed_len)
-            while True:
-                following = src.read(sealed_len)
-                last = not following
-                if len(sealed) < TAG_LEN:
-                    raise BuddyCryptoError("Encrypted stream is truncated")
-                try:
-                    dst.write(aead.decrypt(_nonce(header.nonce_prefix, counter, last), sealed, header.raw))
-                except InvalidTag:
-                    if counter == 0:
-                        raise BuddyCryptoError("Wrong encryption password, or the stream was modified") from None
-                    raise BuddyCryptoError("Encrypted stream was modified or truncated") from None
-                if last:
-                    break
-                sealed = following
-                counter += 1
+            for block in iter(lambda: src.read(1024 * 1024), b""):
+                dst.write(decryptor.update(block))
+            dst.write(decryptor.finalize())
     except Exception:
         try:
             os.remove(plain_path)
