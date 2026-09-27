@@ -18,6 +18,35 @@ from app_services import (
 
 bp = Blueprint('backup', __name__)
 
+
+def _authenticated_buddy():
+    """Identify the buddy behind a peer-to-peer request, or return an error response.
+
+    Two checks: the request carries this NAS's buddy secret, and it arrives
+    through the WireGuard tunnel from the tunnel address of a paired buddy.
+    The secret is shared with every buddy, so on its own it cannot tell them
+    apart; the tunnel address can, because WireGuard only accepts traffic
+    from it when it is signed with that buddy's key.
+    """
+    if buddy_backup_manager is None:
+        return None, (jsonify({'error': 'Buddy backup manager not initialized'}), 500)
+    secret = request.headers.get('X-Buddy-Secret', '')
+    if not buddy_backup_manager.verify_buddy_api_secret(secret):
+        return None, (jsonify({'error': 'Unauthorized buddy request'}), 403)
+    peer = buddy_backup_manager.peer_for_tunnel_ip(request.remote_addr or '')
+    if peer is None:
+        return None, (jsonify({'error': 'Buddy requests are only accepted through the buddy tunnel'}), 403)
+    return peer, None
+
+
+def _own_node_id(peer, claimed):
+    """A buddy may only act on its own snapshots."""
+    node_id = str(peer.get('node_id') or '')
+    claimed = (claimed or '').strip()
+    if claimed and claimed != node_id:
+        return None
+    return node_id
+
 @bp.route('/api/v1/backup/sources', methods=['GET'])
 @require_auth
 def get_backup_sources():
@@ -325,6 +354,13 @@ def buddy_pairing_accept():
     if buddy_backup_manager is None:
         return jsonify({'error': 'Buddy backup manager not initialized'}), 500
 
+    # The remote proves it received this NAS's pairing code: that code
+    # carries the buddy secret. Without this, anyone who can reach the port
+    # could register themselves as a buddy.
+    secret = request.headers.get('X-Buddy-Secret', '')
+    if not buddy_backup_manager.verify_buddy_api_secret(secret):
+        return jsonify({'error': 'Unauthorized pairing request'}), 403
+
     data = request.get_json() or {}
     token = (data.get('token') or '').strip()
     if not token:
@@ -358,14 +394,14 @@ def buddy_pairing_remove_accept():
     if buddy_backup_manager is None:
         return jsonify({'error': 'Buddy backup manager not initialized'}), 500
 
-    secret = request.headers.get('X-Buddy-Secret', '')
-    if not buddy_backup_manager.verify_buddy_api_secret(secret):
-        return jsonify({'error': 'Unauthorized buddy request'}), 403
+    peer, error_response = _authenticated_buddy()
+    if error_response:
+        return error_response
 
     data = request.get_json() or {}
-    node_id = (data.get('node_id') or '').strip()
+    node_id = _own_node_id(peer, data.get('node_id'))
     if not node_id:
-        return jsonify({'error': 'node_id is required'}), 400
+        return jsonify({'error': 'A buddy can only remove its own pairing'}), 403
 
     success, payload = buddy_backup_manager.remove_peer(
         node_id=node_id,
@@ -487,12 +523,14 @@ def buddy_peer_upload():
     if buddy_backup_manager is None:
         return jsonify({'error': 'Buddy backup manager not initialized'}), 500
 
-    secret = request.headers.get('X-Buddy-Secret', '')
-    if not buddy_backup_manager.verify_buddy_api_secret(secret):
-        return jsonify({'error': 'Unauthorized buddy request'}), 403
+    peer, error_response = _authenticated_buddy()
+    if error_response:
+        return error_response
 
-    owner_node_id = (request.form.get('owner_node_id') or '').strip()
-    from_node_id = (request.form.get('from_node_id') or '').strip()
+    owner_node_id = _own_node_id(peer, request.form.get('owner_node_id'))
+    from_node_id = _own_node_id(peer, request.form.get('from_node_id'))
+    if not owner_node_id or not from_node_id:
+        return jsonify({'error': 'A buddy can only upload its own snapshots'}), 403
     source_path = (request.form.get('source_path') or '').strip()
     snapshot_name = (request.form.get('snapshot_name') or '').strip()
     created_at = (request.form.get('created_at') or '').strip()
@@ -520,11 +558,13 @@ def buddy_peer_list():
     if buddy_backup_manager is None:
         return jsonify({'error': 'Buddy backup manager not initialized'}), 500
 
-    secret = request.headers.get('X-Buddy-Secret', '')
-    if not buddy_backup_manager.verify_buddy_api_secret(secret):
-        return jsonify({'error': 'Unauthorized buddy request'}), 403
+    peer, error_response = _authenticated_buddy()
+    if error_response:
+        return error_response
 
-    owner_node_id = (request.args.get('owner_node_id') or '').strip()
+    owner_node_id = _own_node_id(peer, request.args.get('owner_node_id'))
+    if not owner_node_id:
+        return jsonify({'error': "A buddy can only access its own snapshots"}), 403
     limit = request.args.get('limit', 100)
     try:
         limit_int = int(limit)
@@ -541,11 +581,13 @@ def buddy_peer_download(stream_id):
     if buddy_backup_manager is None:
         return jsonify({'error': 'Buddy backup manager not initialized'}), 500
 
-    secret = request.headers.get('X-Buddy-Secret', '')
-    if not buddy_backup_manager.verify_buddy_api_secret(secret):
-        return jsonify({'error': 'Unauthorized buddy request'}), 403
+    peer, error_response = _authenticated_buddy()
+    if error_response:
+        return error_response
 
-    owner_node_id = (request.args.get('owner_node_id') or '').strip()
+    owner_node_id = _own_node_id(peer, request.args.get('owner_node_id'))
+    if not owner_node_id:
+        return jsonify({'error': "A buddy can only access its own snapshots"}), 403
     success, payload = buddy_backup_manager.get_peer_stream_payload(
         owner_node_id=owner_node_id,
         stream_id=stream_id,
@@ -567,11 +609,13 @@ def buddy_peer_delete(stream_id):
     if buddy_backup_manager is None:
         return jsonify({'error': 'Buddy backup manager not initialized'}), 500
 
-    secret = request.headers.get('X-Buddy-Secret', '')
-    if not buddy_backup_manager.verify_buddy_api_secret(secret):
-        return jsonify({'error': 'Unauthorized buddy request'}), 403
+    peer, error_response = _authenticated_buddy()
+    if error_response:
+        return error_response
 
-    owner_node_id = (request.args.get('owner_node_id') or '').strip()
+    owner_node_id = _own_node_id(peer, request.args.get('owner_node_id'))
+    if not owner_node_id:
+        return jsonify({'error': "A buddy can only access its own snapshots"}), 403
     success, payload = buddy_backup_manager.delete_peer_stream(
         owner_node_id=owner_node_id,
         stream_id=stream_id,

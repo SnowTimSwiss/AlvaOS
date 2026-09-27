@@ -23,6 +23,25 @@ Core NAS-to-NAS backup system for AlvaOS. Peer-to-peer, encrypted, and increment
 - **Tunnel**: WireGuard for encrypted NAT traversal.
 - **Engine**: Btrfs send/receive (native block-level) or rsync over SSH.
 
+## Network and trust
+- **All buddy traffic after pairing goes through the WireGuard tunnel** (`buddy0`,
+  `100.95.95.0/24`): snapshot upload/download, listing, deletion, health probes.
+  WireGuard encrypts it and authenticates the buddy by the public key from the
+  pairing code, so no TLS certificates are involved.
+- A buddy request is accepted only if it carries this NAS's buddy secret **and**
+  arrives from the tunnel address of a paired buddy. The tunnel address is
+  what identifies the buddy (WireGuard only accepts it with that buddy's key),
+  so one buddy cannot read, delete or overwrite another buddy's snapshots.
+- **Pairing** is the only step outside the tunnel: the NAS that enters a code
+  calls the other NAS's API once to pair back. That call must present the
+  secret from the code, so nobody can register themselves as a buddy just by
+  reaching the port.
+- **Ports**: the WireGuard UDP port (default `51820`) must be reachable on at
+  least one side. The web port (`8080`) only needs to be reachable while
+  pairing, never permanently. A buddy behind NAT works as long as the other side
+  is reachable.
+- The tunnel is brought up again automatically when AlvaOS starts.
+
 ## Encryption at rest (on the buddy)
 The WireGuard tunnel protects data in transit. With encryption enabled, every
 snapshot stream is additionally encrypted *before* it leaves the NAS, so the

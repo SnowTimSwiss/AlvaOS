@@ -6,6 +6,7 @@ Thin routing layer — all business logic lives in the manager modules.
 
 # ── Standard library ──────────────────────────────────────────────────────────
 import os
+import threading
 import secrets
 import atexit
 
@@ -35,7 +36,7 @@ app.static_folder = WEBUI_ROOT
 # cross-origin access is never legitimate. A permissive policy here would let any
 # website a LAN user visits talk to the NAS API from their browser.
 
-from app_services import VERSION, power_ups_manager
+from app_services import VERSION, buddy_backup_manager, power_ups_manager
 import api_apps
 import api_auth
 import api_backup
@@ -195,6 +196,9 @@ if __name__ == '__main__':
     
     # Mount existing pools on startup (persistence)
     mount_existing_pools()
+
+    # wg-quick state does not survive a reboot; bring the buddy tunnel back up.
+    threading.Thread(target=buddy_backup_manager.start_tunnel_if_paired, daemon=True).start()
     
     if not is_setup_complete():
         print("\n⚠️  SETUP REQUIRED: Access the Web UI to complete initial setup")
