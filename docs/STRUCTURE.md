@@ -6,8 +6,8 @@ Repository organization and development workflows.
 ```
 AlvaOS/
 ├── .github/workflows/ (CI: ISO & .deb builders)
-├── backend/ (REST API - Go/Python)
-├── frontend/ (Web UI - Svelte/Vue)
+├── backend/ (REST API - Python/Flask)
+├── frontend/ (Web UI - vanilla HTML/CSS/JS)
 ├── installer/ (ISO builder - live-build)
 ├── scripts/package/ (.deb builder)
 └── docs/ (Project specs & guides)
@@ -15,6 +15,13 @@ AlvaOS/
 
 ## Directory Details
 - **/backend**: Core API server for system management (Storage, Docker, Backups).
+  - `alvaos-backend.py` — entry point: creates the Flask app, security hooks (setup guard, CSRF, headers), static UI serving.
+  - `api_*.py` — one Flask blueprint per area: `api_auth`, `api_system`, `api_updates`, `api_storage`, `api_shares`, `api_backup`, `api_apps`.
+  - `app_services.py` — the shared manager instances all blueprints use.
+  - `*_manager.py`, `app_store.py` — business logic.
+  - `alvaos-priv`, `priv_policy.py` — the root privilege helper and its policy (see ARCHITECTURE.md).
+  - `update_signing.py`, `buddy_crypto.py` — update signatures and Buddy Backup encryption.
+  - `tests/` — pytest suite (`pytest` from the repository root).
 - **/frontend**: Dark-mode first Web UI. Unraid-inspired, simple, and reactive.
 - **/installer**: Build scripts using Debian `live-build` to create the installer ISO.
 - **/scripts**: Idempotent shell scripts for system setup and maintenance.

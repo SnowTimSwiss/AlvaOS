@@ -1367,11 +1367,7 @@ class BackupManager:
             return False, {"error": "Use system rollback endpoint for full system snapshots"}
 
         if platform.system() != "Linux":
-            return True, {
-                "restored_to": target_source,
-                "previous_backup": None,
-                "message": "Mock restore completed (non-Linux environment)",
-            }
+            return False, {"error": "Restores are only possible on the AlvaOS NAS itself (Linux)"}
 
         pool_mount_points = {self._normalize_path(mp) for _, mp in self._list_pool_mounts()}
         if target_source in pool_mount_points:
