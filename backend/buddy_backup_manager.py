@@ -14,7 +14,6 @@ import re
 import secrets
 import shutil
 import socket
-import subprocess
 import tempfile
 import threading
 import time
@@ -22,7 +21,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import requests
 
@@ -38,7 +37,7 @@ IPV4_RE = re.compile(r"^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d))
 # than a data subvolume replace.
 SYSTEM_SOURCE_PATH = "/"
 
-DEFAULT_BUDDY_SETTINGS = {
+DEFAULT_BUDDY_SETTINGS: Dict[str, Any] = {
     "enabled": False,
     "incoming_path": "",
     "incoming_quota_gb": 200,
@@ -52,7 +51,7 @@ DEFAULT_BUDDY_SETTINGS = {
     "encryption_hash": "",
 }
 
-DEFAULT_BUDDY_RUNTIME = {
+DEFAULT_BUDDY_RUNTIME: Dict[str, Any] = {
     "last_sync_at": "",
     "last_sync_status": "idle",
     "last_sync_error": "",
@@ -1477,7 +1476,7 @@ class BuddyBackupManager:
                     timeout=8,
                     verify=False,  # buddy nodes use self-signed certs
                 )
-                body = {}
+                body: Dict[str, Any] = {}
                 try:
                     body = response.json() if response.text else {}
                 except Exception:
@@ -2004,15 +2003,15 @@ class BuddyBackupManager:
         local_api_endpoint: str = "",
     ) -> Tuple[bool, Dict]:
         payload, decode_err = self._token_decode(token)
-        if decode_err:
-            return False, {"error": decode_err}
+        if decode_err or payload is None:
+            return False, {"error": decode_err or "Invalid pairing token"}
 
         if self._is_token_used(token):
             return False, {"error": "This pairing token was already used"}
 
         peer, peer_err = self._token_to_peer(payload, endpoint_override=endpoint_override, name_override=name_override)
-        if peer_err:
-            return False, {"error": peer_err}
+        if peer_err or peer is None:
+            return False, {"error": peer_err or "Invalid pairing token"}
 
         peers = self._load_peers()
         peers[peer["node_id"]] = peer
@@ -2051,7 +2050,7 @@ class BuddyBackupManager:
             self._save_peers(peers)
             peer = current
 
-        reciprocal = {"skipped": True}
+        reciprocal: Dict[str, Any] = {"skipped": True}
         if auto_reciprocal:
             remote_api_endpoint = str(peer.get("api_endpoint") or "").strip()
             if remote_api_endpoint:

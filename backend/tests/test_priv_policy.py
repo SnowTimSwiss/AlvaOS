@@ -406,7 +406,7 @@ def test_catalog_apps_pass_the_compose_check():
     catalog_path = os.path.join(os.path.dirname(__file__), '..', '..', 'apps', 'catalog.json')
     with open(catalog_path, encoding='utf-8') as f:
         catalog = json.load(f)
-    for app_id, app in catalog.items():
+    for app in catalog.values():
         compose = json.loads(json.dumps(app['docker_compose']).replace('${POOL_PATH}', '/mnt/alvaos/main/apps/x'))
         p.check_compose(yaml.safe_dump(compose).encode())
 

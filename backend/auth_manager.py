@@ -8,6 +8,7 @@ import os
 import json
 import secrets
 import functools
+from typing import Any, Dict
 import time
 from datetime import datetime, timedelta
 
@@ -22,16 +23,16 @@ SESSIONS_FILE = '/var/lib/alvaos/sessions.json'
 
 # ── Session state ─────────────────────────────────────────────────────────────
 # token -> {username, role, expires_at, csrf_token}
-SESSIONS = {}
+SESSIONS: Dict[str, Dict[str, Any]] = {}
 SESSION_TTL_HOURS = 24
 
 # Temporary tokens used during 2FA two-step login: temp_token -> {username, role, expires_at}
-TEMP_2FA_TOKENS = {}
+TEMP_2FA_TOKENS: Dict[str, Dict[str, Any]] = {}
 TEMP_2FA_TTL_SECONDS = 300  # 5 minutes
 
 # ── Rate limiting ─────────────────────────────────────────────────────────────
 # ip -> {count, window_start}
-LOGIN_RATE_LIMIT = {}
+LOGIN_RATE_LIMIT: Dict[str, Dict[str, Any]] = {}
 LOGIN_MAX_ATTEMPTS = 10
 LOGIN_WINDOW_SECONDS = 900  # 15 minutes
 

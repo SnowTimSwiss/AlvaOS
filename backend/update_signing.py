@@ -51,7 +51,7 @@ def _load_public_key(key_b64: bytes):
     try:
         raw = base64.b64decode(key_b64.strip(), validate=True)
     except (binascii.Error, ValueError):
-        raise SignatureError('Update signing key is not valid base64')
+        raise SignatureError('Update signing key is not valid base64') from None
     if len(raw) != 32:
         raise SignatureError('Update signing key has the wrong length')
     return Ed25519PublicKey.from_public_bytes(raw)
@@ -65,7 +65,7 @@ def verify_file(package_path: str, signature_b64: bytes, public_key_b64: bytes) 
     try:
         signature = base64.b64decode(signature_b64.strip(), validate=True)
     except (binascii.Error, ValueError):
-        raise SignatureError('Signature is not valid base64')
+        raise SignatureError('Signature is not valid base64') from None
     if len(signature) != 64:
         raise SignatureError('Signature has the wrong length')
 
@@ -73,7 +73,7 @@ def verify_file(package_path: str, signature_b64: bytes, public_key_b64: bytes) 
     try:
         public_key.verify(signature, statement_for_digest(sha256_hex))
     except InvalidSignature:
-        raise SignatureError('Signature does not match this package')
+        raise SignatureError('Signature does not match this package') from None
     return sha256_hex
 
 
@@ -85,12 +85,12 @@ def verify_installed_key(package_path: str, signature_path: str,
     except FileNotFoundError:
         raise SignatureError(
             'No update signing key is installed; refusing to install unsigned updates'
-        )
+        ) from None
     try:
         with open(signature_path, 'rb') as f:
             signature_b64 = f.read(4096)
     except FileNotFoundError:
-        raise SignatureError('The update has no signature file (.sig)')
+        raise SignatureError('The update has no signature file (.sig)') from None
     return verify_file(package_path, signature_b64, public_key_b64)
 
 

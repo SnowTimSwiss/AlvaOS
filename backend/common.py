@@ -7,7 +7,6 @@ Shared constants, command helpers, and utility functions used across all manager
 import os
 import re
 import subprocess
-import platform
 from datetime import datetime, timezone
 from pathlib import Path
 

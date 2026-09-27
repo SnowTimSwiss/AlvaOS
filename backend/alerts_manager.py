@@ -7,7 +7,6 @@ System alert collection, Telegram notifications, and alert state management.
 import hashlib
 import json
 import os
-import re
 import secrets
 import threading
 import uuid

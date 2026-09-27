@@ -5,21 +5,20 @@ Disk detection, SMART data, Btrfs pool management, path security, and caching.
 """
 
 import json
+from typing import Any, Dict, List, Set
 import os
 import platform
 import re
 import subprocess
 import threading
-import time
-from datetime import datetime
 
-from common import CMD, run_sudo_command, build_privileged_cmd, ensure_directories, parse_size_to_bytes, format_bytes_gib
+from common import CMD, run_sudo_command, ensure_directories, parse_size_to_bytes
 
 # ── State file ────────────────────────────────────────────────────────────────
 POOLS_STATE_FILE = '/var/lib/alvaos/pools.json'
 
 # ── Storage cache ─────────────────────────────────────────────────────────────
-STORAGE_CACHE = {
+STORAGE_CACHE: Dict[str, Dict[str, Any]] = {
     'disks': {'data': None, 'expires': 0},
     'pools': {'data': None, 'expires': 0}
 }
@@ -150,7 +149,7 @@ def get_system_disk_names():
     pool. Covers multi-device system installs (RAID1/mirror) where /proc/mounts only
     exposes the single device the kernel mounted root from, so checks based purely on
     the active root device miss the other mirror leg."""
-    names = set()
+    names: Set[str] = set()
     try:
         pools, root_btrfs_uuid = detect_btrfs_pools()
         if not root_btrfs_uuid:
@@ -316,7 +315,7 @@ def sanitize_pool_name(name: str, fallback: str = "") -> str:
 
 
 def detect_btrfs_pools():
-    pools = []
+    pools: List[Dict[str, Any]] = []
     root_btrfs_uuid = None
     if platform.system() != 'Linux':
         return pools, root_btrfs_uuid
@@ -352,7 +351,7 @@ def detect_btrfs_pools():
             if label == 'none':
                 label = 'Unlabeled'
 
-        pool = {
+        pool: Dict[str, Any] = {
             'id': uuid_val,
             'name': label,
             'uuid': uuid_val,

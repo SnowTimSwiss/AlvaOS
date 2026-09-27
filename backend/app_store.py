@@ -9,11 +9,10 @@ import copy
 import hashlib
 import os
 import re
-import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import requests
 from common import run_sudo_command
 from docker_manager import DockerManager
@@ -37,7 +36,7 @@ class AppStore:
         self._status_lock = threading.RLock()
         self._update_cache_lock = threading.RLock()
         self._active_install_status = None
-        self._last_status_write = 0
+        self._last_status_write = 0.0
         
         # Ensure directories exist
         Path('/var/lib/alvaos').mkdir(parents=True, exist_ok=True)
@@ -330,7 +329,7 @@ class AppStore:
             print(f"Error loading install status: {e}")
         return {"status": "idle"}
 
-    def _update_install_status(self, app_id: str, status: str, progress: int = 0, message: str = "", logs: List[str] = None, force_write: bool = False, action: str = "install"):
+    def _update_install_status(self, app_id: str, status: str, progress: int = 0, message: str = "", logs: Optional[List[str]] = None, force_write: bool = False, action: str = "install"):
         """Update app operation status with in-memory tracking and throttled disk writes"""
         import time
         
@@ -341,7 +340,7 @@ class AppStore:
                 else:
                     # Try to get from last known status if we just started.
                     # Read from disk directly here to avoid nested lock acquisition.
-                    current = {}
+                    current: Dict[str, Any] = {}
                     try:
                         if os.path.exists(self.install_status_file):
                             with open(self.install_status_file, 'r') as f:
@@ -390,8 +389,8 @@ class AppStore:
             Tuple of (list of apps, error message)
         """
         catalog, error = self._load_catalog()
-        if error:
-            return None, error
+        if error or catalog is None:
+            return None, error or "App catalog is unavailable"
         
         apps = []
         for app_id, app_data in catalog.items():
@@ -417,15 +416,15 @@ class AppStore:
             Tuple of (app details dict, error message)
         """
         catalog, error = self._load_catalog()
-        if error:
-            return None, error
+        if error or catalog is None:
+            return None, error or "App catalog is unavailable"
         
         if app_id not in catalog:
             return None, f"App '{app_id}' not found in catalog"
         
         return catalog[app_id], None
 
-    def _tokenize_version(self, value: str) -> List[object]:
+    def _tokenize_version(self, value: str) -> List[Any]:
         """Split a version string into comparable numeric/text tokens."""
         cleaned = re.sub(r'^[^0-9a-zA-Z]+', '', str(value or '').strip().lower())
         if not cleaned:
@@ -694,7 +693,7 @@ class AppStore:
             or ''
         ).strip()
 
-        metadata = {
+        metadata: Dict[str, Any] = {
             'source': source,
             'installed_version': installed_version,
             'catalog_version': '',
@@ -809,8 +808,8 @@ class AppStore:
         """
         # Get app details from catalog
         app_details, error = self.get_app_details(app_id)
-        if error:
-            return False, error
+        if error or app_details is None:
+            return False, error or f"App '{app_id}' not found in catalog"
 
         # Refuse to deploy an app that would come up with placeholder secrets.
         secret_error = self._validate_required_environment(app_details, environment_vars)
@@ -941,13 +940,16 @@ class AppStore:
         try:
             self._update_install_status(app_id, "installing", 5, f"Starting installation of {app_id}...", [], action="install")
             
-            app_details, _ = self.get_app_details(app_id)
+            app_details, details_error = self.get_app_details(app_id)
+            if details_error or app_details is None:
+                self._update_install_status(app_id, "error", 0, f"Failed to read catalog entry: {details_error or 'not found'}", action="install")
+                return
             
             # Prepare storage
             self._update_install_status(app_id, "installing", 10, "Preparing storage...", action="install")
             app_storage_path, error = self._prepare_app_storage(pool_path, parent_subvolume, app_id)
-            if error:
-                self._update_install_status(app_id, "error", 0, f"Storage preparation failed: {error}", action="install")
+            if error or not app_storage_path:
+                self._update_install_status(app_id, "error", 0, f"Storage preparation failed: {error or 'no storage path'}", action="install")
                 return
             
             compose_config = self._build_compose_config(
@@ -1041,8 +1043,8 @@ class AppStore:
 
             self._update_install_status(app_id, "installing", 10, "Preparing storage...", logs, action="install")
             app_storage_path, error = self._prepare_app_storage(pool_path, parent_subvolume, app_id)
-            if error:
-                self._update_install_status(app_id, "error", 0, f"Storage preparation failed: {error}", logs, force_write=True, action="install")
+            if error or not app_storage_path:
+                self._update_install_status(app_id, "error", 0, f"Storage preparation failed: {error or 'no storage path'}", logs, force_write=True, action="install")
                 return
 
             def docker_callback(line: str):
@@ -1141,8 +1143,8 @@ class AppStore:
             return False, f"App '{app_id}' is already up to date"
 
         app_details, error = self.get_app_details(app_id)
-        if error:
-            return False, error
+        if error or app_details is None:
+            return False, error or f"App '{app_id}' not found in catalog"
 
         op_active, active_app_id = self._is_operation_in_progress()
         if op_active:
@@ -1234,8 +1236,8 @@ class AppStore:
             return metadata, None
 
         app_details, error = self.get_app_details(app_id)
-        if error:
-            return metadata, error
+        if error or app_details is None:
+            return metadata, error or f"App '{app_id}' not found in catalog"
 
         probe = self._probe_registry_update_status(app_id, app_details)
         cache_payload = dict(probe)
@@ -1272,8 +1274,8 @@ class AppStore:
         try:
             self._update_install_status(app_id, "updating", 5, f"Starting update of {app_id}...", logs, action="update")
             app_details, error = self.get_app_details(app_id)
-            if error:
-                self._update_install_status(app_id, "error", 0, f"Failed to read catalog entry: {error}", logs, force_write=True, action="update")
+            if error or app_details is None:
+                self._update_install_status(app_id, "error", 0, f"Failed to read catalog entry: {error or 'not found'}", logs, force_write=True, action="update")
                 return
 
             compose_config = self._build_compose_config(
@@ -1364,8 +1366,8 @@ class AppStore:
         
         # Get all containers for this app
         containers, error = self.docker_manager.list_containers(all_containers=True)
-        if error:
-            return False, f"Failed to list containers: {error}"
+        if error or containers is None:
+            return False, f"Failed to list containers: {error or 'no response from Docker'}"
         
         # Remove containers that belong to this app
         project_name = f"alvaos-{app_id}"

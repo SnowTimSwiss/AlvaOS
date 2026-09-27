@@ -7,7 +7,6 @@ import subprocess
 import secrets
 import shutil
 import tempfile
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -20,10 +19,10 @@ from update_signing import signature_path_for
 try:
     from packaging.version import Version, InvalidVersion
 except Exception:
-    class InvalidVersion(ValueError):
+    class InvalidVersion(ValueError):  # type: ignore[no-redef]
         pass
 
-    class Version:
+    class Version:  # type: ignore[no-redef]
         PRECEDENCE = {
             "a": 0,
             "alpha": 0,
@@ -606,7 +605,7 @@ class UpdateManager:
                 pass
             error = f"The update has no downloadable signature ({e}); it will not be installed"
             self.set_update_state("error", "Download failed", {"error": error})
-            raise ValueError(error)
+            raise ValueError(error) from None
 
         checksum = sha256.hexdigest()
         self.set_update_state("idle", "Download complete", {
