@@ -1619,34 +1619,48 @@ class BuddyBackupManager:
             filtered.append(item)
         self._save_stream_entries(filtered)
 
+    # Every AlvaOS backend listens on this port; peers reach it through the tunnel.
+    PEER_API_PORT = 8080
+
     def _peer_api_urls(self, peer: Dict, path: str) -> List[str]:
+        """URLs for talking to a paired buddy: only ever through the WireGuard tunnel.
+
+        The backend speaks plain HTTP, so going to the buddy's public address
+        would send the buddy secret and snapshot data unencrypted over the
+        internet and require exposing the admin port. Inside the tunnel,
+        WireGuard encrypts the traffic and authenticates the buddy by the
+        public key exchanged during pairing.
+        """
         path_part = str(path or "").strip()
         if not path_part.startswith("/"):
             path_part = f"/{path_part}"
-        api_endpoint = str(peer.get("api_endpoint") or "").strip()
-        if not api_endpoint:
-            wg_endpoint = str(peer.get("endpoint") or "").strip()
-            host = wg_endpoint.split(":", 1)[0].strip()
-            if host:
-                api_endpoint = f"{host}:8080"
-        if not api_endpoint:
+        tunnel_ip = str(peer.get("tunnel_ip") or "").strip()
+        if not IPV4_RE.match(tunnel_ip):
             return []
-        port_hint = ""
-        if ":" in api_endpoint:
-            maybe_port = api_endpoint.rsplit(":", 1)[1].strip()
-            if maybe_port.isdigit():
-                port_hint = maybe_port
+        return [f"http://{tunnel_ip}:{self.PEER_API_PORT}{path_part}"]
 
-        # Avoid protocol mismatch noise on common plain-HTTP ports.
-        if port_hint in ("80", "8080"):
-            return [f"http://{api_endpoint}{path_part}"]
-        if port_hint in ("443",):
-            return [f"https://{api_endpoint}{path_part}"]
+    def peer_for_tunnel_ip(self, remote_ip: str) -> Optional[Dict]:
+        """The paired buddy that owns this tunnel address, if any.
 
-        return [
-            f"http://{api_endpoint}{path_part}",
-            f"https://{api_endpoint}{path_part}",
-        ]
+        WireGuard only accepts packets from a tunnel IP when they are signed
+        by that peer's key (AllowedIPs = tunnel_ip/32), so the source address
+        of a request inside the tunnel identifies the buddy.
+        """
+        ip = str(remote_ip or "").strip()
+        if not IPV4_RE.match(ip):
+            return None
+        for peer in self._load_peers().values():
+            if isinstance(peer, dict) and str(peer.get("tunnel_ip") or "").strip() == ip:
+                return peer
+        return None
+
+    def start_tunnel_if_paired(self) -> None:
+        """Bring the tunnel up at startup; wg-quick state does not survive a reboot."""
+        if platform.system() != "Linux" or not self._load_peers():
+            return
+        ok, result = self.apply_tunnel_config()
+        if not ok:
+            print(f"Buddy backup: tunnel not started: {result.get('error')}")
 
     def generate_pairing_token(
         self,
@@ -1763,22 +1777,21 @@ class BuddyBackupManager:
             endpoint = str(peer.get("endpoint") or "").strip()
             public_key = str(peer.get("public_key") or "").strip()
             tunnel_ip = str(peer.get("tunnel_ip") or "").strip()
-            if not endpoint or not public_key or not tunnel_ip:
+            if not public_key or not tunnel_ip:
                 continue
             # These values come from the remote buddy. A newline in any of them
             # would let a peer inject wg-quick directives such as PostUp (a root
             # shell command), so only accept their exact expected shapes.
-            if not (WG_KEY_RE.match(public_key) and WG_ENDPOINT_RE.match(endpoint)
-                    and IPV4_RE.match(tunnel_ip)):
+            if not (WG_KEY_RE.match(public_key) and IPV4_RE.match(tunnel_ip)):
                 continue
-            lines.extend([
-                "[Peer]",
-                f"PublicKey = {public_key}",
-                f"AllowedIPs = {tunnel_ip}/32",
-                f"Endpoint = {endpoint}",
-                "PersistentKeepalive = 25",
-                "",
-            ])
+            if endpoint and not WG_ENDPOINT_RE.match(endpoint):
+                continue
+            lines.extend(["[Peer]", f"PublicKey = {public_key}", f"AllowedIPs = {tunnel_ip}/32"])
+            # A buddy behind NAT has no reachable endpoint; it connects to us
+            # and WireGuard learns its address from the handshake.
+            if endpoint:
+                lines.append(f"Endpoint = {endpoint}")
+            lines.extend(["PersistentKeepalive = 25", ""])
 
         return "\n".join(lines).strip() + "\n"
 
@@ -1920,6 +1933,7 @@ class BuddyBackupManager:
         remote_api_endpoint: str,
         local_wg_endpoint: str = "",
         local_api_endpoint: str = "",
+        remote_secret: str = "",
     ) -> Tuple[bool, Dict]:
         normalized_remote, remote_err = self._normalize_api_endpoint(remote_api_endpoint)
         if remote_err or not normalized_remote:
@@ -1963,7 +1977,9 @@ class BuddyBackupManager:
             request_obj = urllib.request.Request(
                 url,
                 data=req_payload,
-                headers={"Content-Type": "application/json"},
+                # Proves we received the remote's pairing code: the remote only
+                # accepts reciprocal pairing from someone who knows its secret.
+                headers={"Content-Type": "application/json", "X-Buddy-Secret": remote_secret},
                 method="POST",
             )
             try:
@@ -2035,20 +2051,19 @@ class BuddyBackupManager:
             settings["updated_at"] = self._now_iso()
             self._save_json(self.settings_file, self._merge_settings(settings))
 
-        tunnel_result = {"message": "Peer saved (endpoint missing). Add endpoint to activate tunnel."}
-        if peer.get("endpoint"):
-            ok, tunnel_result = self.apply_tunnel_config()
-            peers = self._load_peers()
-            current = peers.get(peer["node_id"], peer)
-            if ok:
-                current["status"] = "configured"
-                current["last_error"] = ""
-            else:
-                current["status"] = "error"
-                current["last_error"] = tunnel_result.get("error", "Failed to apply tunnel config")
-            peers[peer["node_id"]] = current
-            self._save_peers(peers)
-            peer = current
+        # Apply even without an endpoint: a buddy behind NAT connects to us.
+        ok, tunnel_result = self.apply_tunnel_config()
+        peers = self._load_peers()
+        current = peers.get(peer["node_id"], peer)
+        if ok:
+            current["status"] = "configured"
+            current["last_error"] = ""
+        else:
+            current["status"] = "error"
+            current["last_error"] = tunnel_result.get("error", "Failed to apply tunnel config")
+        peers[peer["node_id"]] = current
+        self._save_peers(peers)
+        peer = current
 
         reciprocal: Dict[str, Any] = {"skipped": True}
         if auto_reciprocal:
@@ -2058,6 +2073,7 @@ class BuddyBackupManager:
                     remote_api_endpoint=remote_api_endpoint,
                     local_wg_endpoint=local_wg_endpoint,
                     local_api_endpoint=local_api_endpoint,
+                    remote_secret=str(peer.get("api_secret") or ""),
                 )
                 reciprocal = {"success": reciprocal_ok, **reciprocal_payload}
             else:

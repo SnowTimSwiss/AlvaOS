@@ -54,3 +54,24 @@ def test_placeholder_keys_from_older_versions_are_replaced(manager):
     assert stored["key_source"] == "wireguard"
     assert derive_public(stored["private_key"]) == stored["public_key"]
     assert stored["node_id"] == "abcd1234abcd1234"   # the node keeps its identity
+
+
+def test_peer_api_goes_through_the_tunnel_only(manager):
+    peer = {"node_id": "p", "tunnel_ip": "100.95.95.9", "api_endpoint": "203.0.113.5:8080",
+            "endpoint": "203.0.113.5:51820"}
+    assert manager._peer_api_urls(peer, "/api/v1/backup/buddy/peer/list") == [
+        "http://100.95.95.9:8080/api/v1/backup/buddy/peer/list"
+    ]
+    assert manager._peer_api_urls({"api_endpoint": "203.0.113.5:8080"}, "/x") == []
+
+
+def test_buddy_behind_nat_is_still_in_the_tunnel_config(manager):
+    public = manager._identity_public()
+    peers = {
+        "a": {"public_key": public["public_key"], "tunnel_ip": "100.95.95.10", "endpoint": ""},
+        "b": {"public_key": public["public_key"], "tunnel_ip": "100.95.95.11", "endpoint": "198.51.100.7:51820"},
+    }
+    config = manager._render_wg_config(manager._load_identity(), peers)
+    assert "AllowedIPs = 100.95.95.10/32" in config
+    assert "AllowedIPs = 100.95.95.11/32" in config
+    assert config.count("Endpoint =") == 1

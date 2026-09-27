@@ -137,3 +137,66 @@ def test_security_headers_on_api_and_ui(backend):
         assert response.headers.get("X-Content-Type-Options") == "nosniff"
         assert "frame-ancestors" in response.headers.get("Content-Security-Policy", "")
         assert "Access-Control-Allow-Origin" not in response.headers
+
+
+# ── Buddy peer-to-peer endpoints ─────────────────────────────────────────────
+
+PEER_TUNNEL_IP = "100.95.95.77"
+OTHER_TUNNEL_IP = "100.95.95.78"
+
+
+@pytest.fixture
+def paired_buddy(backend):
+    module, state = backend
+    set_up(state)
+    import app_services
+
+    manager = app_services.buddy_backup_manager
+    saved = manager._load_peers()
+    peers = {
+        "peer-a": {"node_id": "peer-a", "tunnel_ip": PEER_TUNNEL_IP, "public_key": "x", "name": "A"},
+        "peer-b": {"node_id": "peer-b", "tunnel_ip": OTHER_TUNNEL_IP, "public_key": "y", "name": "B"},
+    }
+    manager._save_peers(peers)
+    secret = manager._identity_private()["api_secret"]
+    yield module.app.test_client(), secret
+    manager._save_peers(saved)
+
+
+def test_pairing_accept_requires_the_pairing_secret(backend):
+    module, state = backend
+    set_up(state)
+    client = module.app.test_client()
+    forged = client.post("/api/v1/backup/pairing/accept", json={"token": "eyJ2IjoxfQ"})
+    assert forged.status_code == 403
+
+
+def test_peer_requests_must_come_through_the_tunnel(paired_buddy):
+    client, secret = paired_buddy
+    headers = {"X-Buddy-Secret": secret}
+    # right secret, but from the internet instead of the tunnel
+    outside = client.get("/api/v1/backup/buddy/peer/list?owner_node_id=peer-a", headers=headers,
+                         environ_base={"REMOTE_ADDR": "203.0.113.9"})
+    assert outside.status_code == 403
+    inside = client.get("/api/v1/backup/buddy/peer/list?owner_node_id=peer-a", headers=headers,
+                        environ_base={"REMOTE_ADDR": PEER_TUNNEL_IP})
+    assert inside.status_code == 200
+
+
+def test_a_buddy_cannot_touch_another_buddys_snapshots(paired_buddy):
+    client, secret = paired_buddy
+    headers = {"X-Buddy-Secret": secret}
+    as_a = {"REMOTE_ADDR": PEER_TUNNEL_IP}
+    for method, path in (
+        ("GET", "/api/v1/backup/buddy/peer/list?owner_node_id=peer-b"),
+        ("GET", "/api/v1/backup/buddy/peer/download/s1?owner_node_id=peer-b"),
+        ("DELETE", "/api/v1/backup/buddy/peer/delete/s1?owner_node_id=peer-b"),
+    ):
+        response = client.open(path, method=method, headers=headers, environ_base=as_a)
+        assert response.status_code == 403, path
+    upload = client.post("/api/v1/backup/buddy/peer/upload", headers=headers, environ_base=as_a,
+                         data={"owner_node_id": "peer-b", "from_node_id": "peer-b"})
+    assert upload.status_code == 403
+    unpair = client.post("/api/v1/backup/pairing/remove/accept", headers=headers, environ_base=as_a,
+                         json={"node_id": "peer-b"})
+    assert unpair.status_code == 403
