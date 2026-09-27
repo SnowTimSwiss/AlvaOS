@@ -23,6 +23,28 @@ Core NAS-to-NAS backup system for AlvaOS. Peer-to-peer, encrypted, and increment
 - **Tunnel**: WireGuard for encrypted NAT traversal.
 - **Engine**: Btrfs send/receive (native block-level) or rsync over SSH.
 
+## Encryption at rest (on the buddy)
+The WireGuard tunnel protects data in transit. With encryption enabled, every
+snapshot stream is additionally encrypted *before* it leaves the NAS, so the
+buddy stores only ciphertext.
+
+- **Format `ALVAENC2`** (`backend/buddy_crypto.py`): scrypt derives a master key
+  from the encryption password, HKDF derives a fresh key per stream, and the
+  stream is sealed with AES-256-GCM in 1 MiB chunks. Chunk order and the end of
+  the stream are authenticated, so any modification, reordering or truncation
+  makes the restore fail instead of restoring damaged data.
+- **Disaster recovery**: the key-derivation salt and parameters are stored in
+  each stream's header. A freshly installed AlvaOS can restore with **only the
+  encryption password** — no settings or key files from the old machine.
+  Losing the password means the buddy's copies cannot be decrypted by anyone.
+- **Unattended backups**: the derived master key is kept in
+  `/var/lib/alvaos/buddy_encryption_key.json` (mode 0600, service user only) so
+  scheduled syncs can encrypt without asking for the password.
+- **Older snapshots** (`ALVAENC1`, before this format) remain restorable on the
+  machine that created them, including after a password change. Installs that
+  set their password before `ALVAENC2` keep writing the old format until the
+  password is entered once (restore, rollback or settings).
+
 ## Workflow
 
 ### 1. Pairing

@@ -95,7 +95,7 @@ NAS-to-NAS encrypted incremental backup.
 - Buddy Backup uses encrypted tunnels
 
 **Data:**
-- Buddy Backup payloads are encrypted before transfer (passphrase-derived key) and sent over a WireGuard tunnel.
+- Buddy Backup payloads are encrypted before transfer (scrypt + AES-256-GCM, format `ALVAENC2`, see `docs/BUDDY_BACKUP.md`) and sent over a WireGuard tunnel. A fresh install can restore with only the encryption password.
 - No telemetry or phone-home.
 
 ## Service Architecture
