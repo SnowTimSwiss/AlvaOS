@@ -6,6 +6,7 @@ let backupSystemState = {};
 let buddyState = {};
 let buddySettings = {};
 let buddyRemoteSnapshots = [];
+let buddyRemoteVault = {};
 let selectedBuddyRestorePeerId = '';
 
 function backupToken() {
@@ -545,35 +546,6 @@ function setBuddyTransferPeerOptions(peers) {
     }
 }
 
-// An incremental snapshot needs every snapshot it builds on; oldest first.
-function buddySnapshotChain(streamId) {
-    const byId = new Map(buddyRemoteSnapshots.map((item) => [String(item.id), item]));
-    const chain = [];
-    let current = byId.get(String(streamId));
-    while (current && !chain.includes(current)) {
-        chain.unshift(current);
-        current = current.parent_id ? byId.get(String(current.parent_id)) : null;
-    }
-    return chain;
-}
-
-// Snapshots that build on this one, directly or not; deleting it removes them too.
-function buddySnapshotDependents(streamId) {
-    const ids = new Set([String(streamId)]);
-    let grew = true;
-    while (grew) {
-        grew = false;
-        for (const item of buddyRemoteSnapshots) {
-            if (!ids.has(String(item.id)) && item.parent_id && ids.has(String(item.parent_id))) {
-                ids.add(String(item.id));
-                grew = true;
-            }
-        }
-    }
-    ids.delete(String(streamId));
-    return ids.size;
-}
-
 function renderBuddyRemoteSnapshotsList() {
     const container = document.getElementById('buddy-remote-snapshots-list');
     if (!container) return;
@@ -581,7 +553,13 @@ function renderBuddyRemoteSnapshotsList() {
         container.innerHTML = '<div class="metric-sub">No remote backups available for this buddy.</div>';
         return;
     }
-    container.innerHTML = buddyRemoteSnapshots.map((item) => {
+    const vault = buddyRemoteVault || {};
+    const usage = vault.size_bytes
+        ? `<div class="metric-sub buddy-vault-usage">Encrypted vault on this buddy: ${backupEscapeHtml(backupFormatBytes(vault.size_bytes - (vault.free_bytes || 0)))} used of ${backupEscapeHtml(backupFormatBytes(vault.size_bytes))}${vault.listed_at ? ` · as of ${backupEscapeHtml(backupFormatDate(vault.listed_at))}` : ''}</div>`
+        : '';
+    container.innerHTML = usage + buddyRemoteSnapshots.map((item) => {
+        const isVault = item.kind === 'vault';
+        const needsPassword = isVault ? Boolean(item.needs_passphrase) : Boolean(item.encrypted);
         const isFullSystem = String(item.source_path || '').trim() === '/';
         const title = isFullSystem
             ? `Full system <span class="snap-badge">Reboot required</span>`
@@ -592,21 +570,23 @@ function renderBuddyRemoteSnapshotsList() {
                 <div><strong>${title}</strong></div>
                 <div class="metric-sub">Snapshot: ${backupEscapeHtml(item.snapshot_name || '-')}</div>
                 <div class="metric-sub">Created: ${backupEscapeHtml(backupFormatDate(item.created_at))}</div>
-                <div class="metric-sub">Encrypted: ${item.encrypted ? 'Yes' : 'No'} | Size: ${backupEscapeHtml(String(item.size_bytes || 0))} bytes</div>
-                <div class="metric-sub">${item.parent_id ? 'Incremental (only changes since the previous snapshot)' : 'Full snapshot'}</div>
+                <div class="metric-sub">${isVault
+                    ? 'Encrypted vault'
+                    : `Old format · Encrypted: ${item.encrypted ? 'Yes' : 'No'} · ${backupEscapeHtml(backupFormatBytes(item.size_bytes))}`}</div>
             </div>
             <div class="buddy-remote-actions">
                 <button
                     class="btn-secondary buddy-restore-remote-btn"
                     data-stream-id="${backupEscapeHtml(item.id || '')}"
                     data-source-path="${backupEscapeHtml(item.source_path || '')}"
-                    data-encrypted="${buddySnapshotChain(item.id).some((entry) => entry.encrypted) ? '1' : '0'}"
+                    data-encrypted="${needsPassword ? '1' : '0'}"
                 >
                     Restore
                 </button>
                 <button
                     class="btn-secondary buddy-delete-remote-btn"
                     data-stream-id="${backupEscapeHtml(item.id || '')}"
+                    data-encrypted="${isVault && needsPassword ? '1' : '0'}"
                 >
                     Delete
                 </button>
@@ -749,8 +729,19 @@ function renderBuddyStatus() {
                             <input type="time" class="select-input buddy-peer-send-time" data-node-id="${backupEscapeHtml(peer.node_id || '')}" value="${backupEscapeHtml(peer.policy?.send_time || '02:00')}">
                         </div>
                         <div class="setting-group">
-                            <label class="setting-label">Storage Limit (GB)</label>
+                            <label class="setting-label">Space for this buddy's backups here (GB)</label>
                             <input type="number" min="1" max="20000" class="select-input buddy-peer-quota" data-node-id="${backupEscapeHtml(peer.node_id || '')}" value="${backupEscapeHtml(String(peer.policy?.max_storage_gb || buddySettings?.incoming_quota_gb || 200))}">
+                        </div>
+                        <div class="setting-group" style="grid-column: 1 / -1;">
+                            <label class="setting-label">Snapshots kept on this buddy</label>
+                            <div class="buddy-retention-row">
+                                ${[['keep_daily', 'daily', 14], ['keep_weekly', 'weekly', 8], ['keep_monthly', 'monthly', 12]].map(([key, label, fallback]) => `
+                                <label class="metric-sub buddy-retention-field">
+                                    <input type="number" min="0" max="366" class="select-input buddy-peer-${key}" data-node-id="${backupEscapeHtml(peer.node_id || '')}" value="${backupEscapeHtml(String(peer.policy?.[key] ?? fallback))}">
+                                    ${label}
+                                </label>`).join('')}
+                            </div>
+                            <div class="metric-sub">The newest snapshot is always kept. Older ones are thinned out like this, and the oldest go first when the buddy's space runs low.</div>
                         </div>
                         <div class="setting-group" style="grid-column: 1 / -1;">
                             <label class="setting-label">Outgoing Sources</label>
@@ -1220,6 +1211,10 @@ async function saveBuddyPeerPolicy(nodeId) {
         max_storage_gb: Number(quotaEl?.value || buddySettings?.incoming_quota_gb || 200),
         outgoing_sources: selectedBuddyPeerSources(target)
     };
+    for (const key of ['keep_daily', 'keep_weekly', 'keep_monthly']) {
+        const el = buddyPeerField(`buddy-peer-${key}`, target);
+        if (el && el.value !== '') payload[key] = Number(el.value);
+    }
 
     const response = await backupApi(`/backup/buddy/peers/${encodeURIComponent(target)}/policy`, {
         method: 'POST',
@@ -1467,20 +1462,45 @@ async function syncBuddyNow(preferredNodeId = '', preferredSources = null, optio
     await loadBuddyRemoteSnapshots();
 }
 
-async function loadBuddyRemoteSnapshots() {
+function backupFormatBytes(bytes) {
+    const value = Number(bytes || 0);
+    if (!value) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+    const exp = Math.min(units.length - 1, Math.floor(Math.log(value) / Math.log(1024)));
+    return `${(value / 1024 ** exp).toFixed(exp ? 1 : 0)} ${units[exp]}`;
+}
+
+// Shows what was saved at the last sync; `refresh` opens the vault on the buddy to look now.
+async function loadBuddyRemoteSnapshots(refresh = false, passphrase = '') {
     const nodeId = getBuddyTransferPeerId();
     if (!nodeId) {
         buddyRemoteSnapshots = [];
+        buddyRemoteVault = {};
         renderBuddyRemoteSnapshotsList();
         return;
     }
-    const response = await backupApi(`/backup/buddy/remote/snapshots?node_id=${encodeURIComponent(nodeId)}`);
+    const response = refresh
+        ? await backupApi('/backup/buddy/remote/snapshots', {
+            method: 'POST',
+            json: { node_id: nodeId, encryption_passphrase: passphrase || undefined }
+        })
+        : await backupApi(`/backup/buddy/remote/snapshots?node_id=${encodeURIComponent(nodeId)}`);
     const data = await backupReadJson(response);
     if (!response || !response.ok || !data) {
         backupNotify(data?.error || 'Failed to load remote backups', 'error');
         return;
     }
+    if (refresh && data.vault_error) {
+        if (data.needs_passphrase && !passphrase && /password/i.test(data.vault_error)) {
+            // A reinstalled NAS: the vault key on the buddy opens with the encryption password.
+            const entered = await requestBackupPassphrase('Unlock backups on this buddy\nEnter the encryption password you used for buddy backups.', 'Unlock');
+            if (entered.ok) return loadBuddyRemoteSnapshots(true, entered.passphrase);
+        } else {
+            backupNotify(data.vault_error, 'error');
+        }
+    }
     buddyRemoteSnapshots = Array.isArray(data.streams) ? data.streams : [];
+    buddyRemoteVault = data.vault || {};
     renderBuddyRemoteSnapshotsList();
 }
 
@@ -1534,24 +1554,28 @@ async function restoreBuddyRemoteSnapshot(streamId, sourcePath, encrypted) {
     await Promise.all([loadBuddyStatus(), loadDataSnapshots(), loadBuddyRemoteSnapshots()]);
 }
 
-async function deleteBuddyRemoteSnapshot(streamId) {
+async function deleteBuddyRemoteSnapshot(streamId, needsPassword = false) {
     const nodeId = getBuddyTransferPeerId();
     const stream = String(streamId || '').trim();
     if (!nodeId || !stream) {
         backupNotify('Select a buddy and snapshot first', 'warning');
         return;
     }
-    const dependents = buddySnapshotDependents(stream);
-    const ok = await window.showConfirm(dependents
-        ? `Delete this remote snapshot on your buddy?\n\n${dependents} newer incremental snapshot(s) build on it and will be deleted as well. This cannot be undone.`
-        : 'Delete this remote snapshot on your buddy? This cannot be undone.');
+    const ok = await window.showConfirm('Delete this snapshot on your buddy? This cannot be undone.\n\nOther snapshots are not affected.');
     if (!ok) return;
+    let passphrase = '';
+    if (needsPassword) {
+        const entered = await requestBackupPassphrase('Unlock backups on this buddy\nEnter the encryption password you used for buddy backups.', 'Delete');
+        if (!entered.ok) return;
+        passphrase = entered.passphrase;
+    }
 
     const response = await backupApi('/backup/buddy/remote/snapshot', {
         method: 'DELETE',
         json: {
             node_id: nodeId,
-            stream_id: stream
+            stream_id: stream,
+            encryption_passphrase: passphrase || undefined
         }
     });
     const data = await backupReadJson(response);
@@ -1559,8 +1583,7 @@ async function deleteBuddyRemoteSnapshot(streamId) {
         backupNotify(data?.error || 'Failed to delete remote snapshot', 'error');
         return;
     }
-    const removedCount = Array.isArray(data.removed_ids) ? data.removed_ids.length : 1;
-    backupNotify(removedCount > 1 ? `${removedCount} remote snapshots deleted` : 'Remote snapshot deleted', 'success');
+    backupNotify('Remote snapshot deleted', 'success');
     await loadBuddyRemoteSnapshots();
 }
 
@@ -1690,7 +1713,7 @@ function initBackupHandlers() {
     document.getElementById('buddy-kit-export-btn')?.addEventListener('click', exportRecoveryKit);
     document.getElementById('buddy-kit-import-btn')?.addEventListener('click', importRecoveryKit);
     document.getElementById('buddy-encryption-enabled')?.addEventListener('change', updateBuddySecurityUi);
-    document.getElementById('buddy-refresh-remote-btn')?.addEventListener('click', loadBuddyRemoteSnapshots);
+    document.getElementById('buddy-refresh-remote-btn')?.addEventListener('click', () => loadBuddyRemoteSnapshots(true));
     document.getElementById('buddy-peers-list')?.addEventListener('click', (event) => {
         const saveBtn = event.target.closest('.buddy-save-peer-policy-btn');
         if (saveBtn) {
@@ -1731,7 +1754,7 @@ function initBackupHandlers() {
     document.getElementById('buddy-remote-snapshots-list')?.addEventListener('click', (event) => {
         const deleteBtn = event.target.closest('.buddy-delete-remote-btn');
         if (deleteBtn) {
-            deleteBuddyRemoteSnapshot(deleteBtn.dataset.streamId || '');
+            deleteBuddyRemoteSnapshot(deleteBtn.dataset.streamId || '', String(deleteBtn.dataset.encrypted || '') === '1');
             return;
         }
         const btn = event.target.closest('.buddy-restore-remote-btn');

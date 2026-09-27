@@ -21,6 +21,7 @@ AlvaOS/
   - `*_manager.py`, `app_store.py` — business logic.
   - `alvaos-priv`, `priv_policy.py` — the root privilege helper and its policy (see ARCHITECTURE.md).
   - `update_signing.py`, `buddy_crypto.py` — update signatures and Buddy Backup encryption.
+  - `buddy_vault.py`, `nbd_server.py`, `vault_ops.py` — Buddy Backup vaults: replication and retention, the NBD server a buddy runs, and the root-side attach/unlock/mount used by `alvaos-priv`.
   - `tests/` — pytest suite (`pytest` from the repository root).
 - **/frontend**: Dark-mode first Web UI. Unraid-inspired, simple, and reactive.
 - **/installer**: Build scripts using Debian `live-build` to create the installer ISO.

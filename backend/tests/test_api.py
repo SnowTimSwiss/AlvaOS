@@ -194,52 +194,42 @@ def test_a_buddy_cannot_touch_another_buddys_snapshots(paired_buddy):
     ):
         response = client.open(path, method=method, headers=headers, environ_base=as_a)
         assert response.status_code == 403, path
-    upload = client.post("/api/v1/backup/buddy/peer/upload/start", headers=headers, environ_base=as_a,
-                         json={"owner_node_id": "peer-b", "source_path": "/x", "snapshot_name": "s"})
-    assert upload.status_code == 403
     unpair = client.post("/api/v1/backup/pairing/remove/accept", headers=headers, environ_base=as_a,
                          json={"node_id": "peer-b"})
     assert unpair.status_code == 403
 
 
-def test_snapshot_upload_in_chunks(paired_buddy, monkeypatch):
-    import hashlib
-
+def test_a_buddy_only_ever_gets_its_own_vault(paired_buddy, monkeypatch):
     import app_services
 
     manager = app_services.buddy_backup_manager
-    monkeypatch.setattr(manager, "_free_space_reserve_bytes", lambda path: 0)
     client, secret = paired_buddy
     headers = {"X-Buddy-Secret": secret}
     as_a = {"REMOTE_ADDR": PEER_TUNNEL_IP}
     as_b = {"REMOTE_ADDR": OTHER_TUNNEL_IP}
-    data = os.urandom(3000)
 
-    start = client.post("/api/v1/backup/buddy/peer/upload/start", headers=headers, environ_base=as_a,
-                        json={"owner_node_id": "peer-a", "source_path": "/mnt/alvaos/main/media",
-                              "snapshot_name": ".alvaos-buddy-media-1", "encrypted": True})
-    assert start.status_code == 200, start.get_json()
-    upload = f"/api/v1/backup/buddy/peer/upload/{start.get_json()['upload_id']}"
+    created = client.post("/api/v1/backup/buddy/peer/vault", headers=headers, environ_base=as_a)
+    assert created.status_code == 200, created.get_json()
+    assert created.get_json()["size_bytes"] == manager._owner_quota_bytes("peer-a")
+    assert created.get_json()["used_bytes"] < 1024 * 1024        # sparse until written
 
-    # Another buddy cannot write into it.
-    hijack = client.put(f"{upload}?offset=0", headers=headers, environ_base=as_b, data=b"evil")
-    assert hijack.status_code == 404
+    stored = client.put("/api/v1/backup/buddy/peer/vault/key", headers=headers, environ_base=as_a,
+                        json={"key_blob": "ALVAVKEY1.not-checked-here"})
+    assert stored.status_code == 200
+    bad = client.put("/api/v1/backup/buddy/peer/vault/key", headers=headers, environ_base=as_a,
+                     json={"key_blob": "something else"})
+    assert bad.status_code == 400
 
-    assert client.put(f"{upload}?offset=0", headers=headers, environ_base=as_a, data=data[:1000]).status_code == 200
-    # A resent chunk is recognised, not appended twice.
-    again = client.put(f"{upload}?offset=0", headers=headers, environ_base=as_a, data=data[:1000])
-    assert again.status_code == 409 and again.get_json()["expected_offset"] == 1000
-    assert client.put(f"{upload}?offset=1000", headers=headers, environ_base=as_a, data=data[1000:]).status_code == 200
+    other = client.get("/api/v1/backup/buddy/peer/vault", headers=headers, environ_base=as_b)
+    assert other.status_code == 200 and not other.get_json()["exists"] and not other.get_json()["key_blob"]
+    outside = client.post("/api/v1/backup/buddy/peer/vault", headers=headers,
+                          environ_base={"REMOTE_ADDR": "203.0.113.9"})
+    assert outside.status_code == 403
 
-    done = client.post(f"{upload}/finish", headers=headers, environ_base=as_a,
-                       json={"size": len(data), "sha256": hashlib.sha256(data).hexdigest()})
-    assert done.status_code == 200, done.get_json()
-    stream = done.get_json()["stream"]
-    assert stream["encrypted"] and stream["size_bytes"] == len(data)
+    # NBD access follows the same rule.
+    assert manager.vault_store.resolve(PEER_TUNNEL_IP, "peer-a") is not None
+    assert manager.vault_store.resolve(OTHER_TUNNEL_IP, "peer-a") is None
+    assert manager.vault_store.resolve(PEER_TUNNEL_IP, "peer-b") is None
 
-    listed = client.get("/api/v1/backup/buddy/peer/list?owner_node_id=peer-a", headers=headers, environ_base=as_a)
-    assert stream["id"] in [s["id"] for s in listed.get_json()["streams"]]
-    download = client.get(f"/api/v1/backup/buddy/peer/download/{stream['id']}?owner_node_id=peer-a",
-                          headers=headers, environ_base=as_a)
-    assert download.data == data
-    manager.delete_peer_stream("peer-a", stream["id"])
+    deleted = client.delete("/api/v1/backup/buddy/peer/vault", headers=headers, environ_base=as_a)
+    assert deleted.get_json()["deleted"] is True

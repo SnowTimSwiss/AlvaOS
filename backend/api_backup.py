@@ -15,6 +15,7 @@ from auth_manager import (
 from app_services import (
     backup_manager, buddy_backup_manager,
 )
+from buddy_vault import VaultError
 
 bp = Blueprint('backup', __name__)
 
@@ -461,15 +462,23 @@ def buddy_sync_now():
         return jsonify({'error': payload.get('error', 'Buddy sync failed')}), 400
     return jsonify({'success': True, **payload})
 
-@bp.route('/api/v1/backup/buddy/remote/snapshots', methods=['GET'])
+@bp.route('/api/v1/backup/buddy/remote/snapshots', methods=['GET', 'POST'])
 @require_auth
 def buddy_remote_snapshots():
-    """List snapshots stored on a remote buddy for this node."""
+    """List this NAS's snapshots on a buddy.
+
+    GET shows what was saved at the last sync. POST opens the vault on the
+    buddy to look now; a replacement NAS passes the encryption password once.
+    """
     if buddy_backup_manager is None:
         return jsonify({'error': 'Buddy backup manager not initialized'}), 500
 
-    node_id = (request.args.get('node_id') or '').strip()
-    success, payload = buddy_backup_manager.fetch_remote_snapshots(node_id=node_id, limit=200)
+    data = (request.get_json(silent=True) or {}) if request.method == 'POST' else {}
+    node_id = (data.get('node_id') or request.args.get('node_id') or '').strip()
+    success, payload = buddy_backup_manager.fetch_remote_snapshots(
+        node_id=node_id, limit=200, refresh=request.method == 'POST',
+        passphrase=str(data.get('encryption_passphrase') or ''),
+    )
     if not success:
         return jsonify({'error': payload.get('error', 'Failed to load remote snapshots')}), 400
     return jsonify({'success': True, **payload})
@@ -489,7 +498,9 @@ def buddy_remote_snapshot_delete():
     if not stream_id:
         return jsonify({'error': 'stream_id is required'}), 400
 
-    success, payload = buddy_backup_manager.delete_remote_snapshot(node_id=node_id, stream_id=stream_id)
+    success, payload = buddy_backup_manager.delete_remote_snapshot(
+        node_id=node_id, stream_id=stream_id, passphrase=str(data.get('encryption_passphrase') or ''),
+    )
     if not success:
         return jsonify({'error': payload.get('error', 'Failed to delete remote snapshot')}), 400
     return jsonify({'success': True, **payload})
@@ -548,74 +559,40 @@ def buddy_remote_restore():
         return jsonify({'error': payload.get('error', 'Remote restore failed')}), 400
     return jsonify({'success': True, **payload})
 
-def _upload_result(success, payload):
-    if not success:
-        body = {'error': payload.get('error', 'Buddy upload failed')}
-        for key in ('expected_offset', 'parent_missing'):
-            if key in payload:
-                body[key] = payload[key]
-        return jsonify(body), int(payload.get('status', 400))
-    return jsonify({'success': True, **payload})
+@bp.route('/api/v1/backup/buddy/peer/vault', methods=['GET', 'POST', 'DELETE'])
+def buddy_peer_vault():
+    """The encrypted vault a paired buddy keeps on this NAS.
 
-
-@bp.route('/api/v1/backup/buddy/peer/upload/start', methods=['POST'])
-def buddy_peer_upload_start():
-    """A paired buddy starts sending one of its snapshots to this NAS."""
+    POST creates it (or grows it after the quota was raised), GET describes
+    it, DELETE removes it. The buddy attaches it over NBD through the tunnel;
+    this NAS only ever sees encrypted blocks.
+    """
     peer, error_response = _authenticated_buddy()
     if error_response:
         return error_response
-    data = request.get_json(silent=True) or {}
-    owner_node_id = _own_node_id(peer, data.get('owner_node_id'))
-    if not owner_node_id:
-        return jsonify({'error': 'A buddy can only upload its own snapshots'}), 403
-    return _upload_result(*buddy_backup_manager.begin_peer_upload(
-        owner_node_id=owner_node_id,
-        source_path=str(data.get('source_path') or ''),
-        snapshot_name=str(data.get('snapshot_name') or ''),
-        created_at=str(data.get('created_at') or ''),
-        encrypted=bool(data.get('encrypted')),
-        parent_id=str(data.get('parent_id') or ''),
-    ))
-
-
-@bp.route('/api/v1/backup/buddy/peer/upload/<upload_id>', methods=['PUT'])
-def buddy_peer_upload_chunk(upload_id):
-    """One chunk of snapshot data, raw in the body, placed at ?offset=N."""
-    peer, error_response = _authenticated_buddy()
-    if error_response:
-        return error_response
+    owner = str(peer.get('node_id') or '')
     try:
-        offset = int(request.args.get('offset', ''))
-    except ValueError:
-        return jsonify({'error': 'offset is required'}), 400
-    return _upload_result(*buddy_backup_manager.append_peer_upload(
-        owner_node_id=peer.get('node_id'), upload_id=upload_id, offset=offset, body=request.stream,
-    ))
+        if request.method == 'POST':
+            return jsonify({'success': True, **buddy_backup_manager.vault_store.ensure(owner)})
+        if request.method == 'DELETE':
+            return jsonify({'success': True, 'deleted': buddy_backup_manager.vault_store.delete(owner)})
+        return jsonify({'success': True, **buddy_backup_manager.vault_store.info(owner)})
+    except (VaultError, OSError) as exc:
+        return jsonify({'error': str(exc)}), 507 if getattr(exc, 'errno', None) == 28 else 400
 
 
-@bp.route('/api/v1/backup/buddy/peer/upload/<upload_id>/finish', methods=['POST'])
-def buddy_peer_upload_finish(upload_id):
-    """Check size and checksum of a complete upload and keep the snapshot."""
+@bp.route('/api/v1/backup/buddy/peer/vault/key', methods=['PUT'])
+def buddy_peer_vault_key():
+    """Keep the buddy's sealed vault key (useless without its encryption password)."""
     peer, error_response = _authenticated_buddy()
     if error_response:
         return error_response
     data = request.get_json(silent=True) or {}
     try:
-        size = int(str(data.get('size', '')))
-    except (TypeError, ValueError):
-        return jsonify({'error': 'size is required'}), 400
-    return _upload_result(*buddy_backup_manager.finish_peer_upload(
-        owner_node_id=peer.get('node_id'), upload_id=upload_id, size=size, sha256=str(data.get('sha256') or ''),
-    ))
-
-
-@bp.route('/api/v1/backup/buddy/peer/upload/<upload_id>', methods=['DELETE'])
-def buddy_peer_upload_abort(upload_id):
-    """The sending buddy gave up; drop what was received so far."""
-    peer, error_response = _authenticated_buddy()
-    if error_response:
-        return error_response
-    return _upload_result(*buddy_backup_manager.abort_peer_upload(peer.get('node_id'), upload_id))
+        buddy_backup_manager.vault_store.store_key(str(peer.get('node_id') or ''), str(data.get('key_blob') or ''))
+    except (VaultError, OSError) as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'success': True})
 
 @bp.route('/api/v1/backup/buddy/peer/list', methods=['GET'])
 def buddy_peer_list():

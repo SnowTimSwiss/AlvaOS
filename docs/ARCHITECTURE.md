@@ -50,9 +50,9 @@ Features storage pools (easy disk expansion), snapshots, background rebalancing,
 Git-based template repository for one-click app installs. No Kubernetes or complex orchestration.
 
 ### 4. Buddy Backup (Core Feature)
-NAS-to-NAS encrypted incremental backup. 
+NAS-to-NAS encrypted incremental backup.
 - **Setup**: Link devices via pairing codes.
-- **Security**: End-to-end encryption (WireGuard based).
+- **Replication**: each NAS keeps an encrypted vault on its buddy (an image the buddy exports over NBD inside the WireGuard tunnel; LUKS2 with a key only the owner has). Btrfs snapshots are replicated into it with `btrfs send -p`, so after the first sync only changes travel, and old snapshots can be deleted freely.
 - **Scope**: Backs up configs, shares, and app state (not the OS itself).
 
 ### 5. Web UI & API
@@ -95,7 +95,7 @@ NAS-to-NAS encrypted incremental backup.
 - Buddy Backup uses encrypted tunnels
 
 **Data:**
-- Buddy Backup payloads are encrypted before transfer (scrypt + AES-256-GCM, format `ALVAENC2`, see `docs/BUDDY_BACKUP.md`) and sent over a WireGuard tunnel. A fresh install can restore with only the encryption password.
+- Buddy Backup data is encrypted on the owner before it reaches the buddy (LUKS2 vault; its key is stored on the buddy sealed with the encryption password, see `docs/BUDDY_BACKUP.md`) and travels only through the WireGuard tunnel. A fresh install can restore with only the encryption password.
 - No telemetry or phone-home.
 
 ## Service Architecture

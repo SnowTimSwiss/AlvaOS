@@ -908,7 +908,7 @@ FSTAB_EOF
         -o Acquire::Retries=3 \
         -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" \
         linux-image-amd64 python3 python3-flask python3-waitress python3-psutil python3-requests python3-packaging python3-yaml python3-cryptography \
-        systemd systemd-timesyncd network-manager openssh-server docker.io docker-compose btrfs-progs wireguard-tools \
+        systemd systemd-timesyncd network-manager openssh-server docker.io docker-compose btrfs-progs wireguard-tools nbd-client cryptsetup \
         curl wget vim sudo smartmontools nfs-kernel-server samba >> "$INSTALL_LOG" 2>&1
 
     update_progress "Installing bootloader..."
@@ -1032,6 +1032,10 @@ SERVICE_EOF
     # the SYS_MODULE capability (which would let a container load kernel code).
     mkdir -p /mnt/etc/modules-load.d
     echo wireguard > /mnt/etc/modules-load.d/alvaos-wireguard.conf
+    # Buddy Backup attaches the encrypted vault on a buddy as a network block device.
+    echo nbd > /mnt/etc/modules-load.d/alvaos-nbd.conf
+    mkdir -p /mnt/etc/modprobe.d
+    echo "options nbd nbds_max=16 max_part=0" > /mnt/etc/modprobe.d/alvaos-nbd.conf
 
     # SSH Security
     mkdir -p /mnt/etc/ssh/sshd_config.d

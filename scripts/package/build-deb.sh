@@ -163,7 +163,7 @@ Package: alvaos-system
 Version: ${DEB_VERSION}
 Architecture: amd64
 Maintainer: AlvaOS Team <dev@alvaos.org>
-Depends: python3, python3-yaml, python3-cryptography, python3-flask, python3-waitress, python3-psutil, python3-requests, python3-pyotp, python3-qrcode, python3-pil, docker.io, docker-compose, btrfs-progs, wireguard-tools, systemd, smartmontools, nfs-kernel-server, samba, network-manager
+Depends: python3, python3-yaml, python3-cryptography, python3-flask, python3-waitress, python3-psutil, python3-requests, python3-pyotp, python3-qrcode, python3-pil, docker.io, docker-compose, btrfs-progs, wireguard-tools, nbd-client, cryptsetup, systemd, smartmontools, nfs-kernel-server, samba, network-manager
 Section: admin
 Priority: optional
 Homepage: https://github.com/SnowTimSwiss/AlvaOS
@@ -197,6 +197,10 @@ mkdir -p /var/lib/alvaos/compose /var/lib/alvaos/updates
 # VPN apps get the host's WireGuard module instead of CAP_SYS_MODULE.
 echo wireguard > /etc/modules-load.d/alvaos-wireguard.conf
 modprobe wireguard 2>/dev/null || true
+# Buddy Backup attaches the encrypted vault on a buddy as a network block device.
+echo nbd > /etc/modules-load.d/alvaos-nbd.conf
+echo "options nbd nbds_max=16 max_part=0" > /etc/modprobe.d/alvaos-nbd.conf
+modprobe nbd nbds_max=16 max_part=0 2>/dev/null || true
 
 # Repair critical root-owned system files if a previous broken package/update
 # left the system unable to use sudo. postinst runs as root, so this is the

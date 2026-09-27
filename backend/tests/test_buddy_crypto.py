@@ -256,3 +256,18 @@ def test_short_passwords_are_rejected(manager_factory):
     nas = manager_factory("short")
     ok, payload = nas.save_settings({"encryption_enabled": True, "encryption_password": "1234"})
     assert not ok and "8 characters" in payload["error"]
+
+
+def test_vault_key_opens_with_material_or_password(material):
+    key = os.urandom(32)
+    blob = bc.seal_vault_key(key, material)
+    assert bc.open_vault_key(blob, material=material) == key
+    assert bc.open_vault_key(blob, passphrase=PASSWORD) == key      # a replacement NAS
+    assert bc.vault_key_salt(blob) == material.kdf_salt
+    with pytest.raises(bc.BuddyCryptoError, match="Wrong"):
+        bc.open_vault_key(blob, passphrase="not the password")
+    with pytest.raises(bc.BuddyCryptoError, match="password is needed"):
+        bc.open_vault_key(blob)
+    tampered = blob[:-2] + ("A" if blob[-2] != "A" else "B") + blob[-1]
+    with pytest.raises(bc.BuddyCryptoError):
+        bc.open_vault_key(tampered, material=material)
