@@ -24,6 +24,13 @@ jobs:
           # docker, waitress and the 2FA libraries are not needed for the suite.
           pip install pytest flask pyyaml cryptography psutil requests
 
+      # The backend keeps its state in /var/lib/alvaos, owned by the service
+      # user on a NAS. Give the CI user the same layout.
+      - name: Prepare state directories
+        run: |
+          sudo mkdir -p /var/lib/alvaos /var/log/alvaos
+          sudo chown -R "$USER" /var/lib/alvaos /var/log/alvaos
+
       - name: Run unit tests
         run: pytest
 
