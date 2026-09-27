@@ -72,12 +72,20 @@ buddy stores only ciphertext.
 2. **NAS B**: Enters code; exchanged keys establish WireGuard tunnel.
 
 ### 2. Backup & Sync
-- **What is sent**: a read-only snapshot of each source, as a full
-  `btrfs send` stream. Incremental sends (`btrfs send -p`) are not
-  implemented yet, so every sync transfers the whole source.
+- **What is sent**: the first sync of a source sends a full read-only
+  snapshot. Afterwards only the changes are sent (`btrfs send -p`): the
+  snapshot last sent stays on this NAS as a hidden `.alvaos-buddy-…`
+  subvolume and serves as the base for the next delta. Keeping it costs only
+  the space of data that changed or was deleted since that sync.
+- **Chains**: on the buddy every delta records the snapshot it builds on. After
+  30 deltas the next sync sends a full snapshot again and starts a new chain.
+  If the buddy no longer has the base (deleted or dropped for quota), the
+  sync falls back to a full snapshot on its own.
 - **Schedule**: User-defined (hourly, daily) via systemd timers.
-- **Retention**: the buddy keeps the newest snapshots that fit the quota it
-  grants you and drops the oldest ones.
+- **Retention**: when the quota the buddy grants you is exceeded, it drops the
+  oldest *chains* as a whole (a delta is useless without its base). The chain
+  holding your newest snapshot is always kept. Deleting a snapshot by hand
+  also deletes the deltas that build on it; the UI says how many.
 
 #### How a snapshot travels
 Snapshots can be far larger than RAM or the system disk, so nothing is
@@ -96,7 +104,9 @@ staged locally:
    sender cancels with `DELETE …/peer/upload/<id>`; uploads nobody finishes
    are removed after six hours.
 
-A restore runs the other way without temporary files: the download is
+A restore runs the other way without temporary files. For a delta, the full
+snapshot and every delta up to the chosen one are received in order and the
+intermediate subvolumes are deleted afterwards. For each stream the download is
 decrypted chunk by chunk (each chunk is authenticated first) and piped into
 `btrfs receive`. The end of the stream is only passed on once everything
 checked out, so a cut or altered download never becomes a finished snapshot;

@@ -545,6 +545,35 @@ function setBuddyTransferPeerOptions(peers) {
     }
 }
 
+// An incremental snapshot needs every snapshot it builds on; oldest first.
+function buddySnapshotChain(streamId) {
+    const byId = new Map(buddyRemoteSnapshots.map((item) => [String(item.id), item]));
+    const chain = [];
+    let current = byId.get(String(streamId));
+    while (current && !chain.includes(current)) {
+        chain.unshift(current);
+        current = current.parent_id ? byId.get(String(current.parent_id)) : null;
+    }
+    return chain;
+}
+
+// Snapshots that build on this one, directly or not; deleting it removes them too.
+function buddySnapshotDependents(streamId) {
+    const ids = new Set([String(streamId)]);
+    let grew = true;
+    while (grew) {
+        grew = false;
+        for (const item of buddyRemoteSnapshots) {
+            if (!ids.has(String(item.id)) && item.parent_id && ids.has(String(item.parent_id))) {
+                ids.add(String(item.id));
+                grew = true;
+            }
+        }
+    }
+    ids.delete(String(streamId));
+    return ids.size;
+}
+
 function renderBuddyRemoteSnapshotsList() {
     const container = document.getElementById('buddy-remote-snapshots-list');
     if (!container) return;
@@ -564,13 +593,14 @@ function renderBuddyRemoteSnapshotsList() {
                 <div class="metric-sub">Snapshot: ${backupEscapeHtml(item.snapshot_name || '-')}</div>
                 <div class="metric-sub">Created: ${backupEscapeHtml(backupFormatDate(item.created_at))}</div>
                 <div class="metric-sub">Encrypted: ${item.encrypted ? 'Yes' : 'No'} | Size: ${backupEscapeHtml(String(item.size_bytes || 0))} bytes</div>
+                <div class="metric-sub">${item.parent_id ? 'Incremental (only changes since the previous snapshot)' : 'Full snapshot'}</div>
             </div>
             <div class="buddy-remote-actions">
                 <button
                     class="btn-secondary buddy-restore-remote-btn"
                     data-stream-id="${backupEscapeHtml(item.id || '')}"
                     data-source-path="${backupEscapeHtml(item.source_path || '')}"
-                    data-encrypted="${item.encrypted ? '1' : '0'}"
+                    data-encrypted="${buddySnapshotChain(item.id).some((entry) => entry.encrypted) ? '1' : '0'}"
                 >
                     Restore
                 </button>
@@ -1511,7 +1541,10 @@ async function deleteBuddyRemoteSnapshot(streamId) {
         backupNotify('Select a buddy and snapshot first', 'warning');
         return;
     }
-    const ok = await window.showConfirm('Delete this remote snapshot on your buddy? This cannot be undone.');
+    const dependents = buddySnapshotDependents(stream);
+    const ok = await window.showConfirm(dependents
+        ? `Delete this remote snapshot on your buddy?\n\n${dependents} newer incremental snapshot(s) build on it and will be deleted as well. This cannot be undone.`
+        : 'Delete this remote snapshot on your buddy? This cannot be undone.');
     if (!ok) return;
 
     const response = await backupApi('/backup/buddy/remote/snapshot', {
@@ -1526,7 +1559,8 @@ async function deleteBuddyRemoteSnapshot(streamId) {
         backupNotify(data?.error || 'Failed to delete remote snapshot', 'error');
         return;
     }
-    backupNotify('Remote snapshot deleted', 'success');
+    const removedCount = Array.isArray(data.removed_ids) ? data.removed_ids.length : 1;
+    backupNotify(removedCount > 1 ? `${removedCount} remote snapshots deleted` : 'Remote snapshot deleted', 'success');
     await loadBuddyRemoteSnapshots();
 }
 

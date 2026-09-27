@@ -551,8 +551,9 @@ def buddy_remote_restore():
 def _upload_result(success, payload):
     if not success:
         body = {'error': payload.get('error', 'Buddy upload failed')}
-        if 'expected_offset' in payload:
-            body['expected_offset'] = payload['expected_offset']
+        for key in ('expected_offset', 'parent_missing'):
+            if key in payload:
+                body[key] = payload[key]
         return jsonify(body), int(payload.get('status', 400))
     return jsonify({'success': True, **payload})
 
@@ -573,6 +574,7 @@ def buddy_peer_upload_start():
         snapshot_name=str(data.get('snapshot_name') or ''),
         created_at=str(data.get('created_at') or ''),
         encrypted=bool(data.get('encrypted')),
+        parent_id=str(data.get('parent_id') or ''),
     ))
 
 
@@ -685,7 +687,9 @@ def buddy_peer_delete(stream_id):
     )
     if not success:
         return jsonify({'error': payload.get('error', 'Failed to delete stream')}), 404
-    return jsonify({'success': True, 'deleted': payload.get('stream', {}), 'payload_removed': payload.get('payload_removed', False)})
+    return jsonify({'success': True, 'deleted': payload.get('stream', {}),
+                    'payload_removed': payload.get('payload_removed', False),
+                    'removed_ids': payload.get('removed_ids', [])})
 
 # ============================================================================
 # APP STORE & CONTAINER MANAGEMENT API
