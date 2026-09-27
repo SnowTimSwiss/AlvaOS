@@ -180,6 +180,17 @@ def manager_factory(tmp_path, monkeypatch):
     return make
 
 
+def encrypt_as(nas, src, enc):
+    """Encrypt the way a NAS does: ALVAENC2 with its key material, else the old format."""
+    material = nas._encryption_material()
+    if material is not None:
+        bc.encrypt_file(src, enc, material)
+        return
+    settings = nas.get_settings(include_secret=True)
+    key = bc.legacy_v1_key(settings["encryption_hash"], settings["encryption_salt"])
+    bc.encrypt_legacy_v1_file(src, enc, key)
+
+
 def test_fresh_machine_restores_with_only_the_password(tmp_path, manager_factory):
     old_nas = manager_factory("old")
     ok, _ = old_nas.save_settings({"encryption_enabled": True, "encryption_password": PASSWORD})
@@ -187,8 +198,7 @@ def test_fresh_machine_restores_with_only_the_password(tmp_path, manager_factory
     plain = os.urandom(10_000)
     src = write(tmp_path / "snapshot.stream", plain)
     enc = str(tmp_path / "snapshot.enc")
-    ok, err = old_nas._encrypt_stream_file(src, enc)
-    assert ok, err
+    encrypt_as(old_nas, src, enc)
     assert bc.is_encrypted_stream(enc) == "v2"
 
     # The old NAS is gone. A new install has no settings and no keys.
@@ -210,8 +220,7 @@ def test_pre_upgrade_install_keeps_working_and_upgrades(tmp_path, manager_factor
     os.remove(nas.encryption_key_file)
     src = write(tmp_path / "s", b"legacy data" * 50)
     enc_old = str(tmp_path / "old.enc")
-    ok, err = nas._encrypt_stream_file(src, enc_old)
-    assert ok, err
+    encrypt_as(nas, src, enc_old)
     assert bc.is_encrypted_stream(enc_old) == "v1"
 
     # Old-format snapshots still restore with the password on the same machine.
@@ -219,10 +228,10 @@ def test_pre_upgrade_install_keeps_working_and_upgrades(tmp_path, manager_factor
     assert ok, err
 
     # Entering the password once creates ALVAENC2 key material.
+    assert nas._encryption_material() is None
     assert nas.verify_encryption_passphrase(PASSWORD)
     enc_new = str(tmp_path / "new.enc")
-    ok, err = nas._encrypt_stream_file(src, enc_new)
-    assert ok, err
+    encrypt_as(nas, src, enc_new)
     assert bc.is_encrypted_stream(enc_new) == "v2"
 
 
@@ -231,7 +240,7 @@ def test_password_change_keeps_old_snapshots_restorable(tmp_path, manager_factor
     nas.save_settings({"encryption_enabled": True, "encryption_password": PASSWORD})
     src = write(tmp_path / "s", b"before the change" * 20)
     enc = str(tmp_path / "before.enc")
-    assert nas._encrypt_stream_file(src, enc)[0]
+    encrypt_as(nas, src, enc)
     nas.save_settings({"encryption_enabled": True, "encryption_password": "a brand new password"})
     ok, err = nas._decrypt_stream_with_passphrase(enc, str(tmp_path / "o"), PASSWORD)
     assert ok, err

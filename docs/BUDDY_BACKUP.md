@@ -61,8 +61,9 @@ buddy stores only ciphertext.
   scheduled syncs can encrypt without asking for the password.
 - **Older snapshots** (`ALVAENC1`, before this format) remain restorable on the
   machine that created them, including after a password change. Installs that
-  set their password before `ALVAENC2` keep writing the old format until the
-  password is entered once (restore, rollback or settings).
+  set their password before `ALVAENC2` pause encrypted syncs, with a
+  notification, until the password is entered once in the Buddy Backup
+  settings; they never fall back to sending unencrypted data.
 
 ## Workflow
 
@@ -71,10 +72,35 @@ buddy stores only ciphertext.
 2. **NAS B**: Enters code; exchanged keys establish WireGuard tunnel.
 
 ### 2. Backup & Sync
-- **First Sync**: Full data transfer (hours/days).
-- **Incremental**: Only changed blocks via Btrfs snapshots.
+- **What is sent**: a read-only snapshot of each source, as a full
+  `btrfs send` stream. Incremental sends (`btrfs send -p`) are not
+  implemented yet, so every sync transfers the whole source.
 - **Schedule**: User-defined (hourly, daily) via systemd timers.
-- **Retention**: User-defined
+- **Retention**: the buddy keeps the newest snapshots that fit the quota it
+  grants you and drops the oldest ones.
+
+#### How a snapshot travels
+Snapshots can be far larger than RAM or the system disk, so nothing is
+staged locally:
+
+1. The sender pipes `btrfs send` through the `ALVAENC2` encryptor and cuts the
+   result into 32 MiB chunks.
+2. `POST …/peer/upload/start` opens an upload on the buddy, which creates a
+   partial file directly on its incoming pool.
+3. `PUT …/peer/upload/<id>?offset=N` carries each chunk. Before writing, the
+   buddy checks the chunk's offset, your quota and its free space (it always
+   keeps 2 GiB or 2 % of the filesystem free, whichever is larger). A chunk
+   whose answer was lost is retried; the offset check makes that safe.
+4. `POST …/peer/upload/<id>/finish` sends total size and SHA-256. Only if both
+   match does the partial file become a stored snapshot. On any error the
+   sender cancels with `DELETE …/peer/upload/<id>`; uploads nobody finishes
+   are removed after six hours.
+
+A restore runs the other way without temporary files: the download is
+decrypted chunk by chunk (each chunk is authenticated first) and piped into
+`btrfs receive`. The end of the stream is only passed on once everything
+checked out, so a cut or altered download never becomes a finished snapshot;
+a half-received subvolume is deleted.
 
 ### 3. Recovery kit (do this once, and again after pairing changes)
 Buddies store snapshots under the node id of the NAS that sent them, and they

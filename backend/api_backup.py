@@ -548,40 +548,72 @@ def buddy_remote_restore():
         return jsonify({'error': payload.get('error', 'Remote restore failed')}), 400
     return jsonify({'success': True, **payload})
 
-@bp.route('/api/v1/backup/buddy/peer/upload', methods=['POST'])
-def buddy_peer_upload():
-    """Receive a buddy snapshot stream payload from a paired peer."""
-    if buddy_backup_manager is None:
-        return jsonify({'error': 'Buddy backup manager not initialized'}), 500
+def _upload_result(success, payload):
+    if not success:
+        body = {'error': payload.get('error', 'Buddy upload failed')}
+        if 'expected_offset' in payload:
+            body['expected_offset'] = payload['expected_offset']
+        return jsonify(body), int(payload.get('status', 400))
+    return jsonify({'success': True, **payload})
 
+
+@bp.route('/api/v1/backup/buddy/peer/upload/start', methods=['POST'])
+def buddy_peer_upload_start():
+    """A paired buddy starts sending one of its snapshots to this NAS."""
     peer, error_response = _authenticated_buddy()
     if error_response:
         return error_response
-
-    owner_node_id = _own_node_id(peer, request.form.get('owner_node_id'))
-    from_node_id = _own_node_id(peer, request.form.get('from_node_id'))
-    if not owner_node_id or not from_node_id:
+    data = request.get_json(silent=True) or {}
+    owner_node_id = _own_node_id(peer, data.get('owner_node_id'))
+    if not owner_node_id:
         return jsonify({'error': 'A buddy can only upload its own snapshots'}), 403
-    source_path = (request.form.get('source_path') or '').strip()
-    snapshot_name = (request.form.get('snapshot_name') or '').strip()
-    created_at = (request.form.get('created_at') or '').strip()
-    encrypted = str(request.form.get('encrypted') or '').strip().lower() in ('1', 'true', 'yes')
-    payload_file = request.files.get('payload')
-    if payload_file is None:
-        return jsonify({'error': 'payload file is required'}), 400
-
-    success, payload = buddy_backup_manager.ingest_peer_stream(
+    return _upload_result(*buddy_backup_manager.begin_peer_upload(
         owner_node_id=owner_node_id,
-        from_node_id=from_node_id,
-        source_path=source_path,
-        snapshot_name=snapshot_name,
-        created_at=created_at,
-        encrypted=encrypted,
-        payload_stream=payload_file.stream,
-    )
-    if not success:
-        return jsonify({'error': payload.get('error', 'Failed to ingest buddy stream')}), 400
-    return jsonify({'success': True, **payload})
+        source_path=str(data.get('source_path') or ''),
+        snapshot_name=str(data.get('snapshot_name') or ''),
+        created_at=str(data.get('created_at') or ''),
+        encrypted=bool(data.get('encrypted')),
+    ))
+
+
+@bp.route('/api/v1/backup/buddy/peer/upload/<upload_id>', methods=['PUT'])
+def buddy_peer_upload_chunk(upload_id):
+    """One chunk of snapshot data, raw in the body, placed at ?offset=N."""
+    peer, error_response = _authenticated_buddy()
+    if error_response:
+        return error_response
+    try:
+        offset = int(request.args.get('offset', ''))
+    except ValueError:
+        return jsonify({'error': 'offset is required'}), 400
+    return _upload_result(*buddy_backup_manager.append_peer_upload(
+        owner_node_id=peer.get('node_id'), upload_id=upload_id, offset=offset, body=request.stream,
+    ))
+
+
+@bp.route('/api/v1/backup/buddy/peer/upload/<upload_id>/finish', methods=['POST'])
+def buddy_peer_upload_finish(upload_id):
+    """Check size and checksum of a complete upload and keep the snapshot."""
+    peer, error_response = _authenticated_buddy()
+    if error_response:
+        return error_response
+    data = request.get_json(silent=True) or {}
+    try:
+        size = int(str(data.get('size', '')))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'size is required'}), 400
+    return _upload_result(*buddy_backup_manager.finish_peer_upload(
+        owner_node_id=peer.get('node_id'), upload_id=upload_id, size=size, sha256=str(data.get('sha256') or ''),
+    ))
+
+
+@bp.route('/api/v1/backup/buddy/peer/upload/<upload_id>', methods=['DELETE'])
+def buddy_peer_upload_abort(upload_id):
+    """The sending buddy gave up; drop what was received so far."""
+    peer, error_response = _authenticated_buddy()
+    if error_response:
+        return error_response
+    return _upload_result(*buddy_backup_manager.abort_peer_upload(peer.get('node_id'), upload_id))
 
 @bp.route('/api/v1/backup/buddy/peer/list', methods=['GET'])
 def buddy_peer_list():
