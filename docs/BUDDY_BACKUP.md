@@ -76,11 +76,25 @@ buddy stores only ciphertext.
 - **Schedule**: User-defined (hourly, daily) via systemd timers.
 - **Retention**: User-defined
 
-### 3. Restore
-1. Reinstall AlvaOS on primary NAS.
-2. Pair with Buddy NAS.
-3. Select restore point from snapshots.
-4. Buddy sends data + system configs back.
+### 3. Recovery kit (do this once, and again after pairing changes)
+Buddies store snapshots under the node id of the NAS that sent them, and they
+recognise that NAS by its WireGuard key and buddy secret. A reinstalled NAS has
+none of these, so on its own it would look like a stranger.
+
+**Backup → Buddy → Recovery kit → Download recovery kit** saves a small text
+file with this NAS's buddy identity (node id, WireGuard keys, buddy secret,
+tunnel address) and its buddy list, sealed with a password (scrypt +
+AES-256-GCM). Keep it off the NAS. The card shows when the kit is outdated
+because buddies were added or removed since.
+
+### 4. Restore after losing the NAS
+1. Install AlvaOS on the new hardware and finish setup.
+2. **Backup → Buddy → Recovery kit → Setting up a replacement NAS?**: load the
+   kit and enter its password. The new NAS takes over the old identity; the
+   tunnel to the buddies comes up without re-pairing.
+3. **Restore from a buddy**: pick the buddy and snapshot. Encrypted snapshots
+   need the encryption password (not the kit password, unless you chose the
+   same one).
 
 ## Web UI
 - **Pairing**: Quick access to code generation or entry.

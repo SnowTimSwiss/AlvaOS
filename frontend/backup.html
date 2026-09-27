@@ -1094,6 +1094,36 @@
                     </div>
                 </div>
 
+                <!-- Recovery kit: survive the loss of this NAS -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Recovery kit</div>
+                        <span class="pill" id="buddy-kit-pill">Not saved</span>
+                    </div>
+                    <p class="metric-sub card-help">If this NAS is lost, a new one can only reach its snapshots on your buddies with this kit. It contains this NAS's buddy identity and buddy list, locked with a password. Keep it somewhere other than this NAS, for example on your laptop or printed out.</p>
+                    <p class="metric-sub" id="buddy-kit-status" style="margin-bottom:12px;">No recovery kit saved yet.</p>
+                    <div class="pair-actions">
+                        <button id="buddy-kit-export-btn" class="btn-primary">Download recovery kit</button>
+                    </div>
+                    <details class="advanced" style="margin-top:14px;">
+                        <summary><i data-lucide="key-round" aria-hidden="true"></i> Setting up a replacement NAS? <i data-lucide="chevron-down" class="chev" aria-hidden="true"></i></summary>
+                        <div class="advanced-body">
+                            <p class="metric-sub" style="margin-bottom:12px;">Load the kit from your old NAS. This NAS then takes over its identity: your buddies recognise it again and its snapshots appear under &ldquo;Restore from a buddy&rdquo;.</p>
+                            <div class="setting-group">
+                                <label class="setting-label" for="buddy-kit-file">Recovery kit file</label>
+                                <input id="buddy-kit-file" type="file" accept=".txt,text/plain" class="select-input">
+                            </div>
+                            <div class="setting-group">
+                                <label class="setting-label" for="buddy-kit-text">or paste its contents</label>
+                                <textarea id="buddy-kit-text" rows="3" placeholder="ALVAKIT1..."></textarea>
+                            </div>
+                            <div class="pair-actions">
+                                <button id="buddy-kit-import-btn" class="btn-secondary">Restore identity from kit</button>
+                            </div>
+                        </div>
+                    </details>
+                </div>
+
                 <!-- Advanced: pairing (existing token technology) -->
                 <details class="advanced">
                     <summary><i data-lucide="link" aria-hidden="true"></i> Add a buddy (pairing) <i data-lucide="chevron-down" class="chev" aria-hidden="true"></i></summary>

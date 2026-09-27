@@ -1662,6 +1662,193 @@ class BuddyBackupManager:
         if not ok:
             print(f"Buddy backup: tunnel not started: {result.get('error')}")
 
+    # ── Recovery kit ────────────────────────────────────────────────────────
+    # A fresh install gets a new node id and new keys, so its buddies would not
+    # recognise it and it could not see its old snapshots. The recovery kit
+    # carries this node's identity (node id, WireGuard keys, buddy secret,
+    # tunnel address) and its buddy list, sealed with a password. Importing it
+    # makes the new machine the same node again; the buddies need no change.
+
+    RECOVERY_KIT_KIND = "alvaos-buddy-recovery"
+
+    def _recovery_kit_fingerprint(self) -> str:
+        identity = self._load_identity()
+        peers = self._load_peers()
+        material = json.dumps({
+            "node_id": identity.get("node_id"),
+            "public_key": identity.get("public_key"),
+            "peers": sorted((nid, str(p.get("public_key") or "")) for nid, p in peers.items()),
+        }, sort_keys=True)
+        return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+    def export_recovery_kit(self, passphrase: str) -> Tuple[bool, Dict]:
+        if len(passphrase or "") < 8:
+            return False, {"error": "Choose a recovery kit password with at least 8 characters"}
+        self._identity_public()   # make sure a complete identity exists
+        identity = self._identity_private()
+        peers = self._load_peers()
+        kit: Dict[str, Any] = {
+            "kind": self.RECOVERY_KIT_KIND,
+            "v": 1,
+            "created_at": self._now_iso(),
+            "identity": {
+                key: identity.get(key)
+                for key in ("node_id", "name", "private_key", "public_key", "api_secret",
+                            "tunnel_ip", "listen_port")
+            },
+            "peers": peers,
+        }
+        try:
+            blob = buddy_crypto.seal_json(kit, passphrase)
+        except buddy_crypto.BuddyCryptoError as exc:
+            return False, {"error": str(exc)}
+        self._update_runtime({
+            "recovery_kit_exported_at": kit["created_at"],
+            "recovery_kit_fingerprint": self._recovery_kit_fingerprint(),
+        })
+        name = re.sub(r"[^A-Za-z0-9_-]+", "-", str(identity.get("name") or "alvaos")).strip("-") or "alvaos"
+        return True, {
+            "kit": blob,
+            "filename": f"{name}-buddy-recovery-kit.txt",
+            "created_at": kit["created_at"],
+            "peer_count": len(peers),
+        }
+
+    def recovery_kit_status(self) -> Dict:
+        runtime = self._load_runtime()
+        exported_at = str(runtime.get("recovery_kit_exported_at") or "")
+        return {
+            "exported_at": exported_at,
+            # A kit made before the last pairing change would restore an
+            # incomplete buddy list.
+            "up_to_date": bool(exported_at)
+            and runtime.get("recovery_kit_fingerprint") == self._recovery_kit_fingerprint(),
+        }
+
+    def _validated_kit_identity(self, raw: Any) -> Dict:
+        if not isinstance(raw, dict):
+            raise ValueError("identity is missing")
+        node_id = str(raw.get("node_id") or "")
+        private_key = str(raw.get("private_key") or "")
+        public_key = str(raw.get("public_key") or "")
+        api_secret = str(raw.get("api_secret") or "")
+        tunnel_ip = str(raw.get("tunnel_ip") or "")
+        if not re.fullmatch(r"[0-9a-f]{8,64}", node_id):
+            raise ValueError("invalid node id")
+        if not (WG_KEY_RE.match(private_key) and WG_KEY_RE.match(public_key)):
+            raise ValueError("invalid WireGuard key")
+        if not re.fullmatch(r"[A-Za-z0-9_-]{20,128}", api_secret):
+            raise ValueError("invalid buddy secret")
+        if not IPV4_RE.match(tunnel_ip):
+            raise ValueError("invalid tunnel address")
+        try:
+            from cryptography.hazmat.primitives import serialization
+            from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+
+            derived = X25519PrivateKey.from_private_bytes(base64.b64decode(private_key)).public_key()
+            derived_b64 = base64.b64encode(
+                derived.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+            ).decode("ascii")
+        except Exception:
+            raise ValueError("invalid WireGuard key") from None
+        if derived_b64 != public_key:
+            raise ValueError("WireGuard keys do not belong together")
+        try:
+            listen_port = max(1024, min(65535, int(raw.get("listen_port") or self.default_listen_port)))
+        except (TypeError, ValueError):
+            listen_port = self.default_listen_port
+        name = re.sub(r"[^\w .-]+", "", str(raw.get("name") or ""))[:64] or self._hostname()
+        return {
+            "node_id": node_id, "name": name, "private_key": private_key, "public_key": public_key,
+            "api_secret": api_secret, "tunnel_ip": tunnel_ip, "listen_port": listen_port,
+        }
+
+    def _validated_kit_peers(self, raw: Any) -> Dict[str, Dict]:
+        if not isinstance(raw, dict):
+            raise ValueError("buddy list is missing")
+        peers: Dict[str, Dict] = {}
+        for node_id, peer in raw.items():
+            if not isinstance(peer, dict) or not re.fullmatch(r"[0-9a-f]{8,64}", str(node_id)):
+                raise ValueError("invalid buddy entry")
+            public_key = str(peer.get("public_key") or "")
+            tunnel_ip = str(peer.get("tunnel_ip") or "")
+            endpoint = str(peer.get("endpoint") or "")
+            api_endpoint = str(peer.get("api_endpoint") or "")
+            if not (WG_KEY_RE.match(public_key) and IPV4_RE.match(tunnel_ip)):
+                raise ValueError(f"invalid keys for buddy {node_id}")
+            if endpoint and not WG_ENDPOINT_RE.match(endpoint):
+                raise ValueError(f"invalid endpoint for buddy {node_id}")
+            if api_endpoint and not WG_ENDPOINT_RE.match(api_endpoint):
+                api_endpoint = ""
+            api_secret = str(peer.get("api_secret") or "")
+            if api_secret and not re.fullmatch(r"[A-Za-z0-9_-]{20,128}", api_secret):
+                raise ValueError(f"invalid secret for buddy {node_id}")
+            peers[str(node_id)] = {
+                "node_id": str(node_id),
+                "name": re.sub(r"[^\w .-]+", "", str(peer.get("name") or node_id))[:64],
+                "public_key": public_key,
+                "api_secret": api_secret,
+                "tunnel_ip": tunnel_ip,
+                "listen_port": peer.get("listen_port") or self.default_listen_port,
+                "endpoint": endpoint,
+                "api_endpoint": api_endpoint,
+                "last_paired_at": str(peer.get("last_paired_at") or ""),
+                "status": "configured",
+                "last_error": "",
+            }
+        return peers
+
+    @staticmethod
+    def _kit_restored_message(peer_count: int) -> str:
+        if peer_count == 0:
+            return "Identity restored. The kit contained no buddies yet."
+        buddies = "1 buddy" if peer_count == 1 else f"{peer_count} buddies"
+        return (f"Identity restored with {buddies}. Your snapshots on them now appear under "
+                "\"Restore from a buddy\".")
+
+    def import_recovery_kit(self, kit: str, passphrase: str, replace: bool = False) -> Tuple[bool, Dict]:
+        try:
+            data = buddy_crypto.open_json(kit, passphrase)
+        except buddy_crypto.BuddyCryptoError as exc:
+            return False, {"error": str(exc)}
+        except Exception:
+            return False, {"error": "The recovery kit could not be read"}
+        if data.get("kind") != self.RECOVERY_KIT_KIND or data.get("v") != 1:
+            return False, {"error": "This recovery kit comes from an unsupported AlvaOS version"}
+        try:
+            identity_fields = self._validated_kit_identity(data.get("identity"))
+            peers = self._validated_kit_peers(data.get("peers"))
+        except ValueError as exc:
+            return False, {"error": f"The recovery kit is not valid: {exc}"}
+
+        current_peers = self._load_peers()
+        current = self._load_identity()
+        if current_peers and current.get("node_id") != identity_fields["node_id"] and not replace:
+            return False, {
+                "error": "This NAS already has buddies of its own. Importing replaces its identity "
+                         "and buddy list; confirm to continue.",
+                "needs_confirmation": True,
+            }
+
+        identity = dict(current) if isinstance(current, dict) else {}
+        identity.update(identity_fields)
+        identity.update({"key_source": "wireguard", "key_error": "", "restored_at": self._now_iso()})
+        identity.setdefault("created_at", self._now_iso())
+        with self._transfer_lock:
+            self._save_identity(identity)
+            self._save_peers(peers)
+        tunnel_ok, tunnel_result = self.apply_tunnel_config()
+        self._update_runtime({
+            "recovery_kit_exported_at": str(data.get("created_at") or ""),
+            "recovery_kit_fingerprint": self._recovery_kit_fingerprint(),
+        })
+        return True, {
+            "node_id": identity_fields["node_id"],
+            "peer_count": len(peers),
+            "tunnel": tunnel_result if tunnel_ok else {"error": tunnel_result.get("error", "")},
+            "message": self._kit_restored_message(len(peers)),
+        }
+
     def generate_pairing_token(
         self,
         endpoint: str = "",

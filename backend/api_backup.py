@@ -494,6 +494,37 @@ def buddy_remote_snapshot_delete():
         return jsonify({'error': payload.get('error', 'Failed to delete remote snapshot')}), 400
     return jsonify({'success': True, **payload})
 
+@bp.route('/api/v1/backup/buddy/recovery-kit', methods=['GET', 'POST'])
+@require_auth(require_admin=True)
+def buddy_recovery_kit():
+    """GET: whether a current recovery kit exists. POST: create one."""
+    if buddy_backup_manager is None:
+        return jsonify({'error': 'Buddy backup manager not initialized'}), 500
+    if request.method == 'GET':
+        return jsonify(buddy_backup_manager.recovery_kit_status())
+    data = request.get_json() or {}
+    success, payload = buddy_backup_manager.export_recovery_kit(str(data.get('passphrase') or ''))
+    if not success:
+        return jsonify({'error': payload.get('error', 'Could not create the recovery kit')}), 400
+    return jsonify({'success': True, **payload})
+
+@bp.route('/api/v1/backup/buddy/recovery-kit/import', methods=['POST'])
+@require_auth(require_admin=True)
+def buddy_recovery_kit_import():
+    """Make this NAS the node described by a recovery kit (disaster recovery)."""
+    if buddy_backup_manager is None:
+        return jsonify({'error': 'Buddy backup manager not initialized'}), 500
+    data = request.get_json() or {}
+    success, payload = buddy_backup_manager.import_recovery_kit(
+        kit=str(data.get('kit') or ''),
+        passphrase=str(data.get('passphrase') or ''),
+        replace=bool(data.get('replace')),
+    )
+    if not success:
+        status = 409 if payload.get('needs_confirmation') else 400
+        return jsonify(payload), status
+    return jsonify({'success': True, **payload})
+
 @bp.route('/api/v1/backup/buddy/restore/remote', methods=['POST'])
 @require_auth(require_admin=True)
 def buddy_remote_restore():
