@@ -125,6 +125,8 @@ class BuddyBackupManager:
         self.settings_file = os.path.join(self.state_dir, "buddy_settings.json")
         self.streams_file = os.path.join(self.state_dir, "buddy_streams.json")
         self.runtime_file = os.path.join(self.state_dir, "buddy_runtime.json")
+        # Per buddy and source: the snapshot last sent, kept as base for the next delta.
+        self.send_state_file = os.path.join(self.state_dir, "buddy_send_state.json")
         # ALVAENC2 key material (scrypt output). Needed to encrypt unattended;
         # restores derive the key from the passphrase and the stream header.
         self.encryption_key_file = os.path.join(self.state_dir, "buddy_encryption_key.json")
@@ -1239,6 +1241,8 @@ class BuddyBackupManager:
         return False, last_error or f"Failed to delete temporary snapshot: {target}"
 
     def _cleanup_stale_send_snapshots(self, source_parent: str, source_slug: str, btrfs_cmd: str) -> None:
+        """Remove send snapshots left by interrupted runs, but not the kept delta bases."""
+        keep = self._kept_base_paths()
         base = os.path.normpath(str(source_parent or "").strip())
         slug = str(source_slug or "").strip()
         if not base or not slug:
@@ -1252,6 +1256,8 @@ class BuddyBackupManager:
             if not pattern.match(candidate):
                 continue
             path = os.path.join(base, candidate)
+            if os.path.normpath(path) in keep:
+                continue
             self._cleanup_temp_subvolume(path, btrfs_cmd, attempts=2)
 
     def _device_id_for_path(self, path: str) -> Optional[int]:
@@ -1597,41 +1603,84 @@ class BuddyBackupManager:
             "encrypted": bool(item.get("encrypted")),
             "size_bytes": int(item.get("size_bytes") or 0),
             "sha256": str(item.get("sha256") or ""),
+            "parent_id": str(item.get("parent_id") or ""),
         }
 
+    @staticmethod
+    def _chain_root_id(by_id: Dict[str, Dict], item: Dict) -> str:
+        """Id of the full snapshot an (incremental) snapshot builds on."""
+        seen = set()
+        while item.get("parent_id") and str(item["parent_id"]) in by_id and id(item) not in seen:
+            seen.add(id(item))
+            item = by_id[str(item["parent_id"])]
+        return str(item.get("id") or "")
+
+    @staticmethod
+    def _with_descendants(entries: List[Dict], ids: set) -> set:
+        """`ids` plus every snapshot that builds on one of them, directly or not."""
+        result = set(ids)
+        grew = True
+        while grew:
+            grew = False
+            for item in entries:
+                item_id = str(item.get("id") or "")
+                if item_id not in result and str(item.get("parent_id") or "") in result:
+                    result.add(item_id)
+                    grew = True
+        return result
+
+    def _remove_stream_entries(self, remove_ids: set) -> List[Dict]:
+        """Delete these snapshots and their payload files; returns the removed entries."""
+        entries = self._load_stream_entries()
+        kept, removed = [], []
+        for item in entries:
+            if str(item.get("id") or "") not in remove_ids:
+                kept.append(item)
+                continue
+            removed.append(item)
+            payload_path = str(item.get("payload_path") or "").strip()
+            try:
+                if payload_path and os.path.exists(payload_path):
+                    os.remove(payload_path)
+            except OSError:
+                pass
+        self._save_stream_entries(kept)
+        return removed
+
     def _enforce_stream_quota(self, owner_node_id: str) -> None:
+        """Drop the oldest snapshots of an owner until it fits its quota.
+
+        Incremental snapshots are useless without the snapshots they build
+        on, so whole chains (a full snapshot and its increments) are dropped,
+        oldest first. The chain holding the newest snapshot is always kept.
+        """
         owner = str(owner_node_id or "").strip()
         if not owner:
             return
         limit_bytes = self._owner_quota_bytes(owner)
 
-        entries = self._load_stream_entries()
-        owner_entries = [e for e in entries if str(e.get("owner_node_id") or "").strip() == owner]
-        owner_entries.sort(key=lambda item: str(item.get("received_at") or ""), reverse=True)
+        owner_entries = [e for e in self._load_stream_entries() if str(e.get("owner_node_id") or "").strip() == owner]
         total = sum(int(item.get("size_bytes") or 0) for item in owner_entries)
-        if total <= limit_bytes:
+        if total <= limit_bytes or not owner_entries:
             return
 
-        remove_ids = set()
-        for item in reversed(owner_entries):
+        by_id = {str(item.get("id") or ""): item for item in owner_entries}
+        chains: Dict[str, List[Dict]] = {}
+        for item in owner_entries:
+            chains.setdefault(self._chain_root_id(by_id, item), []).append(item)
+
+        def newest(members: List[Dict]) -> str:
+            return max(str(m.get("received_at") or "") for m in members)
+
+        ordered = sorted(chains.values(), key=newest)
+        remove_ids: set = set()
+        for members in ordered[:-1]:
             if total <= limit_bytes:
                 break
-            remove_ids.add(str(item.get("id") or ""))
-            total -= int(item.get("size_bytes") or 0)
-
-        filtered = []
-        for item in entries:
-            item_id = str(item.get("id") or "")
-            if item_id in remove_ids:
-                payload_path = str(item.get("payload_path") or "").strip()
-                try:
-                    if payload_path and os.path.exists(payload_path):
-                        os.remove(payload_path)
-                except Exception:
-                    pass
-                continue
-            filtered.append(item)
-        self._save_stream_entries(filtered)
+            remove_ids.update(str(m.get("id") or "") for m in members)
+            total -= sum(int(m.get("size_bytes") or 0) for m in members)
+        if remove_ids:
+            self._remove_stream_entries(remove_ids)
 
     # Every AlvaOS backend listens on this port; peers reach it through the tunnel.
     PEER_API_PORT = 8080
@@ -2362,9 +2411,13 @@ class BuddyBackupManager:
         snapshot_name: str,
         created_at: str,
         encrypted: bool,
+        parent_id: str = "",
     ) -> Tuple[bool, Dict]:
+        """Open an upload. With `parent_id` the data is a `btrfs send -p` delta
+        against that earlier snapshot of the same owner."""
         owner = str(owner_node_id or "").strip()
         source = str(source_path or "").strip()
+        parent = str(parent_id or "").strip()
         snap_name = str(snapshot_name or "").strip()
         if not owner:
             return False, {"error": "owner_node_id is required"}
@@ -2374,6 +2427,11 @@ class BuddyBackupManager:
             return False, {"error": "snapshot_name is required"}
         if owner not in self._load_peers():
             return False, {"error": "Unknown owner_node_id"}
+        if parent and not any(str(e.get("id") or "") == parent and str(e.get("owner_node_id") or "") == owner
+                              for e in self._load_stream_entries()):
+            # The sender then starts over with a full snapshot.
+            return False, {"error": "The snapshot this one builds on is no longer stored here",
+                           "status": 409, "parent_missing": True}
 
         root, owner_dir, select_err = self._select_writable_stream_owner_dir(owner)
         if not root or not owner_dir:
@@ -2403,6 +2461,7 @@ class BuddyBackupManager:
                 "snapshot_name": snap_name,
                 "created_at": str(created_at or "").strip() or self._now_iso(),
                 "encrypted": bool(encrypted),
+                "parent_id": parent,
                 "size": 0,
                 "sha": hashlib.sha256(),
                 "touched": time.time(),
@@ -2501,6 +2560,7 @@ class BuddyBackupManager:
             "encrypted": upload["encrypted"],
             "size_bytes": int(size),
             "sha256": digest,
+            "parent_id": upload["parent_id"],
             "payload_path": payload_path,
         }
         entries = self._load_stream_entries()
@@ -2563,6 +2623,7 @@ class BuddyBackupManager:
         return False, {"error": "Stream not found"}
 
     def delete_peer_stream(self, owner_node_id: str, stream_id: str) -> Tuple[bool, Dict]:
+        """Delete a stored snapshot and every incremental snapshot built on it."""
         owner = str(owner_node_id or "").strip()
         sid = str(stream_id or "").strip()
         if not owner:
@@ -2570,34 +2631,62 @@ class BuddyBackupManager:
         if not sid:
             return False, {"error": "stream_id is required"}
 
-        entries = self._load_stream_entries()
-        target_entry = None
-        filtered = []
-        for item in entries:
-            item_owner = str(item.get("owner_node_id") or "").strip()
-            item_id = str(item.get("id") or "").strip()
-            if item_owner == owner and item_id == sid and target_entry is None:
-                target_entry = item
-                continue
-            filtered.append(item)
-
+        owner_entries = [e for e in self._load_stream_entries() if str(e.get("owner_node_id") or "").strip() == owner]
+        target_entry = next((e for e in owner_entries if str(e.get("id") or "").strip() == sid), None)
         if target_entry is None:
             return False, {"error": "Stream not found"}
 
-        payload_path = str(target_entry.get("payload_path") or "").strip()
-        payload_removed = False
-        if payload_path and os.path.exists(payload_path):
-            try:
-                os.remove(payload_path)
-                payload_removed = True
-            except Exception as exc:
-                return False, {"error": f"Failed to delete stream payload: {exc}"}
-
-        self._save_stream_entries(filtered)
+        removed = self._remove_stream_entries(self._with_descendants(owner_entries, {sid}))
         return True, {
             "stream": self._public_stream_entry(target_entry),
-            "payload_removed": payload_removed,
+            "payload_removed": True,
+            "removed_ids": [str(item.get("id") or "") for item in removed],
         }
+
+    # ── Incremental sends ───────────────────────────────────────────────────
+    # After a successful send, the read-only snapshot that was sent stays on
+    # this NAS as the base for the next one: `btrfs send -p BASE NEW` then
+    # only carries what changed. On the buddy each delta names the stored
+    # snapshot it builds on (parent_id). After MAX_DELTA_CHAIN deltas a full
+    # snapshot starts a new chain, so restores stay reasonably short and old
+    # chains can be dropped as a whole when the buddy runs out of quota.
+    MAX_DELTA_CHAIN = 30
+
+    def _load_send_state(self) -> Dict[str, Dict[str, Dict]]:
+        state = self._load_json(self.send_state_file, {})
+        return state if isinstance(state, dict) else {}
+
+    def _save_send_state(self, state: Dict[str, Dict[str, Dict]]) -> None:
+        self._save_json(self.send_state_file, state)
+
+    def _kept_base_paths(self) -> set:
+        return {
+            os.path.normpath(str(entry.get("snapshot_path") or ""))
+            for per_source in self._load_send_state().values() if isinstance(per_source, dict)
+            for entry in per_source.values() if isinstance(entry, dict) and entry.get("snapshot_path")
+        }
+
+    def _usable_base(self, entry: Any) -> Optional[Dict]:
+        """The kept base for a delta, if it is still there and the chain is not too long."""
+        if not isinstance(entry, dict):
+            return None
+        path = str(entry.get("snapshot_path") or "")
+        if not path or not entry.get("stream_id") or int(entry.get("chain_length") or 0) >= self.MAX_DELTA_CHAIN:
+            return None
+        return entry if self._path_is_btrfs_subvolume(path) else None
+
+    def _drop_send_bases(self, node_id: str, btrfs_cmd: Optional[str] = None) -> None:
+        """Forget and delete the kept bases for one buddy (e.g. when it is removed)."""
+        state = self._load_send_state()
+        per_source = state.pop(node_id, None)
+        self._save_send_state(state)
+        btrfs = btrfs_cmd or self._btrfs_cmd()
+        if not isinstance(per_source, dict) or not btrfs:
+            return
+        for entry in per_source.values():
+            path = str((entry or {}).get("snapshot_path") or "")
+            if path:
+                self._cleanup_temp_subvolume(path, btrfs, attempts=2)
 
     def _take_send_snapshot(self, source_path: str) -> Tuple[bool, Dict]:
         """Read-only snapshot of a source to send from. The caller removes it."""
@@ -2698,7 +2787,8 @@ class BuddyBackupManager:
         raise _TransferError(last_error)
 
     def _stream_snapshot_to_peer(self, peer: Dict, snapshot: Dict, meta: Dict,
-                                 material: Optional["buddy_crypto.KeyMaterial"]) -> Tuple[bool, Dict]:
+                                 material: Optional["buddy_crypto.KeyMaterial"],
+                                 base: Optional[Dict] = None) -> Tuple[bool, Dict]:
         """Pipe `btrfs send` into the buddy chunk by chunk, encrypting on the way.
 
         Neither the plain nor the encrypted stream is ever written to local
@@ -2706,9 +2796,16 @@ class BuddyBackupManager:
         """
         if not str(peer.get("api_secret") or "").strip():
             return False, {"error": "Peer is missing API secret. Re-pair to enable transfer."}
+        start = {**meta, "encrypted": material is not None}
         try:
-            status, body = self._peer_request(peer, "POST", "/api/v1/backup/buddy/peer/upload/start",
-                                              json={**meta, "encrypted": material is not None})
+            if base is not None:
+                status, body = self._peer_request(peer, "POST", "/api/v1/backup/buddy/peer/upload/start",
+                                                  json={**start, "parent_id": base["stream_id"]})
+                if status == 409 and body.get("parent_missing"):
+                    base = None  # the buddy dropped the base snapshot; send everything
+            if base is None:
+                status, body = self._peer_request(peer, "POST", "/api/v1/backup/buddy/peer/upload/start",
+                                                  json=start)
         except (requests.RequestException, _TransferError) as exc:
             return False, {"error": str(exc)}
         upload_id = str(body.get("upload_id") or "")
@@ -2716,7 +2813,10 @@ class BuddyBackupManager:
             return False, {"error": body.get("error") or f"HTTP {status}"}
         chunk_bytes = max(1024 * 1024, min(self.UPLOAD_CHUNK_BYTES, int(body.get("chunk_bytes") or 0)))
 
-        proc, stderr = self.spawn_privileged([snapshot["btrfs_cmd"], "send", snapshot["snapshot_path"]])
+        send_cmd = [snapshot["btrfs_cmd"], "send"]
+        if base is not None:
+            send_cmd += ["-p", base["snapshot_path"]]
+        proc, stderr = self.spawn_privileged(send_cmd + [snapshot["snapshot_path"]])
         encryptor = buddy_crypto.StreamEncryptor(material) if material is not None else None
         digest = hashlib.sha256()
         offset = 0
@@ -2747,7 +2847,7 @@ class BuddyBackupManager:
             )
             if not (200 <= status < 300):
                 raise _TransferError(body.get("error") or f"HTTP {status}")
-            return True, body
+            return True, {**body, "incremental": base is not None}
         except (requests.RequestException, _TransferError, OSError, buddy_crypto.BuddyCryptoError) as exc:
             try:
                 self._peer_request(peer, "DELETE", f"/api/v1/backup/buddy/peer/upload/{upload_id}", timeout=15)
@@ -2757,6 +2857,26 @@ class BuddyBackupManager:
         finally:
             _stop_process(proc)
             stderr.close()
+
+    def _keep_as_base(self, node_id: str, source_path: str, snapshot: Dict, upload_payload: Dict,
+                      base: Optional[Dict]) -> None:
+        """Remember the snapshot just sent as base for the next delta; drop the old base."""
+        state = self._load_send_state()
+        per_source = state.setdefault(node_id, {})
+        previous = per_source.get(source_path)
+        incremental = bool(upload_payload.get("incremental")) and base is not None
+        per_source[source_path] = {
+            "snapshot_path": snapshot["snapshot_path"],
+            "stream_id": str((upload_payload.get("stream") or {}).get("id") or ""),
+            "chain_length": int(base.get("chain_length") or 0) + 1 if incremental and base else 0,
+            "sent_at": self._now_iso(),
+        }
+        self._save_send_state(state)
+        old_path = str((previous or {}).get("snapshot_path") or "")
+        if old_path and old_path != snapshot["snapshot_path"]:
+            ok, err = self._cleanup_temp_subvolume(old_path, snapshot["btrfs_cmd"], attempts=3)
+            if not ok:
+                print(f"Buddy old base snapshot cleanup warning: {err}")
 
     def sync_to_peer(
         self,
@@ -2839,19 +2959,24 @@ class BuddyBackupManager:
                     "snapshot_name": snapshot["snapshot_name"],
                     "created_at": snapshot["created_at"],
                 }
+                base = self._usable_base(self._load_send_state().get(target, {}).get(source_path))
+                upload_ok = False
                 try:
-                    upload_ok, upload_payload = self._stream_snapshot_to_peer(peer, snapshot, meta, material)
+                    upload_ok, upload_payload = self._stream_snapshot_to_peer(peer, snapshot, meta, material, base)
                 finally:
-                    cleanup_ok, cleanup_err = self._cleanup_temp_subvolume(
-                        snapshot["snapshot_path"], snapshot["btrfs_cmd"], attempts=3
-                    )
-                    if not cleanup_ok:
-                        print(f"Buddy temp snapshot cleanup warning: {cleanup_err}")
+                    if not upload_ok:
+                        cleanup_ok, cleanup_err = self._cleanup_temp_subvolume(
+                            snapshot["snapshot_path"], snapshot["btrfs_cmd"], attempts=3
+                        )
+                        if not cleanup_ok:
+                            print(f"Buddy temp snapshot cleanup warning: {cleanup_err}")
                 if upload_ok:
+                    self._keep_as_base(target, source_path, snapshot, upload_payload, base)
                     created.append({
                         "source_path": source_path,
                         "snapshot_name": meta["snapshot_name"],
                         "encrypted": material is not None,
+                        "incremental": bool(upload_payload.get("incremental")),
                         "remote": upload_payload.get("stream", {}),
                     })
                 else:
@@ -2991,6 +3116,7 @@ class BuddyBackupManager:
                     return True, {
                         "node_id": target,
                         "deleted": body.get("deleted", {}),
+                        "removed_ids": body.get("removed_ids", []),
                     }
                 last_error = body.get("error") or f"HTTP {response.status_code}"
                 return False, {"error": last_error}
@@ -3090,9 +3216,21 @@ class BuddyBackupManager:
         finally:
             stderr.close()
 
-    def _restore_from_stream(self, stream: Union[str, Iterator[bytes]], snapshot_name: str,
-                             source_path: str) -> Tuple[bool, Dict]:
-        """Receive a snapshot stream (file path or iterator of bytes) and put it in place."""
+    def _restore_from_stream(self, stream: Union[str, Iterator[bytes], Callable[[], Tuple[bool, Any]]],
+                             snapshot_name: str,
+                             source_path: str,
+                             ancestors: Optional[List[Tuple[str, Callable[[], Tuple[bool, Any]]]]] = None,
+                             ) -> Tuple[bool, Dict]:
+        """Receive a snapshot stream and put it in place.
+
+        `stream` is a file path, an iterator of bytes, or an opener returning
+        (True, stream) or (False, error).
+
+        An incremental snapshot needs the snapshots it builds on: `ancestors`
+        lists them oldest first as (snapshot name, opener), where the opener
+        returns (True, stream) or (False, error). They are received first and
+        deleted again once the final snapshot is in place.
+        """
         target_source = str(source_path or "").strip()
         if not target_source.startswith("/"):
             return False, {"error": "source_path must be an absolute path"}
@@ -3109,24 +3247,61 @@ class BuddyBackupManager:
             ok_parent, parent_err = self._mkdir_p(target_parent)
             if not ok_parent:
                 return False, {"error": parent_err or "Failed to prepare target parent"}
+
         expected_name = str(snapshot_name or "").strip()
+        received_ancestors: List[str] = []
+        try:
+            for name in [n for n, _ in ancestors or []] + [expected_name]:
+                clear_err = self._clear_restore_leftover(name, target_parent, target_source,
+                                                         target_is_mount_root, btrfs_cmd)
+                if clear_err:
+                    return False, {"error": clear_err}
+            for name, open_stream in ancestors or []:
+                opened, ancestor_stream = open_stream()
+                if not opened:
+                    return False, {"error": ancestor_stream}
+                before = set(self._list_btrfs_subvolume_names_under(target_parent))
+                recv_ok, recv_err = self._receive_stream(btrfs_cmd, ancestor_stream, target_parent)
+                for new_name in set(self._list_btrfs_subvolume_names_under(target_parent)) - before:
+                    received_ancestors.append(os.path.join(target_parent, new_name))
+                if not recv_ok:
+                    return False, {"error": f"Failed to receive earlier snapshot {name}: {recv_err}"}
+            final: Any = stream
+            if callable(stream):
+                opened, final = stream()
+                if not opened:
+                    return False, {"error": final}
+            return self._receive_and_apply(final, expected_name, target_source, target_parent,
+                                           target_is_mount_root, btrfs_cmd)
+        finally:
+            # Only needed as the base for btrfs receive; the restored data is
+            # an independent subvolume.
+            for path in received_ancestors:
+                self._delete_subvolume_if_exists(path, btrfs_cmd)
 
-        # If an old receive left the same temporary snapshot behind, remove it first.
-        if expected_name:
-            expected_path = os.path.normpath(os.path.join(target_parent, expected_name))
-            if self._path_is_within_parent(expected_path, target_parent) and expected_path != os.path.normpath(target_parent):
-                if target_is_mount_root:
-                    def_ok, def_err = self._ensure_restore_collision_not_default(
-                        collision_path=expected_path,
-                        mount_root=target_source,
-                        btrfs_cmd=btrfs_cmd,
-                    )
-                    if not def_ok:
-                        return False, {"error": def_err or "Failed to prepare restore target default subvolume"}
-                cleanup_ok, cleanup_err, _ = self._delete_subvolume_if_exists(expected_path, btrfs_cmd)
-                if not cleanup_ok:
-                    return False, {"error": cleanup_err or f"Failed to prepare restore target: {expected_path}"}
+    def _clear_restore_leftover(self, name: str, target_parent: str, target_source: str,
+                                target_is_mount_root: bool, btrfs_cmd: str) -> str:
+        """Remove a subvolume an earlier, interrupted restore left under this name."""
+        if not name:
+            return ""
+        expected_path = os.path.normpath(os.path.join(target_parent, name))
+        if not self._path_is_within_parent(expected_path, target_parent) or expected_path == os.path.normpath(target_parent):
+            return ""
+        if target_is_mount_root:
+            def_ok, def_err = self._ensure_restore_collision_not_default(
+                collision_path=expected_path,
+                mount_root=target_source,
+                btrfs_cmd=btrfs_cmd,
+            )
+            if not def_ok:
+                return def_err or "Failed to prepare restore target default subvolume"
+        cleanup_ok, cleanup_err, _ = self._delete_subvolume_if_exists(expected_path, btrfs_cmd)
+        if not cleanup_ok:
+            return cleanup_err or f"Failed to prepare restore target: {expected_path}"
+        return ""
 
+    def _receive_and_apply(self, stream: Union[str, Iterator[bytes]], expected_name: str, target_source: str,
+                           target_parent: str, target_is_mount_root: bool, btrfs_cmd: str) -> Tuple[bool, Dict]:
         before_names = set(self._list_btrfs_subvolume_names_under(target_parent))
 
         recv_ok, recv_err = self._receive_stream(btrfs_cmd, stream, target_parent)
@@ -3237,6 +3412,53 @@ class BuddyBackupManager:
             "message": "Restore completed",
         }
 
+    @staticmethod
+    def _snapshot_chain(streams: List[Dict], entry: Dict) -> Tuple[List[Dict], str]:
+        """The full snapshot and the incremental ones leading to `entry`, oldest first."""
+        by_id = {str(item.get("id") or ""): item for item in streams if isinstance(item, dict)}
+        chain = [entry]
+        while chain[0].get("parent_id"):
+            parent = by_id.get(str(chain[0]["parent_id"]))
+            if parent is None or parent in chain:
+                return [], ("This snapshot builds on an earlier one that is no longer stored on the buddy, "
+                            "so it cannot be restored")
+            chain.insert(0, parent)
+        return chain, ""
+
+    def _open_restore_stream(self, peer: Dict, entry: Dict, owner_node_id: str, passphrase: str,
+                             temp_paths: List[str], responses: List[Any]) -> Tuple[bool, Any]:
+        """Start downloading one stored snapshot: (True, stream to receive) or (False, error)."""
+        try:
+            response = self._open_remote_stream(peer, str(entry.get("id") or ""), owner_node_id)
+            responses.append(response)
+            chunks = response.iter_content(chunk_size=1024 * 1024)
+            head = b""
+            for chunk in chunks:
+                head += chunk
+                if len(head) >= 8:
+                    break
+        except (_TransferError, requests.RequestException) as exc:
+            return False, str(exc) or "Failed to download remote snapshot stream"
+        body = itertools.chain([head], chunks)
+
+        if not entry.get("encrypted"):
+            return True, self._checked_stream(body, str(entry.get("sha256") or ""))
+        if not passphrase:
+            return False, "Encryption password is required for remote restore"
+        if head[:8] == buddy_crypto.MAGIC_V2:
+            # Every chunk is authenticated before it reaches btrfs receive.
+            plain = self._decrypted_stream(body, passphrase)
+            try:
+                first = next(plain, b"")
+            except (buddy_crypto.BuddyCryptoError, requests.RequestException) as exc:
+                return False, str(exc)
+            return True, itertools.chain([first], plain)
+        if head[:8] == buddy_crypto.MAGIC_V1:
+            # The old format has no per-chunk authentication, so it is
+            # downloaded and checked completely before it is used.
+            return self._legacy_v1_to_file(body, passphrase, temp_paths)
+        return False, "The downloaded snapshot is not in a known encrypted format"
+
     def _legacy_v1_to_file(self, body: Iterator[bytes], passphrase: str,
                            temp_paths: List[str]) -> Tuple[bool, str]:
         """Download and decrypt an ALVAENC1 snapshot; returns the plain file path."""
@@ -3290,55 +3512,39 @@ class BuddyBackupManager:
             if not restore_source.startswith("/"):
                 return False, {"error": "Invalid restore source path in remote snapshot"}
 
-            encrypted = bool(stream_entry.get("encrypted"))
-            if encrypted and not encryption_passphrase:
-                return False, {"error": "Encryption password is required for remote restore"}
             # No local password check here: on a freshly installed machine there
             # are no local settings yet. Decryption itself proves the password.
-
             identity = self._identity_public()
             owner_node_id = str(identity.get("node_id") or "")
+            chain, chain_err = self._snapshot_chain(list_payload.get("streams", []), stream_entry)
+            if chain_err:
+                return False, {"error": chain_err}
+            encrypted = any(bool(item.get("encrypted")) for item in chain)
+            if encrypted and not encryption_passphrase:
+                return False, {"error": "Encryption password is required for remote restore"}
             temp_paths: List[str] = []
-            response = None
+            responses: List[Any] = []
+
+            def opener(entry: Dict) -> Callable[[], Tuple[bool, Any]]:
+                return lambda: self._open_restore_stream(peer, entry, owner_node_id, encryption_passphrase,
+                                                         temp_paths, responses)
+
             try:
-                try:
-                    response = self._open_remote_stream(peer, sid, owner_node_id)
-                    chunks = response.iter_content(chunk_size=1024 * 1024)
-                    head = b""
-                    for chunk in chunks:
-                        head += chunk
-                        if len(head) >= 8:
-                            break
-                except (_TransferError, requests.RequestException) as exc:
-                    return False, {"error": str(exc) or "Failed to download remote snapshot stream"}
-                body = itertools.chain([head], chunks)
-
-                stream: Union[str, Iterator[bytes]]
-                if not encrypted:
-                    stream = self._checked_stream(body, str(stream_entry.get("sha256") or ""))
-                elif head[:8] == buddy_crypto.MAGIC_V2:
-                    # Every chunk is authenticated before it reaches btrfs receive.
-                    plain = self._decrypted_stream(body, encryption_passphrase)
-                    try:
-                        # Check the password before anything on disk is touched.
-                        first = next(plain, b"")
-                    except (buddy_crypto.BuddyCryptoError, requests.RequestException) as exc:
-                        return False, {"error": str(exc)}
-                    stream = itertools.chain([first], plain)
-                elif head[:8] == buddy_crypto.MAGIC_V1:
-                    # The old format has no per-chunk authentication, so it is
-                    # downloaded and checked completely before it is used.
-                    ok, result = self._legacy_v1_to_file(body, encryption_passphrase, temp_paths)
-                    if not ok:
-                        return False, {"error": result}
-                    stream = result
-                else:
-                    return False, {"error": "The downloaded snapshot is not in a known encrypted format"}
-
+                # Streams are opened right before they are received (an open
+                # download that sits idle would time out). The first one is
+                # opened now, which checks the password before anything on
+                # disk is touched.
+                openers = [opener(item) for item in chain]
+                opened, first = openers[0]()
+                if not opened:
+                    return False, {"error": first}
+                openers[0] = lambda: (True, first)
                 restore_ok, restore_payload = self._restore_from_stream(
-                    stream,
+                    openers[-1],
                     snapshot_name=str(stream_entry.get("snapshot_name") or ""),
                     source_path=restore_source,
+                    ancestors=[(str(item.get("snapshot_name") or ""), open_item)
+                               for item, open_item in zip(chain[:-1], openers[:-1], strict=True)],
                 )
                 if restore_ok and encrypted:
                     # Upgrades pre-ALVAENC2 installs once the right password is known.
@@ -3367,7 +3573,7 @@ class BuddyBackupManager:
                 })
                 return False, {"error": restore_payload.get("error", "Restore failed")}
             finally:
-                if response is not None:
+                for response in responses:
                     response.close()
                 for path in temp_paths:
                     try:
@@ -3410,6 +3616,8 @@ class BuddyBackupManager:
             kept_streams.append(entry)
         if len(kept_streams) != len(streams):
             self._save_stream_entries(kept_streams)
+
+        self._drop_send_bases(target)
 
         reciprocal_result = {"attempted": False, "success": False, "error": ""}
         if reciprocal:

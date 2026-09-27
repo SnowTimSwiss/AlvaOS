@@ -832,6 +832,11 @@ def _rule_btrfs(sys_: System, args):
             # Stream to stdout: the backend pipes it straight into the upload.
             readable_path(args[1])
             return Plan(argv=list(args))
+        if len(args) == 4 and args[1] == '-p':
+            # Incremental stream to stdout against a kept base snapshot.
+            readable_path(args[2])
+            readable_path(args[3])
+            return Plan(argv=list(args))
         _expect(args[1:], '-f', lambda p: writable_path(sys_, p), readable_path)
         return Plan(argv=list(args))
     if group == 'receive':
