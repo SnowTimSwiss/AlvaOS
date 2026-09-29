@@ -81,7 +81,8 @@ def test_kit_with_malicious_content_is_rejected(make_node):
     new = make_node("new")
 
     bad_identity = json.loads(json.dumps(base))
-    bad_identity["identity"]["public_key"] = identity["public_key"][:-2] + "A="  # not the matching key
+    # Another node's key: valid, but not the one that belongs to the private key.
+    bad_identity["identity"]["public_key"] = make_node("other")._identity_public()["public_key"]
     evil_peer = json.loads(json.dumps(base))
     evil_peer["peers"] = {"abcdef0123456789": {
         "public_key": "x\\nPostUp = id", "tunnel_ip": "100.95.95.9"}}
