@@ -69,12 +69,22 @@ jobs:
         env:
           ALVAOS_VERSION: ${{ steps.version.outputs.version }}
       
+      # Installed systems only accept AlvaOS packages with a valid signature.
+      - name: Sign package
+        if: github.event_name == 'release'
+        run: |
+          sudo apt-get install -y python3-cryptography
+          python3 scripts/release/sign_update.py sign build/package/alvaos-system_*.deb
+        env:
+          ALVAOS_UPDATE_SIGNING_KEY: ${{ secrets.ALVAOS_UPDATE_SIGNING_KEY }}
+
       - name: Upload package to release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@9d7c94cfd0a1f3ed45544c887983e9fa900f0564 # v2.0.4
         with:
           files: |
             build/package/alvaos-system_*.deb
+            build/package/alvaos-system_*.deb.sig
             build/package/checksums.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

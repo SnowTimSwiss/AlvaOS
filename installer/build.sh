@@ -123,6 +123,13 @@ cp "${SCRIPT_DIR}/../VERSION" config/includes.chroot/opt/alvaos/VERSION
 if [ -f "${SCRIPT_DIR}/../backend/alvaos-backend.py" ]; then
   mkdir -p config/includes.chroot/opt/alvaos/backend
   cp "${SCRIPT_DIR}/../backend/"*.py config/includes.chroot/opt/alvaos/backend/
+  cp "${SCRIPT_DIR}/../backend/alvaos-priv" config/includes.chroot/opt/alvaos/backend/
+fi
+
+# Update signing public key (optional; without it updates are refused)
+if [ -f "${SCRIPT_DIR}/../keys/update-signing.pub" ]; then
+  mkdir -p config/includes.chroot/opt/alvaos/keys
+  cp "${SCRIPT_DIR}/../keys/update-signing.pub" config/includes.chroot/opt/alvaos/keys/
 fi
 
 # Apps catalog (optional)

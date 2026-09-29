@@ -1,0 +1,265 @@
+#!/usr/bin/python3 -I
+"""
+alvaos-priv — the only program the AlvaOS backend may run as root.
+
+    sudo -n /opt/alvaos/bin/alvaos-priv [--env KEY=VALUE]... -- /usr/bin/btrfs subvolume create ...
+    sudo -n /opt/alvaos/bin/alvaos-priv write-sysfs PATH VALUE
+    sudo -n /opt/alvaos/bin/alvaos-priv apply-update PACKAGE
+    sudo -n /opt/alvaos/bin/alvaos-priv vault-open NAME HOST EXPORT MODE   (key on stdin)
+    sudo -n /opt/alvaos/bin/alvaos-priv vault-close NAME
+
+Every command line is checked by priv_policy before it runs. Nothing is ever
+passed to a shell. Denials exit with status 126 and are logged to
+/var/log/alvaos/priv-denied.log.
+
+This file and everything it imports must be owned by root and not writable by
+the alvaos user; otherwise the backend could rewrite its own policy.
+"""
+
+import os
+import secrets
+import shutil
+import subprocess
+import sys
+from datetime import datetime, timezone
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, HERE)
+
+import priv_policy as policy  # noqa: E402
+import update_signing  # noqa: E402
+import vault_ops  # noqa: E402
+
+DENIED_EXIT = 126
+MAX_STDIN = 1024 * 1024
+UPDATE_STAGING_DIR = '/var/cache/alvaos-updates'
+APPLY_UPDATE_SCRIPT = '/opt/alvaos/scripts/apply_update.sh'
+ALVAOS_PACKAGE_NAME = 'alvaos-system'
+BASE_ENV = {
+    'PATH': '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+    'LC_ALL': 'C',
+    'LANG': 'C',
+    'HOME': '/root',
+}
+
+
+def log_denied(argv, reason):
+    try:
+        os.makedirs('/var/log/alvaos', exist_ok=True)
+        stamp = datetime.now(timezone.utc).isoformat()
+        with open('/var/log/alvaos/priv-denied.log', 'a', encoding='utf-8') as f:
+            f.write(f'{stamp} denied={reason!r} argv={list(argv)!r}\n')
+    except Exception:
+        pass
+
+
+def deny(argv, reason):
+    log_denied(argv, reason)
+    sys.stderr.write(f'alvaos-priv: denied: {reason}\n')
+    sys.exit(DENIED_EXIT)
+
+
+def _secure_dir(path, mode=0o700):
+    os.makedirs(path, mode=mode, exist_ok=True)
+    st = os.lstat(path)
+    if not os.path.isdir(path) or os.path.islink(path) or st.st_uid != 0:
+        raise policy.PolicyError(f'Staging directory {path} is not a root-owned directory')
+    os.chmod(path, mode)
+
+
+def _open_within(path, allowed_root):
+    """Open a file for reading and prove, via the open fd, where it really is.
+
+    Checking a path and then opening it is racy (the backend could swap in a
+    symlink in between). Resolving /proc/self/fd/N after opening is not.
+    """
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    real = os.readlink(f'/proc/self/fd/{fd}')
+    if not real.startswith(allowed_root.rstrip('/') + '/'):
+        os.close(fd)
+        raise policy.PolicyError(f'{path} resolves outside {allowed_root}')
+    return os.fdopen(fd, 'rb')
+
+
+def _stage_copy(src, allowed_root, dest_dir, name=None):
+    _secure_dir(dest_dir)
+    dest = os.path.join(dest_dir, name or f'{secrets.token_hex(8)}-{os.path.basename(src)}')
+    with _open_within(src, allowed_root) as fin:
+        fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, 'wb') as fout:
+            shutil.copyfileobj(fin, fout, 1024 * 1024)
+    return dest
+
+
+def _verify_alvaos_package(staged_deb, original_path):
+    """AlvaOS packages must be signed. Other Debian packages are left to dpkg."""
+    name = update_signing.read_deb_package_name(staged_deb)
+    if name != ALVAOS_PACKAGE_NAME:
+        return
+    sig_src = update_signing.signature_path_for(original_path)
+    try:
+        staged_sig = _stage_copy(sig_src, policy.UPDATE_CACHE_DIR, os.path.dirname(staged_deb),
+                                 name=os.path.basename(staged_deb) + '.sig')
+    except FileNotFoundError:
+        raise policy.PolicyError('The AlvaOS package has no signature file (.sig); refusing to install it') from None
+    try:
+        update_signing.verify_installed_key(staged_deb, staged_sig)
+    except update_signing.SignatureError as e:
+        raise policy.PolicyError(f'Update signature check failed: {e}') from e
+
+
+def stage_files(plan, cleanup):
+    """Copy backend-writable inputs into root-owned storage and check them there."""
+    stage_root = os.path.join(policy.STAGING_DIR, secrets.token_hex(8))
+    cleanup.append(stage_root)
+    for index, kind in sorted(plan.stage.items()):
+        arg_index = index + 1  # plan.argv[0] is the binary
+        original = plan.argv[arg_index]
+        if kind == 'compose':
+            staged = _stage_copy(original, policy.COMPOSE_DIR, stage_root)
+            with open(staged, 'rb') as f:
+                policy.check_compose(f.read())
+            plan.argv[arg_index] = staged
+            # Relative paths in the compose file keep resolving next to the original.
+            plan.argv[1:1] = ['--project-directory', os.path.dirname(original)]
+        elif kind == 'wg':
+            # wg-quick names the interface after the file, so keep "buddy0.conf".
+            staged = _stage_copy(original, policy.WG_CONFIG_PATH.rsplit('/', 2)[0], stage_root,
+                                 name=os.path.basename(original))
+            with open(staged, 'rb') as f:
+                policy.check_wg_config(f.read())
+            plan.argv[arg_index] = staged
+        elif kind == 'deb':
+            staged = _stage_copy(original, policy.UPDATE_CACHE_DIR, stage_root)
+            _verify_alvaos_package(staged, original)
+            plan.argv[arg_index] = staged
+        elif kind == 'apt-sources-option':
+            key, _, path = original.partition('=')
+            staged = _stage_copy(path, policy.UPDATE_CACHE_DIR, stage_root)
+            with open(staged, 'rb') as f:
+                policy.check_apt_sources(f.read())
+            os.chmod(staged, 0o644)
+            plan.argv[arg_index] = f'{key}={staged}'
+        else:
+            raise policy.PolicyError(f'Unknown staging kind {kind}')
+
+
+def run_command(argv):
+    env_pairs = []
+    while argv and argv[0] == '--env':
+        if len(argv) < 2:
+            deny(argv, '--env needs KEY=VALUE')
+        env_pairs.append(argv[1])
+        argv = argv[2:]
+    if not argv or argv[0] != '--':
+        deny(argv, 'expected -- before the command')
+    cmd = argv[1:]
+
+    cleanup: list = []
+    try:
+        env = dict(BASE_ENV)
+        env.update(policy.validate_env(env_pairs))
+        plan = policy.validate(cmd)
+        for path in plan.make_dirs:
+            if os.path.islink(path):
+                raise policy.PolicyError(f'{path} is a symlink')
+            os.makedirs(path, mode=0o755, exist_ok=True)
+        if plan.stage:
+            stage_files(plan, cleanup)
+        stdin_data = None
+        if plan.stdin_check:
+            stdin_data = sys.stdin.buffer.read(MAX_STDIN + 1)
+            if len(stdin_data) > MAX_STDIN:
+                raise policy.PolicyError('Input is too large')
+            try:
+                plan.stdin_check(stdin_data)
+            except UnicodeDecodeError:
+                raise policy.PolicyError('Input is not valid UTF-8') from None
+    except (policy.PolicyError, OSError) as e:
+        for path in cleanup:
+            shutil.rmtree(path, ignore_errors=True)
+        deny(cmd, str(e))
+
+    if not os.path.isfile(plan.argv[0]):
+        for path in cleanup:
+            shutil.rmtree(path, ignore_errors=True)
+        sys.stderr.write(f'alvaos-priv: command not installed: {plan.argv[0]}\n')
+        return 127
+
+    if not cleanup and stdin_data is None:
+        # Nothing to feed or clean up: become the command, so output streams
+        # and signals behave exactly as if it had been run directly.
+        os.execve(plan.argv[0], plan.argv, env)
+
+    try:
+        result = subprocess.run(
+            plan.argv,
+            input=stdin_data,
+            stdin=None if stdin_data is not None else subprocess.DEVNULL,
+            env=env,
+        )
+        return result.returncode
+    finally:
+        for path in cleanup:
+            shutil.rmtree(path, ignore_errors=True)
+
+
+def write_sysfs(argv):
+    if len(argv) != 2:
+        deny(argv, 'usage: write-sysfs PATH VALUE')
+    path, value = argv
+    try:
+        policy.validate_sysfs_write(path, value)
+    except policy.PolicyError as e:
+        deny(argv, str(e))
+    with open(path, 'w', encoding='ascii') as f:
+        f.write(value)
+    return 0
+
+
+def apply_update(argv):
+    """Verify a signed AlvaOS package and hand it to apply_update.sh, detached."""
+    if len(argv) != 1:
+        deny(argv, 'usage: apply-update PACKAGE')
+    try:
+        package = policy.validate_update_package(argv[0])
+        _secure_dir(UPDATE_STAGING_DIR)
+        # Old staged packages are no longer needed once a new update starts.
+        for entry in os.listdir(UPDATE_STAGING_DIR):
+            shutil.rmtree(os.path.join(UPDATE_STAGING_DIR, entry), ignore_errors=True)
+        stage_dir = os.path.join(UPDATE_STAGING_DIR, secrets.token_hex(8))
+        staged = _stage_copy(package, policy.UPDATE_CACHE_DIR, stage_dir,
+                             name=os.path.basename(package))
+        if update_signing.read_deb_package_name(staged) != ALVAOS_PACKAGE_NAME:
+            raise policy.PolicyError('This is not an AlvaOS package')
+        _verify_alvaos_package(staged, package)
+    except (policy.PolicyError, OSError) as e:
+        deny(argv, str(e))
+
+    unit = 'alvaos-updater-' + secrets.token_hex(4)
+    cmd = [
+        '/usr/bin/systemd-run', f'--unit={unit}', '--description=AlvaOS Updater',
+        '--no-block', '/usr/bin/bash', APPLY_UPDATE_SCRIPT, staged,
+    ]
+    return subprocess.run(cmd, env=BASE_ENV, stdin=subprocess.DEVNULL).returncode
+
+
+def main():
+    if os.geteuid() != 0:
+        sys.stderr.write('alvaos-priv: must be run as root (via sudo)\n')
+        return 1
+    os.umask(0o022)
+    args = sys.argv[1:]
+    if args[:1] == ['write-sysfs']:
+        return write_sysfs(args[1:])
+    if args[:1] == ['apply-update']:
+        return apply_update(args[1:])
+    if args[:1] in (['vault-open'], ['vault-close']):
+        # Buddy Backup vaults: attach, unlock and mount, or the reverse.
+        stdin = sys.stdin.buffer.read(1024) if args[0] == 'vault-open' else b''
+        return vault_ops.main(args, stdin)
+    return run_command(args)
+
+
+if __name__ == '__main__':
+    sys.exit(main())

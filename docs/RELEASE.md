@@ -17,6 +17,25 @@ Predictable, well-tested, and easy-to-upgrade releases.
 - **Beta Testing**: Create pre-release → 1-2 week test period → Release Candidate (RC) → Stable.
 - **Rollback**: Pin previous version in README. Users can downgrade via `sudo apt install alvaos-system=PREV_VERSION`.
 
+## Update Signing
+Every `alvaos-system` package is signed with an Ed25519 key. The release
+workflow writes `alvaos-system_{version}_amd64.deb.sig` next to the package, and
+installed systems refuse to install an AlvaOS package whose signature does not
+verify against `/opt/alvaos/keys/update-signing.pub` (installed from
+`keys/update-signing.pub` in this repository).
+
+One-time setup:
+1. `python3 scripts/release/sign_update.py keygen`
+2. Commit `keys/update-signing.pub`.
+3. Store the printed private key as the GitHub secret `ALVAOS_UPDATE_SIGNING_KEY`,
+   and keep an offline copy. Losing it means users must reinstall a package with
+   a new key by hand; leaking it means anyone can ship "updates".
+
+Offline updates (USB) need the `.deb.sig` file next to the `.deb`.
+
+The check runs in the root-owned privilege helper (`alvaos-priv`), not in the
+web backend, so a compromised backend cannot skip it.
+
 ## Update Mechanism
 Users update via **Web UI → Settings → Updates**. The system restarts automatically. For new installs, download the ISO, write to USB, and boot.
 

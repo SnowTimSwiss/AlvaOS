@@ -6,6 +6,7 @@ let backupSystemState = {};
 let buddyState = {};
 let buddySettings = {};
 let buddyRemoteSnapshots = [];
+let buddyRemoteVault = {};
 let selectedBuddyRestorePeerId = '';
 
 function backupToken() {
@@ -552,7 +553,13 @@ function renderBuddyRemoteSnapshotsList() {
         container.innerHTML = '<div class="metric-sub">No remote backups available for this buddy.</div>';
         return;
     }
-    container.innerHTML = buddyRemoteSnapshots.map((item) => {
+    const vault = buddyRemoteVault || {};
+    const usage = vault.size_bytes
+        ? `<div class="metric-sub buddy-vault-usage">Encrypted vault on this buddy: ${backupEscapeHtml(backupFormatBytes(vault.size_bytes - (vault.free_bytes || 0)))} used of ${backupEscapeHtml(backupFormatBytes(vault.size_bytes))}${vault.listed_at ? ` · as of ${backupEscapeHtml(backupFormatDate(vault.listed_at))}` : ''}</div>`
+        : '';
+    container.innerHTML = usage + buddyRemoteSnapshots.map((item) => {
+        const isVault = item.kind === 'vault';
+        const needsPassword = isVault ? Boolean(item.needs_passphrase) : Boolean(item.encrypted);
         const isFullSystem = String(item.source_path || '').trim() === '/';
         const title = isFullSystem
             ? `Full system <span class="snap-badge">Reboot required</span>`
@@ -563,20 +570,23 @@ function renderBuddyRemoteSnapshotsList() {
                 <div><strong>${title}</strong></div>
                 <div class="metric-sub">Snapshot: ${backupEscapeHtml(item.snapshot_name || '-')}</div>
                 <div class="metric-sub">Created: ${backupEscapeHtml(backupFormatDate(item.created_at))}</div>
-                <div class="metric-sub">Encrypted: ${item.encrypted ? 'Yes' : 'No'} | Size: ${backupEscapeHtml(String(item.size_bytes || 0))} bytes</div>
+                <div class="metric-sub">${isVault
+                    ? 'Encrypted vault'
+                    : `Old format · Encrypted: ${item.encrypted ? 'Yes' : 'No'} · ${backupEscapeHtml(backupFormatBytes(item.size_bytes))}`}</div>
             </div>
             <div class="buddy-remote-actions">
                 <button
                     class="btn-secondary buddy-restore-remote-btn"
                     data-stream-id="${backupEscapeHtml(item.id || '')}"
                     data-source-path="${backupEscapeHtml(item.source_path || '')}"
-                    data-encrypted="${item.encrypted ? '1' : '0'}"
+                    data-encrypted="${needsPassword ? '1' : '0'}"
                 >
                     Restore
                 </button>
                 <button
                     class="btn-secondary buddy-delete-remote-btn"
                     data-stream-id="${backupEscapeHtml(item.id || '')}"
+                    data-encrypted="${isVault && needsPassword ? '1' : '0'}"
                 >
                     Delete
                 </button>
@@ -719,8 +729,19 @@ function renderBuddyStatus() {
                             <input type="time" class="select-input buddy-peer-send-time" data-node-id="${backupEscapeHtml(peer.node_id || '')}" value="${backupEscapeHtml(peer.policy?.send_time || '02:00')}">
                         </div>
                         <div class="setting-group">
-                            <label class="setting-label">Storage Limit (GB)</label>
+                            <label class="setting-label">Space for this buddy's backups here (GB)</label>
                             <input type="number" min="1" max="20000" class="select-input buddy-peer-quota" data-node-id="${backupEscapeHtml(peer.node_id || '')}" value="${backupEscapeHtml(String(peer.policy?.max_storage_gb || buddySettings?.incoming_quota_gb || 200))}">
+                        </div>
+                        <div class="setting-group" style="grid-column: 1 / -1;">
+                            <label class="setting-label">Snapshots kept on this buddy</label>
+                            <div class="buddy-retention-row">
+                                ${[['keep_daily', 'daily', 14], ['keep_weekly', 'weekly', 8], ['keep_monthly', 'monthly', 12]].map(([key, label, fallback]) => `
+                                <label class="metric-sub buddy-retention-field">
+                                    <input type="number" min="0" max="366" class="select-input buddy-peer-${key}" data-node-id="${backupEscapeHtml(peer.node_id || '')}" value="${backupEscapeHtml(String(peer.policy?.[key] ?? fallback))}">
+                                    ${label}
+                                </label>`).join('')}
+                            </div>
+                            <div class="metric-sub">The newest snapshot is always kept. Older ones are thinned out like this, and the oldest go first when the buddy's space runs low.</div>
                         </div>
                         <div class="setting-group" style="grid-column: 1 / -1;">
                             <label class="setting-label">Outgoing Sources</label>
@@ -1190,6 +1211,10 @@ async function saveBuddyPeerPolicy(nodeId) {
         max_storage_gb: Number(quotaEl?.value || buddySettings?.incoming_quota_gb || 200),
         outgoing_sources: selectedBuddyPeerSources(target)
     };
+    for (const key of ['keep_daily', 'keep_weekly', 'keep_monthly']) {
+        const el = buddyPeerField(`buddy-peer-${key}`, target);
+        if (el && el.value !== '') payload[key] = Number(el.value);
+    }
 
     const response = await backupApi(`/backup/buddy/peers/${encodeURIComponent(target)}/policy`, {
         method: 'POST',
@@ -1216,6 +1241,119 @@ async function restartBuddyTunnel() {
     }
     backupNotify('Buddy tunnel restarted', 'success');
     await loadBuddyStatus();
+}
+
+// ----------------------------------------------------------------------------
+// RECOVERY KIT
+// ----------------------------------------------------------------------------
+
+function renderRecoveryKitStatus(status) {
+    const pill = document.getElementById('buddy-kit-pill');
+    const text = document.getElementById('buddy-kit-status');
+    if (!pill || !text) return;
+    if (!status?.exported_at) {
+        pill.textContent = 'Not saved';
+        pill.className = 'pill warn';
+        text.textContent = 'No recovery kit saved yet. Without it, a replacement NAS cannot reach this NAS\'s snapshots on your buddies.';
+    } else if (status.up_to_date) {
+        pill.textContent = 'Up to date';
+        pill.className = 'pill ok';
+        text.textContent = `Last saved ${backupFormatDate(status.exported_at)}.`;
+    } else {
+        pill.textContent = 'Outdated';
+        pill.className = 'pill warn';
+        text.textContent = `Last saved ${backupFormatDate(status.exported_at)}. Your buddies changed since then; download a new kit.`;
+    }
+}
+
+async function loadRecoveryKitStatus() {
+    const response = await backupApi('/backup/buddy/recovery-kit');
+    const data = await backupReadJson(response);
+    if (response && response.ok && data) renderRecoveryKitStatus(data);
+}
+
+function downloadTextFile(filename, content) {
+    const blob = new Blob([content + '\n'], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function exportRecoveryKit() {
+    const first = await window.showPrompt(
+        'Recovery kit password\nThe kit is locked with this password. You need it again to use the kit, and nobody can recover it for you.',
+        { type: 'password', label: 'Password (at least 8 characters)', placeholder: 'Kit password', confirmLabel: 'Next' }
+    );
+    if (first === null) return;
+    if (String(first).length < 8) {
+        backupNotify('The password needs at least 8 characters', 'warning');
+        return;
+    }
+    const second = await window.showPrompt('Repeat the password', {
+        type: 'password', label: 'Password', placeholder: 'Kit password', confirmLabel: 'Download kit'
+    });
+    if (second === null) return;
+    if (second !== first) {
+        backupNotify('The passwords do not match', 'warning');
+        return;
+    }
+
+    const response = await backupApi('/backup/buddy/recovery-kit', { method: 'POST', json: { passphrase: first } });
+    const data = await backupReadJson(response);
+    if (!response || !response.ok || !data?.kit) {
+        backupNotify(data?.error || 'Could not create the recovery kit', 'error');
+        return;
+    }
+    downloadTextFile(data.filename || 'alvaos-buddy-recovery-kit.txt', data.kit);
+    backupNotify('Recovery kit downloaded. Store it somewhere other than this NAS.', 'success');
+    await loadRecoveryKitStatus();
+}
+
+async function readRecoveryKitInput() {
+    const file = document.getElementById('buddy-kit-file')?.files?.[0];
+    if (file) return (await file.text()).trim();
+    return String(document.getElementById('buddy-kit-text')?.value || '').trim();
+}
+
+async function importRecoveryKit() {
+    const kit = await readRecoveryKitInput();
+    if (!kit) {
+        backupNotify('Choose the recovery kit file or paste its contents first', 'warning');
+        return;
+    }
+    const passphrase = await window.showPrompt('Recovery kit password', {
+        type: 'password', label: 'Password', placeholder: 'Kit password', confirmLabel: 'Restore identity'
+    });
+    if (passphrase === null || !String(passphrase)) return;
+
+    let response = await backupApi('/backup/buddy/recovery-kit/import', { method: 'POST', json: { kit, passphrase } });
+    let data = await backupReadJson(response);
+    if (response && response.status === 409 && data?.needs_confirmation) {
+        const ok = await window.showConfirm(
+            'Replace this NAS\'s buddy identity?\nThis NAS is already paired with buddies. Restoring the kit replaces its identity and buddy list with the ones from the kit.'
+        );
+        if (!ok) return;
+        response = await backupApi('/backup/buddy/recovery-kit/import', {
+            method: 'POST', json: { kit, passphrase, replace: true }
+        });
+        data = await backupReadJson(response);
+    }
+    if (!response || !response.ok || !data) {
+        backupNotify(data?.error || 'Could not restore from the recovery kit', 'error');
+        return;
+    }
+    const kitText = document.getElementById('buddy-kit-text');
+    if (kitText) kitText.value = '';
+    const kitFile = document.getElementById('buddy-kit-file');
+    if (kitFile) kitFile.value = '';
+    backupNotify(data.message || 'Identity restored', 'success');
+    await loadBuddyStatus();
+    await loadRecoveryKitStatus();
 }
 
 async function removeBuddyPeer(nodeId) {
@@ -1324,20 +1462,45 @@ async function syncBuddyNow(preferredNodeId = '', preferredSources = null, optio
     await loadBuddyRemoteSnapshots();
 }
 
-async function loadBuddyRemoteSnapshots() {
+function backupFormatBytes(bytes) {
+    const value = Number(bytes || 0);
+    if (!value) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+    const exp = Math.min(units.length - 1, Math.floor(Math.log(value) / Math.log(1024)));
+    return `${(value / 1024 ** exp).toFixed(exp ? 1 : 0)} ${units[exp]}`;
+}
+
+// Shows what was saved at the last sync; `refresh` opens the vault on the buddy to look now.
+async function loadBuddyRemoteSnapshots(refresh = false, passphrase = '') {
     const nodeId = getBuddyTransferPeerId();
     if (!nodeId) {
         buddyRemoteSnapshots = [];
+        buddyRemoteVault = {};
         renderBuddyRemoteSnapshotsList();
         return;
     }
-    const response = await backupApi(`/backup/buddy/remote/snapshots?node_id=${encodeURIComponent(nodeId)}`);
+    const response = refresh
+        ? await backupApi('/backup/buddy/remote/snapshots', {
+            method: 'POST',
+            json: { node_id: nodeId, encryption_passphrase: passphrase || undefined }
+        })
+        : await backupApi(`/backup/buddy/remote/snapshots?node_id=${encodeURIComponent(nodeId)}`);
     const data = await backupReadJson(response);
     if (!response || !response.ok || !data) {
         backupNotify(data?.error || 'Failed to load remote backups', 'error');
         return;
     }
+    if (refresh && data.vault_error) {
+        if (data.needs_passphrase && !passphrase && /password/i.test(data.vault_error)) {
+            // A reinstalled NAS: the vault key on the buddy opens with the encryption password.
+            const entered = await requestBackupPassphrase('Unlock backups on this buddy\nEnter the encryption password you used for buddy backups.', 'Unlock');
+            if (entered.ok) return loadBuddyRemoteSnapshots(true, entered.passphrase);
+        } else {
+            backupNotify(data.vault_error, 'error');
+        }
+    }
     buddyRemoteSnapshots = Array.isArray(data.streams) ? data.streams : [];
+    buddyRemoteVault = data.vault || {};
     renderBuddyRemoteSnapshotsList();
 }
 
@@ -1391,21 +1554,28 @@ async function restoreBuddyRemoteSnapshot(streamId, sourcePath, encrypted) {
     await Promise.all([loadBuddyStatus(), loadDataSnapshots(), loadBuddyRemoteSnapshots()]);
 }
 
-async function deleteBuddyRemoteSnapshot(streamId) {
+async function deleteBuddyRemoteSnapshot(streamId, needsPassword = false) {
     const nodeId = getBuddyTransferPeerId();
     const stream = String(streamId || '').trim();
     if (!nodeId || !stream) {
         backupNotify('Select a buddy and snapshot first', 'warning');
         return;
     }
-    const ok = await window.showConfirm('Delete this remote snapshot on your buddy? This cannot be undone.');
+    const ok = await window.showConfirm('Delete this snapshot on your buddy? This cannot be undone.\n\nOther snapshots are not affected.');
     if (!ok) return;
+    let passphrase = '';
+    if (needsPassword) {
+        const entered = await requestBackupPassphrase('Unlock backups on this buddy\nEnter the encryption password you used for buddy backups.', 'Delete');
+        if (!entered.ok) return;
+        passphrase = entered.passphrase;
+    }
 
     const response = await backupApi('/backup/buddy/remote/snapshot', {
         method: 'DELETE',
         json: {
             node_id: nodeId,
-            stream_id: stream
+            stream_id: stream,
+            encryption_passphrase: passphrase || undefined
         }
     });
     const data = await backupReadJson(response);
@@ -1540,8 +1710,10 @@ function initBackupHandlers() {
     document.getElementById('buddy-copy-token-btn')?.addEventListener('click', copyBuddyToken);
     document.getElementById('buddy-validate-token-btn')?.addEventListener('click', validateBuddyToken);
     document.getElementById('buddy-save-settings-btn')?.addEventListener('click', saveBuddySettings);
+    document.getElementById('buddy-kit-export-btn')?.addEventListener('click', exportRecoveryKit);
+    document.getElementById('buddy-kit-import-btn')?.addEventListener('click', importRecoveryKit);
     document.getElementById('buddy-encryption-enabled')?.addEventListener('change', updateBuddySecurityUi);
-    document.getElementById('buddy-refresh-remote-btn')?.addEventListener('click', loadBuddyRemoteSnapshots);
+    document.getElementById('buddy-refresh-remote-btn')?.addEventListener('click', () => loadBuddyRemoteSnapshots(true));
     document.getElementById('buddy-peers-list')?.addEventListener('click', (event) => {
         const saveBtn = event.target.closest('.buddy-save-peer-policy-btn');
         if (saveBtn) {
@@ -1582,7 +1754,7 @@ function initBackupHandlers() {
     document.getElementById('buddy-remote-snapshots-list')?.addEventListener('click', (event) => {
         const deleteBtn = event.target.closest('.buddy-delete-remote-btn');
         if (deleteBtn) {
-            deleteBuddyRemoteSnapshot(deleteBtn.dataset.streamId || '');
+            deleteBuddyRemoteSnapshot(deleteBtn.dataset.streamId || '', String(deleteBtn.dataset.encrypted || '') === '1');
             return;
         }
         const btn = event.target.closest('.buddy-restore-remote-btn');
@@ -1607,7 +1779,8 @@ async function initBackupPage() {
         loadSystemSnapshots(),
         loadBackupStatus(),
         loadBuddyStatus(),
-        loadBuddySettings()
+        loadBuddySettings(),
+        loadRecoveryKitStatus()
     ]);
 }
 

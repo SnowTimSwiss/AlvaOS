@@ -35,17 +35,30 @@ Track this with a written test checklist so runs are reproducible.
   policy is gone, and the backend runs under waitress instead of the Flask
   development server.
 - ✅ SSH root login stays off after setup and is opt-in under System → Security.
+- ✅ Privilege separation: one sudo rule for the `alvaos-priv` helper, which
+  validates every command against `priv_policy.py` (no shells, no arbitrary
+  paths or options); `/opt/alvaos` is root-owned.
+- ✅ Updates are Ed25519-signed and verified by the helper before install.
 - [ ] Run a focused external security review over the auth + API surface.
 
 ### 🟠 Buddy Backup correctness (the headline feature)
 - [ ] Real WireGuard pairing between two instances (the placeholder keypair path
   must never be hit in production).
-- [ ] Full restore onto a fresh machine, including a deliberate data-loss test.
+- ✅ Encrypted snapshots can be restored on a fresh machine with only the
+  encryption password (format `ALVAENC2`, scrypt + AES-256-GCM).
+- ✅ Recovery kit: a reinstalled NAS takes over its old buddy identity, so
+  its snapshots on buddies are reachable again.
+- [ ] Full restore onto a fresh machine on real hardware, including a
+  deliberate data-loss test.
 
 ### 🟠 Automated tests
 - ✅ Initial pytest suite for pure logic (password hashing, common helpers).
-- [ ] Smoke tests for the critical managers (storage / docker / backup) behind a
-  Linux/root marker so they are skipped safely elsewhere.
+- ✅ Backup manager behaviour (snapshot, send/receive, restore, rollback on
+  failure) tested against a simulated Btrfs; every command it sends is checked
+  against the privilege policy.
+- ✅ API tests over every blueprint: setup guard, session, CSRF, admin role.
+- [ ] Real-Btrfs integration tests on a loop device (needs a runner whose
+  kernel can mount Btrfs).
 - ✅ `pytest` runs in CI on push / PR, alongside three guardrails: the sudoers
   allow-list check (previously release-only), a check that the Web UI loads no
   external assets, and a check that no catalog app can ship a placeholder secret.
