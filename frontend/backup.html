@@ -572,6 +572,89 @@
             }
         }
 
+
+        /* --- Simple by default: inline automatic-backup row, buddy card --- */
+        .auto-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 14px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border-subtle);
+        }
+
+        .auto-label {
+            font-size: 0.9rem;
+            color: var(--text-primary);
+        }
+
+        .auto-row .toggle {
+            margin: 0;
+        }
+
+        .auto-row .auto-interval {
+            width: auto;
+            min-width: 150px;
+        }
+
+        .auto-row .auto-interval:disabled {
+            opacity: 0.5;
+        }
+
+        .snap-more {
+            margin-top: 8px;
+        }
+
+        .snap-more>summary {
+            cursor: pointer;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            padding: 6px 2px;
+        }
+
+        .snap-more .snap-list {
+            margin-top: 8px;
+        }
+
+        .buddy-empty {
+            text-align: center;
+            padding: 18px 8px;
+        }
+
+        .buddy-empty p {
+            max-width: 46ch;
+            margin: 0 auto 14px;
+        }
+
+        details.buddy-more {
+            margin-top: 10px;
+            border-top: 1px solid var(--border-subtle);
+            padding-top: 8px;
+        }
+
+        details.buddy-more>summary {
+            cursor: pointer;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            padding: 4px 0;
+        }
+
+        details.buddy-more>.buddy-more-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin: 10px 0;
+        }
+
+        .buddy-restore-layout.single {
+            grid-template-columns: 1fr;
+        }
+
+        .buddy-restore-layout.single>div:first-child {
+            display: none;
+        }
+
         /* --- Calm status-first redesign --- */
         .status-head {
             display: flex;
@@ -886,14 +969,14 @@
             <div class="page-intro">
                 <h1 class="page-title">Backup</h1>
                 <p class="page-subtitle">
-                    Local snapshots and encrypted offsite copies to a buddy.
+                    Keep copies of your data safe, on this NAS and on a friend&rsquo;s.
                 </p>
             </div>
 
             <div class="tab-bar">
-                <button class="tab-btn active" data-tab="pool-backup">Pool</button>
+                <button class="tab-btn active" data-tab="pool-backup">Data</button>
                 <button class="tab-btn" data-tab="system-backup">System</button>
-                <button class="tab-btn" data-tab="buddy-backup">Buddy</button>
+                <button class="tab-btn" data-tab="buddy-backup">Offsite</button>
             </div>
 
             <!-- POOL BACKUP TAB -->
@@ -904,16 +987,26 @@
                     <div class="status-head">
                         <div class="status-ic" id="pool-status-ic"><i data-lucide="database" aria-hidden="true"></i></div>
                         <div class="status-text">
-                            <div class="status-title">Pool data <span class="pill ok" id="pool-status-pill">Loading</span></div>
-                            <div class="status-sub">
-                                Last run <strong id="pool-last-run">-</strong> &bull;
-                                next <strong id="pool-next-run">-</strong> &bull;
-                                <strong id="pool-last-status">-</strong>
-                            </div>
+                            <div class="status-title">Your data <span class="pill ok" id="pool-status-pill">Loading</span></div>
+                            <div class="status-sub" id="pool-status-sub">Checking...</div>
                         </div>
                         <div class="status-actions">
                             <button id="pool-run-btn" class="btn-primary">Back up now</button>
                         </div>
+                    </div>
+                    <div class="auto-row">
+                        <label class="auto-label" for="pool-enabled">Back up automatically</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="pool-enabled">
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <select id="pool-interval" class="select-input auto-interval" aria-label="How often">
+                            <option value="60">Every hour</option>
+                            <option value="360">Every 6 hours</option>
+                            <option value="720">Every 12 hours</option>
+                            <option value="1440">Every day</option>
+                            <option value="10080">Every week</option>
+                        </select>
                     </div>
                     <div id="pool-last-error" class="metric-sub" style="color: var(--accent-danger); display: none; margin-top: 10px;"></div>
                 </div>
@@ -921,10 +1014,10 @@
                 <!-- Snapshots: pick which one to restore -->
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title">Snapshots</div>
+                        <div class="card-title">Restore points</div>
                         <button id="pool-snapshots-refresh-btn" class="btn-secondary">Refresh</button>
                     </div>
-                    <p class="metric-sub card-help">Each snapshot can be restored on its own. Restoring replaces that pool's current data.</p>
+                    <p class="metric-sub card-help">Pick a point in time to go back to. Restoring replaces the current data of that folder.</p>
                     <div id="pool-snapshots-list">
                         <div class="metric-sub">Loading snapshots...</div>
                     </div>
@@ -932,25 +1025,8 @@
 
                 <!-- Advanced: schedule, retention, which pools, location -->
                 <details class="advanced">
-                    <summary><i data-lucide="settings-2" aria-hidden="true"></i> Schedule &amp; sources <i data-lucide="chevron-down" class="chev" aria-hidden="true"></i></summary>
+                    <summary><i data-lucide="settings-2" aria-hidden="true"></i> More options: folders, retention, location <i data-lucide="chevron-down" class="chev" aria-hidden="true"></i></summary>
                     <div class="advanced-body">
-                        <div class="setting-group">
-                            <label class="setting-label">Enable scheduled backups</label>
-                            <label class="toggle">
-                                <input type="checkbox" id="pool-enabled">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                        <div class="setting-group">
-                            <label class="setting-label" for="pool-interval">Interval</label>
-                            <select id="pool-interval" class="select-input">
-                                <option value="60">Every hour</option>
-                                <option value="360">Every 6 hours</option>
-                                <option value="720">Every 12 hours</option>
-                                <option value="1440">Daily</option>
-                                <option value="10080">Weekly</option>
-                            </select>
-                        </div>
                         <div class="setting-group">
                             <label class="setting-label" for="pool-keep-last">Retention (keep last)</label>
                             <input id="pool-keep-last" type="number" min="1" max="200" value="30" class="select-input">
@@ -986,15 +1062,23 @@
                         <div class="status-ic" id="system-status-ic"><i data-lucide="server-cog" aria-hidden="true"></i></div>
                         <div class="status-text">
                             <div class="status-title">Full system <span class="pill ok" id="system-status-pill">Loading</span></div>
-                            <div class="status-sub">
-                                Last run <strong id="system-last-run">-</strong> &bull;
-                                next <strong id="system-next-run">-</strong> &bull;
-                                <strong id="system-last-status">-</strong>
-                            </div>
+                            <div class="status-sub" id="system-status-sub">Checking...</div>
                         </div>
                         <div class="status-actions">
                             <button id="system-run-btn" class="btn-primary">Back up now</button>
                         </div>
+                    </div>
+                    <div class="auto-row">
+                        <label class="auto-label" for="system-enabled">Back up automatically</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="system-enabled">
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <select id="system-interval" class="select-input auto-interval" aria-label="How often">
+                            <option value="1440">Every day</option>
+                            <option value="10080">Every week</option>
+                            <option value="43200">Every month</option>
+                        </select>
                     </div>
                     <div id="system-last-error" class="metric-sub" style="color: var(--accent-danger); display: none; margin-top: 10px;"></div>
                     <div class="backup-info-grid">
@@ -1012,7 +1096,7 @@
                 <!-- Snapshots: pick which one to roll back to -->
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title">Snapshots</div>
+                        <div class="card-title">Restore points</div>
                         <button id="system-snapshots-refresh-btn" class="btn-secondary">Refresh</button>
                     </div>
                     <p class="metric-sub card-help">Restoring a full system snapshot prepares a rollback and requires a reboot.</p>
@@ -1027,23 +1111,8 @@
 
                 <!-- Advanced: schedule -->
                 <details class="advanced">
-                    <summary><i data-lucide="settings-2" aria-hidden="true"></i> Schedule <i data-lucide="chevron-down" class="chev" aria-hidden="true"></i></summary>
+                    <summary><i data-lucide="settings-2" aria-hidden="true"></i> More options: retention, location <i data-lucide="chevron-down" class="chev" aria-hidden="true"></i></summary>
                     <div class="advanced-body">
-                        <div class="setting-group">
-                            <label class="setting-label">Enable scheduled system backups</label>
-                            <label class="toggle">
-                                <input type="checkbox" id="system-enabled">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                        <div class="setting-group">
-                            <label class="setting-label" for="system-interval">Interval</label>
-                            <select id="system-interval" class="select-input">
-                                <option value="1440">Daily</option>
-                                <option value="10080">Weekly</option>
-                                <option value="43200">Monthly</option>
-                            </select>
-                        </div>
                         <div class="setting-group">
                             <label class="setting-label" for="system-keep-last">Retention (keep last)</label>
                             <input id="system-keep-last" type="number" min="1" max="100" value="10" class="select-input">
@@ -1068,10 +1137,9 @@
                     <div class="status-head">
                         <div class="status-ic" id="buddy-status-ic"><i data-lucide="users" aria-hidden="true"></i></div>
                         <div class="status-text">
-                            <div class="status-title">Buddy backup <span class="pill ok" id="buddy-status-pill">Loading</span></div>
-                            <div class="status-sub">
-                                Supported <strong id="buddy-support-info">-</strong> &bull;
-                                tunnel <strong id="buddy-tunnel-state">-</strong>
+                            <div class="status-title">Offsite copy <span class="pill ok" id="buddy-status-pill">Loading</span></div>
+                            <div class="status-sub" id="buddy-status-sub">
+                                An encrypted copy of your data on a friend&rsquo;s or family member&rsquo;s AlvaOS. Only you can read it.
                             </div>
                         </div>
                         <div class="status-actions">
@@ -1083,19 +1151,19 @@
                 <!-- Paired buddies (JS renders cards with Send pools / Send full system) -->
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title">Your buddies</div>
+                        <div class="card-title">Buddies</div>
                     </div>
                     <div id="buddy-peers-list" class="buddy-peers-wrap">
-                        <div class="metric-sub">No buddies paired yet. Use &ldquo;Add a buddy&rdquo; below to pair.</div>
+                        <div class="metric-sub">Loading...</div>
                     </div>
                 </div>
 
                 <!-- Restore: choose buddy, then choose WHAT to restore -->
-                <div class="card">
+                <div class="card" id="buddy-restore-card">
                     <div class="card-header">
                         <div class="card-title">Restore from a buddy</div>
                     </div>
-                    <p class="metric-sub card-help">Pick a buddy, then choose what to restore: an individual pool, or the full system (reboot required).</p>
+                    <p class="metric-sub card-help">Choose a backup to bring back: a single folder, or the full system (needs a reboot).</p>
                     <div class="buddy-restore-layout">
                         <div>
                             <div class="setting-label" style="margin-bottom:8px;">Buddies</div>
@@ -1146,8 +1214,8 @@
                 </div>
 
                 <!-- Advanced: pairing (existing token technology) -->
-                <details class="advanced">
-                    <summary><i data-lucide="link" aria-hidden="true"></i> Add a buddy (pairing) <i data-lucide="chevron-down" class="chev" aria-hidden="true"></i></summary>
+                <details class="advanced" id="buddy-pairing">
+                    <summary id="buddy-pairing-summary"><i data-lucide="link" aria-hidden="true"></i> Add a buddy <i data-lucide="chevron-down" class="chev" aria-hidden="true"></i></summary>
                     <div class="advanced-body">
                         <p class="metric-sub" style="margin-bottom:12px;">Pair two different AlvaOS machines. Generate a token and send it to your buddy, then paste the token they send you. No manual IP setup needed.</p>
                         <div class="pair-grid">
@@ -1176,7 +1244,7 @@
 
                 <!-- Advanced: defaults & restore security -->
                 <details class="advanced">
-                    <summary><i data-lucide="sliders-horizontal" aria-hidden="true"></i> Buddy defaults &amp; restore security <i data-lucide="chevron-down" class="chev" aria-hidden="true"></i></summary>
+                    <summary><i data-lucide="sliders-horizontal" aria-hidden="true"></i> Storage limits &amp; encryption <i data-lucide="chevron-down" class="chev" aria-hidden="true"></i></summary>
                     <div class="advanced-body">
                         <div class="buddy-defaults-layout">
                             <section class="buddy-defaults-panel">
@@ -1224,6 +1292,14 @@
                     <summary><i data-lucide="wrench" aria-hidden="true"></i> Technical details <i data-lucide="chevron-down" class="chev" aria-hidden="true"></i></summary>
                     <div class="advanced-body">
                         <div class="buddy-identity-grid">
+                            <div class="buddy-identity-item">
+                                <div class="setting-label">Supported on this system</div>
+                                <div id="buddy-support-info" class="buddy-identity-value">-</div>
+                            </div>
+                            <div class="buddy-identity-item">
+                                <div class="setting-label">Tunnel</div>
+                                <div id="buddy-tunnel-state" class="buddy-identity-value">-</div>
+                            </div>
                             <div class="buddy-identity-item">
                                 <div class="setting-label">Node ID</div>
                                 <div id="buddy-node-id" class="mono-text buddy-identity-value">-</div>
