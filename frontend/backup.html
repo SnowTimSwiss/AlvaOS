@@ -640,11 +640,85 @@
             padding: 4px 0;
         }
 
-        details.buddy-more>.buddy-more-actions {
+        .buddy-more-body {
             display: flex;
-            gap: 8px;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 10px;
+        }
+
+        .buddy-section {
+            padding: 14px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            background: var(--bg-card);
+        }
+
+        .buddy-section h4 {
+            margin: 0 0 12px;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .buddy-section .setting-group {
+            margin-bottom: 14px;
+        }
+
+        .buddy-section .setting-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .buddy-fields {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+
+        .buddy-fields .setting-group {
+            margin-bottom: 0;
+        }
+
+        .buddy-hint {
+            margin-bottom: 8px;
+        }
+
+        .buddy-facts {
+            display: grid;
+            grid-template-columns: max-content minmax(0, 1fr);
+            gap: 6px 16px;
+            margin: 0;
+            font-size: 0.85rem;
+        }
+
+        .buddy-facts dt {
+            color: var(--text-secondary);
+        }
+
+        .buddy-facts dd {
+            margin: 0;
+            overflow-wrap: anywhere;
+        }
+
+        .buddy-more-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
             flex-wrap: wrap;
-            margin: 10px 0;
+        }
+
+        .buddy-remove-link {
+            background: none;
+            border: none;
+            padding: 6px 2px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            color: var(--accent-danger);
+        }
+
+        .buddy-remove-link:hover {
+            text-decoration: underline;
         }
 
         .buddy-restore-layout.single {
@@ -976,7 +1050,7 @@
             <div class="tab-bar">
                 <button class="tab-btn active" data-tab="pool-backup">Data</button>
                 <button class="tab-btn" data-tab="system-backup">System</button>
-                <button class="tab-btn" data-tab="buddy-backup">Offsite</button>
+                <button class="tab-btn" data-tab="buddy-backup">Buddy</button>
             </div>
 
             <!-- POOL BACKUP TAB -->
@@ -987,9 +1061,10 @@
                     <div class="status-head">
                         <div class="status-ic" id="pool-status-ic"><i data-lucide="database" aria-hidden="true"></i></div>
                         <div class="status-text">
-                            <div class="status-title">Your data <span class="pill ok" id="pool-status-pill">Loading</span></div>
+                            <div class="status-title">Your data</div>
                             <div class="status-sub" id="pool-status-sub">Checking...</div>
                         </div>
+                        <span class="pill ok" id="pool-status-pill">Loading</span>
                         <div class="status-actions">
                             <button id="pool-run-btn" class="btn-primary">Back up now</button>
                         </div>
@@ -1061,9 +1136,10 @@
                     <div class="status-head">
                         <div class="status-ic" id="system-status-ic"><i data-lucide="server-cog" aria-hidden="true"></i></div>
                         <div class="status-text">
-                            <div class="status-title">Full system <span class="pill ok" id="system-status-pill">Loading</span></div>
+                            <div class="status-title">Full system</div>
                             <div class="status-sub" id="system-status-sub">Checking...</div>
                         </div>
+                        <span class="pill ok" id="system-status-pill">Loading</span>
                         <div class="status-actions">
                             <button id="system-run-btn" class="btn-primary">Back up now</button>
                         </div>
@@ -1137,11 +1213,12 @@
                     <div class="status-head">
                         <div class="status-ic" id="buddy-status-ic"><i data-lucide="users" aria-hidden="true"></i></div>
                         <div class="status-text">
-                            <div class="status-title">Offsite copy <span class="pill ok" id="buddy-status-pill">Loading</span></div>
+                            <div class="status-title">Buddy backup</div>
                             <div class="status-sub" id="buddy-status-sub">
                                 An encrypted copy of your data on a friend&rsquo;s or family member&rsquo;s AlvaOS. Only you can read it.
                             </div>
                         </div>
+                        <span class="pill ok" id="buddy-status-pill">Loading</span>
                         <div class="status-actions">
                             <button id="buddy-refresh-btn" class="btn-secondary">Refresh</button>
                         </div>

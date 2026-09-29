@@ -733,6 +733,7 @@ function renderBuddyStatus() {
             ? `Sends ${intervalText} at ${peer.policy?.send_time || '02:00'}`
             : 'Automatic sending is off';
         const nodeAttr = backupEscapeHtml(peer.node_id || '');
+        const peerName = peer.name || 'this buddy';
         const policyOutgoing = Array.isArray(peer.policy?.outgoing_sources)
             ? peer.policy.outgoing_sources
             : [];
@@ -750,67 +751,78 @@ function renderBuddyStatus() {
                     </div>
                     <div class="buddy-peer-actions">
                         <button class="btn-primary buddy-backup-now-peer-btn" data-node-id="${nodeAttr}">Send backup now</button>
+                        <button class="btn-secondary buddy-test-peer-btn" data-node-id="${nodeAttr}">Test connection</button>
                     </div>
                 </div>
                 ${peer.last_error ? `<div class="metric-sub" style="color: var(--error);">Error: ${backupEscapeHtml(peer.last_error)}</div>` : ''}
                 <details class="buddy-more" data-node-id="${nodeAttr}"${openPeers.has(peer.node_id || '') ? ' open' : ''}>
-                <summary>More: schedule, limits, tools</summary>
-                <div class="buddy-more-actions">
-                    <button class="btn-secondary buddy-send-system-peer-btn" data-node-id="${nodeAttr}">Send full system</button>
-                    <button class="btn-secondary buddy-test-peer-btn" data-node-id="${nodeAttr}">Test connection</button>
-                    <button class="btn-secondary buddy-remove-peer-btn" data-node-id="${nodeAttr}">Remove</button>
-                </div>
-                <div class="buddy-peer-meta-grid">
-                    <div class="metric-sub buddy-peer-meta-item">Buddy ID: <span class="mono-text">${backupEscapeHtml(peer.node_id || '-')}</span></div>
-                    <div class="metric-sub buddy-peer-meta-item">Address: ${backupEscapeHtml(peer.endpoint || '(not set)')}</div>
-                    <div class="metric-sub buddy-peer-meta-item">Tunnel IP: ${backupEscapeHtml(peer.tunnel_ip || '-')}</div>
-                    <div class="metric-sub buddy-peer-meta-item">Status: ${backupEscapeHtml(peer.status || 'unknown')}</div>
-                </div>
-                <div class="buddy-peer-policy">
-                    <div class="buddy-peer-policy-grid">
-                        <div class="setting-group">
-                            <label class="setting-label">Send automatically</label>
-                            <label class="toggle">
-                                <input type="checkbox" class="buddy-peer-enabled" data-node-id="${backupEscapeHtml(peer.node_id || '')}" ${peer.policy?.enabled === true ? 'checked' : ''}>
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                        <div class="setting-group">
-                            <label class="setting-label">How often</label>
-                            <select class="select-input buddy-peer-interval" data-node-id="${backupEscapeHtml(peer.node_id || '')}">
-                                <option value="60" ${String(peer.policy?.interval_minutes || 1440) === '60' ? 'selected' : ''}>Every hour</option>
-                                <option value="360" ${String(peer.policy?.interval_minutes || 1440) === '360' ? 'selected' : ''}>Every 6 hours</option>
-                                <option value="720" ${String(peer.policy?.interval_minutes || 1440) === '720' ? 'selected' : ''}>Every 12 hours</option>
-                                <option value="1440" ${String(peer.policy?.interval_minutes || 1440) === '1440' ? 'selected' : ''}>Daily</option>
-                                <option value="10080" ${String(peer.policy?.interval_minutes || 1440) === '10080' ? 'selected' : ''}>Weekly</option>
-                            </select>
-                        </div>
-                        <div class="setting-group">
-                            <label class="setting-label">Send at</label>
-                            <input type="time" class="select-input buddy-peer-send-time" data-node-id="${backupEscapeHtml(peer.node_id || '')}" value="${backupEscapeHtml(peer.policy?.send_time || '02:00')}">
-                        </div>
-                        <div class="setting-group">
-                            <label class="setting-label">Space for this buddy's backups here (GB)</label>
-                            <input type="number" min="1" max="20000" class="select-input buddy-peer-quota" data-node-id="${backupEscapeHtml(peer.node_id || '')}" value="${backupEscapeHtml(String(peer.policy?.max_storage_gb || buddySettings?.incoming_quota_gb || 200))}">
-                        </div>
-                        <div class="setting-group" style="grid-column: 1 / -1;">
-                            <label class="setting-label">Snapshots kept on this buddy</label>
-                            <div class="buddy-retention-row">
-                                ${[['keep_daily', 'daily', 14], ['keep_weekly', 'weekly', 8], ['keep_monthly', 'monthly', 12]].map(([key, label, fallback]) => `
-                                <label class="metric-sub buddy-retention-field">
-                                    <input type="number" min="0" max="366" class="select-input buddy-peer-${key}" data-node-id="${backupEscapeHtml(peer.node_id || '')}" value="${backupEscapeHtml(String(peer.policy?.[key] ?? fallback))}">
-                                    ${label}
-                                </label>`).join('')}
+                <summary>Settings</summary>
+                <div class="buddy-more-body">
+                    <section class="buddy-section">
+                        <h4>Sending to ${backupEscapeHtml(peerName)}</h4>
+                        <div class="buddy-fields">
+                            <div class="setting-group">
+                                <label class="setting-label">Send automatically</label>
+                                <label class="toggle">
+                                    <input type="checkbox" class="buddy-peer-enabled" data-node-id="${nodeAttr}" ${peer.policy?.enabled === true ? 'checked' : ''}>
+                                    <span class="toggle-slider"></span>
+                                </label>
                             </div>
-                            <div class="metric-sub">The newest snapshot is always kept. Older ones are thinned out like this, and the oldest go first when the buddy's space runs low.</div>
+                            <div class="setting-group">
+                                <label class="setting-label">How often</label>
+                                <select class="select-input buddy-peer-interval" data-node-id="${nodeAttr}">
+                                    <option value="60" ${String(peer.policy?.interval_minutes || 1440) === '60' ? 'selected' : ''}>Every hour</option>
+                                    <option value="360" ${String(peer.policy?.interval_minutes || 1440) === '360' ? 'selected' : ''}>Every 6 hours</option>
+                                    <option value="720" ${String(peer.policy?.interval_minutes || 1440) === '720' ? 'selected' : ''}>Every 12 hours</option>
+                                    <option value="1440" ${String(peer.policy?.interval_minutes || 1440) === '1440' ? 'selected' : ''}>Every day</option>
+                                    <option value="10080" ${String(peer.policy?.interval_minutes || 1440) === '10080' ? 'selected' : ''}>Every week</option>
+                                </select>
+                            </div>
+                            <div class="setting-group">
+                                <label class="setting-label">Send at</label>
+                                <input type="time" class="select-input buddy-peer-send-time" data-node-id="${nodeAttr}" value="${backupEscapeHtml(peer.policy?.send_time || '02:00')}">
+                            </div>
                         </div>
-                        <div class="setting-group" style="grid-column: 1 / -1;">
+                        <div class="setting-group">
                             <label class="setting-label">Folders to send</label>
                             ${renderBuddyPeerSourcePicker(peer.node_id || '', policyOutgoing)}
                         </div>
-                    </div>
-                    <div class="buddy-peer-policy-footer">
-                        <button class="btn-secondary buddy-save-peer-policy-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Save</button>
+                        <div class="setting-group">
+                            <label class="setting-label">Restore points kept on ${backupEscapeHtml(peerName)}</label>
+                            <div class="buddy-retention-row">
+                                ${[['keep_daily', 'daily', 14], ['keep_weekly', 'weekly', 8], ['keep_monthly', 'monthly', 12]].map(([key, label, fallback]) => `
+                                <label class="metric-sub buddy-retention-field">
+                                    <input type="number" min="0" max="366" class="select-input buddy-peer-${key}" data-node-id="${nodeAttr}" value="${backupEscapeHtml(String(peer.policy?.[key] ?? fallback))}">
+                                    ${label}
+                                </label>`).join('')}
+                            </div>
+                            <div class="metric-sub">The newest one is always kept. Older ones are thinned out, and the oldest go first when the space there runs low.</div>
+                        </div>
+                        <div class="setting-group">
+                            <label class="setting-label">Whole system</label>
+                            <div class="metric-sub buddy-hint">Also copy this NAS's system, not just your folders. Restoring it needs a reboot.</div>
+                            <button class="btn-secondary buddy-send-system-peer-btn" data-node-id="${nodeAttr}">Send full system now</button>
+                        </div>
+                    </section>
+                    <section class="buddy-section">
+                        <h4>${backupEscapeHtml(peerName)}'s backups on this NAS</h4>
+                        <div class="setting-group">
+                            <label class="setting-label">Space they may use here (GB)</label>
+                            <input type="number" min="1" max="20000" class="select-input buddy-peer-quota" data-node-id="${nodeAttr}" value="${backupEscapeHtml(String(peer.policy?.max_storage_gb || buddySettings?.incoming_quota_gb || 200))}">
+                        </div>
+                    </section>
+                    <section class="buddy-section">
+                        <h4>Connection</h4>
+                        <dl class="buddy-facts">
+                            <dt>Buddy ID</dt><dd class="mono-text">${backupEscapeHtml(peer.node_id || '-')}</dd>
+                            <dt>Address</dt><dd>${backupEscapeHtml(peer.endpoint || '(not set)')}</dd>
+                            <dt>Tunnel IP</dt><dd>${backupEscapeHtml(peer.tunnel_ip || '-')}</dd>
+                            <dt>Status</dt><dd>${backupEscapeHtml(peer.status || 'unknown')}</dd>
+                        </dl>
+                    </section>
+                    <div class="buddy-more-footer">
+                        <button class="btn-primary buddy-save-peer-policy-btn" data-node-id="${nodeAttr}">Save settings</button>
+                        <button class="buddy-remove-peer-btn buddy-remove-link" data-node-id="${nodeAttr}">Remove this buddy</button>
                     </div>
                 </div>
                 </details>
