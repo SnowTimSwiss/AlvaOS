@@ -15,6 +15,31 @@ How to add an entry:
 
 ---
 
+## 2026-09-29 · Backup page: simple by default
+
+- **Data and System tabs:** the status card now says in one sentence when the
+  last backup ran and what is next, and holds the "Back up automatically"
+  toggle and interval directly (saved on change). Retention, location and
+  folders stay under "More options". A backup that never ran and is not
+  scheduled reads "Not set up" instead of "Healthy".
+- **Restore points:** listed by folder and date, newest five visible, the rest
+  folded away. System support details only show when something is wrong or a
+  rollback is pending.
+- **Buddy tab:** each buddy card shows the name, Online or Offline, when it
+  sends, and two buttons that are always visible: "Send backup now" and "Test
+  connection". "Settings" opens three sections: sending (schedule, folders,
+  restore points kept, full system), what the buddy may store here, and the
+  connection details, with Save and "Remove this buddy" at the bottom. Without
+  a buddy the tab offers a single "Add a buddy" button and hides restore. The
+  buddy picker in restore only appears with more than one buddy. Tunnel and
+  support details moved to "Technical details". Status pills are centred with
+  the action buttons.
+- Checked in a browser at desktop and phone width with mocked API responses;
+  no backend change.
+- **Note for next time:** never opened against a real backend. The
+  auto-save toggle sends the whole pool form (folders, retention, location),
+  so it needs a check on a NAS where folders were never selected.
+
 ## 2026-09-29 · Work log started
 
 - Added this file.
