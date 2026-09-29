@@ -25,12 +25,15 @@ How to add an entry:
 - **Restore points:** listed by folder and date, newest five visible, the rest
   folded away. System support details only show when something is wrong or a
   rollback is pending.
-- **Offsite (formerly Buddy) tab:** each buddy card shows the name, Online or
-  Offline, when it sends, and one button, "Send backup now". Schedule, limits,
-  full-system send, test and remove sit under "More". Without a buddy the tab
-  offers a single "Add a buddy" button and hides restore. The buddy picker in
-  restore only appears with more than one buddy. Tunnel and support details
-  moved to "Technical details".
+- **Buddy tab:** each buddy card shows the name, Online or Offline, when it
+  sends, and two buttons that are always visible: "Send backup now" and "Test
+  connection". "Settings" opens three sections: sending (schedule, folders,
+  restore points kept, full system), what the buddy may store here, and the
+  connection details, with Save and "Remove this buddy" at the bottom. Without
+  a buddy the tab offers a single "Add a buddy" button and hides restore. The
+  buddy picker in restore only appears with more than one buddy. Tunnel and
+  support details moved to "Technical details". Status pills are centred with
+  the action buttons.
 - Checked in a browser at desktop and phone width with mocked API responses;
   no backend change.
 - **Note for next time:** never opened against a real backend. The
