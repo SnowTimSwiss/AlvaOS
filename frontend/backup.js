@@ -216,35 +216,46 @@ function renderBuddyPeerSourcePicker(nodeId, configuredSources = []) {
     `;
 }
 
+function backupFolderName(path) {
+    const trimmed = String(path || '').replace(/\/+$/, '');
+    return trimmed.split('/').pop() || trimmed || '-';
+}
+
+// Newest few restore points stay visible, older ones fold away.
+function snapshotListHtml(rows) {
+    const VISIBLE = 5;
+    const rest = rows.slice(VISIBLE);
+    return `<div class="snap-list">${rows.slice(0, VISIBLE).join('')}</div>`
+        + (rest.length
+            ? `<details class="snap-more"><summary>Show ${rest.length} older</summary><div class="snap-list">${rest.join('')}</div></details>`
+            : '');
+}
+
 function renderDataSnapshots(items) {
     const container = document.getElementById('pool-snapshots-list');
     if (!container) return;
     const snapshots = Array.isArray(items) ? items : [];
     if (!snapshots.length) {
-        container.innerHTML = '<div class="metric-sub">No snapshots found.</div>';
+        container.innerHTML = '<div class="metric-sub">No restore points yet. They appear after the first backup.</div>';
         return;
     }
 
-    container.innerHTML = `
-        <div class="snap-list">
-            ${snapshots.map((entry) => `
-                <div class="snap-row">
-                    <div class="snap-info">
-                        <div class="snap-when">${backupEscapeHtml(backupFormatDate(entry.created_at))}</div>
-                        <div class="snap-meta" title="${backupEscapeHtml(entry.source_path)}">${backupEscapeHtml(entry.source_path || '-')} &bull; ${backupEscapeHtml(entry.snapshot_name || '-')}</div>
-                    </div>
-                    <div class="snap-actions">
-                        <button class="btn-secondary backup-restore-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}" data-source-path="${backupEscapeHtml(entry.source_path || '')}">
-                            Restore
-                        </button>
-                        <button class="btn-secondary backup-delete-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}">
-                            Delete
-                        </button>
-                    </div>
-                </div>
-            `).join('')}
+    container.innerHTML = snapshotListHtml(snapshots.map((entry) => `
+        <div class="snap-row">
+            <div class="snap-info" title="${backupEscapeHtml(entry.source_path)} &bull; ${backupEscapeHtml(entry.snapshot_name)}">
+                <div class="snap-when">${backupEscapeHtml(backupFolderName(entry.source_path))}</div>
+                <div class="snap-meta">${backupEscapeHtml(backupFormatDate(entry.created_at))}</div>
+            </div>
+            <div class="snap-actions">
+                <button class="btn-secondary backup-restore-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}" data-source-path="${backupEscapeHtml(entry.source_path || '')}">
+                    Restore
+                </button>
+                <button class="btn-secondary backup-delete-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}">
+                    Delete
+                </button>
+            </div>
         </div>
-    `;
+    `));
 }
 
 function renderSystemSnapshots(items) {
@@ -252,35 +263,30 @@ function renderSystemSnapshots(items) {
     if (!container) return;
     const snapshots = Array.isArray(items) ? items : [];
     if (!snapshots.length) {
-        container.innerHTML = '<div class="metric-sub">No system snapshots found.</div>';
+        container.innerHTML = '<div class="metric-sub">No restore points yet. They appear after the first system backup.</div>';
         return;
     }
 
-    container.innerHTML = `
-        <div class="snap-list">
-            ${snapshots.map((entry) => `
-                <div class="snap-row">
-                    <div class="snap-info">
-                        <div class="snap-when">${backupEscapeHtml(backupFormatDate(entry.created_at))}</div>
-                        <div class="snap-meta" title="${backupEscapeHtml(entry.snapshot_path)}">${backupEscapeHtml(entry.snapshot_name || '-')}</div>
-                    </div>
-                    <div class="snap-actions">
-                        <button class="btn-secondary backup-system-rollback-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}">
-                            Prepare rollback
-                        </button>
-                        <button class="btn-secondary backup-system-delete-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}">
-                            Delete
-                        </button>
-                    </div>
-                </div>
-            `).join('')}
+    container.innerHTML = snapshotListHtml(snapshots.map((entry) => `
+        <div class="snap-row">
+            <div class="snap-info" title="${backupEscapeHtml(entry.snapshot_path)}">
+                <div class="snap-when">${backupEscapeHtml(backupFormatDate(entry.created_at))}</div>
+            </div>
+            <div class="snap-actions">
+                <button class="btn-secondary backup-system-rollback-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}">
+                    Prepare rollback
+                </button>
+                <button class="btn-secondary backup-system-delete-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}">
+                    Delete
+                </button>
+            </div>
         </div>
-    `;
+    `));
 }
 
-// Map a backup run status into a calm pill (Healthy / Attention / Ready) and tint the
-// status icon to match. Used by the status-first cards on each tab.
-function setStatusPill(pillId, icId, status, error) {
+// Map a backup run status into a calm pill and tint the status icon to match.
+// A backup that never ran and is not scheduled reads "Not set up", not "Healthy".
+function setStatusPill(pillId, icId, status, error, notSetUp = false) {
     const pill = document.getElementById(pillId);
     const ic = document.getElementById(icId);
     const value = String(status || '').toLowerCase();
@@ -288,13 +294,16 @@ function setStatusPill(pillId, icId, status, error) {
     let label = 'Healthy';
     if (error || value === 'error') {
         cls = 'bad';
-        label = 'Attention';
+        label = 'Needs attention';
     } else if (value === 'partial') {
         cls = 'warn';
-        label = 'Attention';
+        label = 'Needs attention';
     } else if (value === 'success') {
         cls = 'ok';
         label = 'Healthy';
+    } else if (notSetUp) {
+        cls = 'warn';
+        label = 'Not set up';
     } else {
         cls = 'ok';
         label = 'Ready';
@@ -308,12 +317,27 @@ function setStatusPill(pillId, icId, status, error) {
     }
 }
 
+// One plain sentence instead of raw timestamps and status codes.
+function backupSummaryText(enabled, lastAt, nextAt, lastStatus) {
+    const outcome = { success: 'completed', partial: 'finished with warnings', error: 'failed' }[String(lastStatus || '').toLowerCase()] || '';
+    const next = enabled && nextAt ? `Next: ${backupFormatDate(nextAt)}.` : '';
+    if (!lastAt) {
+        if (enabled) return `No backup yet. ${next || 'The first one runs soon.'}`.trim();
+        return 'No backup yet. Turn on automatic backups or press Back up now.';
+    }
+    const last = `Last backup ${backupFormatDate(lastAt)}${outcome ? ` (${outcome})` : ''}.`;
+    return `${last} ${enabled ? next : 'Automatic backups are off.'}`.trim();
+}
+
 function updateStatusUi() {
-    // Pool Status
-    document.getElementById('pool-last-run').textContent = backupFormatDate(backupStatus.pool_last_run_at);
-    document.getElementById('pool-next-run').textContent = backupFormatDate(backupStatus.pool_next_run_at);
-    document.getElementById('pool-last-status').textContent = backupStatus.pool_last_status || 'idle';
-    setStatusPill('pool-status-pill', 'pool-status-ic', backupStatus.pool_last_status, backupStatus.pool_last_error);
+    const poolEnabled = !!(backupSettings.pool_backup || {}).enabled;
+    const systemEnabled = !!(backupSettings.system_backup || {}).enabled;
+
+    // Data status
+    document.getElementById('pool-status-sub').textContent = backupSummaryText(
+        poolEnabled, backupStatus.pool_last_run_at, backupStatus.pool_next_run_at, backupStatus.pool_last_status);
+    setStatusPill('pool-status-pill', 'pool-status-ic', backupStatus.pool_last_status, backupStatus.pool_last_error,
+        !backupStatus.pool_last_run_at && !poolEnabled);
 
     const poolError = document.getElementById('pool-last-error');
     if (backupStatus.pool_last_error) {
@@ -323,11 +347,11 @@ function updateStatusUi() {
         poolError.style.display = 'none';
     }
 
-    // System Status
-    document.getElementById('system-last-run').textContent = backupFormatDate(backupStatus.system_last_run_at);
-    document.getElementById('system-next-run').textContent = backupFormatDate(backupStatus.system_next_run_at);
-    document.getElementById('system-last-status').textContent = backupStatus.system_last_status || 'idle';
-    setStatusPill('system-status-pill', 'system-status-ic', backupStatus.system_last_status, backupStatus.system_last_error);
+    // System status
+    document.getElementById('system-status-sub').textContent = backupSummaryText(
+        systemEnabled, backupStatus.system_last_run_at, backupStatus.system_next_run_at, backupStatus.system_last_status);
+    setStatusPill('system-status-pill', 'system-status-ic', backupStatus.system_last_status, backupStatus.system_last_error,
+        !backupStatus.system_last_run_at && !systemEnabled);
 
     const sysError = document.getElementById('system-last-error');
     if (backupStatus.system_last_error) {
@@ -337,27 +361,29 @@ function updateStatusUi() {
         sysError.style.display = 'none';
     }
 
-    // System Info
+    // System info: only shown when there is something to say.
     const sysSupport = document.getElementById('system-support-info');
     const systemRunBtn = document.getElementById('system-run-btn');
-    if (backupSystemState.supported === false) {
-        sysSupport.textContent = `Unsupported (${backupSystemState.reason || 'unknown'})`;
+    const unsupported = backupSystemState.supported === false;
+    if (unsupported) {
+        sysSupport.textContent = `Not available: ${backupSystemState.reason || 'unknown reason'}`;
         sysSupport.style.color = 'var(--error)';
-        if (systemRunBtn) systemRunBtn.disabled = true;
     } else {
-        sysSupport.textContent = `Supported (Root Subvol: ${backupSystemState.root_subvolume_id})`;
+        sysSupport.textContent = 'Yes';
         sysSupport.style.color = 'var(--accent-success)';
-        if (systemRunBtn) systemRunBtn.disabled = false;
     }
+    if (systemRunBtn) systemRunBtn.disabled = unsupported;
 
     const sysPending = document.getElementById('system-pending-rollback');
     if (backupStatus.system_pending_reboot) {
-        sysPending.textContent = `YES - Will rollback to ${backupStatus.system_pending_snapshot_path} on reboot`;
+        sysPending.textContent = `Yes. This NAS returns to ${backupStatus.system_pending_snapshot_path} at the next reboot.`;
         sysPending.style.color = 'var(--accent-warning)';
     } else {
         sysPending.textContent = 'None';
         sysPending.style.color = 'var(--text-secondary)';
     }
+    const infoGrid = sysSupport.closest('.backup-info-grid');
+    if (infoGrid) infoGrid.style.display = unsupported || backupStatus.system_pending_reboot ? '' : 'none';
 }
 
 function fillSettingsUi() {
@@ -366,12 +392,14 @@ function fillSettingsUi() {
     document.getElementById('pool-enabled').checked = !!pb.enabled;
     document.getElementById('pool-interval').value = String(pb.interval_minutes || 1440);
     document.getElementById('pool-keep-last').value = String(pb.keep_last || 30);
+    document.getElementById('pool-interval').disabled = !pb.enabled;
 
     // System Settings
     const sb = backupSettings.system_backup || {};
     document.getElementById('system-enabled').checked = !!sb.enabled;
     document.getElementById('system-interval').value = String(sb.interval_minutes || 10080);
     document.getElementById('system-keep-last').value = String(sb.keep_last || 10);
+    document.getElementById('system-interval').disabled = !sb.enabled;
 }
 
 function fillBuddySettingsUi() {
@@ -514,6 +542,7 @@ function setBuddyTransferPeerOptions(peers) {
 
     const list = Array.isArray(peers) ? peers : [];
     const previous = String(selectedBuddyRestorePeerId || '').trim();
+    listEl.closest('.buddy-restore-layout')?.classList.toggle('single', list.length <= 1);
     if (!list.length) {
         selectedBuddyRestorePeerId = '';
         listEl.innerHTML = '<div class="metric-sub">No buddy available.</div>';
@@ -542,7 +571,7 @@ function setBuddyTransferPeerOptions(peers) {
     const labelEl = document.getElementById('buddy-restore-selected-label');
     if (labelEl) {
         const peerName = selectedPeer?.name || selectedBuddyRestorePeerId || 'Buddy';
-        labelEl.textContent = `Snapshots: ${peerName}`;
+        labelEl.textContent = `Backups on ${peerName}`;
     }
 }
 
@@ -563,7 +592,7 @@ function renderBuddyRemoteSnapshotsList() {
         const isFullSystem = String(item.source_path || '').trim() === '/';
         const title = isFullSystem
             ? `Full system <span class="snap-badge">Reboot required</span>`
-            : backupEscapeHtml(item.source_path || '-');
+            : `<span title="${backupEscapeHtml(item.source_path || '')}">${backupEscapeHtml(backupFolderName(item.source_path))}</span>`;
         return `
         <div class="buddy-remote-item">
             <div class="buddy-remote-meta">
@@ -611,7 +640,7 @@ function renderBuddyStatus() {
     const peersEl = document.getElementById('buddy-peers-list');
 
     if (supportedEl) {
-        supportedEl.textContent = buddyState.supported ? 'Yes' : 'Limited (setup only)';
+        supportedEl.textContent = buddyState.supported ? 'Yes' : 'Limited (pairing and settings only)';
         supportedEl.style.color = buddyState.supported ? 'var(--accent-success)' : 'var(--accent-warning)';
     }
     if (tunnelEl) {
@@ -634,16 +663,16 @@ function renderBuddyStatus() {
     let buddyLabel = 'Connected';
     if (!buddyState.supported) {
         buddyCls = 'warn';
-        buddyLabel = 'Setup only';
+        buddyLabel = 'Limited';
     } else if (!peers.length) {
         buddyCls = 'warn';
-        buddyLabel = 'Not paired';
+        buddyLabel = 'Not set up';
     } else if (tunnelUp) {
         buddyCls = 'ok';
-        buddyLabel = `Connected (${peers.length})`;
+        buddyLabel = 'Connected';
     } else {
         buddyCls = 'warn';
-        buddyLabel = 'Attention';
+        buddyLabel = 'Not connected';
     }
     if (buddyPill) {
         buddyPill.className = `pill ${buddyCls}`;
@@ -657,24 +686,53 @@ function renderBuddyStatus() {
         tunnelEl.title = 'WireGuard tools are missing. Pairing/settings work, tunnel starts after installing wireguard-tools.';
     }
 
+    // One plain sentence about where things stand.
+    const statusSub = document.getElementById('buddy-status-sub');
+    if (statusSub) {
+        const sending = peers.filter((peer) => peer.policy?.enabled === true);
+        if (!buddyState.supported) {
+            statusSub.textContent = 'This system cannot run the encrypted connection yet. See Technical details.';
+        } else if (!peers.length) {
+            statusSub.textContent = 'Keep an encrypted copy of your data at a friend\'s or family member\'s AlvaOS. Only you can read it.';
+        } else if (!tunnelUp) {
+            statusSub.textContent = 'The connection to your buddies is down. Try Test connection, or restart it under Technical details.';
+        } else if (sending.length) {
+            statusSub.textContent = `Sending to ${sending.map((peer) => peer.name || 'a buddy').join(', ')} automatically.`;
+        } else {
+            statusSub.textContent = 'Paired, but automatic sending is off. Open More on a buddy to turn it on.';
+        }
+    }
+
     if (!peersEl) return;
+    const restoreCard = document.getElementById('buddy-restore-card');
+    if (restoreCard) restoreCard.style.display = peers.length ? '' : 'none';
     setBuddyTransferPeerOptions(peers);
     if (!peers.length) {
-        peersEl.innerHTML = '<div class="metric-sub">No buddies paired yet.</div>';
+        peersEl.innerHTML = `
+            <div class="buddy-empty">
+                <p class="metric-sub">No buddy yet. Pair with someone you trust and their AlvaOS keeps an encrypted copy of your data, far away from a fire or a break-in.</p>
+                <button class="btn-primary buddy-add-btn">Add a buddy</button>
+            </div>`;
         buddyRemoteSnapshots = [];
         renderBuddyRemoteSnapshotsList();
         return;
     }
 
+    // Keep "More" panels open across a refresh.
+    const openPeers = new Set(Array.from(peersEl.querySelectorAll('details.buddy-more[open]'))
+        .map((el) => el.dataset.nodeId));
+
     peersEl.innerHTML = peers.map((peer) => {
         const runtime = peer?.runtime || {};
         const online = runtime.online === true;
         const connected = runtime.connected === true;
-        const onlineText = online ? 'Yes' : 'No';
-        const connectedText = connected ? 'Yes' : 'No';
-        const onlineClass = `buddy-state-pill${online ? ' ok' : ''}`;
-        const connectedClass = `buddy-state-pill${connected ? ' ok' : ''}`;
+        const reachable = online && connected;
         const handshakeText = runtime.latest_handshake || '-';
+        const intervalText = { 60: 'every hour', 360: 'every 6 hours', 720: 'every 12 hours', 1440: 'every day', 10080: 'every week' }[Number(peer.policy?.interval_minutes || 1440)] || 'on a schedule';
+        const sendingText = peer.policy?.enabled === true
+            ? `Sends ${intervalText} at ${peer.policy?.send_time || '02:00'}`
+            : 'Automatic sending is off';
+        const nodeAttr = backupEscapeHtml(peer.node_id || '');
         const policyOutgoing = Array.isArray(peer.policy?.outgoing_sources)
             ? peer.policy.outgoing_sources
             : [];
@@ -686,36 +744,39 @@ function renderBuddyStatus() {
                     <div>
                         <div class="buddy-peer-header">
                             <strong>${backupEscapeHtml(peer.name || peer.node_id || 'Buddy')}</strong>
-                            <span class="${onlineClass}">Online: ${onlineText}</span>
-                            <span class="${connectedClass}">Connected: ${connectedText}</span>
+                            <span class="buddy-state-pill${reachable ? ' ok' : ''}">${reachable ? 'Online' : 'Offline'}</span>
                         </div>
-                        <div class="metric-sub mono-text">${backupEscapeHtml(peer.node_id || '-')}</div>
+                        <div class="metric-sub">${backupEscapeHtml(sendingText)}${runtime.latest_handshake ? ` &bull; last contact ${backupEscapeHtml(handshakeText)}` : ''}</div>
                     </div>
                     <div class="buddy-peer-actions">
-                        <button class="btn-primary buddy-backup-now-peer-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Send pools now</button>
-                        <button class="btn-secondary buddy-send-system-peer-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Send full system</button>
-                        <button class="btn-secondary buddy-test-peer-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Test connection</button>
-                        <button class="btn-secondary buddy-remove-peer-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Remove</button>
+                        <button class="btn-primary buddy-backup-now-peer-btn" data-node-id="${nodeAttr}">Send backup now</button>
                     </div>
                 </div>
+                ${peer.last_error ? `<div class="metric-sub" style="color: var(--error);">Error: ${backupEscapeHtml(peer.last_error)}</div>` : ''}
+                <details class="buddy-more" data-node-id="${nodeAttr}"${openPeers.has(peer.node_id || '') ? ' open' : ''}>
+                <summary>More: schedule, limits, tools</summary>
+                <div class="buddy-more-actions">
+                    <button class="btn-secondary buddy-send-system-peer-btn" data-node-id="${nodeAttr}">Send full system</button>
+                    <button class="btn-secondary buddy-test-peer-btn" data-node-id="${nodeAttr}">Test connection</button>
+                    <button class="btn-secondary buddy-remove-peer-btn" data-node-id="${nodeAttr}">Remove</button>
+                </div>
                 <div class="buddy-peer-meta-grid">
-                    <div class="metric-sub buddy-peer-meta-item">Endpoint: ${backupEscapeHtml(peer.endpoint || '(not set)')}</div>
+                    <div class="metric-sub buddy-peer-meta-item">Buddy ID: <span class="mono-text">${backupEscapeHtml(peer.node_id || '-')}</span></div>
+                    <div class="metric-sub buddy-peer-meta-item">Address: ${backupEscapeHtml(peer.endpoint || '(not set)')}</div>
                     <div class="metric-sub buddy-peer-meta-item">Tunnel IP: ${backupEscapeHtml(peer.tunnel_ip || '-')}</div>
                     <div class="metric-sub buddy-peer-meta-item">Status: ${backupEscapeHtml(peer.status || 'unknown')}</div>
-                    <div class="metric-sub buddy-peer-meta-item">Last Handshake: ${backupEscapeHtml(handshakeText)}</div>
                 </div>
-                ${peer.last_error ? `<div class="metric-sub" style="color: var(--error);">Error: ${backupEscapeHtml(peer.last_error)}</div>` : ''}
                 <div class="buddy-peer-policy">
                     <div class="buddy-peer-policy-grid">
                         <div class="setting-group">
-                            <label class="setting-label">Send To This Buddy</label>
+                            <label class="setting-label">Send automatically</label>
                             <label class="toggle">
                                 <input type="checkbox" class="buddy-peer-enabled" data-node-id="${backupEscapeHtml(peer.node_id || '')}" ${peer.policy?.enabled === true ? 'checked' : ''}>
                                 <span class="toggle-slider"></span>
                             </label>
                         </div>
                         <div class="setting-group">
-                            <label class="setting-label">Schedule Interval</label>
+                            <label class="setting-label">How often</label>
                             <select class="select-input buddy-peer-interval" data-node-id="${backupEscapeHtml(peer.node_id || '')}">
                                 <option value="60" ${String(peer.policy?.interval_minutes || 1440) === '60' ? 'selected' : ''}>Every hour</option>
                                 <option value="360" ${String(peer.policy?.interval_minutes || 1440) === '360' ? 'selected' : ''}>Every 6 hours</option>
@@ -725,7 +786,7 @@ function renderBuddyStatus() {
                             </select>
                         </div>
                         <div class="setting-group">
-                            <label class="setting-label">Preferred Send Time</label>
+                            <label class="setting-label">Send at</label>
                             <input type="time" class="select-input buddy-peer-send-time" data-node-id="${backupEscapeHtml(peer.node_id || '')}" value="${backupEscapeHtml(peer.policy?.send_time || '02:00')}">
                         </div>
                         <div class="setting-group">
@@ -744,14 +805,15 @@ function renderBuddyStatus() {
                             <div class="metric-sub">The newest snapshot is always kept. Older ones are thinned out like this, and the oldest go first when the buddy's space runs low.</div>
                         </div>
                         <div class="setting-group" style="grid-column: 1 / -1;">
-                            <label class="setting-label">Outgoing Sources</label>
+                            <label class="setting-label">Folders to send</label>
                             ${renderBuddyPeerSourcePicker(peer.node_id || '', policyOutgoing)}
                         </div>
                     </div>
                     <div class="buddy-peer-policy-footer">
-                        <button class="btn-secondary buddy-save-peer-policy-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Save Buddy Policy</button>
+                        <button class="btn-secondary buddy-save-peer-policy-btn" data-node-id="${backupEscapeHtml(peer.node_id || '')}">Save</button>
                     </div>
                 </div>
+                </details>
             </div>
         </div>
     `;
@@ -1671,6 +1733,25 @@ function initBackupHandlers() {
         if (runTarget) runTarget.value = event.target?.value || '';
     });
 
+    // Automatic backups: the toggle and interval save on change, no extra button.
+    const saveAutoPool = async () => {
+        if (document.getElementById('pool-enabled').checked && !selectedSources().length) {
+            backupNotify('Choose which folders to back up under "More options" first.', 'warning');
+            fillSettingsUi();
+            return;
+        }
+        await savePoolSettings();
+        fillSettingsUi();
+    };
+    const saveAutoSystem = async () => {
+        await saveSystemSettings();
+        fillSettingsUi();
+    };
+    document.getElementById('pool-enabled')?.addEventListener('change', saveAutoPool);
+    document.getElementById('pool-interval')?.addEventListener('change', saveAutoPool);
+    document.getElementById('system-enabled')?.addEventListener('change', saveAutoSystem);
+    document.getElementById('system-interval')?.addEventListener('change', saveAutoSystem);
+
     // System Handlers
     document.getElementById('system-run-btn')?.addEventListener('click', runSystemBackupNow);
     document.getElementById('system-save-settings-btn')?.addEventListener('click', saveSystemSettings);
@@ -1715,6 +1796,14 @@ function initBackupHandlers() {
     document.getElementById('buddy-encryption-enabled')?.addEventListener('change', updateBuddySecurityUi);
     document.getElementById('buddy-refresh-remote-btn')?.addEventListener('click', () => loadBuddyRemoteSnapshots(true));
     document.getElementById('buddy-peers-list')?.addEventListener('click', (event) => {
+        if (event.target.closest('.buddy-add-btn')) {
+            const pairing = document.getElementById('buddy-pairing');
+            if (pairing) {
+                pairing.open = true;
+                pairing.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+            return;
+        }
         const saveBtn = event.target.closest('.buddy-save-peer-policy-btn');
         if (saveBtn) {
             saveBuddyPeerPolicy(saveBtn.dataset.nodeId || '');
