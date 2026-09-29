@@ -7,19 +7,22 @@ import subprocess
 import secrets
 import shutil
 import tempfile
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
 import requests
+
+from common import PRIV_HELPER, build_privileged_cmd, privilege_error_message
+from update_signing import signature_path_for
+
 try:
     from packaging.version import Version, InvalidVersion
 except Exception:
-    class InvalidVersion(ValueError):
+    class InvalidVersion(ValueError):  # type: ignore[no-redef]
         pass
 
-    class Version:
+    class Version:  # type: ignore[no-redef]
         PRECEDENCE = {
             "a": 0,
             "alpha": 0,
@@ -55,15 +58,16 @@ except Exception:
 CMD = {
     'DPKG_DEB': '/usr/bin/dpkg-deb',
     'DPKG': '/usr/bin/dpkg',
-    'SYSTEMD_RUN': '/usr/bin/systemd-run',
-    'BASH': '/usr/bin/bash',
     'APT': '/usr/bin/apt',
     'APT_GET': '/usr/bin/apt-get',
     'LSBLK': '/usr/bin/lsblk',
     'MOUNT': '/usr/bin/mount',
     'UMOUNT': '/usr/bin/umount',
-    'NOHUP': '/usr/bin/nohup'
+    'TEE': '/usr/bin/tee',
 }
+
+# Offline-update USB sticks are mounted here by the privilege helper.
+SCAN_MOUNT_BASE = '/run/alvaos-scan'
 
 
 DEFAULT_SETTINGS = {
@@ -128,10 +132,11 @@ class UpdateManager:
             # Sort by modification time (most recent first)
             files.sort(key=os.path.getmtime, reverse=True)
             for f in files[keep:]:
-                try:
-                    os.remove(f)
-                except Exception:
-                    pass
+                for path in (f, signature_path_for(f)):
+                    try:
+                        os.remove(path)
+                    except Exception:
+                        pass
         except Exception:
             pass
 
@@ -368,16 +373,9 @@ class UpdateManager:
         return "\n".join(lines)
 
     def _set_debian_sources(self, target_codename):
-        # Backup existing sources.list before overwriting
-        backup_path = f"/etc/apt/sources.list.backup.{int(time.time())}"
-        self.run_command([CMD['BASH'], "-lc", f"cp /etc/apt/sources.list {backup_path} 2>/dev/null || true"], timeout=10)
-        
         content = self._build_debian_sources(target_codename)
-        script = f"cat > /etc/apt/sources.list <<'EOF'\n{content}EOF"
-        res, err = self.run_command([CMD['BASH'], "-lc", script], timeout=30)
+        res, err = self.run_command([CMD['TEE'], "/etc/apt/sources.list"], timeout=30, input=content)
         if err or not res or res.returncode != 0:
-            # Restore backup on failure
-            self.run_command([CMD['BASH'], "-lc", f"cp {backup_path} /etc/apt/sources.list 2>/dev/null || true"], timeout=10)
             return False, err or (res.stderr if res else "failed to write /etc/apt/sources.list")
         return True, None
 
@@ -590,6 +588,25 @@ class UpdateManager:
             self.set_update_state("error", "Download failed", {"error": str(e)})
             raise
 
+        # Fetch the detached signature from the same release. It is verified
+        # by the privilege helper right before installation.
+        sig_path = signature_path_for(dest_path)
+        try:
+            with requests.get(url + ".sig", timeout=30) as sig_resp:
+                sig_resp.raise_for_status()
+                if len(sig_resp.content) > 4096:
+                    raise ValueError("Signature file is too large")
+                with open(sig_path, "wb") as f:
+                    f.write(sig_resp.content)
+        except Exception as e:
+            try:
+                os.remove(dest_path)
+            except OSError:
+                pass
+            error = f"The update has no downloadable signature ({e}); it will not be installed"
+            self.set_update_state("error", "Download failed", {"error": error})
+            raise ValueError(error) from None
+
         checksum = sha256.hexdigest()
         self.set_update_state("idle", "Download complete", {
             "path": dest_path,
@@ -597,43 +614,27 @@ class UpdateManager:
         })
         return {"path": dest_path, "sha256": checksum}
 
-    def run_command(self, cmd, timeout=60, extra_env=None, use_sudo=True):
+    def run_command(self, cmd, timeout=60, extra_env=None, use_sudo=True, input=None):
         if not cmd:
             return None, "Empty command"
-        
-        # Prepare final command using sudo if not root
-        final_cmd = []
-        if cmd[0] == 'sudo':
-             # Use absolute path for sudo -n if we're doing it manually or trust build_privileged style
-             # But here we stick to the simpler logic of this module for now, just adding -n
-             final_cmd = ['sudo', '-n'] + cmd[1:]
-        elif use_sudo and platform.system() == "Linux" and not self.is_root_user():
-            final_cmd = ["sudo", "-n"] + cmd
+
+        if cmd[0] == 'sudo' or (use_sudo and platform.system() == "Linux"):
+            final_cmd = build_privileged_cmd(cmd, env=extra_env)
         else:
             final_cmd = cmd
-            
+
         try:
             env = {"LC_ALL": "C"}
             if extra_env and isinstance(extra_env, dict):
                 env.update(extra_env)
-            result = subprocess.run(final_cmd, capture_output=True, text=True, timeout=timeout, env=env)
+            result = subprocess.run(final_cmd, capture_output=True, text=True, timeout=timeout,
+                                    env=env, input=input)
             if result.returncode != 0:
+                special = privilege_error_message(result, final_cmd)
+                if special:
+                    return (None if 'password' in special.lower() else result), special
                 stderr_text = (result.stderr or "").strip()
                 stdout_text = (result.stdout or "").strip()
-                stderr_low = stderr_text.lower()
-                combined_low = f"{stderr_text}\n{stdout_text}".lower()
-                if "/etc/sudoers.d/alvaos" in combined_low and (
-                    "is owned by uid" in combined_low
-                    or "is world writable" in combined_low
-                    or "bad permissions" in combined_low
-                ):
-                    return None, (
-                        "System permission error: /etc/sudoers.d/alvaos has invalid ownership or permissions. "
-                        "Run as root: chown root:root /etc/sudoers.d/alvaos && chmod 440 /etc/sudoers.d/alvaos"
-                    )
-                if "password is required" in stderr_low or "a password is required" in stderr_low:
-                    cmd_str = " ".join(final_cmd)
-                    return None, f"System permission error: Passwordless sudo is not configured for command: {cmd_str}"
                 cmd_str = " ".join(final_cmd)
                 detail = stderr_text or stdout_text or f"exit code {result.returncode}"
                 return result, f"Command failed ({result.returncode}): {cmd_str}: {detail}"
@@ -677,79 +678,33 @@ class UpdateManager:
             self.set_update_state("error", "Package validation failed", {"error": err})
             return {"success": False, "error": err}
 
+        if not os.path.exists(signature_path_for(package_path)):
+            err = "This update has no signature file (.sig); unsigned updates are not installed"
+            self.set_update_state("error", "Package validation failed", {"error": err})
+            return {"success": False, "error": err}
+
         self.set_update_state("installing", "Installing AlvaOS update", {"package": package_path})
-        script_path = "/opt/alvaos/scripts/apply_update.sh"
-        
-        # Use systemd-run to detach the update process if possible
-        use_systemd_run = False
-        if os.path.exists(script_path):
-            use_systemd_run = shutil.which(CMD['SYSTEMD_RUN']) is not None
+        self.update_progress("installing", "Starting update service", 10, {"package": package_path})
 
-        if use_systemd_run and os.path.exists(script_path):
-            self.update_progress("installing", "Starting update service", 10, {"package": package_path})
-            # Run using systemd-run to decouple from the backend process
-            # We construct the command manually to avoid run_command waiting
-            try:
-                # systemd-run --no-block returns immediately; validate return code first.
-                run_prefix = [] if self.is_root_user() else ["sudo", "-n"]
-                final_cmd = run_prefix + [
-                    CMD['SYSTEMD_RUN'],
-                    "--unit=alvaos-updater-" + secrets.token_hex(4),
-                    "--description=AlvaOS Updater",
-                    "--no-block", # Critical: don't wait for it
-                    CMD['BASH'], script_path, package_path
-                ]
-                start_res = subprocess.run(
-                    final_cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=20,
-                    env={"LC_ALL": "C"}
-                )
-                if start_res.returncode != 0:
-                    detail = (start_res.stderr or start_res.stdout or "").strip() or f"exit code {start_res.returncode}"
-                    raise RuntimeError(detail)
-                
-                # Return success immediately because the script will handle the rest
-                return {"success": True, "message": "Update process started in background"}
-            except Exception as e:
-                 # Fallback to direct Popen if systemd-run implies errors (though unlikely on Linux with systemd)
-                 try:
-                    run_prefix = [] if self.is_root_user() else ["sudo", "-n"]
-                    fallback_cmd = run_prefix + [CMD['NOHUP'], CMD['BASH'], script_path, package_path]
-                    fallback_res = subprocess.run(
-                        fallback_cmd,
-                        capture_output=True,
-                        text=True,
-                        timeout=20,
-                        start_new_session=True,
-                        env={"LC_ALL": "C"}
-                    )
-                    if fallback_res.returncode != 0:
-                        detail = (fallback_res.stderr or fallback_res.stdout or "").strip() or f"exit code {fallback_res.returncode}"
-                        raise RuntimeError(detail)
-                    return {"success": True, "message": "Update process started in background (nohup)"}
-                 except Exception as e2:
-                    return {"success": False, "error": f"Failed to launch update script: {e} / {e2}"}
-
-        else:
-            # Fallback for systems without script or systemd
-            res, run_err = self.run_command([CMD['DPKG'], "-i", package_path], timeout=600)
-            if run_err or not res or res.returncode != 0:
-                error_msg = run_err or (res.stderr if res else "dpkg failed")
-                self.set_update_state("error", "Install failed", {"error": error_msg})
-                return {"success": False, "error": error_msg}
-
-        # If we fell back to dpkg -i (synchronous), record history
-        entry = {
-            "type": "alvaos",
-            "package": package_path,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "stdout": res.stdout[-2000:] if res.stdout else ""
-        }
-        self.append_history(entry)
-        self.set_update_state("idle", "Install complete", {"package": package_path})
-        return {"success": True}
+        # The privilege helper verifies the package signature and then starts
+        # apply_update.sh as a detached systemd unit, so the backend restarting
+        # during the update does not kill the update itself.
+        cmd = [PRIV_HELPER, "apply-update", package_path]
+        if not self.is_root_user():
+            cmd = ["sudo", "-n"] + cmd
+        try:
+            start_res = subprocess.run(cmd, capture_output=True, text=True, timeout=120,
+                                       env={"LC_ALL": "C"})
+        except Exception as e:
+            self.set_update_state("error", "Install failed", {"error": str(e)})
+            return {"success": False, "error": f"Failed to launch the update: {e}"}
+        if start_res.returncode != 0:
+            detail = (privilege_error_message(start_res, cmd)
+                      or (start_res.stderr or start_res.stdout or "").strip()
+                      or f"exit code {start_res.returncode}")
+            self.set_update_state("error", "Install failed", {"error": detail})
+            return {"success": False, "error": detail}
+        return {"success": True, "message": "Update process started in background"}
 
     def apply_offline_system_package(self, package_path):
         if platform.system() != "Linux":
@@ -909,7 +864,8 @@ class UpdateManager:
         })
         self.update_progress("installing", "Preparing Debian OS upgrade", 5, {"target": final_target})
 
-        sources_path = f"/tmp/alvaos-debian-upgrade-{secrets.token_hex(4)}.list"
+        self.ensure_dirs()
+        sources_path = os.path.join(self.cache_dir, f"debian-upgrade-{secrets.token_hex(4)}.list")
         sources_content = self._build_debian_sources(final_target)
         try:
             with open(sources_path, "w", encoding="utf-8") as f:
@@ -1086,12 +1042,14 @@ class UpdateManager:
     def _temp_mount_and_scan(self, dev_name):
         """Temporarily mount a device and scan it for packages."""
         dev_path = f"/dev/{dev_name}"
-        mount_point = f"/tmp/alvaos_scan_{dev_name}"
+        if not re.match(r"^[a-zA-Z0-9]+$", dev_name or ""):
+            return []
+        # The helper creates this root-owned mount point and mounts the stick
+        # read-only with nosuid,nodev,noexec.
+        mount_point = os.path.join(SCAN_MOUNT_BASE, dev_name)
         packages = []
-        
+
         try:
-            os.makedirs(mount_point, exist_ok=True)
-            # Use run_command to handle sudo correctly
             res, err = self.run_command([CMD['MOUNT'], '-o', 'ro', dev_path, mount_point], timeout=10)
             if res and res.returncode == 0:
                 try:
@@ -1106,10 +1064,6 @@ class UpdateManager:
                         packages.append(cached_pkg)
                 finally:
                     self.run_command([CMD['UMOUNT'], mount_point], timeout=10)
-            
-            # Cleanup mount point
-            if os.path.exists(mount_point):
-                os.rmdir(mount_point)
         except Exception as e:
             print(f"Failed to temp mount {dev_path}: {e}")
             
@@ -1130,6 +1084,11 @@ class UpdateManager:
                 name, ext = os.path.splitext(base)
                 dest = os.path.join(offline_dir, f"{name}-{secrets.token_hex(4)}{ext}")
             shutil.copy2(src_path, dest)
+            # Keep the detached signature next to the package; AlvaOS packages
+            # are only installed when it verifies.
+            src_sig = signature_path_for(src_path)
+            if os.path.exists(src_sig):
+                shutil.copy2(src_sig, signature_path_for(dest))
             return dest
         except Exception as e:
             print(f"Failed to cache offline package {src_path}: {e}")

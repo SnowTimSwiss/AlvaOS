@@ -8,21 +8,19 @@ import json
 import os
 import platform
 import re
-import shlex
 import shutil
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
-CMD = {
+CMD: Dict[str, str] = {
     "BTRFS": "/usr/bin/btrfs",
     "MKDIR": "/usr/bin/mkdir",
     "MV": "/usr/bin/mv",
-    "BASH": "/usr/bin/bash",
 }
 
-DEFAULT_SETTINGS = {
+DEFAULT_SETTINGS: Dict[str, Dict[str, Any]] = {
     # Pool Backup Settings
     "pool_backup": {
         "enabled": False,
@@ -40,7 +38,7 @@ DEFAULT_SETTINGS = {
     }
 }
 
-DEFAULT_STATUS = {
+DEFAULT_STATUS: Dict[str, Any] = {
     "pool_last_run_at": None,
     "pool_next_run_at": None,
     "pool_last_status": "idle",
@@ -141,7 +139,7 @@ class BackupManager:
     def _now_iso(self) -> str:
         return datetime.now(timezone.utc).isoformat()
 
-    def _detect_cmd(self, candidates: List[str], which_name: str) -> Optional[str]:
+    def _detect_cmd(self, candidates: List[Optional[str]], which_name: str) -> Optional[str]:
         for candidate in candidates:
             if candidate and os.path.exists(candidate):
                 return candidate
@@ -166,12 +164,6 @@ class BackupManager:
             "mv",
         )
 
-    def _bash_cmd(self) -> Optional[str]:
-        return self._detect_cmd(
-            ["/usr/bin/bash", "/bin/bash", CMD.get("BASH")],
-            "bash",
-        )
-
     def _move_path_best_effort(self, source: str, destination: str, timeout: int = 60) -> Tuple[bool, str]:
         src = self._normalize_path(source)
         dst = self._normalize_path(destination)
@@ -191,14 +183,6 @@ class BackupManager:
                 return True, ""
             last_error = mv_err or last_error
 
-        bash_cmd = self._bash_cmd()
-        if bash_cmd:
-            quoted = f"{shlex.quote(src)} {shlex.quote(dst)}"
-            cmd = f"mv {quoted}"
-            bash_res, bash_err = self.run_command([bash_cmd, "-lc", cmd], timeout=timeout)
-            if not bash_err and bash_res and bash_res.returncode == 0:
-                return True, ""
-            last_error = bash_err or last_error
 
         return False, last_error or f"Failed to move {src} -> {dst}"
 
@@ -220,7 +204,7 @@ class BackupManager:
         return None, None
 
     def _list_subvolumes(self, mount_point: str) -> List[Dict]:
-        subvolumes = []
+        subvolumes: List[Dict] = []
         if platform.system() != "Linux":
             return subvolumes
         btrfs_cmd = self._btrfs_cmd()
@@ -379,12 +363,12 @@ class BackupManager:
         pb["enabled"] = bool(pb.get("enabled", False))
         try:
             pb["interval_minutes"] = max(15, min(43200, int(pb.get("interval_minutes", 1440))))
-        except:
+        except Exception:
             pb["interval_minutes"] = 1440
             
         try:
             pb["keep_last"] = max(1, min(200, int(pb.get("keep_last", 30))))
-        except:
+        except Exception:
             pb["keep_last"] = 30
             
         raw_sources = pb.get("sources", [])
@@ -411,12 +395,12 @@ class BackupManager:
         sb["enabled"] = bool(sb.get("enabled", False))
         try:
             sb["interval_minutes"] = max(15, min(43200, int(sb.get("interval_minutes", 10080))))
-        except:
+        except Exception:
             sb["interval_minutes"] = 10080
             
         try:
             sb["keep_last"] = max(1, min(100, int(sb.get("keep_last", 10))))
-        except:
+        except Exception:
             sb["keep_last"] = 10
             
         sb["target_path"] = self._normalize_path(sb.get("target_path"))
@@ -453,7 +437,7 @@ class BackupManager:
     def _refresh_next_run(self, settings: Optional[Dict] = None):
         with self._schedule_lock:
             cfg = settings or self.get_settings()
-            updates = {}
+            updates: Dict[str, Any] = {}
             now = datetime.now(timezone.utc)
             
             # Pool Backup
@@ -558,7 +542,7 @@ class BackupManager:
                 m = re.search(r"uuid:\s+([A-Fa-f0-9-]+)", res.stdout, re.IGNORECASE)
                 if m:
                     return m.group(1).lower()
-        except:
+        except Exception:
             pass
         return None
 
@@ -982,13 +966,10 @@ class BackupManager:
         name = os.path.basename(snapshot_path)
         mkdir_cmd = self._mkdir_cmd()
         btrfs_cmd = self._btrfs_cmd()
-        bash_cmd = self._bash_cmd()
         if not mkdir_cmd:
             return False, "mkdir command not found"
         if not btrfs_cmd:
             return False, "btrfs command not found"
-        if not bash_cmd:
-            return False, "bash command not found"
         source_parent = self._best_temp_snapshot_parent(source_path)
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
         temp_name = f".alvaos-send-{self._slugify(name)}-{stamp}-{os.getpid()}"
@@ -1022,11 +1003,9 @@ class BackupManager:
             if send_err or not send_res or send_res.returncode != 0:
                 return False, send_err or "Failed to send snapshot stream"
 
-            receive_cmd = (
-                f"{shlex.quote(btrfs_cmd)} receive {shlex.quote(target_parent)} "
-                f"< {shlex.quote(stream_file)}"
+            recv_res, recv_err = self.run_command(
+                [btrfs_cmd, "receive", "-f", stream_file, target_parent], timeout=600
             )
-            recv_res, recv_err = self.run_command([bash_cmd, "-lc", receive_cmd], timeout=600)
             if recv_err or not recv_res or recv_res.returncode != 0:
                 return False, recv_err or "Failed to receive snapshot stream"
 
@@ -1263,7 +1242,7 @@ class BackupManager:
                      else:
                          failed.append({"source_path": source, "error": payload.get("error", "unknown error")})
                 
-                status_payload = {
+                status_payload: Dict[str, Any] = {
                     "pool_last_run_at": self._now_iso(),
                     "pool_last_status": "success" if not failed else ("partial" if created else "error"),
                     "pool_last_error": "; ".join([f["error"] for f in failed]) if failed else "",
@@ -1279,7 +1258,7 @@ class BackupManager:
             elif backup_type == "system":
                 # System Backup Logic
                 current_settings = settings.get("system_backup", {})
-                full_data_target_path = self._normalize_path(target_path)
+                full_data_target_path: Optional[str] = self._normalize_path(target_path)
                 if not full_data_target_path:
                     full_data_target_path = self._normalize_path(
                         settings.get("pool_backup", {}).get("target_path")
@@ -1388,11 +1367,7 @@ class BackupManager:
             return False, {"error": "Use system rollback endpoint for full system snapshots"}
 
         if platform.system() != "Linux":
-            return True, {
-                "restored_to": target_source,
-                "previous_backup": None,
-                "message": "Mock restore completed (non-Linux environment)",
-            }
+            return False, {"error": "Restores are only possible on the AlvaOS NAS itself (Linux)"}
 
         pool_mount_points = {self._normalize_path(mp) for _, mp in self._list_pool_mounts()}
         if target_source in pool_mount_points:

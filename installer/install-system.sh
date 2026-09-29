@@ -907,8 +907,8 @@ FSTAB_EOF
     chroot /mnt env DEBIAN_FRONTEND=noninteractive apt-get install -y \
         -o Acquire::Retries=3 \
         -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" \
-        linux-image-amd64 python3 python3-flask python3-waitress python3-psutil python3-requests python3-packaging python3-yaml \
-        systemd systemd-timesyncd network-manager openssh-server docker.io docker-compose btrfs-progs wireguard-tools \
+        linux-image-amd64 python3 python3-flask python3-waitress python3-psutil python3-requests python3-packaging python3-yaml python3-cryptography \
+        systemd systemd-timesyncd network-manager openssh-server docker.io docker-compose btrfs-progs wireguard-tools nbd-client cryptsetup \
         curl wget vim sudo smartmontools nfs-kernel-server samba >> "$INSTALL_LOG" 2>&1
 
     update_progress "Installing bootloader..."
@@ -956,6 +956,12 @@ FSTAB_EOF
     if [ -d "/opt/alvaos/backend" ]; then
         cp /opt/alvaos/backend/*.py /mnt/opt/alvaos/bin/ 2>/dev/null || true
         chmod +x /mnt/opt/alvaos/bin/*.py 2>/dev/null || true
+        cp /opt/alvaos/backend/alvaos-priv /mnt/opt/alvaos/bin/alvaos-priv
+        chmod 755 /mnt/opt/alvaos/bin/alvaos-priv
+    fi
+    if [ -f "/opt/alvaos/keys/update-signing.pub" ]; then
+        mkdir -p /mnt/opt/alvaos/keys
+        cp /opt/alvaos/keys/update-signing.pub /mnt/opt/alvaos/keys/update-signing.pub
     fi
 
     # Copy scripts
@@ -1022,6 +1028,15 @@ SERVICE_EOF
         exit 1
     }
 
+    # Load the WireGuard module on the host at boot so VPN apps work without
+    # the SYS_MODULE capability (which would let a container load kernel code).
+    mkdir -p /mnt/etc/modules-load.d
+    echo wireguard > /mnt/etc/modules-load.d/alvaos-wireguard.conf
+    # Buddy Backup attaches the encrypted vault on a buddy as a network block device.
+    echo nbd > /mnt/etc/modules-load.d/alvaos-nbd.conf
+    mkdir -p /mnt/etc/modprobe.d
+    echo "options nbd nbds_max=16 max_part=0" > /mnt/etc/modprobe.d/alvaos-nbd.conf
+
     # SSH Security
     mkdir -p /mnt/etc/ssh/sshd_config.d
     cat > /mnt/etc/ssh/sshd_config.d/00-alvaos-security.conf << 'SSH_EOF'
@@ -1031,8 +1046,13 @@ PermitEmptyPasswords no
 SSH_EOF
 
     update_progress "Finalizing configuration..."
-    chroot /mnt useradd -r -s /bin/bash -d /opt/alvaos -M alvaos >> "$INSTALL_LOG" 2>&1 || true
-    chroot /mnt chown -R alvaos:alvaos /opt/alvaos /var/lib/alvaos /var/log/alvaos /etc/alvaos >> "$INSTALL_LOG" 2>&1
+    chroot /mnt useradd -r -s /usr/sbin/nologin -d /var/lib/alvaos -M alvaos >> "$INSTALL_LOG" 2>&1 || true
+    mkdir -p /mnt/var/lib/alvaos/compose /mnt/var/lib/alvaos/updates
+    # Code stays root-owned: parts of it (watchdog, update script, privilege
+    # helper) run as root. Only state, logs and config belong to the service.
+    chroot /mnt chown -R root:root /opt/alvaos >> "$INSTALL_LOG" 2>&1
+    chroot /mnt chmod -R go-w /opt/alvaos >> "$INSTALL_LOG" 2>&1
+    chroot /mnt chown -R alvaos:alvaos /var/lib/alvaos /var/log/alvaos /etc/alvaos >> "$INSTALL_LOG" 2>&1
     
     # Version file
     cat > /mnt/etc/alvaos/version.json << VERSION_EOF

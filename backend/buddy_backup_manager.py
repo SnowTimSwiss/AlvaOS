@@ -7,12 +7,12 @@ Identity + token pairing + WireGuard tunnel automation.
 import base64
 import hashlib
 import hmac
+import itertools
 import json
 import os
 import platform
 import re
 import secrets
-import shlex
 import shutil
 import socket
 import tempfile
@@ -22,18 +22,27 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, Union
 
 import requests
 
 from alerts_manager import push_notification
+from buddy_vault import TransferError as _TransferError
+from buddy_vault import VaultError, VaultReplicator, VaultStore
+from buddy_vault import read_stderr as _read_stderr
+from buddy_vault import spawn_privileged as _spawn_privileged
+import buddy_crypto
+
+WG_KEY_RE = re.compile(r"^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$")
+WG_ENDPOINT_RE = re.compile(r"^(\[[0-9a-fA-F:]{2,39}\]|[A-Za-z0-9.-]{1,253}):\d{1,5}$")
+IPV4_RE = re.compile(r"^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$")
 
 # Marker source path for a full-system (root subvolume) buddy transfer. A stream whose
 # source_path is "/" is restored as a full system rollback (set-default + reboot) rather
 # than a data subvolume replace.
 SYSTEM_SOURCE_PATH = "/"
 
-DEFAULT_BUDDY_SETTINGS = {
+DEFAULT_BUDDY_SETTINGS: Dict[str, Any] = {
     "enabled": False,
     "incoming_path": "",
     "incoming_quota_gb": 200,
@@ -47,7 +56,7 @@ DEFAULT_BUDDY_SETTINGS = {
     "encryption_hash": "",
 }
 
-DEFAULT_BUDDY_RUNTIME = {
+DEFAULT_BUDDY_RUNTIME: Dict[str, Any] = {
     "last_sync_at": "",
     "last_sync_status": "idle",
     "last_sync_error": "",
@@ -59,8 +68,10 @@ DEFAULT_BUDDY_RUNTIME = {
 
 
 class BuddyBackupManager:
-    def __init__(self, run_command: Callable):
+    def __init__(self, run_command: Callable, spawn_privileged: Callable = _spawn_privileged):
         self.run_command = run_command
+        # Starts streaming root commands (btrfs send/receive); replaced in tests.
+        self.spawn_privileged = spawn_privileged
         self.state_dir = self._resolve_state_dir()
         self.identity_file = os.path.join(self.state_dir, "buddy_identity.json")
         self.peers_file = os.path.join(self.state_dir, "buddy_peers.json")
@@ -68,12 +79,20 @@ class BuddyBackupManager:
         self.settings_file = os.path.join(self.state_dir, "buddy_settings.json")
         self.streams_file = os.path.join(self.state_dir, "buddy_streams.json")
         self.runtime_file = os.path.join(self.state_dir, "buddy_runtime.json")
+        # Per buddy and source: the snapshot last sent, kept as base for the next delta.
+        self.send_state_file = os.path.join(self.state_dir, "buddy_send_state.json")
+        # ALVAENC2 key material (scrypt output). Needed to encrypt unattended;
+        # restores derive the key from the passphrase and the stream header.
+        self.encryption_key_file = os.path.join(self.state_dir, "buddy_encryption_key.json")
         self.wg_dir = os.path.join(self.state_dir, "wireguard")
         self.wg_config_path = os.path.join(self.wg_dir, "buddy0.conf")
         self.interface_name = "buddy0"
         self.default_listen_port = 51820
         self.connected_handshake_threshold_seconds = 180
         self._transfer_lock = threading.RLock()
+        # Encrypted vaults: the ones buddies keep here, and ours on buddies.
+        self.vault_store = VaultStore(self)
+        self.vault = VaultReplicator(self)
 
         self._ensure_dirs()
         self._ensure_defaults()
@@ -226,12 +245,6 @@ class BuddyBackupManager:
         return self._detect_cmd(
             ["/usr/sbin/ip", "/usr/bin/ip", "/sbin/ip", "/bin/ip"],
             "ip"
-        )
-
-    def _bash_cmd(self) -> Optional[str]:
-        return self._detect_cmd(
-            ["/usr/bin/bash", "/bin/bash"],
-            "bash"
         )
 
     def _ping_cmd(self) -> Optional[str]:
@@ -471,45 +484,31 @@ class BuddyBackupManager:
             value = f"{value}:8080"
         return value, None
 
-    def _placeholder_wg_keypair(self) -> Tuple[str, str]:
-        private_key = base64.b64encode(secrets.token_bytes(32)).decode("ascii")
-        public_key = base64.b64encode(secrets.token_bytes(32)).decode("ascii")
-        return private_key, public_key
-
     def _generate_wg_keypair(self) -> Tuple[Optional[str], Optional[str], Optional[str], str]:
-        if platform.system() != "Linux":
-            priv, pub = self._placeholder_wg_keypair()
-            return priv, pub, None, "placeholder"
+        """Create a WireGuard key pair.
 
-        wg_cmd = self._wg_cmd()
-        bash_cmd = self._bash_cmd()
-        if not wg_cmd:
-            priv, pub = self._placeholder_wg_keypair()
-            return priv, pub, "WireGuard command not found (wg). Install wireguard-tools to enable the tunnel.", "placeholder"
-        if not bash_cmd:
-            priv, pub = self._placeholder_wg_keypair()
-            return priv, pub, "Bash command not found. Install bash to enable WireGuard key generation.", "placeholder"
+        WireGuard keys are plain X25519 keys, so they are generated in-process
+        with `cryptography`: no wg binary, no root, and never a fake key. (A
+        random "public key" that does not belong to the private key would make
+        pairing look successful while the tunnel can never come up.)
+        """
+        try:
+            from cryptography.hazmat.primitives import serialization
+            from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
-        gen_res, gen_err = self.run_command([wg_cmd, "genkey"], timeout=10)
-        if gen_err or not gen_res or gen_res.returncode != 0:
-            priv, pub = self._placeholder_wg_keypair()
-            return priv, pub, gen_err or "Failed to generate WireGuard private key", "placeholder"
-        private_key = (gen_res.stdout or "").strip()
-        if not private_key:
-            priv, pub = self._placeholder_wg_keypair()
-            return priv, pub, "WireGuard private key generation returned empty output", "placeholder"
-
-        pub_cmd = f"printf '%s' {shlex.quote(private_key)} | {shlex.quote(wg_cmd)} pubkey"
-        pub_res, pub_err = self.run_command([bash_cmd, "-lc", pub_cmd], timeout=10)
-        if pub_err or not pub_res or pub_res.returncode != 0:
-            priv, pub = self._placeholder_wg_keypair()
-            return priv, pub, pub_err or "Failed to derive WireGuard public key", "placeholder"
-        public_key = (pub_res.stdout or "").strip()
-        if not public_key:
-            priv, pub = self._placeholder_wg_keypair()
-            return priv, pub, "WireGuard public key generation returned empty output", "placeholder"
-
-        return private_key, public_key, None, "wireguard"
+            key = X25519PrivateKey.generate()
+            private_raw = key.private_bytes(
+                serialization.Encoding.Raw, serialization.PrivateFormat.Raw, serialization.NoEncryption()
+            )
+            public_raw = key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+        except Exception as exc:
+            return None, None, f"Could not generate a WireGuard key pair: {exc}", ""
+        return (
+            base64.b64encode(private_raw).decode("ascii"),
+            base64.b64encode(public_raw).decode("ascii"),
+            None,
+            "wireguard",
+        )
 
     def _create_identity(self) -> Dict:
         node_id = secrets.token_hex(8)
@@ -556,12 +555,10 @@ class BuddyBackupManager:
                 self._save_identity(identity)
 
             needs_regen = not identity.get("public_key") or not identity.get("private_key")
-            can_upgrade_from_placeholder = (
-                key_source != "wireguard"
-                and platform.system() == "Linux"
-                and bool(self._wg_cmd())
-            )
-            if needs_regen or can_upgrade_from_placeholder:
+            # Older versions stored random placeholder keys when wg was missing;
+            # those can never form a tunnel, so replace them with a real pair.
+            has_placeholder_keys = key_source != "wireguard"
+            if needs_regen or has_placeholder_keys:
                 private_key, public_key, key_err, new_source = self._generate_wg_keypair()
                 if private_key and public_key:
                     identity["private_key"] = private_key
@@ -687,9 +684,24 @@ class BuddyBackupManager:
                 "send_time": self._normalize_time_hhmm(item.get("send_time", "02:00")),
                 "max_storage_gb": quota,
                 "outgoing_sources": unique_sources,
+                **self._normalize_retention(item),
                 "updated_at": str(item.get("updated_at", "") or "").strip() or self._now_iso(),
             }
         return normalized
+
+    @staticmethod
+    def _normalize_retention(item: Dict) -> Dict[str, int]:
+        """How many daily/weekly/monthly snapshots the buddy's vault keeps."""
+        from buddy_vault import DEFAULT_RETENTION
+        limits = {"keep_daily": 366, "keep_weekly": 260, "keep_monthly": 240}
+        result = {}
+        for key, default in DEFAULT_RETENTION.items():
+            try:
+                value = int(item.get(key, default))
+            except (TypeError, ValueError):
+                value = default
+            result[key] = max(0, min(limits[key], value))
+        return result
 
     def _merge_settings(self, raw: Optional[Dict]) -> Dict:
         source = raw if isinstance(raw, dict) else {}
@@ -828,10 +840,14 @@ class BuddyBackupManager:
 
         password_supplied = "encryption_password" in payload
         encryption_password = str(payload.get("encryption_password", "") or "")
+        new_material = None
         if password_supplied and encryption_password:
+            if len(encryption_password) < 8:
+                return False, {"error": "The encryption password must have at least 8 characters"}
             digest, salt = self._hash_passphrase(encryption_password)
             candidate["encryption_hash"] = digest
             candidate["encryption_salt"] = salt
+            new_material = buddy_crypto.new_key_material(encryption_password)
 
         if candidate.get("encryption_enabled"):
             if not str(candidate.get("encryption_hash", "") or "").strip():
@@ -844,8 +860,102 @@ class BuddyBackupManager:
         if merged.get("enabled") and not str(merged.get("incoming_path") or "").strip():
             return False, {"error": "Local incoming path is required and must be on a non-system disk"}
         merged["updated_at"] = self._now_iso()
+        # Remember the old password's salt so snapshots in the legacy format
+        # stay restorable with the old password after a password change.
+        old_salt = str(current.get("encryption_salt") or "").strip()
+        if old_salt and old_salt != merged.get("encryption_salt"):
+            self._remember_legacy_salt(old_salt)
+        if new_material is not None and merged.get("encryption_enabled"):
+            self._save_encryption_material(new_material)
+        elif not merged.get("encryption_enabled"):
+            self._delete_encryption_material()
         self._save_json(self.settings_file, merged)
         return True, self._public_settings(merged)
+
+    # ── Encryption key material ─────────────────────────────────────────────
+
+    def _load_key_file(self) -> Dict:
+        data = self._load_json(self.encryption_key_file, {})
+        return data if isinstance(data, dict) else {}
+
+    def _write_key_file(self, data: Dict) -> None:
+        tmp = self.encryption_key_file + ".tmp"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp, self.encryption_key_file)
+
+    def _save_encryption_material(self, material: "buddy_crypto.KeyMaterial") -> None:
+        data = self._load_key_file()
+        data["current"] = material.to_json()
+        self._write_key_file(data)
+
+    def _delete_encryption_material(self) -> None:
+        data = self._load_key_file()
+        if "current" in data:
+            data.pop("current", None)
+            self._write_key_file(data)
+
+    def _remember_legacy_salt(self, salt: str) -> None:
+        data = self._load_key_file()
+        salts = [s for s in data.get("legacy_v1_salts", []) if isinstance(s, str)]
+        if salt not in salts:
+            salts.append(salt)
+        data["legacy_v1_salts"] = salts[-20:]
+        self._write_key_file(data)
+
+    def _encryption_material(self) -> Optional["buddy_crypto.KeyMaterial"]:
+        current = self._load_key_file().get("current")
+        if isinstance(current, dict):
+            return buddy_crypto.KeyMaterial.from_json(current)
+        return None
+
+    def _ensure_encryption_material(self, passphrase: str) -> None:
+        """Create ALVAENC2 key material for installs that predate it."""
+        settings = self.get_settings(include_secret=True)
+        if not settings.get("encryption_enabled") or self._encryption_material() is not None:
+            return
+        try:
+            self._save_encryption_material(buddy_crypto.new_key_material(passphrase))
+        except Exception as exc:
+            print(f"Buddy backup: could not create encryption key material: {exc}")
+
+    def _decrypt_stream_with_passphrase(self, encrypted_path: str, plain_path: str,
+                                        passphrase: str) -> Tuple[bool, str]:
+        """Decrypt a downloaded stream using only the passphrase.
+
+        ALVAENC2 streams carry their key-derivation salt, so this works on a
+        freshly installed machine. Legacy ALVAENC1 streams can only be opened
+        with salts this machine has seen (current or earlier passwords).
+        """
+        try:
+            kind = buddy_crypto.is_encrypted_stream(encrypted_path)
+            if kind == "v2":
+                buddy_crypto.decrypt_file(
+                    encrypted_path, plain_path,
+                    lambda h: buddy_crypto.derive_master_key(passphrase, h.kdf_salt, h.log2_n, h.r, h.p),
+                )
+                return True, ""
+            if kind == "v1":
+                settings = self.get_settings(include_secret=True)
+                salts = [str(settings.get("encryption_salt") or "").strip()]
+                salts += list(reversed(self._load_key_file().get("legacy_v1_salts", [])))
+                for salt in [s for s in salts if s]:
+                    digest, _ = self._hash_passphrase(passphrase, salt=salt)
+                    try:
+                        buddy_crypto.decrypt_legacy_v1_file(
+                            encrypted_path, plain_path, buddy_crypto.legacy_v1_key(digest, salt)
+                        )
+                        return True, ""
+                    except buddy_crypto.BuddyCryptoError:
+                        continue
+                return False, ("Wrong encryption password. Snapshots in the old encryption format can "
+                               "only be restored on the machine that created them.")
+            return False, "The downloaded snapshot is not in a known encrypted format"
+        except buddy_crypto.BuddyCryptoError as exc:
+            return False, str(exc)
+        except Exception as exc:
+            return False, f"Failed to decrypt snapshot: {exc}"
 
     def save_peer_policy(self, node_id: str, payload: Dict) -> Tuple[bool, Dict]:
         nid = str(node_id or "").strip()
@@ -912,9 +1022,12 @@ class BuddyBackupManager:
             return True
         try:
             digest, _ = self._hash_passphrase(passphrase, salt=str(settings.get("encryption_salt")))
-            return secrets.compare_digest(digest, str(settings.get("encryption_hash")))
+            ok = secrets.compare_digest(digest, str(settings.get("encryption_hash")))
         except Exception:
             return False
+        if ok:
+            self._ensure_encryption_material(passphrase)
+        return ok
 
     def _identity_private(self) -> Dict:
         identity = self._load_identity()
@@ -1097,6 +1210,8 @@ class BuddyBackupManager:
         return False, last_error or f"Failed to delete temporary snapshot: {target}"
 
     def _cleanup_stale_send_snapshots(self, source_parent: str, source_slug: str, btrfs_cmd: str) -> None:
+        """Remove send snapshots left by interrupted runs, but not the kept delta bases."""
+        keep = self._kept_base_paths()
         base = os.path.normpath(str(source_parent or "").strip())
         slug = str(source_slug or "").strip()
         if not base or not slug:
@@ -1110,6 +1225,8 @@ class BuddyBackupManager:
             if not pattern.match(candidate):
                 continue
             path = os.path.join(base, candidate)
+            if os.path.normpath(path) in keep:
+                continue
             self._cleanup_temp_subvolume(path, btrfs_cmd, attempts=2)
 
     def _device_id_for_path(self, path: str) -> Optional[int]:
@@ -1180,13 +1297,6 @@ class BuddyBackupManager:
                 return True, ""
             last_error = mv_err or last_error
 
-        bash_cmd = self._bash_cmd()
-        if bash_cmd:
-            cmd = f"mv {shlex.quote(src)} {shlex.quote(dst)}"
-            bash_res, bash_err = self.run_command([bash_cmd, "-lc", cmd], timeout=timeout)
-            if not bash_err and bash_res and bash_res.returncode == 0:
-                return True, ""
-            last_error = bash_err or last_error
 
         return False, last_error or f"Failed to move {src} -> {dst}"
 
@@ -1234,103 +1344,6 @@ class BuddyBackupManager:
             return int(m.group(1))
         except Exception:
             return None
-
-    def _file_sha256(self, path: str) -> str:
-        digest = hashlib.sha256()
-        with open(path, "rb") as f:
-            while True:
-                chunk = f.read(1024 * 1024)
-                if not chunk:
-                    break
-                digest.update(chunk)
-        return digest.hexdigest()
-
-    def _derive_transfer_key(self) -> Tuple[Optional[bytes], Optional[str]]:
-        settings = self.get_settings(include_secret=True)
-        if not settings.get("encryption_enabled"):
-            return None, None
-        enc_hash = str(settings.get("encryption_hash") or "").strip()
-        enc_salt = str(settings.get("encryption_salt") or "").strip()
-        if not enc_hash or not enc_salt:
-            return None, "Encryption is enabled, but no encryption key material is configured"
-        key = hashlib.sha256(f"{enc_hash}|{enc_salt}|alvaos-buddy-v1".encode("utf-8")).digest()
-        return key, None
-
-    def _xor_stream_chunk(self, data: bytes, key: bytes, nonce: bytes, counter_start: int) -> Tuple[bytes, int]:
-        out = bytearray()
-        counter = int(counter_start)
-        cursor = 0
-        while cursor < len(data):
-            block = hmac.new(key, nonce + counter.to_bytes(8, "big"), hashlib.sha256).digest()
-            take = min(len(block), len(data) - cursor)
-            segment = bytes(data[cursor + i] ^ block[i] for i in range(take))
-            out.extend(segment)
-            cursor += take
-            counter += 1
-        return bytes(out), counter
-
-    def _encrypt_stream_file(self, plain_path: str, encrypted_path: str, key: bytes) -> Tuple[bool, str]:
-        magic = b"ALVAENC1"
-        nonce = secrets.token_bytes(16)
-        header = magic + nonce
-        mac_key = hashlib.sha256(key + b":mac").digest()
-        mac = hmac.new(mac_key, digestmod=hashlib.sha256)
-        mac.update(header)
-        counter = 0
-        try:
-            with open(plain_path, "rb") as src, open(encrypted_path, "wb") as dst:
-                dst.write(header)
-                while True:
-                    chunk = src.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    cipher_chunk, counter = self._xor_stream_chunk(chunk, key, nonce, counter)
-                    dst.write(cipher_chunk)
-                    mac.update(cipher_chunk)
-                dst.write(mac.digest())
-            return True, ""
-        except Exception as exc:
-            return False, str(exc)
-
-    def _decrypt_stream_file(self, encrypted_path: str, plain_path: str, key: bytes) -> Tuple[bool, str]:
-        magic = b"ALVAENC1"
-        header_len = len(magic) + 16
-        tag_len = 32
-        mac_key = hashlib.sha256(key + b":mac").digest()
-        try:
-            size = os.path.getsize(encrypted_path)
-            if size < header_len + tag_len:
-                return False, "Encrypted stream is too small"
-            cipher_len = size - header_len - tag_len
-            with open(encrypted_path, "rb") as src, open(plain_path, "wb") as dst:
-                header = src.read(header_len)
-                if len(header) != header_len or not header.startswith(magic):
-                    return False, "Invalid encrypted stream header"
-                nonce = header[len(magic):]
-                mac = hmac.new(mac_key, digestmod=hashlib.sha256)
-                mac.update(header)
-                remaining = cipher_len
-                counter = 0
-                while remaining > 0:
-                    read_len = min(1024 * 1024, remaining)
-                    cipher_chunk = src.read(read_len)
-                    if not cipher_chunk:
-                        return False, "Encrypted stream is truncated"
-                    remaining -= len(cipher_chunk)
-                    mac.update(cipher_chunk)
-                    plain_chunk, counter = self._xor_stream_chunk(cipher_chunk, key, nonce, counter)
-                    dst.write(plain_chunk)
-                expected_tag = src.read(tag_len)
-                actual_tag = mac.digest()
-                if not hmac.compare_digest(expected_tag, actual_tag):
-                    try:
-                        os.remove(plain_path)
-                    except Exception:
-                        pass
-                    return False, "Encrypted stream authentication failed"
-            return True, ""
-        except Exception as exc:
-            return False, str(exc)
 
     def _stream_root_path(self) -> str:
         settings = self.get_settings(include_secret=True)
@@ -1459,7 +1472,7 @@ class BuddyBackupManager:
                     timeout=8,
                     verify=False,  # buddy nodes use self-signed certs
                 )
-                body = {}
+                body: Dict[str, Any] = {}
                 try:
                     body = response.json() if response.text else {}
                 except Exception:
@@ -1559,77 +1572,256 @@ class BuddyBackupManager:
             "encrypted": bool(item.get("encrypted")),
             "size_bytes": int(item.get("size_bytes") or 0),
             "sha256": str(item.get("sha256") or ""),
+            "parent_id": str(item.get("parent_id") or ""),
         }
 
-    def _enforce_stream_quota(self, owner_node_id: str) -> None:
-        owner = str(owner_node_id or "").strip()
-        if not owner:
-            return
-        settings = self.get_settings(include_secret=True)
-        policies = settings.get("peer_policies", {})
-        policy = policies.get(owner, {}) if isinstance(policies, dict) else {}
-        try:
-            limit_gb = int(policy.get("max_storage_gb", settings.get("incoming_quota_gb", 200)))
-        except Exception:
-            limit_gb = 200
-        limit_bytes = max(1, limit_gb) * (1024 ** 3)
-
+    def _remove_stream_entries(self, remove_ids: set) -> List[Dict]:
+        """Delete these snapshots and their payload files; returns the removed entries."""
         entries = self._load_stream_entries()
-        owner_entries = [e for e in entries if str(e.get("owner_node_id") or "").strip() == owner]
-        owner_entries.sort(key=lambda item: str(item.get("received_at") or ""), reverse=True)
-        total = sum(int(item.get("size_bytes") or 0) for item in owner_entries)
-        if total <= limit_bytes:
-            return
-
-        remove_ids = set()
-        for item in reversed(owner_entries):
-            if total <= limit_bytes:
-                break
-            remove_ids.add(str(item.get("id") or ""))
-            total -= int(item.get("size_bytes") or 0)
-
-        filtered = []
+        kept, removed = [], []
         for item in entries:
-            item_id = str(item.get("id") or "")
-            if item_id in remove_ids:
-                payload_path = str(item.get("payload_path") or "").strip()
-                try:
-                    if payload_path and os.path.exists(payload_path):
-                        os.remove(payload_path)
-                except Exception:
-                    pass
+            if str(item.get("id") or "") not in remove_ids:
+                kept.append(item)
                 continue
-            filtered.append(item)
-        self._save_stream_entries(filtered)
+            removed.append(item)
+            payload_path = str(item.get("payload_path") or "").strip()
+            try:
+                if payload_path and os.path.exists(payload_path):
+                    os.remove(payload_path)
+            except OSError:
+                pass
+        self._save_stream_entries(kept)
+        return removed
+
+    # Every AlvaOS backend listens on this port; peers reach it through the tunnel.
+    PEER_API_PORT = 8080
 
     def _peer_api_urls(self, peer: Dict, path: str) -> List[str]:
+        """URLs for talking to a paired buddy: only ever through the WireGuard tunnel.
+
+        The backend speaks plain HTTP, so going to the buddy's public address
+        would send the buddy secret and snapshot data unencrypted over the
+        internet and require exposing the admin port. Inside the tunnel,
+        WireGuard encrypts the traffic and authenticates the buddy by the
+        public key exchanged during pairing.
+        """
         path_part = str(path or "").strip()
         if not path_part.startswith("/"):
             path_part = f"/{path_part}"
-        api_endpoint = str(peer.get("api_endpoint") or "").strip()
-        if not api_endpoint:
-            wg_endpoint = str(peer.get("endpoint") or "").strip()
-            host = wg_endpoint.split(":", 1)[0].strip()
-            if host:
-                api_endpoint = f"{host}:8080"
-        if not api_endpoint:
+        tunnel_ip = str(peer.get("tunnel_ip") or "").strip()
+        if not IPV4_RE.match(tunnel_ip):
             return []
-        port_hint = ""
-        if ":" in api_endpoint:
-            maybe_port = api_endpoint.rsplit(":", 1)[1].strip()
-            if maybe_port.isdigit():
-                port_hint = maybe_port
+        return [f"http://{tunnel_ip}:{self.PEER_API_PORT}{path_part}"]
 
-        # Avoid protocol mismatch noise on common plain-HTTP ports.
-        if port_hint in ("80", "8080"):
-            return [f"http://{api_endpoint}{path_part}"]
-        if port_hint in ("443",):
-            return [f"https://{api_endpoint}{path_part}"]
+    def peer_for_tunnel_ip(self, remote_ip: str) -> Optional[Dict]:
+        """The paired buddy that owns this tunnel address, if any.
 
-        return [
-            f"http://{api_endpoint}{path_part}",
-            f"https://{api_endpoint}{path_part}",
-        ]
+        WireGuard only accepts packets from a tunnel IP when they are signed
+        by that peer's key (AllowedIPs = tunnel_ip/32), so the source address
+        of a request inside the tunnel identifies the buddy.
+        """
+        ip = str(remote_ip or "").strip()
+        if not IPV4_RE.match(ip):
+            return None
+        for peer in self._load_peers().values():
+            if isinstance(peer, dict) and str(peer.get("tunnel_ip") or "").strip() == ip:
+                return peer
+        return None
+
+    def start_tunnel_if_paired(self) -> None:
+        """Bring the tunnel up at startup; wg-quick state does not survive a reboot."""
+        if platform.system() != "Linux" or not self._load_peers():
+            return
+        ok, result = self.apply_tunnel_config()
+        if not ok:
+            print(f"Buddy backup: tunnel not started: {result.get('error')}")
+
+    # ── Recovery kit ────────────────────────────────────────────────────────
+    # A fresh install gets a new node id and new keys, so its buddies would not
+    # recognise it and it could not see its old snapshots. The recovery kit
+    # carries this node's identity (node id, WireGuard keys, buddy secret,
+    # tunnel address) and its buddy list, sealed with a password. Importing it
+    # makes the new machine the same node again; the buddies need no change.
+
+    RECOVERY_KIT_KIND = "alvaos-buddy-recovery"
+
+    def _recovery_kit_fingerprint(self) -> str:
+        identity = self._load_identity()
+        peers = self._load_peers()
+        material = json.dumps({
+            "node_id": identity.get("node_id"),
+            "public_key": identity.get("public_key"),
+            "peers": sorted((nid, str(p.get("public_key") or "")) for nid, p in peers.items()),
+        }, sort_keys=True)
+        return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+    def export_recovery_kit(self, passphrase: str) -> Tuple[bool, Dict]:
+        if len(passphrase or "") < 8:
+            return False, {"error": "Choose a recovery kit password with at least 8 characters"}
+        self._identity_public()   # make sure a complete identity exists
+        identity = self._identity_private()
+        peers = self._load_peers()
+        kit: Dict[str, Any] = {
+            "kind": self.RECOVERY_KIT_KIND,
+            "v": 1,
+            "created_at": self._now_iso(),
+            "identity": {
+                key: identity.get(key)
+                for key in ("node_id", "name", "private_key", "public_key", "api_secret",
+                            "tunnel_ip", "listen_port")
+            },
+            "peers": peers,
+        }
+        try:
+            blob = buddy_crypto.seal_json(kit, passphrase)
+        except buddy_crypto.BuddyCryptoError as exc:
+            return False, {"error": str(exc)}
+        self._update_runtime({
+            "recovery_kit_exported_at": kit["created_at"],
+            "recovery_kit_fingerprint": self._recovery_kit_fingerprint(),
+        })
+        name = re.sub(r"[^A-Za-z0-9_-]+", "-", str(identity.get("name") or "alvaos")).strip("-") or "alvaos"
+        return True, {
+            "kit": blob,
+            "filename": f"{name}-buddy-recovery-kit.txt",
+            "created_at": kit["created_at"],
+            "peer_count": len(peers),
+        }
+
+    def recovery_kit_status(self) -> Dict:
+        runtime = self._load_runtime()
+        exported_at = str(runtime.get("recovery_kit_exported_at") or "")
+        return {
+            "exported_at": exported_at,
+            # A kit made before the last pairing change would restore an
+            # incomplete buddy list.
+            "up_to_date": bool(exported_at)
+            and runtime.get("recovery_kit_fingerprint") == self._recovery_kit_fingerprint(),
+        }
+
+    def _validated_kit_identity(self, raw: Any) -> Dict:
+        if not isinstance(raw, dict):
+            raise ValueError("identity is missing")
+        node_id = str(raw.get("node_id") or "")
+        private_key = str(raw.get("private_key") or "")
+        public_key = str(raw.get("public_key") or "")
+        api_secret = str(raw.get("api_secret") or "")
+        tunnel_ip = str(raw.get("tunnel_ip") or "")
+        if not re.fullmatch(r"[0-9a-f]{8,64}", node_id):
+            raise ValueError("invalid node id")
+        if not (WG_KEY_RE.match(private_key) and WG_KEY_RE.match(public_key)):
+            raise ValueError("invalid WireGuard key")
+        if not re.fullmatch(r"[A-Za-z0-9_-]{20,128}", api_secret):
+            raise ValueError("invalid buddy secret")
+        if not IPV4_RE.match(tunnel_ip):
+            raise ValueError("invalid tunnel address")
+        try:
+            from cryptography.hazmat.primitives import serialization
+            from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+
+            derived = X25519PrivateKey.from_private_bytes(base64.b64decode(private_key)).public_key()
+            derived_b64 = base64.b64encode(
+                derived.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+            ).decode("ascii")
+        except Exception:
+            raise ValueError("invalid WireGuard key") from None
+        if derived_b64 != public_key:
+            raise ValueError("WireGuard keys do not belong together")
+        try:
+            listen_port = max(1024, min(65535, int(raw.get("listen_port") or self.default_listen_port)))
+        except (TypeError, ValueError):
+            listen_port = self.default_listen_port
+        name = re.sub(r"[^\w .-]+", "", str(raw.get("name") or ""))[:64] or self._hostname()
+        return {
+            "node_id": node_id, "name": name, "private_key": private_key, "public_key": public_key,
+            "api_secret": api_secret, "tunnel_ip": tunnel_ip, "listen_port": listen_port,
+        }
+
+    def _validated_kit_peers(self, raw: Any) -> Dict[str, Dict]:
+        if not isinstance(raw, dict):
+            raise ValueError("buddy list is missing")
+        peers: Dict[str, Dict] = {}
+        for node_id, peer in raw.items():
+            if not isinstance(peer, dict) or not re.fullmatch(r"[0-9a-f]{8,64}", str(node_id)):
+                raise ValueError("invalid buddy entry")
+            public_key = str(peer.get("public_key") or "")
+            tunnel_ip = str(peer.get("tunnel_ip") or "")
+            endpoint = str(peer.get("endpoint") or "")
+            api_endpoint = str(peer.get("api_endpoint") or "")
+            if not (WG_KEY_RE.match(public_key) and IPV4_RE.match(tunnel_ip)):
+                raise ValueError(f"invalid keys for buddy {node_id}")
+            if endpoint and not WG_ENDPOINT_RE.match(endpoint):
+                raise ValueError(f"invalid endpoint for buddy {node_id}")
+            if api_endpoint and not WG_ENDPOINT_RE.match(api_endpoint):
+                api_endpoint = ""
+            api_secret = str(peer.get("api_secret") or "")
+            if api_secret and not re.fullmatch(r"[A-Za-z0-9_-]{20,128}", api_secret):
+                raise ValueError(f"invalid secret for buddy {node_id}")
+            peers[str(node_id)] = {
+                "node_id": str(node_id),
+                "name": re.sub(r"[^\w .-]+", "", str(peer.get("name") or node_id))[:64],
+                "public_key": public_key,
+                "api_secret": api_secret,
+                "tunnel_ip": tunnel_ip,
+                "listen_port": peer.get("listen_port") or self.default_listen_port,
+                "endpoint": endpoint,
+                "api_endpoint": api_endpoint,
+                "last_paired_at": str(peer.get("last_paired_at") or ""),
+                "status": "configured",
+                "last_error": "",
+            }
+        return peers
+
+    @staticmethod
+    def _kit_restored_message(peer_count: int) -> str:
+        if peer_count == 0:
+            return "Identity restored. The kit contained no buddies yet."
+        buddies = "1 buddy" if peer_count == 1 else f"{peer_count} buddies"
+        return (f"Identity restored with {buddies}. Your snapshots on them now appear under "
+                "\"Restore from a buddy\".")
+
+    def import_recovery_kit(self, kit: str, passphrase: str, replace: bool = False) -> Tuple[bool, Dict]:
+        try:
+            data = buddy_crypto.open_json(kit, passphrase)
+        except buddy_crypto.BuddyCryptoError as exc:
+            return False, {"error": str(exc)}
+        except Exception:
+            return False, {"error": "The recovery kit could not be read"}
+        if data.get("kind") != self.RECOVERY_KIT_KIND or data.get("v") != 1:
+            return False, {"error": "This recovery kit comes from an unsupported AlvaOS version"}
+        try:
+            identity_fields = self._validated_kit_identity(data.get("identity"))
+            peers = self._validated_kit_peers(data.get("peers"))
+        except ValueError as exc:
+            return False, {"error": f"The recovery kit is not valid: {exc}"}
+
+        current_peers = self._load_peers()
+        current = self._load_identity()
+        if current_peers and current.get("node_id") != identity_fields["node_id"] and not replace:
+            return False, {
+                "error": "This NAS already has buddies of its own. Importing replaces its identity "
+                         "and buddy list; confirm to continue.",
+                "needs_confirmation": True,
+            }
+
+        identity = dict(current) if isinstance(current, dict) else {}
+        identity.update(identity_fields)
+        identity.update({"key_source": "wireguard", "key_error": "", "restored_at": self._now_iso()})
+        identity.setdefault("created_at", self._now_iso())
+        with self._transfer_lock:
+            self._save_identity(identity)
+            self._save_peers(peers)
+        tunnel_ok, tunnel_result = self.apply_tunnel_config()
+        self._update_runtime({
+            "recovery_kit_exported_at": str(data.get("created_at") or ""),
+            "recovery_kit_fingerprint": self._recovery_kit_fingerprint(),
+        })
+        return True, {
+            "node_id": identity_fields["node_id"],
+            "peer_count": len(peers),
+            "tunnel": tunnel_result if tunnel_ok else {"error": tunnel_result.get("error", "")},
+            "message": self._kit_restored_message(len(peers)),
+        }
 
     def generate_pairing_token(
         self,
@@ -1746,22 +1938,27 @@ class BuddyBackupManager:
             endpoint = str(peer.get("endpoint") or "").strip()
             public_key = str(peer.get("public_key") or "").strip()
             tunnel_ip = str(peer.get("tunnel_ip") or "").strip()
-            if not endpoint or not public_key or not tunnel_ip:
+            if not public_key or not tunnel_ip:
                 continue
-            lines.extend([
-                "[Peer]",
-                f"PublicKey = {public_key}",
-                f"AllowedIPs = {tunnel_ip}/32",
-                f"Endpoint = {endpoint}",
-                "PersistentKeepalive = 25",
-                "",
-            ])
+            # These values come from the remote buddy. A newline in any of them
+            # would let a peer inject wg-quick directives such as PostUp (a root
+            # shell command), so only accept their exact expected shapes.
+            if not (WG_KEY_RE.match(public_key) and IPV4_RE.match(tunnel_ip)):
+                continue
+            if endpoint and not WG_ENDPOINT_RE.match(endpoint):
+                continue
+            lines.extend(["[Peer]", f"PublicKey = {public_key}", f"AllowedIPs = {tunnel_ip}/32"])
+            # A buddy behind NAT has no reachable endpoint; it connects to us
+            # and WireGuard learns its address from the handshake.
+            if endpoint:
+                lines.append(f"Endpoint = {endpoint}")
+            lines.extend(["PersistentKeepalive = 25", ""])
 
         return "\n".join(lines).strip() + "\n"
 
     def apply_tunnel_config(self) -> Tuple[bool, Dict]:
         if platform.system() != "Linux":
-            return True, {"message": "Tunnel config is mocked on non-Linux systems"}
+            return False, {"error": "The Buddy Backup tunnel is only available on the AlvaOS NAS itself (Linux)"}
 
         identity = self._load_identity()
         if not identity.get("private_key"):
@@ -1861,7 +2058,7 @@ class BuddyBackupManager:
 
     def _runtime_status(self) -> Dict:
         if platform.system() != "Linux":
-            return {"state": "mock", "message": "WireGuard runtime status is mocked on non-Linux"}
+            return {"state": "unsupported", "message": "WireGuard is only available on the AlvaOS NAS itself (Linux)"}
 
         wg_cmd = self._wg_cmd()
         if not wg_cmd:
@@ -1897,6 +2094,7 @@ class BuddyBackupManager:
         remote_api_endpoint: str,
         local_wg_endpoint: str = "",
         local_api_endpoint: str = "",
+        remote_secret: str = "",
     ) -> Tuple[bool, Dict]:
         normalized_remote, remote_err = self._normalize_api_endpoint(remote_api_endpoint)
         if remote_err or not normalized_remote:
@@ -1940,7 +2138,9 @@ class BuddyBackupManager:
             request_obj = urllib.request.Request(
                 url,
                 data=req_payload,
-                headers={"Content-Type": "application/json"},
+                # Proves we received the remote's pairing code: the remote only
+                # accepts reciprocal pairing from someone who knows its secret.
+                headers={"Content-Type": "application/json", "X-Buddy-Secret": remote_secret},
                 method="POST",
             )
             try:
@@ -1980,15 +2180,15 @@ class BuddyBackupManager:
         local_api_endpoint: str = "",
     ) -> Tuple[bool, Dict]:
         payload, decode_err = self._token_decode(token)
-        if decode_err:
-            return False, {"error": decode_err}
+        if decode_err or payload is None:
+            return False, {"error": decode_err or "Invalid pairing token"}
 
         if self._is_token_used(token):
             return False, {"error": "This pairing token was already used"}
 
         peer, peer_err = self._token_to_peer(payload, endpoint_override=endpoint_override, name_override=name_override)
-        if peer_err:
-            return False, {"error": peer_err}
+        if peer_err or peer is None:
+            return False, {"error": peer_err or "Invalid pairing token"}
 
         peers = self._load_peers()
         peers[peer["node_id"]] = peer
@@ -2012,22 +2212,21 @@ class BuddyBackupManager:
             settings["updated_at"] = self._now_iso()
             self._save_json(self.settings_file, self._merge_settings(settings))
 
-        tunnel_result = {"message": "Peer saved (endpoint missing). Add endpoint to activate tunnel."}
-        if peer.get("endpoint"):
-            ok, tunnel_result = self.apply_tunnel_config()
-            peers = self._load_peers()
-            current = peers.get(peer["node_id"], peer)
-            if ok:
-                current["status"] = "configured"
-                current["last_error"] = ""
-            else:
-                current["status"] = "error"
-                current["last_error"] = tunnel_result.get("error", "Failed to apply tunnel config")
-            peers[peer["node_id"]] = current
-            self._save_peers(peers)
-            peer = current
+        # Apply even without an endpoint: a buddy behind NAT connects to us.
+        ok, tunnel_result = self.apply_tunnel_config()
+        peers = self._load_peers()
+        current = peers.get(peer["node_id"], peer)
+        if ok:
+            current["status"] = "configured"
+            current["last_error"] = ""
+        else:
+            current["status"] = "error"
+            current["last_error"] = tunnel_result.get("error", "Failed to apply tunnel config")
+        peers[peer["node_id"]] = current
+        self._save_peers(peers)
+        peer = current
 
-        reciprocal = {"skipped": True}
+        reciprocal: Dict[str, Any] = {"skipped": True}
         if auto_reciprocal:
             remote_api_endpoint = str(peer.get("api_endpoint") or "").strip()
             if remote_api_endpoint:
@@ -2035,6 +2234,7 @@ class BuddyBackupManager:
                     remote_api_endpoint=remote_api_endpoint,
                     local_wg_endpoint=local_wg_endpoint,
                     local_api_endpoint=local_api_endpoint,
+                    remote_secret=str(peer.get("api_secret") or ""),
                 )
                 reciprocal = {"success": reciprocal_ok, **reciprocal_payload}
             else:
@@ -2046,93 +2246,24 @@ class BuddyBackupManager:
             "reciprocal": reciprocal,
         }
 
-    def ingest_peer_stream(
-        self,
-        owner_node_id: str,
-        from_node_id: str,
-        source_path: str,
-        snapshot_name: str,
-        created_at: str,
-        encrypted: bool,
-        payload_stream,
-    ) -> Tuple[bool, Dict]:
-        owner = str(owner_node_id or "").strip()
-        sender = str(from_node_id or "").strip()
-        source = str(source_path or "").strip()
-        snap_name = str(snapshot_name or "").strip()
-        created = str(created_at or "").strip() or self._now_iso()
-        if not owner:
-            return False, {"error": "owner_node_id is required"}
-        if not sender:
-            return False, {"error": "from_node_id is required"}
-        if not source.startswith("/"):
-            return False, {"error": "source_path must be an absolute path"}
-        if not snap_name:
-            return False, {"error": "snapshot_name is required"}
-
-        peers = self._load_peers()
-        if owner not in peers:
-            return False, {"error": "Unknown owner_node_id"}
-
-        root, owner_dir, select_err = self._select_writable_stream_owner_dir(owner)
-        if not root or not owner_dir:
-            return False, {"error": select_err or "Failed to prepare writable buddy stream path"}
-
-        stream_id = f"{int(self._now().timestamp())}-{secrets.token_hex(4)}"
-        ext = ".enc" if encrypted else ".stream"
-        payload_path = os.path.join(owner_dir, f"{stream_id}{ext}")
-        sha = hashlib.sha256()
-        size_bytes = 0
+    def _owner_quota_bytes(self, owner_node_id: str) -> int:
+        settings = self.get_settings(include_secret=True)
+        policies = settings.get("peer_policies", {})
+        policy = policies.get(owner_node_id, {}) if isinstance(policies, dict) else {}
         try:
-            with open(payload_path, "wb") as dst:
-                while True:
-                    chunk = payload_stream.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    if isinstance(chunk, str):
-                        chunk = chunk.encode("utf-8")
-                    sha.update(chunk)
-                    size_bytes += len(chunk)
-                    dst.write(chunk)
-        except Exception as exc:
-            try:
-                if os.path.exists(payload_path):
-                    os.remove(payload_path)
-            except Exception:
-                pass
-            return False, {"error": f"Failed to store stream payload: {exc}"}
+            limit_gb = int(policy.get("max_storage_gb", settings.get("incoming_quota_gb", 200)))
+        except Exception:
+            limit_gb = 200
+        return max(1, limit_gb) * (1024 ** 3)
 
-        entry = {
-            "id": stream_id,
-            "owner_node_id": owner,
-            "from_node_id": sender,
-            "source_path": source,
-            "snapshot_name": snap_name,
-            "created_at": created,
-            "received_at": self._now_iso(),
-            "encrypted": bool(encrypted),
-            "size_bytes": int(size_bytes),
-            "sha256": sha.hexdigest(),
-            "payload_path": payload_path,
-        }
-        entries = self._load_stream_entries()
-        entries.append(entry)
-        self._save_stream_entries(entries)
-        self._enforce_stream_quota(owner)
+    def _free_bytes(self, path: str) -> int:
+        st = os.statvfs(path)
+        return st.f_bavail * st.f_frsize
 
-        peers = self._load_peers()
-        sender_peer = peers.get(sender) if isinstance(peers, dict) else None
-        sender_name = str((sender_peer or {}).get("name") or sender)
-        push_notification(
-            severity="info",
-            title="Buddy backup received",
-            message=f'Received a backup snapshot from buddy "{sender_name}" ({snap_name}).',
-            source="backup",
-            dismissible=True,
-            link="backup.html",
-        )
-
-        return True, {"stream": self._public_stream_entry(entry)}
+    def _free_space_reserve_bytes(self, path: str) -> int:
+        """Space a buddy may never use up: 2 GiB or 2 % of the filesystem."""
+        st = os.statvfs(path)
+        return max(2 * 1024 ** 3, (st.f_blocks * st.f_frsize) // 50)
 
     def list_peer_streams(self, owner_node_id: str, limit: int = 100) -> Tuple[bool, Dict]:
         owner = str(owner_node_id or "").strip()
@@ -2166,43 +2297,54 @@ class BuddyBackupManager:
         return False, {"error": "Stream not found"}
 
     def delete_peer_stream(self, owner_node_id: str, stream_id: str) -> Tuple[bool, Dict]:
+        """Delete a snapshot a buddy stored here in the old stream format."""
         owner = str(owner_node_id or "").strip()
         sid = str(stream_id or "").strip()
         if not owner:
             return False, {"error": "owner_node_id is required"}
         if not sid:
             return False, {"error": "stream_id is required"}
-
-        entries = self._load_stream_entries()
-        target_entry = None
-        filtered = []
-        for item in entries:
-            item_owner = str(item.get("owner_node_id") or "").strip()
-            item_id = str(item.get("id") or "").strip()
-            if item_owner == owner and item_id == sid and target_entry is None:
-                target_entry = item
-                continue
-            filtered.append(item)
-
+        target_entry = next((e for e in self._load_stream_entries()
+                             if str(e.get("owner_node_id") or "").strip() == owner
+                             and str(e.get("id") or "").strip() == sid), None)
         if target_entry is None:
             return False, {"error": "Stream not found"}
+        self._remove_stream_entries({sid})
+        return True, {"stream": self._public_stream_entry(target_entry), "payload_removed": True}
 
-        payload_path = str(target_entry.get("payload_path") or "").strip()
-        payload_removed = False
-        if payload_path and os.path.exists(payload_path):
-            try:
-                os.remove(payload_path)
-                payload_removed = True
-            except Exception as exc:
-                return False, {"error": f"Failed to delete stream payload: {exc}"}
+    # ── Send bases ──────────────────────────────────────────────────────────
+    # After a successful sync, the read-only snapshot that was sent stays on
+    # this NAS: the next sync to the same buddy only sends what changed since
+    # (`btrfs send -p`), as long as the buddy's vault still has that snapshot.
+    def _load_send_state(self) -> Dict[str, Dict[str, Dict]]:
+        state = self._load_json(self.send_state_file, {})
+        return state if isinstance(state, dict) else {}
 
-        self._save_stream_entries(filtered)
-        return True, {
-            "stream": self._public_stream_entry(target_entry),
-            "payload_removed": payload_removed,
+    def _save_send_state(self, state: Dict[str, Dict[str, Dict]]) -> None:
+        self._save_json(self.send_state_file, state)
+
+    def _kept_base_paths(self) -> set:
+        return {
+            os.path.normpath(str(entry.get("snapshot_path") or ""))
+            for per_source in self._load_send_state().values() if isinstance(per_source, dict)
+            for entry in per_source.values() if isinstance(entry, dict) and entry.get("snapshot_path")
         }
 
-    def _create_send_stream(self, source_path: str) -> Tuple[bool, Dict]:
+    def _drop_send_bases(self, node_id: str, btrfs_cmd: Optional[str] = None) -> None:
+        """Forget and delete the kept bases for one buddy (e.g. when it is removed)."""
+        state = self._load_send_state()
+        per_source = state.pop(node_id, None)
+        self._save_send_state(state)
+        btrfs = btrfs_cmd or self._btrfs_cmd()
+        if not isinstance(per_source, dict) or not btrfs:
+            return
+        for entry in per_source.values():
+            path = str((entry or {}).get("snapshot_path") or "")
+            if path:
+                self._cleanup_temp_subvolume(path, btrfs, attempts=2)
+
+    def _take_send_snapshot(self, source_path: str) -> Tuple[bool, Dict]:
+        """Read-only snapshot of a source to send from. The caller removes it."""
         source = str(source_path or "").strip()
         if not source.startswith("/"):
             return False, {"error": "source_path must be an absolute path"}
@@ -2214,8 +2356,7 @@ class BuddyBackupManager:
             return False, {"error": "btrfs command not found"}
         # `os.path.exists()` can return False for non-root service users on paths
         # that are present but not traversable. Validate with btrfs metadata first.
-        source_is_subvolume = self._path_is_btrfs_subvolume(source)
-        if not source_is_subvolume:
+        if not self._path_is_btrfs_subvolume(source):
             if not os.path.exists(source):
                 return False, {
                     "error": (
@@ -2237,87 +2378,58 @@ class BuddyBackupManager:
         # Best-effort cleanup from older runs so stale temp snapshots do not accumulate in shares.
         self._cleanup_stale_send_snapshots(source_parent=source_parent, source_slug=source_slug, btrfs_cmd=btrfs_cmd)
 
-        stream_fd, stream_path = tempfile.mkstemp(prefix="buddy-send-", suffix=".stream", dir=self.state_dir)
-        os.close(stream_fd)
-        payload = None
-        try:
-            snap_res, snap_err = self.run_command(
-                [btrfs_cmd, "subvolume", "snapshot", "-r", source, temp_snapshot],
-                timeout=240,
-            )
-            if (snap_err or not snap_res or snap_res.returncode != 0) and "invalid cross-device link" in str(snap_err or "").lower():
-                # Retry once inside source path; some pool root paths have parent dirs on another device.
-                fallback_parent = source
-                fallback_snapshot = os.path.join(fallback_parent, temp_name)
-                if fallback_snapshot != temp_snapshot:
-                    ok_fallback_parent, fallback_parent_err = self._mkdir_p(fallback_parent)
-                    if not ok_fallback_parent:
-                        return False, {"error": fallback_parent_err or "Failed to prepare source parent"}
-                    source_parent = fallback_parent
-                    temp_snapshot = fallback_snapshot
-                    snap_res, snap_err = self.run_command(
-                        [btrfs_cmd, "subvolume", "snapshot", "-r", source, temp_snapshot],
-                        timeout=240,
-                    )
-            if snap_err or not snap_res or snap_res.returncode != 0:
-                return False, {"error": snap_err or "Failed to create temporary snapshot"}
+        snap_res, snap_err = self.run_command(
+            [btrfs_cmd, "subvolume", "snapshot", "-r", source, temp_snapshot],
+            timeout=240,
+        )
+        if (snap_err or not snap_res or snap_res.returncode != 0) and "invalid cross-device link" in str(snap_err or "").lower():
+            # Retry once inside source path; some pool root paths have parent dirs on another device.
+            fallback_snapshot = os.path.join(source, temp_name)
+            if fallback_snapshot != temp_snapshot:
+                temp_snapshot = fallback_snapshot
+                snap_res, snap_err = self.run_command(
+                    [btrfs_cmd, "subvolume", "snapshot", "-r", source, temp_snapshot],
+                    timeout=240,
+                )
+        if snap_err or not snap_res or snap_res.returncode != 0:
+            return False, {"error": snap_err or "Failed to create temporary snapshot"}
+        return True, {
+            "btrfs_cmd": btrfs_cmd,
+            "snapshot_path": temp_snapshot,
+            "snapshot_name": temp_name,
+            "created_at": self._now_iso(),
+        }
 
-            send_res, send_err = self.run_command(
-                [btrfs_cmd, "send", "-f", stream_path, temp_snapshot],
-                timeout=1800,
-            )
-            if send_err or not send_res or send_res.returncode != 0:
-                return False, {"error": send_err or "Failed to create Btrfs stream"}
-
-            payload = {
-                "stream_path": stream_path,
-                "snapshot_name": temp_name,
-                "created_at": self._now_iso(),
-            }
-            return True, payload
-        finally:
-            cleanup_ok, cleanup_err = self._cleanup_temp_subvolume(temp_snapshot, btrfs_cmd, attempts=3)
-            if not cleanup_ok:
-                if isinstance(payload, dict):
-                    payload["cleanup_warning"] = cleanup_err
-                else:
-                    print(f"Buddy temp snapshot cleanup warning: {cleanup_err}")
-
-    def _upload_stream_to_peer(self, peer: Dict, payload_path: str, metadata: Dict) -> Tuple[bool, Dict]:
-        remote_secret = str(peer.get("api_secret") or "").strip()
-        if not remote_secret:
-            return False, {"error": "Peer is missing API secret. Re-pair to enable transfer."}
-        urls = self._peer_api_urls(peer, "/api/v1/backup/buddy/peer/upload")
+    def _peer_request(self, peer: Dict, method: str, path: str, timeout: int = 60, **kwargs) -> Tuple[int, Dict]:
+        """One request to a buddy through the tunnel: (HTTP status, JSON body)."""
+        urls = self._peer_api_urls(peer, path)
         if not urls:
-            return False, {"error": "Peer API endpoint is not configured"}
+            raise _TransferError("Peer API endpoint is not configured")
+        headers = dict(kwargs.pop("headers", {}) or {})
+        headers["X-Buddy-Secret"] = str(peer.get("api_secret") or "").strip()
+        response = requests.request(method, urls[0], headers=headers, timeout=timeout, **kwargs)
+        try:
+            body = response.json() if response.content else {}
+        except Exception:
+            body = {}
+        return response.status_code, body if isinstance(body, dict) else {}
 
-        last_error = "Upload failed"
-        headers = {"X-Buddy-Secret": remote_secret}
-        for url in urls:
-            verify_tls = False  # buddy nodes use self-signed certs
-            try:
-                with open(payload_path, "rb") as fh:
-                    response = requests.post(
-                        url,
-                        headers=headers,
-                        data=metadata,
-                        files={"payload": ("stream.bin", fh, "application/octet-stream")},
-                        timeout=1800,
-                        verify=verify_tls,
-                    )
-                try:
-                    body = response.json() if response.content else {}
-                except Exception:
-                    body = {}
-                if response.status_code >= 200 and response.status_code < 300 and not body.get("error"):
-                    return True, body
-                last_error = body.get("error") or f"HTTP {response.status_code}"
-                # The peer answered, so use this concrete error instead of trying another
-                # scheme and potentially masking it with a secondary SSL error.
-                return False, {"error": last_error}
-            except Exception as exc:
-                last_error = str(exc)
-        return False, {"error": last_error}
+    def _keep_as_base(self, node_id: str, source_path: str, snapshot: Dict) -> None:
+        """Remember the snapshot just sent as base for the next sync; drop the old base."""
+        state = self._load_send_state()
+        per_source = state.setdefault(node_id, {})
+        previous = per_source.get(source_path)
+        per_source[source_path] = {
+            "snapshot_path": snapshot["snapshot_path"],
+            "snapshot_name": snapshot["snapshot_name"],
+            "sent_at": self._now_iso(),
+        }
+        self._save_send_state(state)
+        old_path = str((previous or {}).get("snapshot_path") or "")
+        if old_path and old_path != snapshot["snapshot_path"]:
+            ok, err = self._cleanup_temp_subvolume(old_path, snapshot["btrfs_cmd"], attempts=3)
+            if not ok:
+                print(f"Buddy old base snapshot cleanup warning: {err}")
 
     def sync_to_peer(
         self,
@@ -2370,62 +2482,28 @@ class BuddyBackupManager:
             if SYSTEM_SOURCE_PATH in selected_sources and not self._path_is_btrfs_subvolume(SYSTEM_SOURCE_PATH):
                 return False, {"error": "Full system transfer requires a Btrfs root subvolume"}
 
-            identity = self._identity_public()
-            local_node_id = str(identity.get("node_id") or "")
-            transfer_key, key_err = self._derive_transfer_key()
-            if key_err:
-                return False, {"error": key_err}
-            encryption_enabled = bool(transfer_key)
-
             created = []
             failed = []
-            for source_path in selected_sources:
-                send_ok, send_payload = self._create_send_stream(source_path)
-                if not send_ok:
-                    failed.append({"source_path": source_path, "error": send_payload.get("error", "Failed to build stream")})
-                    continue
-                stream_path = str(send_payload.get("stream_path") or "")
-                upload_path = stream_path
-                encrypted_flag = False
-                encrypted_path = ""
-                try:
-                    if encryption_enabled:
-                        encrypted_path = f"{stream_path}.enc"
-                        enc_ok, enc_err = self._encrypt_stream_file(stream_path, encrypted_path, transfer_key or b"")
-                        if not enc_ok:
-                            failed.append({"source_path": source_path, "error": enc_err or "Failed to encrypt stream"})
-                            continue
-                        upload_path = encrypted_path
-                        encrypted_flag = True
-
-                    meta = {
-                        "owner_node_id": local_node_id,
-                        "from_node_id": local_node_id,
-                        "source_path": source_path,
-                        "snapshot_name": str(send_payload.get("snapshot_name") or ""),
-                        "created_at": str(send_payload.get("created_at") or self._now_iso()),
-                        "encrypted": "1" if encrypted_flag else "0",
-                        "sha256": self._file_sha256(upload_path),
-                    }
-                    upload_ok, upload_payload = self._upload_stream_to_peer(peer, upload_path, meta)
-                    if upload_ok:
-                        created.append({
-                            "source_path": source_path,
-                            "snapshot_name": meta["snapshot_name"],
-                            "encrypted": encrypted_flag,
-                            "remote": upload_payload.get("stream", {}),
-                        })
-                    else:
-                        failed.append({"source_path": source_path, "error": upload_payload.get("error", "Upload failed")})
-                finally:
-                    for path in (stream_path, encrypted_path):
-                        if not path:
-                            continue
+            vault_info: Dict[str, Any] = {}
+            try:
+                with self.vault.session(peer, "rw") as mountpoint:
+                    for source_path in selected_sources:
                         try:
-                            if os.path.exists(path):
-                                os.remove(path)
-                        except Exception:
-                            pass
+                            created.append(self.vault.replicate_source(peer, mountpoint, source_path))
+                        except VaultError as exc:
+                            failed.append({"source_path": source_path, "error": str(exc)})
+                    try:
+                        bases = {str(entry.get("snapshot_name") or "")
+                                 for entry in self._load_send_state().get(target, {}).values()}
+                        self.vault.prune(mountpoint, self._retention_for(policy), protected=bases)
+                    except VaultError as exc:
+                        print(f"Buddy vault cleanup warning: {exc}")
+                    vault_info = self._vault_snapshot_cache(mountpoint)
+            except VaultError as exc:
+                failed = [{"source_path": path, "error": str(exc)}
+                          for path in selected_sources if path not in {c["source_path"] for c in created}]
+            if vault_info:
+                self._update_runtime({"peer": {"vault": vault_info}}, node_id=target)
 
             status = "success" if not failed else ("partial" if created else "error")
             sync_error = "; ".join(item.get("error", "") for item in failed if item.get("error"))
@@ -2469,56 +2547,146 @@ class BuddyBackupManager:
                 "status": status,
                 "created": created,
                 "failed": failed,
-                "encryption_enabled": encryption_enabled,
+                "encryption_enabled": True,
             }
 
-    def fetch_remote_snapshots(self, node_id: str, limit: int = 100) -> Tuple[bool, Dict]:
+    # ── Snapshots on a buddy (vault + old stream format) ───────────────────
+    def _retention_for(self, policy: Dict) -> Dict[str, int]:
+        from buddy_vault import DEFAULT_RETENTION
+        return {key: int(policy.get(key, default)) for key, default in DEFAULT_RETENTION.items()}
+
+    def _vault_snapshot_cache(self, mountpoint: str) -> Dict[str, Any]:
+        """What the UI shows about a vault, saved so it does not have to be opened to look."""
+        size, free = self.vault.usage(mountpoint)
+        return {"snapshots": self.vault.list_snapshots(mountpoint), "size_bytes": size,
+                "free_bytes": free, "listed_at": self._now_iso()}
+
+    def fetch_remote_snapshots(self, node_id: str, limit: int = 100, refresh: bool = False,
+                               passphrase: str = "") -> Tuple[bool, Dict]:
+        """Snapshots this NAS has on a buddy: its vault, plus old-format streams.
+
+        Without `refresh` the vault listing saved at the last sync is shown, so
+        opening the page does not attach the vault. A replacement NAS has no
+        vault key yet and needs the encryption password once to unlock it.
+        """
         target = str(node_id or "").strip()
-        if not target:
-            return False, {"error": "node_id is required"}
-        peers = self._load_peers()
-        peer = peers.get(target)
+        peer = self._load_peers().get(target)
         if not isinstance(peer, dict):
             return False, {"error": "Peer not found"}
-        remote_secret = str(peer.get("api_secret") or "").strip()
-        if not remote_secret:
-            return False, {"error": "Peer is missing API secret. Re-pair to enable transfer."}
-
-        identity = self._identity_public()
-        owner_node_id = str(identity.get("node_id") or "")
-        params = {"owner_node_id": owner_node_id, "limit": str(max(1, min(500, int(limit or 100))))}
-        urls = self._peer_api_urls(peer, "/api/v1/backup/buddy/peer/list")
-        if not urls:
-            return False, {"error": "Peer API endpoint is not configured"}
-
-        last_error = "Failed to fetch remote snapshots"
-        for url in urls:
-            verify_tls = False  # buddy nodes use self-signed certs
-            try:
-                response = requests.get(
-                    url,
-                    headers={"X-Buddy-Secret": remote_secret},
-                    params=params,
-                    timeout=30,
-                    verify=verify_tls,
-                )
+        needs_passphrase = not self.vault.has_local_key(target)
+        vault_info = ((self._load_runtime().get("per_peer") or {}).get(target) or {}).get("vault") or {}
+        vault_error = ""
+        if refresh:
+            with self._transfer_lock:
                 try:
-                    body = response.json() if response.content else {}
-                except Exception:
-                    body = {}
-                if response.status_code >= 200 and response.status_code < 300 and not body.get("error"):
-                    streams = body.get("streams", [])
-                    if not isinstance(streams, list):
-                        streams = []
-                    streams = sorted(streams, key=lambda item: str(item.get("created_at") or ""), reverse=True)
-                    return True, {"node_id": target, "streams": streams}
-                last_error = body.get("error") or f"HTTP {response.status_code}"
-                return False, {"error": last_error}
-            except Exception as exc:
-                last_error = str(exc)
-        return False, {"error": last_error}
+                    with self.vault.session(peer, "ro", passphrase) as mountpoint:
+                        vault_info = self._vault_snapshot_cache(mountpoint)
+                    self._update_runtime({"peer": {"vault": vault_info}}, node_id=target)
+                    needs_passphrase = False
+                except VaultError as exc:
+                    vault_error = str(exc)
+        snapshots = [dict(item, needs_passphrase=needs_passphrase) for item in vault_info.get("snapshots", [])]
 
-    def delete_remote_snapshot(self, node_id: str, stream_id: str) -> Tuple[bool, Dict]:
+        legacy_ok, legacy = self._fetch_legacy_streams(target, limit)
+        if legacy_ok:
+            snapshots += [dict(item, kind="legacy") for item in legacy.get("streams", [])]
+        snapshots.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+        return True, {
+            "node_id": target,
+            "streams": snapshots[:max(1, min(500, int(limit or 100)))],
+            "vault": {key: vault_info.get(key) for key in ("size_bytes", "free_bytes", "listed_at")},
+            "needs_passphrase": needs_passphrase,
+            "vault_error": vault_error,
+        }
+
+    def delete_remote_snapshot(self, node_id: str, stream_id: str, passphrase: str = "") -> Tuple[bool, Dict]:
+        target = str(node_id or "").strip()
+        sid = str(stream_id or "").strip()
+        if "/" not in sid:
+            return self._delete_legacy_stream(target, sid)
+        peer = self._load_peers().get(target)
+        if not isinstance(peer, dict):
+            return False, {"error": "Peer not found"}
+        with self._transfer_lock:
+            try:
+                with self.vault.session(peer, "rw", passphrase) as mountpoint:
+                    self.vault.delete_snapshot(mountpoint, sid)
+                    vault_info = self._vault_snapshot_cache(mountpoint)
+            except VaultError as exc:
+                return False, {"error": str(exc)}
+            self._update_runtime({"peer": {"vault": vault_info}}, node_id=target)
+        return True, {"node_id": target, "deleted": {"id": sid}}
+
+    def restore_from_remote_snapshot(
+        self,
+        node_id: str,
+        stream_id: str,
+        source_path: str = "",
+        encryption_passphrase: str = "",
+    ) -> Tuple[bool, Dict]:
+        sid = str(stream_id or "").strip()
+        if "/" not in sid:
+            return self._restore_legacy_stream(node_id, sid, source_path, encryption_passphrase)
+        target = str(node_id or "").strip()
+        peer = self._load_peers().get(target)
+        if not isinstance(peer, dict):
+            return False, {"error": "Peer not found"}
+        from buddy_vault import snapshot_time, source_from_dir
+        folder, _, name = sid.partition("/")
+        restore_source = str(source_path or "").strip() or (source_from_dir(folder) or "")
+        if not restore_source.startswith("/") or snapshot_time(name) is None:
+            return False, {"error": "Unknown snapshot"}
+
+        with self._transfer_lock:
+            try:
+                with self.vault.session(peer, "ro", encryption_passphrase) as mountpoint:
+                    stream, cleanup = self.vault.restore_stream(mountpoint, sid)
+                    try:
+                        restore_ok, restore_payload = self._restore_from_stream(
+                            stream, snapshot_name=name, source_path=restore_source)
+                    finally:
+                        cleanup()
+            except VaultError as exc:
+                restore_ok, restore_payload = False, {"error": str(exc)}
+            return self._finish_restore(restore_ok, restore_payload, {"id": sid, "source_path": restore_source})
+
+    def _finish_restore(self, restore_ok: bool, restore_payload: Dict, entry: Dict) -> Tuple[bool, Dict]:
+        now_iso = self._now_iso()
+        if restore_ok:
+            self._update_runtime({"last_restore_at": now_iso, "last_restore_status": "success",
+                                  "last_restore_error": ""})
+            pending_remount = bool((restore_payload or {}).get("pending_remount"))
+            message = str((restore_payload or {}).get("message") or "").strip() or (
+                "Remote restore prepared. Remount/reboot required." if pending_remount else "Remote restore completed")
+            return True, {"message": message, "stream": entry, "result": restore_payload}
+        error = str(restore_payload.get("error") or "Restore failed")
+        self._update_runtime({"last_restore_at": now_iso, "last_restore_status": "error",
+                              "last_restore_error": error})
+        return False, {"error": error}
+
+    def _fetch_legacy_streams(self, node_id: str, limit: int = 100) -> Tuple[bool, Dict]:
+        """Snapshots a buddy stored in the old stream format (before vaults)."""
+        peer = self._load_peers().get(str(node_id or "").strip())
+        if not isinstance(peer, dict):
+            return False, {"error": "Peer not found"}
+        if not str(peer.get("api_secret") or "").strip():
+            return False, {"error": "Peer is missing API secret. Re-pair to enable transfer."}
+        owner_node_id = str(self._identity_public().get("node_id") or "")
+        params = {"owner_node_id": owner_node_id, "limit": str(max(1, min(500, int(limit or 100))))}
+        try:
+            status, body = self._peer_request(peer, "GET", "/api/v1/backup/buddy/peer/list",
+                                              timeout=10, params=params)
+        except (requests.RequestException, _TransferError) as exc:
+            return False, {"error": str(exc)}
+        if not (200 <= status < 300) or body.get("error"):
+            return False, {"error": body.get("error") or f"HTTP {status}"}
+        streams = body.get("streams", [])
+        if not isinstance(streams, list):
+            streams = []
+        streams = sorted(streams, key=lambda item: str(item.get("created_at") or ""), reverse=True)
+        return True, {"node_id": node_id, "streams": streams}
+
+    def _delete_legacy_stream(self, node_id: str, stream_id: str) -> Tuple[bool, Dict]:
         target = str(node_id or "").strip()
         sid = str(stream_id or "").strip()
         if not target:
@@ -2561,6 +2729,7 @@ class BuddyBackupManager:
                     return True, {
                         "node_id": target,
                         "deleted": body.get("deleted", {}),
+                        "removed_ids": body.get("removed_ids", []),
                     }
                 last_error = body.get("error") or f"HTTP {response.status_code}"
                 return False, {"error": last_error}
@@ -2568,88 +2737,156 @@ class BuddyBackupManager:
                 last_error = str(exc)
         return False, {"error": last_error}
 
-    def _download_remote_stream(self, peer: Dict, stream_id: str, owner_node_id: str, destination_path: str) -> Tuple[bool, str]:
+    def _open_remote_stream(self, peer: Dict, stream_id: str, owner_node_id: str):
+        """Start downloading one of our snapshots from a buddy (streamed response)."""
         remote_secret = str(peer.get("api_secret") or "").strip()
         urls = self._peer_api_urls(peer, f"/api/v1/backup/buddy/peer/download/{stream_id}")
         if not remote_secret or not urls:
-            return False, "Peer API is not configured"
-        params = {"owner_node_id": owner_node_id}
-        last_error = "Download failed"
-        for url in urls:
-            verify_tls = False  # buddy nodes use self-signed certs
+            raise _TransferError("Peer API is not configured")
+        try:
+            response = requests.get(
+                urls[0],
+                headers={"X-Buddy-Secret": remote_secret},
+                params={"owner_node_id": owner_node_id},
+                timeout=300,
+                stream=True,
+            )
+        except requests.RequestException as exc:
+            raise _TransferError(f"Download failed: {exc}") from exc
+        if not (200 <= response.status_code < 300):
             try:
-                with requests.get(
-                    url,
-                    headers={"X-Buddy-Secret": remote_secret},
-                    params=params,
-                    timeout=1800,
-                    stream=True,
-                    verify=verify_tls,
-                ) as response:
-                    if response.status_code < 200 or response.status_code >= 300:
-                        try:
-                            payload = response.json() if response.content else {}
-                            last_error = payload.get("error") or f"HTTP {response.status_code}"
-                        except Exception:
-                            last_error = f"HTTP {response.status_code}"
-                        return False, last_error
-                    with open(destination_path, "wb") as dst:
-                        for chunk in response.iter_content(chunk_size=1024 * 1024):
-                            if not chunk:
-                                continue
-                            dst.write(chunk)
-                    return True, ""
-            except Exception as exc:
-                last_error = str(exc)
-        return False, last_error
+                error = (response.json() or {}).get("error")
+            except Exception:
+                error = None
+            response.close()
+            raise _TransferError(error or f"Download failed: HTTP {response.status_code}")
+        return response
 
-    def _restore_from_stream_file(self, stream_path: str, snapshot_name: str, source_path: str) -> Tuple[bool, Dict]:
+    @staticmethod
+    def _checked_stream(chunks: Iterator[bytes], expected_sha256: str) -> Iterator[bytes]:
+        """Pass data through, holding the last piece back until the checksum matched.
+
+        `btrfs receive` only completes a snapshot when it sees the end of the
+        stream, so a download that is cut short or altered never becomes a
+        finished snapshot.
+        """
+        digest = hashlib.sha256()
+        previous = b""
+        for chunk in chunks:
+            if not chunk:
+                continue
+            digest.update(chunk)
+            if previous:
+                yield previous
+            previous = chunk
+        if expected_sha256 and not hmac.compare_digest(digest.hexdigest(), expected_sha256.lower()):
+            raise _TransferError("The downloaded snapshot does not match its checksum")
+        if previous:
+            yield previous
+
+    @staticmethod
+    def _decrypted_stream(chunks: Iterator[bytes], passphrase: str) -> Iterator[bytes]:
+        decryptor = buddy_crypto.StreamDecryptor(
+            lambda h: buddy_crypto.derive_master_key(passphrase, h.kdf_salt, h.log2_n, h.r, h.p)
+        )
+        for chunk in chunks:
+            plain = decryptor.update(chunk)
+            if plain:
+                yield plain
+        yield decryptor.finalize()
+
+    def _receive_stream(self, btrfs_cmd: str, stream: Union[str, Iterator[bytes]],
+                        target_parent: str) -> Tuple[bool, str]:
+        """`btrfs receive` from a file path or by piping an iterator of bytes."""
+        if isinstance(stream, str):
+            res, err = self.run_command([btrfs_cmd, "receive", "-f", stream, target_parent], timeout=None)
+            if err or not res or res.returncode != 0:
+                return False, err or "Failed to receive Btrfs stream"
+            return True, ""
+
+        proc, stderr = self.spawn_privileged([btrfs_cmd, "receive", target_parent], stdin_pipe=True)
+        feed_error = ""
+        try:
+            assert proc.stdin is not None
+            try:
+                for chunk in stream:
+                    proc.stdin.write(chunk)
+            except BrokenPipeError:
+                pass  # receive stopped early; its exit status and stderr say why
+            except (_TransferError, buddy_crypto.BuddyCryptoError, requests.RequestException, OSError) as exc:
+                feed_error = str(exc)
+            finally:
+                try:
+                    proc.stdin.close()
+                except BrokenPipeError:
+                    pass
+            returncode = proc.wait()
+            if feed_error:
+                return False, feed_error
+            if returncode != 0:
+                return False, _read_stderr(stderr) or f"btrfs receive failed (exit code {returncode})"
+            return True, ""
+        finally:
+            stderr.close()
+
+    def _restore_from_stream(self, stream: Union[str, Iterator[bytes]], snapshot_name: str,
+                             source_path: str) -> Tuple[bool, Dict]:
+        """Receive a snapshot stream (file path or iterator of bytes) and put it in place."""
         target_source = str(source_path or "").strip()
         if not target_source.startswith("/"):
             return False, {"error": "source_path must be an absolute path"}
         if platform.system() != "Linux":
-            return True, {
-                "restored_to": target_source,
-                "previous_backup": None,
-                "message": "Mock restore completed (non-Linux environment)",
-            }
+            return False, {"error": "Restores are only possible on the AlvaOS NAS itself (Linux)"}
         target_is_mount_root = self._is_mounted_path(target_source)
 
         btrfs_cmd = self._btrfs_cmd()
-        bash_cmd = self._bash_cmd()
-        if not (btrfs_cmd and bash_cmd):
-            return False, {"error": "Missing required system commands (btrfs/bash)"}
+        if not btrfs_cmd:
+            return False, {"error": "Missing required system command (btrfs)"}
 
         target_parent = target_source if target_is_mount_root else (os.path.dirname(target_source.rstrip("/")) or "/")
         if not target_is_mount_root:
             ok_parent, parent_err = self._mkdir_p(target_parent)
             if not ok_parent:
                 return False, {"error": parent_err or "Failed to prepare target parent"}
+
         expected_name = str(snapshot_name or "").strip()
+        clear_err = self._clear_restore_leftover(expected_name, target_parent, target_source,
+                                                 target_is_mount_root, btrfs_cmd)
+        if clear_err:
+            return False, {"error": clear_err}
+        return self._receive_and_apply(stream, expected_name, target_source, target_parent,
+                                       target_is_mount_root, btrfs_cmd)
 
-        # If an old receive left the same temporary snapshot behind, remove it first.
-        if expected_name:
-            expected_path = os.path.normpath(os.path.join(target_parent, expected_name))
-            if self._path_is_within_parent(expected_path, target_parent) and expected_path != os.path.normpath(target_parent):
-                if target_is_mount_root:
-                    def_ok, def_err = self._ensure_restore_collision_not_default(
-                        collision_path=expected_path,
-                        mount_root=target_source,
-                        btrfs_cmd=btrfs_cmd,
-                    )
-                    if not def_ok:
-                        return False, {"error": def_err or "Failed to prepare restore target default subvolume"}
-                cleanup_ok, cleanup_err, _ = self._delete_subvolume_if_exists(expected_path, btrfs_cmd)
-                if not cleanup_ok:
-                    return False, {"error": cleanup_err or f"Failed to prepare restore target: {expected_path}"}
+    def _clear_restore_leftover(self, name: str, target_parent: str, target_source: str,
+                                target_is_mount_root: bool, btrfs_cmd: str) -> str:
+        """Remove a subvolume an earlier, interrupted restore left under this name."""
+        if not name:
+            return ""
+        expected_path = os.path.normpath(os.path.join(target_parent, name))
+        if not self._path_is_within_parent(expected_path, target_parent) or expected_path == os.path.normpath(target_parent):
+            return ""
+        if target_is_mount_root:
+            def_ok, def_err = self._ensure_restore_collision_not_default(
+                collision_path=expected_path,
+                mount_root=target_source,
+                btrfs_cmd=btrfs_cmd,
+            )
+            if not def_ok:
+                return def_err or "Failed to prepare restore target default subvolume"
+        cleanup_ok, cleanup_err, _ = self._delete_subvolume_if_exists(expected_path, btrfs_cmd)
+        if not cleanup_ok:
+            return cleanup_err or f"Failed to prepare restore target: {expected_path}"
+        return ""
 
+    def _receive_and_apply(self, stream: Union[str, Iterator[bytes]], expected_name: str, target_source: str,
+                           target_parent: str, target_is_mount_root: bool, btrfs_cmd: str) -> Tuple[bool, Dict]:
         before_names = set(self._list_btrfs_subvolume_names_under(target_parent))
 
-        receive_cmd = f"{shlex.quote(btrfs_cmd)} receive {shlex.quote(target_parent)} < {shlex.quote(stream_path)}"
-        recv_res, recv_err = self.run_command([bash_cmd, "-lc", receive_cmd], timeout=1800)
-        if recv_err or not recv_res or recv_res.returncode != 0:
-            # Retry once if receive failed because a subvolume from a previous run already exists.
-            collision_name = self._extract_receive_exists_name(recv_err or "")
+        recv_ok, recv_err = self._receive_stream(btrfs_cmd, stream, target_parent)
+        if not recv_ok:
+            # A streamed receive cannot be replayed, so collisions are cleared
+            # up front (above); from a file one retry is still possible.
+            collision_name = self._extract_receive_exists_name(recv_err) if isinstance(stream, str) else ""
             retried = False
             if collision_name:
                 collision_path = os.path.normpath(os.path.join(target_parent, collision_name))
@@ -2665,10 +2902,14 @@ class BuddyBackupManager:
                     cleanup_ok, cleanup_err, cleaned = self._delete_subvolume_if_exists(collision_path, btrfs_cmd)
                     if cleanup_ok and cleaned:
                         retried = True
-                        recv_res, recv_err = self.run_command([bash_cmd, "-lc", receive_cmd], timeout=1800)
+                        recv_ok, recv_err = self._receive_stream(btrfs_cmd, stream, target_parent)
                     elif not cleanup_ok:
                         return False, {"error": cleanup_err or f"Failed to clear existing receive subvolume: {collision_path}"}
-            if (not retried) or recv_err or not recv_res or recv_res.returncode != 0:
+            if not retried or not recv_ok:
+                # Do not leave a half-received subvolume behind.
+                new_partial = set(self._list_btrfs_subvolume_names_under(target_parent)) - before_names
+                for name in new_partial:
+                    self._delete_subvolume_if_exists(os.path.join(target_parent, name), btrfs_cmd)
                 return False, {"error": recv_err or "Failed to receive Btrfs stream"}
 
         received_path = ""
@@ -2749,7 +2990,58 @@ class BuddyBackupManager:
             "message": "Restore completed",
         }
 
-    def restore_from_remote_snapshot(
+    def _open_restore_stream(self, peer: Dict, entry: Dict, owner_node_id: str, passphrase: str,
+                             temp_paths: List[str], responses: List[Any]) -> Tuple[bool, Any]:
+        """Start downloading one stored snapshot: (True, stream to receive) or (False, error)."""
+        try:
+            response = self._open_remote_stream(peer, str(entry.get("id") or ""), owner_node_id)
+            responses.append(response)
+            chunks = response.iter_content(chunk_size=1024 * 1024)
+            head = b""
+            for chunk in chunks:
+                head += chunk
+                if len(head) >= 8:
+                    break
+        except (_TransferError, requests.RequestException) as exc:
+            return False, str(exc) or "Failed to download remote snapshot stream"
+        body = itertools.chain([head], chunks)
+
+        if not entry.get("encrypted"):
+            return True, self._checked_stream(body, str(entry.get("sha256") or ""))
+        if not passphrase:
+            return False, "Encryption password is required for remote restore"
+        if head[:8] == buddy_crypto.MAGIC_V2:
+            # Every chunk is authenticated before it reaches btrfs receive.
+            plain = self._decrypted_stream(body, passphrase)
+            try:
+                first = next(plain, b"")
+            except (buddy_crypto.BuddyCryptoError, requests.RequestException) as exc:
+                return False, str(exc)
+            return True, itertools.chain([first], plain)
+        if head[:8] == buddy_crypto.MAGIC_V1:
+            # The old format has no per-chunk authentication, so it is
+            # downloaded and checked completely before it is used.
+            return self._legacy_v1_to_file(body, passphrase, temp_paths)
+        return False, "The downloaded snapshot is not in a known encrypted format"
+
+    def _legacy_v1_to_file(self, body: Iterator[bytes], passphrase: str,
+                           temp_paths: List[str]) -> Tuple[bool, str]:
+        """Download and decrypt an ALVAENC1 snapshot; returns the plain file path."""
+        fd, encrypted_tmp = tempfile.mkstemp(prefix="buddy-restore-", suffix=".enc", dir=self.state_dir)
+        temp_paths.append(encrypted_tmp)
+        try:
+            with os.fdopen(fd, "wb") as dst:
+                for chunk in body:
+                    dst.write(chunk)
+        except (requests.RequestException, OSError) as exc:
+            return False, f"Download failed: {exc}"
+        fd, plain_tmp = tempfile.mkstemp(prefix="buddy-restore-", suffix=".stream", dir=self.state_dir)
+        os.close(fd)
+        temp_paths.append(plain_tmp)
+        ok, err = self._decrypt_stream_with_passphrase(encrypted_tmp, plain_tmp, passphrase)
+        return (True, plain_tmp) if ok else (False, err or "Failed to decrypt remote snapshot stream")
+
+    def _restore_legacy_stream(
         self,
         node_id: str,
         stream_id: str,
@@ -2770,14 +3062,11 @@ class BuddyBackupManager:
             if not isinstance(peer, dict):
                 return False, {"error": "Peer not found"}
 
-            list_ok, list_payload = self.fetch_remote_snapshots(target, limit=500)
+            list_ok, list_payload = self._fetch_legacy_streams(target, limit=500)
             if not list_ok:
                 return False, {"error": list_payload.get("error", "Failed to fetch remote snapshots")}
-            stream_entry = None
-            for item in list_payload.get("streams", []):
-                if str(item.get("id") or "") == sid:
-                    stream_entry = item
-                    break
+            stream_entry = next((item for item in list_payload.get("streams", [])
+                                 if str(item.get("id") or "") == sid), None)
             if not isinstance(stream_entry, dict):
                 return False, {"error": "Remote snapshot not found"}
 
@@ -2785,72 +3074,36 @@ class BuddyBackupManager:
             if not restore_source.startswith("/"):
                 return False, {"error": "Invalid restore source path in remote snapshot"}
 
+            # No local password check here: on a freshly installed machine there
+            # are no local settings yet. Decryption itself proves the password.
             encrypted = bool(stream_entry.get("encrypted"))
-            transfer_key = None
-            if encrypted:
-                if not encryption_passphrase:
-                    return False, {"error": "Encryption password is required for remote restore"}
-                if not self.verify_encryption_passphrase(encryption_passphrase):
-                    return False, {"error": "Invalid encryption password"}
-                transfer_key, key_err = self._derive_transfer_key()
-                if key_err or not transfer_key:
-                    return False, {"error": key_err or "Missing encryption key material"}
-
-            identity = self._identity_public()
-            owner_node_id = str(identity.get("node_id") or "")
-            fd_encrypted, encrypted_tmp = tempfile.mkstemp(prefix="buddy-restore-", suffix=".stream.enc", dir=self.state_dir)
-            os.close(fd_encrypted)
-            plain_tmp = ""
+            if encrypted and not encryption_passphrase:
+                return False, {"error": "Encryption password is required for remote restore"}
+            owner_node_id = str(self._identity_public().get("node_id") or "")
+            temp_paths: List[str] = []
+            responses: List[Any] = []
             try:
-                dl_ok, dl_err = self._download_remote_stream(peer, sid, owner_node_id, encrypted_tmp)
-                if not dl_ok:
-                    return False, {"error": dl_err or "Failed to download remote snapshot stream"}
-
-                stream_for_restore = encrypted_tmp
-                if encrypted:
-                    fd_plain, plain_tmp = tempfile.mkstemp(prefix="buddy-restore-", suffix=".stream", dir=self.state_dir)
-                    os.close(fd_plain)
-                    dec_ok, dec_err = self._decrypt_stream_file(encrypted_tmp, plain_tmp, transfer_key or b"")
-                    if not dec_ok:
-                        return False, {"error": dec_err or "Failed to decrypt remote snapshot stream"}
-                    stream_for_restore = plain_tmp
-
-                restore_ok, restore_payload = self._restore_from_stream_file(
-                    stream_path=stream_for_restore,
+                # Opening the stream checks the password before anything on disk is touched.
+                opened, stream = self._open_restore_stream(peer, stream_entry, owner_node_id,
+                                                           encryption_passphrase, temp_paths, responses)
+                if not opened:
+                    return False, {"error": stream}
+                restore_ok, restore_payload = self._restore_from_stream(
+                    stream,
                     snapshot_name=str(stream_entry.get("snapshot_name") or ""),
                     source_path=restore_source,
                 )
-                now_iso = self._now_iso()
-                if restore_ok:
-                    self._update_runtime({
-                        "last_restore_at": now_iso,
-                        "last_restore_status": "success",
-                        "last_restore_error": "",
-                    })
-                    result_message = str((restore_payload or {}).get("message") or "").strip()
-                    pending_remount = bool((restore_payload or {}).get("pending_remount"))
-                    return True, {
-                        "message": (
-                            result_message
-                            or ("Remote restore prepared. Remount/reboot required." if pending_remount else "Remote restore completed")
-                        ),
-                        "stream": stream_entry,
-                        "result": restore_payload,
-                    }
-                self._update_runtime({
-                    "last_restore_at": now_iso,
-                    "last_restore_status": "error",
-                    "last_restore_error": str(restore_payload.get("error") or "Restore failed"),
-                })
-                return False, {"error": restore_payload.get("error", "Restore failed")}
+                if restore_ok and encrypted:
+                    # Upgrades pre-ALVAENC2 installs once the right password is known.
+                    self.verify_encryption_passphrase(encryption_passphrase)
+                return self._finish_restore(restore_ok, restore_payload, stream_entry)
             finally:
-                for path in (encrypted_tmp, plain_tmp):
-                    if not path:
-                        continue
+                for response in responses:
+                    response.close()
+                for path in temp_paths:
                     try:
-                        if os.path.exists(path):
-                            os.remove(path)
-                    except Exception:
+                        os.remove(path)
+                    except OSError:
                         pass
 
     def remove_peer(self, node_id: str, reciprocal: bool = True, allow_missing: bool = False) -> Tuple[bool, Dict]:
@@ -2888,6 +3141,14 @@ class BuddyBackupManager:
             kept_streams.append(entry)
         if len(kept_streams) != len(streams):
             self._save_stream_entries(kept_streams)
+
+        self._drop_send_bases(target)
+        self.vault.forget_key(target)
+        try:
+            # Like its old-format snapshots above, the buddy's vault goes with it.
+            self.vault_store.delete(target)
+        except (VaultError, OSError) as exc:
+            print(f"Buddy vault cleanup warning: {exc}")
 
         reciprocal_result = {"attempted": False, "success": False, "error": ""}
         if reciprocal:
