@@ -255,6 +255,76 @@ def test_nvme_system_disk_partitions_are_protected():
     p.validate(['/usr/sbin/wipefs', '-a', '/dev/nvme1n1'], system)
 
 
+@pytest.mark.parametrize('argv', [
+    ['/usr/sbin/wipefs', '-a', '-f', '/dev/sdb'],
+    ['/usr/sbin/wipefs', '-a', '/dev/sdc'],
+    ['/usr/sbin/mkfs.btrfs', '-f', '-L', 'new', '/dev/sdd', '/dev/sdc'],
+    ['/usr/bin/btrfs', 'device', 'add', '/dev/sdb', '/mnt/alvaos/main'],
+])
+def test_disks_in_use_are_never_erased(argv):
+    system = FakeSystem(busy={'sdb': 'mounted at /mnt/alvaos/main', 'sdc': 'part of a mounted Btrfs pool'})
+    with pytest.raises(p.PolicyError, match='Refusing to erase'):
+        p.validate(argv, system)
+
+
+def test_mounting_and_unmounting_a_busy_disk_is_still_allowed():
+    system = FakeSystem(busy={'sdb': 'mounted at /mnt/alvaos/main'})
+    p.validate(['/usr/bin/mount', '/dev/sdb', '/mnt/alvaos/main'], system)
+    p.validate(['/usr/bin/umount', '/mnt/alvaos/main'], system)
+    p.validate(['/usr/sbin/wipefs', '-a', '/dev/sdd'], system)
+
+
+def _block(root, name, parent=None, holders=()):
+    """One entry of a fake /sys/class/block (partitions live below their disk)."""
+    real = root / 'devices' / (parent or '') / name
+    (real / 'holders').mkdir(parents=True)
+    for holder in holders:
+        (real / 'holders' / holder).write_text('')
+    if parent:
+        (real / 'partition').write_text('1')
+    (root / 'class' / name).symlink_to(real)
+
+
+def test_busy_devices_reads_mounts_swap_btrfs_members_and_holders(tmp_path):
+    proc = tmp_path / 'proc'
+    proc.mkdir()
+    (proc / 'mounts').write_text(
+        'sysfs /sys sysfs rw 0 0\n'
+        '/dev/sdb1 /mnt/my\\040disk ext4 rw 0 0\n'
+        '/dev/sdd /mnt/alvaos/main btrfs rw 0 0\n'
+    )
+    (proc / 'swaps').write_text('Filename Type Size Used Priority\n/dev/sdf partition 1024 0 -2\n')
+    btrfs = tmp_path / 'btrfs'
+    (btrfs / '0b6c7d3e-1234-4d5e-8f90-abcdef012345' / 'devices' / 'sdd').mkdir(parents=True)
+    (btrfs / '0b6c7d3e-1234-4d5e-8f90-abcdef012345' / 'devices' / 'sde').mkdir(parents=True)
+    (btrfs / 'features').mkdir()
+    block = tmp_path / 'block'
+    (block / 'class').mkdir(parents=True)
+    for name in ('sdb', 'sdc', 'sdd', 'sde', 'sdf', 'sdg'):
+        _block(block, name)
+    _block(block, 'sdb1', parent='sdb')
+    _block(block, 'sdc1', parent='sdc', holders=('dm-0',))
+
+    system = p.System()
+    system.proc_root, system.sys_block, system.sys_btrfs = str(proc), str(block / 'class'), str(btrfs)
+    busy = system.busy_devices()
+
+    assert busy['sdb1'] == 'mounted at /mnt/my disk'
+    assert busy['sdb'] == 'sdb1 is mounted at /mnt/my disk'
+    assert busy['sdc'] == 'sdc1 is in use by dm-0'
+    assert busy['sdd'] == 'mounted at /mnt/alvaos/main'
+    assert busy['sde'] == 'part of a mounted Btrfs pool'  # second pool member, not in /proc/mounts
+    assert busy['sdf'] == 'used as swap'
+    assert 'sdg' not in busy and 'features' not in busy
+
+
+def test_busy_devices_fails_closed_without_a_mount_table(tmp_path):
+    system = p.System()
+    system.proc_root = str(tmp_path / 'missing')
+    with pytest.raises(p.PolicyError):
+        system.busy_devices()
+
+
 def test_usb_scan_mount_is_forced_harmless():
     plan = allowed('/usr/bin/mount', '-o', 'ro', '/dev/sdc1', '/run/alvaos-scan/sdc1')
     assert plan.argv[1:3] == ['-o', 'ro,nosuid,nodev,noexec']
