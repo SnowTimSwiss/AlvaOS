@@ -259,3 +259,170 @@ def test_a_shared_pool_is_not_removed(api, monkeypatch):
     assert response.status_code == 409
     assert response.get_json()['shares'] == ['Media']
     assert runner.calls == []
+
+
+# ── btrfs status output ──────────────────────────────────────────────────────
+
+SHOW_DEGRADED = """Label: 'main'  uuid: 0b6c7d3e-1234-4d5e-8f90-abcdef012345
+	Total devices 2 FS bytes used 1.20TiB
+	devid    1 size 3.64TiB used 1.21TiB path /dev/sdb
+	devid    2 size 3.64TiB used 1.21TiB path <missing disk> MISSING
+"""
+
+SHOW_UNMOUNTED_MISSING = """Label: 'tpool'  uuid: a2ec8266-1864-41b3-a23b-8012f6a9bd9b
+	Total devices 2 FS bytes used 144.00KiB
+	devid    1 size 1.00GiB used 212.75MiB path /dev/loop0
+	*** Some devices missing
+"""
+
+
+def test_pool_members_include_a_missing_disk():
+    members = sm.parse_show_members(SHOW_DEGRADED)
+    assert [(m['devid'], m['path'], m['missing']) for m in members] == [(1, '/dev/sdb', False), (2, '', True)]
+    assert members[0]['size_bytes'] == int(3.64 * 1024 ** 4)
+
+
+def test_pool_detection_counts_missing_disks(monkeypatch):
+    class Res:
+        returncode = 0
+        stdout = SHOW_UNMOUNTED_MISSING
+
+    monkeypatch.setattr(sm.platform, 'system', lambda: 'Linux')
+    monkeypatch.setattr(sm, 'run_sudo_command', lambda cmd, **kw: (Res(), None) if cmd[-1] == 'show' else (None, 'x'))
+    pools, _ = sm.detect_btrfs_pools()
+    assert pools[0]['devices'] == ['/dev/loop0']
+    assert pools[0]['missing_count'] == 1
+    assert pools[0]['status'] == 'degraded'
+
+
+def test_scrub_status():
+    assert sm.parse_scrub_status('UUID: x\n\tno stats available\n') == {'state': 'never'}
+    running = sm.parse_scrub_status(
+        'UUID:             x\nScrub started:    Tue Sep 30 18:00:00 2026\nStatus:           running\n'
+        'Duration:         0:01:05\nTime left:        0:02:00\nTotal to scrub:   100.00GiB\n'
+        'Bytes scrubbed:   30.00GiB  (30.00%)\nRate:             409.60MiB/s\nError summary:    no errors found\n')
+    assert running['state'] == 'running' and running['percent'] == 30.0 and running['errors'] == 0
+    assert running['time_left'] == '0:02:00'
+    found = sm.parse_scrub_status(
+        'UUID: x\nScrub started:    Tue Sep 30 18:00:00 2026\nStatus:           finished\nDuration: 1:00:00\n'
+        'Error summary:    csum=12 verify=1\n  Corrected:      13\n  Uncorrectable:  0\n  Unverified:     0\n')
+    assert found['state'] == 'finished' and found['errors'] == 13 and found['uncorrectable'] == 0
+
+
+def test_replace_status():
+    assert sm.parse_replace_status('Never started')['state'] == 'never'
+    running = sm.parse_replace_status('12.3% done, 0 write errs, 0 uncorr. read errs')
+    assert running['state'] == 'running' and running['percent'] == 12.3
+    done = sm.parse_replace_status('Started on 30.Sep 18:00:00, finished on 30.Sep 21:00:00, '
+                                   '1 write errs, 2 uncorr. read errs')
+    assert done['state'] == 'finished' and done['errors'] == 3
+    assert sm.parse_replace_status('Started on 30.Sep, canceled on 30.Sep at 5.0%, '
+                                   '0 write errs, 0 uncorr. read errs')['state'] == 'canceled'
+
+
+def test_balance_status_and_device_stats():
+    assert sm.parse_balance_status("No balance found on '/mnt/alvaos/main'") == {'state': 'none'}
+    running = sm.parse_balance_status("Balance on '/mnt/alvaos/main' is running\n"
+                                      "3 out of about 10 chunks balanced (4 considered),  70% left\n")
+    assert running == {'state': 'running', 'percent': 30.0}
+    stats = sm.parse_device_stats('[/dev/sdb].write_io_errs    0\n[/dev/sdb].corruption_errs  4\n'
+                                  '[devid:2].read_io_errs     0\n')
+    assert stats == {'/dev/sdb': {'write_io_errs': 0, 'corruption_errs': 4}, 'devid:2': {'read_io_errs': 0}}
+
+
+def test_disk_sizes_from_lsblk_bytes():
+    found = sm.describe_disks([disk('sdb', size=4000787030016)], [])
+    assert found[0]['size'] == '3.6T' and found[0]['size_bytes'] == 4000787030016
+
+
+# ── Pool maintenance API ─────────────────────────────────────────────────────
+
+@pytest.fixture
+def maintenance(api, monkeypatch):
+    client, headers, runner = api
+    started = []
+    status = {'scrub': 'UUID: x\n\tno stats available\n', 'replace': 'Never started',
+              'balance': "No balance found on '/mnt/alvaos/main'", 'device': '[/dev/sdb].write_io_errs 0\n'}
+
+    def btrfs(args, timeout=10):
+        return status.get(args[0], ''), None
+
+    monkeypatch.setattr(api_storage, '_btrfs_output', btrfs)
+    monkeypatch.setattr(api_storage, '_start_background', lambda cmd: started.append(cmd) or '')
+    live = [{'id': 'u-main', 'name': 'main', 'devices': ['/dev/sdb'],
+             'members': sm.parse_show_members(SHOW_DEGRADED)}]
+    monkeypatch.setattr(api_storage, 'detect_btrfs_pools', lambda: (live, None))
+    return client, headers, started, status
+
+
+def test_activity_reports_what_the_pool_is_doing(maintenance):
+    client, headers, _, status = maintenance
+    status['replace'] = '40.0% done, 0 write errs, 0 uncorr. read errs'
+    body = client.get('/api/v1/storage/pools/u-main/activity', headers=headers).get_json()
+    assert body['replace'] == {'state': 'running', 'percent': 40.0, 'errors': 0, 'text': status['replace']}
+    assert body['scrub'] == {'state': 'never'}
+    assert body['device_stats'] == {'/dev/sdb': {'write_io_errs': 0}}
+
+
+def test_a_missing_disk_is_replaced_by_devid(maintenance, tmp_path):
+    client, headers, started, _ = maintenance
+    response = client.post('/api/v1/storage/pools/u-main/replace', headers=headers,
+                           json={'source': 2, 'target': '/dev/sdc'})
+    assert response.status_code == 200, response.get_json()
+    assert started[-1][1:] == ['replace', 'start', '-B', '2', '/dev/sdc', '/mnt/alvaos/main']
+    assert '/dev/sdc' in sm.load_pools_state()['u-main']['devices']
+
+
+@pytest.mark.parametrize('body', [
+    {'source': 9, 'target': '/dev/sdc'},          # not a member
+    {'source': 1, 'target': '/dev/sdd'},          # target has data
+    {'source': 1, 'target': '/dev/sdb'},          # target is in the pool
+    {'source': 1},
+])
+def test_replace_needs_a_member_and_an_empty_disk(maintenance, body):
+    client, headers, started, _ = maintenance
+    response = client.post('/api/v1/storage/pools/u-main/replace', headers=headers, json=body)
+    assert response.status_code in (400, 409)
+    assert started == []
+
+
+def test_replace_needs_a_disk_at_least_as_large(maintenance, monkeypatch):
+    client, headers, started, _ = maintenance
+    small = [disk('sdc', size=1000204886016)]
+    monkeypatch.setattr(api_storage, 'disk_inventory', lambda: sm.describe_disks(small, []))
+    monkeypatch.setattr(sm, 'disk_inventory', lambda: sm.describe_disks(small, []))
+    response = client.post('/api/v1/storage/pools/u-main/replace', headers=headers,
+                           json={'source': 1, 'target': '/dev/sdc'})
+    assert response.status_code == 409 and 'smaller' in response.get_json()['error']
+    assert started == []
+
+
+def test_one_long_job_at_a_time(maintenance):
+    client, headers, started, status = maintenance
+    status['balance'] = "Balance on '/mnt/alvaos/main' is running\n1 out of about 9 chunks balanced, 89% left"
+    assert client.post('/api/v1/storage/pools/u-main/scrub', headers=headers, json={}).status_code == 409
+    assert client.post('/api/v1/storage/pools/u-main/replace', headers=headers,
+                       json={'source': 2, 'target': '/dev/sdc'}).status_code == 409
+    assert started == []
+
+
+def test_scrub_starts_in_the_background(maintenance):
+    client, headers, started, _ = maintenance
+    response = client.post('/api/v1/storage/pools/u-main/scrub', headers=headers, json={})
+    assert response.status_code == 200
+    assert started[-1][1:] == ['scrub', 'start', '-B', '/mnt/alvaos/main']
+
+
+def test_maintenance_needs_a_mounted_pool(maintenance, monkeypatch):
+    client, headers, started, _ = maintenance
+    monkeypatch.setattr(api_storage, '_is_mounted', lambda path: False)
+    assert client.post('/api/v1/storage/pools/u-main/scrub', headers=headers, json={}).status_code == 409
+    assert client.get('/api/v1/storage/pools/nope/activity', headers=headers).status_code == 404
+    assert started == []
+
+
+def test_background_jobs_report_an_immediate_failure(monkeypatch):
+    monkeypatch.setattr(api_storage, 'build_privileged_cmd', lambda cmd: cmd)
+    assert api_storage._start_background(['sh', '-c', 'echo "ERROR: target too small" >&2; exit 1']) \
+        == 'ERROR: target too small'
+    assert api_storage._start_background(['sleep', '5']) == ''  # still running: fine
