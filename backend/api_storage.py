@@ -10,6 +10,7 @@ import time
 from datetime import datetime
 
 # ── Third-party ───────────────────────────────────────────────────────────────
+import psutil
 from flask import Blueprint, jsonify, request
 
 # ── AlvaOS managers ───────────────────────────────────────────────────────────
@@ -28,6 +29,7 @@ from storage_manager import (
     load_pools_state, save_pools_state,
     detect_btrfs_pools, sanitize_pool_name,
     _collect_smart_report, disk_inventory, find_disk, check_disks_for_pool,
+    parse_scrub_status, parse_replace_status, parse_balance_status, parse_device_stats,
 )
 
 
@@ -328,6 +330,9 @@ def manage_pools():
         except Exception as e:
             print(f"Error in manage_pools GET: {e}")
 
+        for pool in pools:
+            pool.update(_usage_bytes(pool.get('mount_point')))
+
         with _storage_cache_lock:
             STORAGE_CACHE['pools'] = {'data': pools, 'expires': current_time + CACHE_TTL}
         return jsonify({'pools': pools})
@@ -464,6 +469,19 @@ def manage_pools():
     
     elif request.method == 'DELETE':
         return _remove_pool(request.get_json(silent=True) or {})
+
+
+def _usage_bytes(mount_point):
+    """Used / free / total bytes of a mounted pool, as df sees it (the same
+    numbers the capacity alerts use)."""
+    if not mount_point or not os.path.ismount(mount_point):
+        return {}
+    try:
+        usage = psutil.disk_usage(mount_point)
+    except OSError:
+        return {}
+    return {'used_bytes': usage.used, 'free_bytes': usage.free, 'total_bytes': usage.total,
+            'used_percent': round(usage.percent, 1)}
 
 
 def _path_within(path, root):
@@ -861,7 +879,7 @@ def expand_pool(pool_id):
 
             # Start the balance in the background to redistribute/convert data without
             # blocking the request.
-            subprocess.Popen(build_privileged_cmd(balance_cmd), env={'LC_ALL': 'C'})
+            _start_background(balance_cmd)
 
             # Update state
             pool_info['devices'].extend(devices)
@@ -877,6 +895,143 @@ def expand_pool(pool_id):
             return jsonify({'error': NOT_ON_NAS}), 501
     except Exception as e:
         return jsonify({'error': f'Failed to expand pool: {str(e)}'}), 500
+
+# ── Long-running pool work: replace, scrub, balance ─────────────────────────
+
+def _start_background(cmd):
+    """Start a long btrfs job (it runs for minutes to hours) without waiting for
+    it. Returns an error when it fails right away, e.g. a target disk too small."""
+    proc = subprocess.Popen(build_privileged_cmd(cmd), env={'LC_ALL': 'C'},
+                            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    try:
+        proc.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        return ''
+    if proc.returncode == 0:
+        return ''
+    detail = (proc.stderr.read() if proc.stderr else '').strip()
+    return detail.splitlines()[-1] if detail else f'exit code {proc.returncode}'
+
+
+def _mounted_managed_pool(pool_id):
+    """(pool state entry, None) for a managed pool that is mounted, else (None, error response)."""
+    pool_info = load_pools_state().get(pool_id)
+    if not isinstance(pool_info, dict):
+        return None, (jsonify({'error': 'Pool not found'}), 404)
+    mount_point = str(pool_info.get('mount_point') or '')
+    if mount_point == '/':
+        return None, (jsonify({'error': 'This is not available for the system pool.'}), 400)
+    if platform.system() != 'Linux':
+        return None, (jsonify({'error': NOT_ON_NAS}), 501)
+    if not mount_point or not _is_mounted(mount_point):
+        return None, (jsonify({'error': f'Pool "{pool_info.get("name") or pool_id}" is not mounted.'}), 409)
+    return pool_info, None
+
+
+def _btrfs_output(args, timeout=10):
+    res, err = run_sudo_command([CMD['BTRFS']] + args, timeout=timeout)
+    return (res.stdout if res else '') or '', err
+
+
+def _pool_activity(mount_point):
+    scrub_out, _ = _btrfs_output(['scrub', 'status', mount_point])
+    replace_out, _ = _btrfs_output(['replace', 'status', '-1', mount_point])
+    balance_out, _ = _btrfs_output(['balance', 'status', mount_point])
+    stats_out, _ = _btrfs_output(['device', 'stats', mount_point])
+    return {
+        'scrub': parse_scrub_status(scrub_out),
+        'replace': parse_replace_status(replace_out),
+        'balance': parse_balance_status(balance_out),
+        'device_stats': parse_device_stats(stats_out),
+    }
+
+
+@bp.route('/api/v1/storage/pools/<pool_id>/activity', methods=['GET'])
+@require_auth(require_admin=True)
+def pool_activity(pool_id):
+    """What the pool is doing (replace, data check, balance) and error counters per disk."""
+    pool_info, error = _mounted_managed_pool(pool_id)
+    if error:
+        return error
+    return jsonify(_pool_activity(pool_info['mount_point']))
+
+
+def _busy_with(activity):
+    if activity['replace'].get('state') == 'running':
+        return 'A disk is being replaced'
+    if activity['balance'].get('state') in ('running', 'paused'):
+        return 'Data is being spread over the disks'
+    if activity['scrub'].get('state') == 'running':
+        return 'A data check is running'
+    return ''
+
+
+@bp.route('/api/v1/storage/pools/<pool_id>/scrub', methods=['POST'])
+@require_auth(require_admin=True)
+def scrub_pool(pool_id):
+    """Start (or cancel) a data check: btrfs reads every block and repairs bad
+    copies from the good one when the pool is redundant."""
+    pool_info, error = _mounted_managed_pool(pool_id)
+    if error:
+        return error
+    mount_point = pool_info['mount_point']
+    if (request.get_json(silent=True) or {}).get('action') == 'cancel':
+        _, err = _btrfs_output(['scrub', 'cancel', mount_point])
+        if err:
+            return jsonify({'error': 'No data check is running.'}), 409
+        return jsonify({'success': True, 'message': 'The data check was stopped.'})
+    busy = _busy_with(_pool_activity(mount_point))
+    if busy:
+        return jsonify({'error': f'{busy}. Try again when it is done.'}), 409
+    failed = _start_background([CMD['BTRFS'], 'scrub', 'start', '-B', mount_point])
+    if failed:
+        return jsonify({'error': f'The data check did not start: {failed}'}), 500
+    return jsonify({'success': True, 'message': 'Data check started. The pool stays usable meanwhile.'})
+
+
+@bp.route('/api/v1/storage/pools/<pool_id>/replace', methods=['POST'])
+@require_auth(require_admin=True)
+def replace_pool_disk(pool_id):
+    """Copy one member (failing or missing) onto an empty disk with btrfs replace.
+    The pool stays online; for a missing disk the data is rebuilt from the mirror."""
+    pool_info, error = _mounted_managed_pool(pool_id)
+    if error:
+        return error
+    data = request.get_json(silent=True) or {}
+    source = data.get('source')
+    target = str(data.get('target') or '')
+    mount_point = pool_info['mount_point']
+
+    live = next((p for p in detect_btrfs_pools()[0] if str(p.get('id', '')).lower() == pool_id.lower()), None)
+    members = (live or {}).get('members') or []
+    member = next((m for m in members if str(m['devid']) == str(source) or (m['path'] and m['path'] == source)), None)
+    if member is None:
+        return jsonify({'error': 'Choose a disk of this pool to replace.'}), 400
+    problem = check_disks_for_pool([target])
+    if problem:
+        return jsonify({'error': problem}), 409
+    new_disk = find_disk(disk_inventory(), target) or {}
+    if member['size_bytes'] and new_disk.get('size_bytes', 0) < member['size_bytes']:
+        return jsonify({'error': f'{target} is smaller than the disk it replaces ({member["size"]}). '
+                                 'Use a disk of the same size or larger.'}), 409
+    busy = _busy_with(_pool_activity(mount_point))
+    if busy:
+        return jsonify({'error': f'{busy}. Try again when it is done.'}), 409
+
+    failed = _start_background([CMD['BTRFS'], 'replace', 'start', '-B', str(member['devid']), target, mount_point])
+    if failed:
+        return jsonify({'error': f'The replacement did not start: {failed}'}), 500
+
+    devices = [d for d in pool_info.get('devices') or [] if d != member['path']]
+    pool_info['devices'] = devices + [target]
+    state = load_pools_state()
+    state[pool_id] = pool_info
+    save_pools_state(state)
+    invalidate_storage_cache('pools', 'disks')
+    old = member['path'] or f'the missing disk (#{member["devid"]})'
+    return jsonify({'success': True,
+                    'message': f'Replacing {old} with {target}. The pool stays usable; this can take hours.'})
+
 
 # ============================================================================
 @bp.route('/api/v1/storage/available-paths', methods=['GET'])

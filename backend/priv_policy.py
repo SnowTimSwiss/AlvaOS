@@ -840,6 +840,11 @@ def _rule_umount(sys_: System, args):
     return Plan(argv=list(args))
 
 
+def _replace_source(value: str) -> None:
+    if not (re.match(r'^[1-9][0-9]{0,5}$', value or '') or DEVICE_RE.match(value or '')):
+        _fail(f'Invalid device to replace: {value!r}')
+
+
 def _rule_btrfs(sys_: System, args):
     if len(args) < 2:
         _fail('btrfs usage not allowed')
@@ -923,6 +928,23 @@ def _rule_btrfs(sys_: System, args):
         return Plan(argv=list(args))
     if group == 'device' and action == 'remove':
         _expect(rest, 'missing', lambda p: _pool_mountpoint(_clean_abs_path(p)))
+        return Plan(argv=list(args))
+    if group == 'replace' and action == 'start':
+        # btrfs replace start -B SOURCE TARGET POOL: SOURCE is the member being
+        # replaced (a devid, or its device, which is in use by definition), TARGET
+        # must be an idle, non-system disk.
+        _expect(rest, '-B', _replace_source, lambda d: _device(sys_, d, destructive=True, idle=True),
+                lambda p: _pool_mountpoint(_clean_abs_path(p)))
+        return Plan(argv=list(args))
+    if group == 'replace' and action == 'status':
+        _expect(rest, '-1', lambda p: _pool_mountpoint(_clean_abs_path(p)))
+        return Plan(argv=list(args))
+    if group == 'scrub' and action == 'start':
+        _expect(rest, '-B', lambda p: _pool_mountpoint(_clean_abs_path(p)))
+        return Plan(argv=list(args))
+    if (group == 'scrub' and action in ('status', 'cancel')) or (group, action) in (
+            ('balance', 'status'), ('device', 'stats')):
+        _expect(rest, lambda p: _pool_mountpoint(_clean_abs_path(p)))
         return Plan(argv=list(args))
     if group == 'balance' and action == 'start':
         for arg in rest[:-1]:

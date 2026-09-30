@@ -232,6 +232,35 @@ def test_pool_lifecycle_commands():
     allowed('/usr/bin/lsblk', '-nrpo', 'NAME,TYPE,MOUNTPOINT', '/dev/sdb')
 
 
+def test_pool_maintenance_commands():
+    allowed('/usr/bin/btrfs', 'replace', 'start', '-B', '2', '/dev/sdd', '/mnt/alvaos/main')
+    allowed('/usr/bin/btrfs', 'replace', 'start', '-B', '/dev/sdb', '/dev/sdd', '/mnt/alvaos/main')
+    allowed('/usr/bin/btrfs', 'replace', 'status', '-1', '/mnt/alvaos/main')
+    allowed('/usr/bin/btrfs', 'scrub', 'start', '-B', '/mnt/alvaos/main')
+    allowed('/usr/bin/btrfs', 'scrub', 'status', '/mnt/alvaos/main')
+    allowed('/usr/bin/btrfs', 'scrub', 'cancel', '/mnt/alvaos/main')
+    allowed('/usr/bin/btrfs', 'balance', 'status', '/mnt/alvaos/main')
+    allowed('/usr/bin/btrfs', 'device', 'stats', '/mnt/alvaos/main')
+
+
+@pytest.mark.parametrize('argv', [
+    ['/usr/bin/btrfs', 'replace', 'start', '-B', '2', '/dev/sda', '/mnt/alvaos/main'],   # onto the system disk
+    ['/usr/bin/btrfs', 'replace', 'start', '-B', '2', '/dev/sdd', '/'],                  # system pool
+    ['/usr/bin/btrfs', 'replace', 'start', '-B', '-f', '2', '/dev/sdd', '/mnt/alvaos/main'],
+    ['/usr/bin/btrfs', 'replace', 'start', '-B', '0; id', '/dev/sdd', '/mnt/alvaos/main'],
+    ['/usr/bin/btrfs', 'scrub', 'start', '/etc'],
+    ['/usr/bin/btrfs', 'device', 'stats', '-z', '/mnt/alvaos/main'],
+])
+def test_pool_maintenance_abuse_is_denied(argv):
+    denied(*argv)
+
+
+def test_a_replacement_disk_must_be_idle():
+    system = FakeSystem(busy={'sdd': 'mounted at /media/usb'})
+    with pytest.raises(p.PolicyError, match='Refusing to erase'):
+        p.validate(['/usr/bin/btrfs', 'replace', 'start', '-B', '2', '/dev/sdd', '/mnt/alvaos/main'], system)
+
+
 @pytest.mark.parametrize('argv', [
     ['/usr/sbin/wipefs', '-a', '-f', '/dev/sda'],
     ['/usr/sbin/wipefs', '-a', '/dev/sda2'],

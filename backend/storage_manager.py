@@ -5,7 +5,7 @@ Disk detection, SMART data, Btrfs pool management, path security, and caching.
 """
 
 import json
-from typing import AbstractSet, Any, Dict, List, Set
+from typing import AbstractSet, Any, Dict, List, Optional, Set
 import os
 import platform
 import re
@@ -364,8 +364,12 @@ def detect_btrfs_pools():
             'is_system_pool': bool(root_btrfs_uuid and uuid_val.lower() == root_btrfs_uuid)
         }
 
-        dev_lines = re.findall(r"path\s+(\S+)", block)
-        pool['devices'] = [d.strip() for d in dev_lines]
+        members = parse_show_members(block)
+        pool['members'] = members
+        pool['devices'] = [m['path'] for m in members if not m['missing']]
+        total_match = re.search(r"Total devices\s+(\d+)", block)
+        present = len(pool['devices'])
+        pool['missing_count'] = max(0, int(total_match.group(1)) - present) if total_match else 0
 
         size_matches = re.findall(r"devid\s+\d+\s+size\s+(\d+\.?\d*[TiGkMBP]i?B)", block)
         for sm in size_matches:
@@ -379,6 +383,108 @@ def detect_btrfs_pools():
         pools.append(pool)
 
     return pools, root_btrfs_uuid
+
+
+# ── btrfs status output ───────────────────────────────────────────────────────
+# Parsers for what `btrfs ... status` prints, so the UI can show long-running
+# pool work (replace, scrub, balance) with progress, even after a page reload.
+
+_MEMBER_RE = re.compile(
+    r"devid\s+(\d+)\s+size\s+(\S+)\s+used\s+(\S+)\s+path\s+(.+?)(\s+MISSING)?\s*$", re.MULTILINE)
+
+
+def parse_show_members(block: str) -> List[Dict[str, Any]]:
+    """Members of one filesystem in `btrfs filesystem show` output.
+
+    A disk that is gone shows as "path <missing disk> MISSING" while the pool
+    is mounted; when it is not mounted, the line is absent altogether."""
+    members = []
+    for devid, size, used, path, missing in _MEMBER_RE.findall(block or ''):
+        gone = bool(missing) or path.startswith('<')
+        members.append({
+            'devid': int(devid),
+            'size': size,
+            'size_bytes': parse_size_to_bytes(size) or 0,
+            'used': used,
+            'path': '' if gone else path.strip(),
+            'missing': gone,
+        })
+    return members
+
+
+def _percent(text: str):
+    match = re.search(r"(\d+(?:\.\d+)?)%", text or '')
+    return float(match.group(1)) if match else None
+
+
+def parse_scrub_status(text: str) -> Dict[str, Any]:
+    """`btrfs scrub status POOL` → state, progress and what was found."""
+    text = text or ''
+    fields = {}
+    for line in text.splitlines():
+        key, sep, value = line.partition(':')
+        if sep:
+            fields[key.strip().lower()] = value.strip()
+    if 'no stats available' in text or 'status' not in fields:
+        return {'state': 'never'}
+    state = fields['status'].split()[0].lower() if fields['status'] else 'unknown'
+    summary = fields.get('error summary', '')
+    errors: Optional[int] = 0
+    if summary and 'no errors' not in summary:
+        errors = sum(int(n) for n in re.findall(r"=(\d+)", summary)) or None
+    uncorrectable = re.search(r"Uncorrectable:\s*(\d+)", text)
+    return {
+        'state': state,
+        'started': fields.get('scrub started') or fields.get('scrub resumed') or '',
+        'duration': fields.get('duration', ''),
+        'time_left': fields.get('time left', ''),
+        'percent': _percent(fields.get('bytes scrubbed', '')) if state == 'running' else None,
+        'errors': errors,
+        'uncorrectable': int(uncorrectable.group(1)) if uncorrectable else (0 if errors == 0 else None),
+        'summary': summary,
+    }
+
+
+def parse_replace_status(text: str) -> Dict[str, Any]:
+    """`btrfs replace status -1 POOL` → never / running / finished / canceled."""
+    text = (text or '').strip()
+    lower = text.lower()
+    errors = re.search(r"(\d+) write errs?, (\d+) uncorr\. read errs?", text)
+    result: Dict[str, Any] = {'errors': int(errors.group(1)) + int(errors.group(2)) if errors else 0}
+    if not text or 'never started' in lower:
+        result['state'] = 'never'
+    elif 'cancel' in lower:
+        result['state'] = 'canceled'
+    elif 'suspended' in lower:
+        result.update(state='paused', percent=_percent(text))
+    elif 'finished' in lower:
+        result['state'] = 'finished'
+    elif '% done' in lower:
+        result.update(state='running', percent=_percent(text))
+    else:
+        result['state'] = 'unknown'
+    result['text'] = text
+    return result
+
+
+def parse_balance_status(text: str) -> Dict[str, Any]:
+    """`btrfs balance status POOL` → none / running / paused, with progress."""
+    text = text or ''
+    lower = text.lower()
+    if 'no balance found' in lower:
+        return {'state': 'none'}
+    state = 'paused' if 'paused' in lower else 'running' if 'running' in lower else 'unknown'
+    left = re.search(r"(\d+(?:\.\d+)?)% left", text)
+    return {'state': state, 'percent': round(100 - float(left.group(1)), 1) if left else None}
+
+
+def parse_device_stats(text: str) -> Dict[str, Dict[str, int]]:
+    """`btrfs device stats POOL` → {device: {counter: value}}; any non-zero
+    counter means the disk returned bad data or failed an I/O at some point."""
+    stats: Dict[str, Dict[str, int]] = {}
+    for dev, counter, value in re.findall(r"^\[(.+?)\]\.(\w+)\s+(\d+)\s*$", text or '', re.MULTILINE):
+        stats.setdefault(dev, {})[counter] = int(value)
+    return stats
 
 
 # ── Disk inventory ────────────────────────────────────────────────────────────
@@ -404,12 +510,36 @@ DISK_ROLES = ('system', 'pool', 'in_use', 'other_pool', 'has_data', 'empty')
 def read_block_devices() -> List[Dict[str, Any]]:
     """Top-level block devices from lsblk, with their partitions as children."""
     result = subprocess.run(
-        ['env', 'LC_ALL=C', CMD['LSBLK'], '-J', '-o', LSBLK_COLUMNS],
+        ['env', 'LC_ALL=C', CMD['LSBLK'], '-J', '-b', '-o', LSBLK_COLUMNS],
         capture_output=True, text=True, timeout=5,
     )
     if result.returncode != 0:
         raise RuntimeError((result.stderr or 'lsblk failed').strip())
     return json.loads(result.stdout or '{}').get('blockdevices') or []
+
+
+def human_size(value) -> str:
+    """Bytes as lsblk prints them: 3.6T, 465.8G, 512M."""
+    try:
+        size = float(value)
+    except (TypeError, ValueError):
+        return str(value or 'Unknown')
+    for unit in ('B', 'K', 'M', 'G', 'T', 'P'):
+        if size < 1024 or unit == 'P':
+            text = f'{size:.1f}'.rstrip('0').rstrip('.')
+            return f'{text}{unit}'
+        size /= 1024
+    return 'Unknown'
+
+
+def _size_bytes(value) -> int:
+    """lsblk -b gives bytes; older callers (and tests) may pass '4T'."""
+    if isinstance(value, (int, float)):
+        return int(value)
+    text = str(value or '').strip()
+    if text.isdigit():
+        return int(text)
+    return parse_size_to_bytes(f'{text}iB' if text[-1:] in 'KMGTP' and text else text) or 0
 
 
 def _walk(node: Dict[str, Any]):
@@ -477,7 +607,8 @@ def describe_disks(blockdevices: List[Dict[str, Any]], pools: List[Dict[str, Any
         disks.append({
             'name': name,
             'path': f'/dev/{name}',
-            'size': device.get('size') or 'Unknown',
+            'size': human_size(device.get('size')) if device.get('size') is not None else 'Unknown',
+            'size_bytes': _size_bytes(device.get('size')),
             'model': model or 'Unknown',
             'serial': (device.get('serial') or '').strip() or 'N/A',
             'fstype': device.get('fstype') or 'none',
@@ -486,7 +617,7 @@ def describe_disks(blockdevices: List[Dict[str, Any]], pools: List[Dict[str, Any
             'is_removable': bool(device.get('rm')) or device.get('tran') == 'usb',
             'transport': device.get('tran') or 'unknown',
             'partitions': [
-                {'name': c.get('name'), 'size': c.get('size') or 'Unknown',
+                {'name': c.get('name'), 'size': human_size(c.get('size')) if c.get('size') is not None else 'Unknown',
                  'fstype': c.get('fstype') or 'none', 'mountpoint': c.get('mountpoint')}
                 for c in children
             ],
