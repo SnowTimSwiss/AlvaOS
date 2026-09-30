@@ -181,6 +181,119 @@
                 width: 100%;
             }
         }
+        .share-where {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-top: -6px;
+        }
+        .address-box {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--bg-body);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            padding: 6px 6px 6px 12px;
+        }
+        .address-box code {
+            flex: 1;
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--text-primary);
+            overflow-wrap: anywhere;
+            user-select: all;
+        }
+        .address-box button {
+            font-size: 0.8rem;
+            padding: 4px 10px;
+        }
+        .tag {
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            border: 1px solid var(--border-default);
+            border-radius: 4px;
+            padding: 1px 6px;
+            letter-spacing: 0.03em;
+        }
+        .people-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-height: 240px;
+            overflow-y: auto;
+            margin-top: 8px;
+        }
+        .person-access {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 6px 0;
+        }
+        .person-access {
+            color: var(--text-primary);
+        }
+        .form-field .person-access select,
+        .person-access select {
+            width: auto;
+            min-width: 150px;
+        }
+        .avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: var(--bg-hover);
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            text-transform: uppercase;
+            flex-shrink: 0;
+        }
+        .form-field {
+            margin-bottom: 1rem;
+            text-align: left;
+        }
+        .form-field .field-label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: var(--text-primary);
+        }
+        .form-field input[type="text"],
+        .form-field input[type="password"],
+        .form-field select {
+            width: 100%;
+        }
+        .field-hint {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+        .field-error {
+            font-size: 0.8rem;
+            color: var(--accent-danger);
+            margin-top: 4px;
+        }
+        .connect-section {
+            margin-bottom: 14px;
+            text-align: left;
+        }
+        .connect-section h4 {
+            font-size: 0.9rem;
+            margin: 0 0 6px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--text-primary);
+        }
+        .connect-section p {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin: 0 0 6px;
+        }
         .pool-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
@@ -698,37 +811,36 @@
 
             <!-- Shares Tab -->
             <div class="tab-content" id="tab-shares">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 12px;">
                     <h2
                         style="font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em;">
-                        Network Shares</h2>
+                        Shared folders</h2>
                     <button id="create-share-btn" class="btn-primary" style="padding: 4px 10px; font-size: 0.85rem;"><i data-lucide="plus" aria-hidden="true"></i>
-                        Create Share</button>
+                        Share a folder</button>
                 </div>
-                <div id="shares-container" class="dashboard-grid">
-                    <div style="padding: 2rem; text-align:center; color: var(--text-secondary); grid-column: 1/-1;">
-                        No shares configured.
-                    </div>
+                <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 16px;">
+                    Folders that computers and phones on your network can open, like a drive.
+                </p>
+                <div id="shares-container" class="pool-grid">
+                    <div style="padding: 2rem; text-align:center; color: var(--text-secondary);">Loading shares...</div>
                 </div>
             </div>
 
             <!-- Users Tab -->
             <div class="tab-content" id="tab-users">
-                <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 16px;">
-                    These accounts control access to your network shares (SMB/NFS). They are separate from the
-                    AlvaOS admin login.
-                </p>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 12px;">
                     <h2
                         style="font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em;">
-                        Share Users</h2>
+                        People</h2>
                     <button id="create-user-btn" class="btn-primary" style="padding: 4px 10px; font-size: 0.85rem;"><i data-lucide="plus" aria-hidden="true"></i>
-                        Create User</button>
+                        Add a person</button>
                 </div>
-                <div id="users-container" class="dashboard-grid">
-                    <div style="padding: 2rem; text-align:center; color: var(--text-secondary); grid-column: 1/-1;">
-                        Loading users...
-                    </div>
+                <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 16px;">
+                    Everyone who opens shared folders signs in with a name and password from this list.
+                    These accounts cannot sign in to AlvaOS itself or log in over SSH.
+                </p>
+                <div id="users-container">
+                    <div style="padding: 2rem; text-align:center; color: var(--text-secondary);">Loading people...</div>
                 </div>
             </div>
 
@@ -750,6 +862,7 @@
     <script src="password-toggle.js"></script>
     <script src="storage.js"></script>
     <script src="storage-pools.js"></script>
+    <script src="storage-shares.js"></script>
     <script src="users.js"></script>
 </body>
 

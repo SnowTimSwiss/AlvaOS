@@ -15,6 +15,38 @@ How to add an entry:
 
 ---
 
+## 2026-09-30 · Shares and people: say who can open what ([#4](https://github.com/SnowTimSwiss/AlvaOS/pull/4))
+
+- **Found:** share names and the NFS "allowed hosts" went unchecked into
+  `smb.conf` and `/etc/exports`, so a name like `x]` plus a new line, or hosts like
+  `*(rw,no_root_squash)`, added config. Share paths could be any folder
+  that was not on the system disk. Share accounts were created with
+  `/bin/bash`, so with SSH enabled they could log in to the NAS.
+- **Backend:** `validate_share_request` checks name (unique, safe
+  characters), place (inside a managed pool), people (must exist) and NFS
+  clients; a share can create its own folder (`new_folder`). Exports are
+  written per client with `root_squash`; the helper refuses
+  `no_root_squash`. The access endpoint also switches between people and
+  everyone (guest, optionally read only). Share accounts get no home and no
+  shell (`useradd -M -s /usr/sbin/nologin`); existing ones are fixed with
+  `usermod -s /usr/sbin/nologin` at startup.
+- **Shares tab:** one card per share: where it lives (`main › Media`), who
+  can open it in one sentence, the address to type with a Copy button, and
+  How to connect / Access / Stop sharing. "Share a folder" asks name, where
+  (new folder by default) and who; SMB/NFS and allowed computers sit under
+  "More options". A person can be added right inside the dialog. "How to
+  connect" gives copyable addresses for Windows, macOS, Linux and phones.
+- **Users tab (People):** each person with the shares they can open (read
+  or edit), Change password and Remove; removing names the shares they lose.
+- Tests: `test_shares.py` (validation, config injection, exports, access
+  changes, shell migration) and policy cases. Checked in a browser with
+  mocked data at desktop and phone width.
+- **Note for next time:** never run against real Samba/NFS here. Check on a
+  NAS that a guest share opens without a password from Windows and macOS,
+  and that a person with "Can read" really cannot write. Old shares whose
+  access list is empty now say "Nobody can open it yet", which matches
+  what the file permissions already allowed.
+
 ## 2026-09-30 · Storage: pools at a glance, replace and data check ([#4](https://github.com/SnowTimSwiss/AlvaOS/pull/4))
 
 - **Pools tab:** one card per pool with a usage bar (used, free, size), the

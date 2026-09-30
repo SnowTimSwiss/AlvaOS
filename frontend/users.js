@@ -95,10 +95,12 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function loadUsers() {
-    setUsersContainerMessage('Loading users...', 'users-loading');
+    const container = document.getElementById('users-container');
+    if (container && !container.querySelector('.disk-row')) setUsersContainerMessage('Loading people...', 'users-loading');
 
-    const response = await usersApi('/users');
+    const [response, sharesResponse] = await Promise.all([usersApi('/users'), usersApi('/storage/shares')]);
     const data = await usersReadJson(response);
+    const sharesData = sharesResponse && sharesResponse.ok ? await usersReadJson(sharesResponse) : null;
 
     if (!response) {
         setUsersContainerMessage('Failed to load users.', 'users-error');
@@ -115,15 +117,30 @@ async function loadUsers() {
         return;
     }
 
-    renderUsers(data.users || []);
+    renderUsers(data.users || [], (sharesData && sharesData.shares) || []);
 }
 
-function renderUsers(users) {
+// What a person can open: [{name, role}] from the shares' SMB permissions.
+function sharesOfUser(username, shares) {
+    return shares
+        .filter((share) => share.protocol === 'smb' && ['read', 'write'].includes((share.smb_permissions || {})[username]))
+        .map((share) => ({ name: share.name, role: share.smb_permissions[username] === 'write' && !share.read_only ? 'edit' : 'read' }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function renderUsers(users, shares = []) {
     const container = document.getElementById('users-container');
     if (!container) return;
 
     if (!users.length) {
-        setUsersContainerMessage('No share users created yet.', 'users-empty');
+        container.innerHTML = `
+            <div class="pool-section" style="text-align: center; padding: 2.5rem 1.5rem;">
+                <div class="pool-name" style="margin-bottom: 6px;">No people yet</div>
+                <p style="color: var(--text-secondary); margin: 0 auto 16px; max-width: 460px;">
+                    Add the people in your home or team, then choose which shared folders each of them can open.
+                </p>
+                <button type="button" class="btn-primary" onclick="showCreateUserModal()">Add a person</button>
+            </div>`;
         return;
     }
 
@@ -131,43 +148,27 @@ function renderUsers(users) {
 
     users.forEach((user) => {
         const username = String(user?.username || '').trim();
-        const createdAt = user?.created_at ? new Date(user.created_at) : null;
-        const createdLabel = createdAt && !Number.isNaN(createdAt.getTime())
-            ? createdAt.toLocaleDateString()
-            : 'Unknown';
+        const access = sharesOfUser(username, shares);
+        const accessText = access.length
+            ? `Can open ${access.map((a) => `${a.name} (${a.role})`).join(', ')}`
+            : 'Not in any shared folder yet. Give access from the Shares tab.';
 
         const row = document.createElement('div');
-        row.className = 'card user-row';
+        row.className = 'disk-row user-row';
         row.dataset.user = username;
-
         row.innerHTML = `
-            <div class="user-row-main">
-                <div>
-                    <div class="user-row-name">${usersEscapeHtml(username)}</div>
-                    <div class="user-row-state">
-                        ${user.system_exists ? 'System user synchronization: Active' : 'System user: Missing (Manual intervention required)'}
-                    </div>
-                    <div class="user-row-created">Created: ${usersEscapeHtml(createdLabel)}</div>
-                </div>
-                <div class="user-row-actions">
-                    <button class="btn-secondary reset-pass-btn" data-user="${usersEscapeHtml(username)}">Reset Password</button>
-                    <button class="btn-secondary delete-user-btn user-delete-btn" data-user="${usersEscapeHtml(username)}">Delete</button>
-                </div>
+            <div class="avatar disk-row-icon">${usersEscapeHtml(username.slice(0, 1))}</div>
+            <div class="disk-row-name">${usersEscapeHtml(username)}</div>
+            ${user.system_exists === false ? '<span class="pill warn" title="The account exists in AlvaOS but not on the system. Remove and add the person again.">Account broken</span>' : ''}
+            <div class="disk-row-meta" style="font-family: inherit;">${usersEscapeHtml(accessText)}</div>
+            <div class="disk-row-actions">
+                <button type="button" class="btn-secondary reset-pass-btn">Change password</button>
+                <button type="button" class="btn-secondary btn-quiet delete-user-btn">Remove</button>
             </div>
         `;
-
         container.appendChild(row);
-
-        const deleteBtn = row.querySelector('.delete-user-btn');
-        const resetBtn = row.querySelector('.reset-pass-btn');
-
-        if (deleteBtn) {
-            deleteBtn.addEventListener('click', () => deleteUser(username, row));
-        }
-
-        if (resetBtn) {
-            resetBtn.addEventListener('click', () => showPasswordResetModal(username, row));
-        }
+        row.querySelector('.delete-user-btn').addEventListener('click', () => deleteUser(username, row, access));
+        row.querySelector('.reset-pass-btn').addEventListener('click', () => showPasswordResetModal(username, row));
     });
 }
 
@@ -180,17 +181,17 @@ function showCreateUserModal() {
 
     panel.innerHTML = `
         <h3 class="user-modal-title">
-            <span>Create User</span>
+            <span>Add a person</span>
             <button type="button" class="modal-close-x" id="close-create-user-x" aria-label="Close">&times;</button>
         </h3>
-        <p class="user-modal-text">Creates a share-access account for SMB/NFS. Separate from the AlvaOS admin login.</p>
-        <input type="text" id="create-user-name-input" class="user-modal-input" placeholder="Username, e.g. alex" />
+        <p class="user-modal-text">They sign in with this name and password when they open a shared folder.</p>
+        <input type="text" id="create-user-name-input" class="user-modal-input" placeholder="Name, e.g. alex" autocomplete="off" />
         <div id="create-user-name-error" class="user-modal-error" style="display:none;"></div>
-        <input type="password" id="create-user-pass-input" class="user-modal-input" placeholder="Minimum 8 characters" />
+        <input type="password" id="create-user-pass-input" class="user-modal-input" placeholder="Password, at least 8 characters" autocomplete="new-password" />
         <div id="create-user-pass-error" class="user-modal-error" style="display:none;"></div>
         <div class="user-modal-actions">
             <button id="cancel-create-btn" class="btn-secondary">Cancel</button>
-            <button id="confirm-create-btn" class="btn-primary">Create</button>
+            <button id="confirm-create-btn" class="btn-primary">Add</button>
         </div>
     `;
 
@@ -226,11 +227,11 @@ function showCreateUserModal() {
             setFieldError(passError, '');
 
             if (!username) {
-                setFieldError(nameError, 'Username is required');
+                setFieldError(nameError, 'A name is required');
                 return;
             }
             if (!USERNAME_PATTERN.test(username)) {
-                setFieldError(nameError, 'Use lowercase letters, numbers, _ or -.');
+                setFieldError(nameError, 'Use 2 to 32 lowercase letters, numbers, _ or -, starting with a letter.');
                 return;
             }
             if (!password || password.length < 8) {
@@ -270,8 +271,9 @@ async function createUser(username, password) {
     return true;
 }
 
-async function deleteUser(username, row) {
-    const ok = await usersConfirm(`Delete user "${username}"?\n\nThis will remove the user and their SMB access.`);
+async function deleteUser(username, row, access = []) {
+    const loses = access.length ? ` They lose access to ${access.map((a) => a.name).join(', ')}.` : '';
+    const ok = await usersConfirm(`Remove ${username}?\n\n${username} can no longer open shared folders.${loses} Files in the shares are not deleted.`);
     if (!ok) return;
 
     setUserRowBusy(row, true);
@@ -301,10 +303,10 @@ function showPasswordResetModal(username, row) {
 
     panel.innerHTML = `
         <h3 class="user-modal-title">
-            <span>Reset Password</span>
+            <span>Change password</span>
             <button type="button" class="modal-close-x" id="close-reset-pass-x" aria-label="Close">&times;</button>
         </h3>
-        <p class="user-modal-text">Set a new password for <strong>${usersEscapeHtml(username)}</strong>.</p>
+        <p class="user-modal-text">New password for <strong>${usersEscapeHtml(username)}</strong>. Their devices ask for it the next time they open a shared folder.</p>
         <input type="password" id="reset-pass-input" class="user-modal-input" placeholder="Minimum 8 characters" />
         <div id="reset-pass-error" class="user-modal-error" style="display:none;"></div>
         <div class="user-modal-actions">
@@ -369,6 +371,6 @@ async function updateUserPassword(username, password, row) {
         return false;
     }
 
-    usersNotify('Password updated', 'success');
+    usersNotify(`Password for ${username} changed.`, 'success');
     return true;
 }
