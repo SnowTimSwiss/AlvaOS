@@ -464,7 +464,8 @@ def manage_users():
 
         try:
             # Create system user
-            res, err = run_sudo_command([CMD['USERADD'], '-m', '-s', '/bin/bash', username])
+            # Share accounts only open network shares: no home directory, no login shell.
+            res, err = run_sudo_command([CMD['USERADD'], '-M', '-s', '/usr/sbin/nologin', username])
             if err:
                 return jsonify({'error': f'Failed to create user: {err}'}), 500
 

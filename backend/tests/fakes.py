@@ -9,7 +9,7 @@ import priv_policy as p
 class FakeSystem(p.System):
     """Deterministic stand-in for the real system the privilege policy inspects."""
 
-    def __init__(self, users=None, groups=None, files=None, links=None, system_disks=('sda',)):
+    def __init__(self, users=None, groups=None, files=None, links=None, system_disks=('sda',), busy=None):
         self.users = {'root': 0, 'alvaos': 998, 'nobody': 65534, 'tim': 1000, 'anna': 1001}
         self.users.update(users or {})
         self.groups = {'root': 0, 'sudo': 27, 'docker': 999, 'alvaos': 998, 'share_media': 1002}
@@ -17,9 +17,13 @@ class FakeSystem(p.System):
         self.files = files or {}
         self.links = links or {}
         self._system_disks = set(system_disks)
+        self._busy = dict(busy or {})
 
     def system_disks(self):
         return self._system_disks
+
+    def busy_devices(self):
+        return self._busy
 
     def uid_of(self, user):
         return self.users.get(user)

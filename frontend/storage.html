@@ -181,6 +181,542 @@
                 width: 100%;
             }
         }
+        .share-where {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-top: -6px;
+        }
+        .address-box {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--bg-body);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            padding: 6px 6px 6px 12px;
+        }
+        .address-box code {
+            flex: 1;
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--text-primary);
+            overflow-wrap: anywhere;
+            user-select: all;
+        }
+        .address-box button {
+            font-size: 0.8rem;
+            padding: 4px 10px;
+        }
+        .tag {
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            border: 1px solid var(--border-default);
+            border-radius: 4px;
+            padding: 1px 6px;
+            letter-spacing: 0.03em;
+        }
+        .people-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-height: 240px;
+            overflow-y: auto;
+            margin-top: 8px;
+        }
+        .person-access {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 6px 0;
+        }
+        .person-access {
+            color: var(--text-primary);
+        }
+        .form-field .person-access select,
+        .person-access select {
+            width: auto;
+            min-width: 150px;
+        }
+        .avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: var(--bg-hover);
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            text-transform: uppercase;
+            flex-shrink: 0;
+        }
+        .form-field {
+            margin-bottom: 1rem;
+            text-align: left;
+        }
+        .form-field .field-label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: var(--text-primary);
+        }
+        .form-field input[type="text"],
+        .form-field input[type="password"],
+        .form-field select {
+            width: 100%;
+        }
+        .field-hint {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+        .field-error {
+            font-size: 0.8rem;
+            color: var(--accent-danger);
+            margin-top: 4px;
+        }
+        .connect-section {
+            margin-bottom: 14px;
+            text-align: left;
+        }
+        .connect-section h4 {
+            font-size: 0.9rem;
+            margin: 0 0 6px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--text-primary);
+        }
+        .connect-section p {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin: 0 0 6px;
+        }
+        .pool-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+            gap: 16px;
+        }
+        .pool-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-lg);
+            padding: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            cursor: pointer;
+            text-align: left;
+            color: inherit;
+            font: inherit;
+        }
+        .pool-card:hover {
+            border-color: var(--border-hover);
+        }
+        .pool-card.attention {
+            border-color: var(--accent-danger);
+        }
+        .pool-card.notice {
+            border-color: var(--accent-warning);
+        }
+        .pool-head {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .pool-name {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            overflow-wrap: anywhere;
+        }
+        .usage-bar {
+            height: 8px;
+            border-radius: 999px;
+            background: var(--bg-hover);
+            overflow: hidden;
+        }
+        .usage-bar.big {
+            height: 14px;
+        }
+        .usage-bar > span {
+            display: block;
+            height: 100%;
+            border-radius: inherit;
+            background: var(--accent-primary);
+        }
+        .usage-bar > span.warn {
+            background: var(--accent-warning);
+        }
+        .usage-bar > span.bad {
+            background: var(--accent-danger);
+        }
+        .usage-text {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-top: 6px;
+            flex-wrap: wrap;
+        }
+        .usage-text strong {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+        .pool-line {
+            font-size: 0.88rem;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+        }
+        .pool-line svg {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+            margin-top: 1px;
+        }
+        .pool-line.bad {
+            color: var(--accent-danger);
+        }
+        .pool-line.warn {
+            color: var(--accent-warning);
+        }
+        .member-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .member-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-family: var(--font-mono);
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            border: 1px solid var(--border-default);
+            border-radius: 999px;
+            padding: 2px 10px;
+        }
+        .member-chip .dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--text-tertiary);
+        }
+        .member-chip .dot.ok {
+            background: var(--accent-success);
+        }
+        .member-chip .dot.bad {
+            background: var(--accent-danger);
+        }
+        .member-chip.missing {
+            color: var(--accent-danger);
+            border-color: var(--accent-danger);
+        }
+        .pool-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: auto;
+        }
+        .pool-actions button {
+            font-size: 0.85rem;
+            padding: 6px 12px;
+        }
+        .progress-line {
+            font-size: 0.85rem;
+            color: var(--text-primary);
+        }
+        .progress-line .usage-bar {
+            margin-top: 6px;
+            height: 6px;
+        }
+        .pool-back {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 0;
+            font-size: 0.9rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 14px;
+        }
+        .pool-back:hover {
+            color: var(--text-primary);
+        }
+        .pool-detail-head {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+        .pool-detail-head h2 {
+            font-size: 1.4rem;
+            font-weight: 600;
+            margin: 0;
+        }
+        .pool-detail-head .pill {
+            margin-left: 0;
+        }
+        .pool-detail-head .pool-actions {
+            margin-left: auto;
+            margin-top: 0;
+        }
+        .pool-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-lg);
+            padding: 18px;
+            margin-bottom: 16px;
+        }
+        .pool-section h3 {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin: 0 0 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .pool-section h3 .pool-actions {
+            margin: 0 0 0 auto;
+            text-transform: none;
+            letter-spacing: 0;
+        }
+        .usage-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-top: 14px;
+        }
+        .usage-stats .k {
+            font-size: 0.76rem;
+            color: var(--text-secondary);
+        }
+        .usage-stats .v {
+            font-size: 1.15rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .member-row {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 4px 12px;
+            align-items: center;
+            padding: 12px 0;
+            border-top: 1px solid var(--border-default);
+        }
+        .member-row:first-of-type {
+            border-top: none;
+            padding-top: 0;
+        }
+        .member-row .disk-row-actions {
+            grid-column: 1 / -1;
+            margin-top: 4px;
+        }
+        .member-row .pill {
+            margin-left: 0;
+        }
+        .member-status {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+        .kv-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 14px 16px;
+            padding: 4px 18px 18px;
+        }
+        .kv-grid .k {
+            font-size: 0.76rem;
+            color: var(--text-secondary);
+            margin-bottom: 3px;
+        }
+        .kv-grid .v {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--text-primary);
+            overflow-wrap: anywhere;
+        }
+        .danger-zone {
+            border-top: 1px solid var(--border-default);
+            margin: 0 18px;
+            padding: 14px 0 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+        @media (max-width: 760px) {
+            .pool-grid {
+                grid-template-columns: 1fr;
+            }
+            .pool-detail-head .pool-actions {
+                margin-left: 0;
+                width: 100%;
+            }
+            .pool-actions button {
+                flex: 1 1 auto;
+            }
+            .usage-stats .v {
+                font-size: 1rem;
+            }
+        }
+        .disk-group {
+            margin-bottom: 24px;
+        }
+        .disk-group-title {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin: 0 0 10px;
+        }
+        .disk-group-hint {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            margin: -4px 0 10px;
+        }
+        .disk-row {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 4px 14px;
+            align-items: center;
+            background: var(--bg-card);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-lg);
+            padding: 14px 16px;
+            margin-bottom: 8px;
+        }
+        .disk-row-icon {
+            grid-column: 1;
+            grid-row: 1 / span 2;
+            width: 36px;
+            height: 36px;
+            border-radius: var(--radius-default);
+            background: var(--bg-hover);
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .disk-row-icon svg {
+            width: 18px;
+            height: 18px;
+        }
+        .disk-row-name {
+            grid-column: 2;
+            grid-row: 1;
+            font-weight: 600;
+            color: var(--text-primary);
+            min-width: 0;
+            overflow-wrap: anywhere;
+        }
+        .disk-row .pill {
+            grid-column: 3;
+            grid-row: 1;
+        }
+        .disk-row-meta {
+            grid-column: 2 / -1;
+            grid-row: 2;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-family: var(--font-mono);
+            overflow-wrap: anywhere;
+        }
+        .disk-row-usage {
+            grid-column: 2 / -1;
+            font-size: 0.88rem;
+            color: var(--text-primary);
+            margin-top: 6px;
+        }
+        .disk-row-usage.muted {
+            color: var(--text-secondary);
+        }
+        .disk-row-actions {
+            grid-column: 2 / -1;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .disk-row-actions button {
+            font-size: 0.85rem;
+            padding: 6px 12px;
+        }
+        .btn-erase {
+            border-color: var(--accent-danger);
+            color: var(--accent-danger);
+        }
+        .btn-quiet {
+            background: transparent;
+            border-color: transparent;
+            color: var(--text-secondary);
+        }
+        .btn-quiet:hover {
+            color: var(--text-primary);
+            border-color: var(--border-default);
+        }
+        .choice-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 1rem;
+            text-align: left;
+        }
+        .choice {
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            padding: 10px 12px;
+            cursor: pointer;
+        }
+        .choice:has(input:checked) {
+            border-color: var(--accent-primary);
+        }
+        .choice input {
+            width: auto;
+            margin-top: 3px;
+            accent-color: var(--accent-primary);
+        }
+        .choice strong {
+            display: block;
+            color: var(--text-primary);
+        }
+        .choice span {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+        @media (max-width: 760px) {
+            .disk-row {
+                padding: 12px;
+                gap: 4px 10px;
+            }
+            .disk-row-usage,
+            .disk-row-actions {
+                grid-column: 1 / -1;
+            }
+            .disk-row-actions button {
+                flex: 1 1 auto;
+            }
+        }
     </style>
 </head>
 
@@ -230,82 +766,81 @@
             <div id="update-banner-slot"></div>
             <div style="margin-bottom: 24px;">
                 <h1 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 4px;">Storage Management</h1>
-                <p style="color: var(--text-secondary); font-size: 0.95rem;">Manage disks, create pools, and configure
-                    shares.</p>
+                <p style="color: var(--text-secondary); font-size: 0.95rem;">Pools hold your data, disks make up pools,
+                    and shares make folders reachable on your network.</p>
             </div>
 
             <!-- Tab Navigation (ID preserved for potential logic, usually class based) -->
             <div class="tab-nav">
-                <button class="tab-btn active" data-tab="disks"><i data-lucide="disc" aria-hidden="true"></i> Disks</button>
-                <button class="tab-btn" data-tab="pools"><i data-lucide="database" aria-hidden="true"></i> Pools</button>
+                <button class="tab-btn active" data-tab="pools"><i data-lucide="database" aria-hidden="true"></i> Pools</button>
+                <button class="tab-btn" data-tab="disks"><i data-lucide="disc" aria-hidden="true"></i> Disks</button>
                 <button class="tab-btn" data-tab="shares"><i data-lucide="network" aria-hidden="true"></i> Shares</button>
                 <button class="tab-btn" data-tab="users"><i data-lucide="users" aria-hidden="true"></i> Users</button>
             </div>
 
+            <!-- Pools Tab -->
+            <div class="tab-content active" id="tab-pools">
+                <div id="pools-overview">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <h2
+                            style="font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em;">
+                            Storage Pools</h2>
+                        <button id="create-pool-btn" class="btn-primary" style="padding: 4px 10px; font-size: 0.85rem;"><i data-lucide="plus" aria-hidden="true"></i>
+                            Create Pool</button>
+                    </div>
+                    <div id="pools-container" class="pool-grid">
+                        <div style="padding: 2rem; text-align:center; color: var(--text-secondary);">Loading pools...</div>
+                    </div>
+                </div>
+                <div id="pool-detail" hidden></div>
+            </div>
             <!-- Disks Tab -->
-            <div class="tab-content active" id="tab-disks">
+            <div class="tab-content" id="tab-disks">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
                     <h2
                         style="font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em;">
-                        Available Disks</h2>
+                        Disks</h2>
                     <button id="refresh-disks-btn" class="btn-secondary"
                         style="padding: 4px 10px; font-size: 0.85rem;"><i data-lucide="refresh-cw" aria-hidden="true"></i> Refresh</button>
                 </div>
-                <div id="disks-container" class="dashboard-grid">
-                    <div style="padding: 2rem; text-align:center; color: var(--text-secondary); grid-column: 1/-1;">
+                <div id="disks-container">
+                    <div style="padding: 2rem; text-align:center; color: var(--text-secondary);">
                         Loading disks...</div>
-                </div>
-            </div>
-
-            <!-- Pools Tab -->
-            <div class="tab-content" id="tab-pools">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                    <h2
-                        style="font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em;">
-                        Storage Pools</h2>
-                    <button id="create-pool-btn" class="btn-primary" style="padding: 4px 10px; font-size: 0.85rem;"><i data-lucide="plus" aria-hidden="true"></i>
-                        Create Pool</button>
-                </div>
-                <div id="pools-container" class="dashboard-grid">
-                    <div style="padding: 2rem; text-align:center; color: var(--text-secondary); grid-column: 1/-1;">
-                        No pools found. <br> <span style="font-size:0.85rem;">Create a pool to start.</span>
-                    </div>
                 </div>
             </div>
 
             <!-- Shares Tab -->
             <div class="tab-content" id="tab-shares">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 12px;">
                     <h2
                         style="font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em;">
-                        Network Shares</h2>
+                        Shared folders</h2>
                     <button id="create-share-btn" class="btn-primary" style="padding: 4px 10px; font-size: 0.85rem;"><i data-lucide="plus" aria-hidden="true"></i>
-                        Create Share</button>
+                        Share a folder</button>
                 </div>
-                <div id="shares-container" class="dashboard-grid">
-                    <div style="padding: 2rem; text-align:center; color: var(--text-secondary); grid-column: 1/-1;">
-                        No shares configured.
-                    </div>
+                <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 16px;">
+                    Folders that computers and phones on your network can open, like a drive.
+                </p>
+                <div id="shares-container" class="pool-grid">
+                    <div style="padding: 2rem; text-align:center; color: var(--text-secondary);">Loading shares...</div>
                 </div>
             </div>
 
             <!-- Users Tab -->
             <div class="tab-content" id="tab-users">
-                <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 16px;">
-                    These accounts control access to your network shares (SMB/NFS). They are separate from the
-                    AlvaOS admin login.
-                </p>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 12px;">
                     <h2
                         style="font-size: 1.1rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em;">
-                        Share Users</h2>
+                        People</h2>
                     <button id="create-user-btn" class="btn-primary" style="padding: 4px 10px; font-size: 0.85rem;"><i data-lucide="plus" aria-hidden="true"></i>
-                        Create User</button>
+                        Add a person</button>
                 </div>
-                <div id="users-container" class="dashboard-grid">
-                    <div style="padding: 2rem; text-align:center; color: var(--text-secondary); grid-column: 1/-1;">
-                        Loading users...
-                    </div>
+                <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 16px;">
+                    Everyone who opens shared folders signs in with a name and password from this list.
+                    These accounts cannot sign in to AlvaOS itself or log in over SSH.
+                </p>
+                <div id="users-container">
+                    <div style="padding: 2rem; text-align:center; color: var(--text-secondary);">Loading people...</div>
                 </div>
             </div>
 
@@ -326,6 +861,8 @@
     <script src="app.js"></script>
     <script src="password-toggle.js"></script>
     <script src="storage.js"></script>
+    <script src="storage-pools.js"></script>
+    <script src="storage-shares.js"></script>
     <script src="users.js"></script>
 </body>
 
