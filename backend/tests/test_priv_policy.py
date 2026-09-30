@@ -53,7 +53,8 @@ def test_newlines_in_arguments_are_denied():
 # ── Users and groups ─────────────────────────────────────────────────────────
 
 def test_user_management_commands_used_by_the_backend():
-    allowed('/usr/sbin/useradd', '-m', '-s', '/bin/bash', 'newuser')
+    allowed('/usr/sbin/useradd', '-M', '-s', '/usr/sbin/nologin', 'newuser')
+    allowed('/usr/sbin/usermod', '-s', '/usr/sbin/nologin', 'tim')
     allowed('/usr/sbin/userdel', 'tim')
     allowed('/usr/bin/smbpasswd', '-a', '-s', 'tim')
     allowed('/usr/bin/smbpasswd', '-x', 'tim')
@@ -66,7 +67,11 @@ def test_user_management_commands_used_by_the_backend():
     ['/usr/sbin/userdel', 'root'],
     ['/usr/sbin/userdel', 'alvaos'],
     ['/usr/sbin/useradd', '-o', '-u', '0', 'evil'],
-    ['/usr/sbin/useradd', '-m', '-s', '/bin/bash', 'root'],
+    ['/usr/sbin/useradd', '-M', '-s', '/usr/sbin/nologin', 'root'],
+    ['/usr/sbin/useradd', '-m', '-s', '/bin/bash', 'newuser'],      # share accounts get no shell
+    ['/usr/sbin/usermod', '-s', '/bin/bash', 'tim'],
+    ['/usr/sbin/usermod', '-s', '/usr/sbin/nologin', 'root'],
+    ['/usr/sbin/usermod', '-aG', 'sudo', 'tim'],
     ['/usr/bin/gpasswd', '-a', 'tim', 'sudo'],
     ['/usr/bin/gpasswd', '-a', 'tim', 'docker'],
     ['/usr/sbin/groupdel', 'sudo'],
@@ -187,6 +192,8 @@ def test_exports_only_share_data_dirs():
     plan.stdin_check(b'/mnt/alvaos/main/media *(rw,sync,no_subtree_check)\n')
     with pytest.raises(p.PolicyError):
         plan.stdin_check(b'/ *(rw,no_root_squash)\n')
+    with pytest.raises(p.PolicyError):  # remote root must stay squashed, even on data dirs
+        plan.stdin_check(b'/mnt/alvaos/main/media *(rw,no_root_squash)\n')
 
 
 def test_hosts_file():
