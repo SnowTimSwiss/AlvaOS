@@ -85,20 +85,6 @@ function unignoreDetectedPool(poolId) {
     }
 }
 
-function notifyDetectedImportCandidates(pools) {
-    const ignored = getIgnoredDetectedPools();
-    const candidates = (Array.isArray(pools) ? pools : []).filter((pool) =>
-        pool
-        && pool.is_system_pool !== true
-        && pool.is_managed === false
-        && !ignored.has(String(pool.id || ''))
-    );
-    if (!candidates.length) return;
-    if (window.showToast) {
-        window.showToast(`${candidates.length} existing Btrfs pool(s) detected. Import or create a new one in the Pools tab.`, 'warning');
-    }
-}
-
 async function importDetectedPool(poolId, poolName) {
     if (!poolId) return;
     if (!await showConfirm(`Import existing pool "${poolName || poolId}"?\n\nThis will mount it and manage it in AlvaOS.`)) {
@@ -124,75 +110,78 @@ async function importDetectedPool(poolId, poolName) {
 
         unignoreDetectedPool(poolId);
         if (window.showToast) window.showToast(result.message || 'Pool imported', 'success');
-        await loadPools();
+        showStorageTab('pools');
     } catch (error) {
         showError(`Error: ${error.message}`);
     }
 }
 
-// Tab switching
+// Tab switching. The tab is kept in the URL (#disks), so a link or a reload
+// lands on the same tab. Pools come first: that is where the data lives.
+const STORAGE_TABS = ['pools', 'disks', 'shares', 'users'];
+
+function showStorageTab(tabName) {
+    const name = STORAGE_TABS.includes(tabName) ? tabName : 'pools';
+    document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+    document.querySelectorAll('.tab-content').forEach((c) => c.classList.toggle('active', c.id === `tab-${name}`));
+    if (location.hash.slice(1) !== name) {
+        history.replaceState(null, '', name === 'pools' ? location.pathname : `#${name}`);
+    }
+    if (name === 'disks') {
+        loadDisks();
+    } else if (name === 'pools') {
+        loadPools();
+    } else if (name === 'shares') {
+        loadShares();
+    } else if (name === 'users' && typeof loadUsers === 'function') {
+        loadUsers();
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
-    const tabBtns = document.querySelectorAll('.tab-btn');
-    const tabContents = document.querySelectorAll('.tab-content');
-
-    tabBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            const tabName = btn.dataset.tab;
-
-            // Update active states
-            tabBtns.forEach(b => b.classList.remove('active'));
-            tabContents.forEach(c => c.classList.remove('active'));
-
-            btn.classList.add('active');
-            document.getElementById(`tab-${tabName}`).classList.add('active');
-
-            // Load data for the selected tab
-            if (tabName === 'disks') {
-                loadDisks();
-            } else if (tabName === 'pools') {
-                loadPools();
-            } else if (tabName === 'shares') {
-                loadShares();
-            } else if (tabName === 'users' && typeof loadUsers === 'function') {
-                loadUsers();
-            }
-        });
+    document.querySelectorAll('.tab-btn').forEach((btn) => {
+        btn.addEventListener('click', () => showStorageTab(btn.dataset.tab));
     });
+    window.addEventListener('hashchange', () => showStorageTab(location.hash.slice(1)));
 
-    // Initial load
-    loadDisks();
+    showStorageTab(location.hash.slice(1));
 
-    // Event listeners
     const refreshBtn = document.getElementById('refresh-disks-btn');
     if (refreshBtn) refreshBtn.addEventListener('click', loadDisks);
 
     const createPoolBtn = document.getElementById('create-pool-btn');
-    if (createPoolBtn) createPoolBtn.addEventListener('click', showCreatePoolDialog);
+    if (createPoolBtn) createPoolBtn.addEventListener('click', () => showCreatePoolDialog());
 
     const createShareBtn = document.getElementById('create-share-btn');
     if (createShareBtn) createShareBtn.addEventListener('click', showCreateShareDialog);
 });
 
 // Load Disks
+let storagePoolsCache = [];
+
 async function loadDisks() {
     const container = document.getElementById('disks-container');
     const refreshBtn = document.getElementById('refresh-disks-btn');
 
-    container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 2rem;"><div class="spinner"></div><p style="color: var(--text-secondary); margin-top: 1rem;">Loading disks...</p></div>';
+    container.innerHTML = '<div style="text-align: center; padding: 2rem;"><div class="spinner"></div><p style="color: var(--text-secondary); margin-top: 1rem;">Loading disks...</p></div>';
     if (refreshBtn) refreshBtn.disabled = true;
 
     try {
         const token = localStorage.getItem('alvaos_token');
-        const response = await apiFetch(`${API_BASE}/storage/disks`, {
-            headers: { 'Authorization': token || '' }
-        });
+        const headers = { 'Authorization': token || '' };
+        const [response, poolsResponse] = await Promise.all([
+            apiFetch(`${API_BASE}/storage/disks`, { headers }),
+            apiFetch(`${API_BASE}/storage/pools`, { headers }).catch(() => null)
+        ]);
 
         if (!response.ok) {
             throw new Error('Failed to load disks');
         }
 
         const data = await response.json();
-        displayDisks(data.disks);
+        const poolsData = poolsResponse && poolsResponse.ok ? await poolsResponse.json() : {};
+        storagePoolsCache = Array.isArray(poolsData.pools) ? poolsData.pools : [];
+        displayDisks(data.disks, data.error);
     } catch (error) {
         console.error('Error loading disks:', error);
         renderLoadFailure(container, {
@@ -205,92 +194,158 @@ async function loadDisks() {
     }
 }
 
-// Display Disks
-function displayDisks(disks) {
+// Pools a disk can be added to: managed, not the system pool.
+function poolsForNewDisks() {
+    return storagePoolsCache.filter((pool) => pool && pool.is_managed !== false && !pool.is_system_pool);
+}
+
+function diskTitle(disk) {
+    const model = disk.model && disk.model !== 'Unknown' ? disk.model : (disk.is_removable ? 'USB disk' : 'Disk');
+    return `${model} · ${disk.size || 'unknown size'}`;
+}
+
+function diskMeta(disk) {
+    const parts = [disk.path || `/dev/${disk.name}`];
+    const transport = String(disk.transport || '').toLowerCase();
+    if (transport && transport !== 'unknown') parts.push(transport === 'nvme' ? 'NVMe' : transport.toUpperCase());
+    if (disk.serial && disk.serial !== 'N/A') parts.push(`S/N ${disk.serial}`);
+    if (disk.temp !== null && disk.temp !== undefined && disk.temp !== '') parts.push(`${disk.temp} °C`);
+    return parts.join(' · ');
+}
+
+function diskHealthPill(disk) {
+    if (disk.smart_status === 'healthy') return '<span class="pill ok">Healthy</span>';
+    if (disk.smart_status === 'failed') return '<span class="pill bad">Failing</span>';
+    return '';
+}
+
+function diskActions(disk) {
+    const usage = disk.usage || {};
+    const name = jsArg(disk.name);
+    const buttons = [];
+    if (usage.can_add_to_pool) {
+        const targets = poolsForNewDisks();
+        buttons.push(`<button type="button" class="${targets.length ? 'btn-secondary' : 'btn-primary'}" onclick="createPoolWithDisk('${name}')">Create pool</button>`);
+        if (targets.length) {
+            buttons.push(`<button type="button" class="btn-primary" onclick="addDiskToPool('${name}')">${targets.length === 1 ? `Add to “${escapeHtml(targets[0].name)}”` : 'Add to a pool'}</button>`);
+        }
+    }
+    if (usage.role === 'other_pool' && usage.pool_id) {
+        buttons.push(`<button type="button" class="btn-secondary" onclick="importDetectedPool('${jsArg(usage.pool_id)}', '${jsArg(usage.pool_name || '')}')">Import pool</button>`);
+    }
+    if (usage.role === 'pool') {
+        buttons.push(`<button type="button" class="btn-secondary" onclick="showStorageTab('pools')">Open pool</button>`);
+    }
+    if (usage.can_erase) {
+        buttons.push(`<button type="button" class="btn-secondary btn-erase" onclick="wipeDisk('${name}')">Erase disk</button>`);
+    }
+    buttons.push(`<button type="button" class="btn-secondary btn-quiet" onclick="viewDiskDetails('${name}')">Health details</button>`);
+    return buttons.join('');
+}
+
+function renderDiskRow(disk) {
+    const usage = disk.usage || {};
+    const icon = disk.is_removable ? 'plug-zap' : (usage.role === 'system' ? 'server' : 'hard-drive');
+    const quiet = ['system', 'in_use'].includes(usage.role);
+    return `
+        <div class="disk-row" data-disk="${escapeHtml(disk.name)}" data-role="${escapeHtml(usage.role || '')}">
+            <div class="disk-row-icon">${window.alvaIcon ? window.alvaIcon(icon, '', 'aria-hidden="true"') : ''}</div>
+            <div class="disk-row-name">${escapeHtml(diskTitle(disk))}</div>
+            ${diskHealthPill(disk)}
+            <div class="disk-row-meta">${escapeHtml(diskMeta(disk))}</div>
+            <div class="disk-row-usage${quiet ? ' muted' : ''}">${escapeHtml(usage.summary || '')}</div>
+            <div class="disk-row-actions">${diskActions(disk)}</div>
+        </div>
+    `;
+}
+
+// Display Disks, grouped by what they are used for.
+function displayDisks(disks, notice) {
     storageDisksCache = Array.isArray(disks) ? disks : [];
     const container = document.getElementById('disks-container');
 
-    if (!disks || disks.length === 0) {
-        container.innerHTML = '<p style="text-align: center; color: var(--text-secondary); grid-column: 1/-1;">No disks detected.</p>';
+    if (!storageDisksCache.length) {
+        container.innerHTML = `<p style="text-align: center; color: var(--text-secondary); padding: 2rem 0;">${escapeHtml(notice || 'No disks detected. Connect a disk and press Refresh.')}</p>`;
         return;
     }
 
-    container.innerHTML = '';
-
-    disks.forEach(disk => {
-        const diskCard = document.createElement('div');
-        diskCard.className = 'card';
-        if (disk.is_system_disk) {
-            diskCard.style.borderLeft = '3px solid var(--accent-warning)';
+    const role = (disk) => (disk.usage && disk.usage.role) || '';
+    const groups = [
+        {
+            title: 'Available',
+            hint: 'Not part of a pool yet. Empty disks can be added right away; disks with old data need to be erased first.',
+            disks: storageDisksCache.filter((d) => ['empty', 'has_data', 'other_pool'].includes(role(d)))
+        },
+        {
+            title: 'In use by AlvaOS',
+            disks: storageDisksCache.filter((d) => ['pool', 'system'].includes(role(d)))
+        },
+        {
+            title: 'Used outside AlvaOS',
+            hint: 'Mounted by something other than AlvaOS. They are left alone.',
+            disks: storageDisksCache.filter((d) => role(d) === 'in_use' || !role(d))
         }
+    ];
 
-        // Status indicator
-        let statusColor = 'var(--text-secondary)';
-        let statusText = 'Unknown';
-        if (disk.smart_status === 'healthy') {
-            statusColor = 'var(--accent-success)';
-            statusText = 'Healthy';
-        } else if (disk.smart_status === 'failed') {
-            statusColor = 'var(--accent-danger)';
-            statusText = 'Failed';
-        }
+    container.innerHTML = groups.filter((g) => g.disks.length).map((g) => `
+        <section class="disk-group">
+            <h3 class="disk-group-title">${escapeHtml(g.title)}</h3>
+            ${g.hint ? `<p class="disk-group-hint">${escapeHtml(g.hint)}</p>` : ''}
+            ${g.disks.map(renderDiskRow).join('')}
+        </section>
+    `).join('');
+}
 
-        diskCard.innerHTML = `
-            <div class="card-header">
-                <div class="card-title">
-                    ${window.alvaIcon ? window.alvaIcon(disk.is_removable ? 'plug-zap' : 'disc-3', '', 'aria-hidden="true"') : ''} /dev/${escapeHtml(disk.name)}
+function createPoolWithDisk(diskName) {
+    const disk = storageDisksCache.find((d) => d.name === diskName);
+    showCreatePoolDialog(disk ? [disk.path] : []);
+}
+
+async function addDiskToPool(diskName) {
+    const disk = storageDisksCache.find((d) => d.name === diskName);
+    const targets = poolsForNewDisks();
+    if (!disk || !targets.length) return;
+    let pool = targets[0];
+    if (targets.length > 1) {
+        pool = await choosePool(targets);
+        if (!pool) return;
+    }
+    showExpandPoolDialog(pool.id, pool.name, [disk.path]);
+}
+
+function choosePool(pools) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = `
+            <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="choose-pool-title" style="max-width: 420px;">
+                <div class="modal-title" id="choose-pool-title">
+                    <span>Add to which pool?</span>
+                    <button type="button" class="modal-close-x" aria-label="Close">&times;</button>
                 </div>
-                <div style="font-size: 0.8rem; font-weight: 600; color: ${statusColor}; display: flex; align-items: center; gap: 4px;">
-                    <div style="width: 8px; height: 8px; border-radius: 50%; background: ${statusColor};"></div>
-                    ${statusText}
+                <div class="choice-list">
+                    ${pools.map((p, i) => `
+                        <label class="choice">
+                            <input type="radio" name="choose-pool" value="${i}" ${i === 0 ? 'checked' : ''}>
+                            <div><strong>${escapeHtml(p.name)}</strong><span>${escapeHtml(p.used_size || '?')} used of ${escapeHtml(p.total_size || '?')}</span></div>
+                        </label>
+                    `).join('')}
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" data-act="cancel">Cancel</button>
+                    <button type="button" class="btn-primary" data-act="ok">Continue</button>
                 </div>
             </div>
-            
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
-                <div>
-                    <span class="setting-label">Model</span>
-                    <span class="setting-val">${escapeHtml(disk.model)}</span>
-                </div>
-                <div>
-                    <span class="setting-label">Size</span>
-                    <span class="setting-val">${escapeHtml(disk.size)}</span>
-                </div>
-                <div>
-                    <span class="setting-label">Serial</span>
-                    <span class="setting-val" style="font-size: 0.8rem;">${escapeHtml(disk.serial)}</span>
-                </div>
-                <div>
-                    <span class="setting-label">Filesystem</span>
-                    <span class="setting-val">${escapeHtml(disk.fstype || 'None')}</span>
-                </div>
-                <div style="grid-column: 1 / -1;">
-                    <span class="setting-label">Mount Point</span>
-                    <span class="setting-val">${escapeHtml(disk.mountpoint || 'Not mounted')}</span>
-                </div>
-            </div>
-
-            <div style="display: flex; gap: 8px; margin-top: auto;">
-                ${!disk.is_system_disk ? `
-                    <button onclick="wipeDisk('${jsArg(disk.name)}')" class="btn-secondary"
-                        style="flex: 1; border-color: var(--accent-danger); color: var(--accent-danger); font-size: 0.85rem;"
-                        title="Completely erase disk">
-                        Wipe
-                    </button>
-                ` : ''}
-                <button onclick="viewDiskDetails('${jsArg(disk.name)}')" class="btn-secondary"
-                    style="flex: 2; font-size: 0.85rem;">
-                    Health Details
-                </button>
-            </div>
-            
-            ${disk.is_system_disk ? `
-                <div style="margin-top: 12px; font-size: 0.75rem; color: var(--accent-warning); display: flex; align-items: center; gap: 4px;">
-                    <span>${window.alvaIcon ? window.alvaIcon('triangle-alert', '', 'aria-hidden="true"') : '!'}</span> System Disk - Restricted Actions
-                </div>
-            ` : ''}
         `;
-
-        container.appendChild(diskCard);
+        document.body.appendChild(overlay);
+        const close = (value) => { overlay.remove(); resolve(value); };
+        overlay.querySelector('.modal-close-x').onclick = () => close(null);
+        overlay.querySelector('[data-act="cancel"]').onclick = () => close(null);
+        overlay.querySelector('[data-act="ok"]').onclick = () => {
+            const picked = overlay.querySelector('input[name="choose-pool"]:checked');
+            close(picked ? pools[Number(picked.value)] : null);
+        };
+        attachModalDismiss(overlay, () => close(null));
     });
 }
 
@@ -311,7 +366,6 @@ async function loadPools() {
 
         const data = await response.json();
         const allPools = Array.isArray(data.pools) ? data.pools : [];
-        notifyDetectedImportCandidates(allPools);
         const ignored = getIgnoredDetectedPools();
         const visiblePools = allPools.filter((pool) => (
             pool && (pool.is_managed !== false || !ignored.has(String(pool.id || '')))
@@ -366,10 +420,10 @@ function displayPools(pools) {
             ? 'var(--accent-warning)'
             : 'var(--accent-success)';
         const statusText = !isManaged && !isSystemPool
-            ? 'DETECTED (NOT IMPORTED)'
+            ? 'Not imported'
             : isDegraded
-            ? (isSystemPool ? 'SYSTEM POOL - DEGRADED' : 'DEGRADED')
-            : (isSystemPool ? 'SYSTEM POOL' : 'Active');
+            ? (isSystemPool ? 'System pool · degraded' : 'Degraded')
+            : (isSystemPool ? 'System pool' : 'Active');
         const actionsHtml = isSystemPool
             ? `
                 <div style="display: flex; gap: 8px; margin-top: auto; flex-wrap: wrap;">
@@ -381,7 +435,7 @@ function displayPools(pools) {
                     </button>`
                         : `<button class="btn-secondary" disabled style="flex: 1; min-width: 100px; font-size: 0.85rem; opacity: 0.6; cursor: not-allowed;">Expand</button>`
                     }
-                    <button class="btn-secondary" disabled style="flex: 1; min-width: 100px; font-size: 0.85rem; opacity: 0.6; cursor: not-allowed;">Delete</button>
+                    <button class="btn-secondary" disabled style="flex: 1; min-width: 100px; font-size: 0.85rem; opacity: 0.6; cursor: not-allowed;">Remove</button>
                 </div>
                 <div style="margin-top: 12px; font-size: 0.75rem; color: var(--accent-warning); display: flex; align-items: center; gap: 4px;">
                     <span>!</span> ${isRedundantRaid ? 'System Pool - mirrored. You may replace a failed mirror disk.' : 'System Pool - Restricted Actions'}
@@ -418,8 +472,8 @@ function displayPools(pools) {
                         ${isDegraded ? 'Replace / Expand' : 'Expand'}
                     </button>
                     <button onclick="deletePool('${jsArg(pool.id)}', '${jsArg(pool.name)}')" class="btn-secondary" 
-                        style="flex: 1; min-width: 100px; font-size: 0.85rem; border-color: var(--accent-danger); color: var(--accent-danger);">
-                        Delete
+                        style="flex: 1; min-width: 100px; font-size: 0.85rem;">
+                        Remove
                     </button>
                 </div>
             `);
@@ -605,24 +659,17 @@ function formatSmbPermissions(share) {
     return entries.map(([user, role]) => `${user} (${role})`).join(', ');
 }
 
-// Initialize Disk
-async function initializeDisk(diskName) {
-    if (!await confirmDanger(`Initialize /dev/${diskName}?\n\nThis will erase all data on the disk.`, null, {
-        confirmLabel: 'Initialize Disk',
-        requireCheckbox: `I confirm that I want to initialize /dev/${diskName} and understand this erases all data.`,
-        details: diskDetailsForConfirm(diskName)
-    })) {
-        return;
-    }
-
-    if (window.showToast) window.showToast('Disk initialization will be implemented in the next phase.', 'warning');
-}
-
-// Wipe Disk
+// Erase a disk that still holds old data, so it can go into a pool.
 async function wipeDisk(diskName) {
-    if (!await confirmDanger(`Wipe /dev/${diskName}?\n\nAll data, partitions, and file systems will be permanently erased.`, null, {
-        confirmLabel: 'Wipe Disk',
-        requireCheckbox: `I confirm that I want to wipe /dev/${diskName} and understand this erases all data.`,
+    const disk = storageDisksCache.find((item) => item.name === diskName) || {};
+    const usage = disk.usage || {};
+    const what = usage.role === 'other_pool'
+        ? `It holds the Btrfs pool "${usage.pool_name || 'unknown'}". Everything in that pool is deleted.`
+        : 'Everything on it is deleted: files, partitions and file systems.';
+    if (!await confirmDanger(`Erase ${disk.path || `/dev/${diskName}`}?\n\n${what} Your pools and other disks are not touched.`, null, {
+        confirmLabel: 'Erase disk',
+        requireCheckbox: `I understand that the data on ${disk.path || `/dev/${diskName}`} is gone for good.`,
+        warning: 'This cannot be undone.',
         details: diskDetailsForConfirm(diskName)
     })) {
         return;
@@ -630,18 +677,19 @@ async function wipeDisk(diskName) {
 
     const token = localStorage.getItem('alvaos_token');
     try {
-        const response = await apiFetch(`${API_BASE}/storage/disks/${diskName}/wipe`, {
+        const response = await apiFetch(`${API_BASE}/storage/disks/${encodeURIComponent(diskName)}/wipe`, {
             method: 'POST',
             headers: { 'Authorization': token || '' }
         });
 
         const result = await response.json();
-        if (!response.ok) throw new Error(result.error || 'Failed to wipe disk');
+        if (!response.ok) throw new Error(result.error || 'The disk could not be erased.');
 
         showSuccess(result.message);
         loadDisks();
     } catch (error) {
-        showError(`Error: ${error.message}`);
+        showError(error.message);
+        loadDisks();
     }
 }
 
@@ -779,25 +827,51 @@ async function viewDiskDetails(diskName) {
 }
 
 // Show Create Pool Dialog
-async function showCreatePoolDialog() {
-    // Fetch available disks
+// Disks that may go into a pool (empty ones), from a fresh disk list. When
+// none are free, explains why and opens the Disks tab, where it can be fixed.
+async function loadEmptyDisks() {
     const token = localStorage.getItem('alvaos_token');
     const response = await apiFetch(`${API_BASE}/storage/disks`, {
         headers: { 'Authorization': token || '' }
     });
-
     if (!response.ok) {
-        showError('Failed to load disks');
-        return;
+        showError('Could not read the disks.');
+        return null;
     }
-
     const data = await response.json();
-    const availableDisks = data.disks.filter(d => !d.is_system_disk && d.fstype === 'none');
-
-    if (availableDisks.length === 0) {
-        showError('No available disks found.\n\nAll disks are either in use or are system disks.');
-        return;
+    const disks = Array.isArray(data.disks) ? data.disks : [];
+    storageDisksCache = disks;
+    const empty = disks.filter((d) => d.usage && d.usage.can_add_to_pool);
+    if (!empty.length) {
+        const withData = disks.filter((d) => d.usage && d.usage.can_erase).length;
+        showNotification(withData
+            ? `No empty disk. ${withData} disk(s) still have old data; erase one on the Disks tab to use it.`
+            : 'No empty disk. Connect a new disk to create or grow a pool.', 'warning');
+        showStorageTab('disks');
+        return null;
     }
+    return { empty, withData: disks.filter((d) => d.usage && d.usage.can_erase).length };
+}
+
+function diskChoiceHtml(disk, className, checked) {
+    return `
+        <label style="display: flex; align-items: center; padding: 0.5rem; cursor: pointer; border-radius: 4px;">
+            <input type="checkbox" value="${escapeHtml(disk.path)}" class="${className}" ${checked ? 'checked' : ''}
+                style="margin-right: 0.75rem; accent-color: var(--accent-primary);">
+            <div>
+                <div style="font-weight: 600;">${escapeHtml(diskTitle(disk))}</div>
+                <div style="font-size: 0.8rem; color: var(--text-secondary); font-family: var(--font-mono);">${escapeHtml(diskMeta(disk))}</div>
+            </div>
+        </label>
+    `;
+}
+
+async function showCreatePoolDialog(preselect = []) {
+    const token = localStorage.getItem('alvaos_token');
+    const found = await loadEmptyDisks();
+    if (!found) return;
+    const availableDisks = found.empty;
+    const preselected = new Set(Array.isArray(preselect) ? preselect : []);
 
     // Create modal
     const modal = document.createElement('div');
@@ -825,20 +899,12 @@ async function showCreatePoolDialog() {
 
         <div style="margin-bottom: 1.5rem;">
             <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Select Disks</label>
-            <div id="disk-selection" style="max-height: 200px; overflow-y: auto; border: 1px solid var(--bg-border); border-radius: 4px; padding: 0.5rem;">
-                ${availableDisks.map(disk => `
-                    <label style="display: flex; align-items: center; padding: 0.5rem; cursor: pointer; border-radius: 4px;">
-                        <input type="checkbox" value="${escapeHtml(disk.path)}" class="disk-checkbox" 
-                            style="margin-right: 0.75rem; accent-color: var(--accent-primary);">
-                        <div>
-                            <div style="font-weight: 600;">${disk.name} - ${disk.size}</div>
-                            <div style="font-size: 0.875rem; color: var(--text-secondary);">${escapeHtml(disk.model)}</div>
-                        </div>
-                    </label>
-                `).join('')}
+            <div id="disk-selection" style="max-height: 240px; overflow-y: auto; border: 1px solid var(--bg-border); border-radius: 4px; padding: 0.5rem;">
+                ${availableDisks.map((disk) => diskChoiceHtml(disk, 'disk-checkbox', preselected.has(disk.path))).join('')}
             </div>
             <p style="font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.5rem;">
-                Selected: <span id="selected-count">0</span> disk(s)
+                Selected: <span id="selected-count">${availableDisks.filter((d) => preselected.has(d.path)).length}</span> disk(s).
+                Only empty disks are listed${found.withData ? `; ${found.withData} disk(s) with old data can be erased on the Disks tab` : ''}.
             </p>
         </div>
 
@@ -1028,9 +1094,9 @@ async function showCreatePoolDialog() {
 
             showSuccess(result.message);
             modal.remove();
-            loadPools();
+            showStorageTab('pools');
         } catch (error) {
-            showError(`Error: ${error.message}`);
+            showError(error.message);
             createBtn.disabled = false;
             createBtn.textContent = 'Create Pool';
             createBtn.style.opacity = '1';
@@ -1039,26 +1105,12 @@ async function showCreatePoolDialog() {
 }
 
 // Show Expand Pool Dialog
-async function showExpandPoolDialog(poolId, poolName) {
+async function showExpandPoolDialog(poolId, poolName, preselect = []) {
     const token = localStorage.getItem('alvaos_token');
-
-    // Fetch available disks
-    const disksResponse = await apiFetch(`${API_BASE}/storage/disks`, {
-        headers: { 'Authorization': token || '' }
-    });
-
-    if (!disksResponse.ok) {
-        showError('Failed to load disks');
-        return;
-    }
-
-    const disksData = await disksResponse.json();
-    const availableDisks = disksData.disks.filter(d => !d.is_system_disk && d.fstype === 'none');
-
-    if (availableDisks.length === 0) {
-        showError('No available disks found to expand the pool.');
-        return;
-    }
+    const found = await loadEmptyDisks();
+    if (!found) return;
+    const availableDisks = found.empty;
+    const preselected = new Set(Array.isArray(preselect) ? preselect : []);
 
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
@@ -1077,15 +1129,7 @@ async function showExpandPoolDialog(poolId, poolName) {
         </p>
 
         <div style="max-height: 200px; overflow-y: auto; border: 1px solid var(--bg-border); border-radius: 4px; padding: 0.5rem; margin-bottom: 1.5rem;">
-            ${availableDisks.map(disk => `
-                <label style="display: flex; align-items: center; padding: 0.5rem; cursor: pointer;">
-                    <input type="checkbox" value="${escapeHtml(disk.path)}" class="expand-disk-checkbox" style="margin-right: 0.75rem;">
-                    <div>
-                        <div style="font-weight: 600; color: var(--text-primary);">${disk.name} - ${disk.size}</div>
-                        <div style="font-size: 0.75rem; color: var(--text-secondary);">${escapeHtml(disk.model)}</div>
-                    </div>
-                </label>
-            `).join('')}
+            ${availableDisks.map((disk) => diskChoiceHtml(disk, 'expand-disk-checkbox', preselected.has(disk.path))).join('')}
         </div>
         
         <div style="display: flex; gap: 0.75rem;">
@@ -1134,23 +1178,68 @@ async function showExpandPoolDialog(poolId, poolName) {
 
             showNotification(result.message, 'success');
             modal.remove();
-            loadPools();
+            showStorageTab('pools');
         } catch (error) {
-            showError(`Error: ${error.message}`);
+            showError(error.message);
         }
     };
 }
 
-// Delete Pool
+// Remove a pool from AlvaOS. By default its data stays on the disks, so the
+// pool can be imported again; erasing the disks is an explicit second choice.
+function askHowToRemovePool(poolName) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = `
+            <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="remove-pool-title" style="max-width: 480px;">
+                <div class="modal-title" id="remove-pool-title">
+                    <span>Remove pool “${escapeHtml(poolName)}”?</span>
+                    <button type="button" class="modal-close-x" aria-label="Close">&times;</button>
+                </div>
+                <div class="modal-body" style="text-align: left;">
+                    The pool is unmounted and disappears from AlvaOS. Shares on it must be deleted first, and apps using it must be stopped.
+                    <div class="choice-list">
+                        <label class="choice">
+                            <input type="radio" name="remove-pool-mode" value="keep" checked>
+                            <div><strong>Keep the data</strong><span>The files stay on the disks. You can import the pool again at any time, here or on another AlvaOS.</span></div>
+                        </label>
+                        <label class="choice">
+                            <input type="radio" name="remove-pool-mode" value="erase">
+                            <div><strong>Erase the disks</strong><span>Every file in the pool is deleted for good, and the disks become empty for a new pool.</span></div>
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" data-act="cancel">Cancel</button>
+                    <button type="button" class="btn-primary" data-act="ok">Remove pool</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        const okBtn = overlay.querySelector('[data-act="ok"]');
+        const sync = () => {
+            const erase = overlay.querySelector('input[value="erase"]').checked;
+            okBtn.textContent = erase ? 'Remove and erase' : 'Remove pool';
+            okBtn.style.background = erase ? 'var(--accent-danger)' : '';
+        };
+        overlay.querySelectorAll('input[name="remove-pool-mode"]').forEach((el) => el.addEventListener('change', sync));
+        const close = (value) => { overlay.remove(); resolve(value); };
+        overlay.querySelector('.modal-close-x').onclick = () => close(null);
+        overlay.querySelector('[data-act="cancel"]').onclick = () => close(null);
+        okBtn.onclick = () => close(overlay.querySelector('input[value="erase"]').checked ? 'erase' : 'keep');
+        attachModalDismiss(overlay, () => close(null));
+    });
+}
+
 async function deletePool(poolId, poolName) {
-    if (!await confirmDanger(`Delete pool "${poolName}"?\n\nThis will unmount the pool from AlvaOS management. It will not erase the pool data.`, null, {
-        confirmLabel: 'Delete Pool',
-        requireCheckbox: `I confirm that I want to delete pool "${poolName}".`,
-        warning: 'Make sure no active shares, apps, or backup jobs depend on this pool.',
-        details: [
-            { label: 'Pool', value: poolName },
-            { label: 'Pool ID', value: poolId }
-        ]
+    const mode = await askHowToRemovePool(poolName);
+    if (!mode) return;
+    const erase = mode === 'erase';
+    if (erase && !await confirmDanger(`Erase every disk of pool "${poolName}"?\n\nAll files in this pool are deleted. This cannot be undone.`, poolName, {
+        confirmLabel: 'Erase disks',
+        warning: 'Only continue if you have a copy of anything you still need.',
+        details: [{ label: 'Pool', value: poolName }]
     })) {
         return;
     }
@@ -1163,19 +1252,19 @@ async function deletePool(poolId, poolName) {
                 'Authorization': token || '',
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ pool_id: poolId })
+            body: JSON.stringify({ pool_id: poolId, erase })
         });
 
         const result = await response.json();
 
         if (!response.ok) {
-            throw new Error(result.error || 'Failed to delete pool');
+            throw new Error(result.error || 'The pool could not be removed.');
         }
 
-        showSuccess(result.message);
+        showNotification(result.message, result.failed ? 'warning' : 'success');
         loadPools();
     } catch (error) {
-        showError(`Error: ${error.message}`);
+        showError(error.message);
     }
 }
 

@@ -15,6 +15,38 @@ How to add an entry:
 
 ---
 
+## 2026-09-30 · Storage: disks with data are never erased by surprise
+
+- **Found:** "Wipe" was offered on every non-system disk, lazily unmounted
+  whatever was mounted and erased it, including members of an active pool.
+  Creating or growing a pool ran `mkfs -f` / `btrfs device add` on any disk
+  whose top level had no file system, so a USB disk with partitions was fair
+  game. "Delete pool" said the data would stay, then ran `wipefs` on every
+  member.
+- **Disk roles:** each disk now has one role (system, pool, in use, other
+  pool, old data, empty) with a plain sentence. Only disks with old data can
+  be erased, only empty disks can go into a pool; the API enforces both and
+  answers 409 otherwise. Virtual devices (zram, loop, NBD vaults) are hidden.
+- **Privilege helper:** `wipefs`, `mkfs.btrfs` and `btrfs device add` refuse a
+  device that is mounted, swap, part of a mounted Btrfs pool or held by
+  LUKS/LVM/md, read from `/proc` and `/sys`.
+- **Remove pool:** keeps the data by default (the pool can be imported
+  again); erasing the disks is an explicit choice with the pool name typed.
+  A pool that is still shared or busy is not removed.
+- **Storage page:** Pools is the first tab, the tab is kept in the URL
+  (`storage.html#disks`). Disks are grouped (available, in use by AlvaOS,
+  used elsewhere) and each shows only the actions its role allows: Create
+  pool / Add to pool, Import pool, Erase disk. The create and expand dialogs
+  list only empty disks and say how many were left out. The repeated "pools
+  detected" toast is gone; the Pools tab shows the card.
+- Tests: `test_storage_disks.py` (roles, endpoints) and new policy cases.
+  Checked in a browser with mocked disk data at desktop and phone width, and
+  against the real backend in a Linux container.
+- **Note for next time:** needs a check on real disks: a pool across two
+  disks (both show "Part of the pool"), a used USB disk (offered for erase,
+  not for a pool), and Remove pool with and without erasing. Locally,
+  `test_backup_manager.py` fails unless `btrfs-progs` is installed.
+
 ## 2026-09-29 · Backup page: simple by default
 
 - **Data and System tabs:** the status card now says in one sentence when the
