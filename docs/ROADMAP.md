@@ -62,7 +62,7 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 - AI chatbot via ollama cloud integration or any other api.
 - you can toggle it completely off or on
 - new page in setup
-- it can do everything that a person can in the ui
+- it can do everything that a person can in the ui (permissions can be changed from read only to approve to NOT RECOMMENDED everything)
 
 ---
 
@@ -91,4 +91,3 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 ### Quality
 - Tests for every backend change. Browser checks at desktop and phone width for every UI change.
 - Fix the tests that write to `/var/lib/alvaos/sessions.json` on a developer machine.
-- A `CLAUDE.md` with setup notes for contributors and agents (test dependencies, running the backend locally, Playwright).
