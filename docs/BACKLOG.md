@@ -15,6 +15,33 @@ How to add an entry:
 
 ---
 
+## 2026-09-30 · Storage: pools at a glance, replace and data check ([#4](https://github.com/SnowTimSwiss/AlvaOS/pull/4))
+
+- **Pools tab:** one card per pool with a usage bar (used, free, size), the
+  protection in plain words ("Mirrored: one disk can fail"), its disks with a
+  health dot, running jobs with progress, and the actions that matter now:
+  Add disk, Replace disk (when degraded or a disk reports errors), Import.
+- **Pool detail** (`storage.html#pool=<id>`, survives a reload): usage first,
+  then activity (replace, balance, data check with progress and the last
+  result), the disks with SMART and btrfs error counters and Replace per
+  disk, folders, and technical details (profile, mount point, UUID, members,
+  error counters, Remove pool) folded away.
+- **Backend:** `btrfs filesystem show` is parsed per member (devid, size,
+  missing), pools report usage in bytes, and there are new endpoints for
+  activity, replace (`btrfs replace start -B`, empty target at least as
+  large) and data check (`btrfs scrub start -B`, cancel). One long job per
+  pool at a time. The helper allows exactly these commands.
+- Disk sizes now come from `lsblk -b`, so sizes can be compared.
+- Tests: parsers with real `btrfs` output, the new endpoints and policy rules.
+  Checked in a browser with mocked data at desktop and phone width; the
+  member parsing was checked against a real degraded Btrfs on loop devices.
+- **Note for next time:** a redundant pool with a missing disk does not mount
+  at boot (`mount` without `-o degraded`), so Replace is only reachable while
+  it stays mounted. Mounting degraded automatically needs a policy rule and a
+  decision. Replacing with a larger disk does not grow the pool yet
+  (`btrfs filesystem resize <devid>:max`). Tests leave sessions in
+  `/var/lib/alvaos/sessions.json` on a dev machine; this predates this PR.
+
 ## 2026-09-30 · Storage: disks with data are never erased by surprise ([#4](https://github.com/SnowTimSwiss/AlvaOS/pull/4))
 
 - **Found:** "Wipe" was offered on every non-system disk, lazily unmounted

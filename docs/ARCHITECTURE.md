@@ -59,6 +59,13 @@ Features storage pools (easy disk expansion), snapshots, background rebalancing,
 
 Only empty disks go into a pool, so `mkfs` and `btrfs device add` never destroy data by surprise. Removing a pool keeps its data on the disks (it can be imported again) unless the user explicitly chooses to erase them; a pool that is still shared or busy is not removed. Virtual devices (zram, loop, NBD vaults, optical drives) are not listed.
 
+**Pool maintenance.** The Pools tab shows each pool's usage, protection and disks; a pool's detail (`storage.html#pool=<id>`) adds its activity and per-disk health. Long jobs run in the background as root through the helper and report progress from `btrfs ... status`, so they survive a page reload:
+- *Replace* (`btrfs replace start -B`): copies a failing or missing member onto an empty disk at least as large, while the pool stays online.
+- *Check data* (`btrfs scrub start -B`): reads every block and repairs bad copies from a good one where the pool is redundant.
+- *Add disk* (`btrfs device add` + balance): as before.
+
+Only one of these runs per pool at a time. Disk errors come from SMART and from `btrfs device stats`.
+
 ### 3. Containers (Docker + Compose)
 Git-based template repository for one-click app installs. No Kubernetes or complex orchestration.
 

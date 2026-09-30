@@ -120,16 +120,20 @@ async function importDetectedPool(poolId, poolName) {
 // lands on the same tab. Pools come first: that is where the data lives.
 const STORAGE_TABS = ['pools', 'disks', 'shares', 'users'];
 
+// #pool=<id> opens one pool's detail view inside the Pools tab.
 function showStorageTab(tabName) {
-    const name = STORAGE_TABS.includes(tabName) ? tabName : 'pools';
+    const poolId = String(tabName || '').startsWith('pool=') ? decodeURIComponent(tabName.slice(5)) : '';
+    const name = poolId ? 'pools' : (STORAGE_TABS.includes(tabName) ? tabName : 'pools');
+    const hash = poolId ? `pool=${encodeURIComponent(poolId)}` : name;
     document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
     document.querySelectorAll('.tab-content').forEach((c) => c.classList.toggle('active', c.id === `tab-${name}`));
-    if (location.hash.slice(1) !== name) {
-        history.replaceState(null, '', name === 'pools' ? location.pathname : `#${name}`);
+    if (location.hash.slice(1) !== hash) {
+        history.replaceState(null, '', hash === 'pools' ? location.pathname : `#${hash}`);
     }
     if (name === 'disks') {
         loadDisks();
     } else if (name === 'pools') {
+        openedPoolId = poolId;
         loadPools();
     } else if (name === 'shares') {
         loadShares();
@@ -157,8 +161,6 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Load Disks
-let storagePoolsCache = [];
-
 async function loadDisks() {
     const container = document.getElementById('disks-container');
     const refreshBtn = document.getElementById('refresh-disks-btn');
@@ -349,193 +351,7 @@ function choosePool(pools) {
     });
 }
 
-// Load Pools
-async function loadPools() {
-    const container = document.getElementById('pools-container');
-    container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 2rem;"><div class="spinner"></div><p style="color: var(--text-secondary); margin-top: 1rem;">Scanning Btrfs pools...</p></div>';
-
-    try {
-        const token = localStorage.getItem('alvaos_token');
-        const response = await apiFetch(`${API_BASE}/storage/pools`, {
-            headers: { 'Authorization': token || '' }
-        });
-
-        if (!response.ok) {
-            throw new Error('Failed to load pools');
-        }
-
-        const data = await response.json();
-        const allPools = Array.isArray(data.pools) ? data.pools : [];
-        const ignored = getIgnoredDetectedPools();
-        const visiblePools = allPools.filter((pool) => (
-            pool && (pool.is_managed !== false || !ignored.has(String(pool.id || '')))
-        ));
-        displayPools(visiblePools);
-    } catch (error) {
-        console.error('Error loading pools:', error);
-        renderLoadFailure(container, {
-            title: 'Could not read the storage pools',
-            detail: 'The storage service did not answer. It may still be starting up after a restart or update. Your data is not affected by this.',
-            onRetry: loadPools
-        });
-    }
-}
-
-// Display Pools
-function displayPools(pools) {
-    const container = document.getElementById('pools-container');
-
-    if (!pools || pools.length === 0) {
-        container.innerHTML = `
-            <div style="padding: 2rem; text-align:center; color: var(--text-secondary); grid-column: 1/-1;">
-                No storage pools configured yet. <br> <span style="font-size:0.875rem;">Create a pool to start managing your storage.</span>
-            </div>
-        `;
-        return;
-    }
-
-    container.innerHTML = '';
-
-    pools.forEach(pool => {
-        const poolCard = document.createElement('div');
-        poolCard.className = 'card';
-        const isSystemPool = !!pool.is_system_pool;
-        const isManaged = pool.is_managed !== false;
-        const devices = Array.isArray(pool.devices) ? pool.devices : [];
-        if (isSystemPool) {
-            poolCard.style.borderLeft = '3px solid var(--accent-warning)';
-        }
-        if (!isManaged && !isSystemPool) {
-            poolCard.style.borderLeft = '3px solid var(--accent-warning)';
-        }
-
-        const raidLevel = String(pool.raid_level || 'single').toLowerCase();
-        const isRedundantRaid = ['raid1', 'raid1c3', 'raid1c4', 'raid10', 'raid5', 'raid6'].includes(raidLevel);
-        const isDegraded = pool.status === 'degraded';
-        const statusColor = !isManaged && !isSystemPool
-            ? 'var(--accent-warning)'
-            : isDegraded
-            ? 'var(--accent-danger)'
-            : isSystemPool
-            ? 'var(--accent-warning)'
-            : 'var(--accent-success)';
-        const statusText = !isManaged && !isSystemPool
-            ? 'Not imported'
-            : isDegraded
-            ? (isSystemPool ? 'System pool · degraded' : 'Degraded')
-            : (isSystemPool ? 'System pool' : 'Active');
-        const actionsHtml = isSystemPool
-            ? `
-                <div style="display: flex; gap: 8px; margin-top: auto; flex-wrap: wrap;">
-                    <button class="btn-secondary" disabled style="flex: 1; min-width: 100px; font-size: 0.85rem; opacity: 0.6; cursor: not-allowed;">Subvolumes</button>
-                    ${isRedundantRaid
-                        ? `<button onclick="showExpandPoolDialog('${jsArg(pool.id)}', '${jsArg(pool.name)}')" class="btn-secondary"
-                        style="flex: 1; min-width: 100px; font-size: 0.85rem; border-color: ${isDegraded ? 'var(--accent-danger)' : 'var(--accent-success)'}; color: ${isDegraded ? 'var(--accent-danger)' : 'var(--accent-success)'}; ${isDegraded ? 'background: rgba(248, 81, 73, 0.1); font-weight: 700;' : ''}">
-                        ${isDegraded ? 'Replace Mirror Disk' : 'Expand'}
-                    </button>`
-                        : `<button class="btn-secondary" disabled style="flex: 1; min-width: 100px; font-size: 0.85rem; opacity: 0.6; cursor: not-allowed;">Expand</button>`
-                    }
-                    <button class="btn-secondary" disabled style="flex: 1; min-width: 100px; font-size: 0.85rem; opacity: 0.6; cursor: not-allowed;">Remove</button>
-                </div>
-                <div style="margin-top: 12px; font-size: 0.75rem; color: var(--accent-warning); display: flex; align-items: center; gap: 4px;">
-                    <span>!</span> ${isRedundantRaid ? 'System Pool - mirrored. You may replace a failed mirror disk.' : 'System Pool - Restricted Actions'}
-                </div>
-            `
-            : (!isManaged
-                ? `
-                <div style="display: flex; gap: 8px; margin-top: auto; flex-wrap: wrap;">
-                    <button onclick="importDetectedPool('${jsArg(pool.id)}', '${jsArg(pool.name)}')" class="btn-primary"
-                        style="flex: 1; min-width: 120px; font-size: 0.85rem;">
-                        Import Pool
-                    </button>
-                    <button onclick="showCreatePoolDialog()" class="btn-secondary"
-                        style="flex: 1; min-width: 120px; font-size: 0.85rem;">
-                        Create New
-                    </button>
-                    <button onclick="ignoreDetectedPool('${jsArg(pool.id)}')" class="btn-secondary"
-                        style="flex: 1; min-width: 120px; font-size: 0.85rem;">
-                        Ignore
-                    </button>
-                </div>
-                <div style="margin-top: 12px; font-size: 0.75rem; color: var(--accent-warning); display: flex; align-items: center; gap: 4px;">
-                    <span>!</span> Existing Btrfs pool found. Import it, or ignore and create a new pool.
-                </div>
-            `
-            : `
-                <div style="display: flex; gap: 8px; margin-top: auto; flex-wrap: wrap;">
-                    <button onclick="manageSubvolumes('${jsArg(pool.id)}')" class="btn-primary" 
-                        style="flex: 1; min-width: 100px; font-size: 0.85rem;">
-                        Subvolumes
-                    </button>
-                    <button onclick="showExpandPoolDialog('${jsArg(pool.id)}', '${jsArg(pool.name)}')" class="btn-secondary" 
-                        style="flex: 1; min-width: 100px; font-size: 0.85rem; border-color: ${isDegraded ? 'var(--accent-danger)' : 'var(--accent-success)'}; color: ${isDegraded ? 'var(--accent-danger)' : 'var(--accent-success)'}; ${isDegraded ? 'background: rgba(248, 81, 73, 0.1); font-weight: 700;' : ''}">
-                        ${isDegraded ? 'Replace / Expand' : 'Expand'}
-                    </button>
-                    <button onclick="deletePool('${jsArg(pool.id)}', '${jsArg(pool.name)}')" class="btn-secondary" 
-                        style="flex: 1; min-width: 100px; font-size: 0.85rem;">
-                        Remove
-                    </button>
-                </div>
-            `);
-
-        poolCard.innerHTML = `
-            <div class="card-header">
-                <div class="card-title">${escapeHtml(pool.name)}</div>
-                <div style="font-size: 0.8rem; font-weight: 600; color: ${statusColor}; display: flex; align-items: center; gap: 4px;">
-                    <div class="status-dot ${isDegraded ? 'danger pulse-danger' : ''}" style="background: ${statusColor};"></div>
-                    ${statusText}
-                </div>
-            </div>
-
-            ${isDegraded ? (isRedundantRaid ? `
-                <div class="degraded-banner">
-                    <span style="font-size: 1.5rem;">${window.alvaIcon ? window.alvaIcon('triangle-alert', '', 'aria-hidden="true"') : '!'}</span>
-                    <div>
-                        <strong style="display: block; margin-bottom: 2px;">RAID DEGRADED</strong>
-                        One or more disks in this pool have failed or are missing. Your data is at risk if another disk fails.
-                        <br><strong>Action required:</strong> Please add a replacement disk immediately.
-                    </div>
-                </div>
-            ` : `
-                <div class="degraded-banner">
-                    <span style="font-size: 1.5rem;">${window.alvaIcon ? window.alvaIcon('triangle-alert', '', 'aria-hidden="true"') : '!'}</span>
-                    <div>
-                        <strong style="display: block; margin-bottom: 2px;">DISK MISSING - NOT REDUNDANT</strong>
-                        This pool uses "${escapeHtml(pool.raid_level)}", which has no redundancy. A disk has failed or disappeared, and any data stored only on it is likely already lost.
-                        <br><strong>Action required:</strong> Adding a disk will not repair missing data. Restore affected files from a backup, then recreate this pool.
-                    </div>
-                </div>
-            `) : ''}
-            
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
-                <div>
-                    <span class="setting-label">RAID Level</span>
-                    <span class="setting-val">${escapeHtml(pool.raid_level)}</span>
-                </div>
-                <div>
-                    <span class="setting-label">Devices</span>
-                    <span class="setting-val">${escapeHtml(devices.length)}</span>
-                </div>
-                <div>
-                    <span class="setting-label">Total Size</span>
-                    <span class="setting-val">${escapeHtml(pool.total_size || 'N/A')}</span>
-                </div>
-                <div>
-                    <span class="setting-label">Used</span>
-                    <span class="setting-val">${escapeHtml(pool.used_size || 'N/A')}</span>
-                </div>
-                <div style="grid-column: 1 / -1;">
-                    <span class="setting-label">Disk Members</span>
-                    <span class="setting-val" style="font-size: 0.8rem;">${escapeHtml(devices.join(', '))}</span>
-                </div>
-            </div>
-
-            ${actionsHtml}
-        `;
-
-        container.appendChild(poolCard);
-    });
-}
+// Pools (overview and detail) live in storage-pools.js.
 
 // Load Shares
 async function loadShares() {
@@ -1178,7 +994,8 @@ async function showExpandPoolDialog(poolId, poolName, preselect = []) {
 
             showNotification(result.message, 'success');
             modal.remove();
-            showStorageTab('pools');
+            if (document.getElementById('tab-pools').classList.contains('active')) loadPools();
+            else showStorageTab('pools');
         } catch (error) {
             showError(error.message);
         }
@@ -1262,7 +1079,7 @@ async function deletePool(poolId, poolName) {
         }
 
         showNotification(result.message, result.failed ? 'warning' : 'success');
-        loadPools();
+        showStorageTab('pools');
     } catch (error) {
         showError(error.message);
     }
