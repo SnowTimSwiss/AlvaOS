@@ -26,7 +26,9 @@ from shares_manager import (
     normalize_smb_permissions, apply_smb_permissions_to_fs,
     disable_samba_homes_share, render_smb_share_config,
     update_samba_share_section, load_shares_state, save_shares_state,
+    validate_share_request, render_nfs_export,
 )
+from storage_manager import load_pools_state
 
 from app_services import VERSION
 
@@ -44,89 +46,49 @@ def manage_shares():
         return jsonify({'shares': shares})
     
     elif request.method == 'POST':
-        # Create new share
-        data = request.get_json()
-        
-        if not data:
-            return jsonify({'error': 'No data provided'}), 400
-        
-        share_name = data.get('name', '').strip()
-        share_path = data.get('path', '').strip()
-        protocol = data.get('protocol', 'nfs').lower()
-        read_only = data.get('read_only', False)
-        guest_access = data.get('guest_access', False)
-        allowed_hosts = data.get('allowed_hosts', '*')
-        smb_permissions = normalize_smb_permissions(data.get('smb_permissions', {}))
-        
-        # Validation
-        if not share_name:
-            return jsonify({'error': 'Share name is required'}), 400
-        
-        if not share_path:
-            return jsonify({'error': 'Share path is required'}), 400
-        if platform.system() == 'Linux' and not os.path.isabs(share_path):
-            return jsonify({'error': 'Share path must be an absolute path'}), 400
-        
-        if protocol not in ['nfs', 'smb']:
-            return jsonify({'error': 'Protocol must be "nfs" or "smb"'}), 400
-        
-        # Check if path exists
-        if platform.system() == 'Linux' and not os.path.exists(share_path):
-            return jsonify({'error': f'Path does not exist: {share_path}'}), 400
-        if platform.system() == 'Linux' and is_path_on_system_disk(share_path):
-            return jsonify({'error': f'Share path is on the system disk and is not allowed: {share_path}'}), 400
+        from api_auth import load_users_state  # avoids an import cycle at module load
+        shares_state = load_shares_state()
+        share, problem = validate_share_request(request.get_json(silent=True), load_pools_state(),
+                                                shares_state, set(load_users_state()))
+        if problem:
+            return jsonify({'error': problem}), 400
+        share_name, share_path, protocol = share['name'], share['path'], share['protocol']
+        read_only, guest_access = share['read_only'], share['guest_access']
+        smb_permissions = share['smb_permissions']
 
-        if protocol == 'smb' and isinstance(data.get('smb_permissions', {}), dict) and len(data.get('smb_permissions', {})) > 0:
-            allowed_users = [u for u, r in smb_permissions.items() if r in ('read', 'write')]
-            if not allowed_users and not guest_access:
-                return jsonify({'error': 'At least one user must have read or write access'}), 400
-        
         try:
-            # Generate a unique share ID using hex token
             share_id = f'share-{secrets.token_hex(4)}'
-            
+
             if platform.system() == 'Linux':
+                if share['new_folder'] and not os.path.exists(share_path):
+                    _, err = run_sudo_command([CMD['BTRFS'], 'subvolume', 'create', share_path])
+                    if err:
+                        return jsonify({'error': f'Could not create the folder {share_path}: {err}'}), 500
+                if not os.path.isdir(share_path):
+                    return jsonify({'error': f'Folder does not exist: {share_path}'}), 400
+                if is_path_on_system_disk(share_path):
+                    return jsonify({'error': f'Share path is on the system disk and is not allowed: {share_path}'}), 400
+
                 if protocol == 'nfs':
-                    # Configure NFS export
-                    export_data = f'# AlvaOS Share: {share_name}\n{share_path} {allowed_hosts}({"ro" if read_only else "rw"},sync,no_subtree_check)\n'
-                    
-                    # Append to /etc/exports
+                    export_data = render_nfs_export(share_name, share_path, share['allowed_hosts'], read_only)
                     cmd = build_privileged_cmd([CMD['TEE'], '-a', '/etc/exports'])
                     subprocess.run(cmd, input=export_data, text=True, check=True, env={'LC_ALL': 'C'})
-                    
-                    # Reload NFS exports
                     res, err = run_sudo_command([CMD['EXPORTFS'], '-ra'])
                     if err:
                         return jsonify({'error': f'Failed to reload NFS: {err}'}), 500
-                    
+
                 elif protocol == 'smb':
-                    # Configure Samba share
                     ensure_samba_conf_exists()
                     ensure_samba_global_settings(guest_access)
                     disable_samba_homes_share()
                     smb_config = render_smb_share_config(
-                        share_name,
-                        share_path,
-                        read_only,
-                        guest_access,
-                        smb_permissions
-                    )
-                    
-                    # Append to /etc/samba/smb.conf
+                        share_name, share_path, read_only, guest_access, smb_permissions)
                     cmd = build_privileged_cmd([CMD['TEE'], '-a', '/etc/samba/smb.conf'])
                     subprocess.run(cmd, input=smb_config, text=True, check=True, env={'LC_ALL': 'C'})
-                    
-                    # Restart Samba
                     res, err = run_sudo_command([CMD['SYSTEMCTL'], 'restart', 'smbd'])
                     if err:
                         return jsonify({'error': f'Failed to restart Samba: {err}'}), 500
-                    
-                    # Ensure root is in Samba database (for non-guest access)
-                    # We look up the current password from AUTH_FILE or just wait for next setup/login
-                    # For now, we expect the user to have gone through setup which already synced it.
-            
-            # Save share state
-            shares_state = load_shares_state()
+
             shares_state[share_id] = {
                 'id': share_id,
                 'name': share_name,
@@ -134,7 +96,7 @@ def manage_shares():
                 'protocol': protocol,
                 'read_only': read_only,
                 'guest_access': guest_access,
-                'allowed_hosts': allowed_hosts,
+                'allowed_hosts': share['allowed_hosts'],
                 'smb_permissions': smb_permissions,
                 'smb_group': f'alvaos_{share_id}',
                 'created_at': datetime.now().isoformat(),
@@ -143,27 +105,22 @@ def manage_shares():
             save_shares_state(shares_state)
 
             if platform.system() == 'Linux' and protocol == 'smb':
-                apply_smb_permissions_to_fs(
-                    share_path,
-                    f'alvaos_{share_id}',
-                    smb_permissions,
-                    guest_access
-                )
+                apply_smb_permissions_to_fs(share_path, f'alvaos_{share_id}', smb_permissions, guest_access)
                 reconcile_samba_guest_settings(shares_state)
-            
+
             return jsonify({
                 'success': True,
-                'message': f'{protocol.upper()} share "{share_name}" created successfully',
+                'message': f'"{share_name}" is now shared on your network.',
                 'share_id': share_id
             })
-        
+
         except subprocess.TimeoutExpired:
             return jsonify({'error': 'Share creation timed out'}), 500
         except PermissionError:
             return jsonify({'error': 'Permission denied. Backend needs sudo access.'}), 500
         except Exception as e:
             return jsonify({'error': f'Failed to create share: {str(e)}'}), 500
-    
+
     elif request.method == 'DELETE':
         # Delete share
         data = request.get_json()
@@ -232,7 +189,7 @@ def manage_shares():
                         
                         # Find and remove the share section
                         import re
-                        pattern = rf'# AlvaOS Share: {share_name}\n\[{share_name}\].*?(?=\n\[|\n# AlvaOS Share:|\Z)'
+                        pattern = rf'# AlvaOS Share: {re.escape(share_name)}\n\[{re.escape(share_name)}\].*?(?=\n\[|\n# AlvaOS Share:|\Z)'
                         content = re.sub(pattern, '', content, flags=re.DOTALL)
                         
                         # Write back using sudo tee
@@ -287,13 +244,19 @@ def update_share_permissions():
     if share_info.get('protocol') != 'smb':
         return jsonify({'error': 'Permissions apply to SMB shares only'}), 400
 
-    # If permissions provided but empty, allow clearing to default (no restrictions)
-    if isinstance(data.get('smb_permissions', {}), dict) and len(data.get('smb_permissions', {})) > 0:
-        allowed_users = [u for u, r in smb_permissions.items() if r in ('read', 'write')]
-        if not allowed_users and not share_info.get('guest_access', False):
-            return jsonify({'error': 'At least one user must have read or write access'}), 400
+    from api_auth import load_users_state  # avoids an import cycle at module load
+    unknown = sorted(u for u in smb_permissions if u not in load_users_state())
+    if unknown:
+        return jsonify({'error': f'Unknown user(s): {", ".join(unknown)}'}), 400
+    guest_access = data.get('guest_access', share_info.get('guest_access', False)) is True
+    if not guest_access and not any(r in ('read', 'write') for r in smb_permissions.values()):
+        return jsonify({'error': 'Choose who can open this share: at least one person, '
+                                 'or everyone on the network.'}), 400
 
     share_info['smb_permissions'] = smb_permissions
+    share_info['guest_access'] = guest_access
+    if 'read_only' in data:
+        share_info['read_only'] = data.get('read_only') is True
     if not share_info.get('smb_group'):
         share_info['smb_group'] = f'alvaos_{share_id}'
     shares_state[share_id] = share_info
@@ -320,4 +283,4 @@ def update_share_permissions():
         reconcile_samba_guest_settings(shares_state)
         run_sudo_command([CMD['SYSTEMCTL'], 'restart', 'smbd'])
 
-    return jsonify({'success': True, 'message': 'SMB permissions updated'})
+    return jsonify({'success': True, 'message': f'Access to "{share_info.get("name")}" was updated.'})

@@ -412,6 +412,9 @@ def check_exports(content: bytes, current: bytes = b'') -> None:
         clean = _clean_abs_path(path)
         if not any(_strictly_within(clean, root) for root in WRITE_ROOTS):
             _fail(f'NFS export outside the AlvaOS data directories: {path}')
+        if re.search(r'no_root_squash|insecure_locks', line):
+            # Remote root would act as root on the NAS's files.
+            _fail(f'NFS export option not allowed: {line!r}')
 
 
 def check_hosts(content: bytes, current: bytes = b'') -> None:
@@ -555,7 +558,8 @@ def _rule_chpasswd(sys_: System, args):
 
 
 def _rule_useradd(sys_: System, args):
-    _expect(args, '-m', '-s', '/bin/bash', lambda u: _user(sys_, u))
+    # Share accounts: no home directory, no login shell (they must not get SSH).
+    _expect(args, '-M', '-s', '/usr/sbin/nologin', lambda u: _user(sys_, u))
     if args[3] in PROTECTED_USERS:
         _fail(f'User {args[3]} is protected')
     return Plan(argv=[])
@@ -563,6 +567,12 @@ def _rule_useradd(sys_: System, args):
 
 def _rule_userdel(sys_: System, args):
     _expect(args, lambda u: _user(sys_, u, deletable=True))
+    return Plan(argv=[])
+
+
+def _rule_usermod(sys_: System, args):
+    # Only ever takes the login shell away from a regular (share) account.
+    _expect(args, '-s', '/usr/sbin/nologin', lambda u: _user(sys_, u, deletable=True))
     return Plan(argv=[])
 
 
@@ -1133,6 +1143,7 @@ RULES = {
     'chpasswd': _rule_chpasswd,
     'useradd': _rule_useradd,
     'userdel': _rule_userdel,
+    'usermod': _rule_usermod,
     'smbpasswd': _rule_smbpasswd,
     'groupadd': _rule_groupadd,
     'groupdel': _rule_groupdel,

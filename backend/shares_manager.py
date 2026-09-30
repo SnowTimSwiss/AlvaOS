@@ -30,6 +30,22 @@ def system_user_exists(username):
         return False
 
 
+def lock_share_user_shells(usernames):
+    """Share accounts created by older versions got /bin/bash, so with SSH on
+    they could log in to the NAS. Give them no login shell; Samba does not need one."""
+    if platform.system() != 'Linux':
+        return
+    import pwd
+    for username in usernames:
+        try:
+            shell = pwd.getpwnam(username).pw_shell
+        except KeyError:
+            continue
+        if shell not in ('/usr/sbin/nologin', '/sbin/nologin', '/bin/false'):
+            _, err = run_sudo_command([CMD['USERMOD'], '-s', '/usr/sbin/nologin', username])
+            print(f"Share user {username}: login shell removed" if not err else f"Share user {username}: {err}")
+
+
 def sync_samba_password(username, password):
     """Synchronize a system user's password with the Samba database"""
     try:
@@ -297,6 +313,87 @@ def update_samba_share_section(share_name, new_config):
         process.communicate(input=content)
     except Exception as e:
         print(f"Error updating SMB share section: {e}")
+
+
+# ── Share requests ────────────────────────────────────────────────────────────
+# Names end up as smb.conf section headers, NFS export comments and folder
+# names, so they are restricted to characters that are safe in all three.
+
+SHARE_NAME_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$')
+# One NFS client: *, a host name (wildcards allowed), an IPv4/IPv6 address or network.
+NFS_CLIENT_RE = re.compile(r'^(\*|[A-Za-z0-9*?_.-]{1,253}|[0-9a-fA-F:.]+(/[0-9]{1,3})?)$')
+
+
+def _within(path, root):
+    return path == root or path.startswith(root.rstrip('/') + '/')
+
+
+def validate_share_request(data, pools_state, shares_state, known_users):
+    """Check a create-share request. Returns (share fields, '') or (None, error).
+
+    The folder is given either as pool_id (+ folder, '' for the whole pool,
+    new_folder to create it) or as an absolute path inside a pool."""
+    if not isinstance(data, dict):
+        return None, 'No data provided'
+    name = str(data.get('name') or '').strip()
+    if not SHARE_NAME_RE.match(name):
+        return None, 'Share names use letters, numbers, "-" and "_" (up to 63 characters), no spaces.'
+    if any(str(s.get('name', '')).lower() == name.lower() for s in shares_state.values() if isinstance(s, dict)):
+        return None, f'A share named "{name}" already exists.'
+    protocol = str(data.get('protocol') or 'smb').lower()
+    if protocol not in ('smb', 'nfs'):
+        return None, 'Protocol must be "smb" or "nfs"'
+
+    pools = {pid: p for pid, p in pools_state.items()
+             if isinstance(p, dict) and p.get('mount_point') and p.get('mount_point') != '/'}
+    new_folder = False
+    if data.get('pool_id') is not None:
+        pool = pools.get(str(data.get('pool_id')))
+        if not pool:
+            return None, 'Choose a pool for this share.'
+        folder = str(data.get('folder') or '').strip().strip('/')
+        if folder and not all(SHARE_NAME_RE.match(part) for part in folder.split('/')):
+            return None, 'Folder names use letters, numbers, "-" and "_".'
+        path = os.path.join(pool['mount_point'], folder) if folder else pool['mount_point']
+        new_folder = bool(data.get('new_folder')) and bool(folder)
+    else:
+        raw = str(data.get('path') or '').strip()
+        if not raw.startswith('/') or '..' in raw.split('/'):
+            return None, 'Share path must be an absolute path'
+        path = os.path.normpath(raw)
+        if not any(_within(path, p['mount_point']) for p in pools.values()):
+            return None, 'Shares must be inside a storage pool.'
+
+    guest = data.get('guest_access') is True
+    permissions = normalize_smb_permissions(data.get('smb_permissions', {}))
+    unknown = sorted(u for u in permissions if u not in known_users)
+    if unknown:
+        return None, f'Unknown user(s): {", ".join(unknown)}'
+    if protocol == 'smb' and not guest and not any(r in ('read', 'write') for r in permissions.values()):
+        return None, 'Choose who can open this share: at least one person, or everyone on the network.'
+
+    hosts = str(data.get('allowed_hosts') or '*').replace(',', ' ').split()
+    if protocol == 'nfs':
+        if not hosts or not all(NFS_CLIENT_RE.match(h) for h in hosts):
+            return None, 'Allowed computers: use *, an address like 192.168.1.20, or a network like 192.168.1.0/24.'
+
+    return {
+        'name': name,
+        'path': path,
+        'new_folder': new_folder,
+        'protocol': protocol,
+        'read_only': data.get('read_only') is True,
+        'guest_access': guest if protocol == 'smb' else False,
+        'allowed_hosts': ' '.join(hosts) if protocol == 'nfs' else '*',
+        'smb_permissions': permissions if protocol == 'smb' else {},
+    }, ''
+
+
+def render_nfs_export(name, path, allowed_hosts, read_only):
+    """/etc/exports lines for one share: a marker comment and the export."""
+    options = f'{"ro" if read_only else "rw"},sync,no_subtree_check,root_squash'
+    clients = ' '.join(f'{host}({options})' for host in str(allowed_hosts or '*').split())
+    return f'# AlvaOS Share: {name}\n{path} {clients}\n'
 
 
 # ── Shares state ──────────────────────────────────────────────────────────────

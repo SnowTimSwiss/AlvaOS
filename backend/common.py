@@ -17,6 +17,7 @@ CMD = {
     'CHPASSWD': '/usr/sbin/chpasswd',
     'USERADD': '/usr/sbin/useradd',
     'USERDEL': '/usr/sbin/userdel',
+    'USERMOD': '/usr/sbin/usermod',
     'SMBPASSWD': '/usr/bin/smbpasswd',
     'GROUPADD': '/usr/sbin/groupadd',
     'GROUPDEL': '/usr/sbin/groupdel',
