@@ -66,6 +66,8 @@ Only empty disks go into a pool, so `mkfs` and `btrfs device add` never destroy 
 
 Only one of these runs per pool at a time. Disk errors come from SMART and from `btrfs device stats`.
 
+**Shares.** A share is a folder inside a pool (a new subvolume by default, an existing folder, or the whole pool), shared over SMB, or NFS for Linux clients. Share names are letters, digits, `-` and `_` only, because they become `smb.conf` section headers, export comments and folder names. NFS client lists are checked address by address, and exports always use `root_squash`. SMB access is either "only people I choose" (per person: read or edit) or "everyone on my network" (guest, optionally read only). The people are share accounts: they have no home directory and no login shell, so they cannot log in over SSH; accounts created by older versions lose their shell when the backend starts.
+
 ### 3. Containers (Docker + Compose)
 Git-based template repository for one-click app installs. No Kubernetes or complex orchestration.
 
@@ -101,6 +103,7 @@ NAS-to-NAS encrypted incremental backup.
 **Privilege separation:**
 - The backend runs as the unprivileged `alvaos` system user.
 - Its single sudo rule is the privilege helper `/opt/alvaos/bin/alvaos-priv`. The helper checks every command against `backend/priv_policy.py` before running it: deny by default, no shells, per-argument rules (which paths, devices, users, subcommands), system disks protected.
+- Share accounts are created with `useradd -M -s /usr/sbin/nologin`; the only `usermod` allowed removes a regular account's login shell. NFS exports with `no_root_squash` are refused.
 - Commands that erase a disk (`wipefs`, `mkfs.btrfs`, `btrfs device add`) are also refused when the device is in use right now: mounted, swap, a member of a mounted Btrfs pool, or held by LUKS/LVM/md (read from `/proc` and `/sys` as root). This holds even if the backend misjudges a disk.
 - Files the backend writes and a root process later interprets (compose files, the WireGuard config, packages, apt sources) are copied into root-owned staging and checked there; config files handed to root daemons (`smb.conf`, the sshd drop-in, `/etc/exports`) are checked for command-executing directives.
 - Denied commands exit with status 126 and are logged to `/var/log/alvaos/priv-denied.log`.
