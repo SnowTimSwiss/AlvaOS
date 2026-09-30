@@ -15,6 +15,97 @@ How to add an entry:
 
 ---
 
+## 2026-09-30 · Shares and people: say who can open what ([#4](https://github.com/SnowTimSwiss/AlvaOS/pull/4))
+
+- **Found:** share names and the NFS "allowed hosts" went unchecked into
+  `smb.conf` and `/etc/exports`, so a name like `x]` plus a new line, or hosts like
+  `*(rw,no_root_squash)`, added config. Share paths could be any folder
+  that was not on the system disk. Share accounts were created with
+  `/bin/bash`, so with SSH enabled they could log in to the NAS.
+- **Backend:** `validate_share_request` checks name (unique, safe
+  characters), place (inside a managed pool), people (must exist) and NFS
+  clients; a share can create its own folder (`new_folder`). Exports are
+  written per client with `root_squash`; the helper refuses
+  `no_root_squash`. The access endpoint also switches between people and
+  everyone (guest, optionally read only). Share accounts get no home and no
+  shell (`useradd -M -s /usr/sbin/nologin`); existing ones are fixed with
+  `usermod -s /usr/sbin/nologin` at startup.
+- **Shares tab:** one card per share: where it lives (`main › Media`), who
+  can open it in one sentence, the address to type with a Copy button, and
+  How to connect / Access / Stop sharing. "Share a folder" asks name, where
+  (new folder by default) and who; SMB/NFS and allowed computers sit under
+  "More options". A person can be added right inside the dialog. "How to
+  connect" gives copyable addresses for Windows, macOS, Linux and phones.
+- **Users tab (People):** each person with the shares they can open (read
+  or edit), Change password and Remove; removing names the shares they lose.
+- Tests: `test_shares.py` (validation, config injection, exports, access
+  changes, shell migration) and policy cases. Checked in a browser with
+  mocked data at desktop and phone width.
+- **Note for next time:** never run against real Samba/NFS here. Check on a
+  NAS that a guest share opens without a password from Windows and macOS,
+  and that a person with "Can read" really cannot write. Old shares whose
+  access list is empty now say "Nobody can open it yet", which matches
+  what the file permissions already allowed.
+
+## 2026-09-30 · Storage: pools at a glance, replace and data check ([#4](https://github.com/SnowTimSwiss/AlvaOS/pull/4))
+
+- **Pools tab:** one card per pool with a usage bar (used, free, size), the
+  protection in plain words ("Mirrored: one disk can fail"), its disks with a
+  health dot, running jobs with progress, and the actions that matter now:
+  Add disk, Replace disk (when degraded or a disk reports errors), Import.
+- **Pool detail** (`storage.html#pool=<id>`, survives a reload): usage first,
+  then activity (replace, balance, data check with progress and the last
+  result), the disks with SMART and btrfs error counters and Replace per
+  disk, folders, and technical details (profile, mount point, UUID, members,
+  error counters, Remove pool) folded away.
+- **Backend:** `btrfs filesystem show` is parsed per member (devid, size,
+  missing), pools report usage in bytes, and there are new endpoints for
+  activity, replace (`btrfs replace start -B`, empty target at least as
+  large) and data check (`btrfs scrub start -B`, cancel). One long job per
+  pool at a time. The helper allows exactly these commands.
+- Disk sizes now come from `lsblk -b`, so sizes can be compared.
+- Tests: parsers with real `btrfs` output, the new endpoints and policy rules.
+  Checked in a browser with mocked data at desktop and phone width; the
+  member parsing was checked against a real degraded Btrfs on loop devices.
+- **Note for next time:** a redundant pool with a missing disk does not mount
+  at boot (`mount` without `-o degraded`), so Replace is only reachable while
+  it stays mounted. Mounting degraded automatically needs a policy rule and a
+  decision. Replacing with a larger disk does not grow the pool yet
+  (`btrfs filesystem resize <devid>:max`). Tests leave sessions in
+  `/var/lib/alvaos/sessions.json` on a dev machine; this predates this PR.
+
+## 2026-09-30 · Storage: disks with data are never erased by surprise ([#4](https://github.com/SnowTimSwiss/AlvaOS/pull/4))
+
+- **Found:** "Wipe" was offered on every non-system disk, lazily unmounted
+  whatever was mounted and erased it, including members of an active pool.
+  Creating or growing a pool ran `mkfs -f` / `btrfs device add` on any disk
+  whose top level had no file system, so a USB disk with partitions was fair
+  game. "Delete pool" said the data would stay, then ran `wipefs` on every
+  member.
+- **Disk roles:** each disk now has one role (system, pool, in use, other
+  pool, old data, empty) with a plain sentence. Only disks with old data can
+  be erased, only empty disks can go into a pool; the API enforces both and
+  answers 409 otherwise. Virtual devices (zram, loop, NBD vaults) are hidden.
+- **Privilege helper:** `wipefs`, `mkfs.btrfs` and `btrfs device add` refuse a
+  device that is mounted, swap, part of a mounted Btrfs pool or held by
+  LUKS/LVM/md, read from `/proc` and `/sys`.
+- **Remove pool:** keeps the data by default (the pool can be imported
+  again); erasing the disks is an explicit choice with the pool name typed.
+  A pool that is still shared or busy is not removed.
+- **Storage page:** Pools is the first tab, the tab is kept in the URL
+  (`storage.html#disks`). Disks are grouped (available, in use by AlvaOS,
+  used elsewhere) and each shows only the actions its role allows: Create
+  pool / Add to pool, Import pool, Erase disk. The create and expand dialogs
+  list only empty disks and say how many were left out. The repeated "pools
+  detected" toast is gone; the Pools tab shows the card.
+- Tests: `test_storage_disks.py` (roles, endpoints) and new policy cases.
+  Checked in a browser with mocked disk data at desktop and phone width, and
+  against the real backend in a Linux container.
+- **Note for next time:** needs a check on real disks: a pool across two
+  disks (both show "Part of the pool"), a used USB disk (offered for erase,
+  not for a pool), and Remove pool with and without erasing. Locally,
+  `test_backup_manager.py` fails unless `btrfs-progs` is installed.
+
 ## 2026-09-29 · Backup page: simple by default
 
 - **Data and System tabs:** the status card now says in one sentence when the

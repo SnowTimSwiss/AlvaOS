@@ -197,6 +197,14 @@ if __name__ == '__main__':
     # Mount existing pools on startup (persistence)
     mount_existing_pools()
 
+    # Share accounts never get a login shell (older versions gave them bash).
+    try:
+        from api_auth import load_users_state
+        from shares_manager import lock_share_user_shells
+        lock_share_user_shells(load_users_state())
+    except Exception as e:
+        print(f"Warning: could not check share user shells: {e}")
+
     # wg-quick state does not survive a reboot; bring the buddy tunnel back up.
     threading.Thread(target=buddy_backup_manager.start_tunnel_if_paired, daemon=True).start()
     # Serves the encrypted vaults buddies keep here, on the tunnel address only.

@@ -146,6 +146,53 @@ class System:
             walk(dev, None)
         return disks
 
+    # Where busy_devices() looks; tests point these at a fake tree.
+    proc_root = '/proc'
+    sys_block = '/sys/class/block'
+    sys_btrfs = '/sys/fs/btrfs'
+
+    def busy_devices(self) -> Dict[str, str]:
+        """Block devices that are in use right now, by name, with the reason.
+
+        A device counts as busy when it is mounted, used as swap, a member of a
+        mounted Btrfs filesystem (only one member shows up in /proc/mounts), or
+        held by another device (LUKS, LVM, md). A disk is busy when any of its
+        partitions is.
+        """
+        busy: Dict[str, str] = {}
+        try:
+            with open(os.path.join(self.proc_root, 'mounts')) as f:
+                mounts = f.read().splitlines()
+        except OSError:
+            raise PolicyError('Cannot read the mount table; refusing destructive disk operation') from None
+        for line in mounts:
+            parts = line.split()
+            if len(parts) >= 2 and parts[0].startswith('/dev/'):
+                target = parts[1].replace('\\040', ' ')
+                busy.setdefault(os.path.basename(self.realpath(parts[0])), f'mounted at {target}')
+        try:
+            with open(os.path.join(self.proc_root, 'swaps')) as f:
+                for line in f.read().splitlines()[1:]:
+                    parts = line.split()
+                    if parts and parts[0].startswith('/dev/'):
+                        busy.setdefault(os.path.basename(self.realpath(parts[0])), 'used as swap')
+        except OSError:
+            pass
+        for fsid in _listdir(self.sys_btrfs):
+            for member in _listdir(os.path.join(self.sys_btrfs, fsid, 'devices')):
+                busy.setdefault(member, 'part of a mounted Btrfs pool')
+        names = _listdir(self.sys_block)
+        for name in names:
+            holders = _listdir(os.path.join(self.sys_block, name, 'holders'))
+            if holders:
+                busy.setdefault(name, f'in use by {holders[0]}')
+        for name in list(busy):
+            entry = os.path.join(self.sys_block, name)
+            if os.path.exists(os.path.join(entry, 'partition')):
+                parent = os.path.basename(os.path.dirname(os.path.realpath(entry)))
+                busy.setdefault(parent, f'{name} is {busy[name]}')
+        return busy
+
     def uid_of(self, user: str) -> Optional[int]:
         try:
             return pwd.getpwnam(user).pw_uid
@@ -170,6 +217,13 @@ class System:
                 return f.read()
         except FileNotFoundError:
             return b''
+
+
+def _listdir(path: str) -> List[str]:
+    try:
+        return sorted(os.listdir(path))
+    except OSError:
+        return []
 
 
 # ── Small validators ─────────────────────────────────────────────────────────
@@ -216,7 +270,9 @@ def readable_path(path: str) -> str:
     return _clean_abs_path(path)
 
 
-def _device(system: System, dev: str, destructive: bool) -> str:
+def _device(system: System, dev: str, destructive: bool, idle: bool = False) -> str:
+    """Validate a device path. destructive: never the system disk. idle: also not
+    in use right now (mounted, swap, pool member, held), for commands that erase."""
     if not DEVICE_RE.match(dev or ''):
         _fail(f'Invalid device: {dev!r}')
     resolved = system.realpath(dev)
@@ -228,6 +284,10 @@ def _device(system: System, dev: str, destructive: bool) -> str:
             # Match the disk itself and any of its partitions (sda1, nvme0n1p2).
             if name == disk or (name.startswith(disk) and name[len(disk):].lstrip('p').isdigit()):
                 _fail(f'Refusing to modify the system disk: {dev}')
+    if idle:
+        reason = system.busy_devices().get(os.path.basename(resolved))
+        if reason:
+            _fail(f'Refusing to erase {dev}: it is {reason}')
     return resolved
 
 
@@ -352,6 +412,9 @@ def check_exports(content: bytes, current: bytes = b'') -> None:
         clean = _clean_abs_path(path)
         if not any(_strictly_within(clean, root) for root in WRITE_ROOTS):
             _fail(f'NFS export outside the AlvaOS data directories: {path}')
+        if re.search(r'no_root_squash|insecure_locks', line):
+            # Remote root would act as root on the NAS's files.
+            _fail(f'NFS export option not allowed: {line!r}')
 
 
 def check_hosts(content: bytes, current: bytes = b'') -> None:
@@ -495,7 +558,8 @@ def _rule_chpasswd(sys_: System, args):
 
 
 def _rule_useradd(sys_: System, args):
-    _expect(args, '-m', '-s', '/bin/bash', lambda u: _user(sys_, u))
+    # Share accounts: no home directory, no login shell (they must not get SSH).
+    _expect(args, '-M', '-s', '/usr/sbin/nologin', lambda u: _user(sys_, u))
     if args[3] in PROTECTED_USERS:
         _fail(f'User {args[3]} is protected')
     return Plan(argv=[])
@@ -503,6 +567,12 @@ def _rule_useradd(sys_: System, args):
 
 def _rule_userdel(sys_: System, args):
     _expect(args, lambda u: _user(sys_, u, deletable=True))
+    return Plan(argv=[])
+
+
+def _rule_usermod(sys_: System, args):
+    # Only ever takes the login shell away from a regular (share) account.
+    _expect(args, '-s', '/usr/sbin/nologin', lambda u: _user(sys_, u, deletable=True))
     return Plan(argv=[])
 
 
@@ -698,7 +768,7 @@ def _rule_wipefs(sys_: System, args):
     devs = [a for a in args if not a.startswith('-')]
     if not set(flags) <= {'-a', '-f'} or len(devs) != 1:
         _fail('wipefs usage: wipefs -a [-f] DEVICE')
-    _device(sys_, devs[0], destructive=True)
+    _device(sys_, devs[0], destructive=True, idle=True)
     return Plan(argv=list(args))
 
 
@@ -723,7 +793,7 @@ def _rule_mkfs_btrfs(sys_: System, args):
                 _fail('Invalid RAID profile')
             i += 2
         else:
-            devices.append(_device(sys_, arg, destructive=True))
+            devices.append(_device(sys_, arg, destructive=True, idle=True))
             i += 1
     if not devices:
         _fail('mkfs.btrfs needs at least one device')
@@ -778,6 +848,11 @@ def _rule_umount(sys_: System, args):
                 or any(_strictly_within(clean, r) for r in ('/media', '/mnt'))):
             _fail(f'Refusing to unmount {target}')
     return Plan(argv=list(args))
+
+
+def _replace_source(value: str) -> None:
+    if not (re.match(r'^[1-9][0-9]{0,5}$', value or '') or DEVICE_RE.match(value or '')):
+        _fail(f'Invalid device to replace: {value!r}')
 
 
 def _rule_btrfs(sys_: System, args):
@@ -858,11 +933,28 @@ def _rule_btrfs(sys_: System, args):
         for dev in rest[:-1]:
             if dev == '-f':
                 continue
-            _device(sys_, dev, destructive=True)
+            _device(sys_, dev, destructive=True, idle=True)
         _pool_mountpoint(_clean_abs_path(rest[-1]))
         return Plan(argv=list(args))
     if group == 'device' and action == 'remove':
         _expect(rest, 'missing', lambda p: _pool_mountpoint(_clean_abs_path(p)))
+        return Plan(argv=list(args))
+    if group == 'replace' and action == 'start':
+        # btrfs replace start -B SOURCE TARGET POOL: SOURCE is the member being
+        # replaced (a devid, or its device, which is in use by definition), TARGET
+        # must be an idle, non-system disk.
+        _expect(rest, '-B', _replace_source, lambda d: _device(sys_, d, destructive=True, idle=True),
+                lambda p: _pool_mountpoint(_clean_abs_path(p)))
+        return Plan(argv=list(args))
+    if group == 'replace' and action == 'status':
+        _expect(rest, '-1', lambda p: _pool_mountpoint(_clean_abs_path(p)))
+        return Plan(argv=list(args))
+    if group == 'scrub' and action == 'start':
+        _expect(rest, '-B', lambda p: _pool_mountpoint(_clean_abs_path(p)))
+        return Plan(argv=list(args))
+    if (group == 'scrub' and action in ('status', 'cancel')) or (group, action) in (
+            ('balance', 'status'), ('device', 'stats')):
+        _expect(rest, lambda p: _pool_mountpoint(_clean_abs_path(p)))
         return Plan(argv=list(args))
     if group == 'balance' and action == 'start':
         for arg in rest[:-1]:
@@ -1051,6 +1143,7 @@ RULES = {
     'chpasswd': _rule_chpasswd,
     'useradd': _rule_useradd,
     'userdel': _rule_userdel,
+    'usermod': _rule_usermod,
     'smbpasswd': _rule_smbpasswd,
     'groupadd': _rule_groupadd,
     'groupdel': _rule_groupdel,

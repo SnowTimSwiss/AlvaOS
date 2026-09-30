@@ -2,7 +2,6 @@
 """Disks, pools and subvolumes."""
 
 # ── Standard library ──────────────────────────────────────────────────────────
-import json
 import os
 import platform
 import re
@@ -11,6 +10,7 @@ import time
 from datetime import datetime
 
 # ── Third-party ───────────────────────────────────────────────────────────────
+import psutil
 from flask import Blueprint, jsonify, request
 
 # ── AlvaOS managers ───────────────────────────────────────────────────────────
@@ -21,142 +21,66 @@ from auth_manager import (
     _get_current_session,
     require_auth, require_csrf_token,
 )
+from shares_manager import load_shares_state
 from storage_manager import (
-    is_secure_system_device, is_path_on_system_disk,
+    is_path_on_system_disk,
     STORAGE_CACHE, CACHE_TTL, _storage_cache_lock,
     invalidate_storage_cache,
     load_pools_state, save_pools_state,
     detect_btrfs_pools, sanitize_pool_name,
-    _collect_smart_report, get_system_disk_names,
+    _collect_smart_report, disk_inventory, find_disk, check_disks_for_pool,
+    parse_scrub_status, parse_replace_status, parse_balance_status, parse_device_stats,
 )
 
 
 bp = Blueprint('storage', __name__)
+
+# Names for new pools (the create dialog checks the same rule).
+POOL_NAME_RE = re.compile(r'^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$')
 
 NOT_ON_NAS = 'Storage management is only available on the AlvaOS NAS itself (Linux).'
 
 @bp.route('/api/v1/storage/disks', methods=['GET'])
 @require_auth
 def get_disks():
-    """Get list of all available disks"""
-    disks = []
-    
+    """All disks, each with its role (usage) and a quick SMART verdict."""
+    if platform.system() != 'Linux':
+        # Disk management only exists on the NAS itself; never invent hardware.
+        return jsonify({'disks': [], 'error': NOT_ON_NAS}), 200
     try:
-        if platform.system() == 'Linux':
-            # Use lsblk to get disk information
-            # LC_ALL=C for consistent parsing
-            result = subprocess.run(
-                ['env', 'LC_ALL=C', CMD['LSBLK'], '-J', '-o', 'NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,MODEL,SERIAL,TRAN,RM'],
-                capture_output=True, text=True, timeout=5
-            )
-            
-            if result.returncode == 0:
-                lsblk_data = json.loads(result.stdout)
-                system_disk_names = get_system_disk_names()
-
-                # Filter for disk devices (not partitions or loops)
-                for device in lsblk_data.get('blockdevices', []):
-                    if device.get('type') == 'disk':
-                        # Skip loop devices and CD-ROMs
-                        if device['name'].startswith('loop') or device['name'].startswith('sr'):
-                            continue
-                        
-                        # Check if disk is system disk (has root partition)
-                        is_system_disk = False
-                        children = device.get('children', [])
-                        for child in children:
-                            if child.get('mountpoint') == '/':
-                                is_system_disk = True
-                                break
-                        
-                        # Strategy 2: Secure check via /proc/mounts logic
-                        if not is_system_disk and platform.system() == 'Linux':
-                            if is_secure_system_device(device['name']):
-                                is_system_disk = True
-
-                        # Strategy 3: Other legs of a multi-device system pool (RAID/mirror
-                        # installs) — /proc/mounts only exposes the device the kernel mounted
-                        # root from, not its mirror siblings.
-                        if not is_system_disk and device['name'] in system_disk_names:
-                            is_system_disk = True
-                        
-                        # Get SMART data
-                        smart_status = 'unknown'
-                        temp = None
-                        power_on_hours = None
-                        
-                        try:
-                            smart_data, unsupported_reason, _ = _collect_smart_report(
-                                device["name"],
-                                detailed=False,
-                                timeout=5
-                            )
-                            if isinstance(smart_data, dict):
-                                if smart_data.get('smart_support', {}).get('available', True) is False:
-                                    smart_status = 'unknown'
-                                elif smart_data.get('smart_status', {}).get('passed'):
-                                    smart_status = 'healthy'
-                                elif isinstance(smart_data.get('smart_status'), dict):
-                                    smart_status = 'failed'
-
-                                # Extract temp and hours from attributes (ATA)
-                                attributes = smart_data.get('ata_smart_attributes', {}).get('table', [])
-                                for attr in attributes:
-                                    if attr.get('id') in [194, 190]:
-                                        temp = attr.get('raw', {}).get('value')
-                                    elif attr.get('id') == 9:
-                                        power_on_hours = attr.get('raw', {}).get('value')
-
-                                # NVMe fallback values
-                                if temp is None:
-                                    temp = smart_data.get('temperature', {}).get('current') or smart_data.get('nvme_smart_health_information_log', {}).get('temperature')
-                                if power_on_hours is None:
-                                    power_on_hours = smart_data.get('power_on_time', {}).get('hours') or smart_data.get('nvme_smart_health_information_log', {}).get('power_on_hours')
-                            elif unsupported_reason:
-                                smart_status = 'unknown'
-                        except Exception:
-                            pass
-                        
-                        # Determine if removable (USB/SD)
-                        is_removable = bool(device.get('rm')) or device.get('tran') == 'usb'
-
-                        disk_info = {
-                            'name': device['name'],
-                            'path': f'/dev/{device["name"]}',
-                            'size': device.get('size', 'Unknown'),
-                            'model': device.get('model', 'Unknown').strip() if device.get('model') else 'Unknown',
-                            'serial': device.get('serial', 'N/A'),
-                            'fstype': device.get('fstype') or 'none', # Fix: detection of empty disks
-                            'mountpoint': device.get('mountpoint', None),
-                            'is_system_disk': is_system_disk,
-                            'smart_status': smart_status,
-                            'temp': temp,
-                            'power_on_hours': power_on_hours,
-                            'is_removable': is_removable,
-                            'transport': device.get('tran', 'unknown'),
-                            'partitions': []
-                        }
-                        
-                        # Add partition information
-                        for child in children:
-                            partition = {
-                                'name': child['name'],
-                                'size': child.get('size', 'Unknown'),
-                                'fstype': child.get('fstype') or 'none', # Fix here too
-                                'mountpoint': child.get('mountpoint', None)
-                            }
-                            disk_info['partitions'].append(partition)
-                        
-                        disks.append(disk_info)
-        else:
-            # Disk management only exists on the NAS itself; never invent hardware.
-            return jsonify({'disks': [], 'error': NOT_ON_NAS}), 200
-    
+        disks = disk_inventory()
     except Exception as e:
         print(f"Error getting disk info: {e}")
         return jsonify({'error': str(e)}), 500
-    
+    for disk in disks:
+        disk.update(_smart_summary(disk['name']))
     return jsonify({'disks': disks})
+
+
+def _smart_summary(name):
+    """healthy / failed / unknown, plus temperature and power-on hours when reported."""
+    summary = {'smart_status': 'unknown', 'temp': None, 'power_on_hours': None}
+    try:
+        data, _, _ = _collect_smart_report(name, detailed=False, timeout=5)
+    except Exception:
+        return summary
+    if not isinstance(data, dict) or data.get('smart_support', {}).get('available', True) is False:
+        return summary
+    if data.get('smart_status', {}).get('passed'):
+        summary['smart_status'] = 'healthy'
+    elif isinstance(data.get('smart_status'), dict):
+        summary['smart_status'] = 'failed'
+    for attr in data.get('ata_smart_attributes', {}).get('table', []):
+        if attr.get('id') in (194, 190):
+            summary['temp'] = attr.get('raw', {}).get('value')
+        elif attr.get('id') == 9:
+            summary['power_on_hours'] = attr.get('raw', {}).get('value')
+    nvme = data.get('nvme_smart_health_information_log', {})
+    if summary['temp'] is None:
+        summary['temp'] = data.get('temperature', {}).get('current') or nvme.get('temperature')
+    if summary['power_on_hours'] is None:
+        summary['power_on_hours'] = data.get('power_on_time', {}).get('hours') or nvme.get('power_on_hours')
+    return summary
 
 @bp.route('/api/v1/storage/disks/<disk_name>/smart', methods=['GET'])
 @require_auth
@@ -197,84 +121,37 @@ def wipe_disk(disk_name):
     if not disk_name.isalnum() and not all(c in '._-' for c in disk_name if not c.isalnum()):
         return jsonify({'error': 'Invalid disk name'}), 400
     
-    # SYSTEM DISK PROTECTION (covers both legs of a RAID/mirror system install)
-    if is_secure_system_device(disk_name) or disk_name in get_system_disk_names():
-        return jsonify({'error': 'Operation denied: Cannot wipe the system disk.'}), 403
+    if platform.system() != 'Linux':
+        return jsonify({'error': NOT_ON_NAS}), 501
 
     try:
-        if platform.system() == 'Linux':
-            disk_path = f'/dev/{disk_name}'
-
-            # 1. Collect children + mountpoints and unmount deepest first.
-            device_rows = []
-            mountpoints = []
-            try:
-                lsblk_res, lsblk_err = run_sudo_command(
-                    [CMD['LSBLK'], '-nrpo', 'NAME,TYPE,MOUNTPOINT', disk_path],
-                    timeout=10
-                )
-                if not lsblk_err and lsblk_res and lsblk_res.returncode == 0:
-                    for raw in (lsblk_res.stdout or '').splitlines():
-                        line = raw.strip()
-                        if not line:
-                            continue
-                        parts = line.split(None, 2)
-                        name = parts[0].strip() if len(parts) > 0 else ''
-                        dev_type = parts[1].strip() if len(parts) > 1 else ''
-                        mnt = parts[2].strip() if len(parts) > 2 else ''
-                        if not name:
-                            continue
-                        device_rows.append({'name': name, 'type': dev_type, 'mountpoint': mnt})
-                        if mnt and mnt not in ('-', '[SWAP]'):
-                            mountpoints.append(mnt)
-            except Exception:
-                pass
-
-            for mnt in sorted(set(mountpoints), key=len, reverse=True):
-                run_sudo_command([CMD['UMOUNT'], '-l', mnt], timeout=20)
-
-            # Also try device-path unmount for remaining holders.
-            for row in sorted(device_rows, key=lambda item: len(item.get('name', '')), reverse=True):
-                dev_name = row.get('name') or ''
-                if not dev_name:
-                    continue
-                run_sudo_command([CMD['UMOUNT'], '-l', dev_name], timeout=20)
-
-            # 2. Wipe children first, then root disk.
-            children = [
-                row.get('name')
-                for row in sorted(device_rows, key=lambda item: len(item.get('name', '')), reverse=True)
-                if row.get('name') and row.get('name') != disk_path
-            ]
-            for child in children:
-                run_sudo_command([CMD['WIPEFS'], '-a', '-f', child], timeout=30)
-
-            res, err = run_sudo_command([CMD['WIPEFS'], '-a', '-f', disk_path], timeout=45)
-            if err:
-                # Retry once after partprobe in case kernel still holds stale partition refs.
-                run_sudo_command([CMD['PARTPROBE'], disk_path], timeout=20)
-                res, err = run_sudo_command([CMD['WIPEFS'], '-a', '-f', disk_path], timeout=45)
-            if err:
-                # Include active mountpoints for actionable troubleshooting.
-                busy_mounts = []
-                try:
-                    mp_res, mp_err = run_sudo_command([CMD['LSBLK'], '-nrpo', 'MOUNTPOINT', disk_path], timeout=10)
-                    if not mp_err and mp_res and mp_res.returncode == 0:
-                        busy_mounts = [ln.strip() for ln in (mp_res.stdout or '').splitlines() if ln.strip() and ln.strip() != '-']
-                except Exception:
-                    pass
-                extra = f" Active mounts: {', '.join(sorted(set(busy_mounts)))}" if busy_mounts else ""
-                return jsonify({'error': f'Wipe failed: {err}{extra}'}), 500
-
-            # 3. Inform kernel of changes
-            run_sudo_command([CMD['PARTPROBE'], disk_path], timeout=20)
-            invalidate_storage_cache('disks', 'pools')
-            
-            return jsonify({'success': True, 'message': f'Disk /dev/{disk_name} wiped successfully and is now ready for use.'})
-        else:
-            return jsonify({'error': NOT_ON_NAS}), 501
+        disk = find_disk(disk_inventory(), disk_name)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': f'Could not read the disks: {e}'}), 500
+    if disk is None:
+        return jsonify({'error': f'Disk /dev/{disk_name} was not found.'}), 404
+    usage = disk['usage']
+    if not usage['can_erase']:
+        # Only disks with leftover data are erased. A disk in a pool, running the
+        # system, or mounted elsewhere is refused instead of unmounted behind the
+        # user's back; an empty disk has nothing to erase.
+        if usage['role'] == 'empty':
+            return jsonify({'error': f'/dev/{disk_name} is already empty.'}), 409
+        return jsonify({'error': f'/dev/{disk_name} was not erased. {usage["summary"]}', 'role': usage['role']}), 409
+
+    disk_path = disk['path']
+    for part in sorted((p['name'] for p in disk['partitions'] if p.get('name')), key=len, reverse=True):
+        run_sudo_command([CMD['WIPEFS'], '-a', '-f', f'/dev/{part}'], timeout=30)
+    res, err = run_sudo_command([CMD['WIPEFS'], '-a', '-f', disk_path], timeout=45)
+    if err:
+        # Retry once after partprobe in case the kernel still holds stale partition refs.
+        run_sudo_command([CMD['PARTPROBE'], disk_path], timeout=20)
+        res, err = run_sudo_command([CMD['WIPEFS'], '-a', '-f', disk_path], timeout=45)
+    if err:
+        return jsonify({'error': f'Erasing {disk_path} failed: {err}'}), 500
+    run_sudo_command([CMD['PARTPROBE'], disk_path], timeout=20)
+    invalidate_storage_cache('disks', 'pools')
+    return jsonify({'success': True, 'message': f'{disk_path} was erased and is ready for a pool.'})
 
 @bp.route('/api/v1/storage/pools', methods=['GET', 'POST', 'DELETE'])
 @require_auth(require_admin=True)
@@ -453,6 +330,9 @@ def manage_pools():
         except Exception as e:
             print(f"Error in manage_pools GET: {e}")
 
+        for pool in pools:
+            pool.update(_usage_bytes(pool.get('mount_point')))
+
         with _storage_cache_lock:
             STORAGE_CACHE['pools'] = {'data': pools, 'expires': current_time + CACHE_TTL}
         return jsonify({'pools': pools})
@@ -500,16 +380,19 @@ def manage_pools():
         if raid_level == 'raid10' and len(devices) < 4:
             return jsonify({'error': 'RAID10 requires at least 4 devices'}), 400
         
-        # SYSTEM DISK PROTECTION
-        system_disk_names = get_system_disk_names()
-        for dev_path in devices:
-            # dev_path is like /dev/sda
-            dev_name = os.path.basename(dev_path)
-            if is_secure_system_device(dev_name) or dev_name in system_disk_names:
-                return jsonify({'error': f'Operation denied: Device {dev_name} is the system disk.'}), 403
-        
+        if not POOL_NAME_RE.match(pool_name):
+            return jsonify({'error': 'Pool names use lowercase letters, numbers, "-" and "_" (up to 63 characters).'}), 400
+        if any(isinstance(p, dict) and p.get('mount_point') == f'/mnt/alvaos/{pool_name}'
+               for p in load_pools_state().values()):
+            return jsonify({'error': f'A pool named "{pool_name}" already exists.'}), 409
+
         try:
             if platform.system() == 'Linux':
+                # Only empty disks: mkfs erases whatever is on them.
+                problem = check_disks_for_pool(devices)
+                if problem:
+                    return jsonify({'error': problem}), 409
+
                 # Build mkfs.btrfs command
                 cmd = [CMD['MKFS_BTRFS'], '-f', '-L', pool_name]
                 
@@ -585,46 +468,92 @@ def manage_pools():
             return jsonify({'error': f'Pool creation failed: {str(e)}'}), 500
     
     elif request.method == 'DELETE':
-        # Delete pool
-        data = request.get_json()
-        pool_id = data.get('pool_id')
-        
-        if not pool_id:
-            return jsonify({'error': 'Pool ID is required'}), 400
-        
-        try:
-            pools_state = load_pools_state()
-            
-            if pool_id not in pools_state:
-                return jsonify({'error': 'Pool not found'}), 404
-            
-            pool_info = pools_state[pool_id]
-            mount_point = pool_info.get('mount_point')
-            
-            if platform.system() == 'Linux':
-                if mount_point:
-                    run_sudo_command([CMD['UMOUNT'], mount_point], timeout=5)
-                    
-                    try:
-                        run_sudo_command([CMD['RMDIR'], mount_point])
-                    except Exception:
-                        pass
-                
-                devices = pool_info.get('devices', [])
-                for device in devices:
-                    try:
-                        run_sudo_command([CMD['WIPEFS'], '-a', device])
-                    except Exception as e:
-                         print(f"Warning: Failed to wipe device {device}: {e}")
-            
-            del pools_state[pool_id]
-            save_pools_state(pools_state)
-            invalidate_storage_cache('pools', 'disks')
-            
-            return jsonify({'success': True, 'message': 'Pool deleted successfully'})
-        
-        except Exception as e:
-            return jsonify({'error': f'Failed to delete pool: {str(e)}'}), 500
+        return _remove_pool(request.get_json(silent=True) or {})
+
+
+def _usage_bytes(mount_point):
+    """Used / free / total bytes of a mounted pool, as df sees it (the same
+    numbers the capacity alerts use)."""
+    if not mount_point or not os.path.ismount(mount_point):
+        return {}
+    try:
+        usage = psutil.disk_usage(mount_point)
+    except OSError:
+        return {}
+    return {'used_bytes': usage.used, 'free_bytes': usage.free, 'total_bytes': usage.total,
+            'used_percent': round(usage.percent, 1)}
+
+
+def _path_within(path, root):
+    path, root = os.path.normpath(path or '/'), os.path.normpath(root)
+    return path == root or path.startswith(root.rstrip('/') + '/')
+
+
+def _is_mounted(path):
+    return subprocess.run([CMD['MOUNTPOINT'], '-q', path], check=False).returncode == 0
+
+
+def _remove_pool(data):
+    """Take a pool out of AlvaOS. Its data stays on the disks (the pool can be
+    imported again) unless erase is true, which wipes every member disk."""
+    pool_id = str(data.get('pool_id') or '')
+    erase = data.get('erase') is True
+    if not pool_id:
+        return jsonify({'error': 'Pool ID is required'}), 400
+
+    pools_state = load_pools_state()
+    pool_info = pools_state.get(pool_id)
+    if not isinstance(pool_info, dict):
+        return jsonify({'error': 'Pool not found'}), 404
+    name = pool_info.get('name') or pool_id
+    mount_point = str(pool_info.get('mount_point') or '')
+    if mount_point == '/':
+        return jsonify({'error': 'The system pool cannot be removed.'}), 403
+
+    if mount_point:
+        users = sorted(
+            str(share.get('name') or share_id) for share_id, share in load_shares_state().items()
+            if isinstance(share, dict) and _path_within(str(share.get('path') or ''), mount_point)
+        )
+        if users:
+            return jsonify({'error': f'Pool "{name}" is still shared as {", ".join(users)}. '
+                                     'Delete those shares first.', 'shares': users}), 409
+
+    devices = list(pool_info.get('devices') or [])
+    if platform.system() == 'Linux':
+        live = next((p for p in detect_btrfs_pools()[0] if str(p.get('id', '')).lower() == pool_id.lower()), None)
+        if live and live.get('devices'):
+            devices = list(live['devices'])
+        if mount_point and _is_mounted(mount_point):
+            run_sudo_command([CMD['UMOUNT'], mount_point], timeout=30)
+            if _is_mounted(mount_point):
+                return jsonify({'error': f'Pool "{name}" is busy, so it was not removed. '
+                                         'Stop the apps and backups that use it, then try again.'}), 409
+        if mount_point:
+            run_sudo_command([CMD['RMDIR'], mount_point])
+
+    del pools_state[pool_id]
+    save_pools_state(pools_state)
+    invalidate_storage_cache('pools', 'disks')
+
+    if not erase:
+        return jsonify({'success': True, 'erased': False,
+                        'message': f'Pool "{name}" was removed. Its data is still on the disks; '
+                                   'import it again from the Pools tab to get it back.'})
+
+    failed = []
+    if platform.system() == 'Linux':
+        for device in devices:
+            _, err = run_sudo_command([CMD['WIPEFS'], '-a', '-f', device], timeout=45)
+            if err:
+                failed.append(device)
+    invalidate_storage_cache('pools', 'disks')
+    if failed:
+        return jsonify({'success': True, 'erased': False, 'failed': failed,
+                        'message': f'Pool "{name}" was removed, but {", ".join(failed)} could not be erased. '
+                                   'Erase them on the Disks tab.'})
+    return jsonify({'success': True, 'erased': True,
+                    'message': f'Pool "{name}" was removed and its disks were erased.'})
 
 @bp.route('/api/v1/storage/pools/import', methods=['POST'])
 @require_auth(require_admin=True)
@@ -877,12 +806,11 @@ def expand_pool(pool_id):
     if not devices:
         return jsonify({'error': 'No devices provided'}), 400
 
-    # SYSTEM DISK PROTECTION
-    system_disk_names = get_system_disk_names()
-    for dev_path in devices:
-        dev_name = os.path.basename(dev_path)
-        if is_secure_system_device(dev_name) or dev_name in system_disk_names:
-            return jsonify({'error': f'Operation denied: Device {dev_name} is the system disk.'}), 403
+    if platform.system() == 'Linux':
+        # Only empty disks: adding a disk to a pool erases it.
+        problem = check_disks_for_pool(devices)
+        if problem:
+            return jsonify({'error': problem}), 409
 
     pools_state = load_pools_state()
     pool_info = pools_state.get(pool_id)
@@ -951,7 +879,7 @@ def expand_pool(pool_id):
 
             # Start the balance in the background to redistribute/convert data without
             # blocking the request.
-            subprocess.Popen(build_privileged_cmd(balance_cmd), env={'LC_ALL': 'C'})
+            _start_background(balance_cmd)
 
             # Update state
             pool_info['devices'].extend(devices)
@@ -967,6 +895,143 @@ def expand_pool(pool_id):
             return jsonify({'error': NOT_ON_NAS}), 501
     except Exception as e:
         return jsonify({'error': f'Failed to expand pool: {str(e)}'}), 500
+
+# ── Long-running pool work: replace, scrub, balance ─────────────────────────
+
+def _start_background(cmd):
+    """Start a long btrfs job (it runs for minutes to hours) without waiting for
+    it. Returns an error when it fails right away, e.g. a target disk too small."""
+    proc = subprocess.Popen(build_privileged_cmd(cmd), env={'LC_ALL': 'C'},
+                            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    try:
+        proc.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        return ''
+    if proc.returncode == 0:
+        return ''
+    detail = (proc.stderr.read() if proc.stderr else '').strip()
+    return detail.splitlines()[-1] if detail else f'exit code {proc.returncode}'
+
+
+def _mounted_managed_pool(pool_id):
+    """(pool state entry, None) for a managed pool that is mounted, else (None, error response)."""
+    pool_info = load_pools_state().get(pool_id)
+    if not isinstance(pool_info, dict):
+        return None, (jsonify({'error': 'Pool not found'}), 404)
+    mount_point = str(pool_info.get('mount_point') or '')
+    if mount_point == '/':
+        return None, (jsonify({'error': 'This is not available for the system pool.'}), 400)
+    if platform.system() != 'Linux':
+        return None, (jsonify({'error': NOT_ON_NAS}), 501)
+    if not mount_point or not _is_mounted(mount_point):
+        return None, (jsonify({'error': f'Pool "{pool_info.get("name") or pool_id}" is not mounted.'}), 409)
+    return pool_info, None
+
+
+def _btrfs_output(args, timeout=10):
+    res, err = run_sudo_command([CMD['BTRFS']] + args, timeout=timeout)
+    return (res.stdout if res else '') or '', err
+
+
+def _pool_activity(mount_point):
+    scrub_out, _ = _btrfs_output(['scrub', 'status', mount_point])
+    replace_out, _ = _btrfs_output(['replace', 'status', '-1', mount_point])
+    balance_out, _ = _btrfs_output(['balance', 'status', mount_point])
+    stats_out, _ = _btrfs_output(['device', 'stats', mount_point])
+    return {
+        'scrub': parse_scrub_status(scrub_out),
+        'replace': parse_replace_status(replace_out),
+        'balance': parse_balance_status(balance_out),
+        'device_stats': parse_device_stats(stats_out),
+    }
+
+
+@bp.route('/api/v1/storage/pools/<pool_id>/activity', methods=['GET'])
+@require_auth(require_admin=True)
+def pool_activity(pool_id):
+    """What the pool is doing (replace, data check, balance) and error counters per disk."""
+    pool_info, error = _mounted_managed_pool(pool_id)
+    if error:
+        return error
+    return jsonify(_pool_activity(pool_info['mount_point']))
+
+
+def _busy_with(activity):
+    if activity['replace'].get('state') == 'running':
+        return 'A disk is being replaced'
+    if activity['balance'].get('state') in ('running', 'paused'):
+        return 'Data is being spread over the disks'
+    if activity['scrub'].get('state') == 'running':
+        return 'A data check is running'
+    return ''
+
+
+@bp.route('/api/v1/storage/pools/<pool_id>/scrub', methods=['POST'])
+@require_auth(require_admin=True)
+def scrub_pool(pool_id):
+    """Start (or cancel) a data check: btrfs reads every block and repairs bad
+    copies from the good one when the pool is redundant."""
+    pool_info, error = _mounted_managed_pool(pool_id)
+    if error:
+        return error
+    mount_point = pool_info['mount_point']
+    if (request.get_json(silent=True) or {}).get('action') == 'cancel':
+        _, err = _btrfs_output(['scrub', 'cancel', mount_point])
+        if err:
+            return jsonify({'error': 'No data check is running.'}), 409
+        return jsonify({'success': True, 'message': 'The data check was stopped.'})
+    busy = _busy_with(_pool_activity(mount_point))
+    if busy:
+        return jsonify({'error': f'{busy}. Try again when it is done.'}), 409
+    failed = _start_background([CMD['BTRFS'], 'scrub', 'start', '-B', mount_point])
+    if failed:
+        return jsonify({'error': f'The data check did not start: {failed}'}), 500
+    return jsonify({'success': True, 'message': 'Data check started. The pool stays usable meanwhile.'})
+
+
+@bp.route('/api/v1/storage/pools/<pool_id>/replace', methods=['POST'])
+@require_auth(require_admin=True)
+def replace_pool_disk(pool_id):
+    """Copy one member (failing or missing) onto an empty disk with btrfs replace.
+    The pool stays online; for a missing disk the data is rebuilt from the mirror."""
+    pool_info, error = _mounted_managed_pool(pool_id)
+    if error:
+        return error
+    data = request.get_json(silent=True) or {}
+    source = data.get('source')
+    target = str(data.get('target') or '')
+    mount_point = pool_info['mount_point']
+
+    live = next((p for p in detect_btrfs_pools()[0] if str(p.get('id', '')).lower() == pool_id.lower()), None)
+    members = (live or {}).get('members') or []
+    member = next((m for m in members if str(m['devid']) == str(source) or (m['path'] and m['path'] == source)), None)
+    if member is None:
+        return jsonify({'error': 'Choose a disk of this pool to replace.'}), 400
+    problem = check_disks_for_pool([target])
+    if problem:
+        return jsonify({'error': problem}), 409
+    new_disk = find_disk(disk_inventory(), target) or {}
+    if member['size_bytes'] and new_disk.get('size_bytes', 0) < member['size_bytes']:
+        return jsonify({'error': f'{target} is smaller than the disk it replaces ({member["size"]}). '
+                                 'Use a disk of the same size or larger.'}), 409
+    busy = _busy_with(_pool_activity(mount_point))
+    if busy:
+        return jsonify({'error': f'{busy}. Try again when it is done.'}), 409
+
+    failed = _start_background([CMD['BTRFS'], 'replace', 'start', '-B', str(member['devid']), target, mount_point])
+    if failed:
+        return jsonify({'error': f'The replacement did not start: {failed}'}), 500
+
+    devices = [d for d in pool_info.get('devices') or [] if d != member['path']]
+    pool_info['devices'] = devices + [target]
+    state = load_pools_state()
+    state[pool_id] = pool_info
+    save_pools_state(state)
+    invalidate_storage_cache('pools', 'disks')
+    old = member['path'] or f'the missing disk (#{member["devid"]})'
+    return jsonify({'success': True,
+                    'message': f'Replacing {old} with {target}. The pool stays usable; this can take hours.'})
+
 
 # ============================================================================
 @bp.route('/api/v1/storage/available-paths', methods=['GET'])
