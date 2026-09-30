@@ -15,7 +15,7 @@ How to add an entry:
 
 ---
 
-## 2026-09-30 · Storage: disks with data are never erased by surprise
+## 2026-09-30 · Storage: disks with data are never erased by surprise ([#4](https://github.com/SnowTimSwiss/AlvaOS/pull/4))
 
 - **Found:** "Wipe" was offered on every non-system disk, lazily unmounted
   whatever was mounted and erased it, including members of an active pool.
