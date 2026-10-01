@@ -740,8 +740,8 @@ function injectNotificationCenter() {
     const path = window.location.pathname;
     if (path.includes('login.html') || path.includes('setup.html')) return;
     if (!getAuthToken()) return;
-    const statusBadge = document.querySelector('.topbar .status-badge');
-    if (!statusBadge || !statusBadge.parentNode || document.getElementById('notif-bell')) return;
+    const actions = document.querySelector('.topbar .topbar-actions');
+    if (!actions || document.getElementById('notif-bell')) return;
 
     const wrap = document.createElement('div');
     wrap.className = 'notif-bell-wrap';
@@ -758,7 +758,7 @@ function injectNotificationCenter() {
             <div id="notif-panel-list" class="notif-panel-list"></div>
         </div>
     `;
-    statusBadge.parentNode.insertBefore(wrap, statusBadge);
+    actions.prepend(wrap);
 
     const notifBellEl = wrap.querySelector('#notif-bell');
     notifPanelEl = wrap.querySelector('#notif-panel');

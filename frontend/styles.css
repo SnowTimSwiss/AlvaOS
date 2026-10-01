@@ -159,38 +159,64 @@ body {
 
 /* --- Navigation --- */
 
-.logo-area {
+.brand {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin-bottom: var(--space-xl);
+    gap: 11px;
+    margin-bottom: var(--space-lg);
     padding: 10px 12px;
     border: 1px solid var(--border-default);
     border-radius: var(--radius-lg);
     background: var(--bg-card);
+    color: var(--text-primary);
+    text-decoration: none;
 }
 
-.logo-area svg {
+.brand:hover {
+    border-color: var(--border-hover);
+}
+
+.brand-mark {
     color: var(--accent-primary);
     flex-shrink: 0;
 }
 
-.logo-text {
+.brand-text {
     display: flex;
     flex-direction: column;
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: var(--text-primary);
-    letter-spacing: -0.01em;
+    min-width: 0;
 }
 
-.logo-text::after {
-    content: "Control Plane";
-    font-size: 0.63rem;
-    line-height: 1.2;
-    letter-spacing: 0.11em;
-    text-transform: uppercase;
+.brand-name {
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.brand-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75rem;
     color: var(--text-secondary);
+}
+
+.brand-status .status-dot {
+    width: 7px;
+    height: 7px;
+}
+
+.nav-spacer {
+    flex: 1;
+}
+
+.sidebar nav {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
 }
 
 .nav-link {
@@ -330,6 +356,118 @@ body {
 .breadcrumbs span {
     color: var(--text-primary);
     font-weight: 500;
+}
+
+.page-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.menu-btn {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    margin-right: 8px;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-default);
+    background: transparent;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.account {
+    position: relative;
+}
+
+.account-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid var(--border-default);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.account-btn:hover,
+.account-btn[aria-expanded="true"] {
+    color: var(--text-primary);
+    border-color: var(--border-hover);
+}
+
+.account-menu {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 8px);
+    min-width: 220px;
+    padding: 6px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    z-index: 1200;
+}
+
+.account-menu[hidden] {
+    display: none;
+}
+
+.account-who {
+    padding: 8px 10px 10px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-subtle);
+    margin-bottom: 4px;
+}
+
+.account-who strong {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.account-menu [role="menuitem"] {
+    display: block;
+    width: 100%;
+    padding: 8px 10px;
+    border: none;
+    border-radius: var(--radius-default);
+    background: transparent;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 0.88rem;
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.account-menu [role="menuitem"]:hover,
+.account-menu [role="menuitem"]:focus-visible {
+    background: var(--bg-hover);
+}
+
+.nav-scrim {
+    display: none;
+}
+
+.status-dot.info {
+    background: var(--accent-primary);
 }
 
 /* Cards (Universal) */
@@ -1234,38 +1372,49 @@ option {
         overflow: auto;
     }
 
+    /* The sidebar becomes a drawer behind the menu button. */
     .sidebar {
-        width: 100%;
-        border-right: none;
-        border-bottom: 1px solid var(--border-default);
-        padding: 10px 12px;
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: min(280px, 85vw);
+        z-index: 1300;
+        overflow-y: auto;
+        transform: translateX(-100%);
+        visibility: hidden;
+        transition: transform 0.2s ease, visibility 0.2s;
     }
 
-    .logo-area {
-        margin-bottom: 10px;
+    body.nav-open .sidebar {
+        transform: none;
+        visibility: visible;
     }
 
-    .sidebar nav {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-        gap: 6px;
+    .nav-scrim {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 1250;
+        background: rgba(1, 4, 9, 0.6);
     }
 
-    .sidebar nav > div[style*="flex:1"] {
-        display: none !important;
+    .nav-scrim[hidden] {
+        display: none;
+    }
+
+    .menu-btn {
+        display: inline-flex;
     }
 
     .nav-link {
-        margin-bottom: 0;
-        padding: 8px 10px;
-        font-size: 0.86rem;
-        gap: 8px;
+        padding: 10px 12px;
     }
 
-    .nav-link.active {
-        border-left: none;
-        border-bottom: 2px solid var(--accent-primary);
-        border-radius: var(--radius-default);
+    .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 1100;
     }
 
     .topbar {
@@ -1316,10 +1465,6 @@ option {
 }
 
 @media (max-width: 760px) {
-    .topbar > .status-badge {
-        display: none;
-    }
-
     .feedback-fab-wrap {
         bottom: 12px;
         right: 12px;
@@ -1881,11 +2026,6 @@ details.live[open] .live-toggle svg { transform: rotate(180deg); }
 }
 
 @media (max-width: 460px) {
-    /* Below this width icon-plus-label navigation no longer fits two across. */
-    .sidebar nav {
-        grid-template-columns: repeat(2, 1fr);
-    }
-
     .content-scroll {
         padding: 12px 10px;
     }
