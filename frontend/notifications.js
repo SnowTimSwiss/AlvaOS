@@ -80,7 +80,10 @@ window.showToast = function (message, type = 'info', options = {}) {
         setTimeout(closeToast, 5000);
     }
 
-    if (window.notificationCenter && options.record !== false) {
+    // Success and info toasts are feedback on what the user just did; only
+    // problems are worth keeping in the notification list.
+    const worthKeeping = type === 'warning' || type === 'error' || options.record === true;
+    if (window.notificationCenter && options.record !== false && worthKeeping) {
         window.notificationCenter.pushLocal({
             severity: type,
             title: options.title || (String(type).charAt(0).toUpperCase() + String(type).slice(1)),
@@ -360,32 +363,12 @@ function removeUpdateBanner() {
 }
 
 function renderDashboardUpdatesCard(available, versionLabel) {
-    const card = document.getElementById('dashboard-updates-card');
-    if (!card) return;
-
-    const pill = document.getElementById('dashboard-updates-pill');
-    const value = document.getElementById('dashboard-updates-value');
-    const sub = document.getElementById('dashboard-updates-sub');
-
-    card.classList.toggle('attention', !!available);
-    if (pill) {
-        pill.className = `pill ${available ? 'warn' : 'ok'}`;
-        pill.textContent = available ? '1 available' : 'Up to date';
-    }
-    if (value) {
-        value.textContent = available ? `AlvaOS ${versionLabel} is ready` : 'AlvaOS is up to date';
-    }
-    if (sub) {
-        sub.textContent = available
-            ? 'Open Updates to review release notes and install.'
-            : 'No updates available right now.';
-    }
-
-    if (window.alvaosSetFocusAttention) window.alvaosSetFocusAttention('updates', !!available);
+    if (window.alvaosDashboardUpdates) window.alvaosDashboardUpdates(!!available, available ? versionLabel : '');
 }
 
 function renderUpdateBanner(versionLabel, versionKey) {
-    if (document.getElementById('dashboard-updates-card')) return;
+    // The dashboard shows updates in its own card and status line.
+    if (document.getElementById('card-updates')) return;
 
     const existing = document.getElementById('update-banner');
     if (existing) {
@@ -450,7 +433,7 @@ function setUpdateIndicators({ available, version, checkedAt } = {}) {
 
     const versionLabel = storedVersion || 'Update';
     const versionKey = storedVersion || 'unknown';
-    renderDashboardUpdatesCard(true, versionLabel);
+    renderDashboardUpdatesCard(true, storedVersion);
     const dismissedVersion = localStorage.getItem(UPDATE_CACHE_KEYS.dismissed) || '';
     const show = versionKey !== dismissedVersion;
     if (show) {
@@ -514,6 +497,18 @@ triggerUpdateCheck();
 const NOTIF_LOCAL_KEY = 'alvaos_local_notifications';
 const NOTIF_LOCAL_MAX = 50;
 const NOTIF_POLL_MS = 60 * 1000;
+// Same rule as the backend: read entries go after a week, the rest after a month.
+const NOTIF_READ_TTL_MS = 7 * 24 * 3600 * 1000;
+const NOTIF_MAX_AGE_MS = 30 * 24 * 3600 * 1000;
+const NOTIF_EARLIER_SHOWN = 10;
+
+function notExpired(entry) {
+    const age = Date.now() - new Date(entry?.ts).getTime();
+    if (!Number.isFinite(age)) return true;
+    if (age > NOTIF_MAX_AGE_MS) return false;
+    if ((entry.read || entry.dismissed) && age > NOTIF_READ_TTL_MS) return false;
+    return true;
+}
 
 function getAuthToken() {
     return localStorage.getItem('alvaos_token');
@@ -523,7 +518,10 @@ function loadLocalNotifications() {
     try {
         const raw = localStorage.getItem(NOTIF_LOCAL_KEY);
         const list = raw ? JSON.parse(raw) : [];
-        return Array.isArray(list) ? list : [];
+        // Entries from before this rule were every toast, success included.
+        return Array.isArray(list)
+            ? list.filter((n) => n && notExpired(n) && n.severity !== 'success' && n.severity !== 'info')
+            : [];
     } catch (e) {
         return [];
     }
@@ -667,36 +665,52 @@ function fetchServerNotifications() {
         .catch(() => { });
 }
 
-function renderNotificationCenter() {
-    if (!notifBadgeEl || !notifPanelEl) return;
-    const count = notifUnreadCount();
-    notifBadgeEl.textContent = count > 99 ? '99+' : String(count);
-    notifBadgeEl.style.display = count > 0 ? 'inline-flex' : 'none';
-
-    const listEl = notifPanelEl.querySelector('#notif-panel-list');
-    if (!listEl) return;
-
-    const list = mergedNotificationFeed().slice(0, 50);
-    if (list.length === 0) {
-        listEl.innerHTML = `<div class="notif-empty">No notifications yet.</div>`;
-        return;
-    }
-
-    listEl.innerHTML = list.map((n) => {
-        const bucket = severityBucket(n.severity);
-        const isLocal = !!n.local;
-        const link = n.link || '';
-        return `
+function notifItemHtml(n) {
+    const bucket = severityBucket(n.severity);
+    const isLocal = !!n.local;
+    const link = n.link || '';
+    return `
         <div class="notif-item severity-${bucket}${n.read ? '' : ' unread'}${link ? ' clickable' : ''}" data-id="${escapeHtml(n.id)}" data-local="${isLocal ? '1' : '0'}" data-link="${escapeHtml(link)}">
             <span class="notif-item-icon">${window.alvaIcon ? window.alvaIcon(severityIconName(n.severity), '', 'aria-hidden="true"') : ''}</span>
             <div class="notif-item-body">
                 <div class="notif-item-title">${escapeHtml(n.title)}</div>
-                <div class="notif-item-message">${escapeHtml(n.message)}</div>
+                ${n.message ? `<div class="notif-item-message">${escapeHtml(n.message)}</div>` : ''}
                 <div class="notif-item-time">${timeAgo(n.ts)}</div>
             </div>
             ${n.dismissible !== false ? `<button type="button" class="notif-item-dismiss" aria-label="Dismiss" data-dismiss="${escapeHtml(n.id)}" data-local="${isLocal ? '1' : '0'}">${window.alvaIcon ? window.alvaIcon('x', '', 'aria-hidden="true"') : '&times;'}</button>` : ''}
         </div>`;
-    }).join('');
+}
+
+function renderNotificationCenter() {
+    if (!notifBadgeEl || !notifPanelEl) return;
+    const feed = mergedNotificationFeed().filter(notExpired);
+    const unread = feed.filter((n) => !n.read);
+    const count = unread.length;
+    notifBadgeEl.textContent = count > 9 ? '9+' : String(count);
+    notifBadgeEl.style.display = count > 0 ? 'inline-flex' : 'none';
+    // The badge is only red when something unread needs action.
+    notifBadgeEl.classList.toggle('calm', !unread.some((n) => severityBucket(n.severity) === 'danger'));
+    const bell = notifPanelEl.parentElement?.querySelector('#notif-bell');
+    if (bell) bell.setAttribute('aria-label', count ? `Notifications, ${count} new` : 'Notifications');
+
+    const markAll = notifPanelEl.querySelector('#notif-mark-all');
+    if (markAll) markAll.style.display = count > 0 ? '' : 'none';
+
+    const listEl = notifPanelEl.querySelector('#notif-panel-list');
+    if (!listEl) return;
+
+    if (feed.length === 0) {
+        listEl.innerHTML = `<div class="notif-empty">Nothing here. When something needs you, it shows up here and on the dashboard.</div>`;
+        return;
+    }
+
+    const earlier = feed.filter((n) => n.read);
+    const earlierShown = earlier.slice(0, NOTIF_EARLIER_SHOWN);
+    listEl.innerHTML = [
+        unread.length ? `<div class="notif-group-label">New</div>${unread.map(notifItemHtml).join('')}` : '',
+        earlierShown.length ? `<div class="notif-group-label">Earlier</div>${earlierShown.map(notifItemHtml).join('')}` : '',
+        earlier.length > earlierShown.length ? `<div class="notif-more">Older ones are cleared automatically.</div>` : '',
+    ].join('');
 
     if (window.renderAlvaIcons) window.renderAlvaIcons(listEl);
 
