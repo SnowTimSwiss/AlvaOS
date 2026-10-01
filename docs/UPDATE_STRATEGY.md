@@ -1,34 +1,34 @@
 # AlvaOS Update Strategy
 
-Safe, simple, and self-hosted system updates with automatic rollbacks.
+Safe, simple, and self-hosted system updates, with a way back when one breaks.
 
 ## Goals
-Safe (no breaks), Simple (one-click), Automated (auto-rollback), and User-controlled (no forced updates).
+Safe (no breaks), Simple (one-click), Recoverable (go back to the previous version), and User-controlled (no forced updates).
 
 ## Update Layers
 1. **Base OS (Debian)**: Managed via `apt` through AlvaOS API. Optional auto-security updates.
 2. **AlvaOS System**: Backend, Frontend, and Scripts delivered as versioned `.deb` packages via GitHub.
 3. **Docker Apps**: Standard Compose-based updates; pulls new images while preserving volumes.
 
-## Process Flow
-1. **Check**: Backend queries GitHub Releases API for new versions.
-2. **Download**: `.deb` package is downloaded and SHA256 verified.
-3. **Prepare**: Snapshot of `/etc/alvaos/` is created for backup.
-4. **Install**: `apt install` is executed, and services are restarted.
-5. **Verify**: 30s health check runs. **Failure triggers auto-rollback**.
+## Process Flow (as implemented)
+1. **Check**: The backend asks the GitHub Releases API for the newest release on the chosen channel (cached for an hour).
+2. **Download**: The `.deb` and its detached `.sig` are downloaded into `/var/lib/alvaos/updates/`. The three newest packages are kept there.
+3. **Verify**: The privilege helper checks the Ed25519 signature against the installed key and that the package is `alvaos-system` (`RELEASE.md`).
+4. **Install**: `apply_update.sh` runs as a detached systemd unit: it copies `/var/lib/alvaos` to `/var/lib/alvaos.bak`, stops the services, runs `dpkg -i`, runs migrations and starts the services again.
+5. **Record**: The installed version is added to the update history.
 
 ## Rollback & Recovery
-- **Automatic**: Restores config snapshot and downgrades package if health checks fail.
-- **Manual**: `sudo apt install alvaos-system=PREV_VERSION && sudo systemctl restart alvaos.service`.
+- **From the Updates page**: "Go back to an earlier version" lists earlier signed packages that are still in the update cache and installs one through the same signed path as an update (`GET/POST /api/v1/updates/rollback`). A version that was installed from the installer or a USB stick is not in the cache and cannot be offered.
+- **Not yet automatic**: when `dpkg -i` fails or no service comes back, the script reports an error but does not reinstall the previous package by itself. The state copy in `/var/lib/alvaos.bak` is only restored if files went missing.
+- **Manual**: `sudo dpkg -i /var/lib/alvaos/updates/<previous>.deb && sudo systemctl restart alvaos-backend`.
 - **Disaster**: Recovery shell via installer USB or restore from Buddy Backup.
 
 ## Update Channels
-- **stable**: Production-ready releases.
-- **beta**: Pre-release testing builds.
-- **dev**: Bleeding-edge builds from the `main` branch.
+- **stable**: Releases (shown as "Stable (recommended)").
+- **unstable**: Pre-releases (shown as "Testing").
 
 ## Security & Packaging
-- **Security**: HTTPS only, SHA256 checksums, and admin-only execution. No telemetry.
+- **Security**: HTTPS only, Ed25519-signed packages, and admin-only execution. No telemetry.
 - **Packaging**: Built via `scripts/package/build-deb.sh`. Contains all system binaries and assets.
 - **Offline**: Supports manual `.deb` installation via Web UI or SSH.
 

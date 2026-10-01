@@ -35,6 +35,8 @@
         setStatus(level === 'setup' ? 'ok' : level);
     };
     window.alvaosBrandName = setName;
+    // notifications.js calls this when it learns whether an update is ready.
+    window.alvaosBrandRefresh = () => refreshOwnStatus();
 
     async function refreshOwnStatus() {
         if (!ownStatus || !localStorage.getItem('alvaos_token')) return;

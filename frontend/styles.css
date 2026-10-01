@@ -1930,6 +1930,230 @@ details.live[open] .live-toggle svg { transform: rotate(180deg); }
     .live-meta { display: none; }
 }
 
+/* ── Updates page ─────────────────────────────────────────────────────────── */
+
+.upd-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.upd-actions [hidden] { display: none; }
+
+.upd-progress {
+    margin: 0 0 12px;
+    padding: 14px 18px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-lg);
+}
+
+.upd-progress-track {
+    height: 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+}
+
+.upd-progress-track > span {
+    display: block;
+    height: 100%;
+    width: 3%;
+    background: var(--accent-primary);
+    border-radius: 999px;
+    transition: width 0.4s ease;
+}
+
+.upd-progress-text {
+    margin-top: 8px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.upd-notes,
+.upd-system {
+    margin: 12px 0;
+}
+
+.upd-notes-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.upd-notes h2,
+.upd-system h2 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0;
+}
+
+.upd-notes-date {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.upd-notes-body {
+    max-height: 320px;
+    overflow-y: auto;
+    font-size: 0.9rem;
+    line-height: 1.55;
+    color: var(--text-primary);
+}
+
+.upd-notes-body h3 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin: 12px 0 4px;
+}
+
+.upd-notes-body h3:first-child { margin-top: 0; }
+.upd-notes-body p { margin: 0 0 8px; }
+.upd-notes-body ul { margin: 0 0 8px; padding-left: 20px; }
+
+.upd-notes-foot {
+    margin: 12px 0 0;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-subtle);
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+}
+
+.upd-system-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.upd-system-row p {
+    margin: 2px 0 0;
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+}
+
+details.upd-inline {
+    margin-top: 10px;
+}
+
+details.upd-inline summary {
+    cursor: pointer;
+    font-size: 0.84rem;
+    color: var(--accent-primary);
+}
+
+.upd-pkg-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 8px 0 10px;
+    max-height: 260px;
+    overflow-y: auto;
+}
+
+.upd-pkg {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 2px;
+    font-size: 0.85rem;
+}
+
+.upd-pkg input { width: auto; margin: 0; }
+.upd-pkg .mono-text { color: var(--text-secondary); font-size: 0.78rem; }
+
+.upd-os-upgrade {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-subtle);
+    font-size: 0.86rem;
+}
+
+.upd-os-upgrade[hidden] { display: none; }
+
+details.upd-section { margin-bottom: 10px; }
+
+.upd-section-body {
+    padding: 0 18px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-start;
+}
+
+.upd-section-body .metric-sub { margin: 0; }
+
+.upd-list {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+}
+
+.upd-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 9px 0;
+    border-top: 1px solid var(--border-subtle);
+}
+
+.upd-row:first-child { border-top: none; }
+
+.upd-row > div {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.upd-row strong { font-size: 0.88rem; font-weight: 600; }
+
+.upd-row small {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    overflow-wrap: anywhere;
+}
+
+.upd-settings { gap: 0; align-items: stretch; }
+
+.upd-setting {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 10px 0;
+    border-top: 1px solid var(--border-subtle);
+    cursor: pointer;
+}
+
+.upd-setting:first-child { border-top: none; }
+
+.upd-setting > span:first-child {
+    display: flex;
+    flex-direction: column;
+}
+
+.upd-setting strong { font-size: 0.88rem; font-weight: 600; }
+.upd-setting small { font-size: 0.78rem; color: var(--text-secondary); }
+.upd-setting .select-input { width: auto; min-width: 170px; }
+
+@media (max-width: 760px) {
+    .upd-actions { width: 100%; }
+    .upd-actions button { flex: 1; }
+    .upd-system-row,
+    .upd-os-upgrade { flex-direction: column; align-items: stretch; }
+    .upd-setting { align-items: flex-start; }
+    .upd-setting .select-input { min-width: 0; }
+}
+
 /* ── Mobile ───────────────────────────────────────────────────────────────────
    AlvaOS is usually checked from a phone, and usually because something needs
    attention. Status, alerts and backup state have to be readable without

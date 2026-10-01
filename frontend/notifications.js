@@ -368,7 +368,7 @@ function renderDashboardUpdatesCard(available, versionLabel) {
 
 function renderUpdateBanner(versionLabel, versionKey) {
     // The dashboard shows updates in its own card and status line.
-    if (document.getElementById('card-updates')) return;
+    if (document.getElementById('card-updates') || document.getElementById('upd-status')) return;
 
     const existing = document.getElementById('update-banner');
     if (existing) {
@@ -405,7 +405,7 @@ function renderUpdateBanner(versionLabel, versionKey) {
     }
 }
 
-function setUpdateIndicators({ available, version, checkedAt } = {}) {
+function applyUpdateIndicators({ available, version, checkedAt } = {}) {
     if (typeof checkedAt === 'number') {
         localStorage.setItem(UPDATE_CACHE_KEYS.lastCheck, String(checkedAt));
     }
@@ -444,7 +444,10 @@ function setUpdateIndicators({ available, version, checkedAt } = {}) {
     setUpdateBadge(show);
 }
 
-window.setUpdateIndicators = setUpdateIndicators;
+window.setUpdateIndicators = function (state) {
+    applyUpdateIndicators(state);
+    if (window.alvaosBrandRefresh) window.alvaosBrandRefresh();
+};
 
 function triggerUpdateCheck() {
     if (window.__updateCheckRunning) return;
@@ -462,7 +465,7 @@ function triggerUpdateCheck() {
 
     const shouldReuseCache = Date.now() - lastCheck < CHECK_INTERVAL_MS;
     if (shouldReuseCache) {
-        setUpdateIndicators({ available: cachedAvailable, version: cachedVersion });
+        window.setUpdateIndicators({ available: cachedAvailable, version: cachedVersion });
         if (cachedAvailable) return;
     }
 
@@ -480,7 +483,7 @@ function triggerUpdateCheck() {
         .then(res => res ? res.json() : null)
         .then(data => {
             if (!data || data.error) return;
-            setUpdateIndicators({
+            window.setUpdateIndicators({
                 available: !!data.update_available,
                 version: data.latest_version || '',
                 checkedAt: Date.now()

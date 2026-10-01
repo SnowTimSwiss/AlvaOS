@@ -15,6 +15,38 @@ How to add an entry:
 
 ---
 
+## 2026-10-01 · Updates page: one sentence, what's new, one button, a way back
+
+- **First screen:** "AlvaOS 0.9.0 is up to date" with Check now, or
+  "AlvaOS 0.10.0 is ready to install" with Install update and the release
+  notes (Markdown headings and lists shown as text, never as HTML). Progress
+  and the reconnect after the restart happen on the page itself instead of a
+  full-screen overlay; a failed install says so and offers Try again.
+- **System packages** in one sentence with Install all; single packages under
+  "Choose packages"; a Debian release upgrade only shows when one exists.
+- Folded away: **Go back to an earlier version** (only shown when there is
+  one), **Install from a USB stick** (AlvaOS and Debian packages in one list),
+  **History** in words ("AlvaOS 0.9.0 installed, yesterday") and
+  **Settings**, saved on change. The tabs are gone.
+- **Rollback backend:** `GET /api/v1/updates/rollback` lists earlier signed
+  packages still in `/var/lib/alvaos/updates/`; `POST` installs one through
+  the same signed path as an update (the helper checks the signature). Only
+  versions from that list are accepted. `apply_update.sh` now writes the
+  package version into the history.
+- **Found:** `UPDATE_STRATEGY.md` promised an automatic rollback with health
+  checks that does not exist. The document now describes what really
+  happens; the missing part is in the roadmap.
+- **Fixed on the way:** a mypy error in the dashboard I/O counters from the
+  first commit of this session (CI would have been red), and a recursion in
+  `notifications.js` (`window.setUpdateIndicators` wrapped a top-level
+  function of the same name, which is the same global).
+- Tests: `test_update_rollback.py`. Checked in a browser with mocked data
+  (update ready, up to date with Debian release upgrade, all sections open)
+  at desktop and phone width.
+- **Note for next time:** never run against a real update. Check on a NAS
+  that going back to an older package works with `dpkg -i` (downgrade) and
+  that the page reconnects after the restart.
+
 ## 2026-10-01 · Navigation: NAS name and status, a real phone menu
 
 - **Brand block** (top left): the AlvaOS mark, the NAS name (hostname,
