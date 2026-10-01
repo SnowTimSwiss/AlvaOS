@@ -20,6 +20,10 @@ from common import _utc_now, _now_iso, _parse_iso, _safe_int, _read_cpu_temperat
 ALERTS_STATE_FILE = '/var/lib/alvaos/alerts.json'
 NOTIFICATIONS_STATE_FILE = '/var/lib/alvaos/notifications.json'
 NOTIFICATIONS_MAX_ENTRIES = 200
+# Old notifications expire so the bell shows what matters now, not a backlog.
+# Read or dismissed entries go after a week, everything else after a month.
+NOTIFICATIONS_READ_TTL_DAYS = 7
+NOTIFICATIONS_MAX_AGE_DAYS = 30
 _notifications_lock = threading.Lock()
 
 # ── Thresholds ────────────────────────────────────────────────────────────────
@@ -496,9 +500,36 @@ def _save_notifications_raw(notifications):
         print(f"Error saving notifications: {e}")
 
 
+def _prune_expired(notifications, now=None):
+    """Drop entries that are too old to matter. Entries without a readable
+    timestamp are kept, so a malformed file never silently loses alerts."""
+    now = now or _utc_now()
+    kept = []
+    for entry in notifications:
+        if not isinstance(entry, dict):
+            continue
+        ts = _parse_iso(entry.get('ts'))
+        if ts is None:
+            kept.append(entry)
+            continue
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=now.tzinfo)
+        age_days = (now - ts).total_seconds() / 86400
+        if age_days > NOTIFICATIONS_MAX_AGE_DAYS:
+            continue
+        if (entry.get('read') or entry.get('dismissed')) and age_days > NOTIFICATIONS_READ_TTL_DAYS:
+            continue
+        kept.append(entry)
+    return kept
+
+
 def load_notifications():
     with _notifications_lock:
-        return _load_notifications_raw()
+        notifications = _load_notifications_raw()
+        pruned = _prune_expired(notifications)
+        if len(pruned) != len(notifications):
+            _save_notifications_raw(pruned)
+        return pruned
 
 
 def push_notification(severity, title, message, source='system', dismissible=True, link=None, fingerprint=None):
@@ -513,7 +544,7 @@ def push_notification(severity, title, message, source='system', dismissible=Tru
         severity = 'info'
 
     with _notifications_lock:
-        notifications = _load_notifications_raw()
+        notifications = _prune_expired(_load_notifications_raw())
 
         if fingerprint:
             for existing in notifications:
