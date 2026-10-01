@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 import requests
 
 from common import PRIV_HELPER, build_privileged_cmd, privilege_error_message
-from update_signing import signature_path_for
+from update_signing import read_deb_version, signature_path_for
 
 try:
     from packaging.version import Version, InvalidVersion
@@ -705,6 +705,51 @@ class UpdateManager:
             self.set_update_state("error", "Install failed", {"error": detail})
             return {"success": False, "error": detail}
         return {"success": True, "message": "Update process started in background"}
+
+    def list_rollback_candidates(self):
+        """Earlier AlvaOS versions that are still in the update cache, signed,
+        newest first. Only these can be gone back to: the privilege helper
+        verifies the signature exactly as for a normal update."""
+        current = self.get_current_version()
+        candidates: dict = {}
+        try:
+            names = os.listdir(self.cache_dir)
+        except OSError:
+            return []
+        for name in names:
+            path = os.path.join(self.cache_dir, name)
+            if not name.endswith(".deb") or not os.path.isfile(path):
+                continue
+            if not os.path.isfile(signature_path_for(path)):
+                continue
+            version = read_deb_version(path)
+            if not version or not self.is_newer(version, current):
+                continue
+            # is_newer(a, b) is "b is newer than a": keep only older versions.
+            candidates.setdefault(version, {
+                "version": version,
+                "file": name,
+                "downloaded_at": datetime.fromtimestamp(os.path.getmtime(path), timezone.utc).isoformat(),
+            })
+
+        def sort_key(item):
+            try:
+                return Version(self.normalize_version(item["version"]))
+            except InvalidVersion:
+                return Version("0")
+
+        return sorted(candidates.values(), key=sort_key, reverse=True)
+
+    def rollback_to(self, version):
+        """Reinstall an earlier signed AlvaOS package from the cache."""
+        wanted = str(version or "").strip()
+        match = next((c for c in self.list_rollback_candidates() if c["version"] == wanted), None)
+        if not match:
+            return {"success": False, "error": f"AlvaOS {wanted or '?'} is not stored on this NAS"}
+        result = self.apply_alvaos_update(os.path.join(self.cache_dir, match["file"]))
+        if result.get("success"):
+            result["message"] = f"Going back to AlvaOS {wanted}"
+        return result
 
     def apply_offline_system_package(self, package_path):
         if platform.system() != "Linux":

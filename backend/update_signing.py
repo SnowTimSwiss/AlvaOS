@@ -126,11 +126,21 @@ def signature_path_for(package_path: str) -> str:
 
 def read_deb_package_name(package_path: str) -> Optional[str]:
     """Package name from the control file, via dpkg-deb (no root needed)."""
+    return read_deb_field(package_path, 'Package')
+
+
+def read_deb_version(package_path: str) -> Optional[str]:
+    """Package version from the control file, via dpkg-deb (no root needed)."""
+    return read_deb_field(package_path, 'Version')
+
+
+def read_deb_field(package_path: str, field: str) -> Optional[str]:
+    """One control field of a .deb, via dpkg-deb (no root needed)."""
     import subprocess
 
     try:
         res = subprocess.run(
-            ['/usr/bin/dpkg-deb', '-f', package_path, 'Package'],
+            ['/usr/bin/dpkg-deb', '-f', package_path, field],
             capture_output=True, text=True, timeout=30, env={'LC_ALL': 'C'},
         )
     except Exception:

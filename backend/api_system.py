@@ -46,7 +46,7 @@ bp = Blueprint('system', __name__)
 
 def _io_counters():
     """Bytes moved over the network and to/from disks since boot."""
-    info = {'net_bytes_sent': None, 'net_bytes_recv': None,
+    info: dict = {'net_bytes_sent': None, 'net_bytes_recv': None,
             'disk_read_bytes': None, 'disk_write_bytes': None}
     try:
         net = psutil.net_io_counters(pernic=True) or {}
