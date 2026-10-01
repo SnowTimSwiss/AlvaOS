@@ -470,3 +470,24 @@
         width: 100%;
     }
 }
+
+/* Unread but nothing that needs action: a calm badge instead of red. */
+.notif-bell-badge.calm {
+    background: var(--accent-primary);
+    color: #0d1117;
+}
+
+.notif-group-label {
+    padding: 0.6rem 1rem 0.3rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.notif-more {
+    padding: 0.6rem 1rem 0.8rem;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}

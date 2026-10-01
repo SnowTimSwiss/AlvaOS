@@ -15,6 +15,47 @@ How to add an entry:
 
 ---
 
+## 2026-10-01 · Dashboard: one status line, four cards, quiet live numbers
+
+- **Status line** at the top: "Everything is fine", or the one most important
+  thing with a button to the page where it is fixed. Further items are listed
+  below it (at most four, "and N more"). Every card and the alerts feed it a
+  list of issues with a level: `bad` (red, action required), `warn` (amber),
+  `setup` (blue, "Next step: set up storage / turn on backups" on a new NAS)
+  and `info` (blue, e.g. an update is ready). The top bar dot and its label
+  ("Online" / "Worth a look" / "Needs attention") follow the status line.
+- **Cards** for Storage (free space, one bar per pool), Backup (last backup
+  in words, next run, buddies online/offline), Apps (each app running /
+  stopped / not fully running) and Updates. Each card is a link to its page.
+  The separate Alerts card is gone: alerts now feed the status line.
+- **Decisions:** a stopped app is a choice, not a problem, so it is grey and
+  does not raise the status. Only an app with some containers stopped is
+  amber. A NAS without pools or backups is not "warning" but a blue next
+  step. CPU and memory alerts point at the dashboard itself, so their button
+  opens the live details instead.
+- **Live resources:** one quiet strip with CPU, memory, network and disk
+  activity. Clicking it opens a 4-hour history (CPU, memory, network, CPU
+  temperature) and the hardware details. `/system/info` now returns
+  cumulative network and disk counters (`io`); the page turns two samples into
+  a rate. Loopback and Docker bridges are not counted as network traffic.
+- **Notifications:** only warnings and errors are kept in the bell list
+  (success toasts are feedback, not news). Old entries expire: read ones
+  after 7 days, all after 30, in the backend and for local entries. The
+  badge shows at most "9+", and is blue unless something unread needs action.
+  The list is split into New and Earlier.
+- **Code:** dashboard logic moved from the shared `app.js` (loaded on every
+  page) into `dashboard.js`; the old hero/focus-card CSS was removed.
+- Tests: `test_notifications.py` (expiry, dedupe, feed counts, I/O counters).
+  Checked in a browser with mocked API data (all fine, several problems, a
+  fresh NAS) at desktop and phone width, no console errors, no sideways
+  scrolling.
+- **Note for next time:** not yet opened against a real backend. Check on a
+  NAS that the network rate looks plausible (bonded or VLAN interfaces are
+  counted once each) and that `/containers` failing (Docker off) shows
+  "Could not check which apps are running" rather than all apps stopped.
+  The degraded-pool state on the Storage card is read from the alert id
+  `pool-<id>-degraded`; keep that id stable.
+
 ## 2026-09-30 · Shares and people: say who can open what ([#4](https://github.com/SnowTimSwiss/AlvaOS/pull/4))
 
 - **Found:** share names and the NFS "allowed hosts" went unchecked into

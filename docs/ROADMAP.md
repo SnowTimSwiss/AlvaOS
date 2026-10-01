@@ -6,7 +6,7 @@ default, powerful when needed, light enough for old hardware.
 This is a prioritized to-do list, not a promise. Top to bottom is the order of work.
 Done work moves to `BACKLOG.md`.
 
-Every page follows the same pattern as the reworked Storage and Backup pages:
+Every page follows the same pattern as the reworked Dashboard, Storage and Backup pages:
 - The first screen answers "is it fine, and what do I do next?" in plain words.
 - Only the actions that make sense right now are shown.
 - Details and power options are one click away, never forced into view.
@@ -16,20 +16,12 @@ Every page follows the same pattern as the reworked Storage and Backup pages:
 
 ## Now
 
-### 1. Dashboard redesign
-The dashboard is the calm overview. It is not a control panel.
-- One status line at the top: "Everything is fine", or the one thing that needs attention, with a link to where it is fixed.
-- Cards for storage (pools, usage, health), backup (last run, next run, buddy), apps (running / stopped) and updates. Each card leads to its page.
-- Live resources (CPU, memory, network, disk activity) small and quiet, with details on click.
-- No numbers without context, no red unless action is required.
-- Replace the "99+" notification badge with a short, useful list. Old notifications expire.
-
-### 2. Navigation and branding
+### 1. Navigation and branding
 - Redesign the logo block (top left): a simple mark, the NAS name, and its status (online, update available).
 - Sidebar in a fixed order with clear icons; a proper mobile menu instead of the button grid.
 - A top bar with the page title and at most one or two global items (notifications, account).
 
-### 3. Remaining pages in the new pattern
+### 2. Remaining pages in the new pattern
 - **Apps:** installed apps with status, the address to open them, and Update/Stop/Remove. The store shows what an app needs (ports, folders) before installing. App data goes into pool folders the user picks.
 - **System:** split into Network, Time, Security, Alerts, Power and Logs as today, but each shows its state first and its settings second.
 - **Updates:** one sentence ("AlvaOS is up to date" / "Update X is ready"), a changelog, one button, and rollback when something breaks.
@@ -39,7 +31,7 @@ The dashboard is the calm overview. It is not a control panel.
 
 ## Next
 
-### 4. AlvaOS Files: a native, lightweight file cloud
+### 3. AlvaOS Files: a native, lightweight file cloud
 Everything people use Nextcloud for at home, built into AlvaOS and working on the same folders as the shares. No separate app, no database server.
 - **Web file browser** on the shared folders: browse, upload (drag and drop, large files resumable), download, rename, move, delete, and folder downloads as zip.
 - Every person from the People tab signs in with the same password and sees exactly the shares they can open, with the same read/edit rights.
@@ -51,14 +43,14 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 - **Remote access** without port forwarding, over the existing WireGuard, with a simple "add this device" flow and QR code.
 - Lightweight: a few MB of code, no PHP and no extra database, and it does not run when nobody uses it.
 
-### 5. Storage follow-ups
+### 4. Storage follow-ups
 - Mount a redundant pool degraded when a disk is missing at boot, with a clear warning and a Replace button. This needs a decision on safety first.
 - Grow the pool after replacing a disk with a larger one (`btrfs filesystem resize <devid>:max`).
 - Scheduled data checks (scrub) and SMART tests, with results on the dashboard.
 - Snapshots per folder with a simple schedule ("keep hourly for a day, daily for a month").
 - Quotas per share.
 
-## 6. AI
+### 5. AI
 - AI chatbot via ollama cloud integration or any other api.
 - you can toggle it completely off or on
 - new page in setup
