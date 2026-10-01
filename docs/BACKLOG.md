@@ -15,6 +15,33 @@ How to add an entry:
 
 ---
 
+## 2026-10-01 · Automatic updates and the watchdog really run
+
+- **Found:** `alvaos-update-checker.service` was a oneshot enabled for boot
+  only, with no timer, so "look for updates" and "install automatically" only
+  happened after a restart. A new AlvaOS version also raised no
+  notification (only Debian packages did). `alvaos-watchdog.service/.timer`
+  were never installed by the package or the installer, pointed at
+  `/opt/alvaos/backend/` (the code lives in `/opt/alvaos/bin/`) and
+  `watchdog_manager.py` had no entry point, so the documented auto-restart of
+  Samba, NFS and Docker never ran.
+- **Update checker:** new `alvaos-update-checker.timer` (15 minutes after boot,
+  then daily with up to 2 h random delay, catches up after downtime). The
+  postinst disables the old boot-only service and enables the timer. A new
+  AlvaOS version now raises one notification per version ("AlvaOS 0.10.0 is
+  ready") unless it is installed automatically.
+- **Watchdog:** installed and enabled (every 5 minutes) by the package and the
+  installer. Decision: it only restarts a service that is *enabled* but not
+  running. A disabled or missing service (no NFS shares, Docker not
+  installed) is left alone and shown as "Off" instead of a red "Stopped" on
+  the System page.
+- Updates > Settings now says what really happens ("Once a day and after a
+  restart").
+- Tests: `test_watchdog.py`. Unit files checked with `systemd-analyze verify`.
+- **Note for next time:** check on a NAS after installing the package that
+  `systemctl list-timers` shows both timers, and that the watchdog log
+  (`/var/log/alvaos/watchdog.log`) stays quiet when everything runs.
+
 ## 2026-10-01 · Updates page: one sentence, what's new, one button, a way back
 
 - **First screen:** "AlvaOS 0.9.0 is up to date" with Check now, or

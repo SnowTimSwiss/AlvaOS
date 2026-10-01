@@ -8,5 +8,4 @@ ExecStart=/opt/alvaos/scripts/update_checker.sh
 User=alvaos
 Group=alvaos
 
-[Install]
-WantedBy=multi-user.target
+# Started by alvaos-update-checker.timer (after boot and once a day).

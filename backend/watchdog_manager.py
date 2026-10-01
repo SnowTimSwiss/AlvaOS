@@ -68,6 +68,23 @@ class WatchdogManager:
         except Exception:
             return False
 
+    def _is_service_enabled(self, service_name):
+        """Return True if the service is meant to run (enabled at boot).
+
+        A service that is disabled, masked or not installed was switched off on
+        purpose (no NFS shares, Docker not installed); the watchdog leaves it
+        alone instead of starting it every few minutes."""
+        if platform.system() != 'Linux':
+            return True
+        try:
+            result = subprocess.run(
+                ['/usr/bin/systemctl', 'is-enabled', service_name],
+                capture_output=True, text=True, timeout=5, env={'LC_ALL': 'C'}
+            )
+            return result.stdout.strip() in ('enabled', 'enabled-runtime')
+        except Exception:
+            return False
+
     def _restart_service(self, service_name):
         """Attempt to restart a service. Returns (success, error_message)."""
         if platform.system() != 'Linux':
@@ -103,16 +120,18 @@ class WatchdogManager:
             name = svc['name']
             label = svc['label']
             is_active = self._is_service_active(name)
+            is_enabled = is_active or self._is_service_enabled(name)
 
             entry = {
                 'name': name,
                 'label': label,
                 'active': is_active,
+                'enabled': is_enabled,
                 'recovered': False,
                 'recover_error': None,
             }
 
-            if not is_active:
+            if not is_active and is_enabled:
                 self._log(f"Service '{name}' is not running. Attempting restart...")
                 success, err = self._restart_service(name)
                 if success:
@@ -153,10 +172,12 @@ class WatchdogManager:
         state = self._load_state()
         services = []
         for svc in WATCHED_SERVICES:
+            active = self._is_service_active(svc['name'])
             services.append({
                 'name': svc['name'],
                 'label': svc['label'],
-                'active': self._is_service_active(svc['name']),
+                'active': active,
+                'enabled': active or self._is_service_enabled(svc['name']),
             })
 
         return {
@@ -164,3 +185,13 @@ class WatchdogManager:
             'last_check': state.get('last_check'),
             'recoveries': (state.get('recoveries') or [])[:10],
         }
+
+
+if __name__ == '__main__':
+    # Run by alvaos-watchdog.service (every few minutes via its timer).
+    import sys
+    if sys.argv[1:] in ([], ['run']):
+        WatchdogManager().run_check()
+    else:
+        sys.stderr.write('usage: watchdog_manager.py [run]\n')
+        sys.exit(2)

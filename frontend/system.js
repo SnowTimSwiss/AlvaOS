@@ -1091,8 +1091,8 @@ function renderWatchdog(data) {
         item.innerHTML = `
             <span>${svc.label} <small style="color:var(--text-secondary); margin-left:8px;">${svc.name}</small></span>
             <span class="status-badge" style="border:none; background:transparent; padding:0;">
-                <span class="status-dot" style="background:${svc.active ? 'var(--accent-success)' : 'var(--accent-danger)'};"></span>
-                <span>${svc.active ? 'Active' : 'Stopped'}</span>
+                <span class="status-dot" style="background:${svc.active ? 'var(--accent-success)' : (svc.enabled === false ? 'var(--text-tertiary)' : 'var(--accent-danger)')};"></span>
+                <span>${svc.active ? 'Active' : (svc.enabled === false ? 'Off' : 'Stopped')}</span>
             </span>
         `;
         els.watchdogList.appendChild(item);

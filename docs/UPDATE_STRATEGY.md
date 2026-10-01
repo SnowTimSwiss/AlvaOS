@@ -11,7 +11,7 @@ Safe (no breaks), Simple (one-click), Recoverable (go back to the previous versi
 3. **Docker Apps**: Standard Compose-based updates; pulls new images while preserving volumes.
 
 ## Process Flow (as implemented)
-1. **Check**: The backend asks the GitHub Releases API for the newest release on the chosen channel (cached for an hour).
+1. **Check**: Once a day (and 15 minutes after boot) `alvaos-update-checker.timer` runs the check; the Updates page can also check now. The backend asks the GitHub Releases API for the newest release on the chosen channel (cached for an hour).
 2. **Download**: The `.deb` and its detached `.sig` are downloaded into `/var/lib/alvaos/updates/`. The three newest packages are kept there.
 3. **Verify**: The privilege helper checks the Ed25519 signature against the installed key and that the package is `alvaos-system` (`RELEASE.md`).
 4. **Install**: `apply_update.sh` runs as a detached systemd unit: it copies `/var/lib/alvaos` to `/var/lib/alvaos.bak`, stops the services, runs `dpkg -i`, runs migrations and starts the services again.

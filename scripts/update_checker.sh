@@ -58,6 +58,18 @@ details = {
     "last_check": datetime.now(timezone.utc).isoformat()
 }
 
+if alvaos.get("update_available") and not auto_apply:
+    latest = str(alvaos.get("latest_version") or "").lstrip("v")
+    push_notification(
+        severity="info",
+        title=f"AlvaOS {latest} is ready" if latest else "An AlvaOS update is ready",
+        message="See what changed and install it when it suits you.",
+        source="updates",
+        dismissible=True,
+        link="updates.html",
+        fingerprint=f"alvaos-update-{latest}",
+    )
+
 # Auto-apply logic
 if auto_apply and alvaos.get("update_available"):
     release = alvaos.get("release")

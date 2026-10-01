@@ -4,9 +4,8 @@ After=network.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 /opt/alvaos/backend/watchdog_manager.py run
-Environment=PYTHONPATH=/opt/alvaos/backend
+ExecStart=/usr/bin/python3 /opt/alvaos/bin/watchdog_manager.py run
+Environment=PYTHONPATH=/opt/alvaos/bin
 User=root
 
-[Install]
-WantedBy=multi-user.target
+# Started by alvaos-watchdog.timer.
