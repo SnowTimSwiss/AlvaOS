@@ -129,7 +129,8 @@ The backend is a single Flask process that serves both the REST API and the stat
 **systemd units:**
 - `alvaos.service` — main backend: REST API + Web UI (`python3 /opt/alvaos/bin/alvaos-backend.py`).
 - `alvaos-update-checker.service` — periodic update check.
-- `alvaos-watchdog.timer` / `alvaos-watchdog.service` — health check with auto-restart of failing services (every ~5 min).
+- `alvaos-watchdog.timer` / `alvaos-watchdog.service` — health check every ~5 min: restarts Samba, NFS or Docker when they are enabled but not running; services that are switched off are left alone.
+- `alvaos-update-checker.timer` / `.service` — looks for AlvaOS and Debian updates 15 min after boot and once a day; installs them only if automatic updates are switched on.
 - Standard Docker service for app containers.
 
 **Filesystem layout:**
