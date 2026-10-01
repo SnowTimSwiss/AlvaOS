@@ -97,6 +97,24 @@ def apply_offline_update():
     status = 200 if result.get('success') else 500
     return jsonify(result), status
 
+@bp.route('/api/v1/updates/rollback', methods=['GET'])
+@require_auth
+def list_rollback_versions():
+    return jsonify({
+        'current_version': update_manager.get_current_version(),
+        'versions': update_manager.list_rollback_candidates(),
+    })
+
+@bp.route('/api/v1/updates/rollback', methods=['POST'])
+@require_auth(require_admin=True)
+def rollback_alvaos():
+    data = request.get_json(silent=True) or {}
+    result = update_manager.rollback_to(data.get('version'))
+    if result.get('success'):
+        return jsonify(result), 200
+    status = 404 if 'not stored' in str(result.get('error', '')) else 500
+    return jsonify(result), status
+
 @bp.route('/api/v1/updates/status', methods=['GET'])
 @require_auth
 def get_update_status():
