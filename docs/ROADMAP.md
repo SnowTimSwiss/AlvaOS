@@ -16,12 +16,7 @@ Every page follows the same pattern as the reworked Dashboard, Storage and Backu
 
 ## Now
 
-### 1. Navigation and branding
-- Redesign the logo block (top left): a simple mark, the NAS name, and its status (online, update available).
-- Sidebar in a fixed order with clear icons; a proper mobile menu instead of the button grid.
-- A top bar with the page title and at most one or two global items (notifications, account).
-
-### 2. Remaining pages in the new pattern
+### 1. Remaining pages in the new pattern
 - **Apps:** installed apps with status, the address to open them, and Update/Stop/Remove. The store shows what an app needs (ports, folders) before installing. App data goes into pool folders the user picks.
 - **System:** split into Network, Time, Security, Alerts, Power and Logs as today, but each shows its state first and its settings second.
 - **Updates:** one sentence ("AlvaOS is up to date" / "Update X is ready"), a changelog, one button, and rollback when something breaks.
@@ -31,7 +26,7 @@ Every page follows the same pattern as the reworked Dashboard, Storage and Backu
 
 ## Next
 
-### 3. AlvaOS Files: a native, lightweight file cloud
+### 2. AlvaOS Files: a native, lightweight file cloud
 Everything people use Nextcloud for at home, built into AlvaOS and working on the same folders as the shares. No separate app, no database server.
 - **Web file browser** on the shared folders: browse, upload (drag and drop, large files resumable), download, rename, move, delete, and folder downloads as zip.
 - Every person from the People tab signs in with the same password and sees exactly the shares they can open, with the same read/edit rights.
@@ -43,14 +38,14 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 - **Remote access** without port forwarding, over the existing WireGuard, with a simple "add this device" flow and QR code.
 - Lightweight: a few MB of code, no PHP and no extra database, and it does not run when nobody uses it.
 
-### 4. Storage follow-ups
+### 3. Storage follow-ups
 - Mount a redundant pool degraded when a disk is missing at boot, with a clear warning and a Replace button. This needs a decision on safety first.
 - Grow the pool after replacing a disk with a larger one (`btrfs filesystem resize <devid>:max`).
 - Scheduled data checks (scrub) and SMART tests, with results on the dashboard.
 - Snapshots per folder with a simple schedule ("keep hourly for a day, daily for a month").
 - Quotas per share.
 
-### 5. AI
+### 4. AI
 - AI chatbot via ollama cloud integration or any other api.
 - you can toggle it completely off or on
 - new page in setup

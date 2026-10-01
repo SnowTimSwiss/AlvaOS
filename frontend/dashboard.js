@@ -469,13 +469,8 @@
                 + (list.length > 5 ? `<li class="status-more-item status-more-count">and ${list.length - 5} more</li>` : '');
         }
 
-        // Top bar dot follows the status line: red only when action is required.
-        const dot = document.querySelector('.topbar .status-dot');
-        if (dot) {
-            dot.className = `status-dot ${level === 'bad' ? 'critical' : (level === 'warn' ? 'warning' : 'online')}`;
-            const label = dot.parentElement?.querySelector('span');
-            if (label) label.textContent = level === 'bad' ? 'Needs attention' : (level === 'warn' ? 'Worth a look' : 'Online');
-        }
+        // The brand block in the sidebar follows the status line.
+        if (window.alvaosBrandStatus) window.alvaosBrandStatus(level);
     }
 
     // ── Live resources ───────────────────────────────────────────────────────
@@ -590,6 +585,7 @@
 
         // Details
         setText('hostname', data?.network?.hostname || '-');
+        if (window.alvaosBrandName) window.alvaosBrandName(data?.network?.hostname);
         setText('ip-address', data?.network?.ip_address || '-');
         setText('uptime', formatUptime(data?.system?.uptime_hours));
         setText('cpu-model', data?.cpu?.model || '-');

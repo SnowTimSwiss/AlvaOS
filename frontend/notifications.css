@@ -1,7 +1,8 @@
 /* Toast Notifications */
 .toast-container {
     position: fixed;
-    top: 20px;
+    /* Below the top bar, so the bell, account and menu stay reachable. */
+    top: 72px;
     right: 20px;
     z-index: 99999;
     display: flex;
@@ -443,10 +444,14 @@
 }
 
 @media (max-width: 760px) {
+    /* On a phone toasts come from the bottom, above the feedback button,
+       and never cover the menu button. */
     .toast-container {
-        top: 10px;
+        top: auto;
+        bottom: 64px;
         right: 10px;
         left: 10px;
+        flex-direction: column-reverse;
     }
 
     .toast {

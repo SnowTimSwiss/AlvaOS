@@ -15,6 +15,35 @@ How to add an entry:
 
 ---
 
+## 2026-10-01 · Navigation: NAS name and status, a real phone menu
+
+- **Brand block** (top left): the AlvaOS mark, the NAS name (hostname,
+  remembered in the browser) and its status: Online, Update available, Worth
+  a look or Needs attention. On the dashboard it follows the status line; on
+  other pages it is read from the alert summary every two minutes. Clicking it
+  goes to the dashboard.
+- **Sidebar** in a fixed order: Dashboard, Storage, Apps, Backup, Updates,
+  and System at the bottom. Backup now has its own icon (shield) instead of
+  a second set of arrows next to Updates.
+- **Top bar:** the page title, the notification bell and an account button
+  (signed in as Administrator, Password and security, Log out). Breadcrumbs,
+  the clock and the "Online" pill are gone; Log out moved into the account
+  menu.
+- **Phone:** the sidebar is a drawer behind a menu button instead of the
+  grid of buttons above the page; Escape, the backdrop or a link closes it.
+- Toasts no longer cover the top bar: below it on desktop, at the bottom on
+  a phone.
+- `system.html#security` (and every other System tab) can be linked, like
+  the Storage tabs.
+- The sidebar and top bar are identical static HTML on all six pages; the
+  generator lived in a scratch script, so edit all six by hand (or with a
+  script) and keep them identical. `nav.js` only adds behaviour.
+- Checked in a browser with mocked data at desktop and phone width on the
+  dashboard, Storage, System and Updates pages.
+- **Note for next time:** the account menu says "Administrator" because
+  login has a single admin password. When people from the People tab can
+  sign in (AlvaOS Files), show their name here.
+
 ## 2026-10-01 · Dashboard: one status line, four cards, quiet live numbers
 
 - **Status line** at the top: "Everything is fine", or the one most important

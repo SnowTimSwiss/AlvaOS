@@ -1162,15 +1162,29 @@ function setupTabs() {
     const tabBtns = document.querySelectorAll('.tab-btn');
     const tabPanels = document.querySelectorAll('.tab-panel');
 
+    const show = (btn) => {
+        const tabName = btn.dataset.tab;
+        tabBtns.forEach(b => b.classList.remove('active'));
+        tabPanels.forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(`tab-${tabName}`)?.classList.add('active');
+    };
+
     tabBtns.forEach(btn => {
         btn.addEventListener('click', () => {
-            const tabName = btn.dataset.tab;
-            tabBtns.forEach(b => b.classList.remove('active'));
-            tabPanels.forEach(p => p.classList.remove('active'));
-            btn.classList.add('active');
-            document.getElementById(`tab-${tabName}`)?.classList.add('active');
+            show(btn);
+            // Keep the tab in the URL (system.html#security), like Storage does.
+            history.replaceState(null, '', `#${btn.dataset.tab}`);
         });
     });
+
+    const fromHash = () => {
+        const name = window.location.hash.slice(1);
+        const btn = Array.from(tabBtns).find((b) => b.dataset.tab === name);
+        if (btn) show(btn);
+    };
+    fromHash();
+    window.addEventListener('hashchange', fromHash);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
