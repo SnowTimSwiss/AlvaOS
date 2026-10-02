@@ -84,6 +84,24 @@ def last_results() -> Dict[str, Dict[str, Any]]:
     return seen if isinstance(seen, dict) else {}
 
 
+def _we_started(pool_id: str) -> Optional[datetime]:
+    value = (_load().get('started_by_scheduler') or {}).get(pool_id)
+    try:
+        return datetime.fromisoformat(value) if value else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _remember_start(pool_id: str, when: datetime) -> None:
+    with _lock:
+        data = _load()
+        started = data.get('started_by_scheduler')
+        started = started if isinstance(started, dict) else {}
+        started[pool_id] = when.isoformat()
+        data['started_by_scheduler'] = started
+        _save(data)
+
+
 def _record(pool_id: str, result: Dict[str, Any]) -> None:
     with _lock:
         data = _load()
@@ -114,19 +132,24 @@ def in_window(now: datetime, start_hour: int) -> bool:
     return (now.hour - start_hour) % 24 < WINDOW_HOURS
 
 
-def is_due(scrub: Dict[str, Any], now: datetime, frequency: str) -> bool:
-    """Whether a pool needs a data check now, given `btrfs scrub status`."""
+def is_due(scrub: Dict[str, Any], now: datetime, frequency: str,
+           we_started: Optional[datetime] = None) -> bool:
+    """Whether a pool needs a data check now, given `btrfs scrub status`.
+
+    `we_started` is when this scheduler last started one. It counts too, so a
+    btrfs-progs version that prints the time differently does not make every
+    night look due."""
     days = FREQUENCIES.get(frequency)
     if not days:
         return False
     state = scrub.get('state')
     if state == 'running':
         return False
-    if state == 'never':
-        return True
     started = parse_btrfs_time(scrub.get('started', ''))
-    if started is None:
+    candidates = [t for t in (started, we_started) if t is not None]
+    if not candidates:
         return True
+    started = max(candidates)
     # A little slack so "monthly" does not drift a day later every month.
     return now - started >= timedelta(days=days) - timedelta(hours=WINDOW_HOURS)
 
@@ -189,7 +212,7 @@ class HealthScheduler:
             if started_one or not in_window(now, settings['start_hour']):
                 outcome[pool_id] = 'waiting'
                 continue
-            if not is_due(scrub, now, settings['scrub']):
+            if not is_due(scrub, now, settings['scrub'], _we_started(pool_id)):
                 outcome[pool_id] = 'not due'
                 continue
             reason = self.busy(act)
@@ -201,6 +224,7 @@ class HealthScheduler:
                 outcome[pool_id] = f'failed: {error}'
                 self.log(f"[health] data check for {pool.get('name') or pool_id} did not start: {error}")
                 continue
+            _remember_start(pool_id, now)
             started_one = True  # one at a time: checks are heavy on the disks
             outcome[pool_id] = 'started'
             self.log(f"[health] started the scheduled data check for {pool.get('name') or pool_id}")

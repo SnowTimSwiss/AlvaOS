@@ -47,8 +47,10 @@ How to add an entry:
   mocked data: dashboard card, pool detail and saving the setting.
 - **Note for next time:** check on a NAS that a scheduled scrub starts at
   night and that `btrfs scrub status` "Scrub started" parses with the
-  installed btrfs-progs version (the format has changed between versions;
-  unknown formats count as "due", which at worst checks once too often).
+  installed btrfs-progs version (the format has changed between versions).
+  If it does not, the scheduler falls back to the time it started the check
+  itself (`started_by_scheduler`), so an unreadable format can never start a
+  check every night; that case has a test.
 
 ## 2026-10-02 · Setup wizard: "Set up the rest myself"
 

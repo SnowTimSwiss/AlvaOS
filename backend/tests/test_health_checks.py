@@ -150,3 +150,15 @@ def test_alerts_report_damaged_and_repaired_data(state, monkeypatch):
     assert alerts["pool-u-1-scrub-damaged"]["route"] == "storage.html#pool=u-1"
     assert alerts["pool-u-2-scrub-repaired"]["severity"] == "warning"
     assert not any("u-3" in key or "gone" in key for key in alerts)
+
+
+def test_an_unreadable_btrfs_time_does_not_start_a_check_every_night():
+    pools = {"a": {"name": "main", "mount_point": "/mnt/alvaos/main"}}
+    # A btrfs-progs version that prints the start time in another format.
+    activity = {"/mnt/alvaos/main": {"scrub": {"state": "finished", "started": "2026-10-02T03:30:00+0200",
+                                               "errors": 0, "uncorrectable": 0}}}
+    scheduler, started = make(pools, activity)
+    assert scheduler.run_once(NIGHT)["a"] == "started"            # first night: never seen, so due
+    next_night = NIGHT.replace(day=3)
+    assert scheduler.run_once(next_night)["a"] == "not due"       # remembered: not again tomorrow
+    assert started == ["/mnt/alvaos/main"]
