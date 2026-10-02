@@ -328,6 +328,7 @@
                 <button class="tab-btn" data-tab="security"><i data-lucide="shield-check" aria-hidden="true"></i> Security</button>
                 <button class="tab-btn" data-tab="alerts"><i data-lucide="bell" aria-hidden="true"></i> Notifications</button>
                 <button class="tab-btn" data-tab="power"><i data-lucide="power" aria-hidden="true"></i> Power</button>
+                <button class="tab-btn" data-tab="assistant"><i data-lucide="bot" aria-hidden="true"></i> Assistant</button>
                 <button class="tab-btn" data-tab="logs"><i data-lucide="activity" aria-hidden="true"></i> Diagnostics</button>
             </div>
 
@@ -506,6 +507,38 @@
                 </section>
             </div>
 
+            <!-- ============ ASSISTANT ============ -->
+            <div class="tab-panel" id="tab-assistant">
+                <section class="set-group">
+                    <h2 class="set-group-title">Assistant</h2>
+                    <p class="set-group-desc">Ask about this NAS in your own words, from the button at the top of every page. The assistant looks at the real state of disks, backups, apps and updates. For now it can only look, never change anything.</p>
+                    <div class="set-row">
+                        <div class="set-text"><div class="set-label"><label for="ai-enabled">Assistant</label></div><div class="set-desc" id="ai-summary">Off. Needs an AI service, set up below.</div></div>
+                        <div class="set-value"><label class="toggle"><input type="checkbox" id="ai-enabled"><span class="toggle-slider"></span></label></div>
+                        <div class="set-action"></div>
+                    </div>
+                    <form class="pw-form ai-settings" id="ai-form" novalidate>
+                        <label class="pw-field">AI service
+                            <select id="ai-provider"></select>
+                            <small id="ai-provider-hint"></small></label>
+                        <label class="pw-field">Address
+                            <input type="url" id="ai-url" placeholder="http://192.168.1.20:11434/v1" autocomplete="off" spellcheck="false"></label>
+                        <label class="pw-field">Model
+                            <input type="text" id="ai-model" placeholder="llama3.1" autocomplete="off" spellcheck="false"></label>
+                        <label class="pw-field" id="ai-key-field">API key
+                            <input type="password" id="ai-key" autocomplete="new-password" spellcheck="false">
+                            <small>Stored on this NAS only, never shown again.</small></label>
+                        <div class="pw-error" id="ai-error" role="alert"></div>
+                        <div class="pw-ok" id="ai-ok" role="status"></div>
+                        <div class="modal-actions">
+                            <button type="button" class="btn-secondary" id="ai-test">Try it</button>
+                            <button type="submit" class="btn-primary" id="ai-save">Save</button>
+                        </div>
+                    </form>
+                    <p class="set-group-desc" style="margin-top: 12px;" id="ai-privacy">What you ask and what the assistant looks at (disk names, folder names, usage, app names) is sent to the AI service. With Ollama on your own network nothing leaves your home. Passwords, keys and the contents of your files are never sent.</p>
+                </section>
+            </div>
+
             <!-- ============ DIAGNOSTICS ============ -->
             <div class="tab-panel" id="tab-logs">
                 <section class="set-group">
@@ -548,12 +581,14 @@
     <script src="feedback.js"></script>
     <script src="app.js"></script>
     <script src="nav.js"></script>
+    <script src="assistant.js"></script>
     <script src="password-toggle.js"></script>
     <script src="system.js"></script>
     <script src="sessions.js"></script>
     <script src="settings.js"></script>
     <script src="settings-email.js"></script>
     <script src="settings-disks.js"></script>
+    <script src="settings-ai.js"></script>
 </body>
 
 </html>

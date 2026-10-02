@@ -15,6 +15,26 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · AI assistant (read-only)
+
+- Settings › Assistant: off by default. Pick a service (Ollama on your
+  network, Ollama Cloud, OpenAI, or any OpenAI-compatible API), address,
+  model, API key; "Try it" asks for five words before saving. Settings in
+  `/var/lib/alvaos/ai.json` (0600); the key is never sent back to the page.
+- A chat button in the top bar of every page (`frontend/assistant.js`), only
+  when it is on. Replies are escaped, then bold, code and lists are allowed;
+  "Looked at: ..." under each answer. The chat lives in the tab's
+  sessionStorage.
+- `backend/ai_assistant.py` + `api_ai.py`: tool calling over the OpenAI chat
+  API, at most 6 rounds. The tools are a fixed list of 20 GET endpoints the
+  page already uses (pools, disks, backups, apps, updates, alerts, ...), read
+  in-process with the admin's own session (`app.test_client`). Keys that look
+  secret (password, token, key, hash, ...) are replaced by "(hidden)" before
+  the model sees them; each answer is cut at 8000 characters.
+- **Note for next time:** the next level ("asks first") needs a second
+  allowlist of POST actions with a confirmation step in the panel; never
+  let the model call arbitrary endpoints.
+
 ## 2026-10-03 · AlvaOS Files: copy
 
 - "Copy to…" in the right-click menu (the folder picker of Move, "Copy
