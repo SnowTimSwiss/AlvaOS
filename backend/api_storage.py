@@ -1136,6 +1136,32 @@ def grow_pool(pool_id):
                     'message': f'The pool now uses the whole disk{"s" if len(candidates) > 1 else ""}.'})
 
 
+_space_scanner = None
+
+
+def _space():
+    global _space_scanner
+    if _space_scanner is None:
+        from app_services import backup_manager
+        from space_report import SpaceScanner
+        _space_scanner = SpaceScanner(run_sudo_command, backup_manager.list_snapshots)
+    return _space_scanner
+
+
+@bp.route('/api/v1/storage/pools/<pool_id>/space', methods=['GET', 'POST'])
+@require_auth(require_admin=True)
+def pool_space(pool_id):
+    """What uses the space on a pool. POST starts a scan in the background."""
+    pool_info, error = _mounted_managed_pool(pool_id)
+    if error:
+        return error
+    if request.method == 'POST':
+        ok, message = _space().start(pool_id, pool_info['mount_point'])
+        if not ok:
+            return jsonify({'error': message}), 409
+    return jsonify({'success': True, **_space().report(pool_id)})
+
+
 @bp.route('/api/v1/storage/pools/<pool_id>/mirror-metadata', methods=['POST'])
 @require_auth(require_admin=True)
 def mirror_pool_metadata(pool_id):

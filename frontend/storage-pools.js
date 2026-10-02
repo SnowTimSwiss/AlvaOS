@@ -202,6 +202,7 @@ function renderPools() {
         const detail = document.getElementById('pool-detail');
         detail.hidden = false;
         detail.innerHTML = renderPoolDetail(pool);
+        if (!pool.is_system_pool && typeof loadPoolSpace === 'function') loadPoolSpace(pool.id);
         return;
     }
     showPoolsView();
@@ -324,6 +325,8 @@ function renderPoolDetail(pool) {
             <div class="pool-line" style="margin-top: 14px;">${icon('shield-check')}<span>${escapeHtml(protection.text)}${protection.failures === 0 && !system ? ' Add a second disk to mirror it.' : ''}</span></div>
             ${system ? '' : renderPoolOffers(pool, running)}
         </section>
+
+        ${system || typeof renderPoolSpace !== 'function' ? '' : `<section class="pool-section" id="pool-space" data-pool="${escapeHtml(pool.id)}">${renderPoolSpace(pool.id)}</section>`}
 
         ${system ? '' : renderActivitySection(pool, act)}
 
