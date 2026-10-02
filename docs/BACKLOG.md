@@ -15,6 +15,17 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · Dashboard: Getting started
+
+- A "Getting started" list under the status line with the five things a new
+  NAS needs to keep files safe: storage, a shared folder, automatic restore
+  points, protection against a failing disk (a redundant pool), and hearing
+  about problems (email or Telegram). Each step ticks itself off from the
+  real state (`getting-started.js` reads pools, shares, backup settings and
+  the notification settings), the next step has the blue button.
+- It disappears when all five are done, or for good with "Hide" (stored in
+  the browser). Non-admins never see it (the endpoints answer 403).
+
 ## 2026-10-03 · Updates: go back by themselves when they fail
 
 - `alvaos-priv apply-update` now also looks in the update cache for the signed
