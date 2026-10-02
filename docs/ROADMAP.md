@@ -17,7 +17,7 @@ Every page follows the same pattern as the reworked Dashboard, Storage and Backu
 ## Now
 
 ### 1. Remaining pages in the new pattern
-- **Apps:** installed apps with status, the address to open them, and Update/Stop/Remove. The store shows what an app needs (ports, folders) before installing. App data goes into pool folders the user picks.
+- **Apps:** app data goes into pool folders the user picks (check the install wizard against that); ship real app icons in `apps/icons/`.
 - **System:** split into Network, Time, Security, Alerts, Power and Logs as today, but each shows its state first and its settings second.
 - **Updates follow-up:** roll back automatically when `dpkg -i` fails or no service comes back after an update (`apply_update.sh` only reports the error today), and keep the package of the installed version in the cache even when it came from the installer or a USB stick, so "Go back" is always offered.
 

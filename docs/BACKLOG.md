@@ -15,6 +15,28 @@ How to add an entry:
 
 ---
 
+## 2026-10-02 · Apps: honest status, Open right away, what an app needs
+
+- **Installed list:** each app says Running, Stopped or "Not fully running"
+  (amber, when only some of its containers run; before it said Running), and
+  instead of "1/2 containers running" either "Open at nas:8096" with an Open
+  button, "Not running" with Start, or "Part of it stopped. Restart it in the
+  details." "Update ready" shows on the card. The details panel uses the same
+  status words.
+- **Store:** every card says what the app needs before installing ("Opens
+  on port 8096 · 3 folders on your storage") and warns when a port is already
+  used by an installed app. Installed apps show "Installed" (opens it)
+  instead of a second Install. "vlatest" is gone; versions only show when
+  they are real.
+- **Found:** no app icons are shipped (`apps/icons/` does not exist), so
+  every store card showed a broken image with its alt text. The category
+  icon is now always there; a real icon covers it only once it loads.
+- **Backend:** `/apps/available` includes `needs` (ports with protocol and
+  description, folder descriptions) from each app's `config_schema`
+  (`summarize_app_needs`, tested against the whole catalog).
+- Checked in a browser with mocked apps and containers, desktop and phone,
+  both themes.
+
 ## 2026-10-02 · Sign-in page in the new look
 
 - "Sign in to alva-home" (the name this browser remembers; "AlvaOS"

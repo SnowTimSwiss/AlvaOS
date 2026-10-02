@@ -18,6 +18,27 @@ from common import run_sudo_command
 from docker_manager import DockerManager
 
 
+def summarize_app_needs(app_data: Dict) -> Dict:
+    """What an app needs from the NAS, for the store card before installing:
+    the ports it opens and how many folders it keeps on your storage."""
+    schema = app_data.get('config_schema') if isinstance(app_data, dict) else None
+    schema = schema if isinstance(schema, dict) else {}
+    ports = []
+    for port in schema.get('ports') or []:
+        if not isinstance(port, dict):
+            continue
+        external = port.get('external')
+        if isinstance(external, int) and 0 < external < 65536:
+            ports.append({
+                'port': external,
+                'protocol': str(port.get('protocol') or 'tcp'),
+                'description': str(port.get('description') or ''),
+            })
+    folders = [str(v.get('description') or v.get('container_path') or '')
+               for v in schema.get('volumes') or [] if isinstance(v, dict)]
+    return {'ports': ports, 'folders': folders}
+
+
 class AppStore:
     """Manages the AlvaOS app catalog and installation"""
     
@@ -400,7 +421,8 @@ class AppStore:
                 'description': app_data.get('description', ''),
                 'icon': app_data.get('icon', ''),
                 'category': app_data.get('category', 'Other'),
-                'version': app_data.get('version', 'latest')
+                'version': app_data.get('version', 'latest'),
+                'needs': summarize_app_needs(app_data),
             })
         
         return apps, None

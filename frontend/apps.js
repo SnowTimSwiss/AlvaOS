@@ -214,20 +214,27 @@ function renderAvailableApps() {
         return;
     }
 
-    container.innerHTML = filteredApps.map((app) => `
+    const installedIds = new Set(installedAppsCache.map((a) => a.app_id));
+    container.innerHTML = filteredApps.map((app) => {
+        const installed = installedIds.has(app.id);
+        const needs = describeNeeds(app);
+        const version = String(app.version || '');
+        const versionText = version && version !== 'latest' ? `v${escapeHtml(version.replace(/^v/i, ''))}` : '';
+        return `
         <div class="app-card" onclick="showAppDetails('${escapeHtml(app.id)}')">
             <div class="app-icon">${getAppIcon(app)}</div>
             <div class="app-name">${escapeHtml(app.name)}</div>
             <div class="app-description">${escapeHtml(app.description)}</div>
-            <div class="app-category">${escapeHtml(app.category)}</div>
+            ${needs.text ? `<div class="app-needs">${escapeHtml(needs.text)}</div>` : ''}
+            ${needs.conflict && !installed ? `<div class="app-needs warn">${escapeHtml(needs.conflict)}</div>` : ''}
             <div class="app-footer">
-                <span style="font-size: 0.8rem; color: var(--text-secondary);">v${escapeHtml(app.version)}</span>
-                <button class="btn-primary" style="padding: 6px 12px; font-size: 0.85rem;" onclick="event.stopPropagation(); installApp('${escapeHtml(app.id)}')">
-                    Install
-                </button>
+                <span class="app-footer-meta">${escapeHtml(app.category || '')}${versionText ? ` · ${versionText}` : ''}</span>
+                ${installed
+                    ? `<button class="btn-secondary" style="padding: 6px 12px; font-size: 0.85rem;" onclick="event.stopPropagation(); showInstalledApp('${escapeHtml(app.id)}')">Installed</button>`
+                    : `<button class="btn-primary" style="padding: 6px 12px; font-size: 0.85rem;" onclick="event.stopPropagation(); installApp('${escapeHtml(app.id)}')">Install</button>`}
             </div>
-        </div>
-    `).join('');
+        </div>`;
+    }).join('');
 }
 
 function normalizeIconPath(iconPath) {
@@ -257,22 +264,64 @@ function getCategoryIconMarkup(category) {
 
 function getAppIcon(appOrCategory) {
     if (appOrCategory && typeof appOrCategory === 'object') {
+        const fallback = getCategoryIconMarkup(appOrCategory.category);
         const iconUrl = normalizeIconPath(appOrCategory.icon);
-        if (iconUrl) {
-            const appName = String(appOrCategory.name || appOrCategory.id || 'App');
-            return `
-                <img
-                    class="app-icon-image"
-                    src="${escapeHtml(iconUrl)}"
-                    alt="${escapeHtml(appName)} icon"
-                    loading="lazy"
-                    decoding="async">
-            `;
-        }
-        return getCategoryIconMarkup(appOrCategory.category);
+        if (!iconUrl) return fallback;
+        // The category icon stays underneath; the picture covers it only once
+        // it has loaded, so a missing icon never shows a broken image.
+        return `${fallback}<img class="app-icon-image" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" decoding="async"
+            onload="this.classList.add('loaded')" onerror="this.remove()">`;
     }
-
     return getCategoryIconMarkup(appOrCategory);
+}
+
+// Host ports used by installed apps: { 8096: 'Jellyfin' }.
+function portsInUse() {
+    const used = {};
+    installedAppsCache.forEach((app) => {
+        getContainersForApp(app.app_id).forEach((container) => {
+            parseHostPorts(container.Ports).forEach((port) => { used[port] = app.name || app.app_id; });
+        });
+    });
+    return used;
+}
+
+function describeNeeds(app) {
+    const needs = app.needs || {};
+    const ports = Array.isArray(needs.ports) ? needs.ports : [];
+    const folders = Array.isArray(needs.folders) ? needs.folders : [];
+    const used = portsInUse();
+    const conflict = ports.find((p) => used[p.port]);
+    const web = ports.find((p) => /web/i.test(p.description || '')) || ports[0];
+    const bits = [];
+    if (web) bits.push(`Opens on port ${web.port}`);
+    if (ports.length > 1) bits.push(`${ports.length - 1} more port${ports.length > 2 ? 's' : ''}`);
+    if (folders.length) bits.push(`${folders.length} folder${folders.length === 1 ? '' : 's'} on your storage`);
+    return {
+        text: bits.join(' · '),
+        conflict: conflict ? `Port ${conflict.port} is already used by ${used[conflict.port]}` : '',
+    };
+}
+
+function showInstalledApp(appId) {
+    setActiveTab('installed');
+    selectInstalledApp(appId);
+}
+
+// Running / stopped / partly running, in words a person understands.
+function appRunState(appId) {
+    if (!containersLoaded) return { key: 'unknown', label: '' };
+    const own = getContainersForApp(appId);
+    const running = own.filter((c) => c.State === 'running').length;
+    if (own.length === 0) return { key: 'stopped', label: 'Not started' };
+    if (running === own.length) return { key: 'running', label: 'Running' };
+    if (running === 0) return { key: 'stopped', label: 'Stopped' };
+    return { key: 'partial', label: 'Not fully running' };
+}
+
+function appQuickAddress(appId) {
+    const port = getContainersForApp(appId).flatMap((c) => parseHostPorts(c.Ports))[0];
+    return port ? `${window.location.protocol}//${window.location.hostname}:${port}` : '';
 }
 
 function setActiveTab(tabName) {
@@ -443,30 +492,36 @@ function renderInstalledList() {
     if (!list) return;
 
     list.innerHTML = installedAppsCache.map((app) => {
-        const appContainers = getContainersForApp(app.app_id);
-        const running = appContainers.filter((c) => c.State === 'running').length;
-        const total = appContainers.length;
-        const statusText = containersLoaded
-            ? `${running}/${total} containers running`
-            : (containersLoading ? 'Loading containers...' : 'Container status unavailable');
-        const isRunning = running > 0;
-        const canToggle = containersLoaded && total > 0;
+        const state = appRunState(app.app_id);
         const toggling = appTogglePending.has(app.app_id);
-
+        const address = state.key === 'running' ? appQuickAddress(app.app_id) : '';
+        const cachedUpdate = appUpdateStatusCache[app.app_id] || {};
+        const updateReady = (cachedUpdate.update_available ?? app.update_available) === true && app.source !== 'custom_compose';
+        const sub = toggling
+            ? 'Working...'
+            : state.key === 'partial'
+                ? 'Part of it stopped. Restart it in the details.'
+                : address
+                    ? `Open at ${address.replace(/^https?:\/\//, '')}`
+                    : (state.key === 'stopped' ? 'Not running' : (containersLoading ? 'Checking...' : ''));
+        const action = toggling
+            ? ''
+            : address
+                ? `<a class="btn-secondary app-quick" href="${escapeHtml(address)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Open</a>`
+                : (state.key === 'stopped' && getContainersForApp(app.app_id).length
+                    ? `<button class="btn-secondary app-quick" onclick="event.stopPropagation(); toggleAppRunning('${escapeHtml(app.app_id)}')">Start</button>`
+                    : '');
         return `
             <div class="app-list-item ${selectedAppId === app.app_id ? 'active' : ''}" role="button" tabindex="0"
                 onclick="selectInstalledApp('${escapeHtml(app.app_id)}')"
                 onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectInstalledApp('${escapeHtml(app.app_id)}'); }">
-                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-                    <div style="font-weight: 600;">${escapeHtml(app.name || app.app_id)}</div>
-                    ${containersLoaded ? `<span class="container-status ${isRunning ? 'running' : 'stopped'}" style="flex-shrink:0;">${isRunning ? 'Running' : 'Stopped'}</span>` : ''}
+                <div class="app-list-top">
+                    <div class="app-list-name">${escapeHtml(app.name || app.app_id)}</div>
+                    ${state.label ? `<span class="app-state ${state.key}">${escapeHtml(state.label)}</span>` : ''}
                 </div>
-                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:4px;">
-                    <div class="app-count">${statusText}</div>
-                    ${canToggle ? `
-                        <button class="btn-icon" ${toggling ? 'disabled style="opacity:0.6; cursor:not-allowed;"' : ''}
-                            onclick="event.stopPropagation(); toggleAppRunning('${escapeHtml(app.app_id)}')">${toggling ? '...' : (isRunning ? 'Stop' : 'Start')}</button>
-                    ` : ''}
+                <div class="app-list-bottom">
+                    <div class="app-count">${escapeHtml(sub)}${updateReady ? ' <span class="app-update-dot">Update ready</span>' : ''}</div>
+                    ${action}
                 </div>
             </div>
         `;
@@ -534,7 +589,7 @@ async function renderInspector() {
                 <div style="min-width:0;">
                     <div style="font-size:1.2rem; font-weight:600;">${escapeHtml(selected.name || appId)}</div>
                     <div class="inspector-substatus">
-                        <span class="container-status ${runningCount > 0 ? 'running' : 'stopped'}">${runningCount > 0 ? 'Running' : 'Stopped'}</span>
+                        <span class="app-state ${appRunState(appId).key}">${escapeHtml(appRunState(appId).label || (runningCount > 0 ? 'Running' : 'Stopped'))}</span>
                         <span>${statusBits.join(' &middot; ')}</span>
                     </div>
                 </div>
@@ -753,6 +808,9 @@ async function loadInstalledWorkspace(preserveSelection = true) {
             containersLoading = false;
             renderInstalledList();
             renderInspector();
+            // The store marks installed apps and port clashes, so it needs
+            // the installed list and the containers too.
+            if (availableAppsCache.length) renderAvailableApps();
         }
     } catch (error) {
         if (requestId !== installedLoadRequestId) return;
