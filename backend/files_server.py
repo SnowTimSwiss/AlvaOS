@@ -348,8 +348,8 @@ def make_thumbnail(data: bytes) -> Optional[bytes]:
     try:
         from io import BytesIO
         from PIL import Image, ImageOps
-        with Image.open(BytesIO(data)) as img:
-            img = ImageOps.exif_transpose(img)
+        with Image.open(BytesIO(data)) as source:
+            img: Image.Image = ImageOps.exif_transpose(source)
             img.thumbnail((THUMB_SIZE, THUMB_SIZE))
             if img.mode not in ('RGB', 'L'):
                 img = img.convert('RGB')

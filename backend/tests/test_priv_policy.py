@@ -653,3 +653,10 @@ def test_degraded_mount_and_soft_conversion():
     denied('/usr/bin/mount', '-o', 'degraded', '-U', '12345678-1234-1234-1234-123456789abc', '/etc')
     allowed('/usr/bin/btrfs', 'balance', 'start', '-dconvert=raid1,soft', '-mconvert=raid1,soft', '/mnt/alvaos/main')
     denied('/usr/bin/btrfs', 'balance', 'start', '-dconvert=raid1,soft,limit=1', '/mnt/alvaos/main')
+
+
+def test_files_app_service_can_be_switched_and_nothing_else():
+    for args in (("enable", "--now"), ("disable", "--now"), ("is-enabled",), ("is-active",)):
+        allowed('/usr/bin/systemctl', *args, 'alvaos-files.service')
+    denied('/usr/bin/systemctl', 'enable', '--now', 'ssh.service')
+    denied('/usr/bin/systemctl', 'disable', '--now', 'alvaos.service')

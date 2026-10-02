@@ -15,6 +15,39 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · AlvaOS Files as a built-in app (port 8090)
+
+- **Decision:** Files is its own app, like Nextcloud, but part of the OS:
+  a separate service `alvaos-files` (`files_server.py`, waitress, port 8090,
+  user alvaos), no database, no container. Off by default; "Turn on" under
+  Apps (a "Built into AlvaOS" card at the top of the store) or on the Files
+  page in AlvaOS, which also opens it and turns it off
+  (`/api/v1/files-app` → `systemctl enable|disable --now alvaos-files.service`,
+  the only new systemctl actions the helper allows).
+- **Everyone signs in**, not only the admin: people from Storage › Users
+  with their share password (a PBKDF2 hash is now stored in `users.json`
+  whenever the admin creates a person or sets their password; people from
+  before need it set once more, the Files page lists them), the admin as
+  "admin" with the admin password and the 2FA code. Cookie session
+  (HttpOnly, SameSite=Strict, 14 days), state changes need the page's own
+  header, sign-in attempts are rate limited.
+- **Same rights as over the network, checked by Linux:** each person sees
+  the shares they have in `smb_permissions` (read or write; read-only shares
+  stay read-only), and every file operation runs as them through
+  `alvaos-priv --as <person>` (step A). The admin acts as root.
+- **The app** (`frontend/files-app/`): sidebar with the shares and the
+  trash; grid with thumbnails or list; click selects, double-click or Enter
+  opens, Ctrl/Shift selection, right-click menu, F2, Delete, Backspace, arrow
+  keys; drag and drop upload with progress; viewer with arrows; search;
+  phone layout with a drawer; installable (web manifest). Thumbnails are
+  made in the Files server (unprivileged; Pillow) from the bytes the helper
+  reads as the person, 320 px, cached in `/var/lib/alvaos/thumbs`.
+- The admin-only Files page and its API from earlier today are replaced by
+  this; the helper operations, trash and range support are reused.
+- **Note for next time:** try on a real NAS with two people and a
+  read-only share; HTTPS for the app (and for AlvaOS) is still missing;
+  share links, resumable uploads and WebDAV are the next Files steps.
+
 ## 2026-10-03 · AlvaOS Files: seeking in videos, resuming downloads
 
 - `/api/v1/files/get/<token>` answers one-range `Range` requests with 206,
