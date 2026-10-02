@@ -29,6 +29,8 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(fs, "AUTH_FILE", str(tmp_path / "auth.json"))
     monkeypatch.setattr(fs, "SESSIONS_FILE", str(tmp_path / "sessions.json"))
     monkeypatch.setattr(fs, "STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(fs, "LINKS_FILE", str(tmp_path / "links.json"))
+    monkeypatch.setattr(fs, "SECRET_FILE", str(tmp_path / "secret"))
     fs._attempts.clear()
     calls = []
     monkeypatch.setattr(files_manager, "run_helper",
@@ -149,3 +151,64 @@ def test_moving_stays_in_the_same_share(client):
     assert client.calls[-1] == (["files-move", "/mnt/alvaos/main/Family", "a.jpg", "/mnt/alvaos/main/Family/Holidays"], "anna")
     assert client.post("/api/move", json={"share": "Family", "path": "", "names": ["a.jpg"], "to": "../Anna"},
                        headers=H).status_code == 404
+
+
+
+def test_share_links_open_as_their_maker_and_can_be_removed(client, monkeypatch, tmp_path):
+    opened = []
+    monkeypatch.setattr(files_manager, "file_size", lambda path, user=None: 4)
+    monkeypatch.setattr(files_manager, "open_stream",
+                        lambda path, part=None, user=None: (opened.append((path, user)) or iter([b"data"]), ""))
+    sign_in(client, "anna", "anna-pass")
+    assert client.post("/api/links", json={"share": "Family", "path": ""}, headers=H).status_code == 400
+    made = client.post("/api/links", json={"share": "Family", "path": "Holidays", "kind": "folder", "days": 7},
+                       headers=H).get_json()
+    token = made["url"].split("/")[-1]
+    assert made["kind"] == "folder" and made["expires_at"]
+    assert [x["id"] for x in client.get("/api/links").get_json()["links"]] == [made["id"]]
+
+    visitor = fs.app.test_client()           # no account at all
+    assert visitor.get(f"/api/public/{token}").get_json()["name"] == "Holidays"
+    visitor.get(f"/api/public/{token}/list?path=2025")
+    assert client.calls[-1] == (["files-list", "/mnt/alvaos/main/Family/Holidays/2025"], "anna")
+    assert visitor.get(f"/api/public/{token}/list?path=../../Anna").status_code == 404
+    got = visitor.get(f"/api/public/{token}/file?path=2025/a.jpg")
+    assert got.data == b"data" and opened[-1] == ("/mnt/alvaos/main/Family/Holidays/2025/a.jpg", "anna")
+    assert visitor.post(f"/api/links/{made['id']}/delete", headers=H).status_code == 401
+
+    sign_in(client, "ben", "ben-pass")       # someone else cannot remove Anna's link
+    assert client.post(f"/api/links/{made['id']}/delete", headers=H).status_code == 403
+    sign_in(client, "anna", "anna-pass")
+    assert client.post(f"/api/links/{made['id']}/delete", headers=H).status_code == 200
+    assert visitor.get(f"/api/public/{token}").status_code == 404
+
+
+def test_link_passwords_expiry_and_lost_access(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(files_manager, "file_size", lambda path, user=None: 4)
+    monkeypatch.setattr(files_manager, "open_stream", lambda path, part=None, user=None: (iter([b"data"]), ""))
+    sign_in(client, "anna", "anna-pass")
+    made = client.post("/api/links", json={"share": "Anna", "path": "secret.pdf", "kind": "file", "days": 0,
+                                           "password": "open-sesame"}, headers=H).get_json()
+    token = made["url"].split("/")[-1]
+    assert made["expires_at"] is None and made["has_password"] is True
+    visitor = fs.app.test_client()
+    locked = visitor.get(f"/api/public/{token}")
+    assert locked.status_code == 401 and locked.get_json()["needs_password"] is True
+    assert visitor.post(f"/api/public/{token}/unlock", json={"password": "wrong"}).status_code == 401
+    assert visitor.post(f"/api/public/{token}/unlock", json={"password": "open-sesame"}).status_code == 200
+    assert visitor.get(f"/api/public/{token}/file").data == b"data"
+    assert visitor.get(f"/api/public/{token}/file?path=other.pdf").status_code == 404   # a file link is one file
+
+    # Anna loses access to her share: the link stops working.
+    shares = json.loads((tmp_path / "shares.json").read_text())
+    shares["2"]["smb_permissions"] = {}
+    (tmp_path / "shares.json").write_text(json.dumps(shares))
+    assert visitor.get(f"/api/public/{token}").status_code == 404
+
+    # An expired link is gone.
+    links = json.loads((tmp_path / "links.json").read_text())
+    for v in links.values():
+        v["expires_at"] = "2000-01-01T00:00:00+00:00"
+    (tmp_path / "links.json").write_text(json.dumps(links))
+    assert visitor.get(f"/api/public/{token}").status_code == 404
+    assert client.post("/api/links", json={"share": "Family", "path": "x", "days": 5}, headers=H).status_code == 400

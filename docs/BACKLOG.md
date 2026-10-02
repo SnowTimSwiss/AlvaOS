@@ -15,6 +15,26 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · AlvaOS Files: share links
+
+- "Share link…" in the right-click menu: a link to a file or folder that
+  anyone with it can open read-only, for 1, 7 (default), 30 or 90 days or
+  until removed, optionally with a password. "Shared links" in the sidebar
+  lists them with Copy and Remove (the admin sees all).
+- Visitors get `/s/<token>`: the file with a preview and Download, or the
+  folder with thumbnails, subfolders, a viewer and per-file download. A
+  password link asks first (rate limited; unlocked by an HMAC cookie per
+  link, secret in `files_secret`, 0600).
+- Everything a visitor sees is read **as the person who made the link**
+  (`--as`), inside the linked folder only (`..` refused); if that person
+  loses access to the share, the link stops working. Links live in
+  `files_links.json` (0600); expired ones are ignored.
+- "Copy" works on plain http on the home network too (the clipboard API
+  only exists on https; falls back to the old copy command).
+- **Note for next time:** links only work where port 8090 is reachable (the
+  home network, or the WireGuard tunnel); opening it to the internet needs
+  HTTPS first. Upload-only links ("drop box") are still open.
+
 ## 2026-10-03 · AlvaOS Files: move, and who needs a password
 
 - **Move:** "Move to…" in the right-click menu opens a folder picker of the

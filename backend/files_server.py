@@ -370,8 +370,11 @@ def thumbnail():
         return bad
     if not rel or not rel.lower().endswith(THUMB_TYPES):
         return jsonify({'error': 'No preview for this file.'}), 404
-    stamp = str(request.args.get('v') or '')
-    key = hashlib.sha256(f'{as_user(session)}|{path}|{stamp}'.encode()).hexdigest()
+    return _thumb_response(path, as_user(session), str(request.args.get('v') or ''))
+
+
+def _thumb_response(path: str, user: Optional[str], stamp: str):
+    key = hashlib.sha256(f'{user}|{path}|{stamp}'.encode()).hexdigest()
     cached = os.path.join(THUMB_DIR, key[:2], key + '.jpg')
     headers = {'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff'}
     try:
@@ -379,10 +382,10 @@ def thumbnail():
             return Response(f.read(), mimetype='image/jpeg', headers=headers)
     except OSError:
         pass
-    size = files_manager.file_size(path, user=as_user(session))
+    size = files_manager.file_size(path, user=user)
     if size is None or size > THUMB_MAX_SOURCE_BYTES:
         return jsonify({'error': 'No preview for this file.'}), 404
-    stream, _ = files_manager.open_stream(path, user=as_user(session))
+    stream, _ = files_manager.open_stream(path, user=user)
     if stream is None:
         return jsonify({'error': 'No preview for this file.'}), 404
     thumb = make_thumbnail(b''.join(stream))
@@ -531,6 +534,246 @@ def trash_empty():
     if bad:
         return bad
     return _helper_answer(*files_manager.run_helper(['files-trash-purge', share['path'], '0']))
+
+
+# ── Share links ──────────────────────────────────────────────────────────────
+# A link to a file or folder that anyone with it can open, read-only, as the
+# person who made it (so it never shows more than they may see). Optional
+# password and expiry; every link is listed and can be removed.
+
+LINKS_FILE = os.path.join(STATE_DIR, 'files_links.json')
+SECRET_FILE = os.path.join(STATE_DIR, 'files_secret')
+LINK_DAYS = (0, 1, 7, 30, 90)
+
+
+def _secret() -> bytes:
+    try:
+        with open(SECRET_FILE, 'rb') as f:
+            data = f.read()
+        if len(data) >= 32:
+            return data
+    except OSError:
+        pass
+    data = secrets.token_bytes(32)
+    fd = os.open(SECRET_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'wb') as f:
+        f.write(data)
+    return data
+
+
+def _load_links() -> Dict[str, Dict[str, Any]]:
+    links = _read_json(LINKS_FILE)
+    now = _now().isoformat()
+    return {k: v for k, v in links.items() if isinstance(v, dict) and (not v.get('expires_at') or v['expires_at'] > now)}
+
+
+def _save_links(links: Dict[str, Dict[str, Any]]) -> None:
+    os.makedirs(STATE_DIR, exist_ok=True)
+    tmp = f'{LINKS_FILE}.tmp'
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w') as f:
+        json.dump(links, f, indent=1)
+    os.replace(tmp, LINKS_FILE)
+
+
+def _public_link(link: Dict[str, Any], token: str) -> Dict[str, Any]:
+    return {'id': link['id'], 'url': f'/s/{token}', 'share': link['share'], 'path': link['path'],
+            'name': link['name'], 'kind': link['kind'], 'owner': link['owner'],
+            'created_at': link['created_at'], 'expires_at': link.get('expires_at'),
+            'has_password': bool(link.get('password'))}
+
+
+@app.post('/api/links')
+def create_link():
+    session, refused = need_session()
+    if refused:
+        return refused
+    data = request.get_json(silent=True) or {}
+    share, path, rel, bad = target(session, data)
+    if bad:
+        return bad
+    if not rel:
+        return jsonify({'error': 'Share a folder or file inside the shared folder, not all of it.'}), 400
+    try:
+        days = int(data.get('days', 7))
+    except (TypeError, ValueError):
+        days = -1
+    if days not in LINK_DAYS:
+        return jsonify({'error': 'Choose how long the link works.'}), 400
+    password = str(data.get('password') or '')
+    if password and len(password) < 4:
+        return jsonify({'error': 'Use at least 4 characters for the link password.'}), 400
+    kind = 'folder' if data.get('kind') == 'folder' else 'file'
+    from password_utils import hash_password
+    token = secrets.token_urlsafe(18)
+    link = {'id': secrets.token_hex(6), 'share': share['name'], 'path': rel, 'name': os.path.basename(rel),
+            'kind': kind, 'owner': session['user'], 'role': session['role'], 'created_at': _now().isoformat(),
+            'expires_at': (_now() + timedelta(days=days)).isoformat() if days else None,
+            'password': hash_password(password) if password else None}
+    with _lock:
+        links = _load_links()
+        links[token] = link
+        _save_links(links)
+    return jsonify({'success': True, **_public_link(link, token)}), 201
+
+
+@app.get('/api/links')
+def list_links():
+    session, refused = need_session()
+    if refused:
+        return refused
+    with _lock:
+        links = _load_links()
+    mine = [_public_link(v, k) for k, v in links.items()
+            if session['role'] == 'admin' or v.get('owner') == session['user']]
+    return jsonify({'links': sorted(mine, key=lambda x: x['created_at'], reverse=True)})
+
+
+@app.post('/api/links/<link_id>/delete')
+def delete_link(link_id):
+    session, refused = need_session()
+    if refused:
+        return refused
+    with _lock:
+        links = _load_links()
+        token = next((k for k, v in links.items() if v.get('id') == link_id), None)
+        if token is None:
+            return jsonify({'error': 'This link does not exist any more.'}), 404
+        if session['role'] != 'admin' and links[token].get('owner') != session['user']:
+            return jsonify({'error': 'Only the person who made a link can remove it.'}), 403
+        del links[token]
+        _save_links(links)
+    return jsonify({'success': True})
+
+
+def _unlock_value(token: str) -> str:
+    import hmac
+    return hmac.new(_secret(), token.encode(), hashlib.sha256).hexdigest()
+
+
+def opened_link(token: str):
+    """(link, base path, owner account, error response) for a visitor."""
+    with _lock:
+        link = _load_links().get(token)
+    if not link:
+        return None, None, None, (jsonify({'error': 'This link does not work any more. It may have expired '
+                                                    'or been removed.'}), 404)
+    if link.get('password'):
+        import hmac
+        if not hmac.compare_digest(request.cookies.get(f'alvaos_link_{link["id"]}', ''), _unlock_value(token)):
+            return link, None, None, (jsonify({'error': 'This link needs a password.', 'needs_password': True}), 401)
+    owner = {'user': link['owner'], 'role': link.get('role', 'user')}
+    share = shares_for(owner).get(link['share'])
+    if not share:
+        return None, None, None, (jsonify({'error': 'This link does not work any more.'}), 404)
+    base, _, error = files_manager.resolve({'s': share}, share['name'], link['path'])
+    if error or base is None:
+        return None, None, None, (jsonify({'error': 'This link does not work any more.'}), 404)
+    return link, base, as_user(owner), None
+
+
+def _inside_link(link: Dict[str, Any], base: str, sub: str):
+    """The path a visitor asks for, inside the link's folder (or the file itself)."""
+    if link['kind'] == 'file':
+        return (base, link['name']) if not sub else (None, '')
+    rel = files_manager.clean_relative_path(sub)
+    if rel is None:
+        return None, ''
+    return (os.path.join(base, rel) if rel else base), rel
+
+
+@app.get('/api/public/<token>')
+def public_info(token):
+    link, _, _, bad = opened_link(token)
+    if bad:
+        return bad
+    return jsonify({'name': link['name'], 'kind': link['kind'], 'owner': link['owner'],
+                    'expires_at': link.get('expires_at'), 'nas_name': socket.gethostname().split('.')[0]})
+
+
+@app.post('/api/public/<token>/unlock')
+def public_unlock(token):
+    if _limited(request.remote_addr or ''):
+        return jsonify({'error': 'Too many attempts. Wait a few minutes.'}), 429
+    with _lock:
+        link = _load_links().get(token)
+    if not link or not link.get('password'):
+        return jsonify({'error': 'This link does not work any more.'}), 404
+    ok, _ = verify_password(str((request.get_json(silent=True) or {}).get('password') or ''), link['password'])
+    if not ok:
+        return jsonify({'error': 'That password is not right.'}), 401
+    response = jsonify({'success': True})
+    response.set_cookie(f'alvaos_link_{link["id"]}', _unlock_value(token), max_age=7 * 86400, httponly=True,
+                        samesite='Lax', secure=request.is_secure, path='/')
+    return response
+
+
+@app.get('/api/public/<token>/list')
+def public_list(token):
+    link, base, owner, bad = opened_link(token)
+    if bad:
+        return bad
+    if link['kind'] != 'folder':
+        return jsonify({'error': 'This link is a file.'}), 400
+    path, rel = _inside_link(link, base, request.args.get('path', ''))
+    if path is None:
+        return jsonify({'error': 'Invalid path.'}), 404
+    entries, error = files_manager.list_entries(path, user=owner)
+    if entries is None:
+        return jsonify({'error': error}), 404
+    return jsonify({'path': rel, 'entries': [e for e in entries if not str(e.get('name', '')).startswith('.')]})
+
+
+def _public_stream(token: str, inline: bool):
+    link, base, owner, bad = opened_link(token)
+    if bad:
+        return bad
+    sub = request.args.get('path', '')
+    path, rel = _inside_link(link, base, sub)
+    if path is None or (link['kind'] == 'folder' and not rel):
+        return jsonify({'error': 'Choose a file.'}), 404
+    name = os.path.basename(path)
+    size = files_manager.file_size(path, user=owner)
+    part, ok = files_manager.parse_range(request.headers.get('Range'), size or 0) if size is not None else (None, True)
+    if not ok:
+        return Response(status=416, headers={'Content-Range': f'bytes */{size}'})
+    stream, error = files_manager.open_stream(path, part=part, user=owner)
+    if stream is None:
+        return jsonify({'error': error or 'The file could not be read.'}), 404
+    mime, shown_inline = files_manager.content_type(name, inline)
+    headers = {
+        'Content-Disposition': f"{'inline' if shown_inline else 'attachment'}; filename*=UTF-8''{quote(name)}",
+        'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Cache-Control': 'private, max-age=600',
+        'Content-Security-Policy': "default-src 'none'; img-src 'self' data:; media-src 'self'; "
+                                   "style-src 'unsafe-inline'" + ('' if mime == 'application/pdf' else '; sandbox'),
+    }
+    if size is not None:
+        headers['Accept-Ranges'] = 'bytes'
+        headers['Content-Length'] = str(part[1] if part else size)
+    if part:
+        headers['Content-Range'] = f'bytes {part[0]}-{part[0] + part[1] - 1}/{size}'
+    return Response(stream, status=206 if part else 200, mimetype=mime, headers=headers, direct_passthrough=True)
+
+
+@app.get('/api/public/<token>/file')
+def public_file(token):
+    return _public_stream(token, request.args.get('inline') == '1')
+
+
+@app.get('/api/public/<token>/thumb')
+def public_thumb(token):
+    link, base, owner, bad = opened_link(token)
+    if bad:
+        return bad
+    path, rel = _inside_link(link, base, request.args.get('path', ''))
+    if path is None or not path.lower().endswith(THUMB_TYPES):
+        return jsonify({'error': 'No preview.'}), 404
+    return _thumb_response(path, owner, str(request.args.get('v') or ''))
+
+
+@app.get('/s/<token>')
+def share_page(token):
+    return send_from_directory(APP_ROOT, 'share.html')
 
 
 # ── The app itself ───────────────────────────────────────────────────────────
