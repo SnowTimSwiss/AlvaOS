@@ -15,6 +15,41 @@ How to add an entry:
 
 ---
 
+## 2026-10-02 · Storage that looks after itself: nightly data checks
+
+- **Found:** the welcome screen promises regular checks, but a data check
+  (`btrfs scrub`) only ran when someone pressed "Check data".
+- **`health_checks.py`:** a backend thread looks every 10 minutes and, between
+  03:00 and 06:00, starts a data check for a pool whose last check (as btrfs
+  itself records it in `btrfs scrub status`) is older than the interval:
+  monthly by default, or weekly, or off. One pool at a time, never while a
+  disk is replaced or data is balanced. The decisions are pure functions with
+  tests; the btrfs calls are passed in from `api_storage`.
+- It records the last result per pool in `/var/lib/alvaos/health_checks.json`
+  (written only when something changed, so the system disk is not woken every
+  pass). `/system/info` includes it per pool; the alerts read it without
+  running btrfs.
+- **Alerts:** blocks that could not be repaired → red "The data check found
+  damaged files" (restore from backup); repaired blocks → amber "A disk
+  returned bad data" (often a disk wearing out). Both link to the pool.
+- **Dashboard:** the Storage card says "Data checked 12 days ago: no problems"
+  (or what was repaired or damaged, or "Checking data now (45%)"), and turns
+  amber or red accordingly.
+- **Storage › pool › Activity:** "Check data automatically: Monthly
+  (recommended) / Weekly / Off" with when it runs. `GET/POST
+  /api/v1/storage/health-checks`.
+- **Fixed on the way:** `alvaos-backend.py` used `platform` without importing
+  it in the new startup code; mypy caught it before it could crash the
+  backend on a NAS.
+- Tests: `test_health_checks.py` (time parsing, night window incl. wrap past
+  midnight, due rules, one at a time, busy pools, off, settings validation,
+  write-only-on-change, unreadable pools, alerts). Checked in a browser with
+  mocked data: dashboard card, pool detail and saving the setting.
+- **Note for next time:** check on a NAS that a scheduled scrub starts at
+  night and that `btrfs scrub status` "Scrub started" parses with the
+  installed btrfs-progs version (the format has changed between versions;
+  unknown formats count as "due", which at worst checks once too often).
+
 ## 2026-10-02 · Setup wizard: "Set up the rest myself"
 
 - Once the admin password is set, the storage and shared-folder steps show a

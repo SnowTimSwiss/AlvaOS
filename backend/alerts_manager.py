@@ -397,6 +397,40 @@ def _collect_system_alerts():
     except Exception:
         pass
 
+    # Results of the last data check per pool (recorded by health_checks; no
+    # btrfs call here, so the alert poll stays cheap).
+    try:
+        import health_checks
+        pools_state = load_pools_state() if isinstance(load_pools_state(), dict) else {}
+        for pool_id, result in health_checks.last_results().items():
+            if pool_id not in pools_state or not isinstance(result, dict):
+                continue
+            pool_name = str((pools_state.get(pool_id) or {}).get('name') or pool_id)
+            uncorrectable = result.get('uncorrectable') or 0
+            errors = result.get('errors') or 0
+            if uncorrectable:
+                alerts.append(_build_alert_item(
+                    alert_id=f'pool-{pool_id}-scrub-damaged',
+                    severity='critical',
+                    title='The data check found damaged files',
+                    message=(f'{uncorrectable} block(s) in "{pool_name}" could not be repaired. '
+                             'Restore the affected files from a backup and look at the disks.'),
+                    route=f'storage.html#pool={pool_id}',
+                    action_label='Open pool'
+                ))
+            elif errors:
+                alerts.append(_build_alert_item(
+                    alert_id=f'pool-{pool_id}-scrub-repaired',
+                    severity='warning',
+                    title='A disk returned bad data',
+                    message=(f'The data check repaired {errors} problem(s) in "{pool_name}" from the '
+                             'other copy. This often means a disk is wearing out.'),
+                    route=f'storage.html#pool={pool_id}',
+                    action_label='Open pool'
+                ))
+    except Exception:
+        pass
+
     alerts.sort(key=lambda item: (
         ALERT_SEVERITY_PRIORITY.get(str(item.get('severity', 'info')).lower(), 9),
         str(item.get('title', ''))

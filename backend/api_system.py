@@ -15,6 +15,7 @@ import psutil
 from flask import Blueprint, jsonify, request
 
 # ── AlvaOS managers ───────────────────────────────────────────────────────────
+import health_checks
 from common import (
     CMD, PRIV_HELPER, run_sudo_command, build_privileged_cmd, is_root_user,
     _utc_now, _now_iso, _parse_iso,
@@ -135,6 +136,7 @@ def get_system_info():
     pool_storage_info = []
     try:
         pools_state = load_pools_state()
+        checks = health_checks.last_results()
         for pool_id, pool_data in pools_state.items():
             mount_point = pool_data.get('mount_point')
             if not mount_point:
@@ -146,6 +148,9 @@ def get_system_info():
                 'mount_point': mount_point,
                 'mounted': bool(os.path.ismount(mount_point)),
             }
+            check = checks.get(str(pool_id))
+            if isinstance(check, dict):
+                pool_entry['last_check'] = check
 
             if pool_entry['mounted']:
                 try:
