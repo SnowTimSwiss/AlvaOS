@@ -84,20 +84,18 @@ def parse_range(header: Optional[str], size: int) -> Tuple[Optional[Tuple[int, i
     return (start, end - start + 1), True
 
 
-def file_size(path: str) -> Optional[int]:
-    result, _ = run_helper(['file-size', path], timeout=30)
+def file_size(path: str, user: Optional[str] = None) -> Optional[int]:
+    result, _ = run_helper(['file-size', path], timeout=30, user=user)
     size = (result or {}).get('size')
     return size if isinstance(size, int) and size >= 0 else None
 
 
-def open_stream(path: str, chunk: int = 256 * 1024,
-                part: Optional[Tuple[int, int]] = None) -> Tuple[Optional[Iterator[bytes]], str]:
+def open_stream(path: str, chunk: int = 256 * 1024, part: Optional[Tuple[int, int]] = None,
+                user: Optional[str] = None) -> Tuple[Optional[Iterator[bytes]], str]:
     """Stream a file (or one part) through `alvaos-priv read-file`. The first
     chunk is read before answering, so a refused or missing file becomes an
     error, not an empty download."""
-    cmd = [PRIV_HELPER, 'read-file', path] + ([str(part[0]), str(part[1])] if part else [])
-    if not is_root_user():
-        cmd = ['sudo', '-n'] + cmd
+    cmd = _helper_cmd(['read-file', path] + ([str(part[0]), str(part[1])] if part else []), user)
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env={'LC_ALL': 'C'})
     except OSError as exc:
@@ -129,8 +127,10 @@ def open_stream(path: str, chunk: int = 256 * 1024,
 
 # ── Changes (alvaos-priv files-* operations) ─────────────────────────────────
 
-def _helper_cmd(args: List[str]) -> List[str]:
-    cmd = [PRIV_HELPER] + args
+def _helper_cmd(args: List[str], user: Optional[str] = None) -> List[str]:
+    """The helper command line; with `user`, the helper drops root to that
+    person first so Linux checks their rights."""
+    cmd = [PRIV_HELPER] + (['--as', user] if user else []) + args
     return cmd if is_root_user() else ['sudo', '-n'] + cmd
 
 
@@ -146,18 +146,20 @@ def _result(returncode: int, out: bytes, err: bytes) -> Tuple[Optional[Dict[str,
         return {}, ''
 
 
-def run_helper(args: List[str], timeout: int = 600) -> Tuple[Optional[Dict[str, Any]], str]:
+def run_helper(args: List[str], timeout: int = 600,
+               user: Optional[str] = None) -> Tuple[Optional[Dict[str, Any]], str]:
     try:
-        res = subprocess.run(_helper_cmd(args), capture_output=True, timeout=timeout, env={'LC_ALL': 'C'})
+        res = subprocess.run(_helper_cmd(args, user), capture_output=True, timeout=timeout, env={'LC_ALL': 'C'})
     except (OSError, subprocess.SubprocessError) as exc:
         return None, str(exc)
     return _result(res.returncode, res.stdout, res.stderr)
 
 
-def upload(dir_path: str, name: str, stream: Any, chunk: int = 1024 * 1024) -> Tuple[Optional[Dict[str, Any]], str]:
+def upload(dir_path: str, name: str, stream: Any, chunk: int = 1024 * 1024,
+           user: Optional[str] = None) -> Tuple[Optional[Dict[str, Any]], str]:
     """Pipe an upload into `files-write`; the helper never overwrites."""
     try:
-        proc = subprocess.Popen(_helper_cmd(['files-write', dir_path, name]), stdin=subprocess.PIPE,
+        proc = subprocess.Popen(_helper_cmd(['files-write', dir_path, name], user), stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, env={'LC_ALL': 'C'})
     except OSError as exc:
         return None, str(exc)
@@ -188,3 +190,12 @@ def purge_all_trash(shares_state: Dict[str, Any], days: int = 30) -> None:
     for share in (shares_state or {}).values():
         if isinstance(share, dict) and str(share.get('path', '')).startswith('/'):
             run_helper(['files-trash-purge', os.path.normpath(share['path']), str(days)])
+
+
+def list_entries(path: str, user: Optional[str] = None) -> Tuple[Optional[List[Dict[str, Any]]], str]:
+    """A folder through `files-list` (as the person, when given)."""
+    result, error = run_helper(['files-list', path], timeout=60, user=user)
+    if result is None:
+        return None, error or 'This folder could not be read.'
+    entries = result.get('entries')
+    return (entries if isinstance(entries, list) else []), ''
