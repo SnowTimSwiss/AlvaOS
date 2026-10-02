@@ -15,6 +15,17 @@ How to add an entry:
 
 ---
 
+## 2026-10-02 · Setup wizard: "Set up the rest myself"
+
+- Once the admin password is set, the storage and shared-folder steps show a
+  quiet "Set up the rest myself" link (bottom left; on a phone below the
+  buttons) that goes straight to the dashboard. "Skip for now" still skips
+  just the current step. Not shown before the password exists, so no NAS is
+  left without one. The dashboard picks up what was skipped as next steps.
+- Copy fix: the erase note now speaks of "this disk / it" for a single disk.
+- Checked in a browser: hidden on welcome and password, shown on storage,
+  leads to `/`, at desktop and phone width.
+
 ## 2026-10-02 · A welcome that feels like a start; honest RAID choices
 
 - **Welcome screen** of the setup wizard: the AlvaOS mark builds up layer by
