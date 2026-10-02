@@ -1139,6 +1139,25 @@ def grow_pool(pool_id):
                     'message': f'The pool now uses the whole disk{"s" if len(candidates) > 1 else ""}.'})
 
 
+@bp.route('/api/v1/storage/disk-power', methods=['GET', 'POST'])
+@require_auth(require_admin=True)
+def disk_power_settings():
+    """Let hard disks sleep after a while without use (one setting for all)."""
+    import disk_power
+    disks = disk_power.sleepable_disks(disk_inventory())
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or {}
+        try:
+            minutes = int(data.get('spindown_minutes', 0))
+            settings = disk_power.save_settings(minutes)
+        except (TypeError, ValueError) as e:
+            return jsonify({'error': str(e) or 'Invalid value'}), 400
+        results = disk_power.apply(minutes, disks, run_sudo_command)
+        failed = [r['path'] for r in results if not r['ok']]
+        return jsonify({'success': True, **settings, 'disks': [d['path'] for d in disks], 'failed': failed})
+    return jsonify({'success': True, **disk_power.load_settings(), 'disks': [d['path'] for d in disks]})
+
+
 _space_scanner = None
 
 

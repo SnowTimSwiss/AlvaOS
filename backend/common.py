@@ -35,6 +35,7 @@ CMD = {
     'TAIL': '/usr/bin/tail',
     'JOURNALCTL': '/usr/bin/journalctl',
     'SMARTCTL': '/usr/sbin/smartctl',
+    'HDPARM': '/usr/sbin/hdparm',
     'LSBLK': '/usr/bin/lsblk',
     'WIPEFS': '/usr/sbin/wipefs',
     'PARTPROBE': '/usr/sbin/partprobe',
