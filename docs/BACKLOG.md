@@ -44,6 +44,11 @@ How to add an entry:
   reads as the person, 320 px, cached in `/var/lib/alvaos/thumbs`.
 - The admin-only Files page and its API from earlier today are replaced by
   this; the helper operations, trash and range support are reused.
+- Checked end to end for real in a container: the real server, the real
+  helper as root, a person "anna" in a share group, real photos. It found a
+  bug the stand-in tests missed (a finished upload answered 500 because the
+  pipe to the helper was closed twice); fixed, with a test on a real process.
+  Uploaded files belong to the person and the share's group, like over SMB.
 - **Note for next time:** try on a real NAS with two people and a
   read-only share; HTTPS for the app (and for AlvaOS) is still missing;
   share links, resumable uploads and WebDAV are the next Files steps.
