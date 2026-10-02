@@ -213,7 +213,7 @@ async function alvaosLogout() {
     localStorage.removeItem('alvaos_token');
     localStorage.removeItem('alvaos_csrf_token');
     csrfToken = null;
-    window.location.href = 'login.html';
+    window.location.href = 'login.html?reason=signed-out';
 }
 
 window.alvaosLogout = alvaosLogout;
