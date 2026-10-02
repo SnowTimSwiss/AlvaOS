@@ -217,6 +217,36 @@ def write_sysfs(argv):
     return 0
 
 
+def _installed_alvaos_version():
+    try:
+        res = subprocess.run(['/usr/bin/dpkg-query', '-W', '-f=${Version}', ALVAOS_PACKAGE_NAME],
+                             capture_output=True, text=True, timeout=30, env=BASE_ENV)
+    except (OSError, subprocess.SubprocessError):
+        return ''
+    return res.stdout.strip() if res.returncode == 0 else ''
+
+
+def _stage_way_back(stage_dir, new_package):
+    """The signed package of the version installed now, staged and verified
+    like the update itself, so apply_update.sh can go back to it when the
+    update fails. None when it is not in the update cache."""
+    for path in update_signing.packages_of_version(policy.UPDATE_CACHE_DIR, _installed_alvaos_version(),
+                                                   exclude=new_package):
+        try:
+            staged = _stage_copy(path, policy.UPDATE_CACHE_DIR, stage_dir, name='way-back.deb')
+            if update_signing.read_deb_package_name(staged) != ALVAOS_PACKAGE_NAME:
+                raise policy.PolicyError('not an AlvaOS package')
+            _verify_alvaos_package(staged, path)
+            return staged
+        except (policy.PolicyError, OSError):
+            for leftover in ('way-back.deb', 'way-back.deb.sig'):
+                try:
+                    os.unlink(os.path.join(stage_dir, leftover))
+                except OSError:
+                    pass
+    return None
+
+
 def apply_update(argv):
     """Verify a signed AlvaOS package and hand it to apply_update.sh, detached."""
     if len(argv) != 1:
@@ -241,6 +271,9 @@ def apply_update(argv):
         '/usr/bin/systemd-run', f'--unit={unit}', '--description=AlvaOS Updater',
         '--no-block', '/usr/bin/bash', APPLY_UPDATE_SCRIPT, staged,
     ]
+    way_back = _stage_way_back(stage_dir, package)
+    if way_back:
+        cmd.append(way_back)
     return subprocess.run(cmd, env=BASE_ENV, stdin=subprocess.DEVNULL).returncode
 
 

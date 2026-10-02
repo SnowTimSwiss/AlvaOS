@@ -15,6 +15,27 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · Updates: go back by themselves when they fail
+
+- `alvaos-priv apply-update` now also looks in the update cache for the signed
+  package of the version installed now (`update_signing.packages_of_version`),
+  stages and verifies it exactly like the update, and passes it to
+  `apply_update.sh` as the way back.
+- `apply_update.sh`: when `dpkg -i` fails, or the backend does not answer on
+  `/api/v1/setup/status` within two minutes, it reinstalls that version, puts
+  the settings back from before the update, starts the services and says
+  "The update did not work. AlvaOS went back to version X." The history shows
+  "An update failed; went back to AlvaOS X". Without a way back it says so.
+- **Bugs found:** restoring the settings backup after a failed update used
+  `rsync --delete` and deleted the whole update cache (the packages to go back
+  to); and the error state was written before that restore, so the restore
+  brought back "installing" and the Updates page stayed busy forever.
+- Checked by running the script with fake `dpkg`/`systemctl`: dpkg fails →
+  back to 1.0.0; no answer and no package → clear message; all fine → done.
+- **Note for next time:** systems set up by the installer have no package in
+  the cache yet (the installer copies files), so their first update has no way
+  back. The second item of this roadmap point is still open.
+
 ## 2026-10-03 · Problems by email, also when nobody looks; weekly report
 
 - **Bug found:** Telegram alerts were only sent from `GET /api/v1/alerts`,

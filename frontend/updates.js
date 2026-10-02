@@ -519,6 +519,9 @@ function historyText(entry) {
             || (String(entry.package || '').match(/_(\d[\w.+~-]*?)(?:_[a-z0-9]+)?\.deb$/i) || [])[1];
         return version ? `AlvaOS ${cleanVersion(version)} installed` : 'AlvaOS update installed';
     }
+    if (entry.type === 'rollback') {
+        return entry.version ? `An update failed; went back to AlvaOS ${cleanVersion(entry.version)}` : 'An update failed; went back to the earlier version';
+    }
     if (entry.type === 'debian') {
         const n = Array.isArray(entry.packages) ? entry.packages.length : 0;
         return n ? `${plural(n, 'system package')} updated` : 'System packages updated';
