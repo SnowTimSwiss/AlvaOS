@@ -220,6 +220,18 @@
 
         .btn-quiet:hover { color: var(--text-primary); }
 
+        .btn-exit {
+            padding-left: 0;
+            font-size: 0.84rem;
+            text-decoration: underline;
+            text-underline-offset: 3px;
+            text-decoration-color: var(--border-default);
+        }
+
+        @media (max-width: 520px) {
+            .btn-exit { order: 3; flex: 1 1 100%; text-align: center; }
+        }
+
         .done-list {
             list-style: none;
             margin: 0 0 18px;
@@ -587,6 +599,7 @@
 
             <div class="wizard-nav">
                 <button type="button" class="btn-secondary" id="btn-back" hidden>Back</button>
+                <button type="button" class="btn-quiet btn-exit" id="btn-exit" hidden title="Your NAS is set up enough to sign in. Storage, shares and backups are on the dashboard.">Set up the rest myself</button>
                 <span class="spacer"></span>
                 <button type="button" class="btn-quiet" id="btn-skip" hidden>Skip for now</button>
                 <button type="button" class="btn-primary" id="btn-next">Get started</button>

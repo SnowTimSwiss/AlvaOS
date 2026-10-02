@@ -77,6 +77,9 @@
         $('btn-next').hidden = nextHidden;
         $('btn-back').hidden = !back;
         $('btn-skip').hidden = !skip;
+        // For people who know their way around: once the password is set, the
+        // rest of the guided setup can be left for the dashboard.
+        $('btn-exit').hidden = !(state.accountDone && current() !== 'done');
     }
 
     function render() {
@@ -105,12 +108,14 @@
         button.disabled = true;
         button.textContent = label;
         $('btn-skip').disabled = true;
+        $('btn-exit').disabled = true;
         try {
             return await task();
         } finally {
             button.disabled = false;
             button.textContent = original;
             $('btn-skip').disabled = false;
+            $('btn-exit').disabled = false;
         }
     }
 
@@ -305,7 +310,9 @@
             field.innerHTML = '';
         }
         $('erase-note').innerHTML = picks.length
-            ? `<strong>Everything on ${picks.length === 1 ? 'this disk' : `these ${picks.length} disks`} will be erased.</strong> They look empty, but check that nothing important is on them.`
+            ? (picks.length === 1
+                ? '<strong>Everything on this disk will be erased.</strong> It looks empty, but check that nothing important is on it.'
+                : `<strong>Everything on these ${picks.length} disks will be erased.</strong> They look empty, but check that nothing important is on them.`)
             : 'Choose at least one disk.';
         setButtons({ next: picks.length ? 'Erase and set up storage' : 'Continue', nextEnabled: picks.length > 0, skip: true });
     }
@@ -492,6 +499,10 @@
             }
         }
         return undefined;
+    });
+
+    $('btn-exit').addEventListener('click', () => {
+        window.location.href = '/';
     });
 
     $('btn-back').addEventListener('click', () => {
