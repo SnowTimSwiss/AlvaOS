@@ -264,3 +264,27 @@ def test_time_zone_names():
         assert api_auth.TIMEZONE_RE.match(ok), ok
     for bad in ("/etc/passwd", "Europe/../x", "Europe Zurich", "-UTC"):
         assert not api_auth.TIMEZONE_RE.match(bad), bad
+
+
+def test_signed_in_devices_can_be_listed_and_signed_out(backend):
+    import auth_manager as am
+    module, state = backend
+    set_up(state)
+    client = module.app.test_client()
+    mine = am._create_session("root", role="admin")
+    other = am._create_session("root", role="admin")
+    headers = {"Authorization": mine, "X-CSRF-Token": am.SESSIONS[mine]["csrf_token"]}
+
+    listed = client.get("/api/v1/auth/sessions", headers=headers).get_json()["sessions"]
+    assert listed[0]["current"] and other not in repr(listed)
+
+    # Changing sessions needs the CSRF token like every other change.
+    no_csrf = client.post("/api/v1/auth/sessions/revoke-others", headers={"Authorization": mine})
+    assert no_csrf.status_code == 403
+
+    own = client.delete(f"/api/v1/auth/sessions/{am.session_public_id(mine)}", headers=headers)
+    assert own.status_code == 400
+    response = client.post("/api/v1/auth/sessions/revoke-others", headers=headers)
+    assert response.get_json()["signed_out"] >= 1
+    assert other not in am.SESSIONS and mine in am.SESSIONS
+    am._destroy_session(mine)

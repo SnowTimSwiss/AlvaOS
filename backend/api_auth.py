@@ -28,6 +28,7 @@ from auth_manager import (
     _create_session, _get_current_session, _purge_expired_sessions,
     _destroy_session, _destroy_all_sessions, require_auth,
     _check_rate_limit, _reset_rate_limit,
+    list_sessions, revoke_session_by_id, revoke_other_sessions,
 )
 from password_utils import hash_password, verify_password
 from shares_manager import (
@@ -326,6 +327,34 @@ def logout():
     token = request.headers.get('Authorization', '').strip()
     _destroy_session(token)
     return jsonify({'success': True})
+
+@bp.route('/api/v1/auth/sessions', methods=['GET'])
+@require_auth(require_admin=True)
+def get_sessions():
+    """Where AlvaOS is signed in: device, address, last use."""
+    token = request.headers.get('Authorization', '').strip()
+    return jsonify({'sessions': list_sessions(token)})
+
+
+@bp.route('/api/v1/auth/sessions/<session_id>', methods=['DELETE'])
+@require_auth(require_admin=True)
+def delete_session(session_id):
+    token = request.headers.get('Authorization', '').strip()
+    outcome = revoke_session_by_id(session_id, keep_token=token)
+    if outcome == 'current':
+        return jsonify({'error': 'Use Log out to end this session.'}), 400
+    if outcome == 'unknown':
+        return jsonify({'error': 'This session has already ended.'}), 404
+    return jsonify({'success': True})
+
+
+@bp.route('/api/v1/auth/sessions/revoke-others', methods=['POST'])
+@require_auth(require_admin=True)
+def revoke_others():
+    """Sign out everywhere else, e.g. after using a borrowed computer."""
+    token = request.headers.get('Authorization', '').strip()
+    return jsonify({'success': True, 'signed_out': revoke_other_sessions(token)})
+
 
 @bp.route('/api/v1/auth/2fa/status', methods=['GET'])
 @require_auth

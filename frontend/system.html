@@ -9,6 +9,34 @@
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="notifications.css">
     <style>
+        .sessions-card { margin-bottom: var(--space-md); }
+        .sessions-card .card-header { gap: 12px; flex-wrap: wrap; }
+        .sessions-list { display: flex; flex-direction: column; }
+        .session-row {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 0;
+            border-top: 1px solid var(--border-subtle);
+        }
+        .session-row:first-child { border-top: none; }
+        .session-icon {
+            width: 34px; height: 34px; border-radius: 8px;
+            display: inline-flex; align-items: center; justify-content: center;
+            background: var(--track); color: var(--text-secondary);
+        }
+        .session-icon svg { width: 18px; height: 18px; }
+        .session-main strong { display: block; font-size: 0.9rem; }
+        .session-main small { display: block; font-size: 0.8rem; color: var(--text-secondary); }
+        .session-here {
+            font-size: 0.72rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; margin-left: 6px;
+            color: var(--accent-success); background: color-mix(in srgb, var(--accent-success) 15%, transparent);
+        }
+        @media (max-width: 760px) {
+            .session-row { grid-template-columns: auto 1fr; }
+            .session-row .btn-secondary { grid-column: 2; justify-self: start; }
+        }
         /* .status-row and .card-actions now live in styles.css so every page
            renders them identically. */
 
@@ -240,6 +268,14 @@
 
             <!-- ============ SECURITY ============ -->
             <div class="tab-panel" id="tab-security">
+                <section class="card sessions-card" id="sessions-card">
+                    <div class="card-header">
+                        <div class="card-title">Signed in</div>
+                        <button type="button" class="btn-secondary" id="sessions-revoke-others" hidden>Sign out everywhere else</button>
+                    </div>
+                    <p class="metric-sub" style="margin-bottom: 8px;">Every browser and app that is signed in to this NAS. If you see one you do not recognise, sign it out and change the password.</p>
+                    <div id="sessions-list" class="sessions-list"><div class="metric-sub">Loading...</div></div>
+                </section>
                 <div class="dashboard-grid">
                     <div class="card">
                         <div class="card-header">
@@ -462,6 +498,7 @@
     <script src="nav.js"></script>
     <script src="password-toggle.js"></script>
     <script src="system.js"></script>
+    <script src="sessions.js"></script>
 </body>
 
 </html>

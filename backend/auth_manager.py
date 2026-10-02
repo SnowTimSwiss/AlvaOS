@@ -4,15 +4,17 @@ AlvaOS Auth Manager
 Session management, authentication decorators, rate limiting, and setup state.
 """
 
+import hashlib
 import os
 import json
+import re
 import secrets
 import functools
 from typing import Any, Dict
 import time
 from datetime import datetime, timedelta
 
-from flask import request, jsonify
+from flask import has_request_context, request, jsonify
 from common import _utc_now, _parse_iso, ensure_directories
 from password_utils import hash_password
 
@@ -134,14 +136,105 @@ def _purge_expired_sessions():
         _save_sessions()
 
 
+LAST_SEEN_RESOLUTION = timedelta(minutes=5)   # avoid a disk write per request
+
+
+def session_public_id(token):
+    """A stable id for a session that can be shown and sent around. The
+    token itself is a credential and never leaves the server again."""
+    return hashlib.sha256(str(token).encode()).hexdigest()[:16]
+
+
+def describe_device(user_agent):
+    """'Firefox on Windows' from a User-Agent header, or 'Unknown device'."""
+    ua = str(user_agent or '')
+    if not ua:
+        return 'Unknown device'
+    browser = next((name for pattern, name in (
+        (r'Edg/', 'Edge'), (r'OPR/|Opera', 'Opera'), (r'Firefox/', 'Firefox'),
+        (r'Chrome/|CriOS/', 'Chrome'), (r'Safari/', 'Safari'), (r'curl/', 'curl'),
+    ) if re.search(pattern, ua)), 'A browser')
+    system = next((name for pattern, name in (
+        (r'iPhone', 'iPhone'), (r'iPad', 'iPad'), (r'Android', 'Android'), (r'Windows', 'Windows'),
+        (r'Mac OS X|Macintosh', 'macOS'), (r'CrOS', 'ChromeOS'), (r'Linux', 'Linux'),
+    ) if re.search(pattern, ua)), '')
+    return f'{browser} on {system}' if system else browser
+
+
+def _client_details():
+    if not has_request_context():
+        return {}
+    return {
+        'ip': request.remote_addr or '',
+        'device': describe_device(request.headers.get('User-Agent', '')),
+    }
+
+
 def _create_session(username, role='admin'):
     """Create a new session token, returning the token string."""
     token = secrets.token_hex(32)
     csrf_token = secrets.token_hex(32)
-    expires_at = (_utc_now() + timedelta(hours=SESSION_TTL_HOURS)).isoformat()
-    SESSIONS[token] = {'username': username, 'role': role, 'expires_at': expires_at, 'csrf_token': csrf_token}
+    now = _utc_now()
+    expires_at = (now + timedelta(hours=SESSION_TTL_HOURS)).isoformat()
+    SESSIONS[token] = {'username': username, 'role': role, 'expires_at': expires_at, 'csrf_token': csrf_token,
+                       'created_at': now.isoformat(), 'last_seen_at': now.isoformat(), **_client_details()}
     _save_sessions()
     return token
+
+
+def _touch_session(session):
+    """Remember when (and from where) a session was last used, at most every
+    few minutes so an open dashboard does not write to disk on every poll."""
+    now = _utc_now()
+    last = _parse_iso(session.get('last_seen_at'))
+    if last and now - last < LAST_SEEN_RESOLUTION:
+        return
+    session['last_seen_at'] = now.isoformat()
+    session.update(_client_details())
+    _save_sessions()
+
+
+def list_sessions(current_token=None):
+    """Every active session, newest use first, without the secrets."""
+    _purge_expired_sessions()
+    rows = []
+    for token, session in SESSIONS.items():
+        rows.append({
+            'id': session_public_id(token),
+            'username': session.get('username'),
+            'device': session.get('device') or 'Unknown device',
+            'ip': session.get('ip') or '',
+            'created_at': session.get('created_at'),
+            'last_seen_at': session.get('last_seen_at') or session.get('created_at'),
+            'expires_at': session.get('expires_at'),
+            'current': token == current_token,
+        })
+    current = [r for r in rows if r['current']]
+    others = sorted((r for r in rows if not r['current']), key=lambda r: str(r['last_seen_at'] or ''), reverse=True)
+    return current + others
+
+
+def revoke_session_by_id(public_id, keep_token=None):
+    """Sign out one session by its public id. The current one is refused."""
+    for token in list(SESSIONS):
+        if session_public_id(token) == public_id:
+            if token == keep_token:
+                return 'current'
+            del SESSIONS[token]
+            _save_sessions()
+            return 'revoked'
+    return 'unknown'
+
+
+def revoke_other_sessions(keep_token):
+    """Sign out everywhere except the session making the request."""
+    others = [t for t in SESSIONS if t != keep_token]
+    for token in others:
+        del SESSIONS[token]
+    TEMP_2FA_TOKENS.clear()
+    if others:
+        _save_sessions()
+    return len(others)
 
 
 def _get_session(token):
@@ -160,7 +253,10 @@ def _get_session(token):
 def _get_current_session():
     """Get the session for the current request."""
     token = request.headers.get('Authorization', '').strip()
-    return _get_session(token)
+    session = _get_session(token)
+    if session is not None:
+        _touch_session(session)
+    return session
 
 
 def _destroy_session(token):
