@@ -322,6 +322,7 @@ function renderPoolDetail(pool) {
                 <div><div class="k">Size</div><div class="v">${escapeHtml(usage.total)}</div></div>
             </div>
             <div class="pool-line" style="margin-top: 14px;">${icon('shield-check')}<span>${escapeHtml(protection.text)}${protection.failures === 0 && !system ? ' Add a second disk to mirror it.' : ''}</span></div>
+            ${system ? '' : renderPoolOffers(pool, running)}
         </section>
 
         ${system ? '' : renderActivitySection(pool, act)}
@@ -352,6 +353,53 @@ function renderPoolDetail(pool) {
                 <button type="button" class="btn-secondary btn-erase" onclick="deletePool('${id}', '${name}')">Remove pool</button>
             </div>`}
         </details>`;
+}
+
+// Things worth doing that only apply sometimes: unused space after a disk
+// was replaced by a bigger one, and parity pools with parity metadata.
+function growableSpace(pool) {
+    return poolMembers(pool).reduce((sum, member) => {
+        if (member.missing || !member.path) return sum;
+        const disk = storageDisksCache.find((d) => d.path === member.path);
+        const extra = Number(disk?.size_bytes || 0) - Number(member.size_bytes || 0);
+        return extra >= 1024 ** 3 ? sum + extra : sum;
+    }, 0);
+}
+
+function renderPoolOffers(pool, running) {
+    const id = jsArg(pool.id);
+    const rows = [];
+    const extra = growableSpace(pool);
+    if (extra) {
+        rows.push(`<div class="pool-offer">${icon('circle-arrow-up')}<span>A disk in this pool is bigger than the part the pool uses: ${escapeHtml(formatBytes(extra))} are unused.</span>
+            <button type="button" class="btn-secondary" onclick="growPool('${id}')" ${running ? 'disabled title="Wait until the current job is done"' : ''}>Use the extra space</button></div>`);
+    }
+    const level = String(pool.raid_level || '').toUpperCase();
+    const meta = String(pool.metadata_profile || '').toUpperCase();
+    if (['RAID5', 'RAID6'].includes(level) && ['RAID5', 'RAID6'].includes(meta)) {
+        rows.push(`<div class="pool-offer warn">${icon('triangle-alert')}<span>The folder structure of this pool is stored with parity, which Btrfs does not recommend: a power cut while writing can damage it. Keeping it mirrored takes a few minutes and little space.</span>
+            <button type="button" class="btn-secondary" onclick="mirrorPoolMetadata('${id}')" ${running ? 'disabled title="Wait until the current job is done"' : ''}>Mirror the folder structure</button></div>`);
+    }
+    return rows.join('');
+}
+
+async function growPool(poolId) {
+    try {
+        showSuccess((await poolPost(poolId, 'grow', {})).message);
+    } catch (error) {
+        showError(error.message);
+    }
+    loadPools();
+}
+
+async function mirrorPoolMetadata(poolId) {
+    if (!await showConfirm('Mirror the folder structure?\nThe pool stays usable. Btrfs rewrites the folder structure in the background; this takes a few minutes.', { confirmLabel: 'Start' })) return;
+    try {
+        showSuccess((await poolPost(poolId, 'mirror-metadata', {})).message);
+    } catch (error) {
+        showError(error.message);
+    }
+    loadPools();
 }
 
 function renderActivitySection(pool, act) {

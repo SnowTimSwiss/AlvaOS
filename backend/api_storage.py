@@ -31,7 +31,7 @@ from storage_manager import (
     load_pools_state, save_pools_state,
     detect_btrfs_pools, sanitize_pool_name,
     _collect_smart_report, disk_inventory, find_disk, check_disks_for_pool,
-    parse_scrub_status, parse_replace_status, parse_balance_status, parse_device_stats,
+    parse_scrub_status, parse_usage_profiles, growable_members, parse_show_members, parse_replace_status, parse_balance_status, parse_device_stats,
 )
 
 
@@ -230,20 +230,12 @@ def manage_pools():
                             usage_res, _ = run_sudo_command([CMD['BTRFS'], 'filesystem', 'usage', usage_target], timeout=5)
                             if usage_res and usage_res.returncode == 0:
                                 u_out = usage_res.stdout
-                                if 'RAID1C3' in u_out:
-                                    pool['raid_level'] = 'RAID1C3'
-                                elif 'RAID1C4' in u_out:
-                                    pool['raid_level'] = 'RAID1C4'
-                                elif 'RAID10' in u_out:
-                                    pool['raid_level'] = 'RAID10'
-                                elif 'RAID1' in u_out:
-                                    pool['raid_level'] = 'RAID1'
-                                elif 'RAID5' in u_out:
-                                    pool['raid_level'] = 'RAID5'
-                                elif 'RAID6' in u_out:
-                                    pool['raid_level'] = 'RAID6'
-                                elif 'RAID0' in u_out:
-                                    pool['raid_level'] = 'RAID0'
+                                profiles = parse_usage_profiles(u_out)
+                                if profiles.get('data'):
+                                    data_profile = profiles['data']
+                                    pool['raid_level'] = 'Single' if data_profile in ('SINGLE', 'DUP') else data_profile
+                                if profiles.get('metadata'):
+                                    pool['metadata_profile'] = profiles['metadata']
 
                                 # Prefer explicit sizes when present
                                 used_match = re.search(r"Used:\s+(\d+\.?\d*[TiGkMBP]i?B)", u_out)
@@ -1112,6 +1104,60 @@ def storage_health_checks():
         'pools': health_checks.last_results(),
         'disks': disks,
     })
+
+
+def _pool_members(mount_point):
+    show_out, _ = _btrfs_output(['filesystem', 'show', mount_point])
+    return parse_show_members(show_out)
+
+
+@bp.route('/api/v1/storage/pools/<pool_id>/grow', methods=['POST'])
+@require_auth(require_admin=True)
+def grow_pool(pool_id):
+    """Use the whole disk for members that sit on a bigger disk than the pool
+    uses (after replacing a disk with a larger one)."""
+    pool_info, error = _mounted_managed_pool(pool_id)
+    if error:
+        return error
+    mount_point = pool_info['mount_point']
+    busy = _busy_with(_pool_activity(mount_point))
+    if busy:
+        return jsonify({'error': f'{busy}. Try again when it is done.'}), 409
+    candidates = growable_members(_pool_members(mount_point), disk_inventory())
+    if not candidates:
+        return jsonify({'error': 'There is no unused space on the disks of this pool.'}), 409
+    for member in candidates:
+        _, err = _btrfs_output(['filesystem', 'resize', f"{member['devid']}:max", mount_point], timeout=60)
+        if err:
+            return jsonify({'error': f"Could not grow {member['path']}: {err}"}), 500
+    invalidate_storage_cache('pools')
+    extra = sum(m['extra_bytes'] for m in candidates)
+    return jsonify({'success': True, 'extra_bytes': extra,
+                    'message': f'The pool now uses the whole disk{"s" if len(candidates) > 1 else ""}.'})
+
+
+@bp.route('/api/v1/storage/pools/<pool_id>/mirror-metadata', methods=['POST'])
+@require_auth(require_admin=True)
+def mirror_pool_metadata(pool_id):
+    """For an older parity pool: keep the folder structure (metadata) mirrored
+    instead of on parity, as the Btrfs documentation advises."""
+    pool_info, error = _mounted_managed_pool(pool_id)
+    if error:
+        return error
+    mount_point = pool_info['mount_point']
+    usage_out, _ = _btrfs_output(['filesystem', 'usage', mount_point])
+    profiles = parse_usage_profiles(usage_out)
+    target = {'RAID5': 'raid1', 'RAID6': 'raid1c3'}.get(profiles.get('metadata', ''))
+    if not target:
+        return jsonify({'error': 'The folder structure of this pool is already kept safely.'}), 409
+    busy = _busy_with(_pool_activity(mount_point))
+    if busy:
+        return jsonify({'error': f'{busy}. Try again when it is done.'}), 409
+    failed = _start_background([CMD['BTRFS'], 'balance', 'start', f'-mconvert={target}', mount_point])
+    if failed:
+        return jsonify({'error': f'It did not start: {failed}'}), 500
+    invalidate_storage_cache('pools')
+    return jsonify({'success': True, 'message': 'Started. The pool stays usable; this takes a few minutes.'})
 
 
 @bp.route('/api/v1/storage/pools/<pool_id>/replace', methods=['POST'])

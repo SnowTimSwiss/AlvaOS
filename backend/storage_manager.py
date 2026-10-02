@@ -417,6 +417,41 @@ def _percent(text: str):
     return float(match.group(1)) if match else None
 
 
+GROW_THRESHOLD_BYTES = 1024 ** 3   # ignore rounding; only offer at least 1 GiB
+
+
+def growable_members(members: List[Dict[str, Any]], disks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Pool members whose disk is bigger than the part the pool uses, e.g.
+    after replacing a disk with a larger one. [{devid, path, extra_bytes}]."""
+    by_path = {d.get('path'): d for d in disks if isinstance(d, dict)}
+    result = []
+    for member in members or []:
+        if member.get('missing') or not member.get('path'):
+            continue
+        disk = by_path.get(member['path'])
+        disk_bytes = int((disk or {}).get('size_bytes') or 0)
+        used_bytes = int(member.get('size_bytes') or 0)
+        if disk_bytes and used_bytes and disk_bytes - used_bytes >= GROW_THRESHOLD_BYTES:
+            result.append({'devid': member['devid'], 'path': member['path'],
+                           'extra_bytes': disk_bytes - used_bytes})
+    return result
+
+
+_PROFILE_RE = re.compile(r"^(Data|Metadata|System),\s*([A-Za-z0-9]+)\s*:", re.MULTILINE)
+
+
+def parse_usage_profiles(text: str) -> Dict[str, str]:
+    """`btrfs filesystem usage POOL` → {'data': 'RAID5', 'metadata': 'RAID1', ...}.
+
+    Data and metadata can use different profiles (parity pools keep their
+    metadata mirrored), so the pool's protection is read from the Data line,
+    not from whatever profile name appears first in the output."""
+    profiles: Dict[str, str] = {}
+    for kind, profile in _PROFILE_RE.findall(text or ''):
+        profiles.setdefault(kind.lower(), profile.upper())
+    return profiles
+
+
 def parse_scrub_status(text: str) -> Dict[str, Any]:
     """`btrfs scrub status POOL` → state, progress and what was found."""
     text = text or ''
