@@ -148,6 +148,12 @@
         .pw-error { color: var(--accent-danger); font-size: 0.85rem; }
         .pw-error:empty { display: none; }
         .pw-note { font-size: 0.82rem; color: var(--text-secondary); margin: 0; }
+        .pw-field select { width: 100%; }
+        .mail-adv summary { cursor: pointer; font-size: 0.85rem; color: var(--accent-primary); font-weight: 600; }
+        .mail-adv .pw-form { margin-top: 12px; }
+        .mail-grid { display: grid; grid-template-columns: 1fr 110px; gap: 12px; }
+        .pw-ok { color: var(--accent-success); font-size: 0.85rem; }
+        .pw-ok:empty { display: none; }
 
         @media (max-width: 760px) {
             .set-group { padding: 4px 14px 6px; }
@@ -429,6 +435,17 @@
                         <div class="set-value"><span class="status-dot" id="telegram-summary-dot" style="background:var(--text-secondary);" aria-hidden="true"></span><span id="telegram-summary-status" role="status" aria-live="polite">Checking...</span></div>
                         <div class="set-action"><button id="configure-telegram-btn" class="btn-secondary">Set up</button></div>
                     </div>
+                    <div class="set-row">
+                        <div class="set-text"><div class="set-label">Email</div><div class="set-desc" id="email-summary">Problems that need action are emailed to you.</div></div>
+                        <div class="set-value"><span class="status-dot" id="email-summary-dot" style="background:var(--text-secondary);" aria-hidden="true"></span><span id="email-summary-status" role="status" aria-live="polite">Checking...</span></div>
+                        <div class="set-action"><button id="configure-email-btn" class="btn-secondary">Set up</button></div>
+                    </div>
+                    <div class="set-row">
+                        <div class="set-text"><div class="set-label"><label for="weekly-report-toggle">Weekly report</label></div><div class="set-desc">Every Sunday morning: all is well, or what to look at. Sent by email and Telegram.</div></div>
+                        <div class="set-value"><label class="toggle"><input type="checkbox" id="weekly-report-toggle"><span class="toggle-slider"></span></label></div>
+                        <div class="set-action"></div>
+                    </div>
+                    <p class="set-group-desc" style="margin: 10px 0 6px;">AlvaOS checks every five minutes. A problem is sent once, when it is still there at the next check, and again only if it comes back after it was gone.</p>
                 </section>
             </div>
 
@@ -516,6 +533,7 @@
     <script src="system.js"></script>
     <script src="sessions.js"></script>
     <script src="settings.js"></script>
+    <script src="settings-email.js"></script>
 </body>
 
 </html>

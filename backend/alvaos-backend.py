@@ -213,6 +213,10 @@ if __name__ == '__main__':
                          kwargs={'smart': make_smart_scheduler()}, name='health-checks',
                          daemon=True).start()
 
+    # Problems by Telegram and email, also when nobody has the web page open.
+    import alert_delivery
+    threading.Thread(target=alert_delivery.serve_forever, name='alert-delivery', daemon=True).start()
+
     # wg-quick state does not survive a reboot; bring the buddy tunnel back up.
     threading.Thread(target=buddy_backup_manager.start_tunnel_if_paired, daemon=True).start()
     # Serves the encrypted vaults buddies keep here, on the tunnel address only.

@@ -15,6 +15,25 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · Problems by email, also when nobody looks; weekly report
+
+- **Bug found:** Telegram alerts were only sent from `GET /api/v1/alerts`,
+  i.e. while someone had the web page open. A disk failing at night never
+  reached the phone. Now `alert_delivery.py` runs in the background every five
+  minutes and sends to every channel that is set up; the API no longer sends.
+- A problem is sent when it is still there at the next check (so a short
+  spike does not wake anyone), once, and again only if it went away and came
+  back. CPU load and memory stay on the dashboard and are never sent.
+- **Email** as a channel (Settings › Notifications › Email): send-to address,
+  provider (Gmail, Outlook, iCloud, GMX fill in the server) and password;
+  "Mail server" is folded away. "Send test email" tries what is typed before
+  saving. Login errors say that many providers need an app password. The
+  password is never sent back to the page; `alert_delivery.json` is 0600.
+- **Weekly report** (on by default, toggle in the same place): Sunday after
+  10:00, "all is well" or what needs attention, plus how full each pool is.
+- **Note for next time:** try a real Gmail app password and an SMTP server on
+  port 465 once.
+
 ## 2026-10-02 · Pools: start with a missing disk, then restore protection
 
 - **Decision (safety):** at startup a pool whose normal mount fails is
