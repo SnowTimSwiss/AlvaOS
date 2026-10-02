@@ -288,3 +288,38 @@ def test_signed_in_devices_can_be_listed_and_signed_out(backend):
     assert response.get_json()["signed_out"] >= 1
     assert other not in am.SESSIONS and mine in am.SESSIONS
     am._destroy_session(mine)
+
+
+def test_the_admin_password_can_be_changed(backend, monkeypatch):
+    import api_auth
+    import auth_manager as am
+    from password_utils import hash_password, verify_password
+
+    module, state = backend
+    set_up(state)
+    auth_file = state / "auth.json"
+    auth_file.write_text(__import__("json").dumps({**hash_password("old password"), "totp_secret": "KEEPME"}))
+    monkeypatch.setattr(api_auth, "AUTH_FILE", str(auth_file))
+    monkeypatch.setattr(api_auth.platform, "system", lambda: "Darwin")  # no chpasswd here
+    am._reset_rate_limit("127.0.0.1")
+
+    client = module.app.test_client()
+    mine = am._create_session("root", role="admin")
+    other = am._create_session("root", role="admin")
+    headers = {"Authorization": mine, "X-CSRF-Token": am.SESSIONS[mine]["csrf_token"]}
+
+    wrong = client.post("/api/v1/auth/password", headers=headers,
+                        json={"current_password": "nope", "new_password": "a new password"})
+    assert wrong.status_code == 403
+    short = client.post("/api/v1/auth/password", headers=headers,
+                        json={"current_password": "old password", "new_password": "short"})
+    assert short.status_code == 400
+
+    ok = client.post("/api/v1/auth/password", headers=headers,
+                     json={"current_password": "old password", "new_password": "a new password"})
+    assert ok.status_code == 200, ok.get_json()
+    stored = __import__("json").loads(auth_file.read_text())
+    assert verify_password("a new password", stored)[0] and not verify_password("old password", stored)[0]
+    assert stored["totp_secret"] == "KEEPME"
+    assert mine in am.SESSIONS and other not in am.SESSIONS
+    am._destroy_session(mine)

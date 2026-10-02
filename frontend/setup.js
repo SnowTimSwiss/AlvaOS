@@ -186,7 +186,7 @@
                 await api('/system/hostname', { method: 'PUT', json: { hostname: name } });
                 state.hostname = name;
             } catch (e) {
-                state.nameNote = `The name could not be changed (${e.message}). You can try again in System › Network.`;
+                state.nameNote = `The name could not be changed (${e.message}). You can try again in Settings › Network.`;
             }
         }
     }

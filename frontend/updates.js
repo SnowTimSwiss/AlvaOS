@@ -44,7 +44,7 @@ function apiErrorMessage(res, data, fallback) {
     if (data && typeof data.error === 'string' && data.error.trim()) return data.error.trim();
     if (!res) return fallback;
     if (res.status === 403) return 'Only an administrator can do this.';
-    if (res.status >= 500) return `${fallback}. The details are in System > Logs.`;
+    if (res.status >= 500) return `${fallback}. The details are in Settings › Diagnostics.`;
     return fallback;
 }
 
@@ -410,7 +410,7 @@ async function applyOsUpgrade() {
         if (!res.ok || !data.success) {
             window.showToast(apiErrorMessage(res, data, 'The release upgrade did not finish'), 'error');
         } else {
-            window.showToast('Release upgrade done. Restart the NAS in System > Power.', 'success');
+            window.showToast('Release upgrade done. Restart the NAS in Settings › Power.', 'success');
         }
     } catch (_err) {
         window.showToast('The release upgrade did not finish', 'error');
