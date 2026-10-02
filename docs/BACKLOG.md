@@ -15,6 +15,22 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · AlvaOS Files: big uploads in pieces, continued after a drop
+
+- Uploads go in 16 MB pieces: `GET /api/upload/status`, `POST
+  /api/upload/piece?offset=`, `POST /api/upload/finish`, `/abort`. The helper
+  (as the person) appends to a hidden `.<name>.alvaos-upload` part file,
+  checks the offset is exactly where the part ends, and only renames it to
+  the real name at the end, never over an existing file
+  (`files-part-size | -write | -finish | -abort`). A symlink in place of the
+  part file is refused.
+- When the connection drops, the app asks how far the NAS got and goes on
+  from there (6 tries with back-off). No more 4 GB limit; waitress now only
+  takes 65 MB per request, so it never parks a whole upload on the system
+  disk. The old single-request upload is gone.
+- Real test: a 40 MB file in 3 pieces with the second piece's connection
+  cut on purpose arrived bit for bit (same SHA-256), owned by the person.
+
 ## 2026-10-03 · AlvaOS Files: folders as ZIP
 
 - "Download as ZIP" for a folder (right-click, or the selection's Download),

@@ -167,8 +167,14 @@ def run_helper(args: List[str], timeout: int = 600,
 def upload(dir_path: str, name: str, stream: Any, chunk: int = 1024 * 1024,
            user: Optional[str] = None) -> Tuple[Optional[Dict[str, Any]], str]:
     """Pipe an upload into `files-write`; the helper never overwrites."""
+    return pipe_helper(['files-write', dir_path, name], stream, chunk, user)
+
+
+def pipe_helper(args: List[str], stream: Any, chunk: int = 1024 * 1024,
+                user: Optional[str] = None) -> Tuple[Optional[Dict[str, Any]], str]:
+    """Run a helper operation with the request body on its stdin."""
     try:
-        proc = subprocess.Popen(_helper_cmd(['files-write', dir_path, name], user), stdin=subprocess.PIPE,
+        proc = subprocess.Popen(_helper_cmd(args, user), stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, env={'LC_ALL': 'C'})
     except OSError as exc:
         return None, str(exc)
