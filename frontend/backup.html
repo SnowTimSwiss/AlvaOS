@@ -594,6 +594,18 @@
             margin: 0;
         }
 
+        .keep-last-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
+            font-size: 0.88rem;
+        }
+
+        .keep-last-row[hidden] { display: none; }
+
+        .keep-last-row input { width: 90px; }
+
         .auto-row .auto-interval {
             width: auto;
             min-width: 150px;
@@ -1124,8 +1136,17 @@
                     <summary><i data-lucide="settings-2" aria-hidden="true"></i> More options: folders, retention, location <i data-lucide="chevron-down" class="chev" aria-hidden="true"></i></summary>
                     <div class="advanced-body">
                         <div class="setting-group">
-                            <label class="setting-label" for="pool-keep-last">Retention (keep last)</label>
-                            <input id="pool-keep-last" type="number" min="1" max="200" value="30" class="select-input">
+                            <label class="setting-label" for="pool-retention">Which restore points to keep</label>
+                            <select id="pool-retention" class="select-input">
+                                <option value="smart">Smart (recommended)</option>
+                                <option value="count">Only the newest ones</option>
+                            </select>
+                            <p class="metric-sub" id="pool-retention-help">Every one from the last day, then one per day for a month, one per week for 3 months and one per month for a year.</p>
+                            <div id="pool-keep-last-row" class="keep-last-row" hidden>
+                                <label for="pool-keep-last">Keep the newest</label>
+                                <input id="pool-keep-last" type="number" min="1" max="200" value="30" class="select-input">
+                                <span>per folder</span>
+                            </div>
                         </div>
                         <div class="setting-group">
                             <label class="setting-label" for="pool-target-path">Save location</label>

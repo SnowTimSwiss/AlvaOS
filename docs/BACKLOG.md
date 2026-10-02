@@ -15,6 +15,21 @@ How to add an entry:
 
 ---
 
+## 2026-10-02 · Restore points: smart retention
+
+- **Smart (recommended)** is the new default for local data snapshots: every
+  restore point from the last day, then one per day for a month, one per
+  week for 3 months, one per month for a year (`smart_keep` in
+  `backup_manager.py`). The newest and entries without a readable time are
+  never deleted.
+- "Only the newest ones" keeps the old `keep_last` behaviour; the number field
+  only shows in that mode. Settings saved before this change keep counting,
+  so an update never deletes restore points someone chose to keep.
+- **Bugs found:** `_normalize_settings` used a shallow copy of
+  `DEFAULT_SETTINGS`, so saving settings changed the defaults in memory; and
+  `save_settings` replaced a whole section, so a client that left out a field
+  reset it. Now deep copy and a merge per section.
+
 ## 2026-10-02 · Pools: use the extra space, mirror the folder structure
 
 - **Use the extra space:** after a disk was replaced with a bigger one, the

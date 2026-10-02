@@ -38,7 +38,6 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 
 ### 3. Storage follow-ups
 - Mount a redundant pool degraded when a disk is missing at boot, with a clear warning and a Replace button. This needs a decision on safety first.
-- Snapshots per folder with a simple schedule ("keep hourly for a day, daily for a month").
 - Quotas per share.
 
 ### 4. AI

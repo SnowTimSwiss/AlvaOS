@@ -4,6 +4,7 @@ AlvaOS Local Backup Manager
 Provides local Btrfs snapshots, restore, and automatic scheduling.
 """
 
+import copy
 import json
 import os
 import platform
@@ -26,6 +27,9 @@ DEFAULT_SETTINGS: Dict[str, Dict[str, Any]] = {
         "enabled": False,
         "interval_minutes": 1440,
         "keep_last": 30,
+        # "smart": everything from the last day, then one per day, week and
+        # month (SMART_RETENTION). "count": the newest keep_last snapshots.
+        "retention": "smart",
         "sources": [],
         "target_path": "",
     },
@@ -54,6 +58,63 @@ DEFAULT_STATUS: Dict[str, Any] = {
     "system_pending_reboot": False,
     "system_pending_snapshot_path": None,
 }
+
+
+RETENTION_MODES = ("smart", "count")
+
+# Smart retention, like Time Machine: every snapshot of the last day, then the
+# newest of each day for a month, of each week for 3 months and of each month
+# for a year.
+SMART_RETENTION = {"all_hours": 24, "daily": 30, "weekly": 12, "monthly": 12}
+
+
+def _parse_created(value: Any) -> Optional[datetime]:
+    try:
+        stamp = datetime.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+    return stamp if stamp.tzinfo else stamp.replace(tzinfo=timezone.utc)
+
+
+def smart_keep(entries: List[Dict], now: datetime) -> List[Dict]:
+    """The snapshots smart retention keeps. Always the newest one; entries
+    without a readable time are kept too, never deleted by guessing."""
+    dated = []
+    keep_ids = set()
+    for entry in entries:
+        stamp = _parse_created(entry.get("created_at"))
+        if stamp is None:
+            keep_ids.add(id(entry))
+        else:
+            dated.append((stamp, entry))
+    dated.sort(key=lambda item: item[0], reverse=True)
+    if dated:
+        keep_ids.add(id(dated[0][1]))
+    recent = now - timedelta(hours=SMART_RETENTION["all_hours"])
+    today = now.date()
+
+    def week_start(day):
+        return day - timedelta(days=day.weekday())
+
+    buckets = [
+        (SMART_RETENTION["daily"], lambda d: d, lambda d: (today - d).days),
+        (SMART_RETENTION["weekly"], week_start, lambda d: (week_start(today) - week_start(d)).days // 7),
+        (SMART_RETENTION["monthly"], lambda d: (d.year, d.month),
+         lambda d: (today.year - d.year) * 12 + today.month - d.month),
+    ]
+    for stamp, entry in dated:
+        if stamp >= recent:
+            keep_ids.add(id(entry))
+    for count, bucket_of, age_of in buckets:
+        seen = set()
+        for stamp, entry in dated:
+            day = stamp.date()
+            bucket = bucket_of(day)
+            if bucket in seen or age_of(day) >= count:
+                continue
+            seen.add(bucket)
+            keep_ids.add(id(entry))
+    return [entry for entry in entries if id(entry) in keep_ids]
 
 
 class BackupManager:
@@ -330,7 +391,7 @@ class BackupManager:
         return self._normalize_settings(settings)
 
     def _normalize_settings(self, payload: Dict) -> Dict:
-        merged = DEFAULT_SETTINGS.copy()
+        merged = copy.deepcopy(DEFAULT_SETTINGS)
         
         # Migration from old flat structure if needed
         # Check if payload has old keys and missing new keys
@@ -340,6 +401,7 @@ class BackupManager:
                 "enabled": bool(payload.get("auto_enabled")),
                 "interval_minutes": int(payload.get("interval_minutes", 1440)),
                 "keep_last": int(payload.get("keep_last", 30)),
+                "retention": "count",
                 "sources": payload.get("sources", []),
                 "target_path": payload.get("snapshot_target_path", "")
             }
@@ -354,7 +416,12 @@ class BackupManager:
         else:
             # Standard merge of nested dicts
             if "pool_backup" in payload:
-                merged["pool_backup"].update(payload["pool_backup"])
+                pool_payload = payload["pool_backup"] if isinstance(payload["pool_backup"], dict) else {}
+                merged["pool_backup"].update(pool_payload)
+                # Saved before smart retention existed: keep counting, so an
+                # update never deletes snapshots someone chose to keep.
+                if "retention" not in pool_payload:
+                    merged["pool_backup"]["retention"] = "count"
             if "system_backup" in payload:
                 merged["system_backup"].update(payload["system_backup"])
 
@@ -370,6 +437,8 @@ class BackupManager:
             pb["keep_last"] = max(1, min(200, int(pb.get("keep_last", 30))))
         except Exception:
             pb["keep_last"] = 30
+        if pb.get("retention") not in RETENTION_MODES:
+            pb["retention"] = "smart"
             
         raw_sources = pb.get("sources", [])
         if not isinstance(raw_sources, list):
@@ -414,7 +483,12 @@ class BackupManager:
     def save_settings(self, payload: Dict) -> Dict:
         payload = payload or {}
         current = self.get_settings()
-        current.update(payload)
+        for key, value in payload.items():
+            # A section that is sent keeps the fields it leaves out.
+            if isinstance(value, dict) and isinstance(current.get(key), dict):
+                current[key] = {**current[key], **value}
+            else:
+                current[key] = value
         normalized = self._normalize_settings(current)
         self._save_json(self.settings_file, normalized)
         self._refresh_next_run(normalized)
@@ -1183,14 +1257,19 @@ class BackupManager:
         res, err = self.run_command([btrfs_cmd, "subvolume", "delete", target], timeout=120)
         return bool(res and res.returncode == 0 and not err)
 
-    def _enforce_retention(self, source_path: str, keep_last: int, snapshot_class: str) -> None:
-        keep = max(1, int(keep_last))
+    def _enforce_retention(self, source_path: str, keep_last: int, snapshot_class: str,
+                           mode: str = "count") -> None:
         source = self._normalize_path(source_path)
         entries = self.list_snapshots(source_path=source, snapshot_class=snapshot_class)
-        if len(entries) <= keep:
+        if mode == "smart":
+            kept = {id(item) for item in smart_keep(entries, datetime.now(timezone.utc))}
+            dropped = [item for item in entries if id(item) not in kept]
+        else:
+            dropped = entries[max(1, int(keep_last)):]
+        if not dropped:
             return
         remove_paths = set()
-        for item in entries[keep:]:
+        for item in dropped:
             remove_paths.add(self._normalize_path(item.get("snapshot_path")))
         all_entries = self._load_json(self.snapshots_file, [])
         if not isinstance(all_entries, list):
@@ -1238,7 +1317,8 @@ class BackupManager:
                      )
                      if ok:
                          created.append(payload)
-                         self._enforce_retention(source, current_settings.get("keep_last", 30), "data")
+                         self._enforce_retention(source, current_settings.get("keep_last", 30), "data",
+                                                current_settings.get("retention", "count"))
                      else:
                          failed.append({"source_path": source, "error": payload.get("error", "unknown error")})
                 
