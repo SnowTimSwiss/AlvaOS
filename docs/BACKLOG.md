@@ -15,6 +15,27 @@ How to add an entry:
 
 ---
 
+## 2026-10-02 · Restore points: get single files back
+
+- Each restore point has **"Get files"**: browse the folder as it was, with
+  "gone since" on what is not there any more and a filter "Only what is
+  gone". "Restore" copies a file or folder back to where it was. Nothing is
+  overwritten: if the name is taken, the old one is added beside it as
+  "name (restored 2026-10-01 0300).ext". If its parent folder is gone, it says
+  to restore that folder instead. "Restore" for the whole folder is now
+  "Restore all".
+- Backend: `GET /api/v1/backup/snapshots/browse`, `POST
+  /api/v1/backup/snapshots/restore-item` (`browse_snapshot`, `restore_item`
+  in `backup_manager.py`); only snapshots in the snapshot list are accepted,
+  paths are relative without `..`.
+- The backend user cannot read share folders (2770), so listing and copying go
+  through the helper with two new, exact rules: `find DIR -mindepth 1
+  -maxdepth 1 -printf <fixed format>` and `cp -a --reflink=auto --no-clobber
+  -- SRC DST`, both only inside the data directories.
+- Added the Lucide `file` icon to `lucide-icons.js` by hand (same ISC source).
+- **Note for next time:** checked with mocks only; try once on a real NAS that
+  ownership and permissions of a restored file are right (`cp -a` keeps them).
+
 ## 2026-10-02 · Apps: change folders and ports after installing
 
 - The app inspector menu has **"Folders and ports..."**: the same choices as

@@ -1151,6 +1151,26 @@ def _rule_wg_quick(sys_: System, args):
     return Plan(argv=list(args), stage={1: 'wg'})
 
 
+# One directory level, one entry per NUL-terminated record: type, size,
+# modification time, name. Used to browse restore points.
+FIND_LIST_FORMAT = '%y\\t%s\\t%T@\\t%f\\0'
+
+
+def _rule_find(sys_: System, args):
+    """List one directory inside the data directories. Nothing else: no
+    -exec, -delete or other expressions."""
+    _expect(args, lambda p: None, '-mindepth', '1', '-maxdepth', '1', '-printf', FIND_LIST_FORMAT)
+    return Plan(argv=[writable_path(sys_, args[0])] + list(args[1:]))
+
+
+def _rule_cp(sys_: System, args):
+    """Copy a file or folder out of a restore point, never over an existing one."""
+    _expect(args, '-a', '--reflink=auto', '--no-clobber', '--', lambda p: None, lambda p: None)
+    src = writable_path(sys_, args[4])
+    dst = writable_path(sys_, args[5])
+    return Plan(argv=list(args[:4]) + [src, dst])
+
+
 def _rule_readonly_any(sys_: System, args):
     # id, getent, df, mountpoint, blkid: pure queries.
     for arg in args:
@@ -1176,6 +1196,8 @@ RULES = {
     'mkdir': _rule_mkdir,
     'rmdir': _rule_rmdir,
     'mv': _rule_mv,
+    'cp': _rule_cp,
+    'find': _rule_find,
     'systemctl': _rule_systemctl,
     'apt-get': _rule_apt,
     'apt': _rule_apt,

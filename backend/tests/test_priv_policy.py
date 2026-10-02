@@ -623,3 +623,25 @@ def test_a_pool_member_can_only_grow_to_its_disk():
     denied('/usr/bin/btrfs', 'filesystem', 'resize', '2:10g', '/mnt/alvaos/main')
     denied('/usr/bin/btrfs', 'filesystem', 'resize', '2:max', '/')
     denied('/usr/bin/btrfs', 'filesystem', 'resize', '2:max', '/etc')
+
+
+def test_restore_points_can_be_listed_and_copied_from():
+    fmt = p.FIND_LIST_FORMAT
+    allowed('/usr/bin/find', '/mnt/alvaos/main/.alvaos-snapshots/media/x', '-mindepth', '1', '-maxdepth', '1',
+            '-printf', fmt)
+    allowed('/usr/bin/cp', '-a', '--reflink=auto', '--no-clobber', '--',
+            '/mnt/alvaos/main/.alvaos-snapshots/media/x/a.jpg', '/mnt/alvaos/main/media/a.jpg')
+
+
+@pytest.mark.parametrize("argv", [
+    ['/usr/bin/find', '/etc', '-mindepth', '1', '-maxdepth', '1', '-printf', p.FIND_LIST_FORMAT],
+    ['/usr/bin/find', '/mnt/alvaos/main', '-delete'],
+    ['/usr/bin/find', '/mnt/alvaos/main', '-exec', 'sh', '{}', ';'],
+    ['/usr/bin/find', '/mnt/alvaos/main', '-mindepth', '1', '-maxdepth', '1', '-printf', '%p'],
+    ['/usr/bin/cp', '-a', '--reflink=auto', '--no-clobber', '--', '/etc/shadow', '/mnt/alvaos/main/x'],
+    ['/usr/bin/cp', '-a', '--reflink=auto', '--no-clobber', '--', '/mnt/alvaos/main/x', '/etc/cron.d/x'],
+    ['/usr/bin/cp', '-a', '--reflink=auto', '--', '/mnt/alvaos/main/x', '/mnt/alvaos/main/y'],
+    ['/usr/bin/cp', '-a', '--reflink=auto', '--no-clobber', '--', '/mnt/alvaos/main/../../etc/x', '/mnt/alvaos/main/y'],
+])
+def test_listing_and_copying_stay_in_the_data_directories(argv):
+    denied(*argv)
