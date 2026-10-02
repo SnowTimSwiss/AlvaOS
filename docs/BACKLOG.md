@@ -15,6 +15,35 @@ How to add an entry:
 
 ---
 
+## 2026-10-02 · Installing an app: your folders, free ports, fewer fields
+
+- **Where it keeps its files:** the install dialog sorts an app's folders.
+  Folders with your own files (media, photos, downloads, documents) get a
+  choice of your shared folders, preselected by name (Jellyfin's media →
+  "Media", Immich's uploads → "Photos"), or "A new folder for this app".
+  Settings, caches and databases go to `pool › apps › <app>` with one line
+  saying so. Pools show their free space; the system disk is not offered.
+- **Ports:** "Advanced: ports" lists the app's ports. When one is already used
+  by an installed app it opens by itself and suggests the next free one
+  ("8081 is used by Vaultwarden, so 8082 is suggested"); sent as
+  `port_mappings`.
+- **App settings** (environment values) are folded behind "Advanced: app
+  settings". It only opens when something must be typed; generated
+  passwords are mentioned in one line. `TZ` defaults to the browser's time
+  zone instead of UTC.
+- **Backend:** `/apps/install` now refuses a `pool_path` that is not a managed
+  pool and any `volume_mappings` folder outside the pools, and checks port
+  numbers (`validate_install_paths`, tested). The privilege helper already
+  refused system paths in compose files; this says no earlier and clearer.
+- **Fixed on the way:** the install progress of an earlier app stayed visible
+  in the next install dialog and showed "undefined%"; the status poll of an
+  old install kept running. The dialog starts clean and an old poll stops.
+- Checked in a browser: Jellyfin gets `/media` → the "Media" share, Nextcloud
+  moves from 8081 to 8082 because of a clash, at desktop and phone width.
+- **Note for next time:** on a NAS, check that a share used by an app keeps
+  its permissions (the container writes as its own user; Jellyfin only needs
+  to read, Immich needs to write).
+
 ## 2026-10-02 · Settings page: state first, one action per row
 
 - **"System" is now "Settings"** in the navigation and on the page (the file
