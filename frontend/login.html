@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AlvaOS - Login</title>
+    <title>AlvaOS - Sign in</title>
     <script src="theme.js"></script>
     <link rel="stylesheet" href="styles.css">
     <style>
@@ -13,273 +13,305 @@
             align-items: center;
             justify-content: center;
             min-height: 100vh;
-            padding: 1rem;
+            height: auto;
+            overflow: auto;
+            padding: 24px 16px;
             background: var(--bg-body);
         }
 
-        .login-container {
-            max-width: 400px;
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            pointer-events: none;
+            opacity: 0.6;
+            background:
+                radial-gradient(60vmax 40vmax at 15% -10%, color-mix(in srgb, var(--accent-primary) 16%, transparent), transparent 70%),
+                radial-gradient(50vmax 35vmax at 110% 110%, color-mix(in srgb, var(--accent-success) 10%, transparent), transparent 70%);
+        }
+
+        .signin {
             width: 100%;
+            max-width: 380px;
+        }
+
+        .signin-card {
             background: var(--bg-card);
             border: 1px solid var(--border-default);
             border-radius: var(--radius-lg);
-            padding: 2.5rem;
+            padding: 32px 28px 28px;
+            box-shadow: var(--shadow-md);
         }
 
-        .logo {
+        .signin-mark {
+            width: 56px;
+            height: 56px;
+            margin: 0 auto 16px;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--accent-primary);
+            background: linear-gradient(160deg, color-mix(in srgb, var(--accent-primary) 22%, transparent), color-mix(in srgb, var(--accent-primary) 6%, transparent));
+            border: 1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent);
+        }
+
+        .signin-mark svg { width: 30px; height: 30px; }
+
+        .signin h1 {
             text-align: center;
-            margin-bottom: 2rem;
+            font-size: 1.3rem;
+            font-weight: 650;
+            margin: 0 0 4px;
+            overflow-wrap: anywhere;
         }
 
-        .logo h1 {
-            font-size: 2rem;
-            font-weight: 700;
-            color: var(--text-primary);
-            margin-bottom: 0.5rem;
-            letter-spacing: -0.02em;
-        }
-
-        .logo p {
+        .signin-sub {
+            text-align: center;
             color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin: 0 0 22px;
         }
 
-        .form-group {
-            margin-bottom: 1.5rem;
-        }
+        .step { display: none; }
+        .step.active { display: block; }
 
-        .form-group label {
+        .field { margin-bottom: 16px; }
+
+        .field > label {
             display: block;
-            margin-bottom: 0.5rem;
+            font-size: 0.85rem;
             font-weight: 600;
-            font-size: 0.875rem;
-            color: var(--text-secondary);
+            margin-bottom: 6px;
         }
 
-        .form-group input {
+        .field input { width: 100%; }
+
+        .code-input {
+            font-family: var(--font-mono);
+            font-size: 1.5rem;
+            letter-spacing: 0.4em;
+            text-align: center;
+            padding: 10px 12px;
+        }
+
+        .signin .btn-primary {
             width: 100%;
-            padding: 0.75rem;
-            background: var(--bg-body);
-            border: 1px solid var(--border-default);
-            border-radius: var(--radius-default);
-            color: var(--text-primary);
-            font-family: var(--font-sans);
-            font-size: 0.95rem;
-            transition: border-color 0.2s;
-            box-sizing: border-box;
+            padding: 0.7rem 1rem;
+            font-size: 0.98rem;
         }
 
-        .form-group input:focus {
-            outline: none;
-            border-color: var(--accent-primary);
-        }
-
-        .btn {
-            width: 100%;
-            padding: 0.875rem;
-            background: var(--accent-primary);
-            color: white;
+        .linklike {
+            display: block;
+            margin: 14px auto 0;
+            background: none;
             border: none;
-            border-radius: var(--radius-btn);
-            font-weight: 600;
-            font-size: 0.95rem;
-            cursor: pointer;
-            transition: opacity 0.2s;
-        }
-
-        .btn:hover {
-            opacity: 0.9;
-        }
-
-        .btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-
-        .btn-secondary {
-            width: 100%;
-            padding: 0.75rem;
-            background: transparent;
             color: var(--text-secondary);
-            border: 1px solid var(--border-default);
-            border-radius: var(--radius-btn);
-            font-weight: 500;
-            font-size: 0.875rem;
+            font: inherit;
+            font-size: 0.85rem;
             cursor: pointer;
-            margin-top: 0.75rem;
-            transition: all 0.2s;
         }
 
-        .btn-secondary:hover {
-            border-color: var(--accent-primary);
-            color: var(--text-primary);
-        }
+        .linklike:hover { color: var(--text-primary); }
 
-        .error-message {
-            background: rgba(248, 81, 73, 0.15);
-            color: var(--accent-danger);
-            border: 1px solid rgba(248, 81, 73, 0.3);
-            padding: 0.875rem;
+        .notice {
+            font-size: 0.86rem;
+            line-height: 1.45;
+            padding: 10px 12px;
             border-radius: var(--radius-default);
-            margin-bottom: 1rem;
-            font-size: 0.875rem;
+            margin-bottom: 16px;
         }
 
-        .mfa-hint {
-            font-size: 0.8rem;
-            color: var(--text-secondary);
+        .notice:empty { display: none; }
+
+        .notice.error {
+            background: var(--accent-danger-soft);
+            border: 1px solid color-mix(in srgb, var(--accent-danger) 40%, transparent);
+        }
+
+        .notice.info {
+            background: var(--accent-primary-soft);
+        }
+
+        .signin-foot {
+            margin-top: 16px;
             text-align: center;
-            margin-top: 0.75rem;
-        }
-
-        .step {
-            display: none;
-        }
-
-        .step.active {
-            display: block;
+            font-size: 0.78rem;
+            color: var(--text-tertiary);
         }
     </style>
 </head>
 
 <body>
-    <div class="login-container">
-        <div class="logo">
-            <h1>AlvaOS</h1>
-            <p id="login-subtitle">System Login</p>
-        </div>
+    <main class="signin">
+        <div class="signin-card">
+            <div class="signin-mark" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                </svg>
+            </div>
+            <h1 id="signin-title">Sign in</h1>
+            <p class="signin-sub" id="signin-sub">Enter the admin password of this NAS.</p>
 
-        <div id="error-container"></div>
+            <div class="notice" id="notice" role="alert"></div>
 
-        <!-- Step 1: Password -->
-        <div id="step-password" class="step active">
-            <form id="login-form">
-                <div class="form-group">
-                    <label for="password">Root Password</label>
-                    <input type="password" id="password" name="password" required autofocus>
+            <!-- Step 1: password -->
+            <form id="step-password" class="step active" autocomplete="on">
+                <input type="text" name="username" value="admin" autocomplete="username" hidden>
+                <div class="field">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" required autofocus autocomplete="current-password">
                 </div>
-                <button type="submit" class="btn" id="login-btn">Login</button>
+                <button type="submit" class="btn-primary" id="login-btn">Sign in</button>
+            </form>
+
+            <!-- Step 2: code from the authenticator app -->
+            <form id="step-2fa" class="step">
+                <div class="field">
+                    <label for="totp-code">Code from your authenticator app</label>
+                    <input type="text" id="totp-code" class="code-input" inputmode="numeric" pattern="[0-9]*" maxlength="6"
+                        placeholder="000000" autocomplete="one-time-code">
+                </div>
+                <button type="submit" class="btn-primary" id="totp-btn">Verify</button>
+                <button type="button" class="linklike" id="back-btn">Use a different password</button>
             </form>
         </div>
-
-        <!-- Step 2: 2FA TOTP code -->
-        <div id="step-2fa" class="step">
-            <form id="totp-form">
-                <div class="form-group">
-                    <label for="totp-code">Authenticator Code</label>
-                    <input type="text" id="totp-code" name="code" inputmode="numeric" pattern="[0-9]*" maxlength="6"
-                        placeholder="6-digit code" autocomplete="one-time-code">
-                </div>
-                <button type="submit" class="btn" id="totp-btn">Verify</button>
-                <button type="button" class="btn-secondary" id="back-btn">&#8592; Back to password</button>
-            </form>
-            <p class="mfa-hint">Open your authenticator app and enter the 6-digit code.</p>
-        </div>
-
-        <div style="margin-top: 1.25rem; text-align: center; font-size: 0.8rem; color: var(--text-secondary);">
-            AlvaOS {{VERSION}}
-        </div>
-    </div>
+        <div class="signin-foot">AlvaOS {{VERSION}}</div>
+    </main>
 
     <script src="password-toggle.js"></script>
     <script>
-        const errorContainer = document.getElementById('error-container');
-        let pendingTempToken = null;
+        (function () {
+            const $ = (id) => document.getElementById(id);
+            let pendingTempToken = null;
 
-        function showError(msg) {
-            clearError();
-            const box = document.createElement('div');
-            box.className = 'error-message';
-            box.textContent = String(msg || 'Login failed');
-            errorContainer.appendChild(box);
-        }
-        function clearError() { errorContainer.textContent = ''; }
-
-        function storeAuth(data) {
-            localStorage.setItem('alvaos_token', data.token);
-            if (data.csrf_token) {
-                localStorage.setItem('alvaos_csrf_token', data.csrf_token);
-            } else {
-                localStorage.removeItem('alvaos_csrf_token');
+            function notice(message, kind) {
+                const box = $('notice');
+                box.className = `notice ${kind || 'error'}`;
+                box.textContent = message || '';
             }
-        }
 
-        function showStep(name) {
-            document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
-            document.getElementById('step-' + name).classList.add('active');
-            document.getElementById('login-subtitle').textContent =
-                name === '2fa' ? 'Two-Factor Authentication' : 'System Login';
-        }
+            // Plain sentences for what the backend says.
+            function explain(status, data) {
+                const raw = String((data && data.error) || '');
+                if (status === 401 && /password/i.test(raw)) return 'That password is not right. Check Caps Lock and try again.';
+                if (status === 401 && /2fa|code/i.test(raw)) return 'That code is not right. Codes change every 30 seconds; use the newest one.';
+                if (status === 401) return 'This step took too long. Sign in again.';
+                if (status === 429) return raw.replace('Too many login attempts.', 'Too many attempts.') || 'Too many attempts. Wait a moment.';
+                if (status >= 500) return 'The NAS could not check the password right now. Try again in a moment.';
+                return raw || 'Signing in did not work.';
+            }
 
-        // Step 1: Password
-        document.getElementById('login-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            clearError();
-            const btn = document.getElementById('login-btn');
-            btn.disabled = true;
-            btn.textContent = 'Logging in...';
+            function storeAuth(data) {
+                localStorage.setItem('alvaos_token', data.token);
+                if (data.csrf_token) localStorage.setItem('alvaos_csrf_token', data.csrf_token);
+                else localStorage.removeItem('alvaos_csrf_token');
+            }
 
-            try {
-                const response = await fetch('/api/v1/auth/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ password: document.getElementById('password').value })
-                });
-                const data = await response.json();
-                if (!response.ok) throw new Error(data.error || 'Login failed');
+            function goInside() {
+                const next = new URLSearchParams(window.location.search).get('next') || '';
+                window.location.href = /^[a-z0-9_-]+\.html(#[a-z0-9=_-]*)?$/i.test(next) ? `/${next}` : '/';
+            }
 
-                if (data.require_2fa) {
-                    pendingTempToken = data.temp_token;
-                    showStep('2fa');
-                    setTimeout(() => document.getElementById('totp-code').focus(), 50);
-                } else {
-                    storeAuth(data);
-                    window.location.href = '/';
+            function showStep(name) {
+                document.querySelectorAll('.step').forEach((s) => s.classList.toggle('active', s.id === `step-${name}`));
+                $('signin-sub').textContent = name === '2fa'
+                    ? 'One more step: the code from your authenticator app.'
+                    : 'Enter the admin password of this NAS.';
+            }
+
+            async function post(url, body) {
+                let response;
+                try {
+                    response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                } catch (_e) {
+                    throw new Error('The NAS did not answer. Check that it is on and on the same network.');
                 }
-            } catch (err) {
-                showError(err.message);
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'Login';
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(explain(response.status, data));
+                return data;
             }
-        });
 
-        // Step 2: TOTP code
-        document.getElementById('totp-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            clearError();
-            const btn = document.getElementById('totp-btn');
-            btn.disabled = true;
-            btn.textContent = 'Verifying...';
+            $('step-password').addEventListener('submit', async (event) => {
+                event.preventDefault();
+                notice('');
+                const button = $('login-btn');
+                button.disabled = true;
+                button.textContent = 'Signing in...';
+                try {
+                    const data = await post('/api/v1/auth/login', { password: $('password').value });
+                    if (data.require_2fa) {
+                        pendingTempToken = data.temp_token;
+                        showStep('2fa');
+                        setTimeout(() => $('totp-code').focus(), 30);
+                    } else {
+                        storeAuth(data);
+                        goInside();
+                    }
+                } catch (e) {
+                    notice(e.message);
+                    $('password').select();
+                } finally {
+                    button.disabled = false;
+                    button.textContent = 'Sign in';
+                }
+            });
 
-            try {
-                const response = await fetch('/api/v1/auth/2fa/complete', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        temp_token: pendingTempToken,
-                        code: document.getElementById('totp-code').value
-                    })
-                });
-                const data = await response.json();
-                if (!response.ok) throw new Error(data.error || 'Verification failed');
+            $('step-2fa').addEventListener('submit', async (event) => {
+                event.preventDefault();
+                notice('');
+                const button = $('totp-btn');
+                button.disabled = true;
+                button.textContent = 'Checking...';
+                try {
+                    const data = await post('/api/v1/auth/2fa/complete', { temp_token: pendingTempToken, code: $('totp-code').value });
+                    storeAuth(data);
+                    goInside();
+                } catch (e) {
+                    notice(e.message);
+                    $('totp-code').select();
+                } finally {
+                    button.disabled = false;
+                    button.textContent = 'Verify';
+                }
+            });
 
-                storeAuth(data);
-                window.location.href = '/';
-            } catch (err) {
-                showError(err.message);
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'Verify';
+            // Six digits typed or pasted: send right away.
+            $('totp-code').addEventListener('input', () => {
+                const code = $('totp-code').value.replace(/\D/g, '').slice(0, 6);
+                $('totp-code').value = code;
+                if (code.length === 6 && !$('totp-btn').disabled) $('step-2fa').requestSubmit();
+            });
+
+            $('back-btn').addEventListener('click', () => {
+                pendingTempToken = null;
+                notice('');
+                $('totp-code').value = '';
+                showStep('password');
+                $('password').focus();
+            });
+
+            async function start() {
+                let name = '';
+                try { name = localStorage.getItem('alvaos_nas_name') || ''; } catch (_e) { /* storage off */ }
+                $('signin-title').textContent = name ? `Sign in to ${name}` : 'Sign in to AlvaOS';
+                if (name) document.title = `${name} - Sign in`;
+                try {
+                    const res = await fetch('/api/v1/setup/status');
+                    const status = res.ok ? await res.json() : null;
+                    if (status && !status.setup_complete) {
+                        window.location.href = '/setup.html';
+                        return;
+                    }
+                } catch (_e) { /* the sign-in itself will report a problem */ }
+                const reason = new URLSearchParams(window.location.search).get('reason');
+                if (reason === 'expired') notice('You were signed out after a while without activity. Sign in again.', 'info');
+                if (reason === 'signed-out') notice('You are signed out.', 'info');
             }
-        });
 
-        // Back button clears temp token and returns to password step
-        document.getElementById('back-btn').addEventListener('click', () => {
-            pendingTempToken = null;
-            clearError();
-            document.getElementById('totp-code').value = '';
-            showStep('password');
-        });
+            start();
+        })();
     </script>
 </body>
 

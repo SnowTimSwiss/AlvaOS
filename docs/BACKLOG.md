@@ -15,6 +15,23 @@ How to add an entry:
 
 ---
 
+## 2026-10-02 · Sign-in page in the new look
+
+- "Sign in to alva-home" (the name this browser remembers; "AlvaOS"
+  otherwise), the AlvaOS mark and the soft background of the setup wizard,
+  "Password" instead of "Root Password", one wide Sign in button. Both themes.
+- Errors in plain words: wrong password ("Check Caps Lock"), wrong code
+  ("Codes change every 30 seconds"), too many attempts, NAS not answering.
+  The field is selected again so retyping is quick.
+- 2FA: one big code field that sends itself after six digits (typed or
+  pasted); "Use a different password" goes back.
+- Log out now lands on the sign-in page with "You are signed out."
+  (`?reason=signed-out`); `?reason=expired` and `?next=page.html` are
+  understood for later use. A hidden username field lets password managers
+  save the login.
+- Checked in a browser: wrong password, wrong code, auto-submit, success, at
+  desktop (dark) and phone (light) width.
+
 ## 2026-10-02 · Where am I signed in? Sign out everywhere else
 
 - **System › Security › Signed in:** every session with device ("Safari on
