@@ -141,3 +141,11 @@ def test_thumbnails_are_made_here_and_cached(client, monkeypatch, tmp_path):
     assert client.get("/api/thumb?share=Anna&path=a.jpg").status_code == 404     # not Ben's share
     monkeypatch.setattr(files_manager, "open_stream", lambda path, part=None, user=None: (iter([b"not an image"]), ""))
     assert client.get("/api/thumb?share=Family&path=b.jpg").status_code == 404
+
+
+def test_moving_stays_in_the_same_share(client):
+    sign_in(client, "anna", "anna-pass")
+    client.post("/api/move", json={"share": "Family", "path": "", "names": ["a.jpg"], "to": "Holidays"}, headers=H)
+    assert client.calls[-1] == (["files-move", "/mnt/alvaos/main/Family", "a.jpg", "/mnt/alvaos/main/Family/Holidays"], "anna")
+    assert client.post("/api/move", json={"share": "Family", "path": "", "names": ["a.jpg"], "to": "../Anna"},
+                       headers=H).status_code == 404

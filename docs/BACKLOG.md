@@ -15,6 +15,16 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · AlvaOS Files: move, and who needs a password
+
+- **Move:** "Move to…" in the right-click menu opens a folder picker of the
+  share; items can also be dragged onto a folder or onto a folder in the path
+  bar. New helper operation `files-move SRC_DIR NAME DST_DIR` (both folders
+  checked on their descriptors, never over an existing item, not into
+  itself; a separate subvolume says so). Only within one share.
+- Storage › Users marks people who need their password set once more for
+  Files ("Set password for Files"); setting it refreshes the list.
+
 ## 2026-10-03 · AlvaOS Files as a built-in app (port 8090)
 
 - **Decision:** Files is its own app, like Nextcloud, but part of the OS:

@@ -439,6 +439,35 @@ def rename():
         ['files-rename', path, str(data.get('old') or ''), str(data.get('new') or '')], user=as_user(session)))
 
 
+@app.post('/api/move')
+def move():
+    """Move items to another folder of the same share."""
+    session, refused = need_session()
+    if refused:
+        return refused
+    data = request.get_json(silent=True) or {}
+    share, path, _, bad = target(session, data, write=True)
+    if bad:
+        return bad
+    _, dest, _, bad = target(session, {'share': share['name'], 'path': data.get('to')}, write=True)
+    if bad:
+        return bad
+    names = data.get('names') if isinstance(data.get('names'), list) else []
+    if not names or len(names) > 500:
+        return jsonify({'error': 'Choose what to move.'}), 400
+    moved: List[str] = []
+    failed: List[str] = []
+    for name in names:
+        result, problem = files_manager.run_helper(['files-move', path, str(name), dest], user=as_user(session))
+        if result is not None:
+            moved.append(str(name))
+        else:
+            failed.append(f'{name}: {problem}')
+    if not moved:
+        return jsonify({'error': '; '.join(failed) or 'Nothing was moved.'}), 409
+    return jsonify({'success': True, 'moved': moved, 'failed': failed})
+
+
 @app.post('/api/delete')
 def delete():
     session, refused = need_session()
