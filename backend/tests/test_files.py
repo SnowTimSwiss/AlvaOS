@@ -89,3 +89,21 @@ def test_read_file_stays_on_the_pools_even_through_symlinks(tmp_path):
 ])
 def test_one_byte_range_is_understood(header, size, expected):
     assert fm.parse_range(header, size) == expected
+
+
+def test_upload_pipes_everything_into_a_real_process(monkeypatch):
+    import io
+    import sys
+    script = "import sys, json; d = sys.stdin.buffer.read(); print(json.dumps({'written': len(d)}))"
+    monkeypatch.setattr(fm, "_helper_cmd", lambda args, user=None: [sys.executable, "-c", script])
+    result, error = fm.upload("/mnt/alvaos/main/Media", "a.bin", io.BytesIO(b"x" * 3_000_000), chunk=65536)
+    assert error == "" and result == {"written": 3_000_000}
+
+
+def test_upload_reports_a_refusal_from_the_helper(monkeypatch):
+    import io
+    import sys
+    script = "import sys; sys.stderr.write('\"a.bin\" is already there.'); sys.exit(1)"
+    monkeypatch.setattr(fm, "_helper_cmd", lambda args, user=None: [sys.executable, "-c", script])
+    result, error = fm.upload("/mnt/alvaos/main/Media", "a.bin", io.BytesIO(b"x" * 5_000_000), chunk=65536)
+    assert result is None and "already there" in error
