@@ -17,7 +17,7 @@ Every page follows the same pattern as the reworked Dashboard, Storage and Backu
 ## Now
 
 ### 1. Remaining pages in the new pattern
-- **Apps:** ship real app icons in `apps/icons/` (SVG, made or licensed for AlvaOS); change an installed app's folders and ports later from its details.
+- **Apps:** ship real app icons in `apps/icons/` (SVG, made or licensed for AlvaOS).
 - **Updates follow-up:** roll back automatically when `dpkg -i` fails or no service comes back after an update (`apply_update.sh` only reports the error today), and keep the package of the installed version in the cache even when it came from the installer or a USB stick, so "Go back" is always offered.
 
 ---

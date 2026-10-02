@@ -15,6 +15,21 @@ How to add an entry:
 
 ---
 
+## 2026-10-02 · Apps: change folders and ports after installing
+
+- The app inspector menu has **"Folders and ports..."**: the same choices as
+  the install dialog (shared folder or a new folder for the app, ports with a
+  warning when another app uses one and the next free port named). "Save and
+  restart" recreates the containers without pulling
+  (`POST /api/v1/apps/<id>/settings` → `AppStore.reconfigure_app`, the update
+  worker with `action="reconfigure"`, `pull=False`). Files are not moved; the
+  dialog says so.
+- An app whose catalog entry is newer than what is installed is told to update
+  first: recreating from the newer entry would be an update in disguise.
+  Custom compose apps are not offered this.
+- Disabled `.btn-primary`/`.btn-secondary` buttons now look disabled
+  everywhere (they did not before).
+
 ## 2026-10-02 · Restore points: smart retention
 
 - **Smart (recommended)** is the new default for local data snapshots: every

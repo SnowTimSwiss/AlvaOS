@@ -601,6 +601,10 @@ async function renderInspector() {
                                 ${window.alvaIcon ? window.alvaIcon('rotate-cw') : ''} Restart app
                             </button>` : ''}
                         ${!isCustom ? `
+                            <button class="menu-item" onclick="toggleInspectorMenu('app-actions-menu', event); showAppSettingsDialog('${escId}')">
+                                ${window.alvaIcon ? window.alvaIcon('folder-open') : ''} Folders and ports&hellip;
+                            </button>` : ''}
+                        ${!isCustom ? `
                             <button class="menu-item" onclick="toggleInspectorMenu('app-actions-menu', event); checkAppForUpdates('${escId}')">
                                 ${window.alvaIcon ? window.alvaIcon('refresh-cw') : ''} Check for updates
                             </button>` : ''}
@@ -1394,6 +1398,124 @@ async function showInstallWizard(appId) {
         showNotification(err.message, 'error');
         modal.style.display = 'none';
     }
+}
+
+// Folders and ports of an installed app, changed later. Same choices as the
+// install dialog; the app is recreated with the same version and keeps its data.
+async function showAppSettingsDialog(appId) {
+    const installed = installedAppsCache.find((a) => a.app_id === appId) || {};
+    const app = await getAppDetails(appId);
+    if (!app) {
+        showNotification('The app details could not be loaded.', 'error');
+        return;
+    }
+    let shares = [];
+    try {
+        const res = await apiFetch(`${API_BASE}/storage/shares`, { headers: { 'Authorization': authToken } });
+        if (res.ok) shares = ((await res.json()).shares || []).filter((sh) => sh && sh.path);
+    } catch (_e) { shares = []; }
+
+    const volumes = Array.isArray(app?.config_schema?.volumes) ? app.config_schema.volumes.filter(isYourFilesVolume) : [];
+    const ports = Array.isArray(app?.config_schema?.ports) ? app.config_schema.ports : [];
+    const currentFolders = installed.volume_mappings || {};
+    const currentPorts = installed.port_mappings || {};
+    const used = portsInUse();
+    Object.keys(used).forEach((port) => { if (used[port] === (installed.name || appId)) delete used[port]; });
+
+    const folderOptions = (current) => {
+        const known = shares.some((sh) => sh.path === current);
+        return [
+            `<option value=""${current ? '' : ' selected'}>A new folder for this app</option>`,
+            ...shares.map((sh) => `<option value="${escapeHtml(sh.path)}"${sh.path === current ? ' selected' : ''}>Shared folder "${escapeHtml(sh.name)}"</option>`),
+            current && !known ? `<option value="${escapeHtml(current)}" selected>${escapeHtml(current)}</option>` : '',
+        ].join('');
+    };
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+        <div class="modal-content app-settings" role="dialog" aria-modal="true" aria-labelledby="app-settings-title">
+            <div class="modal-title"><span id="app-settings-title">Folders and ports</span>
+                <button type="button" class="modal-close-x" aria-label="Close">&times;</button></div>
+            <div class="modal-body">
+                <p class="install-hint" style="margin-top:0;">${escapeHtml(installed.name || app.name || appId)} restarts with the new settings. Its own settings and database stay where they are.</p>
+                ${volumes.length ? `<div class="install-folders">${volumes.map((v, i) => `
+                    <div class="install-folder">
+                        <label for="app-set-folder-${i}">${escapeHtml(v.description || v.container_path)}</label>
+                        <select id="app-set-folder-${i}" data-container-path="${escapeHtml(v.container_path)}">${folderOptions(currentFolders[v.container_path] || '')}</select>
+                    </div>`).join('')}
+                    <p class="install-hint">Files are not moved: what is in the old folder stays there.</p></div>` : ''}
+                ${ports.length ? `<div class="install-port-fields">${ports.map((p, i) => {
+                    const value = Number(currentPorts[p.internal] || currentPorts[String(p.internal)] || p.external);
+                    return `
+                    <div class="install-port">
+                        <span>${escapeHtml(p.description || 'Port')}
+                            <small id="app-set-port-note-${i}">Inside the app: ${escapeHtml(p.internal)}/${escapeHtml(p.protocol || 'tcp')}</small></span>
+                        <input id="app-set-port-${i}" type="number" min="1" max="65535" value="${value}"
+                            data-internal="${escapeHtml(p.internal)}" data-default="${escapeHtml(p.external)}" aria-label="${escapeHtml(p.description || 'Port')}">
+                    </div>`;
+                }).join('')}</div>` : ''}
+                ${!volumes.length && !ports.length ? '<p class="install-hint">This app has no folders or ports to choose.</p>' : ''}
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn-secondary" data-action="cancel">Cancel</button>
+                <button type="button" class="btn-primary" data-action="save"${!volumes.length && !ports.length ? ' disabled' : ''}>Save and restart</button>
+            </div>
+        </div>`;
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.querySelector('.modal-close-x').onclick = close;
+    overlay.querySelector('[data-action="cancel"]').onclick = close;
+    if (window.attachModalDismiss) window.attachModalDismiss(overlay, close);
+
+    const save = overlay.querySelector('[data-action="save"]');
+    const checkPorts = () => {
+        let problem = false;
+        overlay.querySelectorAll('input[data-internal]').forEach((input, i) => {
+            const note = overlay.querySelector(`#app-set-port-note-${i}`);
+            const value = Number(input.value);
+            const port = ports[i] || {};
+            let text = `Inside the app: ${port.internal}/${port.protocol || 'tcp'}`;
+            let warn = false;
+            if (!Number.isInteger(value) || value < 1 || value > 65535) { text = 'A number from 1 to 65535.'; warn = true; }
+            else if (used[value]) { text = `${value} is used by ${used[value]}. ${nextFreePort(value, used)} is free.`; warn = true; }
+            if (note) { note.textContent = text; note.classList.toggle('warn', warn); }
+            problem = problem || warn;
+        });
+        save.disabled = problem;
+    };
+    overlay.querySelectorAll('input[data-internal]').forEach((input) => input.addEventListener('input', checkPorts));
+    checkPorts();
+
+    save.onclick = async () => {
+        const volumeMappings = {};
+        overlay.querySelectorAll('select[data-container-path]').forEach((select) => {
+            if (select.value) volumeMappings[select.dataset.containerPath] = select.value;
+        });
+        const portMappings = {};
+        overlay.querySelectorAll('input[data-internal]').forEach((input) => {
+            if (String(Number(input.value)) !== input.dataset.default) portMappings[input.dataset.internal] = Number(input.value);
+        });
+        save.disabled = true;
+        save.textContent = 'Restarting...';
+        try {
+            const res = await apiFetch(`${API_BASE}/apps/${encodeURIComponent(appId)}/settings`, {
+                method: 'POST',
+                headers: { 'Authorization': authToken, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ volume_mappings: volumeMappings, port_mappings: portMappings }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || 'The settings were not changed.');
+            await waitForAppOperation(appId, 'reconfigure', 900);
+            close();
+            showNotification('New folders and ports are in use.', 'success');
+            await loadInstalledWorkspace(true);
+        } catch (error) {
+            showNotification(error.message, 'error');
+            save.textContent = 'Save and restart';
+            checkPorts();
+        }
+    };
 }
 
 function showAppDetails(appId) {
