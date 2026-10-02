@@ -465,6 +465,24 @@
                     </div>
                 </section>
 
+                <section class="set-group" id="disk-power-group">
+                    <h2 class="set-group-title">Hard disks</h2>
+                    <div class="set-row">
+                        <div class="set-text"><div class="set-label"><label for="disk-sleep-select">Let hard disks sleep</label></div>
+                            <div class="set-desc" id="disk-sleep-desc">Saves power and noise when nobody uses the NAS. The first access after a sleep takes a few seconds.</div></div>
+                        <div class="set-value">
+                            <select id="disk-sleep-select" class="select-input">
+                                <option value="0">Never</option>
+                                <option value="10">After 10 minutes</option>
+                                <option value="20">After 20 minutes</option>
+                                <option value="30">After 30 minutes</option>
+                                <option value="60">After 1 hour</option>
+                            </select>
+                        </div>
+                        <div class="set-action"></div>
+                    </div>
+                </section>
+
                 <section class="set-group">
                     <h2 class="set-group-title">Battery backup</h2>
                     <div class="set-row">
@@ -534,6 +552,7 @@
     <script src="sessions.js"></script>
     <script src="settings.js"></script>
     <script src="settings-email.js"></script>
+    <script src="settings-disks.js"></script>
 </body>
 
 </html>

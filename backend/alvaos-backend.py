@@ -16,7 +16,7 @@ from flask import Flask, Response, jsonify, request, send_from_directory
 
 # ── AlvaOS managers ───────────────────────────────────────────────────────────
 from common import (
-    ensure_directories,
+    ensure_directories, run_sudo_command,
 )
 from auth_manager import (
     is_setup_complete,
@@ -212,6 +212,13 @@ if __name__ == '__main__':
         threading.Thread(target=make_health_scheduler().serve_forever,
                          kwargs={'smart': make_smart_scheduler()}, name='health-checks',
                          daemon=True).start()
+
+    # Hard disks forget their sleep timer when they lose power.
+    if platform.system() == 'Linux':
+        import disk_power
+        from storage_manager import disk_inventory
+        threading.Thread(target=disk_power.apply_saved, args=(disk_inventory, run_sudo_command),
+                         name='disk-power', daemon=True).start()
 
     # Problems by Telegram and email, also when nobody has the web page open.
     import alert_delivery

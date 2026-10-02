@@ -15,6 +15,21 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · Let hard disks sleep
+
+- Settings › Power › Hard disks: "Let hard disks sleep" never (default) or
+  after 10, 20, 30 or 60 minutes. Applies to spinning data disks only (lsblk
+  `ROTA`, now in the disk list as `rotational`); SSDs, USB disks and the
+  system disk are left alone. The line below says how many disks it applies
+  to.
+- `disk_power.py` sets it with `hdparm -S` when saved and again at every start
+  (disks forget it without power). The helper allows only `hdparm -S
+  <0|120|240|241|242> <data disk>`; everything else hdparm can do is denied.
+  `hdparm` is now a package dependency and installed by the installer.
+- SMART checks already use `-n standby`, so they do not wake sleeping disks.
+- **Note for next time:** check on real disks that they really sleep (Btrfs
+  commits and Docker logs on the pool can keep them awake).
+
 ## 2026-10-03 · Apps: own icons
 
 - Every catalog app has its own icon: a colour and a symbol for what it does

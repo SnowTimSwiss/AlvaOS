@@ -1167,6 +1167,17 @@ def _rule_wg_quick(sys_: System, args):
 FIND_LIST_FORMAT = '%y\\t%s\\t%T@\\t%f\\0'
 
 
+# hdparm only sets the standby (sleep) timeout of a data disk; values as in
+# disk_power.SPINDOWN_VALUES. Nothing else hdparm can do (secure erase,
+# firmware, write cache, ...) is allowed.
+_HDPARM_SPINDOWN = {'0', '120', '240', '241', '242'}
+
+
+def _rule_hdparm(sys_: System, args):
+    _expect(args, '-S', _HDPARM_SPINDOWN, lambda p: None)
+    return Plan(argv=['-S', args[1], _device(sys_, args[2], destructive=True)])
+
+
 def _rule_find(sys_: System, args):
     """List one directory inside the data directories. Nothing else: no
     -exec, -delete or other expressions."""
@@ -1214,6 +1225,7 @@ RULES = {
     'apt': _rule_apt,
     'dpkg': _rule_dpkg,
     'smartctl': _rule_smartctl,
+    'hdparm': _rule_hdparm,
     'lsblk': _rule_readonly_flags(r'^(-[a-zA-Z]{1,6}|[A-Z,-]{1,120})$'),
     'blkid': _rule_readonly_flags(r'^(-[so]|UUID|value|TYPE|LABEL)$'),
     'btrfs': _rule_btrfs,
