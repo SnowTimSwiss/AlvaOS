@@ -31,7 +31,7 @@ from storage_manager import (
 from alerts_manager import (
     load_alerts_state,
     save_alerts_state, _collect_system_alerts,
-    _build_alert_summary, _maybe_send_telegram_critical_alerts,
+    _build_alert_summary,
     _is_pairing_active,
     _clear_pairing_state, _clear_telegram_chat_binding, _alert_settings_public_payload,
     _telegram_api_call,
@@ -242,8 +242,8 @@ def get_system_info():
 def get_alerts():
     alerts = _collect_system_alerts()
     summary = _build_alert_summary(alerts)
-    state = load_alerts_state()
-    _maybe_send_telegram_critical_alerts(alerts, state)
+    # Telegram and email are sent by alert_delivery in the background, so they
+    # also arrive when nobody has this page open.
     return jsonify({
         'alerts': alerts,
         'summary': summary,
@@ -326,6 +326,43 @@ def alerts_settings():
         'success': True,
         'settings': _alert_settings_public_payload(saved)
     })
+
+@bp.route('/api/v1/alerts/email', methods=['GET', 'POST'])
+@require_auth(require_admin=True)
+def alerts_email():
+    """Email for problems and the weekly report. The password is never sent back."""
+    import alert_delivery
+    state = alert_delivery.load_state()
+    if request.method == 'POST':
+        payload = request.get_json(silent=True) or {}
+        if isinstance(payload.get('report'), dict) and 'weekly' in payload['report']:
+            state['report']['weekly'] = bool(payload['report']['weekly'])
+        if isinstance(payload.get('email'), dict):
+            email, problem = alert_delivery.apply_email_settings(state, payload['email'])
+            if problem:
+                return jsonify({'error': problem}), 400
+            state['email'] = email
+        state = alert_delivery.save_state(state)
+    return jsonify({'success': True, **alert_delivery.public_settings(state)})
+
+
+@bp.route('/api/v1/alerts/email/test', methods=['POST'])
+@require_auth(require_admin=True)
+def alerts_email_test():
+    """Send a test email with what is typed in the dialog (saved password if none typed)."""
+    import alert_delivery
+    state = alert_delivery.load_state()
+    payload = request.get_json(silent=True) or {}
+    email, problem = alert_delivery.apply_email_settings(state, {**(payload.get('email') or {}), 'test': True})
+    if problem:
+        return jsonify({'error': problem}), 400
+    ok, error = alert_delivery.send_email(
+        email, 'AlvaOS test email',
+        'This is a test from your NAS. If you can read this, AlvaOS can tell you about problems by email.')
+    if not ok:
+        return jsonify({'error': error}), 502
+    return jsonify({'success': True, 'message': f'Sent to {email["recipient"]}. Check your inbox (and the spam folder).'})
+
 
 @bp.route('/api/v1/alerts/telegram/pairing/start', methods=['POST'])
 @require_auth
