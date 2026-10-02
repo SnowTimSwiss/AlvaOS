@@ -328,6 +328,58 @@ def logout():
     _destroy_session(token)
     return jsonify({'success': True})
 
+@bp.route('/api/v1/auth/password', methods=['POST'])
+@require_auth(require_admin=True)
+def change_admin_password():
+    """Change the admin password: the current one is checked first. Every other
+    session is signed out; this one stays, so the person is not thrown out."""
+    client_ip = request.remote_addr or 'unknown'
+    allowed, retry_after = _check_rate_limit(client_ip)
+    if not allowed:
+        return jsonify({'error': f'Too many attempts. Try again in {retry_after}s.'}), 429
+
+    data = request.get_json(silent=True) or {}
+    current = str(data.get('current_password') or '')
+    new = str(data.get('new_password') or '')
+    if len(new) < 8:
+        return jsonify({'error': 'The new password needs at least 8 characters.'}), 400
+    if new == current:
+        return jsonify({'error': 'The new password is the same as the current one.'}), 400
+
+    try:
+        with open(AUTH_FILE, 'r') as f:
+            auth_data = json.load(f)
+    except (OSError, ValueError):
+        return jsonify({'error': 'The password file could not be read.'}), 500
+    valid, _ = verify_password(current, auth_data)
+    if not valid:
+        return jsonify({'error': 'The current password is not right.'}), 403
+    _reset_rate_limit(client_ip)
+
+    if platform.system() == 'Linux':
+        try:
+            process = subprocess.Popen(
+                build_privileged_cmd([CMD['CHPASSWD']]),
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, env={'LC_ALL': 'C'},
+            )
+            _, stderr = process.communicate(input=f'root:{new}\n', timeout=10)
+            if process.returncode != 0:
+                return jsonify({'error': f'The password could not be set: {stderr.strip()}'}), 500
+        except Exception as e:
+            return jsonify({'error': f'The password could not be set: {e}'}), 500
+        sync_samba_password('root', new)
+
+    # Keep everything else in the file (the 2FA secret lives there too).
+    auth_data.update(hash_password(new))
+    with open(AUTH_FILE, 'w') as f:
+        json.dump(auth_data, f)
+
+    token = request.headers.get('Authorization', '').strip()
+    signed_out = revoke_other_sessions(token)
+    return jsonify({'success': True, 'signed_out': signed_out})
+
+
 @bp.route('/api/v1/auth/sessions', methods=['GET'])
 @require_auth(require_admin=True)
 def get_sessions():

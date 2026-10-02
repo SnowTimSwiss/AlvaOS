@@ -15,6 +15,37 @@ How to add an entry:
 
 ---
 
+## 2026-10-02 · Settings page: state first, one action per row
+
+- **"System" is now "Settings"** in the navigation and on the page (the file
+  stays `system.html`, so links keep working). Tabs: Network, Time,
+  Security, Notifications (was Alerts), Power, Diagnostics (was Logs); the
+  hash names are unchanged (`#security`, `#alerts`, `#logs`).
+- **One pattern everywhere:** groups of rows, each with a name and one
+  sentence on the left, the current value in the middle and one action on
+  the right. Technical details (subnet, gateway, DNS, battery values) are
+  under "details"; the system log only opens on request. On a phone the
+  value and action go under the text.
+- **Network:** Name (Change), "Open AlvaOS" with the address to type
+  (`name.local:port`) and Copy, the address from the router.
+- **Security:** Admin password (Change), two-step sign-in and SSH with On/Off
+  and Turn on/off, then the signed-in devices.
+- **Power:** Restart and Shut down as calm buttons with a clear confirm
+  ("Shares and apps are away for a minute or two"), no red header. Battery
+  backup in one sentence ("Shuts down at 20%").
+- **Found:** there was no way to change the admin password after setup; the
+  account menu's "Password and security" led nowhere useful. New
+  `POST /api/v1/auth/password` checks the current password (rate limited
+  like login), sets it with chpasswd and Samba, keeps the 2FA secret in
+  `auth.json`, and signs out every other session (this one stays). Dialog
+  with live hints in Settings › Security.
+- Plain words: On/Off instead of Enabled/Disabled, "Restarted" / "Could not
+  restart" instead of FIXED/FAILED; watchdog error text is now escaped.
+- Tests: password change (wrong current, too short, success, 2FA kept,
+  other sessions signed out) in `test_api.py`. All six tabs and the password
+  dialog checked in a browser with mocked data, desktop (dark) and phone
+  (light), no sideways scrolling.
+
 ## 2026-10-02 · Apps: honest status, Open right away, what an app needs
 
 - **Installed list:** each app says Running, Stopped or "Not fully running"

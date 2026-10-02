@@ -1,4 +1,4 @@
-// System › Security › Signed in: where AlvaOS is signed in, and signing out
+// Settings › Security › Signed in: where AlvaOS is signed in, and signing out
 // one browser or everywhere else.
 (function () {
     const list = document.getElementById('sessions-list');
@@ -73,5 +73,6 @@
         load();
     });
 
+    document.addEventListener('alvaos-sessions-changed', load);
     load();
 })();
