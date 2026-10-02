@@ -81,6 +81,7 @@
 
     function render() {
         document.querySelectorAll('.step').forEach((el) => el.classList.toggle('active', el.dataset.step === current()));
+        document.body.classList.toggle('on-welcome', current() === 'welcome');
         document.querySelectorAll('#progress span').forEach((el, i) => el.classList.toggle('done', i <= state.step));
         $('step-label').textContent = current() === 'done' ? 'All done' : `Step ${state.step + 1} of ${STEPS.length}`;
         showError('');
@@ -282,12 +283,21 @@
         const previous = document.querySelector('input[name="protection"]:checked')?.value;
         if (picks.length >= 2) {
             const total = sizes.reduce((a, b) => a + b, 0);
-            const mirrored = total / 2;
-            const choice = previous || 'raid1';
+            let choice = previous || 'raid1';
+            if (choice === 'raid1c3' && picks.length < 3) choice = 'raid1';
+            // Btrfs with c copies: limited by the total over c, and by what is
+            // left once the c-1 largest disks are full.
+            const usableBytes = (copies) => {
+                const largest = [...sizes].sort((a, b) => b - a).slice(0, copies - 1).reduce((a, b) => a + b, 0);
+                return Math.max(0, Math.min(total / copies, total - largest));
+            };
+            const usable = (copies) => (total ? `${formatBytes(usableBytes(copies))} usable` : '');
+            const option = (value, title, text, meta) => `<label class="choice"><input type="radio" name="protection" value="${value}"${choice === value ? ' checked' : ''}><span><strong>${title}</strong><small>${text}</small></span><span class="meta">${meta}</span></label>`;
             field.innerHTML = `<span class="label">Protection</span><div class="choice-list">
-                <label class="choice"><input type="radio" name="protection" value="raid1"${choice === 'raid1' ? ' checked' : ''}><span><strong>Mirrored</strong><small>Recommended. Every file is on two disks, so one disk can fail without losing anything.</small></span><span class="meta">${total ? `${formatBytes(mirrored)} usable` : ''}</span></label>
-                <label class="choice"><input type="radio" name="protection" value="single"${choice === 'single' ? ' checked' : ''}><span><strong>Use all space</strong><small>No protection: if one disk fails, files on it are lost.</small></span><span class="meta">${total ? `${formatBytes(total)} usable` : ''}</span></label>
-            </div>`;
+                ${option('raid1', 'Mirrored', 'Recommended. Every file is on two disks, so one disk can fail without losing anything.', usable(2))}
+                ${picks.length >= 3 ? option('raid1c3', 'Three copies', 'Every file is on three disks, so two disks can fail at the same time.', usable(3)) : ''}
+                ${option('single', 'Use all space', 'No protection: if one disk fails, files on it are lost.', total ? `${formatBytes(total)} usable` : '')}
+            </div><small style="display:block;margin-top:8px;color:var(--text-secondary);font-size:0.8rem;">More layouts (RAID10, parity) are in Storage when you create a pool there.</small>`;
             field.querySelectorAll('input').forEach((i) => i.addEventListener('change', updateStorageChoice));
         } else if (picks.length === 1) {
             field.innerHTML = `<div class="note">One disk holds one copy of your files. Add a second disk later in Storage to mirror it, and use Buddy Backup for a copy outside your home.</div>`;
@@ -423,7 +433,10 @@
         if (state.pool) {
             const how = { created: 'Storage set up', imported: 'Storage from before connected', existing: 'Storage ready' }[state.pool.how];
             const detail = state.pool.how === 'created'
-                ? (state.pool.raid === 'raid1' ? `Mirrored on ${state.pool.disks} disks: one can fail without losing files.` : `On ${state.pool.disks === 1 ? 'one disk' : `${state.pool.disks} disks`}, without protection.`)
+                ? ({
+                    raid1: `Mirrored on ${state.pool.disks} disks: one can fail without losing files.`,
+                    raid1c3: `Three copies on ${state.pool.disks} disks: two can fail without losing files.`,
+                }[state.pool.raid] || `On ${state.pool.disks === 1 ? 'one disk' : `${state.pool.disks} disks`}, without protection.`)
                 : `"${state.pool.name}"`;
             items.push(['ok', how, detail]);
         } else {

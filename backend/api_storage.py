@@ -38,6 +38,21 @@ bp = Blueprint('storage', __name__)
 # Names for new pools (the create dialog checks the same rule).
 POOL_NAME_RE = re.compile(r'^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$')
 
+POOL_PROFILES = ('single', 'raid0', 'raid1', 'raid1c3', 'raid1c4', 'raid5', 'raid6', 'raid10')
+
+
+def mkfs_profile_args(raid_level):
+    """mkfs.btrfs -d/-m arguments for a pool profile.
+
+    Btrfs parity (raid5/raid6) is still not recommended for metadata: a crash
+    during a write can damage it (the "write hole"). As the Btrfs
+    documentation advises, data uses parity but metadata is mirrored with at
+    least as many copies as the parity can lose disks."""
+    if raid_level == 'single':
+        return []
+    metadata = {'raid5': 'raid1', 'raid6': 'raid1c3'}.get(raid_level, raid_level)
+    return ['-d', raid_level, '-m', metadata]
+
 NOT_ON_NAS = 'Storage management is only available on the AlvaOS NAS itself (Linux).'
 
 @bp.route('/api/v1/storage/disks', methods=['GET'])
@@ -361,6 +376,11 @@ def manage_pools():
         if not devices or len(devices) == 0:
             return jsonify({'error': 'At least one device is required'}), 400
         
+        if raid_level not in POOL_PROFILES:
+            return jsonify({'error': 'Unknown protection level'}), 400
+        if raid_level in ('raid0', 'raid10') and len(devices) < 2:
+            return jsonify({'error': f'{raid_level.upper()} requires at least 2 devices'}), 400
+
         # Validate RAID level requirements
         if raid_level == 'raid1' and len(devices) < 2:
             return jsonify({'error': 'RAID1 requires at least 2 devices'}), 400
@@ -396,9 +416,8 @@ def manage_pools():
                 # Build mkfs.btrfs command
                 cmd = [CMD['MKFS_BTRFS'], '-f', '-L', pool_name]
                 
-                # Add RAID level
-                if raid_level != 'single':
-                    cmd.extend(['-d', raid_level, '-m', raid_level])
+                # Add RAID level (parity profiles keep metadata mirrored)
+                cmd.extend(mkfs_profile_args(raid_level))
                 
                 # Add devices
                 cmd.extend(devices)

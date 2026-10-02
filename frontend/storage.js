@@ -639,14 +639,14 @@ async function showCreatePoolDialog(preselect = []) {
     const raidDesc = wizard.querySelector('#raid-description');
 
     const raidDescriptions = {
-        'single': '[WARNING] High Risk. No data protection. If the disk dies, data is lost. Full capacity (100%).',
-        'raid0': '[WARNING] Very High Risk. High speed, but NO protection. If ONE disk fails, ALL data is lost. Capacity: 100%.',
-        'raid1': '[RECOMMENDED] Mirrors data for safety. Survives 1 disk failure. Capacity: 50%.',
-        'raid5': 'Single-disk parity protection. Survives 1 disk failure. Capacity: (N-1)*DiskSize.',
-        'raid1c3': 'Mirrors data across 3 disks. Survives 2 disk failures. Capacity: 33%.',
-        'raid6': 'Double-disk parity protection. Survives 2 disk failures. Capacity: (N-2)*DiskSize.',
-        'raid1c4': 'Mirrors data across 4 disks. Survives 3 disk failures. Capacity: 25%.',
-        'raid10': '[HIGH PERFORMANCE] Combines speed of RAID0 with safety of RAID1. Capacity: 50%.'
+        'single': 'No protection: if a disk fails, the files on it are lost. All space is usable.',
+        'raid0': 'Spread across the disks for speed, with no protection: if one disk fails, everything is lost.',
+        'raid1': 'Recommended. Every file is on two disks: one disk can fail. Half the space is usable.',
+        'raid1c3': 'Every file is on three disks: two disks can fail. A third of the space is usable.',
+        'raid1c4': 'Every file is on four disks: three disks can fail. A quarter of the space is usable.',
+        'raid10': 'Mirrored and spread for speed: one disk can fail. Half the space is usable.',
+        'raid5': 'Parity: one disk can fail, and all but one disk of space is usable. Btrfs still calls parity experimental; AlvaOS keeps the folder structure mirrored, but a power cut during writing can damage recent files. Use with a UPS and backups.',
+        'raid6': 'Double parity: two disks can fail, and all but two disks of space is usable. Btrfs still calls parity experimental; AlvaOS keeps the folder structure mirrored three times, but a power cut during writing can damage recent files. Use with a UPS and backups.'
     };
 
     const updateRaidOptions = () => {
@@ -654,14 +654,14 @@ async function showCreatePoolDialog(preselect = []) {
         const currentVal = raidSelect.value;
 
         const options = [
-            { value: 'single', label: 'Single (No Redundancy)', min: 1 },
-            { value: 'raid0', label: 'RAID0 (Striping)', min: 1 },
-            { value: 'raid1', label: 'RAID1 (Mirroring - 2+ disks)', min: 2 },
-            { value: 'raid5', label: 'RAID5 (Parity - 3+ disks)', min: 3 },
-            { value: 'raid1c3', label: 'RAID1c3 (3-way Mirroring - 3+ disks)', min: 3 },
-            { value: 'raid6', label: 'RAID6 (Double Parity - 4+ disks)', min: 4 },
-            { value: 'raid1c4', label: 'RAID1c4 (4-way Mirroring - 4+ disks)', min: 4 },
-            { value: 'raid10', label: 'RAID10 (Striping + Mirroring - 4+ disks)', min: 4 }
+            { value: 'raid1', label: 'Mirrored (RAID1) - recommended', min: 2 },
+            { value: 'raid1c3', label: 'Three copies (RAID1c3)', min: 3 },
+            { value: 'raid1c4', label: 'Four copies (RAID1c4)', min: 4 },
+            { value: 'raid10', label: 'Mirrored and striped (RAID10)', min: 4 },
+            { value: 'raid5', label: 'Parity (RAID5) - experimental', min: 3 },
+            { value: 'raid6', label: 'Double parity (RAID6) - experimental', min: 4 },
+            { value: 'single', label: 'No protection (single)', min: 1 },
+            { value: 'raid0', label: 'Striped, no protection (RAID0)', min: 2 }
         ];
 
         const allowed = options.filter(opt => count >= opt.min);
