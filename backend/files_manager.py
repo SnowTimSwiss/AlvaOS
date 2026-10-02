@@ -96,6 +96,15 @@ def open_stream(path: str, chunk: int = 256 * 1024, part: Optional[Tuple[int, in
     chunk is read before answering, so a refused or missing file becomes an
     error, not an empty download."""
     cmd = _helper_cmd(['read-file', path] + ([str(part[0]), str(part[1])] if part else []), user)
+    return _stream(cmd, chunk)
+
+
+def open_zip(path: str, user: Optional[str] = None) -> Tuple[Optional[Iterator[bytes]], str]:
+    """A folder as a ZIP stream through `alvaos-priv files-zip`."""
+    return _stream(_helper_cmd(['files-zip', path], user), 256 * 1024)
+
+
+def _stream(cmd: List[str], chunk: int) -> Tuple[Optional[Iterator[bytes]], str]:
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env={'LC_ALL': 'C'})
     except OSError as exc:

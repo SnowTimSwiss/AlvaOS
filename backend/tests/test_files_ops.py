@@ -162,3 +162,20 @@ def test_move_into_another_folder_without_overwriting(share):
         fo.move(s, "notes.txt", outside, root)
     with pytest.raises(fo.FileOpError, match="already in that folder"):
         fo.move(s, "notes.txt", s, root)
+
+
+
+def test_a_folder_zips_without_symlinks_hidden_files_or_trash(share):
+    import io
+    import zipfile
+    root, s_, outside = share
+    fo.write_file(os.path.join(s_, "Films"), "a.mkv", io.BytesIO(b"film"), root)
+    os.symlink(os.path.join(outside, "shadow"), os.path.join(s_, "evil.txt"))
+    open(os.path.join(s_, ".DS_Store"), "w").write("x")
+    fo.make_dir(s_, "Gone", root)
+    fo.trash(s_, s_, "Gone", root)
+    buf = io.BytesIO()
+    assert fo.zip_folder(s_, buf, root) == 2
+    z = zipfile.ZipFile(io.BytesIO(buf.getvalue()))
+    assert sorted(z.namelist()) == ["Films/a.mkv", "notes.txt"]
+    assert z.read("Films/a.mkv") == b"film"

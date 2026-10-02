@@ -54,6 +54,7 @@
         const parts = path ? path.split('/') : [];
         $('pub-crumbs').innerHTML = [`<button type="button" class="crumb" data-p="">${esc(info.name)}</button>`,
             ...parts.map((p, i) => `<span class="sep">›</span><button type="button" class="crumb" data-p="${esc(parts.slice(0, i + 1).join('/'))}">${esc(p)}</button>`)].join('');
+        $('pub-zip').href = `${base}/zip?${new URLSearchParams(path ? { path } : {})}`;
         $('pub-items').innerHTML = '<div class="empty">Loading…</div>';
         let entries = [];
         try {

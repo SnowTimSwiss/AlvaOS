@@ -263,7 +263,7 @@
             const canWrite = access() === 'write';
             $('sel-rename').hidden = !canWrite || n !== 1;
             $('sel-delete').hidden = !canWrite;
-            $('sel-download').hidden = !sel.some((e) => e.type === 'file');
+            $('sel-download').hidden = false;
         }
         $('status').textContent = [folders ? `${folders} folder${folders === 1 ? '' : 's'}` : '',
             files.length ? `${files.length} file${files.length === 1 ? '' : 's'} (${bytes(files.reduce((s, e) => s + (e.size_bytes || 0), 0))})` : '',
@@ -340,7 +340,18 @@
         return (await api('link', { method: 'POST', json: { share, path: rel(entry), inline: !!inline } })).url;
     }
 
+    function zipDownload(folderPath) {
+        const a = document.createElement('a');
+        a.href = `/api/zip?${new URLSearchParams({ share, path: folderPath })}`;
+        a.download = '';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        toast('The ZIP is made while it downloads; big folders take a while.');
+    }
+
     async function download(list) {
+        for (const entry of list.filter((e) => e.type === 'folder')) zipDownload(rel(entry));
         for (const entry of list.filter((e) => e.type === 'file')) {
             try {
                 const a = document.createElement('a');
@@ -364,6 +375,8 @@
         const rows = [];
         if (one) rows.push(`<button type="button" data-ctx="open">${icon(one.type === 'folder' ? 'folder' : 'open')}Open</button>`);
         if (sel.some((e) => e.type === 'file')) rows.push(`<button type="button" data-ctx="download">${icon('download')}Download</button>`);
+        if (one && one.type === 'folder') rows.push(`<button type="button" data-ctx="zip">${icon('archive')}Download as ZIP</button>`);
+        if (!sel.length) rows.push(`<button type="button" data-ctx="zip-here">${icon('archive')}Download this folder as ZIP</button>`);
         if (canWrite && one) rows.push(`<button type="button" data-ctx="rename">${icon('pen')}Rename</button>`);
         if (one) rows.push(`<button type="button" data-ctx="share">${icon('link')}Share link…</button>`);
         if (canWrite && sel.length) rows.push(`<button type="button" data-ctx="move">${icon('folder')}Move to…</button>`);
@@ -391,6 +404,8 @@
         const sel = selectedEntries();
         if (name === 'open') open(sel[0]);
         if (name === 'download') download(sel);
+        if (name === 'zip' && sel.length === 1) zipDownload(rel(sel[0]));
+        if (name === 'zip-here') zipDownload(path);
         if (name === 'rename' && sel.length === 1) rename(sel[0]);
         if (name === 'delete' && sel.length) remove(sel);
         if (name === 'move' && sel.length) moveDialog(sel);

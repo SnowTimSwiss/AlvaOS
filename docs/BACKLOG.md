@@ -15,6 +15,19 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · AlvaOS Files: folders as ZIP
+
+- "Download as ZIP" for a folder (right-click, or the selection's Download),
+  "Download this folder as ZIP" on empty space, and "Download all" on a
+  shared-folder link page.
+- New helper operation `files-zip DIR` (`files_ops.zip_folder`): streams the
+  ZIP to stdout while it is made (no temporary file, ZIP64 for big files,
+  stored without compression since photos and videos are compressed
+  already). It walks with `os.fwalk(follow_symlinks=False)`, opens files with
+  `O_NOFOLLOW`, leaves out hidden files and the trash, and runs as the
+  person: in a real test, a subfolder the person had no access to was left
+  out by Linux.
+
 ## 2026-10-03 · AlvaOS Files: share links
 
 - "Share link…" in the right-click menu: a link to a file or folder that

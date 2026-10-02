@@ -236,3 +236,6 @@ body.public { display: flex; flex-direction: column; min-height: 100%; }
 .pub-folder .tile .more { display: inline-flex; text-decoration: none; }
 .pub-folder .tile .more svg { width: 16px; height: 16px; }
 .pub-main .signin-card h1 { font-size: 1.25rem; margin: 0 0 6px; }
+.pub-folder-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.pub-folder-bar .crumbs { margin: 0; }
+.pub-folder-bar .btn { text-decoration: none; }

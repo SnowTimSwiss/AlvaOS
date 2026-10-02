@@ -401,6 +401,27 @@ def _thumb_response(path: str, user: Optional[str], stamp: str):
     return Response(thumb, mimetype='image/jpeg', headers=headers)
 
 
+def _zip_response(stream, name: str):
+    return Response(stream, mimetype='application/zip', direct_passthrough=True, headers={
+        'Content-Disposition': f"attachment; filename*=UTF-8''{quote(name + '.zip')}",
+        'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store'})
+
+
+@app.get('/api/zip')
+def zip_folder():
+    """A folder (or a whole share) as one ZIP download, made while it downloads."""
+    session, refused = need_session()
+    if refused:
+        return refused
+    share, path, rel, bad = target(session, request.args)
+    if bad:
+        return bad
+    stream, error = files_manager.open_zip(path, user=as_user(session))
+    if stream is None:
+        return jsonify({'error': error or 'This folder could not be read.'}), 404
+    return _zip_response(stream, os.path.basename(rel) if rel else share['name'])
+
+
 @app.post('/api/upload')
 def upload():
     session, refused = need_session()
@@ -769,6 +790,22 @@ def public_thumb(token):
     if path is None or not path.lower().endswith(THUMB_TYPES):
         return jsonify({'error': 'No preview.'}), 404
     return _thumb_response(path, owner, str(request.args.get('v') or ''))
+
+
+@app.get('/api/public/<token>/zip')
+def public_zip(token):
+    link, base, owner, bad = opened_link(token)
+    if bad:
+        return bad
+    if link['kind'] != 'folder':
+        return jsonify({'error': 'This link is a file.'}), 400
+    path, rel = _inside_link(link, base, request.args.get('path', ''))
+    if path is None:
+        return jsonify({'error': 'Invalid path.'}), 404
+    stream, error = files_manager.open_zip(path, user=owner)
+    if stream is None:
+        return jsonify({'error': error or 'This folder could not be read.'}), 404
+    return _zip_response(stream, os.path.basename(rel) if rel else link['name'])
 
 
 @app.get('/s/<token>')
