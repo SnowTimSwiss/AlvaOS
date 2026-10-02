@@ -15,6 +15,32 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · AlvaOS Files, first step: browse, look at, download
+
+- New page **Files** (in the navigation after Storage): the shared folders as
+  tabs, breadcrumbs, filter and sort (name, newest, largest), folders first,
+  size and date, hidden dot-files left out. Photos, videos and audio open in a
+  viewer with arrow keys between them, text files as plain text, PDFs in a
+  new tab; everything else downloads. Folder and share are in the URL, so
+  Back and links work. Admins only for now.
+- `api_files.py` / `files_manager.py`: every request names a share and a path
+  inside it (`clean_relative_path`, no `..`); never a path on the NAS.
+  Listing uses the helper's `find` rule from "Get files".
+- Reading goes through a new helper operation `alvaos-priv read-file PATH`:
+  it opens the file without following a final symlink and checks, on the
+  open file descriptor, that it is a regular file below `/mnt/alvaos`. So a
+  share user who swaps a folder for a symlink to `/etc/shadow` gets nothing.
+- Downloads and previews use short-lived links (`POST /api/v1/files/link` →
+  `/api/v1/files/get/<token>`, 10 minutes, bound to one file), so the browser
+  streams big files itself instead of holding them in memory. Responses are
+  `nosniff`, sandboxed by CSP (except PDFs, which the browser viewer needs),
+  and only images, audio, video, PDF and text are ever shown inline; HTML, SVG
+  and scripts always download.
+- **Note for next time:** next steps for Files are upload, rename, move,
+  delete (with the same symlink-safe checks), folder download as zip, and
+  per-person access with the share rights. No Range requests yet, so seeking
+  in a long video restarts it from the start.
+
 ## 2026-10-03 · Let hard disks sleep
 
 - Settings › Power › Hard disks: "Let hard disks sleep" never (default) or

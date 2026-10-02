@@ -22,6 +22,7 @@ PUBLIC = {
     "/api/v1/auth/2fa/complete",
     "/api/v1/backup/pairing/accept",
     "/api/v1/backup/pairing/remove/accept",
+    "/api/v1/files/get/<token>",    # the expiring download link is the permission
 }
 PEER_PREFIX = "/api/v1/backup/buddy/peer/"   # authenticated with X-Buddy-Secret
 
@@ -323,3 +324,35 @@ def test_the_admin_password_can_be_changed(backend, monkeypatch):
     assert stored["totp_secret"] == "KEEPME"
     assert mine in am.SESSIONS and other not in am.SESSIONS
     am._destroy_session(mine)
+
+
+def test_files_download_links(backend, monkeypatch):
+    import api_files
+    import files_manager
+    module, state = backend
+    set_up(state)
+    token = auth_manager._create_session("root", role="admin")
+    headers = {"Authorization": token, "X-CSRF-Token": auth_manager.SESSIONS[token]["csrf_token"]}
+    monkeypatch.setattr(api_files, "load_shares_state",
+                        lambda: {"a": {"name": "Media", "path": "/mnt/alvaos/main/Media"}})
+    opened = []
+    monkeypatch.setattr(files_manager, "open_stream",
+                        lambda path: (opened.append(path) or iter([b"data"]), ""))
+    client = module.app.test_client()
+
+    assert client.post("/api/v1/files/link", json={"share": "Media", "path": "../../etc/shadow"},
+                       headers=headers).status_code == 404
+    assert client.post("/api/v1/files/link", json={"share": "Media", "path": ""}, headers=headers).status_code == 404
+    link = client.post("/api/v1/files/link", json={"share": "Media", "path": "Films/a b.mkv"}, headers=headers)
+    url = link.get_json()["url"]
+
+    got = client.get(url)      # no session: the link is the permission
+    assert got.status_code == 200 and got.data == b"data"
+    assert opened == ["/mnt/alvaos/main/Media/Films/a b.mkv"]
+    assert got.headers["Content-Disposition"] == "attachment; filename*=UTF-8''a%20b.mkv"
+    assert "sandbox" in got.headers["Content-Security-Policy"]
+    assert client.get("/api/v1/files/get/not-a-real-token").status_code == 404
+
+    for entry in api_files._links.values():
+        entry["expires"] = 0
+    assert client.get(url).status_code == 404

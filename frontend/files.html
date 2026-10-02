@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlvaOS - Files</title>
+    <script src="theme.js"></script>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="notifications.css">
+    <style>
+        .files-head { margin-bottom: 16px; }
+        .files-head h1 { font-size: 1.5rem; font-weight: 600; margin: 0 0 4px; }
+        .files-head p { color: var(--text-secondary); font-size: 0.95rem; margin: 0; }
+
+        .files-shares { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+        .files-share {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 8px 14px; border-radius: 999px;
+            border: 1px solid var(--border-default); background: var(--bg-card);
+            color: var(--text-primary); font: inherit; font-size: 0.9rem; cursor: pointer;
+        }
+        .files-share svg { width: 16px; height: 16px; color: var(--text-tertiary); }
+        .files-share[aria-selected="true"] { border-color: var(--accent-primary); background: var(--accent-primary-soft); font-weight: 600; }
+        .files-share[aria-selected="true"] svg { color: var(--accent-primary); }
+
+        .files-card { background: var(--bg-card); border: 1px solid var(--border-default); border-radius: var(--radius-lg); overflow: hidden; }
+        .files-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--border-subtle); }
+        .files-crumbs { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; min-width: 0; font-size: 0.92rem; color: var(--text-tertiary); }
+        .files-crumb { background: none; border: none; padding: 3px 6px; border-radius: 6px; font: inherit; color: var(--accent-primary); font-weight: 600; cursor: pointer; overflow-wrap: anywhere; text-align: left; }
+        .files-crumb:last-child { color: var(--text-primary); cursor: default; }
+        .files-crumb:not(:last-child):hover { background: var(--accent-primary-soft); }
+        .files-tools { display: flex; gap: 8px; }
+        .files-tools input { width: 200px; }
+
+        .files-row {
+            display: grid; grid-template-columns: 26px minmax(0, 1fr) 110px 170px 40px;
+            align-items: center; gap: 12px; padding: 9px 16px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .files-row:last-child { border-bottom: none; }
+        .files-row:hover { background: var(--accent-primary-soft); }
+        .files-row .ic { display: inline-flex; color: var(--text-tertiary); }
+        .files-row .ic svg { width: 20px; height: 20px; }
+        .files-row.folder .ic { color: var(--accent-primary); }
+        .files-name { background: none; border: none; padding: 0; font: inherit; color: var(--text-primary); text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.92rem; }
+        .files-row.folder .files-name { font-weight: 600; }
+        .files-name:hover { text-decoration: underline; }
+        .files-size, .files-date { font-size: 0.82rem; color: var(--text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .files-size { text-align: right; }
+        .files-dl { background: none; border: none; padding: 6px; border-radius: 6px; color: var(--text-tertiary); cursor: pointer; display: inline-flex; }
+        .files-dl:hover { color: var(--accent-primary); background: var(--bg-body); }
+        .files-dl svg { width: 18px; height: 18px; }
+        .files-empty { padding: 40px 16px; text-align: center; color: var(--text-secondary); font-size: 0.92rem; }
+        .files-foot { padding: 10px 16px; font-size: 0.8rem; color: var(--text-tertiary); border-top: 1px solid var(--border-subtle); }
+        .files-note { margin: 12px 2px 0; font-size: 0.82rem; color: var(--text-tertiary); }
+        .files-note a { color: var(--accent-primary); }
+
+        .viewer { position: fixed; inset: 0; z-index: 10000; background: rgba(8, 10, 14, 0.92); display: flex; flex-direction: column; }
+        .viewer[hidden] { display: none; }
+        .viewer-bar { display: flex; align-items: center; gap: 10px; padding: 12px 16px; color: #f3f4f6; }
+        .viewer-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+        .viewer-bar button, .viewer-bar a { background: rgba(255, 255, 255, 0.1); border: none; color: #f3f4f6; border-radius: 8px; padding: 8px 12px; font: inherit; font-size: 0.88rem; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+        .viewer-bar button:hover, .viewer-bar a:hover { background: rgba(255, 255, 255, 0.2); }
+        .viewer-bar svg { width: 16px; height: 16px; }
+        .viewer-body { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 0 16px 16px; }
+        .viewer-body img, .viewer-body video { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; }
+        .viewer-body pre { width: min(900px, 100%); max-height: 100%; overflow: auto; margin: 0; padding: 16px; background: var(--bg-card); color: var(--text-primary); border-radius: 8px; font-size: 0.85rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+        .viewer-body audio { width: min(600px, 100%); }
+        .viewer-nav { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255, 255, 255, 0.12); border: none; color: #fff; width: 44px; height: 44px; border-radius: 50%; cursor: pointer; font-size: 1.4rem; }
+        .viewer-nav.prev { left: 12px; }
+        .viewer-nav.next { right: 12px; }
+        .viewer-nav[hidden] { display: none; }
+
+        @media (max-width: 760px) {
+            .files-tools { width: 100%; }
+            .files-tools input { flex: 1; width: auto; min-width: 0; }
+            .files-row { grid-template-columns: 26px minmax(0, 1fr) 40px; row-gap: 0; }
+            .files-row .files-meta-wrap { grid-column: 2; }
+            .files-size, .files-date { display: none; }
+            .files-row .files-sub { display: block; }
+        }
+        .files-sub { display: none; font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px; }
+        .files-text { min-width: 0; }
+    </style>
+</head>
+
+<body>
+
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
+    <!-- Sidebar: same on every page (generated, keep in sync) -->
+    <aside class="sidebar" id="sidebar">
+        <a class="brand" href="index.html" aria-label="Go to the dashboard">
+            <svg class="brand-mark" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span class="brand-text">
+                <span class="brand-name" id="brand-name">AlvaOS</span>
+                <span class="brand-status" id="brand-status"><span class="status-dot online" aria-hidden="true"></span><span id="brand-status-text">Online</span></span>
+            </span>
+        </a>
+
+        <nav aria-label="Main">
+            <a href="index.html" class="nav-link"><i data-lucide="house" aria-hidden="true"></i> Dashboard</a>
+            <a href="storage.html" class="nav-link"><i data-lucide="hard-drive" aria-hidden="true"></i> Storage</a>
+            <a href="files.html" class="nav-link active" aria-current="page"><i data-lucide="folder-open" aria-hidden="true"></i> Files</a>
+            <a href="apps.html" class="nav-link"><i data-lucide="blocks" aria-hidden="true"></i> Apps</a>
+            <a href="backup.html" class="nav-link"><i data-lucide="shield-check" aria-hidden="true"></i> Backup</a>
+            <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw" aria-hidden="true"></i> Updates <span class="nav-badge" id="updates-nav-badge" style="display:none;">1</span></a>
+            <div class="nav-spacer"></div>
+            <a href="system.html" class="nav-link"><i data-lucide="settings" aria-hidden="true"></i> Settings</a>
+        </nav>
+    </aside>
+    <div class="nav-scrim" id="nav-scrim" hidden></div>
+
+    <!-- Main Content -->
+    <div class="main">
+        <header class="topbar">
+            <button type="button" class="nav-menu-btn" id="menu-btn" aria-controls="sidebar" aria-expanded="false" aria-label="Open menu">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <div class="page-title">Files</div>
+            <div class="topbar-actions" id="topbar-actions">
+                <div class="account">
+                    <button type="button" class="account-btn" id="account-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" aria-label="Account">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="10" r="3"/><path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662"/></svg>
+                    </button>
+                    <div class="account-menu" id="account-menu" role="menu" hidden>
+                        <div class="account-who">Signed in as <strong>Administrator</strong></div>
+                        <div class="account-theme" role="group" aria-label="Appearance">
+                            <span class="account-theme-label">Appearance</span>
+                            <div class="seg">
+                                <button type="button" role="menuitemradio" aria-checked="true" data-theme-choice="auto">Auto</button>
+                                <button type="button" role="menuitemradio" aria-checked="false" data-theme-choice="light">Light</button>
+                                <button type="button" role="menuitemradio" aria-checked="false" data-theme-choice="dark">Dark</button>
+                            </div>
+                        </div>
+                        <a role="menuitem" href="system.html#security">Password and security</a>
+                        <button type="button" role="menuitem" onclick="alvaosLogout()">Log out</button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main class="content-scroll" id="main-content" tabindex="-1">
+            <div class="files-head">
+                <h1>Files</h1>
+                <p>Your shared folders in the browser: look at photos, play videos, download what you need.</p>
+            </div>
+
+            <div class="files-shares" id="files-shares" role="tablist" aria-label="Shared folders"></div>
+
+            <section class="files-card" id="files-card" hidden>
+                <div class="files-bar">
+                    <nav class="files-crumbs" id="files-crumbs" aria-label="Folder"></nav>
+                    <div class="files-tools">
+                        <input type="search" id="files-filter" placeholder="Filter this folder" aria-label="Filter this folder">
+                        <select id="files-sort" class="select-input" aria-label="Sort">
+                            <option value="name">Name</option>
+                            <option value="new">Newest first</option>
+                            <option value="big">Largest first</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="files-list" aria-live="polite"></div>
+                <div class="files-foot" id="files-foot"></div>
+            </section>
+            <p class="files-note" id="files-note" hidden>To add, rename or delete files, open the shared folder from your computer: <a href="storage.html#shares">Storage › Shares › How to connect</a>.</p>
+
+            <footer class="dash-footer">
+                <div>AlvaOS {{VERSION}}</div>
+            </footer>
+        </main>
+    </div>
+
+    <div class="viewer" id="viewer" hidden role="dialog" aria-modal="true" aria-labelledby="viewer-title">
+        <div class="viewer-bar">
+            <span class="viewer-title" id="viewer-title"></span>
+            <a id="viewer-download" href="#"><i data-lucide="download" aria-hidden="true"></i> Download</a>
+            <button type="button" id="viewer-close" aria-label="Close"><i data-lucide="x" aria-hidden="true"></i></button>
+        </div>
+        <div class="viewer-body" id="viewer-body"></div>
+        <button type="button" class="viewer-nav prev" id="viewer-prev" aria-label="Previous" hidden>&lsaquo;</button>
+        <button type="button" class="viewer-nav next" id="viewer-next" aria-label="Next" hidden>&rsaquo;</button>
+    </div>
+
+    <!-- Scripts -->
+    <script src="lucide-icons.js"></script>
+    <script src="icons.js"></script>
+    <script src="notifications.js"></script>
+    <script src="feedback.js"></script>
+    <script src="app.js"></script>
+    <script src="nav.js"></script>
+    <script src="files.js"></script>
+</body>
+
+</html>
