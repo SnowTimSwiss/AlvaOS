@@ -392,6 +392,8 @@ function fillSettingsUi() {
     document.getElementById('pool-enabled').checked = !!pb.enabled;
     document.getElementById('pool-interval').value = String(pb.interval_minutes || 1440);
     document.getElementById('pool-keep-last').value = String(pb.keep_last || 30);
+    document.getElementById('pool-retention').value = pb.retention === 'count' ? 'count' : 'smart';
+    syncRetentionUi();
     document.getElementById('pool-interval').disabled = !pb.enabled;
 
     // System Settings
@@ -836,12 +838,26 @@ function renderBuddyStatus() {
 // ACTIONS
 // ----------------------------------------------------------------------------
 
+// Smart keeps a thinning history; "Only the newest ones" shows the count.
+function syncRetentionUi() {
+    const smart = document.getElementById('pool-retention')?.value !== 'count';
+    const help = document.getElementById('pool-retention-help');
+    const row = document.getElementById('pool-keep-last-row');
+    if (row) row.hidden = smart;
+    if (help) {
+        help.textContent = smart
+            ? 'Every one from the last day, then one per day for a month, one per week for 3 months and one per month for a year.'
+            : 'Older restore points are deleted once there are more than this many for a folder.';
+    }
+}
+
 async function savePoolSettings() {
     const payload = {
         pool_backup: {
             enabled: document.getElementById('pool-enabled').checked,
             interval_minutes: Number(document.getElementById('pool-interval').value || 1440),
             keep_last: Number(document.getElementById('pool-keep-last').value || 30),
+            retention: document.getElementById('pool-retention').value === 'count' ? 'count' : 'smart',
             target_path: document.getElementById('pool-target-path').value || '',
             sources: selectedSources()
         }
@@ -1739,6 +1755,7 @@ function initBackupHandlers() {
     document.getElementById('pool-sources-refresh-btn')?.addEventListener('click', loadBackupSources);
     document.getElementById('pool-snapshots-refresh-btn')?.addEventListener('click', loadDataSnapshots);
     document.getElementById('pool-save-settings-btn')?.addEventListener('click', savePoolSettings);
+    document.getElementById('pool-retention')?.addEventListener('change', syncRetentionUi);
     document.getElementById('pool-run-btn')?.addEventListener('click', runPoolBackupNow);
     document.getElementById('pool-target-path')?.addEventListener('change', (event) => {
         const runTarget = document.getElementById('pool-run-target-path');
