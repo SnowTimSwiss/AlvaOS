@@ -447,3 +447,50 @@ def test_unknown_protection_levels_are_refused(api):
                            json={'name': 'media', 'devices': ['/dev/sdc'], 'raid_level': 'raid7'})
     assert response.status_code == 400
     assert runner.ran('mkfs.btrfs') == []
+
+
+USAGE_RAID5 = """Overall:
+    Device size:                  12.00TiB
+    Device allocated:              3.02TiB
+    Used:                          2.95TiB
+    Data ratio:                       1.50
+    Metadata ratio:                   2.00
+
+Data,RAID5: Size:2.00TiB, Used:1.96TiB (98.00%)
+   /dev/sdb      1.00TiB
+   /dev/sdc      1.00TiB
+   /dev/sdd      1.00TiB
+
+Metadata,RAID1: Size:5.00GiB, Used:3.10GiB (62.00%)
+   /dev/sdb      5.00GiB
+   /dev/sdc      5.00GiB
+
+System,RAID1: Size:32.00MiB, Used:240.00KiB (0.73%)
+   /dev/sdb     32.00MiB
+   /dev/sdc     32.00MiB
+
+Unallocated:
+   /dev/sdb      2.99TiB
+"""
+
+
+def test_profiles_are_read_from_their_own_lines():
+    # Parity data with mirrored metadata must not be reported as RAID1.
+    assert sm.parse_usage_profiles(USAGE_RAID5) == {"data": "RAID5", "metadata": "RAID1", "system": "RAID1"}
+    single = "Data,single: Size:1.00GiB, Used:0.00B\nMetadata,DUP: Size:256.00MiB, Used:112.00KiB\n"
+    assert sm.parse_usage_profiles(single) == {"data": "SINGLE", "metadata": "DUP"}
+    assert sm.parse_usage_profiles("") == {}
+
+
+def test_only_members_on_a_bigger_disk_can_grow():
+    tib = 1024 ** 4
+    members = [
+        {"devid": 1, "path": "/dev/sdb", "size_bytes": 4 * tib, "missing": False},   # replaced by 8 TiB
+        {"devid": 2, "path": "/dev/sdc", "size_bytes": 4 * tib, "missing": False},   # same size
+        {"devid": 3, "path": "", "size_bytes": 4 * tib, "missing": True},            # gone
+        {"devid": 4, "path": "/dev/sdd", "size_bytes": 4 * tib - 512 * 1024 ** 2, "missing": False},  # rounding
+    ]
+    disks = [{"path": "/dev/sdb", "size_bytes": 8 * tib}, {"path": "/dev/sdc", "size_bytes": 4 * tib},
+             {"path": "/dev/sdd", "size_bytes": 4 * tib}]
+    assert sm.growable_members(members, disks) == [{"devid": 1, "path": "/dev/sdb", "extra_bytes": 4 * tib}]
+    assert sm.growable_members([], disks) == []

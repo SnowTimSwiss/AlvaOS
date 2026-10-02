@@ -614,3 +614,12 @@ def test_smart_self_tests_and_logs():
     denied('/usr/sbin/smartctl', '-l', 'error', '-s', 'off', '/dev/sdb')
     denied('/usr/sbin/smartctl', '-n', 'never', '-H', '/dev/sdb')
     denied('/usr/sbin/smartctl', '-t', 'short', '/etc/passwd')
+
+
+def test_a_pool_member_can_only_grow_to_its_disk():
+    allowed('/usr/bin/btrfs', 'filesystem', 'resize', '2:max', '/mnt/alvaos/main')
+    denied('/usr/bin/btrfs', 'filesystem', 'resize', 'max', '/mnt/alvaos/main')
+    denied('/usr/bin/btrfs', 'filesystem', 'resize', '2:-100g', '/mnt/alvaos/main')
+    denied('/usr/bin/btrfs', 'filesystem', 'resize', '2:10g', '/mnt/alvaos/main')
+    denied('/usr/bin/btrfs', 'filesystem', 'resize', '2:max', '/')
+    denied('/usr/bin/btrfs', 'filesystem', 'resize', '2:max', '/etc')

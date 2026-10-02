@@ -470,6 +470,26 @@
             margin-left: auto;
             margin-top: 0;
         }
+        .pool-offer {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            align-items: center;
+            gap: 10px;
+            margin-top: 12px;
+            padding: 10px 12px;
+            border-radius: var(--radius-default);
+            background: var(--accent-primary-soft);
+            font-size: 0.86rem;
+        }
+
+        .pool-offer.warn { background: color-mix(in srgb, var(--accent-warning) 12%, transparent); }
+        .pool-offer svg { width: 16px; height: 16px; }
+
+        @media (max-width: 760px) {
+            .pool-offer { grid-template-columns: auto 1fr; }
+            .pool-offer .btn-secondary { grid-column: 1 / -1; }
+        }
+
         .health-schedule {
             display: flex;
             align-items: center;

@@ -15,6 +15,24 @@ How to add an entry:
 
 ---
 
+## 2026-10-02 · Pools: use the extra space, mirror the folder structure
+
+- **Use the extra space:** after a disk was replaced with a bigger one, the
+  pool page says how much is unused and offers "Use the extra space"
+  (`POST /api/v1/storage/pools/<id>/grow` → `btrfs filesystem resize
+  <devid>:max` per member that has more than 1 GiB to gain). The privilege
+  policy allows only `DEVID:max` on a pool mountpoint.
+- **Mirror the folder structure:** pools whose metadata is RAID5/6 (made
+  before AlvaOS mirrored metadata) get an offer to convert it
+  (`POST .../mirror-metadata` → `balance -mconvert=raid1`, or `raid1c3` for
+  RAID6) in the background.
+- **Bug found:** the RAID level was guessed by substring over `filesystem
+  usage`, so a RAID5 pool with RAID1 metadata could show as RAID1. Now
+  `parse_usage_profiles` reads the Data/Metadata/System lines separately;
+  the API returns `raid_level` and `metadata_profile`.
+- **Note for next time:** both actions are only tested with mocks; check
+  them once on a real pool (grow after a real disk swap).
+
 ## 2026-10-02 · Installing an app: your folders, free ports, fewer fields
 
 - **Where it keeps its files:** the install dialog sorts an app's folders.
