@@ -887,6 +887,11 @@ def _rule_btrfs(sys_: System, args):
     if group == 'filesystem' and action == 'usage':
         _expect([a for a in rest if a != '-b'], readable_path)
         return Plan(argv=list(args))
+    if group == 'filesystem' and action == 'du':
+        # How much space folders use: -s --raw and data directories only.
+        if rest[:2] != ['-s', '--raw'] or not 1 <= len(rest) - 2 <= 64:
+            _fail('btrfs filesystem du: only -s --raw with 1 to 64 paths')
+        return Plan(argv=['filesystem', 'du', '-s', '--raw'] + [writable_path(sys_, a) for a in rest[2:]])
     if group == 'filesystem' and action == 'resize':
         # Only growing one member to the full size of its disk: DEVID:max.
         # Shrinking (or a byte count) could cut off data.

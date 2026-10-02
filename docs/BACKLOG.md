@@ -15,6 +15,26 @@ How to add an entry:
 
 ---
 
+## 2026-10-02 · Pools: what uses the space
+
+- New section on the pool page, **"What uses the space"**: "Check what uses
+  space" measures the pool in the background (`space_report.py`,
+  `GET/POST /api/v1/storage/pools/<id>/space`), one pool at a time. It shows
+  the biggest folders, the apps (from `apps/`) and the restore points with
+  bars, plus "Measured ... ago · Check again".
+- Restore points show their **exclusive** size (about what deleting one
+  frees, since they share unchanged data). "Free space by deleting restore
+  points" lists the biggest with a Delete button: the one cleanup that is
+  always safe for the current files.
+- Sizes come from `btrfs filesystem du -s --raw` (new helper rule: only these
+  flags, 1 to 64 paths, data directories only); the pool's top level is
+  listed with the `find` rule from "Get files". The result stays in memory
+  until the next check or a backend restart; a failed check keeps the last
+  good result.
+- **Note for next time:** `btrfs filesystem du` walks every file. On a pool
+  with millions of files a check can take long; measure on a real NAS and
+  consider running it at night with the health checks.
+
 ## 2026-10-02 · Restore points: get single files back
 
 - Each restore point has **"Get files"**: browse the folder as it was, with
