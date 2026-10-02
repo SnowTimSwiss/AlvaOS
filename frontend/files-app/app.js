@@ -379,7 +379,7 @@
         if (!sel.length) rows.push(`<button type="button" data-ctx="zip-here">${icon('archive')}Download this folder as ZIP</button>`);
         if (canWrite && one) rows.push(`<button type="button" data-ctx="rename">${icon('pen')}Rename</button>`);
         if (one) rows.push(`<button type="button" data-ctx="share">${icon('link')}Share link…</button>`);
-        if (canWrite && sel.length) rows.push(`<button type="button" data-ctx="move">${icon('folder')}Move to…</button>`);
+        if (canWrite && sel.length) rows.push(`<button type="button" data-ctx="move">${icon('folder')}Move to…</button>`, `<button type="button" data-ctx="copy">${icon('copy')}Copy to…</button>`);
         if (canWrite && sel.length) rows.push('<hr>', `<button type="button" class="danger" data-ctx="delete">${icon('trash')}Delete</button>`);
         if (!sel.length && canWrite) rows.push(`<button type="button" data-ctx="upload">${icon('upload')}Upload files</button>`, `<button type="button" data-ctx="folder">${icon('folder-plus')}New folder</button>`);
         if (!rows.length) return;
@@ -409,6 +409,7 @@
         if (name === 'rename' && sel.length === 1) rename(sel[0]);
         if (name === 'delete' && sel.length) remove(sel);
         if (name === 'move' && sel.length) moveDialog(sel);
+        if (name === 'copy' && sel.length) moveDialog(sel, true);
         if (name === 'share' && sel.length === 1) shareDialog(sel[0]);
         if (name === 'upload') $('file-input').click();
         if (name === 'folder') newFolder();
@@ -564,18 +565,20 @@
     });
 
     // ── Moving ─────────────────────────────────────────────────────────────
-    async function moveTo(list, to) {
-        if (to === path) return;
+    async function moveTo(list, to, copying) {
+        if (to === path && !copying) return;
         try {
-            const res = await api('move', { method: 'POST', json: { share, path, names: list.map((e) => e.name), to } });
+            if (copying) toast(list.length === 1 ? `Copying "${list[0].name}"…` : `Copying ${list.length} items…`);
+            const res = await api(copying ? 'copy' : 'move', { method: 'POST', json: { share, path, names: list.map((e) => e.name), to } });
             const where = [share, ...(to ? to.split('/') : [])].join(' › ');
-            toast(res.failed?.length ? res.failed[0] : `Moved ${res.moved.length === 1 ? `"${res.moved[0]}"` : `${res.moved.length} items`} to ${where}.`, res.failed?.length ? 'error' : '');
+            const verb = copying ? 'Copied' : 'Moved';
+            toast(res.failed?.length ? res.failed[0] : `${verb} ${res.moved.length === 1 ? `"${res.moved[0]}"` : `${res.moved.length} items`} to ${where}.`, res.failed?.length ? 'error' : '');
             selected = new Set();
             load();
         } catch (err) { toast(err.message, 'error'); }
     }
 
-    function moveDialog(list) {
+    function moveDialog(list, copying) {
         const wrap = $('dialog');
         const moving = new Set(list.map((e) => rel(e)));
         let at = path;
@@ -590,7 +593,7 @@
             const crumbs = [`<button type="button" class="crumb" data-to="">${esc(share)}</button>`,
                 ...parts.map((p, i) => `<span class="sep">›</span><button type="button" class="crumb" data-to="${esc(parts.slice(0, i + 1).join('/'))}">${esc(p)}</button>`)].join('');
             const what = list.length === 1 ? `"${list[0].name}"` : `${list.length} items`;
-            wrap.innerHTML = `<div class="dialog wide"><h2>Move ${esc(what)}</h2>
+            wrap.innerHTML = `<div class="dialog wide"><h2>${copying ? 'Copy' : 'Move'} ${esc(what)}</h2>
                 <div class="crumbs" style="margin-bottom:8px">${crumbs}</div>
                 <div class="trash-list">${error ? esc(error) : folders.length ? folders.map((f) => {
                     const target = at ? `${at}/${f.name}` : f.name;
@@ -598,11 +601,11 @@
                     return `<button type="button" class="side-item" data-into="${esc(target)}"${blocked ? ' disabled style="opacity:.45"' : ''}><span class="ic">${icon('folder-fill')}</span><span>${esc(f.name)}</span></button>`;
                 }).join('') : '<div class="empty" style="padding:24px 0">No folders here.</div>'}</div>
                 <div class="actions"><button type="button" class="btn" data-cancel>Cancel</button>
-                <button type="button" class="btn primary" data-here${at === path ? ' disabled' : ''}>Move here</button></div></div>`;
+                <button type="button" class="btn primary" data-here${at === path && !copying ? ' disabled' : ''}>${copying ? 'Copy here' : 'Move here'}</button></div></div>`;
             wrap.querySelectorAll('[data-to]').forEach((b) => { b.onclick = () => { at = b.dataset.to; paint(); }; });
             wrap.querySelectorAll('[data-into]').forEach((b) => { b.onclick = () => { at = b.dataset.into; paint(); }; });
             wrap.querySelector('[data-cancel]').onclick = () => { wrap.hidden = true; wrap.innerHTML = ''; };
-            wrap.querySelector('[data-here]').onclick = () => { wrap.hidden = true; wrap.innerHTML = ''; moveTo(list, at); };
+            wrap.querySelector('[data-here]').onclick = () => { wrap.hidden = true; wrap.innerHTML = ''; moveTo(list, at, copying); };
         };
         wrap.hidden = false;
         wrap.innerHTML = '<div class="dialog"><p>Loading…</p></div>';

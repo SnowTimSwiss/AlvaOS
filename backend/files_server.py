@@ -511,9 +511,19 @@ def rename():
         ['files-rename', path, str(data.get('old') or ''), str(data.get('new') or '')], user=as_user(session)))
 
 
+@app.post('/api/copy')
+def copy_items():
+    """Copy items into a folder of the same share."""
+    return _move_or_copy('files-copy')
+
+
 @app.post('/api/move')
 def move():
     """Move items to another folder of the same share."""
+    return _move_or_copy('files-move')
+
+
+def _move_or_copy(operation: str):
     session, refused = need_session()
     if refused:
         return refused
@@ -530,13 +540,14 @@ def move():
     moved: List[str] = []
     failed: List[str] = []
     for name in names:
-        result, problem = files_manager.run_helper(['files-move', path, str(name), dest], user=as_user(session))
+        result, problem = files_manager.run_helper([operation, path, str(name), dest], user=as_user(session),
+                                                   timeout=3600)
         if result is not None:
             moved.append(str(name))
         else:
             failed.append(f'{name}: {problem}')
     if not moved:
-        return jsonify({'error': '; '.join(failed) or 'Nothing was moved.'}), 409
+        return jsonify({'error': '; '.join(failed) or 'Nothing was done.'}), 409
     return jsonify({'success': True, 'moved': moved, 'failed': failed})
 
 

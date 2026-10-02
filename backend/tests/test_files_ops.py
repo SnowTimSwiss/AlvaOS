@@ -210,3 +210,20 @@ def test_a_symlink_in_place_of_the_part_file_is_refused(share):
     with pytest.raises((fo.FileOpError, OSError)):
         fo.part_write(s_, "x.bin", 0, io.BytesIO(b"pwn"), root)
     assert open(os.path.join(outside, "shadow")).read() == "secret"
+
+
+def test_copy_files_and_folders_without_symlinks_or_overwriting(share):
+    import io
+    root, s_, outside = share
+    fo.write_file(os.path.join(s_, "Films"), "a.mkv", io.BytesIO(b"film"), root)
+    os.symlink(os.path.join(outside, "shadow"), os.path.join(s_, "Films", "evil"))
+    assert fo.copy(s_, "Films", s_, root) == "Films (copy)"
+    assert sorted(os.listdir(os.path.join(s_, "Films (copy)"))) == ["a.mkv"]
+    assert fo.copy(s_, "notes.txt", s_, root) == "notes (copy).txt"
+    assert fo.copy(s_, "notes.txt", s_, root) == "notes (copy 2).txt"
+    assert fo.copy(s_, "notes.txt", os.path.join(s_, "Films"), root) == "notes.txt"
+    with pytest.raises(fo.FileOpError, match="into itself"):
+        fo.copy(s_, "Films", os.path.join(s_, "Films"), root)
+    with pytest.raises(fo.FileOpError):
+        fo.copy(s_, "evil", s_, root)          # not a file in the share root
+    assert open(os.path.join(outside, "shadow")).read() == "secret"

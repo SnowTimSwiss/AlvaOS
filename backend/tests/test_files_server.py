@@ -242,3 +242,9 @@ def test_uploads_go_in_pieces_as_the_person(client, monkeypatch):
     assert client.calls[-1] == (["files-part-finish", "/mnt/alvaos/main/Family/Holidays", "film.mkv", "3"], "anna")
     sign_in(client, "ben", "ben-pass")      # read-only in Family
     assert client.post(f"/api/upload/piece?{q}&offset=0", data=b"x", headers=H).status_code == 403
+
+
+def test_copy_runs_as_the_person_in_one_share(client):
+    sign_in(client, "anna", "anna-pass")
+    client.post("/api/copy", json={"share": "Family", "path": "", "names": ["a.jpg"], "to": ""}, headers=H)
+    assert client.calls[-1] == (["files-copy", "/mnt/alvaos/main/Family", "a.jpg", "/mnt/alvaos/main/Family"], "anna")

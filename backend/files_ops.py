@@ -295,6 +295,112 @@ def move(src_dir: str, name: str, dst_dir: str, root: str = DATA_ROOT) -> None:
         os.close(sfd)
 
 
+def _free_name(name: str, dir_fd: int, is_dir: bool) -> str:
+    if not _exists(name, dir_fd):
+        return name
+    stem, ext = os.path.splitext(name)
+    if not stem or is_dir:
+        stem, ext = name, ''
+    candidate = f'{stem} (copy){ext}'
+    n = 2
+    while _exists(candidate, dir_fd):
+        candidate = f'{stem} (copy {n}){ext}'
+        n += 1
+    return candidate
+
+
+def _copy_file_at(src_dir_fd: int, name: str, dst_dir_fd: int, new_name: str) -> None:
+    sfd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=src_dir_fd)
+    try:
+        st = os.fstat(sfd)
+        if not stat.S_ISREG(st.st_mode):
+            return
+        dfd = os.open(new_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600,
+                      dir_fd=dst_dir_fd)
+        try:
+            with os.fdopen(sfd, 'rb', closefd=False) as fin, os.fdopen(dfd, 'wb', closefd=False) as fout:
+                shutil.copyfileobj(fin, fout, 1024 * 1024)
+            _like_parent(dfd, dst_dir_fd, is_dir=False)
+            os.utime(dfd, ns=(st.st_atime_ns, st.st_mtime_ns))
+        except BaseException:
+            os.unlink(new_name, dir_fd=dst_dir_fd)
+            raise
+        finally:
+            os.close(dfd)
+    finally:
+        os.close(sfd)
+
+
+def _copy_tree_at(src_fd: int, dst_fd: int) -> None:
+    """Copy what is inside src_fd into dst_fd: files and folders, never
+    symlinks, nothing the person cannot read."""
+    for name in os.listdir(src_fd):
+        if name == TRASH_DIR or name.endswith(PART_SUFFIX):
+            continue
+        try:
+            st = os.lstat(name, dir_fd=src_fd)
+        except OSError:
+            continue
+        if stat.S_ISREG(st.st_mode):
+            try:
+                _copy_file_at(src_fd, name, dst_fd, name)
+            except PermissionError:
+                continue
+        elif stat.S_ISDIR(st.st_mode):
+            try:
+                child = _open_subdir(name, src_fd)
+            except OSError:
+                continue
+            try:
+                os.mkdir(name, 0o700, dir_fd=dst_fd)
+                new = _open_subdir(name, dst_fd)
+                try:
+                    _like_parent(new, dst_fd, is_dir=True)
+                    _copy_tree_at(child, new)
+                finally:
+                    os.close(new)
+            finally:
+                os.close(child)
+
+
+def copy(src_dir: str, name: str, dst_dir: str, root: str = DATA_ROOT) -> str:
+    """Copy one file or folder into a folder. Returns the name of the copy
+    ("name (copy)" when the name is taken there)."""
+    check_name(name)
+    sfd = open_dir(src_dir, root)
+    try:
+        dfd = open_dir(dst_dir, root)
+        try:
+            try:
+                st = os.lstat(name, dir_fd=sfd)
+            except FileNotFoundError:
+                raise FileOpError(f'"{name}" is not there any more.') from None
+            if stat.S_ISDIR(st.st_mode) and _inside(_real(dfd), os.path.join(_real(sfd), name)):
+                raise FileOpError('A folder cannot be copied into itself.')
+            new_name = _free_name(name, dfd, stat.S_ISDIR(st.st_mode))
+            if stat.S_ISREG(st.st_mode):
+                _copy_file_at(sfd, name, dfd, new_name)
+            elif stat.S_ISDIR(st.st_mode):
+                src = _open_subdir(name, sfd)
+                try:
+                    os.mkdir(new_name, 0o700, dir_fd=dfd)
+                    new = _open_subdir(new_name, dfd)
+                    try:
+                        _like_parent(new, dfd, is_dir=True)
+                        _copy_tree_at(src, new)
+                    finally:
+                        os.close(new)
+                finally:
+                    os.close(src)
+            else:
+                raise FileOpError('Only files and folders can be copied.')
+            return new_name
+        finally:
+            os.close(dfd)
+    finally:
+        os.close(sfd)
+
+
 def zip_folder(dir_path: str, out: BinaryIO, root: str = DATA_ROOT) -> int:
     """Write a folder as a ZIP stream (no temporary file). Walks with
     descriptors and never follows symlinks; files that cannot be read (no

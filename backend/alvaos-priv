@@ -346,6 +346,7 @@ FILES_OPS = {
     'files-mkdir': (2, lambda a: files_ops.make_dir(a[0], a[1])),
     'files-rename': (3, lambda a: files_ops.rename(a[0], a[1], a[2])),
     'files-move': (3, lambda a: files_ops.move(a[0], a[1], a[2])),
+    'files-copy': (3, lambda a: {'name': files_ops.copy(a[0], a[1], a[2])}),
     'files-part-size': (2, lambda a: {'size': files_ops.part_size(a[0], a[1])}),
     'files-part-write': (3, lambda a: {'size': files_ops.part_write(
         a[0], a[1], int(policy._int_arg(a[2], 0, 10**15)), sys.stdin.buffer)}),
