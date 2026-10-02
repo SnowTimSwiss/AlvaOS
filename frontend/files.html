@@ -9,117 +9,23 @@
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="notifications.css">
     <style>
-        .files-head { margin-bottom: 16px; }
-        .files-head h1 { font-size: 1.5rem; font-weight: 600; margin: 0 0 4px; }
-        .files-head p { color: var(--text-secondary); font-size: 0.95rem; margin: 0; }
-
-        .files-shares { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
-        .files-share {
-            display: inline-flex; align-items: center; gap: 8px;
-            padding: 8px 14px; border-radius: 999px;
-            border: 1px solid var(--border-default); background: var(--bg-card);
-            color: var(--text-primary); font: inherit; font-size: 0.9rem; cursor: pointer;
-        }
-        .files-share svg { width: 16px; height: 16px; color: var(--text-tertiary); }
-        .files-share[aria-selected="true"] { border-color: var(--accent-primary); background: var(--accent-primary-soft); font-weight: 600; }
-        .files-share[aria-selected="true"] svg { color: var(--accent-primary); }
-
-        .files-card { background: var(--bg-card); border: 1px solid var(--border-default); border-radius: var(--radius-lg); }
-        .files-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--border-subtle); }
-        .files-crumbs { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; min-width: 0; font-size: 0.92rem; color: var(--text-tertiary); }
-        .files-crumb { background: none; border: none; padding: 3px 6px; border-radius: 6px; font: inherit; color: var(--accent-primary); font-weight: 600; cursor: pointer; overflow-wrap: anywhere; text-align: left; }
-        .files-crumb:last-child { color: var(--text-primary); cursor: default; }
-        .files-crumb:not(:last-child):hover { background: var(--accent-primary-soft); }
-        .files-tools { display: flex; gap: 8px; }
-        .files-tools input { width: 200px; }
-
-        .files-row {
-            display: grid; grid-template-columns: 26px minmax(0, 1fr) 110px 170px 40px;
-            align-items: center; gap: 12px; padding: 9px 16px;
-            border-bottom: 1px solid var(--border-subtle);
-        }
-        .files-row:last-child { border-bottom: none; }
-        .files-row:hover { background: var(--accent-primary-soft); }
-        .files-row .ic { display: inline-flex; color: var(--text-tertiary); }
-        .files-row .ic svg { width: 20px; height: 20px; }
-        .files-row.folder .ic { color: var(--accent-primary); }
-        .files-name { background: none; border: none; padding: 0; font: inherit; color: var(--text-primary); text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.92rem; }
-        .files-row.folder .files-name { font-weight: 600; }
-        .files-name:hover { text-decoration: underline; }
-        .files-size, .files-date { font-size: 0.82rem; color: var(--text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
-        .files-size { text-align: right; }
-        .files-dl { background: none; border: none; padding: 6px; border-radius: 6px; color: var(--text-tertiary); cursor: pointer; display: inline-flex; }
-        .files-dl:hover { color: var(--accent-primary); background: var(--bg-body); }
-        .files-dl svg { width: 18px; height: 18px; }
-        .files-empty { padding: 40px 16px; text-align: center; color: var(--text-secondary); font-size: 0.92rem; }
-        .files-foot { padding: 10px 16px; font-size: 0.8rem; color: var(--text-tertiary); border-top: 1px solid var(--border-subtle); }
-        .files-note { margin: 12px 2px 0; font-size: 0.82rem; color: var(--text-tertiary); }
-        .files-note a { color: var(--accent-primary); }
-
-        .viewer { position: fixed; inset: 0; z-index: 10000; background: rgba(8, 10, 14, 0.92); display: flex; flex-direction: column; }
-        .viewer[hidden] { display: none; }
-        .viewer-bar { display: flex; align-items: center; gap: 10px; padding: 12px 16px; color: #f3f4f6; }
-        .viewer-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-        .viewer-bar button, .viewer-bar a { background: rgba(255, 255, 255, 0.1); border: none; color: #f3f4f6; border-radius: 8px; padding: 8px 12px; font: inherit; font-size: 0.88rem; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
-        .viewer-bar button:hover, .viewer-bar a:hover { background: rgba(255, 255, 255, 0.2); }
-        .viewer-bar svg { width: 16px; height: 16px; }
-        .viewer-body { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 0 16px 16px; }
-        .viewer-body img, .viewer-body video { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; }
-        .viewer-body pre { width: min(900px, 100%); max-height: 100%; overflow: auto; margin: 0; padding: 16px; background: var(--bg-card); color: var(--text-primary); border-radius: 8px; font-size: 0.85rem; white-space: pre-wrap; overflow-wrap: anywhere; }
-        .viewer-body audio { width: min(600px, 100%); }
-        .viewer-nav { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255, 255, 255, 0.12); border: none; color: #fff; width: 44px; height: 44px; border-radius: 50%; cursor: pointer; font-size: 1.4rem; }
-        .viewer-nav.prev { left: 12px; }
-        .viewer-nav.next { right: 12px; }
-        .viewer-nav[hidden] { display: none; }
-
+        .fl-hero { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 22px; align-items: center; background: var(--bg-card); border: 1px solid var(--border-default); border-radius: var(--radius-lg); padding: 26px; }
+        .fl-hero img { width: 76px; height: 76px; }
+        .fl-hero h1 { margin: 0 0 6px; font-size: 1.45rem; }
+        .fl-hero p { margin: 0; color: var(--text-secondary); line-height: 1.5; }
+        .fl-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; align-items: center; }
+        .fl-actions .btn-primary { text-decoration: none; display: inline-flex; align-items: center; gap: 8px; padding: 0.6rem 1.1rem; }
+        .fl-actions .fl-addr { font-family: var(--font-mono); font-size: 0.85rem; color: var(--text-secondary); }
+        .fl-points { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+        .fl-point { background: var(--bg-card); border: 1px solid var(--border-default); border-radius: var(--radius-lg); padding: 16px; font-size: 0.9rem; color: var(--text-secondary); line-height: 1.45; }
+        .fl-point strong { display: block; color: var(--text-primary); margin-bottom: 4px; }
+        .fl-note { margin-top: 14px; padding: 12px 14px; border-radius: var(--radius-default); background: color-mix(in srgb, var(--accent-warning) 12%, transparent); font-size: 0.88rem; line-height: 1.45; }
+        .fl-off { margin-top: 18px; }
         @media (max-width: 760px) {
-            .files-tools { width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
-            .files-tools .btn-primary, .files-tools .btn-secondary { justify-content: center; }
-            .files-tools input, .files-tools select { width: 100%; min-width: 0; }
-            .files-tools input { flex: 1; width: auto; min-width: 0; }
-            .files-row { grid-template-columns: 26px minmax(0, 1fr) 40px; row-gap: 0; }
-            .files-row .files-meta-wrap { grid-column: 2; }
-            .files-size, .files-date { display: none; }
-            .files-row .files-sub { display: block; }
+            .fl-hero { grid-template-columns: 1fr; text-align: left; padding: 20px; }
+            .fl-hero img { width: 56px; height: 56px; }
+            .fl-points { grid-template-columns: 1fr; }
         }
-        .files-tools .btn-primary, .files-tools .btn-secondary { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-        .files-tools svg { width: 16px; height: 16px; }
-        .files-card { position: relative; }
-        .files-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-        .files-trash-btn { background: none; border: none; color: var(--text-tertiary); font: inherit; font-size: 0.8rem; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; padding: 4px 6px; border-radius: 6px; }
-        .files-trash-btn:hover { color: var(--text-primary); background: var(--bg-body); }
-        .files-trash-btn svg { width: 14px; height: 14px; }
-        .files-drop { position: absolute; inset: 0; background: color-mix(in srgb, var(--accent-primary) 14%, var(--bg-card)); border: 2px dashed var(--accent-primary); border-radius: inherit; display: flex; align-items: center; justify-content: center; pointer-events: none; }
-        .files-drop[hidden] { display: none; }
-        .files-drop div { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--accent-primary); font-weight: 600; }
-        .files-drop svg { width: 32px; height: 32px; }
-        .files-more { position: relative; }
-        .files-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 160px; background: var(--bg-card); border: 1px solid var(--border-default); border-radius: 10px; box-shadow: var(--shadow-md); padding: 4px; }
-        .files-menu[hidden] { display: none; }
-        .files-menu button { display: flex; width: 100%; align-items: center; gap: 8px; background: none; border: none; padding: 8px 10px; border-radius: 6px; font: inherit; font-size: 0.88rem; color: var(--text-primary); cursor: pointer; text-align: left; }
-        .files-menu button:hover { background: var(--accent-primary-soft); }
-        .files-menu button.danger { color: var(--accent-danger); }
-        .files-menu svg { width: 16px; height: 16px; }
-        .files-uploads { position: fixed; right: 16px; bottom: 76px; z-index: 1250; width: min(360px, calc(100vw - 32px)); background: var(--bg-card); border: 1px solid var(--border-default); border-radius: 12px; box-shadow: var(--shadow-md); padding: 10px 12px; }
-        .files-uploads[hidden] { display: none; }
-        .up-row { padding: 6px 0; font-size: 0.84rem; }
-        .up-row + .up-row { border-top: 1px solid var(--border-subtle); }
-        .up-name { display: flex; justify-content: space-between; gap: 8px; }
-        .up-name span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .up-name span:last-child { color: var(--text-secondary); white-space: nowrap; }
-        .up-bar { height: 4px; border-radius: 2px; background: var(--track); margin-top: 5px; overflow: hidden; }
-        .up-bar span { display: block; height: 100%; background: var(--accent-primary); width: 0; transition: width 0.2s; }
-        .up-row.done .up-bar span { background: var(--accent-success); }
-        .up-row.failed .up-bar span { background: var(--accent-danger); }
-        .up-row.failed .up-name span:last-child { color: var(--accent-danger); }
-        .trash-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 0; font-size: 0.88rem; }
-        .trash-row + .trash-row { border-top: 1px solid var(--border-subtle); }
-        .trash-row small { display: block; color: var(--text-secondary); font-size: 0.78rem; }
-        .trash-row strong { overflow-wrap: anywhere; font-weight: 600; }
-        .trash-list { max-height: 50vh; overflow-y: auto; }
-
-        .files-sub { display: none; font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px; }
-        .files-text { min-width: 0; }
     </style>
 </head>
 
@@ -182,50 +88,24 @@
         </header>
 
         <main class="content-scroll" id="main-content" tabindex="-1">
-            <div class="files-head">
-                <h1>Files</h1>
-                <p>Your shared folders in the browser: look at photos, play videos, download what you need.</p>
-            </div>
-
-            <div class="files-shares" id="files-shares" role="tablist" aria-label="Shared folders"></div>
-
-            <section class="files-card" id="files-card" hidden>
-                <div class="files-bar">
-                    <nav class="files-crumbs" id="files-crumbs" aria-label="Folder"></nav>
-                    <div class="files-tools">
-                        <button type="button" class="btn-primary" id="files-upload-btn"><i data-lucide="upload" aria-hidden="true"></i> Upload</button>
-                        <input type="file" id="files-upload-input" multiple hidden>
-                        <button type="button" class="btn-secondary" id="files-mkdir-btn"><i data-lucide="plus" aria-hidden="true"></i> New folder</button>
-                        <input type="search" id="files-filter" placeholder="Filter this folder" aria-label="Filter this folder">
-                        <select id="files-sort" class="select-input" aria-label="Sort">
-                            <option value="name">Name</option>
-                            <option value="new">Newest first</option>
-                            <option value="big">Largest first</option>
-                        </select>
-                    </div>
+            <section class="fl-hero">
+                <img src="files-app/icon.svg" alt="">
+                <div>
+                    <h1>AlvaOS Files</h1>
+                    <p id="fl-text">Your shared folders as an app, in any browser and on the phone. Everyone from Storage › Users signs in with their own password and sees exactly their shared folders.</p>
+                    <div class="fl-actions" id="fl-actions"><span class="fl-addr">Checking…</span></div>
+                    <div class="fl-note" id="fl-note" hidden></div>
                 </div>
-                <div id="files-list" aria-live="polite"></div>
-                <div class="files-foot"><span id="files-foot"></span><button type="button" class="files-trash-btn" id="files-trash-btn"><i data-lucide="trash-2" aria-hidden="true"></i> Trash</button></div>
-                <div class="files-drop" id="files-drop" hidden><div><i data-lucide="upload" aria-hidden="true"></i><span id="files-drop-text">Drop to upload</span></div></div>
             </section>
-            <p class="files-note" id="files-note" hidden>Drag files here to upload them (up to 4 GB each). Bigger files and whole folders go faster through the shared folder on your computer: <a href="storage.html#shares">Storage › Shares › How to connect</a>.</p>
-            <div class="files-uploads" id="files-uploads" hidden aria-live="polite"></div>
-
+            <div class="fl-points">
+                <div class="fl-point"><strong>The same rights everywhere</strong>What someone may open or change over the network, they may in Files. Linux checks it, not a second list.</div>
+                <div class="fl-point"><strong>Photos, videos, documents</strong>Thumbnails, a viewer, upload by dragging files in, and a trash for 30 days.</div>
+                <div class="fl-point"><strong>Light and built in</strong>No database, no container. It only runs when it is turned on.</div>
+            </div>
             <footer class="dash-footer">
                 <div>AlvaOS {{VERSION}}</div>
             </footer>
         </main>
-    </div>
-
-    <div class="viewer" id="viewer" hidden role="dialog" aria-modal="true" aria-labelledby="viewer-title">
-        <div class="viewer-bar">
-            <span class="viewer-title" id="viewer-title"></span>
-            <a id="viewer-download" href="#"><i data-lucide="download" aria-hidden="true"></i> Download</a>
-            <button type="button" id="viewer-close" aria-label="Close"><i data-lucide="x" aria-hidden="true"></i></button>
-        </div>
-        <div class="viewer-body" id="viewer-body"></div>
-        <button type="button" class="viewer-nav prev" id="viewer-prev" aria-label="Previous" hidden>&lsaquo;</button>
-        <button type="button" class="viewer-nav next" id="viewer-next" aria-label="Next" hidden>&rsaquo;</button>
     </div>
 
     <!-- Scripts -->
@@ -235,7 +115,7 @@
     <script src="feedback.js"></script>
     <script src="app.js"></script>
     <script src="nav.js"></script>
-    <script src="files.js"></script>
+    <script src="files-launcher.js"></script>
 </body>
 
 </html>

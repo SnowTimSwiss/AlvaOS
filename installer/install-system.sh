@@ -971,7 +971,7 @@ FSTAB_EOF
         cp /opt/alvaos/scripts/setup_sudoers.sh /mnt/opt/alvaos/scripts/ 2>/dev/null || true
         cp /opt/alvaos/scripts/sudoers.alvaos /mnt/opt/alvaos/scripts/ 2>/dev/null || true
         chmod +x /mnt/opt/alvaos/scripts/*.sh 2>/dev/null || true
-        for unit in alvaos-update-checker.service alvaos-update-checker.timer alvaos-watchdog.service alvaos-watchdog.timer; do
+        for unit in alvaos-update-checker.service alvaos-update-checker.timer alvaos-watchdog.service alvaos-watchdog.timer alvaos-files.service; do
             [ -f "/opt/alvaos/scripts/${unit}" ] && cp "/opt/alvaos/scripts/${unit}" /mnt/etc/systemd/system/
         done
     fi

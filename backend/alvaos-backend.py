@@ -42,7 +42,6 @@ import api_apps
 import api_auth
 import api_backup
 import api_files
-from api_files import UPLOAD_LIMIT_BYTES
 import api_shares
 import api_storage
 import api_system
@@ -257,10 +256,7 @@ if __name__ == '__main__':
         waitress = None  # type: ignore[assignment]
 
     if waitress is not None:
-        # Uploads in AlvaOS Files: waitress keeps a request body in a temporary
-        # file on the system disk until it is complete, so one file is capped at 4 GB.
-        waitress.serve(app, host='0.0.0.0', port=8080, threads=8, ident='AlvaOS',
-                       max_request_body_size=UPLOAD_LIMIT_BYTES)
+        waitress.serve(app, host='0.0.0.0', port=8080, threads=8, ident='AlvaOS')
     else:
         print("Warning: waitress is not installed, falling back to the Flask "
               "development server. Install python3-waitress for production use.")

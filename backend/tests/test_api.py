@@ -22,7 +22,6 @@ PUBLIC = {
     "/api/v1/auth/2fa/complete",
     "/api/v1/backup/pairing/accept",
     "/api/v1/backup/pairing/remove/accept",
-    "/api/v1/files/get/<token>",    # the expiring download link is the permission
 }
 PEER_PREFIX = "/api/v1/backup/buddy/peer/"   # authenticated with X-Buddy-Secret
 
@@ -326,96 +325,25 @@ def test_the_admin_password_can_be_changed(backend, monkeypatch):
     am._destroy_session(mine)
 
 
-def test_files_download_links(backend, monkeypatch):
+
+def test_files_app_is_turned_on_and_off_with_systemctl(backend, monkeypatch):
     import api_files
-    import files_manager
     module, state = backend
     set_up(state)
     token = auth_manager._create_session("root", role="admin")
     headers = {"Authorization": token, "X-CSRF-Token": auth_manager.SESSIONS[token]["csrf_token"]}
-    monkeypatch.setattr(api_files, "load_shares_state",
-                        lambda: {"a": {"name": "Media", "path": "/mnt/alvaos/main/Media"}})
-    opened = []
-    monkeypatch.setattr(files_manager, "open_stream",
-                        lambda path, part=None: (opened.append(path) or iter([b"data"]), ""))
-    monkeypatch.setattr(files_manager, "file_size", lambda path: 4)
-    client = module.app.test_client()
-
-    assert client.post("/api/v1/files/link", json={"share": "Media", "path": "../../etc/shadow"},
-                       headers=headers).status_code == 404
-    assert client.post("/api/v1/files/link", json={"share": "Media", "path": ""}, headers=headers).status_code == 404
-    link = client.post("/api/v1/files/link", json={"share": "Media", "path": "Films/a b.mkv"}, headers=headers)
-    url = link.get_json()["url"]
-
-    got = client.get(url)      # no session: the link is the permission
-    assert got.status_code == 200 and got.data == b"data"
-    assert opened == ["/mnt/alvaos/main/Media/Films/a b.mkv"]
-    assert got.headers["Content-Disposition"] == "attachment; filename*=UTF-8''a%20b.mkv"
-    assert "sandbox" in got.headers["Content-Security-Policy"]
-    assert client.get("/api/v1/files/get/not-a-real-token").status_code == 404
-
-    for entry in api_files._links.values():
-        entry["expires"] = 0
-    assert client.get(url).status_code == 404
-
-
-def test_files_changes_go_to_the_helper_with_share_paths_only(backend, monkeypatch):
-    import api_files
-    import files_manager
-    module, state = backend
-    set_up(state)
-    token = auth_manager._create_session("root", role="admin")
-    headers = {"Authorization": token, "X-CSRF-Token": auth_manager.SESSIONS[token]["csrf_token"]}
-    monkeypatch.setattr(api_files, "load_shares_state",
-                        lambda: {"a": {"name": "Media", "path": "/mnt/alvaos/main/Media"}})
     calls = []
-    monkeypatch.setattr(files_manager, "run_helper", lambda args, timeout=600: (calls.append(args) or {}, ""))
-    uploads = []
-    monkeypatch.setattr(files_manager, "upload",
-                        lambda folder, name, stream: (uploads.append((folder, name, stream.read())) or {"written": 3}, ""))
+
+    def fake(cmd, timeout=30):
+        import subprocess
+        calls.append(cmd[1:])
+        out = {"is-enabled": "enabled", "is-active": "active"}.get(cmd[1], "")
+        return subprocess.CompletedProcess(cmd, 0, out, ""), None
+
+    monkeypatch.setattr(api_files, "run_sudo_command", fake)
     client = module.app.test_client()
-
-    up = client.post("/api/v1/files/upload?share=Media&path=Films&name=a.txt", data=b"abc", headers=headers)
-    assert up.status_code == 201 and uploads == [("/mnt/alvaos/main/Media/Films", "a.txt", b"abc")]
-    assert client.post("/api/v1/files/upload?share=Media&path=../..&name=x", data=b"x",
-                       headers=headers).status_code == 404
-    client.post("/api/v1/files/mkdir", json={"share": "Media", "path": "", "name": "New"}, headers=headers)
-    client.post("/api/v1/files/rename", json={"share": "Media", "path": "Films", "old": "a", "new": "b"}, headers=headers)
-    client.post("/api/v1/files/delete", json={"share": "Media", "path": "Films", "names": ["a", "b"]}, headers=headers)
-    client.post("/api/v1/files/trash/restore", json={"share": "Media", "id": "20261001-100000-abc"}, headers=headers)
-    client.post("/api/v1/files/trash/empty", json={"share": "Media"}, headers=headers)
-    assert calls == [
-        ["files-mkdir", "/mnt/alvaos/main/Media", "New"],
-        ["files-rename", "/mnt/alvaos/main/Media/Films", "a", "b"],
-        ["files-trash", "/mnt/alvaos/main/Media", "/mnt/alvaos/main/Media/Films", "a"],
-        ["files-trash", "/mnt/alvaos/main/Media", "/mnt/alvaos/main/Media/Films", "b"],
-        ["files-trash-restore", "/mnt/alvaos/main/Media", "20261001-100000-abc"],
-        ["files-trash-purge", "/mnt/alvaos/main/Media", "0"],
-    ]
-    assert client.post("/api/v1/files/delete", json={"share": "Media", "path": "", "names": []},
-                       headers=headers).status_code == 400
-
-
-def test_files_links_answer_range_requests(backend, monkeypatch):
-    import api_files
-    import files_manager
-    module, state = backend
-    set_up(state)
-    token = auth_manager._create_session("root", role="admin")
-    headers = {"Authorization": token, "X-CSRF-Token": auth_manager.SESSIONS[token]["csrf_token"]}
-    monkeypatch.setattr(api_files, "load_shares_state",
-                        lambda: {"a": {"name": "Media", "path": "/mnt/alvaos/main/Media"}})
-    data = bytes(range(100))
-    monkeypatch.setattr(files_manager, "file_size", lambda path: len(data))
-    monkeypatch.setattr(files_manager, "open_stream",
-                        lambda path, part=None: (iter([data[part[0]:part[0] + part[1]] if part else data]), ""))
-    client = module.app.test_client()
-    url = client.post("/api/v1/files/link", json={"share": "Media", "path": "film.mp4", "inline": True},
-                      headers=headers).get_json()["url"]
-
-    whole = client.get(url)
-    assert whole.status_code == 200 and whole.headers["Accept-Ranges"] == "bytes" and len(whole.data) == 100
-    part = client.get(url, headers={"Range": "bytes=10-19"})
-    assert part.status_code == 206 and part.data == data[10:20]
-    assert part.headers["Content-Range"] == "bytes 10-19/100" and part.headers["Content-Length"] == "10"
-    assert client.get(url, headers={"Range": "bytes=200-"}).status_code == 416
+    data = client.post("/api/v1/files-app", json={"enabled": True}, headers=headers).get_json()
+    assert calls[0] == ["enable", "--now", "alvaos-files.service"]
+    assert data["enabled"] is True and data["running"] is True and data["port"] == 8090
+    client.post("/api/v1/files-app", json={"enabled": False}, headers=headers)
+    assert ["disable", "--now", "alvaos-files.service"] in calls

@@ -124,6 +124,9 @@ cp "${REPO_ROOT}/scripts/alvaos-update-checker.service" "${PKG_DIR}/etc/systemd/
 cp "${REPO_ROOT}/scripts/alvaos-update-checker.timer" "${PKG_DIR}/etc/systemd/system/"
 cp "${REPO_ROOT}/backend/alvaos-watchdog.service" "${PKG_DIR}/etc/systemd/system/"
 cp "${REPO_ROOT}/backend/alvaos-watchdog.timer" "${PKG_DIR}/etc/systemd/system/"
+# AlvaOS Files: installed, but off until it is turned on under Apps.
+cp "${REPO_ROOT}/scripts/alvaos-files.service" "${PKG_DIR}/etc/systemd/system/"
+cp "${REPO_ROOT}/scripts/alvaos-files.service" "${PKG_DIR}/opt/alvaos/scripts/"
 
 log "Creating configuration files..."
 # Create version file
@@ -241,6 +244,8 @@ systemctl enable alvaos.service
 systemctl disable alvaos-update-checker.service >/dev/null 2>&1 || true
 systemctl enable --now alvaos-update-checker.timer || true
 systemctl enable --now alvaos-watchdog.timer || true
+# AlvaOS Files keeps running after an update when it was on (it stays off otherwise).
+systemctl try-restart alvaos-files.service || true
 
 echo "AlvaOS system package installed successfully!"
 echo "To start services: sudo systemctl start alvaos"
@@ -258,6 +263,7 @@ echo "Stopping AlvaOS services..."
 systemctl stop alvaos.service || true
 systemctl stop alvaos-backend.service || true
 systemctl stop alvaos-ui.service || true
+systemctl stop alvaos-files.service || true
 
 exit 0
 EOF

@@ -673,6 +673,9 @@ _SYSTEMCTL_ALLOWED = {
     ('restart', 'ssh'), ('restart', 'smbd'),
     ('restart', 'docker'), ('restart', 'docker.service'), ('status', 'docker.service'),
     ('reload', 'nfs-kernel-server'), ('restart', 'nfs-kernel-server'),
+    # AlvaOS Files, turned on and off under Apps.
+    ('enable', '--now', 'alvaos-files.service'), ('disable', '--now', 'alvaos-files.service'),
+    ('restart', 'alvaos-files.service'), ('is-enabled', 'alvaos-files.service'),
 }
 
 
