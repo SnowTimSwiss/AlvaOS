@@ -160,6 +160,7 @@ function renderUsers(users, shares = []) {
             <div class="avatar disk-row-icon">${usersEscapeHtml(username.slice(0, 1))}</div>
             <div class="disk-row-name">${usersEscapeHtml(username)}</div>
             ${user.system_exists === false ? '<span class="pill warn" title="The account exists in AlvaOS but not on the system. Remove and add the person again.">Account broken</span>' : ''}
+            ${user.files_ready === false && user.system_exists !== false ? '<span class="pill warn" title="Set the password once more so this person can also sign in to AlvaOS Files.">Set password for Files</span>' : ''}
             <div class="disk-row-meta" style="font-family: inherit;">${usersEscapeHtml(accessText)}</div>
             <div class="disk-row-actions">
                 <button type="button" class="btn-secondary reset-pass-btn">Change password</button>
@@ -371,6 +372,7 @@ async function updateUserPassword(username, password, row) {
         return false;
     }
 
-    usersNotify(`Password for ${username} changed.`, 'success');
+    usersNotify(`Password for ${username} changed. It works for the shared folders and AlvaOS Files.`, 'success');
+    loadUsers();
     return true;
 }
