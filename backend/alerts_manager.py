@@ -431,6 +431,26 @@ def _collect_system_alerts():
     except Exception:
         pass
 
+    # What the disks themselves report (recorded at night by the self-test
+    # scheduler, so no disk is woken up here).
+    try:
+        import health_checks
+        for key, record in health_checks.smart_records().items():
+            problem = health_checks.smart_problems(record) if isinstance(record, dict) else None
+            if not problem:
+                continue
+            label = ' '.join(str(x) for x in (record.get('model'), f"({record.get('name')})" if record.get('name') else '') if x)
+            alerts.append(_build_alert_item(
+                alert_id=f'disk-{key}-smart',
+                severity=problem['severity'],
+                title=f"Disk {label or key} needs attention" if problem['severity'] == 'warning' else f"Disk {label or key} is failing",
+                message=problem['text'],
+                route='storage.html#disks',
+                action_label='Open disks'
+            ))
+    except Exception:
+        pass
+
     alerts.sort(key=lambda item: (
         ALERT_SEVERITY_PRIORITY.get(str(item.get('severity', 'info')).lower(), 9),
         str(item.get('title', ''))

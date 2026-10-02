@@ -738,12 +738,27 @@ def _rule_dpkg(sys_: System, args):
 _SMARTCTL_FLAGS = {'-a', '-x', '-H', '-A', '-i', '-j', '-d', 'sat', 'scsi', 'nvme', 'auto'}
 
 
+# Options that take a value: only these exact pairs. A self-test runs inside
+# the disk's firmware and only reads; "-n standby" skips a sleeping disk
+# instead of spinning it up.
+_SMARTCTL_PAIRS = {'-t': {'short', 'long'}, '-l': {'selftest'}, '-n': {'standby'}}
+
+
 def _rule_smartctl(sys_: System, args):
     if not args:
         _fail('smartctl needs a device')
-    for arg in args[:-1]:
+    options = args[:-1]
+    i = 0
+    while i < len(options):
+        arg = options[i]
+        if arg in _SMARTCTL_PAIRS:
+            if i + 1 >= len(options) or options[i + 1] not in _SMARTCTL_PAIRS[arg]:
+                _fail(f'smartctl {arg} value not allowed')
+            i += 2
+            continue
         if arg not in _SMARTCTL_FLAGS:
             _fail(f'smartctl argument not allowed: {arg}')
+        i += 1
     _device(sys_, args[-1], destructive=False)
     return Plan(argv=list(args))
 

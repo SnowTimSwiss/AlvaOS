@@ -601,3 +601,16 @@ def test_only_known_environment_is_forwarded():
     for bad in ('LD_PRELOAD=/tmp/x.so', 'PATH=/tmp', 'DEBIAN_FRONTEND=readline', 'PYTHONPATH=/tmp'):
         with pytest.raises(p.PolicyError):
             p.validate_env([bad])
+
+
+def test_smart_self_tests_and_logs():
+    allowed('/usr/sbin/smartctl', '-t', 'short', '/dev/sdb')
+    allowed('/usr/sbin/smartctl', '-t', 'long', '-d', 'sat', '/dev/sdb')
+    allowed('/usr/sbin/smartctl', '-n', 'standby', '-H', '-A', '-l', 'selftest', '-j', '/dev/sdb')
+    # Only the read-only test kinds; no aborting, offline or vendor tests.
+    denied('/usr/sbin/smartctl', '-t', 'offline', '/dev/sdb')
+    denied('/usr/sbin/smartctl', '-X', '/dev/sdb')
+    denied('/usr/sbin/smartctl', '-t', '/dev/sdb')
+    denied('/usr/sbin/smartctl', '-l', 'error', '-s', 'off', '/dev/sdb')
+    denied('/usr/sbin/smartctl', '-n', 'never', '-H', '/dev/sdb')
+    denied('/usr/sbin/smartctl', '-t', 'short', '/etc/passwd')

@@ -96,7 +96,8 @@ def test_settings_are_validated():
         hc.save_settings({"start_hour": 24})
     with pytest.raises(ValueError):
         hc.save_settings({"start_hour": True})
-    assert hc.save_settings({"scrub": "weekly", "start_hour": 1}) == {"scrub": "weekly", "start_hour": 1}
+    assert hc.save_settings({"scrub": "weekly", "start_hour": 1}) == {"scrub": "weekly", "start_hour": 1, "smart": "standard"}
+    assert hc.save_settings({"smart": "short"})["scrub"] == "weekly"
     assert hc.get_settings()["scrub"] == "weekly"
 
 
@@ -162,3 +163,128 @@ def test_an_unreadable_btrfs_time_does_not_start_a_check_every_night():
     next_night = NIGHT.replace(day=3)
     assert scheduler.run_once(next_night)["a"] == "not due"       # remembered: not again tomorrow
     assert started == ["/mnt/alvaos/main"]
+
+
+# ── SMART self-tests ─────────────────────────────────────────────────────────
+
+ATA_OK = {
+    "smart_status": {"passed": True},
+    "ata_smart_attributes": {"table": [{"id": 5, "raw": {"value": 0}}, {"id": 197, "raw": {"value": 0}},
+                                       {"id": 198, "raw": {"value": 0}}]},
+    "ata_smart_self_test_log": {"standard": {"table": [
+        {"type": {"string": "Short offline"}, "status": {"string": "Completed without error", "passed": True}}]}},
+}
+
+
+def ata(reallocated=0, pending=0, passed=True, test_passed=True, running=False):
+    payload = json.loads(json.dumps(ATA_OK))
+    payload["smart_status"]["passed"] = passed
+    payload["ata_smart_attributes"]["table"][0]["raw"]["value"] = reallocated
+    payload["ata_smart_attributes"]["table"][1]["raw"]["value"] = pending
+    entry = payload["ata_smart_self_test_log"]["standard"]["table"][0]
+    entry["status"] = {"string": "Completed: read failure" if not test_passed else "Completed without error",
+                       "passed": test_passed}
+    if running:
+        payload["ata_smart_data"] = {"self_test": {"status": {"remaining_percent": 60}}}
+    return payload
+
+
+def test_smart_readings_for_ata_and_nvme():
+    reading = hc.parse_smart(ata(reallocated=3))
+    assert reading["health"] == "passed" and reading["reallocated"] == 3
+    assert reading["last_test"]["passed"] is True and reading["test_running"] is False
+
+    nvme = hc.parse_smart({
+        "smart_status": {"passed": True},
+        "nvme_smart_health_information_log": {"media_errors": 2},
+        "nvme_self_test_log": {"table": [{"self_test_code": {"string": "Short"},
+                                          "self_test_result": {"value": 7, "string": "Failed segment"}}],
+                               "current_self_test_operation": {"value": 0}},
+    })
+    assert nvme["media_errors"] == 2 and nvme["last_test"]["passed"] is False
+
+    assert hc.parse_smart({"power_mode": "STANDBY"}) is None
+    assert hc.parse_smart(None) is None
+
+
+@pytest.mark.parametrize("record, severity", [
+    ({"reading": hc.parse_smart(ata(passed=False))}, "critical"),
+    ({"reading": hc.parse_smart(ata(test_passed=False))}, "critical"),
+    ({"reading": hc.parse_smart(ata(pending=4))}, "warning"),
+    ({"reading": hc.parse_smart(ata(reallocated=12)), "reallocated_baseline": 8}, "warning"),
+    ({"reading": hc.parse_smart(ata(reallocated=8)), "reallocated_baseline": 8}, None),   # old, stable
+    ({"reading": hc.parse_smart(ata())}, None),
+])
+def test_what_counts_as_a_disk_problem(record, severity):
+    problem = hc.smart_problems(record)
+    assert (problem or {}).get("severity") == severity
+
+
+def make_smart(disks, payloads):
+    started = []
+    scheduler = hc.SmartScheduler(
+        disks=lambda: disks,
+        start_test=lambda path, kind: started.append((path, kind)) or "",
+        read=lambda path: payloads.get(path),
+        log=lambda msg: None,
+    )
+    return scheduler, started
+
+
+DISKS = [{"key": "S1", "name": "sdb", "path": "/dev/sdb", "model": "WD", "pool_id": "p1"},
+         {"key": "S2", "name": "sdc", "path": "/dev/sdc", "model": "WD", "pool_id": "p1"}]
+
+
+def test_self_tests_start_at_night_one_long_test_per_night():
+    scheduler, started = make_smart(DISKS, {"/dev/sdb": ata(), "/dev/sdc": ata()})
+    assert scheduler.run_once(DAY) == {} and started == []
+
+    assert scheduler.run_once(NIGHT) == {"S1": "long started", "S2": "short started"}
+    # The next night the other disk gets its long test; the first is not due.
+    second = NIGHT.replace(day=3)
+    assert scheduler.run_once(second) == {"S1": "not due", "S2": "long started"}
+    assert started == [("/dev/sdb", "long"), ("/dev/sdc", "short"), ("/dev/sdc", "long")]
+
+
+def test_no_long_test_while_the_pool_gets_a_data_check(state):
+    state.write_text(json.dumps({"pools": {"p1": {"state": "running"}}}))
+    scheduler, started = make_smart(DISKS[:1], {"/dev/sdb": ata()})
+    assert scheduler.run_once(NIGHT) == {"S1": "short started"}
+
+
+def test_running_tests_and_off_are_respected():
+    scheduler, started = make_smart(DISKS[:1], {"/dev/sdb": ata(running=True)})
+    assert scheduler.run_once(NIGHT) == {"S1": "test running"}
+    hc.save_settings({"smart": "off"})
+    assert scheduler.run_once(NIGHT.replace(day=5)) == {}
+    assert started == []
+
+
+def test_readings_set_a_baseline_once():
+    scheduler, _ = make_smart(DISKS[:1], {"/dev/sdb": ata(reallocated=8)})
+    scheduler.run_once(NIGHT)
+    assert hc.smart_records()["S1"]["reallocated_baseline"] == 8
+    scheduler.read = lambda path: ata(reallocated=12)
+    scheduler.run_once(NIGHT.replace(day=3))
+    record = hc.smart_records()["S1"]
+    assert record["reallocated_baseline"] == 8 and record["reading"]["reallocated"] == 12
+    assert hc.smart_problems(record)["severity"] == "warning"
+
+
+def test_failing_disks_raise_alerts(state, monkeypatch):
+    import alerts_manager
+    import storage_manager
+
+    state.write_text(json.dumps({"smart": {
+        "S1": {"name": "sdb", "model": "WDC WD40", "reading": hc.parse_smart(ata(passed=False))},
+        "S2": {"name": "sdc", "model": "WDC WD40", "reading": hc.parse_smart(ata(pending=2))},
+        "S3": {"name": "sdd", "model": "WDC WD40", "reading": hc.parse_smart(ata())},
+    }}))
+    monkeypatch.setattr(storage_manager, "load_pools_state", lambda: {})
+    monkeypatch.setattr(storage_manager, "detect_btrfs_pools", lambda: ([], None))
+
+    alerts = {a["id"]: a for a in alerts_manager._collect_system_alerts()}
+    assert alerts["disk-S1-smart"]["severity"] == "critical"
+    assert alerts["disk-S1-smart"]["title"] == "Disk WDC WD40 (sdb) is failing"
+    assert alerts["disk-S2-smart"]["severity"] == "warning"
+    assert "disk-S3-smart" not in alerts
