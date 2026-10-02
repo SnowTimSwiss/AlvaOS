@@ -15,6 +15,34 @@ How to add an entry:
 
 ---
 
+## 2026-10-02 · A welcome that feels like a start; honest RAID choices
+
+- **Welcome screen** of the setup wizard: the AlvaOS mark builds up layer by
+  layer, "Welcome to AlvaOS", one sentence, three promises with icons
+  (storage that looks after itself, one folder on every device, backups also
+  at a friend's), "About two minutes · Nothing is erased without asking you"
+  and one big Get started. A soft colour wash in the background (both
+  themes), no progress bar on this first screen. No motion with
+  `prefers-reduced-motion`.
+- **Wizard storage step:** with three or more disks it also offers "Three
+  copies" (RAID1c3: two disks can fail). Usable space is now computed the way
+  Btrfs fills disks of different sizes: min(total / copies, total minus the
+  copies-1 largest disks). RAID10 and parity stay on the Storage page.
+- **Found:** pools with parity were created with parity metadata too
+  (`-d raid5 -m raid5`). Btrfs still does not recommend parity for metadata
+  (write hole). Now `-m raid1` for RAID5 and `-m raid1c3` for RAID6
+  (`mkfs_profile_args`), and unknown profiles are refused by the API before
+  the privilege helper. RAID0/RAID10 need at least two disks.
+- **Storage page:** layouts in plain words, mirrored first and recommended,
+  parity marked experimental with what that means (UPS and backups), no more
+  "[WARNING] High Risk" text.
+- Tests: profile mapping and unknown profile refusal in
+  `test_storage_disks.py`. Wizard walked through with two, three and no free
+  disks at desktop and phone width in both themes.
+- **Note for next time:** existing RAID5/6 pools keep parity metadata; a
+  `btrfs balance start -mconvert=raid1` (policy already allows `-mconvert`)
+  could be offered for them on the pool detail page.
+
 ## 2026-10-02 · Setup wizard that ends in a usable NAS
 
 - Five steps instead of three, and the NAS can be used at the end:

@@ -305,6 +305,132 @@
             color: var(--text-tertiary);
         }
 
+        /* ── Welcome: the one screen that may be a little special ── */
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            pointer-events: none;
+            background:
+                radial-gradient(60vmax 40vmax at 15% -10%, color-mix(in srgb, var(--accent-primary) 16%, transparent), transparent 70%),
+                radial-gradient(50vmax 35vmax at 110% 110%, color-mix(in srgb, var(--accent-success) 10%, transparent), transparent 70%);
+            transition: opacity 0.6s ease;
+        }
+
+        body:not(.on-welcome)::before { opacity: 0.45; }
+
+        body.on-welcome .wizard-progress,
+        body.on-welcome .wizard-step-label,
+        body.on-welcome .wizard-brand { visibility: hidden; }
+
+        .welcome { text-align: center; padding: 8px 4px 0; }
+
+        .welcome-mark {
+            width: 84px;
+            height: 84px;
+            margin: 0 auto 18px;
+            border-radius: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--accent-primary);
+            background: linear-gradient(160deg, color-mix(in srgb, var(--accent-primary) 22%, transparent), color-mix(in srgb, var(--accent-primary) 6%, transparent));
+            border: 1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent);
+        }
+
+        .welcome-mark svg { width: 46px; height: 46px; overflow: visible; }
+
+        .welcome-mark .layer {
+            opacity: 0;
+            transform: translateY(-6px);
+            animation: layer-in 0.7s cubic-bezier(.2, .7, .2, 1) forwards;
+        }
+
+        .welcome-mark .layer-1 { animation-delay: 0.1s; }
+        .welcome-mark .layer-2 { animation-delay: 0.3s; }
+        .welcome-mark .layer-3 { animation-delay: 0.5s; }
+
+        @keyframes layer-in {
+            to { opacity: 1; transform: none; }
+        }
+
+        .welcome h1 {
+            font-size: 1.9rem;
+            letter-spacing: -0.02em;
+            margin-bottom: 8px;
+        }
+
+        .welcome-tagline {
+            color: var(--text-secondary);
+            font-size: 1.02rem;
+            margin: 0 auto 26px;
+            max-width: 26em;
+            line-height: 1.5;
+        }
+
+        .welcome-points {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            text-align: left;
+        }
+
+        .welcome-points li {
+            display: flex;
+            gap: 14px;
+            align-items: flex-start;
+            padding: 14px 16px;
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            background: color-mix(in srgb, var(--bg-body) 55%, transparent);
+            opacity: 0;
+            animation: layer-in 0.6s ease forwards;
+        }
+
+        .welcome-points li:nth-child(1) { animation-delay: 0.55s; }
+        .welcome-points li:nth-child(2) { animation-delay: 0.7s; }
+        .welcome-points li:nth-child(3) { animation-delay: 0.85s; }
+
+        .welcome-icon {
+            width: 36px;
+            height: 36px;
+            flex-shrink: 0;
+            border-radius: 10px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--accent-primary);
+            background: var(--accent-primary-soft);
+        }
+
+        .welcome-icon svg { width: 19px; height: 19px; }
+        .welcome-points strong { display: block; font-size: 0.95rem; margin-bottom: 2px; }
+        .welcome-points small { display: block; color: var(--text-secondary); font-size: 0.84rem; line-height: 1.45; }
+
+        .welcome-meta {
+            margin: 20px 0 0;
+            font-size: 0.8rem;
+            color: var(--text-tertiary);
+        }
+
+        body.on-welcome .wizard-nav { justify-content: center; }
+        body.on-welcome .wizard-nav .spacer { display: none; }
+        body.on-welcome #btn-next { min-width: 220px; padding: 0.75rem 1.4rem; font-size: 1rem; }
+
+        @media (prefers-reduced-motion: reduce) {
+            .welcome-mark .layer,
+            .welcome-points li { animation: none; opacity: 1; transform: none; }
+        }
+
+        @media (max-width: 520px) {
+            .welcome h1 { font-size: 1.55rem; }
+            body.on-welcome #btn-next { min-width: 0; }
+        }
+
         @media (max-width: 520px) {
             body { padding-top: 16px; }
             .wizard-card { padding: 20px 16px; }
@@ -314,7 +440,7 @@
     </style>
 </head>
 
-<body>
+<body class="on-welcome">
     <main class="wizard">
         <div class="wizard-brand">
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false">
@@ -330,10 +456,39 @@
             <div class="error-box" id="error" role="alert"></div>
 
             <!-- 1. Welcome -->
-            <section class="step active" data-step="welcome">
-                <h1>Welcome to your NAS</h1>
-                <p class="lead">In about two minutes you will have a name and a password for it, storage on your disks, and a shared folder you can open from your computers and phones.</p>
-                <p class="lead" style="margin-bottom:0;">Every step after the password can be skipped and done later.</p>
+            <section class="step active welcome" data-step="welcome">
+                <div class="welcome-mark" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                        <path class="layer layer-3" d="M2 17l10 5 10-5" />
+                        <path class="layer layer-2" d="M2 12l10 5 10-5" />
+                        <path class="layer layer-1" d="M12 2L2 7l10 5 10-5-10-5z" />
+                    </svg>
+                </div>
+                <h1>Welcome to AlvaOS</h1>
+                <p class="welcome-tagline">Your files, your apps and your backups. At home, and yours.</p>
+
+                <ul class="welcome-points">
+                    <li>
+                        <span class="welcome-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
+                        </span>
+                        <span><strong>Storage that looks after itself</strong><small>Mirrored disks, regular checks and a calm warning before anything goes wrong.</small></span>
+                    </li>
+                    <li>
+                        <span class="welcome-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                        </span>
+                        <span><strong>One folder on every device</strong><small>Open it from Windows, Mac, Linux and phones, like any drive.</small></span>
+                    </li>
+                    <li>
+                        <span class="welcome-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
+                        </span>
+                        <span><strong>Backups, also at a friend's</strong><small>Daily restore points here, and an encrypted copy on a buddy's NAS.</small></span>
+                    </li>
+                </ul>
+
+                <p class="welcome-meta">About two minutes &middot; Nothing is erased without asking you</p>
             </section>
 
             <!-- 2. Name and password -->

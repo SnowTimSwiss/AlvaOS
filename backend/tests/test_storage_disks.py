@@ -426,3 +426,24 @@ def test_background_jobs_report_an_immediate_failure(monkeypatch):
     assert api_storage._start_background(['sh', '-c', 'echo "ERROR: target too small" >&2; exit 1']) \
         == 'ERROR: target too small'
     assert api_storage._start_background(['sleep', '5']) == ''  # still running: fine
+
+
+@pytest.mark.parametrize('level, expected', [
+    ('single', []),
+    ('raid1', ['-d', 'raid1', '-m', 'raid1']),
+    ('raid1c3', ['-d', 'raid1c3', '-m', 'raid1c3']),
+    ('raid10', ['-d', 'raid10', '-m', 'raid10']),
+    # Parity for data only: metadata mirrored against the Btrfs write hole.
+    ('raid5', ['-d', 'raid5', '-m', 'raid1']),
+    ('raid6', ['-d', 'raid6', '-m', 'raid1c3']),
+])
+def test_pool_profiles_keep_metadata_mirrored(level, expected):
+    assert api_storage.mkfs_profile_args(level) == expected
+
+
+def test_unknown_protection_levels_are_refused(api):
+    client, headers, runner = api
+    response = client.post('/api/v1/storage/pools', headers=headers,
+                           json={'name': 'media', 'devices': ['/dev/sdc'], 'raid_level': 'raid7'})
+    assert response.status_code == 400
+    assert runner.ran('mkfs.btrfs') == []
