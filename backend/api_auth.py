@@ -539,7 +539,9 @@ def manage_users():
             users.append({
                 'username': username,
                 'created_at': info.get('created_at'),
-                'system_exists': system_user_exists(username)
+                'system_exists': system_user_exists(username),
+                # Users made before AlvaOS Files need their password set once more.
+                'files_ready': bool(info.get('files_auth')),
             })
         users.sort(key=lambda u: u['username'])
         return jsonify({'users': users})
@@ -597,7 +599,10 @@ def manage_users():
 
             users_state[username] = {
                 'username': username,
-                'created_at': datetime.now().isoformat()
+                'created_at': datetime.now().isoformat(),
+                # AlvaOS Files signs people in with this (Python cannot read
+                # /etc/shadow hashes any more, and should not need root to).
+                'files_auth': hash_password(password),
             }
             save_users_state(users_state)
 
@@ -697,6 +702,10 @@ def update_user(username):
             ok, smb_err = sync_samba_password(username, password)
             if not ok:
                  return jsonify({'error': f'Failed to update Samba password: {smb_err}'}), 500
+            entry = users_state.get(username) or {'username': username, 'created_at': datetime.now().isoformat()}
+            entry['files_auth'] = hash_password(password)
+            users_state[username] = entry
+            save_users_state(users_state)
         except Exception as e:
             return jsonify({'error': f'Failed to update password: {str(e)}'}), 500
 
