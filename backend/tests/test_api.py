@@ -356,3 +356,40 @@ def test_files_download_links(backend, monkeypatch):
     for entry in api_files._links.values():
         entry["expires"] = 0
     assert client.get(url).status_code == 404
+
+
+def test_files_changes_go_to_the_helper_with_share_paths_only(backend, monkeypatch):
+    import api_files
+    import files_manager
+    module, state = backend
+    set_up(state)
+    token = auth_manager._create_session("root", role="admin")
+    headers = {"Authorization": token, "X-CSRF-Token": auth_manager.SESSIONS[token]["csrf_token"]}
+    monkeypatch.setattr(api_files, "load_shares_state",
+                        lambda: {"a": {"name": "Media", "path": "/mnt/alvaos/main/Media"}})
+    calls = []
+    monkeypatch.setattr(files_manager, "run_helper", lambda args, timeout=600: (calls.append(args) or {}, ""))
+    uploads = []
+    monkeypatch.setattr(files_manager, "upload",
+                        lambda folder, name, stream: (uploads.append((folder, name, stream.read())) or {"written": 3}, ""))
+    client = module.app.test_client()
+
+    up = client.post("/api/v1/files/upload?share=Media&path=Films&name=a.txt", data=b"abc", headers=headers)
+    assert up.status_code == 201 and uploads == [("/mnt/alvaos/main/Media/Films", "a.txt", b"abc")]
+    assert client.post("/api/v1/files/upload?share=Media&path=../..&name=x", data=b"x",
+                       headers=headers).status_code == 404
+    client.post("/api/v1/files/mkdir", json={"share": "Media", "path": "", "name": "New"}, headers=headers)
+    client.post("/api/v1/files/rename", json={"share": "Media", "path": "Films", "old": "a", "new": "b"}, headers=headers)
+    client.post("/api/v1/files/delete", json={"share": "Media", "path": "Films", "names": ["a", "b"]}, headers=headers)
+    client.post("/api/v1/files/trash/restore", json={"share": "Media", "id": "20261001-100000-abc"}, headers=headers)
+    client.post("/api/v1/files/trash/empty", json={"share": "Media"}, headers=headers)
+    assert calls == [
+        ["files-mkdir", "/mnt/alvaos/main/Media", "New"],
+        ["files-rename", "/mnt/alvaos/main/Media/Films", "a", "b"],
+        ["files-trash", "/mnt/alvaos/main/Media", "/mnt/alvaos/main/Media/Films", "a"],
+        ["files-trash", "/mnt/alvaos/main/Media", "/mnt/alvaos/main/Media/Films", "b"],
+        ["files-trash-restore", "/mnt/alvaos/main/Media", "20261001-100000-abc"],
+        ["files-trash-purge", "/mnt/alvaos/main/Media", "0"],
+    ]
+    assert client.post("/api/v1/files/delete", json={"share": "Media", "path": "", "names": []},
+                       headers=headers).status_code == 400

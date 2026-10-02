@@ -42,6 +42,7 @@ import api_apps
 import api_auth
 import api_backup
 import api_files
+from api_files import UPLOAD_LIMIT_BYTES
 import api_shares
 import api_storage
 import api_system
@@ -221,6 +222,20 @@ if __name__ == '__main__':
         threading.Thread(target=disk_power.apply_saved, args=(disk_inventory, run_sudo_command),
                          name='disk-power', daemon=True).start()
 
+    # AlvaOS Files: what has been in a share's trash for 30 days goes for good.
+    def _purge_trash_daily():
+        import time as _time
+        import files_manager
+        from shares_manager import load_shares_state
+        while True:
+            _time.sleep(3600)
+            try:
+                files_manager.purge_all_trash(load_shares_state())
+            except Exception as e:
+                print(f"Trash cleanup failed: {e}")
+            _time.sleep(23 * 3600)
+    threading.Thread(target=_purge_trash_daily, name='files-trash', daemon=True).start()
+
     # Problems by Telegram and email, also when nobody has the web page open.
     import alert_delivery
     threading.Thread(target=alert_delivery.serve_forever, name='alert-delivery', daemon=True).start()
@@ -242,7 +257,10 @@ if __name__ == '__main__':
         waitress = None  # type: ignore[assignment]
 
     if waitress is not None:
-        waitress.serve(app, host='0.0.0.0', port=8080, threads=8, ident='AlvaOS')
+        # Uploads in AlvaOS Files: waitress keeps a request body in a temporary
+        # file on the system disk until it is complete, so one file is capped at 4 GB.
+        waitress.serve(app, host='0.0.0.0', port=8080, threads=8, ident='AlvaOS',
+                       max_request_body_size=UPLOAD_LIMIT_BYTES)
     else:
         print("Warning: waitress is not installed, falling back to the Flask "
               "development server. Install python3-waitress for production use.")

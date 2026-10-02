@@ -4,7 +4,7 @@ import os
 import secrets
 import threading
 import time
-from typing import Any, Dict
+from typing import Any, Dict, List
 from urllib.parse import quote
 
 from flask import Blueprint, Response, jsonify, request
@@ -16,13 +16,16 @@ from shares_manager import load_shares_state
 
 bp = Blueprint('files', __name__)
 
+UPLOAD_LIMIT_BYTES = 4 * 1024 ** 3
+
 
 @bp.route('/api/v1/files/shares', methods=['GET'])
 @require_auth(require_admin=True)
 def files_shares():
     shares = [{'name': s.get('name'), 'protocol': s.get('protocol', 'smb')}
               for s in load_shares_state().values() if isinstance(s, dict) and s.get('name')]
-    return jsonify({'success': True, 'shares': sorted(shares, key=lambda s: str(s['name']).lower())})
+    return jsonify({'success': True, 'shares': sorted(shares, key=lambda s: str(s['name']).lower()),
+                    'upload_limit_bytes': UPLOAD_LIMIT_BYTES})
 
 
 @bp.route('/api/v1/files/list', methods=['GET'])
@@ -91,3 +94,109 @@ def files_get(token):
         'Referrer-Policy': 'no-referrer',
     }
     return Response(stream, mimetype=mime, headers=headers, direct_passthrough=True)
+
+
+# ── Changes ──────────────────────────────────────────────────────────────────
+
+def _folder(data):
+    """(share root, folder path, relative folder, error) for a request."""
+    shares = load_shares_state()
+    share = str(data.get('share') or '')
+    folder, rel, error = files_manager.resolve(shares, share, str(data.get('path') or ''))
+    root = files_manager.share_root(shares, share)
+    if error or folder is None or root is None:
+        return None, None, '', error or 'This shared folder does not exist.'
+    return root, folder, rel, ''
+
+
+def _answer(result, error, status=200, **extra):
+    if result is None:
+        return jsonify({'error': error}), 409
+    return jsonify({'success': True, **result, **extra}), status
+
+
+@bp.route('/api/v1/files/upload', methods=['POST'])
+@require_auth(require_admin=True)
+def files_upload():
+    """The file is the request body; share, folder and name are in the URL."""
+    _, folder, _, error = _folder(request.args)
+    if error:
+        return jsonify({'error': error}), 404
+    if (request.content_length or 0) > UPLOAD_LIMIT_BYTES:
+        return jsonify({'error': 'Files over 4 GB go through the shared folder on your computer.'}), 413
+    result, error = files_manager.upload(folder, str(request.args.get('name') or ''), request.stream)
+    return _answer(result, error, 201)
+
+
+@bp.route('/api/v1/files/mkdir', methods=['POST'])
+@require_auth(require_admin=True)
+def files_mkdir():
+    data = request.get_json(silent=True) or {}
+    _, folder, _, error = _folder(data)
+    if error:
+        return jsonify({'error': error}), 404
+    return _answer(*files_manager.run_helper(['files-mkdir', folder, str(data.get('name') or '')]))
+
+
+@bp.route('/api/v1/files/rename', methods=['POST'])
+@require_auth(require_admin=True)
+def files_rename():
+    data = request.get_json(silent=True) or {}
+    _, folder, _, error = _folder(data)
+    if error:
+        return jsonify({'error': error}), 404
+    return _answer(*files_manager.run_helper(['files-rename', folder, str(data.get('old') or ''),
+                                              str(data.get('new') or '')]))
+
+
+@bp.route('/api/v1/files/delete', methods=['POST'])
+@require_auth(require_admin=True)
+def files_delete():
+    """Moves the items into the share's trash (kept 30 days)."""
+    data = request.get_json(silent=True) or {}
+    root, folder, _, error = _folder(data)
+    if error:
+        return jsonify({'error': error}), 404
+    names = data.get('names') if isinstance(data.get('names'), list) else []
+    if not names or len(names) > 500:
+        return jsonify({'error': 'Choose what to delete.'}), 400
+    moved: List[str] = []
+    failed: List[str] = []
+    for name in names:
+        result, problem = files_manager.run_helper(['files-trash', root, folder, str(name)])
+        if result is not None:
+            moved.append(str(name))
+        else:
+            failed.append(f'{name}: {problem}')
+    if not moved:
+        return jsonify({'error': '; '.join(failed) or 'Nothing was deleted.'}), 409
+    return jsonify({'success': True, 'moved': moved, 'failed': failed})
+
+
+@bp.route('/api/v1/files/trash', methods=['GET'])
+@require_auth(require_admin=True)
+def files_trash():
+    root = files_manager.share_root(load_shares_state(), request.args.get('share', ''))
+    if root is None:
+        return jsonify({'error': 'This shared folder does not exist.'}), 404
+    return _answer(*files_manager.run_helper(['files-trash-list', root]), keep_days=30)
+
+
+@bp.route('/api/v1/files/trash/restore', methods=['POST'])
+@require_auth(require_admin=True)
+def files_trash_restore():
+    data = request.get_json(silent=True) or {}
+    root = files_manager.share_root(load_shares_state(), str(data.get('share') or ''))
+    if root is None:
+        return jsonify({'error': 'This shared folder does not exist.'}), 404
+    return _answer(*files_manager.run_helper(['files-trash-restore', root, str(data.get('id') or '')]))
+
+
+@bp.route('/api/v1/files/trash/empty', methods=['POST'])
+@require_auth(require_admin=True)
+def files_trash_empty():
+    data = request.get_json(silent=True) or {}
+    root = files_manager.share_root(load_shares_state(), str(data.get('share') or ''))
+    if root is None:
+        return jsonify({'error': 'This shared folder does not exist.'}), 404
+    return _answer(*files_manager.run_helper(['files-trash-purge', root, '0']))

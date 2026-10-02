@@ -24,7 +24,7 @@
         .files-share[aria-selected="true"] { border-color: var(--accent-primary); background: var(--accent-primary-soft); font-weight: 600; }
         .files-share[aria-selected="true"] svg { color: var(--accent-primary); }
 
-        .files-card { background: var(--bg-card); border: 1px solid var(--border-default); border-radius: var(--radius-lg); overflow: hidden; }
+        .files-card { background: var(--bg-card); border: 1px solid var(--border-default); border-radius: var(--radius-lg); }
         .files-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--border-subtle); }
         .files-crumbs { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; min-width: 0; font-size: 0.92rem; color: var(--text-tertiary); }
         .files-crumb { background: none; border: none; padding: 3px 6px; border-radius: 6px; font: inherit; color: var(--accent-primary); font-weight: 600; cursor: pointer; overflow-wrap: anywhere; text-align: left; }
@@ -73,13 +73,51 @@
         .viewer-nav[hidden] { display: none; }
 
         @media (max-width: 760px) {
-            .files-tools { width: 100%; }
+            .files-tools { width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
+            .files-tools .btn-primary, .files-tools .btn-secondary { justify-content: center; }
+            .files-tools input, .files-tools select { width: 100%; min-width: 0; }
             .files-tools input { flex: 1; width: auto; min-width: 0; }
             .files-row { grid-template-columns: 26px minmax(0, 1fr) 40px; row-gap: 0; }
             .files-row .files-meta-wrap { grid-column: 2; }
             .files-size, .files-date { display: none; }
             .files-row .files-sub { display: block; }
         }
+        .files-tools .btn-primary, .files-tools .btn-secondary { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+        .files-tools svg { width: 16px; height: 16px; }
+        .files-card { position: relative; }
+        .files-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .files-trash-btn { background: none; border: none; color: var(--text-tertiary); font: inherit; font-size: 0.8rem; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; padding: 4px 6px; border-radius: 6px; }
+        .files-trash-btn:hover { color: var(--text-primary); background: var(--bg-body); }
+        .files-trash-btn svg { width: 14px; height: 14px; }
+        .files-drop { position: absolute; inset: 0; background: color-mix(in srgb, var(--accent-primary) 14%, var(--bg-card)); border: 2px dashed var(--accent-primary); border-radius: inherit; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+        .files-drop[hidden] { display: none; }
+        .files-drop div { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--accent-primary); font-weight: 600; }
+        .files-drop svg { width: 32px; height: 32px; }
+        .files-more { position: relative; }
+        .files-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 160px; background: var(--bg-card); border: 1px solid var(--border-default); border-radius: 10px; box-shadow: var(--shadow-md); padding: 4px; }
+        .files-menu[hidden] { display: none; }
+        .files-menu button { display: flex; width: 100%; align-items: center; gap: 8px; background: none; border: none; padding: 8px 10px; border-radius: 6px; font: inherit; font-size: 0.88rem; color: var(--text-primary); cursor: pointer; text-align: left; }
+        .files-menu button:hover { background: var(--accent-primary-soft); }
+        .files-menu button.danger { color: var(--accent-danger); }
+        .files-menu svg { width: 16px; height: 16px; }
+        .files-uploads { position: fixed; right: 16px; bottom: 76px; z-index: 1250; width: min(360px, calc(100vw - 32px)); background: var(--bg-card); border: 1px solid var(--border-default); border-radius: 12px; box-shadow: var(--shadow-md); padding: 10px 12px; }
+        .files-uploads[hidden] { display: none; }
+        .up-row { padding: 6px 0; font-size: 0.84rem; }
+        .up-row + .up-row { border-top: 1px solid var(--border-subtle); }
+        .up-name { display: flex; justify-content: space-between; gap: 8px; }
+        .up-name span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .up-name span:last-child { color: var(--text-secondary); white-space: nowrap; }
+        .up-bar { height: 4px; border-radius: 2px; background: var(--track); margin-top: 5px; overflow: hidden; }
+        .up-bar span { display: block; height: 100%; background: var(--accent-primary); width: 0; transition: width 0.2s; }
+        .up-row.done .up-bar span { background: var(--accent-success); }
+        .up-row.failed .up-bar span { background: var(--accent-danger); }
+        .up-row.failed .up-name span:last-child { color: var(--accent-danger); }
+        .trash-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 0; font-size: 0.88rem; }
+        .trash-row + .trash-row { border-top: 1px solid var(--border-subtle); }
+        .trash-row small { display: block; color: var(--text-secondary); font-size: 0.78rem; }
+        .trash-row strong { overflow-wrap: anywhere; font-weight: 600; }
+        .trash-list { max-height: 50vh; overflow-y: auto; }
+
         .files-sub { display: none; font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px; }
         .files-text { min-width: 0; }
     </style>
@@ -155,6 +193,9 @@
                 <div class="files-bar">
                     <nav class="files-crumbs" id="files-crumbs" aria-label="Folder"></nav>
                     <div class="files-tools">
+                        <button type="button" class="btn-primary" id="files-upload-btn"><i data-lucide="upload" aria-hidden="true"></i> Upload</button>
+                        <input type="file" id="files-upload-input" multiple hidden>
+                        <button type="button" class="btn-secondary" id="files-mkdir-btn"><i data-lucide="plus" aria-hidden="true"></i> New folder</button>
                         <input type="search" id="files-filter" placeholder="Filter this folder" aria-label="Filter this folder">
                         <select id="files-sort" class="select-input" aria-label="Sort">
                             <option value="name">Name</option>
@@ -164,9 +205,11 @@
                     </div>
                 </div>
                 <div id="files-list" aria-live="polite"></div>
-                <div class="files-foot" id="files-foot"></div>
+                <div class="files-foot"><span id="files-foot"></span><button type="button" class="files-trash-btn" id="files-trash-btn"><i data-lucide="trash-2" aria-hidden="true"></i> Trash</button></div>
+                <div class="files-drop" id="files-drop" hidden><div><i data-lucide="upload" aria-hidden="true"></i><span id="files-drop-text">Drop to upload</span></div></div>
             </section>
-            <p class="files-note" id="files-note" hidden>To add, rename or delete files, open the shared folder from your computer: <a href="storage.html#shares">Storage › Shares › How to connect</a>.</p>
+            <p class="files-note" id="files-note" hidden>Drag files here to upload them (up to 4 GB each). Bigger files and whole folders go faster through the shared folder on your computer: <a href="storage.html#shares">Storage › Shares › How to connect</a>.</p>
+            <div class="files-uploads" id="files-uploads" hidden aria-live="polite"></div>
 
             <footer class="dash-footer">
                 <div>AlvaOS {{VERSION}}</div>

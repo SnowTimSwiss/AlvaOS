@@ -98,3 +98,66 @@ def open_stream(path: str, chunk: int = 256 * 1024) -> Tuple[Optional[Iterator[b
             proc.wait()
 
     return chunks(), ''
+
+
+# ── Changes (alvaos-priv files-* operations) ─────────────────────────────────
+
+def _helper_cmd(args: List[str]) -> List[str]:
+    cmd = [PRIV_HELPER] + args
+    return cmd if is_root_user() else ['sudo', '-n'] + cmd
+
+
+def _result(returncode: int, out: bytes, err: bytes) -> Tuple[Optional[Dict[str, Any]], str]:
+    if returncode != 0:
+        message = err.decode('utf-8', 'replace').strip().replace('alvaos-priv: denied: ', '')
+        return None, message.replace('alvaos-priv: ', '') or 'That did not work.'
+    lines = out.decode('utf-8', 'replace').strip().splitlines()
+    try:
+        import json
+        return (json.loads(lines[-1]) if lines else {}), ''
+    except ValueError:
+        return {}, ''
+
+
+def run_helper(args: List[str], timeout: int = 600) -> Tuple[Optional[Dict[str, Any]], str]:
+    try:
+        res = subprocess.run(_helper_cmd(args), capture_output=True, timeout=timeout, env={'LC_ALL': 'C'})
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, str(exc)
+    return _result(res.returncode, res.stdout, res.stderr)
+
+
+def upload(dir_path: str, name: str, stream: Any, chunk: int = 1024 * 1024) -> Tuple[Optional[Dict[str, Any]], str]:
+    """Pipe an upload into `files-write`; the helper never overwrites."""
+    try:
+        proc = subprocess.Popen(_helper_cmd(['files-write', dir_path, name]), stdin=subprocess.PIPE,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, env={'LC_ALL': 'C'})
+    except OSError as exc:
+        return None, str(exc)
+    assert proc.stdin is not None
+    try:
+        while True:
+            data = stream.read(chunk)
+            if not data:
+                break
+            proc.stdin.write(data)
+        proc.stdin.close()
+    except (BrokenPipeError, OSError):
+        pass   # the helper refused or stopped; its answer says why
+    except BaseException:
+        proc.kill()   # the browser went away: the helper removes the half file
+        raise
+    out, err = proc.communicate(timeout=120)
+    return _result(proc.returncode, out, err)
+
+
+def share_root(shares_state: Dict[str, Any], share_name: str) -> Optional[str]:
+    share = find_share(shares_state, share_name)
+    return os.path.normpath(share['path']) if share else None
+
+
+def purge_all_trash(shares_state: Dict[str, Any], days: int = 30) -> None:
+    """Daily: trash items older than `days` are removed for good."""
+    for share in (shares_state or {}).values():
+        if isinstance(share, dict) and str(share.get('path', '')).startswith('/'):
+            run_helper(['files-trash-purge', os.path.normpath(share['path']), str(days)])
