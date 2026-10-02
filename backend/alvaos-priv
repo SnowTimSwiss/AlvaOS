@@ -355,7 +355,7 @@ FILES_OPS = {
 
 # Operations that may run as one person (`--as USER`), so Linux checks their
 # rights exactly as for their network shares.
-AS_USER_OPS = set(FILES_OPS) - {'files-trash-purge'} | {'read-file', 'file-size'}
+AS_USER_OPS = set(FILES_OPS) - {'files-trash-purge'} | {'read-file', 'file-size', 'files-zip'}
 
 
 def become(user):
@@ -371,6 +371,21 @@ def become(user):
     if os.getuid() == 0 or os.geteuid() == 0:
         raise policy.PolicyError('Could not drop root')
     os.umask(0o007)
+
+
+def files_zip(argv):
+    """AlvaOS Files: a folder as a ZIP stream on stdout."""
+    if len(argv) != 1:
+        deny(['files-zip'] + list(argv), 'usage: files-zip DIR')
+    try:
+        files_ops.zip_folder(argv[0], sys.stdout.buffer)
+        sys.stdout.buffer.flush()
+    except files_ops.FileOpError as e:
+        sys.stderr.write(f'{e}\n')
+        return 1
+    except BrokenPipeError:
+        pass   # the browser stopped the download
+    return 0
 
 
 def files_op(name, argv):
@@ -413,6 +428,8 @@ def main():
         return read_file(args[1:])
     if args[:1] == ['file-size']:
         return file_size(args[1:])
+    if args[:1] == ['files-zip']:
+        return files_zip(args[1:])
     if args and args[0] in FILES_OPS:
         return files_op(args[0], args[1:])
     if args[:1] in (['vault-open'], ['vault-close']):

@@ -212,3 +212,15 @@ def test_link_passwords_expiry_and_lost_access(client, monkeypatch, tmp_path):
     (tmp_path / "links.json").write_text(json.dumps(links))
     assert visitor.get(f"/api/public/{token}").status_code == 404
     assert client.post("/api/links", json={"share": "Family", "path": "x", "days": 5}, headers=H).status_code == 400
+
+
+
+def test_folders_download_as_zip_as_the_person(client, monkeypatch):
+    zipped = []
+    monkeypatch.setattr(files_manager, "open_zip", lambda path, user=None: (zipped.append((path, user)) or iter([b"PK"]), ""))
+    sign_in(client, "ben", "ben-pass")
+    got = client.get("/api/zip?share=Family&path=Holidays")
+    assert got.status_code == 200 and got.mimetype == "application/zip"
+    assert "Holidays.zip" in got.headers["Content-Disposition"]
+    assert zipped == [("/mnt/alvaos/main/Family/Holidays", "ben")]
+    assert client.get("/api/zip?share=Anna").status_code == 404

@@ -206,6 +206,63 @@ def move(src_dir: str, name: str, dst_dir: str, root: str = DATA_ROOT) -> None:
         os.close(sfd)
 
 
+def zip_folder(dir_path: str, out: BinaryIO, root: str = DATA_ROOT) -> int:
+    """Write a folder as a ZIP stream (no temporary file). Walks with
+    descriptors and never follows symlinks; files that cannot be read (no
+    access) are left out. Returns the number of files."""
+    import zipfile
+    dfd = open_dir(dir_path, root)
+    count = 0
+    try:
+        with zipfile.ZipFile(_Unseekable(out), "w", compression=zipfile.ZIP_STORED, allowZip64=True) as zf:  # type: ignore[call-overload]
+            for top, dirs, files, tfd in os.fwalk('.', dir_fd=dfd, follow_symlinks=False):
+                dirs[:] = sorted(d for d in dirs if d != TRASH_DIR and not d.startswith('.'))
+                rel_top = os.path.normpath(top)
+                for name in sorted(files):
+                    if name.startswith('.'):
+                        continue
+                    try:
+                        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=tfd)
+                    except OSError:
+                        continue
+                    with os.fdopen(fd, 'rb') as f:
+                        st = os.fstat(f.fileno())
+                        if not stat.S_ISREG(st.st_mode):
+                            continue
+                        arcname = name if rel_top == '.' else os.path.join(rel_top, name)
+                        info = zipfile.ZipInfo(arcname, datetime.fromtimestamp(st.st_mtime).timetuple()[:6])
+                        info.compress_type = zipfile.ZIP_STORED
+                        info.file_size = st.st_size
+                        with zf.open(info, 'w', force_zip64=st.st_size > 2 ** 31) as dst:
+                            shutil.copyfileobj(f, dst, 1024 * 1024)
+                        count += 1
+        return count
+    finally:
+        os.close(dfd)
+
+
+class _Unseekable:
+    """zipfile writes data descriptors when the stream cannot seek (stdout)."""
+
+    def __init__(self, raw: BinaryIO):
+        self.raw = raw
+        self.pos = 0
+
+    def write(self, data: bytes) -> int:
+        self.raw.write(data)
+        self.pos += len(data)
+        return len(data)
+
+    def tell(self) -> int:
+        return self.pos
+
+    def flush(self) -> None:
+        self.raw.flush()
+
+    def seekable(self) -> bool:
+        return False
+
+
 # ── Trash ────────────────────────────────────────────────────────────────────
 
 def _inside(child: str, parent: str) -> bool:
