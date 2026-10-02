@@ -37,8 +37,7 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 - Lightweight: a few MB of code, no PHP and no extra database, and it does not run when nobody uses it.
 
 ### 3. Storage follow-ups
-- Mount a redundant pool degraded when a disk is missing at boot, with a clear warning and a Replace button. This needs a decision on safety first.
-- Quotas per share.
+- Quotas per share. Needs a decision first: Btrfs quotas (qgroups) can slow down big pools noticeably, especially with many snapshots.
 
 ### 4. AI
 - AI chatbot via ollama cloud integration or any other api.

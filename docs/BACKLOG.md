@@ -15,6 +15,28 @@ How to add an entry:
 
 ---
 
+## 2026-10-02 · Pools: start with a missing disk, then restore protection
+
+- **Decision (safety):** at startup a pool whose normal mount fails is
+  mounted with `-o degraded` only when its profile in `pools.json` is
+  redundant (raid1, raid1c3, raid1c4, raid10, raid5, raid6) **and** exactly
+  one disk is missing (`degraded_mount_allowed`). Anything else stays
+  unmounted, as before: no writes to a pool that may be missing data. The
+  helper allows exactly `mount -o degraded -U <uuid> <pool mountpoint>`.
+- The pool records `mounted_degraded_at`; the page says "AlvaOS started the
+  pool without it so your files stay reachable, but it is no longer
+  protected. Replace the disk soon." The existing degraded alert and Replace
+  button do the rest. The flag is cleared at the next normal mount.
+- While degraded, Btrfs writes new data with a single copy. Mixed profiles are
+  now detected (`parse_usage_profile_sets`, `unprotected_profiles`;
+  `parse_usage_profiles` picks the strongest profile per kind so the pool is
+  not shown as "Single"). Once no disk is missing, the pool page offers
+  **"Restore protection"** (`POST /api/v1/storage/pools/<id>/restore-protection`
+  → `balance start -dconvert=raid1,soft -mconvert=raid1,soft`; the helper now
+  accepts `,soft`).
+- **Note for next time:** verify on real hardware: pull a disk from a raid1
+  pool, reboot, check the page, replace, restore protection.
+
 ## 2026-10-02 · Pools: what uses the space
 
 - New section on the pool page, **"What uses the space"**: "Check what uses

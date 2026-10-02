@@ -645,3 +645,11 @@ def test_restore_points_can_be_listed_and_copied_from():
 ])
 def test_listing_and_copying_stay_in_the_data_directories(argv):
     denied(*argv)
+
+
+def test_degraded_mount_and_soft_conversion():
+    allowed('/usr/bin/mount', '-o', 'degraded', '-U', '12345678-1234-1234-1234-123456789abc', '/mnt/alvaos/main')
+    denied('/usr/bin/mount', '-o', 'degraded,rw', '-U', '12345678-1234-1234-1234-123456789abc', '/mnt/alvaos/main')
+    denied('/usr/bin/mount', '-o', 'degraded', '-U', '12345678-1234-1234-1234-123456789abc', '/etc')
+    allowed('/usr/bin/btrfs', 'balance', 'start', '-dconvert=raid1,soft', '-mconvert=raid1,soft', '/mnt/alvaos/main')
+    denied('/usr/bin/btrfs', 'balance', 'start', '-dconvert=raid1,soft,limit=1', '/mnt/alvaos/main')

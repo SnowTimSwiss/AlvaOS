@@ -85,7 +85,7 @@ function poolState(pool) {
             line: {
                 tone: 'bad',
                 text: redundant
-                    ? `${missing || 'A'} disk${missing > 1 ? 's are' : ' is'} missing. The pool still works, but is no longer protected. Replace the disk.`
+                    ? `${missing || 'A'} disk${missing > 1 ? 's are' : ' is'} missing. ${pool.mounted_degraded_at ? 'AlvaOS started the pool without it so your files stay reachable, but' : 'The pool still works, but'} it is no longer protected. Replace the disk soon.`
                     : 'A disk is missing and this pool has no protection. Data on that disk is gone; restore it from a backup.'
             },
             needsReplace: redundant
@@ -383,7 +383,22 @@ function renderPoolOffers(pool, running) {
         rows.push(`<div class="pool-offer warn">${icon('triangle-alert')}<span>The folder structure of this pool is stored with parity, which Btrfs does not recommend: a power cut while writing can damage it. Keeping it mirrored takes a few minutes and little space.</span>
             <button type="button" class="btn-secondary" onclick="mirrorPoolMetadata('${id}')" ${running ? 'disabled title="Wait until the current job is done"' : ''}>Mirror the folder structure</button></div>`);
     }
+    const weak = Object.keys(pool.unprotected || {});
+    const degraded = pool.status === 'degraded' || Number(pool.missing_count || 0) > 0;
+    if (weak.length && !degraded) {
+        rows.push(`<div class="pool-offer warn">${icon('shield-plus')}<span>Some ${weak.includes('data') ? 'files were' : 'of the folder structure was'} written while a disk was missing and ${weak.includes('data') ? 'have' : 'has'} only one copy. Copy ${weak.includes('data') ? 'them' : 'it'} onto the other disks to protect ${weak.includes('data') ? 'them' : 'it'} again.</span>
+            <button type="button" class="btn-secondary" onclick="restorePoolProtection('${id}')" ${running ? 'disabled title="Wait until the current job is done"' : ''}>Restore protection</button></div>`);
+    }
     return rows.join('');
+}
+
+async function restorePoolProtection(poolId) {
+    try {
+        showSuccess((await poolPost(poolId, 'restore-protection', {})).message);
+    } catch (error) {
+        showError(error.message);
+    }
+    loadPools();
 }
 
 async function growPool(poolId) {

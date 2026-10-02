@@ -11,6 +11,7 @@ import platform
 import re
 import subprocess
 import threading
+from datetime import datetime, timezone
 
 from common import CMD, run_sudo_command, ensure_directories, parse_size_to_bytes
 
@@ -440,16 +441,54 @@ def growable_members(members: List[Dict[str, Any]], disks: List[Dict[str, Any]])
 _PROFILE_RE = re.compile(r"^(Data|Metadata|System),\s*([A-Za-z0-9]+)\s*:", re.MULTILINE)
 
 
+# How many disks a profile survives; used to tell the intended profile from
+# chunks Btrfs wrote with less protection (while a disk was missing).
+PROFILE_STRENGTH = {'SINGLE': 0, 'DUP': 0, 'RAID0': 0, 'RAID1': 1, 'RAID10': 1, 'RAID5': 1,
+                    'RAID6': 2, 'RAID1C3': 2, 'RAID1C4': 3}
+REDUNDANT_PROFILES = {'raid1', 'raid1c3', 'raid1c4', 'raid10', 'raid5', 'raid6'}
+
+
+def parse_usage_profile_sets(text: str) -> Dict[str, List[str]]:
+    """Every profile per kind: {'data': ['RAID1', 'SINGLE'], ...}."""
+    sets: Dict[str, List[str]] = {}
+    for kind, profile in _PROFILE_RE.findall(text or ''):
+        bucket = sets.setdefault(kind.lower(), [])
+        if profile.upper() not in bucket:
+            bucket.append(profile.upper())
+    return sets
+
+
 def parse_usage_profiles(text: str) -> Dict[str, str]:
     """`btrfs filesystem usage POOL` → {'data': 'RAID5', 'metadata': 'RAID1', ...}.
 
     Data and metadata can use different profiles (parity pools keep their
     metadata mirrored), so the pool's protection is read from the Data line,
-    not from whatever profile name appears first in the output."""
-    profiles: Dict[str, str] = {}
-    for kind, profile in _PROFILE_RE.findall(text or ''):
-        profiles.setdefault(kind.lower(), profile.upper())
-    return profiles
+    not from whatever profile name appears first in the output. When a kind
+    has several profiles (data written while a disk was missing), the
+    strongest one is what the pool is meant to be."""
+    return {kind: max(found, key=lambda p: PROFILE_STRENGTH.get(p, 0))
+            for kind, found in parse_usage_profile_sets(text).items()}
+
+
+def unprotected_profiles(text: str) -> Dict[str, str]:
+    """Kinds with some chunks weaker than the pool's profile, and the profile
+    to convert them to: {'data': 'raid1'}. System chunks are left out (they
+    follow metadata and converting them needs force)."""
+    result = {}
+    for kind, found in parse_usage_profile_sets(text).items():
+        if kind == 'system' or len(found) < 2:
+            continue
+        best = max(found, key=lambda p: PROFILE_STRENGTH.get(p, 0))
+        if any(PROFILE_STRENGTH.get(p, 0) < PROFILE_STRENGTH.get(best, 0) for p in found):
+            result[kind] = best.lower()
+    return result
+
+
+def degraded_mount_allowed(raid_level: Any, missing_count: int) -> bool:
+    """Start a pool without a missing disk only when that is safe: the pool
+    has redundancy and exactly one disk is gone. Anything worse stays
+    unmounted, so nobody writes to a pool that may be missing data."""
+    return str(raid_level or '').strip().lower() in REDUNDANT_PROFILES and missing_count == 1
 
 
 def parse_scrub_status(text: str) -> Dict[str, Any]:
@@ -719,6 +758,23 @@ def check_disks_for_pool(devices) -> str:
 
 # ── Startup ───────────────────────────────────────────────────────────────────
 
+def _mount_degraded(pool_id: str, pool_info: Dict[str, Any], mount_point: str) -> bool:
+    live = next((p for p in detect_btrfs_pools()[0] if str(p.get('id', '')).lower() == str(pool_id).lower()), None)
+    missing = int((live or {}).get('missing_count') or 0)
+    if not live or not degraded_mount_allowed(pool_info.get('raid_level'), missing):
+        print(f"Pool {pool_info.get('name')} stays unmounted: {missing} disk(s) missing, "
+              f"profile {pool_info.get('raid_level') or 'single'}.")
+        return False
+    res, err = run_sudo_command([CMD['MOUNT'], '-o', 'degraded', '-U', pool_id, mount_point], timeout=60)
+    if err or res is None or res.returncode != 0:
+        print(f"Degraded mount of {pool_info.get('name')} failed: {err}")
+        return False
+    pool_info['mounted_degraded_at'] = datetime.now(timezone.utc).isoformat()
+    save_pools_state({**load_pools_state(), pool_id: pool_info})
+    print(f"Mounted {pool_info.get('name')} without its missing disk. Replace the disk soon.")
+    return True
+
+
 def mount_existing_pools():
     """Mount all known pools on startup"""
     if platform.system() != 'Linux':
@@ -744,6 +800,8 @@ def mount_existing_pools():
             # 2. Check if already mounted
             is_mounted = subprocess.run([CMD['MOUNTPOINT'], '-q', mount_point], check=False).returncode == 0
 
+            if is_mounted and pool_info.pop('mounted_degraded_at', None):
+                save_pools_state({**load_pools_state(), pool_id: pool_info})
             if not is_mounted:
                 print(f"Mounting pool {name}...")
                 mounted = False
@@ -762,7 +820,15 @@ def mount_existing_pools():
                     if err:
                         print(f"Error mounting {name}: {err}")
                     else:
+                        mounted = True
                         print(f"Successfully mounted {name} using device path")
+
+                # STRATEGY 3: a disk is missing. Only for redundant pools with
+                # exactly one disk gone; the pool page then asks for a replacement.
+                if not mounted:
+                    mounted = _mount_degraded(pool_id, pool_info, mount_point)
+                elif pool_info.pop('mounted_degraded_at', None):
+                    save_pools_state({**load_pools_state(), pool_id: pool_info})
             else:
                 print(f"Pool {name} is already mounted.")
 
