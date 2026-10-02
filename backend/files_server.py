@@ -336,6 +336,68 @@ def get_file(token):
     return Response(stream, status=206 if part else 200, mimetype=mime, headers=headers, direct_passthrough=True)
 
 
+THUMB_DIR = os.path.join(STATE_DIR, 'thumbs')
+THUMB_SIZE = 320
+THUMB_MAX_SOURCE_BYTES = 60 * 1024 ** 2
+THUMB_TYPES = ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp')
+
+
+def make_thumbnail(data: bytes) -> Optional[bytes]:
+    """A small JPEG. Decoded here, in this unprivileged process, never in the
+    helper; Pillow's pixel limit stops decompression bombs."""
+    try:
+        from io import BytesIO
+        from PIL import Image, ImageOps
+        with Image.open(BytesIO(data)) as img:
+            img = ImageOps.exif_transpose(img)
+            img.thumbnail((THUMB_SIZE, THUMB_SIZE))
+            if img.mode not in ('RGB', 'L'):
+                img = img.convert('RGB')
+            out = BytesIO()
+            img.save(out, 'JPEG', quality=80)
+            return out.getvalue()
+    except Exception:  # noqa: BLE001 - any broken image just has no thumbnail
+        return None
+
+
+@app.get('/api/thumb')
+def thumbnail():
+    session, refused = need_session()
+    if refused:
+        return refused
+    _, path, rel, bad = target(session, request.args)
+    if bad:
+        return bad
+    if not rel or not rel.lower().endswith(THUMB_TYPES):
+        return jsonify({'error': 'No preview for this file.'}), 404
+    stamp = str(request.args.get('v') or '')
+    key = hashlib.sha256(f'{as_user(session)}|{path}|{stamp}'.encode()).hexdigest()
+    cached = os.path.join(THUMB_DIR, key[:2], key + '.jpg')
+    headers = {'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff'}
+    try:
+        with open(cached, 'rb') as f:
+            return Response(f.read(), mimetype='image/jpeg', headers=headers)
+    except OSError:
+        pass
+    size = files_manager.file_size(path, user=as_user(session))
+    if size is None or size > THUMB_MAX_SOURCE_BYTES:
+        return jsonify({'error': 'No preview for this file.'}), 404
+    stream, _ = files_manager.open_stream(path, user=as_user(session))
+    if stream is None:
+        return jsonify({'error': 'No preview for this file.'}), 404
+    thumb = make_thumbnail(b''.join(stream))
+    if thumb is None:
+        return jsonify({'error': 'No preview for this file.'}), 404
+    try:
+        os.makedirs(os.path.dirname(cached), exist_ok=True)
+        with open(cached + '.tmp', 'wb') as f:
+            f.write(thumb)
+        os.replace(cached + '.tmp', cached)
+    except OSError:
+        pass
+    return Response(thumb, mimetype='image/jpeg', headers=headers)
+
+
 @app.post('/api/upload')
 def upload():
     session, refused = need_session()
