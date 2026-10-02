@@ -11,6 +11,7 @@ from auth_manager import (
     require_auth,
 )
 
+from app_store import validate_install_paths
 from app_services import (
     docker_manager, app_store,
 )
@@ -69,6 +70,11 @@ def install_app():
         except Exception:
             return jsonify({'error': 'Invalid port_mappings format. Use positive integer source/target ports.'}), 400
     
+    from storage_manager import load_pools_state
+    problem = validate_install_paths(pool_path, volume_mappings, port_mappings, load_pools_state())
+    if problem:
+        return jsonify({'error': problem}), 400
+
     success, error = app_store.install_app(
         app_id=app_id,
         pool_path=pool_path,

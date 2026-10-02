@@ -39,6 +39,38 @@ def summarize_app_needs(app_data: Dict) -> Dict:
     return {'ports': ports, 'folders': folders}
 
 
+def validate_install_paths(pool_path, volume_mappings, port_mappings, pools_state) -> Optional[str]:
+    """Where an app may keep its files: on a managed pool, and any folder of
+    yours it uses must be inside a pool too. Returns a sentence, or None.
+
+    The privilege helper already refuses system paths in compose files; this
+    says no earlier and more clearly, and keeps apps on the pools."""
+    mounts = [os.path.normpath(str(p.get('mount_point')))
+              for p in (pools_state or {}).values()
+              if isinstance(p, dict) and p.get('mount_point') and p.get('mount_point') != '/']
+
+    def inside_a_pool(path: str) -> bool:
+        if not isinstance(path, str) or not path.startswith('/') or '..' in path.split('/'):
+            return False
+        clean = os.path.normpath(path)
+        return any(clean == m or clean.startswith(m.rstrip('/') + '/') for m in mounts)
+
+    if os.path.normpath(str(pool_path or '')) not in mounts:
+        return 'Choose one of your storage pools for this app.'
+    if volume_mappings:
+        if not isinstance(volume_mappings, dict):
+            return 'Folders must be given as container path: folder on the NAS.'
+        for container_path, host_path in volume_mappings.items():
+            if not str(container_path).startswith('/'):
+                return f'"{container_path}" is not a folder inside the app.'
+            if not inside_a_pool(host_path):
+                return f'{host_path} is not a folder on one of your storage pools.'
+    for internal, external in (port_mappings or {}).items():
+        if not (0 < int(internal) < 65536 and 0 < int(external) < 65536):
+            return 'Ports are numbers from 1 to 65535.'
+    return None
+
+
 class AppStore:
     """Manages the AlvaOS app catalog and installation"""
     

@@ -68,6 +68,18 @@
 
         .app-icon-image.loaded { opacity: 1; background: var(--bg-card); }
 
+        .install-folders { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+        .install-folder label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px; }
+        .install-folder select { width: 100%; padding: 8px 10px; }
+        .install-hint { font-size: 0.8rem; color: var(--text-secondary); margin: 4px 0 0; line-height: 1.4; }
+        .install-advanced { margin-top: 16px; }
+        .install-advanced summary { cursor: pointer; font-size: 0.85rem; color: var(--accent-primary); }
+        .install-port-fields { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+        .install-port { display: grid; grid-template-columns: 1fr 120px; align-items: center; gap: 10px; font-size: 0.85rem; }
+        .install-port input { width: 100%; padding: 8px 10px; }
+        .install-port small { display: block; color: var(--text-secondary); font-size: 0.78rem; }
+        .install-port small.warn { color: var(--accent-warning); }
+
         .app-needs {
             font-size: 0.8rem;
             color: var(--text-secondary);
@@ -946,20 +958,24 @@
                 </div>
             </div>
 
-            <div class="setting-group">
-                <label class="setting-label">Storage Pool</label>
-                <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 8px;">Select a pool to host
-                    app data and containers.</p>
+            <div class="setting-group install-files">
+                <label class="setting-label" for="install-pool-select">Where it keeps its files</label>
                 <select id="install-pool-select" style="width: 100%; padding: 10px;"></select>
+                <div id="install-folders" class="install-folders"></div>
             </div>
 
-            <div id="install-env-fields-group" class="setting-group" style="margin-top: 16px; display: none;">
-                <label class="setting-label">App Settings</label>
-                <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 8px;">
-                    Set credentials and optional environment values for this app.
-                </p>
+            <details id="install-ports" class="install-advanced" hidden>
+                <summary>Advanced: ports</summary>
+                <p class="install-hint">The port is the number after the address, like :8096. Change it if another program already uses it.</p>
+                <div id="install-port-fields" class="install-port-fields"></div>
+            </details>
+
+            <p id="install-env-note" class="install-hint" style="margin-top: 16px; display: none;">Passwords the app needs inside were created for you and stay with the app.</p>
+            <details id="install-env-fields-group" class="install-advanced" style="display: none;">
+                <summary>Advanced: app settings</summary>
+                <p class="install-hint" style="margin-bottom: 8px;">Values the app reads when it starts. The defaults work for most homes.</p>
                 <div id="install-env-fields" style="display: flex; flex-direction: column; gap: 10px;"></div>
-            </div>
+            </details>
 
             <div id="install-port-warning"
                 style="margin-top: 16px; padding: 12px; background: var(--accent-danger-soft); border: 1px solid var(--accent-danger); border-radius: var(--radius-default); display: none;">
