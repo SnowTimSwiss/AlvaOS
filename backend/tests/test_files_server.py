@@ -119,3 +119,25 @@ def test_too_many_attempts_are_slowed_down(client):
     for _ in range(fs.LOGIN_MAX_ATTEMPTS):
         sign_in(client, "anna", "wrong")
     assert sign_in(client, "anna", "anna-pass").status_code == 429
+
+
+def test_thumbnails_are_made_here_and_cached(client, monkeypatch, tmp_path):
+    from io import BytesIO
+    from PIL import Image
+    buf = BytesIO()
+    Image.new("RGB", (1200, 800), (200, 100, 50)).save(buf, "JPEG")
+    reads = []
+    monkeypatch.setattr(fs, "THUMB_DIR", str(tmp_path / "thumbs"))
+    monkeypatch.setattr(files_manager, "file_size", lambda path, user=None: len(buf.getvalue()))
+    monkeypatch.setattr(files_manager, "open_stream",
+                        lambda path, part=None, user=None: (reads.append(user) or iter([buf.getvalue()]), ""))
+    sign_in(client, "ben", "ben-pass")
+    first = client.get("/api/thumb?share=Family&path=a.jpg&v=1")
+    assert first.status_code == 200 and first.mimetype == "image/jpeg"
+    assert max(Image.open(BytesIO(first.data)).size) == fs.THUMB_SIZE
+    assert client.get("/api/thumb?share=Family&path=a.jpg&v=1").data == first.data
+    assert reads == ["ben"]                       # second time from the cache
+    assert client.get("/api/thumb?share=Family&path=notes.txt").status_code == 404
+    assert client.get("/api/thumb?share=Anna&path=a.jpg").status_code == 404     # not Ben's share
+    monkeypatch.setattr(files_manager, "open_stream", lambda path, part=None, user=None: (iter([b"not an image"]), ""))
+    assert client.get("/api/thumb?share=Family&path=b.jpg").status_code == 404

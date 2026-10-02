@@ -1,0 +1,649 @@
+// AlvaOS Files: the shared folders as an app. Sign in with your share
+// password; everything you do runs as you on the NAS, so you see and change
+// exactly what you may over the network.
+(function () {
+    'use strict';
+
+    // ── Icons (Lucide, ISC) ────────────────────────────────────────────────
+    const P = {
+        folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+        'folder-fill': '<path fill="currentColor" stroke="none" d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+        file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
+        doc: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+        pdf: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M9 15h6"/><path d="M9 11h6"/>',
+        image: '<rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
+        video: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="m10 8 6 4-6 4Z"/>',
+        audio: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+        archive: '<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
+        trash: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
+        menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+        left: '<path d="m15 18-6-6 6-6"/>',
+        right: '<path d="m9 18 6-6-6-6"/>',
+        search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+        grid: '<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>',
+        list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+        plus: '<path d="M5 12h14M12 5v14"/>',
+        upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/>',
+        'folder-plus': '<path d="M12 10v6M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+        x: '<path d="M18 6 6 18M6 6l12 12"/>',
+        download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
+        pen: '<path d="M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/>',
+        more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+        open: '<path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+        lock: '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+        undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
+    };
+    const icon = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[name] || P.file}</svg>`;
+    const paintIcons = (root) => (root || document).querySelectorAll('[data-icon]').forEach((el) => { if (!el.firstChild) el.innerHTML = icon(el.dataset.icon); });
+
+    const $ = (id) => document.getElementById(id);
+    const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    const KINDS = [
+        ['image', /\.(jpe?g|png|gif|webp|avif|bmp|heic)$/i], ['video', /\.(mp4|webm|m4v|mov|mkv|avi)$/i],
+        ['audio', /\.(mp3|ogg|wav|flac|m4a|aac)$/i], ['pdf', /\.pdf$/i],
+        ['doc', /\.(txt|md|log|csv|json|xml|ya?ml|ini|conf|cfg|docx?|odt|xlsx?|ods|pptx?|odp|rtf)$/i],
+        ['archive', /\.(zip|tar|gz|tgz|7z|rar|bz2|xz)$/i],
+    ];
+    const kindOf = (e) => (e.type === 'folder' ? 'folder' : (KINDS.find(([, re]) => re.test(e.name)) || ['file'])[0]);
+    const THUMB = /\.(jpe?g|png|gif|webp|bmp)$/i;
+    const VIEW = { image: /\.(jpe?g|png|gif|webp|avif|bmp)$/i, video: /\.(mp4|webm|m4v)$/i, audio: /\.(mp3|ogg|wav|flac|m4a)$/i, text: /\.(txt|md|log|csv|json|xml|ya?ml|ini|conf|cfg)$/i };
+
+    function bytes(n) {
+        n = Number(n) || 0;
+        if (n < 1024) return `${n} B`;
+        const u = ['KB', 'MB', 'GB', 'TB']; let v = n / 1024; let i = 0;
+        while (v >= 1024 && i < u.length - 1) { v /= 1024; i += 1; }
+        return `${v >= 100 ? Math.round(v) : v.toFixed(1)} ${u[i]}`;
+    }
+    function when(iso) {
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return '';
+        const today = new Date();
+        if (d.toDateString() === today.toDateString()) return `Today ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        return d.toLocaleDateString([], { day: 'numeric', month: 'short', year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
+    }
+
+    // ── Talking to the NAS ─────────────────────────────────────────────────
+    async function api(path, options = {}) {
+        const opts = { credentials: 'same-origin', ...options, headers: { ...(options.headers || {}) } };
+        if (opts.method && opts.method !== 'GET') opts.headers['X-AlvaOS-Files'] = '1';
+        if (opts.json !== undefined) {
+            opts.headers['Content-Type'] = 'application/json';
+            opts.body = JSON.stringify(opts.json);
+            delete opts.json;
+        }
+        const res = await fetch(`/api/${path}`, opts);
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401 && data.signed_out) { showSignin(); throw new Error('Please sign in.'); }
+        if (!res.ok) { const err = new Error(data.error || 'That did not work.'); err.data = data; throw err; }
+        return data;
+    }
+
+    function toast(text, kind) {
+        const el = document.createElement('div');
+        el.className = `toast ${kind || ''}`;
+        el.textContent = text;
+        $('toasts').appendChild(el);
+        setTimeout(() => el.remove(), kind === 'error' ? 6000 : 3500);
+    }
+
+    // ── State ──────────────────────────────────────────────────────────────
+    let me = null;
+    let share = '';
+    let path = '';
+    let entries = [];
+    let shown = [];
+    let selected = new Set();
+    let anchor = -1;
+    let view = 'grid';
+    try { view = localStorage.getItem('alvaos_files_view') || 'grid'; } catch (_e) { /* storage off */ }
+    let loadId = 0;
+    const access = () => (me?.shares || []).find((s) => s.name === share)?.access || 'read';
+
+    // ── Sign in ────────────────────────────────────────────────────────────
+    function showSignin() {
+        $('app').hidden = true;
+        $('signin').hidden = false;
+        $('in-user').focus();
+    }
+
+    $('signin-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = $('signin-btn');
+        btn.disabled = true;
+        $('signin-error').textContent = '';
+        try {
+            await api('login', { method: 'POST', json: { username: $('in-user').value.trim(), password: $('in-pass').value, code: $('in-code').value.trim() } });
+            $('in-pass').value = '';
+            $('in-code').value = '';
+            await start();
+        } catch (err) {
+            if (err.data?.needs_code) {
+                $('field-code').hidden = false;
+                $('signin-sub').textContent = 'One more step: the code from your authenticator app.';
+                if (err.data.error) $('signin-error').textContent = err.data.error;
+                $('in-code').focus();
+            } else {
+                $('signin-error').textContent = err.message;
+            }
+        } finally {
+            btn.disabled = false;
+        }
+    });
+
+    $('signout').addEventListener('click', async () => {
+        await api('logout', { method: 'POST' }).catch(() => {});
+        me = null;
+        showSignin();
+    });
+
+    // ── Navigation and history ─────────────────────────────────────────────
+    function hashFor(s, p) {
+        const q = new URLSearchParams();
+        if (s) q.set('share', s);
+        if (p) q.set('path', p);
+        return `#${q}`;
+    }
+    function go(s, p, push = true) {
+        share = s;
+        path = p || '';
+        selected = new Set();
+        anchor = -1;
+        if (push && location.hash !== hashFor(share, path)) history.pushState(null, '', hashFor(share, path));
+        closeSide();
+        renderSide();
+        load();
+    }
+    window.addEventListener('popstate', () => {
+        const q = new URLSearchParams(location.hash.slice(1));
+        const s = q.get('share');
+        if (s && me?.shares.some((x) => x.name === s)) go(s, q.get('path') || '', false);
+    });
+    $('back-btn').addEventListener('click', () => history.back());
+    $('fwd-btn').addEventListener('click', () => history.forward());
+    const up = () => { if (path) go(share, path.split('/').slice(0, -1).join('/')); };
+
+    function renderSide() {
+        $('share-list').innerHTML = (me?.shares || []).map((s) => `
+            <button type="button" class="side-item${s.name === share ? ' active' : ''}" data-share="${esc(s.name)}">
+                <span class="ic">${icon('folder-fill')}</span><span>${esc(s.name)}</span>
+                ${s.access === 'read' ? `<span class="ro" title="You can look, not change">${icon('lock').replace('<svg', '<svg width="13" height="13"')}</span>` : ''}
+            </button>`).join('');
+        const parts = path ? path.split('/') : [];
+        $('crumbs').innerHTML = [`<button type="button" class="crumb" data-path="">${esc(share)}</button>`,
+            ...parts.map((p, i) => `<span class="sep">›</span><button type="button" class="crumb" data-path="${esc(parts.slice(0, i + 1).join('/'))}">${esc(p)}</button>`)].join('');
+        const canWrite = access() === 'write';
+        $('new-btn').hidden = !canWrite;
+        $('back-btn').disabled = false;
+    }
+    $('share-list').addEventListener('click', (e) => { const b = e.target.closest('[data-share]'); if (b) go(b.dataset.share, ''); });
+    $('crumbs').addEventListener('click', (e) => { const b = e.target.closest('[data-path]'); if (b) go(share, b.dataset.path); });
+
+    const openSide = () => { $('side').classList.add('open'); $('scrim').hidden = false; };
+    function closeSide() { $('side').classList.remove('open'); $('scrim').hidden = true; }
+    $('menu-btn').addEventListener('click', openSide);
+    $('scrim').addEventListener('click', closeSide);
+
+    // ── Listing ────────────────────────────────────────────────────────────
+    async function load() {
+        const id = ++loadId;
+        $('items').className = `items ${view}`;
+        $('items').innerHTML = '<div class="empty">Loading…</div>';
+        $('status').textContent = '';
+        try {
+            const data = await api(`list?share=${encodeURIComponent(share)}&path=${encodeURIComponent(path)}`);
+            if (id !== loadId) return;
+            entries = (data.entries || []).filter((e) => !e.name.startsWith('.') && (e.type === 'file' || e.type === 'folder'));
+            render();
+        } catch (err) {
+            if (id !== loadId) return;
+            entries = [];
+            $('items').innerHTML = `<div class="empty">${icon('lock')}<strong>Cannot open this folder</strong>${esc(err.message)}</div>`;
+        }
+    }
+
+    function render() {
+        const q = $('search').value.trim().toLowerCase();
+        shown = entries.filter((e) => !q || e.name.toLowerCase().includes(q));
+        shown.sort((a, b) => (a.type === 'folder' ? 0 : 1) - (b.type === 'folder' ? 0 : 1) || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+        const items = $('items');
+        items.className = `items ${view}`;
+        $('view-grid').setAttribute('aria-pressed', view === 'grid');
+        $('view-list').setAttribute('aria-pressed', view === 'list');
+        if (!shown.length) {
+            items.innerHTML = q
+                ? `<div class="empty">${icon('search')}<strong>Nothing found</strong>No name in this folder contains "${esc(q)}".</div>`
+                : `<div class="empty">${icon('folder')}<strong>This folder is empty</strong>${access() === 'write' ? 'Drop files here, or use New › Upload files.' : ''}</div>`;
+        } else if (view === 'grid') {
+            items.innerHTML = shown.map((e, i) => {
+                const k = kindOf(e);
+                const thumb = THUMB.test(e.name)
+                    ? `<div class="thumb"><img loading="lazy" decoding="async" alt="" src="/api/thumb?share=${encodeURIComponent(share)}&path=${encodeURIComponent(rel(e))}&v=${encodeURIComponent(e.modified_at || '')}" data-fallback="${k}"></div>`
+                    : `<div class="thumb icon kind-${k}">${icon(k === 'folder' ? 'folder-fill' : k)}</div>`;
+                return `<div class="tile" data-i="${i}" title="${esc(e.name)}">${thumb}<div class="name">${esc(e.name)}</div>
+                    <button type="button" class="more" data-more="${i}" aria-label="More for ${esc(e.name)}">${icon('more')}</button></div>`;
+            }).join('');
+        } else {
+            items.innerHTML = `<div class="head"><span></span><span>Name</span><span style="text-align:right">Size</span><span>Modified</span><span></span></div>` + shown.map((e, i) => {
+                const k = kindOf(e);
+                const lead = THUMB.test(e.name)
+                    ? `<img class="rthumb" loading="lazy" alt="" src="/api/thumb?share=${encodeURIComponent(share)}&path=${encodeURIComponent(rel(e))}&v=${encodeURIComponent(e.modified_at || '')}" data-fallback="${k}">`
+                    : `<span class="ricon kind-${k}">${icon(k === 'folder' ? 'folder-fill' : k)}</span>`;
+                const size = e.type === 'folder' ? '' : bytes(e.size_bytes);
+                return `<div class="row" data-i="${i}">${lead}<div class="rtext"><div class="rname">${esc(e.name)}</div><div class="rsub">${esc([size, when(e.modified_at)].filter(Boolean).join(' · '))}</div></div>
+                    <span class="rsize">${esc(size)}</span><span class="rdate">${esc(when(e.modified_at))}</span>
+                    <button type="button" class="more" data-more="${i}" aria-label="More for ${esc(e.name)}">${icon('more')}</button></div>`;
+            }).join('');
+        }
+        items.querySelectorAll('img[data-fallback]').forEach((img) => img.addEventListener('error', () => {
+            const k = img.dataset.fallback;
+            const box = document.createElement(img.classList.contains('rthumb') ? 'span' : 'div');
+            box.className = img.classList.contains('rthumb') ? `ricon kind-${k}` : `thumb icon kind-${k}`;
+            box.innerHTML = icon(k);
+            (img.classList.contains('rthumb') ? img : img.parentElement).replaceWith(box);
+        }, { once: true }));
+        paintSelection();
+    }
+
+    const rel = (e) => (path ? `${path}/${e.name}` : e.name);
+
+    function paintSelection() {
+        $('items').querySelectorAll('[data-i]').forEach((el) => el.classList.toggle('selected', selected.has(shown[Number(el.dataset.i)]?.name)));
+        const n = selected.size;
+        $('selbar').hidden = n === 0;
+        const files = shown.filter((e) => e.type === 'file');
+        const folders = shown.length - files.length;
+        if (n) {
+            const sel = shown.filter((e) => selected.has(e.name));
+            const size = sel.filter((e) => e.type === 'file').reduce((s, e) => s + (e.size_bytes || 0), 0);
+            $('sel-count').textContent = `${n} selected${size ? ` · ${bytes(size)}` : ''}`;
+            const canWrite = access() === 'write';
+            $('sel-rename').hidden = !canWrite || n !== 1;
+            $('sel-delete').hidden = !canWrite;
+            $('sel-download').hidden = !sel.some((e) => e.type === 'file');
+        }
+        $('status').textContent = [folders ? `${folders} folder${folders === 1 ? '' : 's'}` : '',
+            files.length ? `${files.length} file${files.length === 1 ? '' : 's'} (${bytes(files.reduce((s, e) => s + (e.size_bytes || 0), 0))})` : '',
+            access() === 'read' ? 'You can look at this folder, not change it' : ''].filter(Boolean).join(' · ');
+    }
+
+    // ── Selecting and opening ──────────────────────────────────────────────
+    function select(i, e) {
+        const name = shown[i].name;
+        if (e && (e.ctrlKey || e.metaKey)) {
+            if (selected.has(name)) selected.delete(name); else selected.add(name);
+            anchor = i;
+        } else if (e && e.shiftKey && anchor >= 0) {
+            const [a, b] = [Math.min(anchor, i), Math.max(anchor, i)];
+            selected = new Set(shown.slice(a, b + 1).map((x) => x.name));
+        } else {
+            selected = new Set([name]);
+            anchor = i;
+        }
+        paintSelection();
+    }
+
+    const coarse = window.matchMedia('(pointer: coarse)');
+    $('items').addEventListener('click', (e) => {
+        const more = e.target.closest('[data-more]');
+        if (more) {
+            e.stopPropagation();
+            const i = Number(more.dataset.more);
+            if (!selected.has(shown[i].name)) select(i);
+            const r = more.getBoundingClientRect();
+            showContext(r.left, r.bottom + 4);
+            return;
+        }
+        const item = e.target.closest('[data-i]');
+        if (!item) { selected = new Set(); paintSelection(); return; }
+        const i = Number(item.dataset.i);
+        // Touch: a tap opens, like on a phone. Mouse: click selects, double-click opens.
+        if (coarse.matches && !selected.size) open(shown[i]);
+        else select(i, e);
+    });
+    $('items').addEventListener('dblclick', (e) => {
+        const item = e.target.closest('[data-i]');
+        if (item) open(shown[Number(item.dataset.i)]);
+    });
+    $('items').addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        const item = e.target.closest('[data-i]');
+        if (item) {
+            const i = Number(item.dataset.i);
+            if (!selected.has(shown[i].name)) select(i);
+        } else {
+            selected = new Set();
+            paintSelection();
+        }
+        showContext(e.clientX, e.clientY);
+    });
+
+    function selectedEntries() { return shown.filter((e) => selected.has(e.name)); }
+
+    async function open(entry) {
+        if (!entry) return;
+        if (entry.type === 'folder') { go(share, rel(entry)); return; }
+        if (/\.pdf$/i.test(entry.name)) {
+            const w = window.open('', '_blank');
+            try { const url = await link(entry, true); if (w) w.location.href = url; else location.href = url; } catch (err) { if (w) w.close(); toast(err.message, 'error'); }
+            return;
+        }
+        const kind = Object.keys(VIEW).find((k) => VIEW[k].test(entry.name));
+        if (kind && !(kind === 'text' && entry.size_bytes > 2 * 1024 * 1024)) { showViewer(entry, kind); return; }
+        download([entry]);
+    }
+
+    async function link(entry, inline) {
+        return (await api('link', { method: 'POST', json: { share, path: rel(entry), inline: !!inline } })).url;
+    }
+
+    async function download(list) {
+        for (const entry of list.filter((e) => e.type === 'file')) {
+            try {
+                const a = document.createElement('a');
+                a.href = await link(entry, false);
+                a.download = entry.name;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        }
+    }
+
+    // ── Context menu ───────────────────────────────────────────────────────
+    function showContext(x, y) {
+        const menu = $('ctx');
+        const sel = selectedEntries();
+        const canWrite = access() === 'write';
+        const one = sel.length === 1 ? sel[0] : null;
+        const rows = [];
+        if (one) rows.push(`<button type="button" data-ctx="open">${icon(one.type === 'folder' ? 'folder' : 'open')}Open</button>`);
+        if (sel.some((e) => e.type === 'file')) rows.push(`<button type="button" data-ctx="download">${icon('download')}Download</button>`);
+        if (canWrite && one) rows.push(`<button type="button" data-ctx="rename">${icon('pen')}Rename</button>`);
+        if (canWrite && sel.length) rows.push('<hr>', `<button type="button" class="danger" data-ctx="delete">${icon('trash')}Delete</button>`);
+        if (!sel.length && canWrite) rows.push(`<button type="button" data-ctx="upload">${icon('upload')}Upload files</button>`, `<button type="button" data-ctx="folder">${icon('folder-plus')}New folder</button>`);
+        if (!rows.length) return;
+        menu.innerHTML = rows.join('');
+        menu.hidden = false;
+        const w = menu.offsetWidth;
+        const h = menu.offsetHeight;
+        menu.style.left = `${Math.max(8, Math.min(x, innerWidth - w - 8))}px`;
+        menu.style.top = `${Math.max(8, Math.min(y, innerHeight - h - 8))}px`;
+        menu.querySelector('button')?.focus();
+    }
+    const hideMenus = () => { $('ctx').hidden = true; $('new-menu').hidden = true; };
+    document.addEventListener('click', (e) => { if (!e.target.closest('.menu') && !e.target.closest('#new-btn')) hideMenus(); });
+    $('ctx').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-ctx]');
+        if (!b) return;
+        hideMenus();
+        action(b.dataset.ctx);
+    });
+
+    function action(name) {
+        const sel = selectedEntries();
+        if (name === 'open') open(sel[0]);
+        if (name === 'download') download(sel);
+        if (name === 'rename' && sel.length === 1) rename(sel[0]);
+        if (name === 'delete' && sel.length) remove(sel);
+        if (name === 'upload') $('file-input').click();
+        if (name === 'folder') newFolder();
+    }
+
+    $('new-btn').addEventListener('click', () => { $('new-menu').hidden = !$('new-menu').hidden; });
+    $('new-menu').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-new]');
+        if (!b) return;
+        hideMenus();
+        action(b.dataset.new === 'upload' ? 'upload' : 'folder');
+    });
+    $('sel-clear').addEventListener('click', () => { selected = new Set(); paintSelection(); });
+    $('sel-download').addEventListener('click', () => action('download'));
+    $('sel-rename').addEventListener('click', () => action('rename'));
+    $('sel-delete').addEventListener('click', () => action('delete'));
+    $('view-grid').addEventListener('click', () => setView('grid'));
+    $('view-list').addEventListener('click', () => setView('list'));
+    function setView(v) { view = v; try { localStorage.setItem('alvaos_files_view', v); } catch (_e) { /* off */ } render(); }
+    $('search').addEventListener('input', render);
+
+    // ── Dialogs ────────────────────────────────────────────────────────────
+    function ask({ title, text, value, okLabel, danger }) {
+        return new Promise((resolve) => {
+            const wrap = $('dialog');
+            const hasInput = value !== undefined;
+            wrap.innerHTML = `<form class="dialog" novalidate><h2>${esc(title)}</h2>${text ? `<p>${esc(text)}</p>` : ''}
+                ${hasInput ? `<input id="dlg-input" value="${esc(value)}" autocomplete="off" spellcheck="false">` : ''}
+                <div class="actions"><button type="button" class="btn" data-cancel>Cancel</button><button type="submit" class="btn primary${danger ? ' danger-fill' : ''}">${esc(okLabel)}</button></div></form>`;
+            wrap.hidden = false;
+            const input = wrap.querySelector('#dlg-input');
+            const done = (v) => { wrap.hidden = true; wrap.innerHTML = ''; resolve(v); };
+            wrap.querySelector('[data-cancel]').onclick = () => done(null);
+            wrap.onclick = (e) => { if (e.target === wrap) done(null); };
+            wrap.querySelector('form').onsubmit = (e) => { e.preventDefault(); done(hasInput ? input.value.trim() : true); };
+            if (input) {
+                input.focus();
+                const dot = value.lastIndexOf('.');
+                input.setSelectionRange(0, dot > 0 ? dot : value.length);
+            } else {
+                wrap.querySelector('[type=submit]').focus();
+            }
+        });
+    }
+
+    async function rename(entry) {
+        const name = await ask({ title: 'Rename', value: entry.name, okLabel: 'Rename' });
+        if (!name || name === entry.name) return;
+        try {
+            await api('rename', { method: 'POST', json: { share, path, old: entry.name, new: name } });
+            selected = new Set([name]);
+            load();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
+    async function newFolder() {
+        const name = await ask({ title: 'New folder', value: 'New folder', okLabel: 'Create' });
+        if (!name) return;
+        try {
+            await api('mkdir', { method: 'POST', json: { share, path, name } });
+            selected = new Set([name]);
+            load();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
+    async function remove(list) {
+        const what = list.length === 1 ? `"${list[0].name}"` : `${list.length} items`;
+        if (!await ask({ title: `Delete ${what}?`, text: 'Deleted items go to the trash and can be put back for 30 days.', okLabel: 'Delete', danger: true })) return;
+        try {
+            const res = await api('delete', { method: 'POST', json: { share, path, names: list.map((e) => e.name) } });
+            toast(res.failed?.length ? `Some items were not deleted: ${res.failed[0]}` : `${what} moved to the trash.`, res.failed?.length ? 'error' : '');
+            selected = new Set();
+            load();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
+    // ── Trash ──────────────────────────────────────────────────────────────
+    $('trash-nav').addEventListener('click', async () => {
+        closeSide();
+        const forShare = share;
+        const wrap = $('dialog');
+        wrap.hidden = false;
+        const paint = async () => {
+            let items = [];
+            let error = '';
+            try { items = (await api(`trash?share=${encodeURIComponent(forShare)}`)).items || []; } catch (err) { error = err.message; }
+            wrap.innerHTML = `<div class="dialog wide"><h2>Trash of ${esc(forShare)}</h2><p>Deleted items stay here for 30 days.</p>
+                <div class="trash-list">${error ? esc(error) : items.length ? items.map((it) => `<div class="trash-row"><div><strong>${esc(it.name)}</strong>
+                <small>From ${esc([forShare, ...(it.folder ? it.folder.split('/') : [])].join(' › '))} · ${esc(when(it.deleted_at))}${it.type === 'file' ? ` · ${bytes(it.size_bytes)}` : ''}</small></div>
+                ${access() === 'write' ? `<button type="button" class="btn" data-restore="${esc(it.id)}">${icon('undo')}Put back</button>` : ''}</div>`).join('') : '<div class="empty" style="padding:30px 0">The trash is empty.</div>'}</div>
+                <div class="actions">${me?.role === 'admin' && items.length ? '<button type="button" class="btn danger" data-empty>Empty trash</button>' : ''}<button type="button" class="btn primary" data-close>Done</button></div></div>`;
+            wrap.querySelector('[data-close]').onclick = () => { wrap.hidden = true; wrap.innerHTML = ''; if (share === forShare) load(); };
+            wrap.querySelectorAll('[data-restore]').forEach((b) => { b.onclick = async () => {
+                b.disabled = true;
+                try { const r = await api('trash/restore', { method: 'POST', json: { share: forShare, id: b.dataset.restore } }); toast(`"${r.name}" is back.`); } catch (err) { toast(err.message, 'error'); }
+                paint();
+            }; });
+            const empty = wrap.querySelector('[data-empty]');
+            if (empty) empty.onclick = async () => {
+                if (!window.confirm(`Empty the trash of ${forShare}? This cannot be undone.`)) return;
+                try { await api('trash/empty', { method: 'POST', json: { share: forShare } }); } catch (err) { toast(err.message, 'error'); }
+                paint();
+            };
+        };
+        wrap.innerHTML = '<div class="dialog"><p>Loading…</p></div>';
+        paint();
+    });
+
+    // ── Upload ─────────────────────────────────────────────────────────────
+    const uploads = [];
+    function paintUploads() {
+        const live = uploads.filter((u) => !u.hideAt || u.hideAt > Date.now());
+        $('uploads').hidden = !live.length;
+        $('uploads').innerHTML = live.map((u) => `<div class="up-row ${u.state}"><div class="up-name"><span>${esc(u.name)}</span><span>${esc(u.label)}</span></div><div class="up-bar"><span style="width:${u.pct}%"></span></div></div>`).join('');
+    }
+    function uploadOne(file, t) {
+        return new Promise((resolve) => {
+            const u = { name: file.name, pct: 0, state: '', label: 'Waiting…' };
+            uploads.push(u);
+            paintUploads();
+            const finish = (state, label) => {
+                Object.assign(u, { state, label, pct: 100, hideAt: Date.now() + (state === 'done' ? 4000 : 12000) });
+                paintUploads();
+                setTimeout(paintUploads, state === 'done' ? 4100 : 12100);
+                resolve(state === 'done');
+            };
+            if (file.size > (me?.upload_limit_bytes || 4 * 1024 ** 3)) { finish('failed', 'Over 4 GB: use the shared folder'); return; }
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', `/api/upload?${new URLSearchParams({ share: t.share, path: t.path, name: file.name })}`);
+            xhr.setRequestHeader('X-AlvaOS-Files', '1');
+            xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+            xhr.upload.onprogress = (e) => { if (e.lengthComputable) { u.pct = Math.round((e.loaded / e.total) * 100); u.label = `${u.pct}%`; paintUploads(); } };
+            xhr.onload = () => {
+                let msg = '';
+                try { msg = JSON.parse(xhr.responseText || '{}').error || ''; } catch (_e) { /* not JSON */ }
+                if (xhr.status >= 200 && xhr.status < 300) finish('done', 'Done'); else finish('failed', msg || 'Did not upload');
+            };
+            xhr.onerror = () => finish('failed', 'Connection lost');
+            xhr.send(file);
+        });
+    }
+    async function uploadFiles(files) {
+        if (!files.length) return;
+        if (access() !== 'write') { toast(`You can only look at "${share}".`, 'error'); return; }
+        const t = { share, path };
+        let ok = 0;
+        for (const f of files) if (await uploadOne(f, t)) ok += 1;
+        if (ok && t.share === share && t.path === path) load();
+    }
+    $('file-input').addEventListener('change', (e) => { uploadFiles(Array.from(e.target.files || [])); e.target.value = ''; });
+    let depth = 0;
+    const content = $('content');
+    const hasFiles = (e) => Array.from(e.dataTransfer?.types || []).includes('Files');
+    content.addEventListener('dragenter', (e) => {
+        if (!hasFiles(e) || access() !== 'write') return;
+        e.preventDefault();
+        depth += 1;
+        $('drop-text').textContent = `Drop to upload to ${[share, ...(path ? path.split('/') : [])].join(' › ')}`;
+        $('drop').hidden = false;
+    });
+    content.addEventListener('dragover', (e) => { if (hasFiles(e)) e.preventDefault(); });
+    content.addEventListener('dragleave', () => { depth = Math.max(0, depth - 1); if (!depth) $('drop').hidden = true; });
+    content.addEventListener('drop', (e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        depth = 0;
+        $('drop').hidden = true;
+        uploadFiles(Array.from(e.dataTransfer.files || []));
+    });
+
+    // ── Viewer ─────────────────────────────────────────────────────────────
+    let viewing = -1;
+    const viewable = (e) => e.type === 'file' && ['image', 'video', 'audio'].some((k) => VIEW[k].test(e.name));
+    async function showViewer(entry, kind) {
+        viewing = shown.indexOf(entry);
+        $('viewer-title').textContent = entry.name;
+        $('viewer-body').innerHTML = '<div>Loading…</div>';
+        $('viewer').hidden = false;
+        $('viewer-prev').hidden = neighbour(-1) < 0;
+        $('viewer-next').hidden = neighbour(1) < 0;
+        $('viewer-download').onclick = () => download([entry]);
+        try {
+            const url = await link(entry, true);
+            if (shown[viewing] !== entry) return;
+            if (kind === 'image') $('viewer-body').innerHTML = `<img src="${esc(url)}" alt="${esc(entry.name)}">`;
+            else if (kind === 'video') $('viewer-body').innerHTML = `<video src="${esc(url)}" controls autoplay playsinline></video>`;
+            else if (kind === 'audio') $('viewer-body').innerHTML = `<audio src="${esc(url)}" controls autoplay></audio>`;
+            else { const pre = document.createElement('pre'); pre.textContent = await (await fetch(url)).text(); $('viewer-body').replaceChildren(pre); }
+        } catch (err) {
+            $('viewer-body').textContent = err.message;
+        }
+    }
+    function neighbour(step) {
+        for (let i = viewing + step; i >= 0 && i < shown.length; i += step) if (viewable(shown[i])) return i;
+        return -1;
+    }
+    function step(d) { const i = neighbour(d); if (i >= 0) showViewer(shown[i], Object.keys(VIEW).find((k) => VIEW[k].test(shown[i].name))); }
+    function closeViewer() { $('viewer').hidden = true; $('viewer-body').innerHTML = ''; viewing = -1; }
+    $('viewer-close').addEventListener('click', closeViewer);
+    $('viewer-prev').addEventListener('click', () => step(-1));
+    $('viewer-next').addEventListener('click', () => step(1));
+
+    // ── Keyboard ───────────────────────────────────────────────────────────
+    document.addEventListener('keydown', (e) => {
+        if (!$('viewer').hidden) {
+            if (e.key === 'Escape') closeViewer();
+            if (e.key === 'ArrowLeft') step(-1);
+            if (e.key === 'ArrowRight') step(1);
+            return;
+        }
+        if (!$('dialog').hidden || $('app').hidden) return;
+        if (e.target.closest('input, textarea')) { if (e.key === 'Escape') e.target.blur(); return; }
+        const sel = selectedEntries();
+        if (e.key === 'Escape') { hideMenus(); selected = new Set(); paintSelection(); }
+        else if (e.key === 'Enter' && sel.length === 1) open(sel[0]);
+        else if ((e.key === 'Delete' || (e.key === 'Backspace' && e.metaKey)) && sel.length && access() === 'write') remove(sel);
+        else if (e.key === 'F2' && sel.length === 1 && access() === 'write') { e.preventDefault(); rename(sel[0]); }
+        else if (e.key === 'Backspace' || (e.altKey && e.key === 'ArrowUp')) { e.preventDefault(); up(); }
+        else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); selected = new Set(shown.map((x) => x.name)); paintSelection(); }
+        else if (['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'].includes(e.key) && shown.length) {
+            e.preventDefault();
+            const cols = view === 'grid' ? Math.max(1, Math.round($('items').clientWidth / ($('items').firstElementChild?.offsetWidth || 150))) : 1;
+            const delta = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: cols, ArrowUp: -cols }[e.key];
+            const next = Math.max(0, Math.min(shown.length - 1, (anchor < 0 ? -delta : anchor) + delta));
+            select(next, e.shiftKey ? { shiftKey: true } : null);
+            if (!e.shiftKey) anchor = next;
+            $('items').querySelector(`[data-i="${next}"]`)?.scrollIntoView({ block: 'nearest' });
+        }
+    });
+
+    // ── Start ──────────────────────────────────────────────────────────────
+    async function start() {
+        try {
+            me = await api('me');
+        } catch (_e) {
+            showSignin();
+            return;
+        }
+        $('signin').hidden = true;
+        $('app').hidden = false;
+        $('me-name').textContent = me.user;
+        $('me-avatar').textContent = (me.user || '?').slice(0, 1).toUpperCase();
+        $('nas-name').textContent = me.nas_name || '';
+        document.title = me.nas_name ? `Files · ${me.nas_name}` : 'Files';
+        if (!me.shares.length) {
+            $('crumbs').innerHTML = '';
+            $('items').innerHTML = `<div class="empty">${icon('folder')}<strong>No shared folders for you yet</strong>Ask whoever runs this NAS to give you access to a shared folder.</div>`;
+            $('new-btn').hidden = true;
+            return;
+        }
+        const q = new URLSearchParams(location.hash.slice(1));
+        const wanted = me.shares.find((s) => s.name === q.get('share'));
+        go(wanted ? wanted.name : me.shares[0].name, wanted ? q.get('path') || '' : '', false);
+        history.replaceState(null, '', hashFor(share, path));
+    }
+
+    paintIcons();
+    start();
+})();

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Files</title>
+    <meta name="theme-color" content="#1f5fd1">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" href="icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="icon.svg">
+    <link rel="stylesheet" href="app.css">
+</head>
+<body>
+    <!-- Sign in -->
+    <main class="signin" id="signin" hidden>
+        <form class="signin-card" id="signin-form" novalidate>
+            <img class="signin-logo" src="icon.svg" alt="" width="56" height="56">
+            <h1>Files</h1>
+            <p class="signin-sub" id="signin-sub">Sign in with your name and password for the shared folders.</p>
+            <div class="notice" id="signin-error" role="alert"></div>
+            <label class="field" id="field-user">Name<input id="in-user" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>
+            <label class="field" id="field-pass">Password<input id="in-pass" type="password" autocomplete="current-password" required></label>
+            <label class="field" id="field-code" hidden>Code from your authenticator app<input id="in-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></label>
+            <button type="submit" class="btn primary wide" id="signin-btn">Sign in</button>
+        </form>
+    </main>
+
+    <!-- The app -->
+    <div class="app" id="app" hidden>
+        <aside class="side" id="side">
+            <div class="side-head">
+                <img src="icon.svg" alt="" width="30" height="30">
+                <div><div class="side-title">Files</div><div class="side-nas" id="nas-name"></div></div>
+            </div>
+            <nav class="side-list" id="share-list" aria-label="Shared folders"></nav>
+            <div class="side-sep"></div>
+            <button type="button" class="side-item" id="trash-nav"><span class="ic" data-icon="trash"></span><span>Trash</span></button>
+            <div class="side-foot">
+                <div class="me"><span class="avatar" id="me-avatar"></span><span id="me-name"></span></div>
+                <button type="button" class="link" id="signout">Sign out</button>
+            </div>
+        </aside>
+        <div class="scrim" id="scrim" hidden></div>
+
+        <section class="main" id="main">
+            <header class="bar">
+                <button type="button" class="icon-btn only-phone" id="menu-btn" aria-label="Shared folders"><span data-icon="menu"></span></button>
+                <button type="button" class="icon-btn" id="back-btn" aria-label="Back" title="Back"><span data-icon="left"></span></button>
+                <button type="button" class="icon-btn hide-phone" id="fwd-btn" aria-label="Forward" title="Forward"><span data-icon="right"></span></button>
+                <nav class="crumbs" id="crumbs" aria-label="Folder"></nav>
+                <div class="bar-right">
+                    <label class="search hide-phone"><span data-icon="search"></span><input type="search" id="search" placeholder="Search in this folder" aria-label="Search in this folder"></label>
+                    <div class="seg" role="group" aria-label="View">
+                        <button type="button" class="icon-btn" id="view-grid" aria-label="Grid" title="Grid"><span data-icon="grid"></span></button>
+                        <button type="button" class="icon-btn" id="view-list" aria-label="List" title="List"><span data-icon="list"></span></button>
+                    </div>
+                    <div class="new-wrap">
+                        <button type="button" class="btn primary" id="new-btn"><span data-icon="plus"></span><span class="hide-phone">New</span></button>
+                        <div class="menu" id="new-menu" hidden role="menu">
+                            <button type="button" role="menuitem" data-new="upload"><span data-icon="upload"></span>Upload files</button>
+                            <button type="button" role="menuitem" data-new="folder"><span data-icon="folder-plus"></span>New folder</button>
+                        </div>
+                    </div>
+                    <input type="file" id="file-input" multiple hidden>
+                </div>
+            </header>
+
+            <div class="selbar" id="selbar" hidden>
+                <button type="button" class="icon-btn" id="sel-clear" aria-label="Clear selection"><span data-icon="x"></span></button>
+                <span id="sel-count"></span>
+                <div class="selbar-actions">
+                    <button type="button" class="btn ghost" id="sel-download"><span data-icon="download"></span><span class="hide-phone">Download</span></button>
+                    <button type="button" class="btn ghost" id="sel-rename"><span data-icon="pen"></span><span class="hide-phone">Rename</span></button>
+                    <button type="button" class="btn ghost danger" id="sel-delete"><span data-icon="trash"></span><span class="hide-phone">Delete</span></button>
+                </div>
+            </div>
+
+            <div class="content" id="content" tabindex="0" aria-label="Files">
+                <div class="items" id="items"></div>
+                <div class="drop" id="drop" hidden><div><span data-icon="upload"></span><span id="drop-text">Drop files to upload</span></div></div>
+            </div>
+
+            <footer class="status" id="status"></footer>
+        </section>
+    </div>
+
+    <div class="menu ctx" id="ctx" hidden role="menu"></div>
+
+    <div class="viewer" id="viewer" hidden role="dialog" aria-modal="true" aria-labelledby="viewer-title">
+        <div class="viewer-bar">
+            <button type="button" class="vbtn" id="viewer-close" aria-label="Close"><span data-icon="x"></span></button>
+            <span class="viewer-title" id="viewer-title"></span>
+            <button type="button" class="vbtn" id="viewer-download"><span data-icon="download"></span><span class="hide-phone">Download</span></button>
+        </div>
+        <div class="viewer-body" id="viewer-body"></div>
+        <button type="button" class="viewer-nav prev" id="viewer-prev" aria-label="Previous" hidden><span data-icon="left"></span></button>
+        <button type="button" class="viewer-nav next" id="viewer-next" aria-label="Next" hidden><span data-icon="right"></span></button>
+    </div>
+
+    <div class="dialog-wrap" id="dialog" hidden></div>
+    <div class="uploads" id="uploads" hidden aria-live="polite"></div>
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
