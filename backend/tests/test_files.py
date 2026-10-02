@@ -73,3 +73,19 @@ def test_read_file_stays_on_the_pools_even_through_symlinks(tmp_path):
                 secret):
         with pytest.raises((p.PolicyError, OSError)):
             helper.open_data_file(str(bad), root)
+
+
+@pytest.mark.parametrize("header,size,expected", [
+    (None, 100, (None, True)),
+    ("bytes=0-9", 100, ((0, 10), True)),
+    ("bytes=90-", 100, ((90, 10), True)),
+    ("bytes=-5", 100, ((95, 5), True)),
+    ("bytes=50-500", 100, ((50, 50), True)),
+    ("bytes=100-", 100, (None, False)),
+    ("bytes=5-2", 100, (None, False)),
+    ("bytes=0-1,5-6", 100, (None, False)),
+    ("items=0-1", 100, (None, False)),
+    ("bytes=-", 100, (None, False)),
+])
+def test_one_byte_range_is_understood(header, size, expected):
+    assert fm.parse_range(header, size) == expected

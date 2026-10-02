@@ -15,6 +15,15 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · AlvaOS Files: seeking in videos, resuming downloads
+
+- `/api/v1/files/get/<token>` answers one-range `Range` requests with 206,
+  `Content-Range` and `Accept-Ranges` (416 when it cannot be served), and
+  sends `Content-Length`. Videos can be skipped forward, and interrupted
+  downloads can be resumed.
+- The helper's `read-file` takes an optional `START LENGTH`; a new
+  `file-size` operation reports the size (both checked on the open file).
+
 ## 2026-10-03 · AlvaOS Files, step 2: upload, new folder, rename, trash
 
 - **Upload** (button or drag and drop on the list) with a progress panel,

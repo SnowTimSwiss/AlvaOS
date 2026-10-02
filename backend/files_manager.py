@@ -64,11 +64,38 @@ def content_type(name: str, inline: bool) -> Tuple[str, bool]:
     return 'application/octet-stream', False
 
 
-def open_stream(path: str, chunk: int = 256 * 1024) -> Tuple[Optional[Iterator[bytes]], str]:
-    """Stream a file through `alvaos-priv read-file`. The first chunk is read
-    before answering, so a refused or missing file becomes an error, not an
-    empty download."""
-    cmd = [PRIV_HELPER, 'read-file', path]
+def parse_range(header: Optional[str], size: int) -> Tuple[Optional[Tuple[int, int]], bool]:
+    """One byte range from a Range header: ((start, length), ok). No header:
+    (None, True). A range that cannot be served: (None, False)."""
+    if not header:
+        return None, True
+    import re
+    m = re.fullmatch(r'\s*bytes=(\d*)-(\d*)\s*', header)
+    if not m or (not m.group(1) and not m.group(2)) or size <= 0:
+        return None, False
+    if m.group(1):
+        start = int(m.group(1))
+        end = min(int(m.group(2)), size - 1) if m.group(2) else size - 1
+    else:
+        start = max(0, size - int(m.group(2)))
+        end = size - 1
+    if start >= size or end < start:
+        return None, False
+    return (start, end - start + 1), True
+
+
+def file_size(path: str) -> Optional[int]:
+    result, _ = run_helper(['file-size', path], timeout=30)
+    size = (result or {}).get('size')
+    return size if isinstance(size, int) and size >= 0 else None
+
+
+def open_stream(path: str, chunk: int = 256 * 1024,
+                part: Optional[Tuple[int, int]] = None) -> Tuple[Optional[Iterator[bytes]], str]:
+    """Stream a file (or one part) through `alvaos-priv read-file`. The first
+    chunk is read before answering, so a refused or missing file becomes an
+    error, not an empty download."""
+    cmd = [PRIV_HELPER, 'read-file', path] + ([str(part[0]), str(part[1])] if part else [])
     if not is_root_user():
         cmd = ['sudo', '-n'] + cmd
     try:

@@ -79,7 +79,16 @@ def files_get(token):
         link = dict(_links.get(token) or {})
     if not link:
         return jsonify({'error': 'This link has expired. Open the file again in AlvaOS Files.'}), 404
-    stream, error = files_manager.open_stream(link['path'])
+    size = link.get('size')
+    if size is None:
+        size = files_manager.file_size(link['path'])
+        with _links_lock:
+            if token in _links:
+                _links[token]['size'] = size
+    part, ok = files_manager.parse_range(request.headers.get('Range'), size or 0) if size is not None else (None, True)
+    if not ok:
+        return Response(status=416, headers={'Content-Range': f'bytes */{size}'})
+    stream, error = files_manager.open_stream(link['path'], part=part)
     if stream is None:
         return jsonify({'error': error or 'The file could not be read.'}), 404
     mime, inline = files_manager.content_type(link['name'], link['inline'])
@@ -93,6 +102,12 @@ def files_get(token):
         'Cache-Control': 'private, no-store',
         'Referrer-Policy': 'no-referrer',
     }
+    if size is not None:
+        headers['Accept-Ranges'] = 'bytes'
+        headers['Content-Length'] = str(part[1] if part else size)
+    if part:
+        headers['Content-Range'] = f'bytes {part[0]}-{part[0] + part[1] - 1}/{size}'
+        return Response(stream, status=206, mimetype=mime, headers=headers, direct_passthrough=True)
     return Response(stream, mimetype=mime, headers=headers, direct_passthrough=True)
 
 
