@@ -91,6 +91,7 @@ def main():
         "power_ups_manager.py",  # sudo alvaos-priv write-sysfs
         "update_manager.py",   # sudo alvaos-priv apply-update
         "buddy_vault.py",      # sudo alvaos-priv vault-open / vault-close
+        "files_manager.py",    # sudo alvaos-priv read-file
         "watchdog_manager.py",  # runs as root; sudo is a no-op there
     }
     for path in python_sources():

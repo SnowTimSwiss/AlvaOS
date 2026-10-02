@@ -25,7 +25,7 @@ Every page follows the same pattern as the reworked Dashboard, Storage and Backu
 
 ### 2. AlvaOS Files: a native, lightweight file cloud
 Everything people use Nextcloud for at home, built into AlvaOS and working on the same folders as the shares. No separate app, no database server.
-- **Web file browser** on the shared folders: browse, upload (drag and drop, large files resumable), download, rename, move, delete, and folder downloads as zip.
+- **Web file browser** on the shared folders. Done: browse, preview (photos, video, audio, text, PDF) and download, for admins. Next: upload (drag and drop, large files resumable), rename, move, delete, folder downloads as zip, and Range requests for seeking in videos.
 - Every person from the People tab signs in with the same password and sees exactly the shares they can open, with the same read/edit rights.
 - **Preview** of images, video, audio, PDF and text; photo thumbnails generated in the background.
 - **Share links** for single files or folders: optional password, expiry date, read-only or upload-only ("drop box"). Visible and revocable in one list.

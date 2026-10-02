@@ -41,12 +41,13 @@ from app_services import VERSION, buddy_backup_manager, power_ups_manager
 import api_apps
 import api_auth
 import api_backup
+import api_files
 import api_shares
 import api_storage
 import api_system
 import api_updates
 
-for _module in (api_auth, api_system, api_updates, api_storage, api_shares, api_backup, api_apps):
+for _module in (api_auth, api_system, api_updates, api_storage, api_shares, api_backup, api_apps, api_files):
     app.register_blueprint(_module.bp)
 
 # ── Frontend serving ──────────────────────────────────────────────────────────

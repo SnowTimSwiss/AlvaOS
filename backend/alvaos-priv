@@ -5,6 +5,7 @@ alvaos-priv — the only program the AlvaOS backend may run as root.
     sudo -n /opt/alvaos/bin/alvaos-priv [--env KEY=VALUE]... -- /usr/bin/btrfs subvolume create ...
     sudo -n /opt/alvaos/bin/alvaos-priv write-sysfs PATH VALUE
     sudo -n /opt/alvaos/bin/alvaos-priv apply-update PACKAGE
+    sudo -n /opt/alvaos/bin/alvaos-priv read-file PATH      (file on a pool, to stdout)
     sudo -n /opt/alvaos/bin/alvaos-priv vault-open NAME HOST EXPORT MODE   (key on stdin)
     sudo -n /opt/alvaos/bin/alvaos-priv vault-close NAME
 
@@ -19,6 +20,7 @@ the alvaos user; otherwise the backend could rewrite its own policy.
 import os
 import secrets
 import shutil
+import stat
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -277,6 +279,35 @@ def apply_update(argv):
     return subprocess.run(cmd, env=BASE_ENV, stdin=subprocess.DEVNULL).returncode
 
 
+def open_data_file(path, root=None):
+    """Open a regular file on a pool for reading. The check is made on the
+    open file, not the name, so swapping in a symlink meanwhile does not help."""
+    root = root or policy.POOL_MOUNT_BASE
+    if not isinstance(path, str) or not path.startswith('/') or '\x00' in path:
+        raise policy.PolicyError('Invalid path')
+    f = _open_within(path, root)
+    if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+        f.close()
+        raise policy.PolicyError('Only files can be read')
+    return f
+
+
+def read_file(argv):
+    """AlvaOS Files: stream one file from a pool to stdout."""
+    if len(argv) != 1:
+        deny(argv, 'usage: read-file PATH')
+    try:
+        f = open_data_file(argv[0])
+    except (policy.PolicyError, OSError) as e:
+        deny(['read-file'] + list(argv), str(e))
+    with f:
+        try:
+            shutil.copyfileobj(f, sys.stdout.buffer, 1024 * 1024)
+        except BrokenPipeError:
+            pass   # the browser stopped the download
+    return 0
+
+
 def main():
     if os.geteuid() != 0:
         sys.stderr.write('alvaos-priv: must be run as root (via sudo)\n')
@@ -287,6 +318,8 @@ def main():
         return write_sysfs(args[1:])
     if args[:1] == ['apply-update']:
         return apply_update(args[1:])
+    if args[:1] == ['read-file']:
+        return read_file(args[1:])
     if args[:1] in (['vault-open'], ['vault-close']):
         # Buddy Backup vaults: attach, unlock and mount, or the reverse.
         stdin = sys.stdin.buffer.read(1024) if args[0] == 'vault-open' else b''
