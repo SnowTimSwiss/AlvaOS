@@ -177,6 +177,35 @@ def rename(dir_path: str, old: str, new: str, root: str = DATA_ROOT) -> None:
         os.close(dfd)
 
 
+def move(src_dir: str, name: str, dst_dir: str, root: str = DATA_ROOT) -> None:
+    """Move one item into another folder, never over something there."""
+    check_name(name)
+    sfd = open_dir(src_dir, root)
+    try:
+        dfd = open_dir(dst_dir, root)
+        try:
+            if not _exists(name, sfd):
+                raise FileOpError(f'"{name}" is not there any more.')
+            src_real, dst_real = _real(sfd), _real(dfd)
+            if src_real == dst_real:
+                raise FileOpError(f'"{name}" is already in that folder.')
+            if _inside(dst_real, os.path.join(src_real, name)):
+                raise FileOpError('A folder cannot be moved into itself.')
+            if _exists(name, dfd):
+                raise FileOpError(f'There is already a "{name}" in that folder.')
+            try:
+                os.rename(name, name, src_dir_fd=sfd, dst_dir_fd=dfd)
+            except OSError as exc:
+                if exc.errno == 18:   # EXDEV
+                    raise FileOpError('That folder is a separate Btrfs folder (subvolume); copy the item '
+                                      'there from your computer instead.') from None
+                raise
+        finally:
+            os.close(dfd)
+    finally:
+        os.close(sfd)
+
+
 # ── Trash ────────────────────────────────────────────────────────────────────
 
 def _inside(child: str, parent: str) -> bool:

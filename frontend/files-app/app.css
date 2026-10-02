@@ -204,3 +204,6 @@ svg { display: block; }
 .menu svg, .side-item svg, .btn svg, .trash-row svg { width: 18px; height: 18px; flex-shrink: 0; }
 .side-item .ro svg { width: 13px; height: 13px; }
 .empty svg { display: block; }
+.drop-target { background: var(--sel) !important; outline: 2px solid var(--sel-border); outline-offset: -2px; }
+.dialog .side-item:disabled { cursor: not-allowed; }
+.dialog .crumbs { font-size: 0.92rem; }

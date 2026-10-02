@@ -143,3 +143,22 @@ def test_only_file_operations_can_run_as_a_person():
     helper = load_helper()
     assert {"files-list", "files-write", "files-trash", "read-file", "file-size"} <= helper.AS_USER_OPS
     assert not {"apply-update", "write-sysfs", "vault-open", "files-trash-purge"} & helper.AS_USER_OPS
+
+
+def test_move_into_another_folder_without_overwriting(share):
+    root, s, outside = share
+    fo.make_dir(s, "Old", root)
+    fo.move(s, "notes.txt", os.path.join(s, "Films"), root)
+    assert os.path.exists(os.path.join(s, "Films", "notes.txt"))
+    open(os.path.join(s, "notes.txt"), "w").write("new")
+    with pytest.raises(fo.FileOpError, match="already a"):
+        fo.move(s, "notes.txt", os.path.join(s, "Films"), root)
+    with pytest.raises(fo.FileOpError, match="into itself"):
+        fo.move(s, "Films", os.path.join(s, "Films"), root)
+    fo.make_dir(os.path.join(s, "Films"), "Inner", root)
+    with pytest.raises(fo.FileOpError, match="into itself"):
+        fo.move(s, "Films", os.path.join(s, "Films", "Inner"), root)
+    with pytest.raises(fo.FileOpError):
+        fo.move(s, "notes.txt", outside, root)
+    with pytest.raises(fo.FileOpError, match="already in that folder"):
+        fo.move(s, "notes.txt", s, root)

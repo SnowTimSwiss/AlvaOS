@@ -345,6 +345,7 @@ FILES_OPS = {
     'files-write': (2, lambda a: {'written': files_ops.write_file(a[0], a[1], sys.stdin.buffer)}),
     'files-mkdir': (2, lambda a: files_ops.make_dir(a[0], a[1])),
     'files-rename': (3, lambda a: files_ops.rename(a[0], a[1], a[2])),
+    'files-move': (3, lambda a: files_ops.move(a[0], a[1], a[2])),
     'files-trash': (3, lambda a: {'id': files_ops.trash(a[0], a[1], a[2])}),
     'files-trash-list': (1, lambda a: {'items': files_ops.list_trash(a[0])}),
     'files-trash-restore': (2, lambda a: files_ops.restore(a[0], a[1])),

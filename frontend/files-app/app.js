@@ -221,7 +221,7 @@
                 const thumb = THUMB.test(e.name)
                     ? `<div class="thumb"><img loading="lazy" decoding="async" alt="" src="/api/thumb?share=${encodeURIComponent(share)}&path=${encodeURIComponent(rel(e))}&v=${encodeURIComponent(e.modified_at || '')}" data-fallback="${k}"></div>`
                     : `<div class="thumb icon kind-${k}">${icon(k === 'folder' ? 'folder-fill' : k)}</div>`;
-                return `<div class="tile" data-i="${i}" title="${esc(e.name)}">${thumb}<div class="name">${esc(e.name)}</div>
+                return `<div class="tile" data-i="${i}" title="${esc(e.name)}" draggable="${access() === 'write'}">${thumb}<div class="name">${esc(e.name)}</div>
                     <button type="button" class="more" data-more="${i}" aria-label="More for ${esc(e.name)}">${icon('more')}</button></div>`;
             }).join('');
         } else {
@@ -231,7 +231,7 @@
                     ? `<img class="rthumb" loading="lazy" alt="" src="/api/thumb?share=${encodeURIComponent(share)}&path=${encodeURIComponent(rel(e))}&v=${encodeURIComponent(e.modified_at || '')}" data-fallback="${k}">`
                     : `<span class="ricon kind-${k}">${icon(k === 'folder' ? 'folder-fill' : k)}</span>`;
                 const size = e.type === 'folder' ? '' : bytes(e.size_bytes);
-                return `<div class="row" data-i="${i}">${lead}<div class="rtext"><div class="rname">${esc(e.name)}</div><div class="rsub">${esc([size, when(e.modified_at)].filter(Boolean).join(' · '))}</div></div>
+                return `<div class="row" data-i="${i}" draggable="${access() === 'write'}">${lead}<div class="rtext"><div class="rname">${esc(e.name)}</div><div class="rsub">${esc([size, when(e.modified_at)].filter(Boolean).join(' · '))}</div></div>
                     <span class="rsize">${esc(size)}</span><span class="rdate">${esc(when(e.modified_at))}</span>
                     <button type="button" class="more" data-more="${i}" aria-label="More for ${esc(e.name)}">${icon('more')}</button></div>`;
             }).join('');
@@ -363,6 +363,7 @@
         if (one) rows.push(`<button type="button" data-ctx="open">${icon(one.type === 'folder' ? 'folder' : 'open')}Open</button>`);
         if (sel.some((e) => e.type === 'file')) rows.push(`<button type="button" data-ctx="download">${icon('download')}Download</button>`);
         if (canWrite && one) rows.push(`<button type="button" data-ctx="rename">${icon('pen')}Rename</button>`);
+        if (canWrite && sel.length) rows.push(`<button type="button" data-ctx="move">${icon('folder')}Move to…</button>`);
         if (canWrite && sel.length) rows.push('<hr>', `<button type="button" class="danger" data-ctx="delete">${icon('trash')}Delete</button>`);
         if (!sel.length && canWrite) rows.push(`<button type="button" data-ctx="upload">${icon('upload')}Upload files</button>`, `<button type="button" data-ctx="folder">${icon('folder-plus')}New folder</button>`);
         if (!rows.length) return;
@@ -389,6 +390,7 @@
         if (name === 'download') download(sel);
         if (name === 'rename' && sel.length === 1) rename(sel[0]);
         if (name === 'delete' && sel.length) remove(sel);
+        if (name === 'move' && sel.length) moveDialog(sel);
         if (name === 'upload') $('file-input').click();
         if (name === 'folder') newFolder();
     }
@@ -463,6 +465,98 @@
             load();
         } catch (err) { toast(err.message, 'error'); }
     }
+
+    // ── Moving ─────────────────────────────────────────────────────────────
+    async function moveTo(list, to) {
+        if (to === path) return;
+        try {
+            const res = await api('move', { method: 'POST', json: { share, path, names: list.map((e) => e.name), to } });
+            const where = [share, ...(to ? to.split('/') : [])].join(' › ');
+            toast(res.failed?.length ? res.failed[0] : `Moved ${res.moved.length === 1 ? `"${res.moved[0]}"` : `${res.moved.length} items`} to ${where}.`, res.failed?.length ? 'error' : '');
+            selected = new Set();
+            load();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
+    function moveDialog(list) {
+        const wrap = $('dialog');
+        const moving = new Set(list.map((e) => rel(e)));
+        let at = path;
+        const paint = async () => {
+            let folders = [];
+            let error = '';
+            try {
+                folders = ((await api(`list?share=${encodeURIComponent(share)}&path=${encodeURIComponent(at)}`)).entries || [])
+                    .filter((e) => e.type === 'folder' && !e.name.startsWith('.'));
+            } catch (err) { error = err.message; }
+            const parts = at ? at.split('/') : [];
+            const crumbs = [`<button type="button" class="crumb" data-to="">${esc(share)}</button>`,
+                ...parts.map((p, i) => `<span class="sep">›</span><button type="button" class="crumb" data-to="${esc(parts.slice(0, i + 1).join('/'))}">${esc(p)}</button>`)].join('');
+            const what = list.length === 1 ? `"${list[0].name}"` : `${list.length} items`;
+            wrap.innerHTML = `<div class="dialog wide"><h2>Move ${esc(what)}</h2>
+                <div class="crumbs" style="margin-bottom:8px">${crumbs}</div>
+                <div class="trash-list">${error ? esc(error) : folders.length ? folders.map((f) => {
+                    const target = at ? `${at}/${f.name}` : f.name;
+                    const blocked = moving.has(target);
+                    return `<button type="button" class="side-item" data-into="${esc(target)}"${blocked ? ' disabled style="opacity:.45"' : ''}><span class="ic">${icon('folder-fill')}</span><span>${esc(f.name)}</span></button>`;
+                }).join('') : '<div class="empty" style="padding:24px 0">No folders here.</div>'}</div>
+                <div class="actions"><button type="button" class="btn" data-cancel>Cancel</button>
+                <button type="button" class="btn primary" data-here${at === path ? ' disabled' : ''}>Move here</button></div></div>`;
+            wrap.querySelectorAll('[data-to]').forEach((b) => { b.onclick = () => { at = b.dataset.to; paint(); }; });
+            wrap.querySelectorAll('[data-into]').forEach((b) => { b.onclick = () => { at = b.dataset.into; paint(); }; });
+            wrap.querySelector('[data-cancel]').onclick = () => { wrap.hidden = true; wrap.innerHTML = ''; };
+            wrap.querySelector('[data-here]').onclick = () => { wrap.hidden = true; wrap.innerHTML = ''; moveTo(list, at); };
+        };
+        wrap.hidden = false;
+        wrap.innerHTML = '<div class="dialog"><p>Loading…</p></div>';
+        paint();
+    }
+
+    // Drag items onto a folder (or a folder in the path bar) to move them there.
+    const DRAG = 'application/x-alvaos-files';
+    let dragging = [];
+    $('items').addEventListener('dragstart', (e) => {
+        const item = e.target.closest('[data-i]');
+        if (!item || access() !== 'write') return;
+        const entry = shown[Number(item.dataset.i)];
+        if (!selected.has(entry.name)) { selected = new Set([entry.name]); paintSelection(); }
+        dragging = selectedEntries();
+        e.dataTransfer.setData(DRAG, dragging.map((x) => x.name).join('\n'));
+        e.dataTransfer.effectAllowed = 'move';
+    });
+    $('items').addEventListener('dragend', () => { dragging = []; document.querySelectorAll('.drop-target').forEach((x) => x.classList.remove('drop-target')); });
+    function dropTarget(e) {
+        if (!Array.from(e.dataTransfer?.types || []).includes(DRAG)) return null;
+        const folder = e.target.closest('[data-i]');
+        if (folder) {
+            const entry = shown[Number(folder.dataset.i)];
+            if (entry.type !== 'folder' || dragging.some((d) => d.name === entry.name)) return null;
+            return { el: folder, to: rel(entry) };
+        }
+        const crumb = e.target.closest('.crumb[data-path]');
+        if (crumb && crumb.dataset.path !== path) return { el: crumb, to: crumb.dataset.path };
+        return null;
+    }
+    ['items', 'crumbs'].forEach((id) => {
+        $(id).addEventListener('dragover', (e) => {
+            const t = dropTarget(e);
+            document.querySelectorAll('.drop-target').forEach((x) => { if (!t || x !== t.el) x.classList.remove('drop-target'); });
+            if (!t) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            t.el.classList.add('drop-target');
+        });
+        $(id).addEventListener('drop', (e) => {
+            const t = dropTarget(e);
+            if (!t) return;
+            e.preventDefault();
+            e.stopPropagation();
+            t.el.classList.remove('drop-target');
+            const list = dragging.length ? dragging : selectedEntries();
+            dragging = [];
+            moveTo(list, t.to);
+        });
+    });
 
     // ── Trash ──────────────────────────────────────────────────────────────
     $('trash-nav').addEventListener('click', async () => {
