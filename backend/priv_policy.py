@@ -840,6 +840,12 @@ def _rule_mount(sys_: System, args):
         target = _clean_abs_path(args[1])
         _pool_mountpoint(target)
         return Plan(argv=list(args))
+    if len(args) == 5 and args[:3] == ['-o', 'degraded', '-U']:
+        # A redundant pool with a missing disk, at startup (storage_manager decides).
+        if not UUID_RE.match(args[3]):
+            _fail('Invalid filesystem UUID')
+        _pool_mountpoint(_clean_abs_path(args[4]))
+        return Plan(argv=list(args))
     if len(args) == 4 and args[0] == '-o' and args[1] == 'ro':
         # Offline update scan of a USB stick: force it harmless.
         _device(sys_, args[2], destructive=True)
@@ -985,7 +991,7 @@ def _rule_btrfs(sys_: System, args):
         return Plan(argv=list(args))
     if group == 'balance' and action == 'start':
         for arg in rest[:-1]:
-            if not re.match(r'^-[dm]convert=(single|dup|raid0|raid1|raid1c3|raid1c4|raid5|raid6|raid10)$', arg):
+            if not re.match(r'^-[dm]convert=(single|dup|raid0|raid1|raid1c3|raid1c4|raid5|raid6|raid10)(,soft)?$', arg):
                 _fail(f'btrfs balance option not allowed: {arg}')
         _pool_mountpoint(_clean_abs_path(rest[-1]) if rest else '')
         return Plan(argv=list(args))

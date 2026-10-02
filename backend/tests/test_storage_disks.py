@@ -494,3 +494,68 @@ def test_only_members_on_a_bigger_disk_can_grow():
              {"path": "/dev/sdd", "size_bytes": 4 * tib}]
     assert sm.growable_members(members, disks) == [{"devid": 1, "path": "/dev/sdb", "extra_bytes": 4 * tib}]
     assert sm.growable_members([], disks) == []
+
+
+# ── A missing disk at startup ────────────────────────────────────────────────
+
+USAGE_AFTER_DEGRADED = """Overall:
+    Device size:                   7.28TiB
+Data,single: Size:12.00GiB, Used:11.20GiB (93.33%)
+Data,RAID1: Size:1.20TiB, Used:1.10TiB (91.67%)
+Metadata,RAID1: Size:3.00GiB, Used:2.10GiB (70.00%)
+Metadata,DUP: Size:1.00GiB, Used:0.20GiB (20.00%)
+System,RAID1: Size:32.00MiB, Used:192.00KiB (0.59%)
+System,single: Size:32.00MiB, Used:16.00KiB (0.05%)
+"""
+
+
+def test_data_written_while_a_disk_was_missing_is_found():
+    assert sm.parse_usage_profiles(USAGE_AFTER_DEGRADED) == {"data": "RAID1", "metadata": "RAID1", "system": "RAID1"}
+    assert sm.unprotected_profiles(USAGE_AFTER_DEGRADED) == {"data": "raid1", "metadata": "raid1"}
+    assert sm.unprotected_profiles(USAGE_RAID5) == {}
+    # A single-disk pool is not "unprotected" in this sense: nothing to restore.
+    assert sm.unprotected_profiles("Data,single: Size:1.00GiB\nMetadata,DUP: Size:1.00GiB\n") == {}
+
+
+@pytest.mark.parametrize("level,missing,allowed", [
+    ("raid1", 1, True), ("RAID1", 1, True), ("raid10", 1, True), ("raid5", 1, True), ("raid6", 1, True),
+    ("raid1c3", 1, True), ("raid1", 2, False), ("raid6", 2, False), ("raid1", 0, False),
+    ("single", 1, False), ("raid0", 1, False), (None, 1, False),
+])
+def test_a_pool_starts_without_a_disk_only_when_safe(level, missing, allowed):
+    assert sm.degraded_mount_allowed(level, missing) is allowed
+
+
+class MountRunner:
+    def __init__(self, missing_count):
+        self.calls = []
+        self.missing_count = missing_count
+
+    def __call__(self, cmd, timeout=30, extra_env=None, input=None):
+        import subprocess as sp
+        self.calls.append(cmd)
+        if cmd[1:3] == ["-o", "degraded"]:
+            return sp.CompletedProcess(cmd, 0, "", ""), None
+        if "mount" in cmd[0]:
+            return sp.CompletedProcess(cmd, 32, "", "wrong fs type"), "wrong fs type"
+        return sp.CompletedProcess(cmd, 0, "", ""), None
+
+
+@pytest.mark.parametrize("level,missing,expect_degraded", [("raid1", 1, True), ("raid1", 2, False), ("single", 1, False)])
+def test_startup_mounts_degraded_only_when_allowed(monkeypatch, tmp_path, level, missing, expect_degraded):
+    uuid = "12345678-1234-1234-1234-123456789abc"
+    mount = str(tmp_path / "main")
+    state = {uuid: {"name": "main", "mount_point": mount, "devices": ["/dev/sdb", "/dev/sdc"], "raid_level": level}}
+    saved = {}
+    runner = MountRunner(missing)
+    monkeypatch.setattr(sm.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(sm, "load_pools_state", lambda: dict(state))
+    monkeypatch.setattr(sm, "save_pools_state", lambda s: saved.update(s))
+    monkeypatch.setattr(sm, "run_sudo_command", runner)
+    monkeypatch.setattr(sm, "detect_btrfs_pools", lambda: ([{"id": uuid, "missing_count": missing}], None))
+    monkeypatch.setattr(sm.subprocess, "run", lambda *a, **k: __import__("subprocess").CompletedProcess(a, 1))
+    (tmp_path / "main").mkdir()
+    sm.mount_existing_pools()
+    degraded = [c for c in runner.calls if c[1:3] == ["-o", "degraded"]]
+    assert bool(degraded) is expect_degraded
+    assert ("mounted_degraded_at" in saved.get(uuid, {})) is expect_degraded

@@ -31,7 +31,7 @@ from storage_manager import (
     load_pools_state, save_pools_state,
     detect_btrfs_pools, sanitize_pool_name,
     _collect_smart_report, disk_inventory, find_disk, check_disks_for_pool,
-    parse_scrub_status, parse_usage_profiles, growable_members, parse_show_members, parse_replace_status, parse_balance_status, parse_device_stats,
+    parse_scrub_status, parse_usage_profiles, unprotected_profiles, growable_members, parse_show_members, parse_replace_status, parse_balance_status, parse_device_stats,
 )
 
 
@@ -217,6 +217,8 @@ def manage_pools():
                         pool['mount_point'] = mount_point
                         if mount_point == '/':
                             pool['is_system_pool'] = True
+                    if pool_state.get('mounted_degraded_at'):
+                        pool['mounted_degraded_at'] = pool_state['mounted_degraded_at']
 
                     if pool['devices']:
                         try:
@@ -236,6 +238,7 @@ def manage_pools():
                                     pool['raid_level'] = 'Single' if data_profile in ('SINGLE', 'DUP') else data_profile
                                 if profiles.get('metadata'):
                                     pool['metadata_profile'] = profiles['metadata']
+                                pool['unprotected'] = unprotected_profiles(u_out)
 
                                 # Prefer explicit sizes when present
                                 used_match = re.search(r"Used:\s+(\d+\.?\d*[TiGkMBP]i?B)", u_out)
@@ -1160,6 +1163,34 @@ def pool_space(pool_id):
         if not ok:
             return jsonify({'error': message}), 409
     return jsonify({'success': True, **_space().report(pool_id)})
+
+
+@bp.route('/api/v1/storage/pools/<pool_id>/restore-protection', methods=['POST'])
+@require_auth(require_admin=True)
+def restore_pool_protection(pool_id):
+    """Data written while a disk was missing has fewer copies than the rest of
+    the pool. Once all disks are back, convert just those parts (soft)."""
+    pool_info, error = _mounted_managed_pool(pool_id)
+    if error:
+        return error
+    mount_point = pool_info['mount_point']
+    live = next((p for p in detect_btrfs_pools()[0] if str(p.get('id', '')).lower() == pool_id.lower()), None)
+    if live and (live.get('missing_count') or any(m.get('missing') for m in live.get('members') or [])):
+        return jsonify({'error': 'Replace the missing disk first.'}), 409
+    usage_out, _ = _btrfs_output(['filesystem', 'usage', mount_point])
+    weak = unprotected_profiles(usage_out)
+    if not weak:
+        return jsonify({'error': 'All data in this pool is protected.'}), 409
+    busy = _busy_with(_pool_activity(mount_point))
+    if busy:
+        return jsonify({'error': f'{busy}. Try again when it is done.'}), 409
+    args = [f'-{kind[0]}convert={profile},soft' for kind, profile in sorted(weak.items())]
+    failed = _start_background([CMD['BTRFS'], 'balance', 'start', *args, mount_point])
+    if failed:
+        return jsonify({'error': f'It did not start: {failed}'}), 500
+    invalidate_storage_cache('pools')
+    return jsonify({'success': True,
+                    'message': 'Copying the unprotected parts. The pool stays usable; this takes a while.'})
 
 
 @bp.route('/api/v1/storage/pools/<pool_id>/mirror-metadata', methods=['POST'])
