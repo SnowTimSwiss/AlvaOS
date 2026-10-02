@@ -15,6 +15,35 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · AlvaOS Files, step 2: upload, new folder, rename, trash
+
+- **Upload** (button or drag and drop on the list) with a progress panel,
+  **New folder**, and a "⋯" menu per row with Download, Rename and Delete.
+  **Delete moves to the share's trash**: "Trash" at the bottom of the list
+  shows what was deleted, from where and when, with "Put back" and "Empty
+  trash". Items older than 30 days are removed daily.
+- All changes run as root in `files_ops.py`, called through new helper
+  operations `alvaos-priv files-write | files-mkdir | files-rename |
+  files-trash | files-trash-list | files-trash-restore | files-trash-purge`.
+  Each gets a folder plus a single name (no "/"), opens the folder with
+  `O_NOFOLLOW`, checks it on the descriptor to be below `/mnt/alvaos`, and
+  works relative to it (`dir_fd`). Nothing is overwritten (`O_EXCL`, checks
+  before rename; put back as "name (restored)"). A broken upload removes the
+  half file. New files and folders get the group and permissions of the
+  folder they are in, so the share's users can use them over SMB.
+- The trash is `<share>/.alvaos-trash/<stamp>/<name>` with a `.origin` file;
+  a trash that is a symlink is refused. Something in its own Btrfs
+  subvolume cannot be moved there and the message says so.
+- **Upload limit 4 GB per file:** waitress keeps a request body in a
+  temporary file on the system disk until it is complete (default limit was
+  1 GB). The page says so and points to the share for bigger files.
+- Tested: `files_ops` against symlink tricks in a temporary tree, the real
+  helper as root in the container, the API with a stand-in helper, and the
+  page in the browser (desktop and phone).
+- **Note for next time:** check owner and permissions of uploads on a real
+  share from Windows/macOS; resumable uploads for big files; move between
+  folders; per-person access.
+
 ## 2026-10-03 · AlvaOS Files, first step: browse, look at, download
 
 - New page **Files** (in the navigation after Storage): the shared folders as
