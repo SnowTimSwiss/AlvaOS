@@ -6,6 +6,7 @@ Thin routing layer — all business logic lives in the manager modules.
 
 # ── Standard library ──────────────────────────────────────────────────────────
 import os
+import platform
 import threading
 import secrets
 import atexit
@@ -204,6 +205,12 @@ if __name__ == '__main__':
         lock_share_user_shells(load_users_state())
     except Exception as e:
         print(f"Warning: could not check share user shells: {e}")
+
+    # Nightly data checks (btrfs scrub) for every pool, monthly by default.
+    if platform.system() == 'Linux':
+        from api_storage import make_health_scheduler
+        threading.Thread(target=make_health_scheduler().serve_forever, name='health-checks',
+                         daemon=True).start()
 
     # wg-quick state does not survive a reboot; bring the buddy tunnel back up.
     threading.Thread(target=buddy_backup_manager.start_tunnel_if_paired, daemon=True).start()

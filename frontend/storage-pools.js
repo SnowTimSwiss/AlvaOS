@@ -11,6 +11,7 @@ let storagePoolsCache = [];
 let openedPoolId = '';
 const poolActivity = {};
 let poolActivityTimer = null;
+let healthSettings = { scrub: 'monthly', start_hour: 3 };
 
 const PROTECTION = {
     single: { failures: 0, text: 'No protection: if a disk fails, the data on it is lost.' },
@@ -153,6 +154,7 @@ async function loadPools() {
         storagePoolsCache = (Array.isArray(data.pools) ? data.pools : []).filter((pool) => (
             pool && (pool.is_managed !== false || !ignored.has(String(pool.id || '')))
         ));
+        await loadHealthSettings();
         renderPools();
         await loadPoolActivity();
     } catch (error) {
@@ -378,7 +380,56 @@ function renderActivitySection(pool, act) {
     if (!Object.keys(act).length) {
         rows.push(`<div class="pool-line">${icon('info')}<span>Activity is shown once the pool is mounted.</span></div>`);
     }
+    rows.push(renderHealthSchedule());
     return `<section class="pool-section"><h3>Activity</h3>${rows.join('<div style="height: 12px;"></div>')}</section>`;
+}
+
+// How often every pool gets a data check (one setting for all pools).
+async function loadHealthSettings() {
+    try {
+        const response = await apiFetch(`${API_BASE}/storage/health-checks`, {
+            headers: { 'Authorization': localStorage.getItem('alvaos_token') || '' }
+        });
+        if (response.ok) healthSettings = (await response.json()).settings || healthSettings;
+    } catch (_error) {
+        // Keep the default; the select still shows it.
+    }
+}
+
+function renderHealthSchedule() {
+    const hour = Number(healthSettings.start_hour ?? 3);
+    const when = `${String(hour).padStart(2, '0')}:00`;
+    const options = [
+        ['monthly', 'Monthly (recommended)'],
+        ['weekly', 'Weekly'],
+        ['off', 'Off'],
+    ].map(([value, label]) => `<option value="${value}"${healthSettings.scrub === value ? ' selected' : ''}>${label}</option>`).join('');
+    const hint = healthSettings.scrub === 'off'
+        ? 'Damaged data is only found when a file is read. Turn this on unless you check by hand.'
+        : `Starts at night around ${when}, one pool at a time, never while a disk is being replaced. Applies to all pools.`;
+    return `
+        <div class="health-schedule">
+            <label for="health-scrub">Check data automatically</label>
+            <select id="health-scrub" class="select-input" onchange="saveHealthSchedule(this.value)">${options}</select>
+        </div>
+        <div class="pool-line" style="font-size: 0.8rem; margin-top: 6px;">${escapeHtml(hint)}</div>`;
+}
+
+async function saveHealthSchedule(value) {
+    try {
+        const response = await apiFetch(`${API_BASE}/storage/health-checks`, {
+            method: 'POST',
+            headers: { 'Authorization': localStorage.getItem('alvaos_token') || '', 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scrub: value })
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || 'The setting was not saved.');
+        healthSettings = result.settings || healthSettings;
+        showSuccess(value === 'off' ? 'Automatic data checks are off.' : `Data is now checked ${value === 'weekly' ? 'every week' : 'every month'}.`);
+    } catch (error) {
+        showError(error.message);
+    }
+    renderPools();
 }
 
 function progressRow(label, percent, hint) {

@@ -211,6 +211,32 @@
                 <div class="ov-bar" role="img" aria-label="${name}: ${pct.toFixed(0)}% used"><span class="${barState}" style="width:${pct}%"></span></div>`;
         }).join('');
 
+        // Data checks (btrfs scrub): the most recent one over all pools, and
+        // the worst thing any of them found.
+        const checks = pools.map((p) => p.last_check).filter((c) => c && typeof c === 'object');
+        const running = checks.find((c) => c.state === 'running');
+        const damaged = checks.some((c) => Number(c.uncorrectable) > 0);
+        const repaired = checks.reduce((sum, c) => sum + (Number(c.errors) || 0), 0);
+        const latest = checks.map((c) => c.started_at).filter(Boolean).sort().pop();
+        let checkLine = '';
+        if (running) {
+            checkLine = `Checking data now${num(running.percent) !== null ? ` (${Math.round(running.percent)}%)` : ''}`;
+        } else if (latest) {
+            checkLine = `Data checked ${timeAgo(latest)}: ${damaged ? 'damaged files found' : repaired ? `${repaired} problem${repaired === 1 ? '' : 's'} repaired` : 'no problems'}`;
+        } else if (checks.length) {
+            checkLine = 'Data not checked yet: the first check runs at night';
+        }
+        if (damaged && state !== 'bad') {
+            state = 'bad';
+            label = 'Damaged files';
+        } else if (repaired && state === 'ok') {
+            state = 'warn';
+            label = 'Check disks';
+        }
+        const checkHtml = checkLine
+            ? `<div class="ov-row ov-hint"><span class="ov-row-name"><span class="ov-dot ${damaged ? 'bad' : repaired ? 'warn' : running ? 'info' : 'ok'}"></span>${esc(checkLine)}</span></div>`
+            : '';
+
         setCard('storage', {
             state,
             label,
@@ -218,7 +244,7 @@
             sub: mounted.length > 0
                 ? `of ${formatGb(total)} in ${plural(pools.length, 'pool')}`
                 : 'Your files cannot be reached right now.',
-            listHtml: rows,
+            listHtml: rows + checkHtml,
         });
         // Problems with pools come in through the alerts (with the right
         // wording and link), so the card adds no issues of its own here.

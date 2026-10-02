@@ -41,7 +41,8 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 ### 3. Storage follow-ups
 - Mount a redundant pool degraded when a disk is missing at boot, with a clear warning and a Replace button. This needs a decision on safety first.
 - Grow the pool after replacing a disk with a larger one (`btrfs filesystem resize <devid>:max`).
-- Scheduled data checks (scrub) and SMART tests, with results on the dashboard.
+- Scheduled SMART self-tests (short weekly, long monthly), with results on the dashboard like the data checks.
+- Offer existing RAID5/6 pools a switch to mirrored metadata (`btrfs balance start -mconvert=raid1`).
 - Snapshots per folder with a simple schedule ("keep hourly for a day, daily for a month").
 - Quotas per share.
 

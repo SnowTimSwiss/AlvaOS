@@ -14,6 +14,7 @@ import psutil
 from flask import Blueprint, jsonify, request
 
 # ── AlvaOS managers ───────────────────────────────────────────────────────────
+import health_checks
 from common import (
     CMD, run_sudo_command, build_privileged_cmd, format_bytes_gib,
 )
@@ -1006,6 +1007,41 @@ def scrub_pool(pool_id):
     if failed:
         return jsonify({'error': f'The data check did not start: {failed}'}), 500
     return jsonify({'success': True, 'message': 'Data check started. The pool stays usable meanwhile.'})
+
+
+def _mounted_managed_pools():
+    """{pool_id: state entry} for managed pools that are mounted (not the system)."""
+    result = {}
+    for pool_id, info in load_pools_state().items():
+        mount_point = str((info or {}).get('mount_point') or '') if isinstance(info, dict) else ''
+        if mount_point and mount_point != '/' and _is_mounted(mount_point):
+            result[str(pool_id)] = info
+    return result
+
+
+def make_health_scheduler():
+    """The nightly data-check scheduler, wired to the real btrfs commands."""
+    return health_checks.HealthScheduler(
+        pools=_mounted_managed_pools,
+        activity=_pool_activity,
+        busy=_busy_with,
+        start_scrub=lambda mount_point: _start_background([CMD['BTRFS'], 'scrub', 'start', '-B', mount_point]),
+    )
+
+
+@bp.route('/api/v1/storage/health-checks', methods=['GET', 'POST'])
+@require_auth(require_admin=True)
+def storage_health_checks():
+    """How often pools get a data check, and the last result per pool."""
+    if request.method == 'POST':
+        try:
+            health_checks.save_settings(request.get_json(silent=True) or {})
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
+    return jsonify({
+        'settings': health_checks.get_settings(),
+        'pools': health_checks.last_results(),
+    })
 
 
 @bp.route('/api/v1/storage/pools/<pool_id>/replace', methods=['POST'])
