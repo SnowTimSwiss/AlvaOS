@@ -337,7 +337,8 @@ def test_files_download_links(backend, monkeypatch):
                         lambda: {"a": {"name": "Media", "path": "/mnt/alvaos/main/Media"}})
     opened = []
     monkeypatch.setattr(files_manager, "open_stream",
-                        lambda path: (opened.append(path) or iter([b"data"]), ""))
+                        lambda path, part=None: (opened.append(path) or iter([b"data"]), ""))
+    monkeypatch.setattr(files_manager, "file_size", lambda path: 4)
     client = module.app.test_client()
 
     assert client.post("/api/v1/files/link", json={"share": "Media", "path": "../../etc/shadow"},
@@ -393,3 +394,28 @@ def test_files_changes_go_to_the_helper_with_share_paths_only(backend, monkeypat
     ]
     assert client.post("/api/v1/files/delete", json={"share": "Media", "path": "", "names": []},
                        headers=headers).status_code == 400
+
+
+def test_files_links_answer_range_requests(backend, monkeypatch):
+    import api_files
+    import files_manager
+    module, state = backend
+    set_up(state)
+    token = auth_manager._create_session("root", role="admin")
+    headers = {"Authorization": token, "X-CSRF-Token": auth_manager.SESSIONS[token]["csrf_token"]}
+    monkeypatch.setattr(api_files, "load_shares_state",
+                        lambda: {"a": {"name": "Media", "path": "/mnt/alvaos/main/Media"}})
+    data = bytes(range(100))
+    monkeypatch.setattr(files_manager, "file_size", lambda path: len(data))
+    monkeypatch.setattr(files_manager, "open_stream",
+                        lambda path, part=None: (iter([data[part[0]:part[0] + part[1]] if part else data]), ""))
+    client = module.app.test_client()
+    url = client.post("/api/v1/files/link", json={"share": "Media", "path": "film.mp4", "inline": True},
+                      headers=headers).get_json()["url"]
+
+    whole = client.get(url)
+    assert whole.status_code == 200 and whole.headers["Accept-Ranges"] == "bytes" and len(whole.data) == 100
+    part = client.get(url, headers={"Range": "bytes=10-19"})
+    assert part.status_code == 206 and part.data == data[10:20]
+    assert part.headers["Content-Range"] == "bytes 10-19/100" and part.headers["Content-Length"] == "10"
+    assert client.get(url, headers={"Range": "bytes=200-"}).status_code == 416
