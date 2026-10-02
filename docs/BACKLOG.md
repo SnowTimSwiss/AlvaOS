@@ -15,6 +15,15 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · AlvaOS Files: copy
+
+- "Copy to…" in the right-click menu (the folder picker of Move, "Copy
+  here"). New helper operation `files-copy SRC_DIR NAME DST_DIR`: files and
+  whole folders, copied through descriptors, never following symlinks,
+  leaving out what the person cannot read, the trash and unfinished uploads;
+  modification times are kept. A taken name becomes "name (copy)",
+  "name (copy 2)", ... Not into itself.
+
 ## 2026-10-03 · AlvaOS Files: big uploads in pieces, continued after a drop
 
 - Uploads go in 16 MB pieces: `GET /api/upload/status`, `POST
