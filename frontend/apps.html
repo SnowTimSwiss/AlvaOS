@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AlvaOS - Apps</title>
+    <script src="theme.js"></script>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="notifications.css">
     <style>
@@ -171,7 +172,7 @@
         }
 
         .btn-danger:hover {
-            background: rgba(248, 81, 73, 0.1);
+            background: var(--accent-danger-soft);
         }
 
         .empty-state {
@@ -234,7 +235,7 @@
 
         .app-list-item.active {
             border-color: var(--accent-primary);
-            background: rgba(88, 166, 255, 0.1);
+            background: var(--accent-primary-soft);
         }
 
         .inspector-card {
@@ -336,8 +337,8 @@
             resize: vertical;
             border: 1px solid var(--border-default);
             border-radius: var(--radius-default);
-            background: #0a111d;
-            color: #eaf2ff;
+            background: var(--console-bg);
+            color: var(--console-fg);
             padding: 10px 12px;
             font-family: var(--font-mono);
             font-size: 0.84rem;
@@ -413,7 +414,7 @@
             display: none;
             position: fixed;
             inset: 0;
-            background: rgba(0, 0, 0, 0.85);
+            background: var(--scrim);
             backdrop-filter: blur(4px);
             z-index: 1200;
             align-items: center;
@@ -457,7 +458,7 @@
             font-size: 0.8rem;
             line-height: 1.45;
             white-space: pre-wrap;
-            background: #05090f;
+            background: var(--console-bg);
             color: #78f5a5;
             flex: 1;
         }
@@ -481,8 +482,8 @@
             width: 100%;
             border: 1px solid var(--border-default);
             border-radius: var(--radius-default);
-            background: #0a111d;
-            color: #eaf2ff;
+            background: var(--console-bg);
+            color: var(--console-fg);
             padding: 10px 12px;
             font-family: var(--font-mono);
             font-size: 0.85rem;
@@ -573,7 +574,7 @@
             border-radius: var(--radius-default);
             padding: 6px;
             min-width: 190px;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+            box-shadow: var(--shadow-md);
             display: none;
             z-index: 50;
         }
@@ -616,7 +617,7 @@
         }
 
         .menu-item.danger:hover {
-            background: rgba(248, 81, 73, 0.1);
+            background: var(--accent-danger-soft);
         }
 
         .menu-item i {
@@ -713,7 +714,7 @@
     <!-- Main Content -->
     <div class="main">
         <header class="topbar">
-            <button type="button" class="menu-btn" id="menu-btn" aria-controls="sidebar" aria-expanded="false" aria-label="Open menu">
+            <button type="button" class="nav-menu-btn" id="menu-btn" aria-controls="sidebar" aria-expanded="false" aria-label="Open menu">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
             </button>
             <div class="page-title">Apps</div>
@@ -724,6 +725,14 @@
                     </button>
                     <div class="account-menu" id="account-menu" role="menu" hidden>
                         <div class="account-who">Signed in as <strong>Administrator</strong></div>
+                        <div class="account-theme" role="group" aria-label="Appearance">
+                            <span class="account-theme-label">Appearance</span>
+                            <div class="seg">
+                                <button type="button" role="menuitemradio" aria-checked="true" data-theme-choice="auto">Auto</button>
+                                <button type="button" role="menuitemradio" aria-checked="false" data-theme-choice="light">Light</button>
+                                <button type="button" role="menuitemradio" aria-checked="false" data-theme-choice="dark">Dark</button>
+                            </div>
+                        </div>
                         <a role="menuitem" href="system.html#security">Password and security</a>
                         <button type="button" role="menuitem" onclick="alvaosLogout()">Log out</button>
                     </div>
@@ -840,7 +849,7 @@
 
     <!-- App Install Modal -->
     <div id="install-modal" class="modal"
-        style="display:none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(4px); z-index: 1000; align-items: center; justify-content: center;">
+        style="display:none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--scrim); backdrop-filter: blur(4px); z-index: 1000; align-items: center; justify-content: center;">
         <div class="modal-content"
             style="background: var(--bg-card); border: 1px solid var(--border-default); border-radius: var(--radius-default); padding: 24px; max-width: 550px; width: 90%; max-height: min(90vh, 720px); display: flex; flex-direction: column;">
             <div class="modal-header"
@@ -883,7 +892,7 @@
             </div>
 
             <div id="install-port-warning"
-                style="margin-top: 16px; padding: 12px; background: rgba(248, 81, 73, 0.1); border: 1px solid var(--accent-danger); border-radius: var(--radius-default); display: none;">
+                style="margin-top: 16px; padding: 12px; background: var(--accent-danger-soft); border: 1px solid var(--accent-danger); border-radius: var(--radius-default); display: none;">
                 <p style="font-size: 0.85rem; color: var(--accent-danger); margin: 0;"><i data-lucide="triangle-alert" aria-hidden="true"></i> Some default ports are already
                     in use. You may need to remap them after installation.</p>
             </div>
@@ -901,7 +910,7 @@
                     </div>
                 </div>
                 <div id="install-log-container"
-                    style="margin-top: 16px; padding: 12px; background: #000; border-radius: var(--radius-default); border: 1px solid var(--border-default); font-family: monospace; font-size: 0.75rem; color: #0f0; max-height: 150px; overflow-y: auto; white-space: pre-wrap;">
+                    style="margin-top: 16px; padding: 12px; background: var(--console-bg); border-radius: var(--radius-default); border: 1px solid var(--border-default); font-family: monospace; font-size: 0.75rem; color: #78f5a5; max-height: 150px; overflow-y: auto; white-space: pre-wrap;">
                     <div id="install-log-content"></div>
                 </div>
             </div>

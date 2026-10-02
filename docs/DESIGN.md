@@ -67,10 +67,20 @@ Users should feel confident leaving AlvaOS running unattended for months to year
 
 ### Color Palette
 
-Dark mode is the default and, at present, the **only** experience. A light
-theme is planned but not implemented; the palette below is defined as CSS
-custom properties on `:root` in `frontend/styles.css` so adding one later is a
-matter of redefining tokens rather than editing components.
+AlvaOS has a dark and a light theme. By default it follows the device
+(`prefers-color-scheme`); the account menu offers Auto, Light and Dark, stored
+per browser. `frontend/theme.js` runs in `<head>` and sets `data-theme` on
+`<html>` before the first paint.
+
+Every colour is a CSS custom property on `:root` in `frontend/styles.css`;
+`:root[data-theme="light"]` redefines them. Components never use a fixed
+colour: bars use `--track`, dialogs `--scrim`, elevation `--shadow-sm/md/lg`,
+text on amber or blue badges `--on-accent`. Translucent accent tints
+(`rgba(<accent>, 0.1)`) are fine in both themes. Consoles, logs and the
+compose editor stay dark in both themes (`--console-bg`, `--console-fg`),
+like code blocks.
+
+Dark palette:
 
 - **Background:** `#0d1117`  
 - **Surface:** `#161b22`  
@@ -85,6 +95,14 @@ matter of redefining tokens rather than editing components.
 - **Primary:** `#e6edf3` (Bright/Blueish White)
 - **Secondary:** `#8b949e` (Grey)
 - **Tertiary:** `#484f58` (Dark Grey)
+
+### Light palette
+- **Background:** `#f6f8fa`, **Surface:** `#ffffff`, **Border:** `#d0d7de`
+- **Primary:** `#0969da`, **Success:** `#1a7f37`, **Warning:** `#9a6700`, **Danger:** `#cf222e`
+- **Text:** `#1f2328` / `#59636e` / `#818b98`
+
+The light accents are darker than the dark ones so they keep their contrast
+on white.
 
 Color usage rules:
 - Red is reserved for **action-required states only**
