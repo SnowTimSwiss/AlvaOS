@@ -17,7 +17,6 @@ Every page follows the same pattern as the reworked Dashboard, Storage and Backu
 ## Now
 
 ### 1. Remaining pages in the new pattern
-- **Apps:** ship real app icons in `apps/icons/` (SVG, made or licensed for AlvaOS).
 - **Updates follow-up:** keep the package of the installed version in the update cache even when it came from the installer or a USB stick (with its signature), so going back, by hand or automatically after a failed update, is always possible.
 
 ---
