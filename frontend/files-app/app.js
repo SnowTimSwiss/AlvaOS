@@ -32,6 +32,8 @@
         open: '<path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
         lock: '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
         undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
+        link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+        copy: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
     };
     const icon = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[name] || P.file}</svg>`;
     const paintIcons = (root) => (root || document).querySelectorAll('[data-icon]').forEach((el) => { if (!el.firstChild) el.innerHTML = icon(el.dataset.icon); });
@@ -363,6 +365,7 @@
         if (one) rows.push(`<button type="button" data-ctx="open">${icon(one.type === 'folder' ? 'folder' : 'open')}Open</button>`);
         if (sel.some((e) => e.type === 'file')) rows.push(`<button type="button" data-ctx="download">${icon('download')}Download</button>`);
         if (canWrite && one) rows.push(`<button type="button" data-ctx="rename">${icon('pen')}Rename</button>`);
+        if (one) rows.push(`<button type="button" data-ctx="share">${icon('link')}Share link…</button>`);
         if (canWrite && sel.length) rows.push(`<button type="button" data-ctx="move">${icon('folder')}Move to…</button>`);
         if (canWrite && sel.length) rows.push('<hr>', `<button type="button" class="danger" data-ctx="delete">${icon('trash')}Delete</button>`);
         if (!sel.length && canWrite) rows.push(`<button type="button" data-ctx="upload">${icon('upload')}Upload files</button>`, `<button type="button" data-ctx="folder">${icon('folder-plus')}New folder</button>`);
@@ -391,6 +394,7 @@
         if (name === 'rename' && sel.length === 1) rename(sel[0]);
         if (name === 'delete' && sel.length) remove(sel);
         if (name === 'move' && sel.length) moveDialog(sel);
+        if (name === 'share' && sel.length === 1) shareDialog(sel[0]);
         if (name === 'upload') $('file-input').click();
         if (name === 'folder') newFolder();
     }
@@ -465,6 +469,84 @@
             load();
         } catch (err) { toast(err.message, 'error'); }
     }
+
+    // ── Share links ────────────────────────────────────────────────────────
+    const fullUrl = (u) => `${location.origin}${u}`;
+    async function copy(text) {
+        try {
+            await navigator.clipboard.writeText(text);   // only on https or localhost
+            toast('Link copied.');
+            return;
+        } catch (_e) { /* plain http on the home network: copy the old way */ }
+        const area = document.createElement('textarea');
+        area.value = text;
+        area.setAttribute('readonly', '');
+        area.style.position = 'fixed';
+        area.style.opacity = '0';
+        document.body.appendChild(area);
+        area.select();
+        let ok = false;
+        try { ok = document.execCommand('copy'); } catch (_e) { ok = false; }
+        area.remove();
+        if (ok) toast('Link copied.'); else window.prompt('Copy the link:', text);
+    }
+
+    function shareDialog(entry) {
+        const wrap = $('dialog');
+        wrap.innerHTML = `<form class="dialog" novalidate><h2>Share "${esc(entry.name)}"</h2>
+            <p>Anyone with the link can ${entry.type === 'folder' ? 'look at and download what is in this folder' : 'look at and download this file'}. They cannot change anything.</p>
+            <label class="field">Works for<select id="ln-days" class="sel">
+                <option value="1">1 day</option><option value="7" selected>7 days</option><option value="30">30 days</option>
+                <option value="90">90 days</option><option value="0">Until I remove it</option></select></label>
+            <label class="field">Password (optional)<input id="ln-pass" type="text" autocomplete="off" placeholder="Leave empty for no password"></label>
+            <div class="notice" id="ln-error"></div>
+            <div class="actions"><button type="button" class="btn" data-cancel>Cancel</button><button type="submit" class="btn primary">Create link</button></div></form>`;
+        wrap.hidden = false;
+        const close = () => { wrap.hidden = true; wrap.innerHTML = ''; };
+        wrap.querySelector('[data-cancel]').onclick = close;
+        wrap.querySelector('form').onsubmit = async (e) => {
+            e.preventDefault();
+            try {
+                const link = await api('links', { method: 'POST', json: { share, path: rel(entry), kind: entry.type, days: Number($('ln-days').value), password: $('ln-pass').value } });
+                const url = fullUrl(link.url);
+                wrap.innerHTML = `<div class="dialog"><h2>Link ready</h2>
+                    <p>${link.expires_at ? `Works until ${esc(when(link.expires_at))}` : 'Works until you remove it'}${link.has_password ? ', with a password' : ''}. You find it again under Shared links.</p>
+                    <div class="linkbox"><input readonly value="${esc(url)}" id="ln-url"><button type="button" class="btn primary" id="ln-copy">${icon('copy')}Copy</button></div>
+                    <div class="actions"><button type="button" class="btn" data-done>Done</button></div></div>`;
+                $('ln-url').select();
+                $('ln-copy').onclick = () => copy(url);
+                wrap.querySelector('[data-done]').onclick = close;
+            } catch (err) {
+                $('ln-error').textContent = err.message;
+            }
+        };
+        $('ln-days').focus();
+    }
+
+    $('links-nav').addEventListener('click', async () => {
+        closeSide();
+        const wrap = $('dialog');
+        wrap.hidden = false;
+        const paint = async () => {
+            let links = [];
+            let error = '';
+            try { links = (await api('links')).links || []; } catch (err) { error = err.message; }
+            wrap.innerHTML = `<div class="dialog wide"><h2>Shared links</h2><p>Links you made. Anyone with a link can open what it points to until it expires or you remove it.</p>
+                <div class="trash-list">${error ? esc(error) : links.length ? links.map((l) => `<div class="trash-row"><div><strong>${icon(l.kind === 'folder' ? 'folder' : 'file')} ${esc(l.name)}</strong>
+                <small>${esc([l.share, ...l.path.split('/').slice(0, -1)].join(' › '))} · ${l.expires_at ? `until ${esc(when(l.expires_at))}` : 'no end date'}${l.has_password ? ' · password' : ''}${me?.role === 'admin' && l.owner !== me.user ? ` · by ${esc(l.owner)}` : ''}</small></div>
+                <div style="display:flex;gap:6px"><button type="button" class="btn" data-copy="${esc(l.url)}">${icon('copy')}<span class="hide-phone">Copy</span></button><button type="button" class="btn danger" data-del="${esc(l.id)}">Remove</button></div></div>`).join('') : '<div class="empty" style="padding:30px 0">No shared links yet. Right-click a file or folder and choose "Share link".</div>'}</div>
+                <div class="actions"><button type="button" class="btn primary" data-close>Done</button></div></div>`;
+            wrap.querySelector('[data-close]').onclick = () => { wrap.hidden = true; wrap.innerHTML = ''; };
+            wrap.querySelectorAll('[data-copy]').forEach((b) => { b.onclick = () => copy(fullUrl(b.dataset.copy)); });
+            wrap.querySelectorAll('[data-del]').forEach((b) => { b.onclick = async () => {
+                b.disabled = true;
+                try { await api(`links/${encodeURIComponent(b.dataset.del)}/delete`, { method: 'POST' }); toast('Link removed. It does not work any more.'); } catch (err) { toast(err.message, 'error'); }
+                paint();
+            }; });
+        };
+        wrap.innerHTML = '<div class="dialog"><p>Loading…</p></div>';
+        paint();
+    });
 
     // ── Moving ─────────────────────────────────────────────────────────────
     async function moveTo(list, to) {
