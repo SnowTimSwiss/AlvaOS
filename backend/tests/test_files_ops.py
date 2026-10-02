@@ -126,3 +126,20 @@ def test_the_trash_itself_cannot_be_a_symlink(share):
     with pytest.raises(fo.FileOpError):
         fo.trash(s, s, "A", root)
     assert os.listdir(outside) == ["shadow"]
+
+
+def test_listing_hides_the_trash_and_puts_folders_first(share):
+    root, s, _ = share
+    fo.make_dir(s, "B", root)
+    fo.trash(s, s, "B", root)
+    fo.make_dir(s, "zeta", root)
+    entries = fo.list_dir(s, root)
+    assert [(e["name"], e["type"]) for e in entries] == [("Films", "folder"), ("zeta", "folder"), ("notes.txt", "file")]
+    assert entries[2]["size_bytes"] == 3
+
+
+def test_only_file_operations_can_run_as_a_person():
+    from test_files import load_helper
+    helper = load_helper()
+    assert {"files-list", "files-write", "files-trash", "read-file", "file-size"} <= helper.AS_USER_OPS
+    assert not {"apply-update", "write-sysfs", "vault-open", "files-trash-purge"} & helper.AS_USER_OPS

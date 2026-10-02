@@ -51,6 +51,8 @@ def open_dir(path: str, root: str = DATA_ROOT) -> int:
         raise FileOpError('Invalid folder.')
     try:
         fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except PermissionError:
+        raise FileOpError('You do not have access to this folder.') from None
     except OSError:
         raise FileOpError('This folder does not exist (any more).') from None
     if not _real(fd).startswith(root.rstrip('/') + '/'):
@@ -73,11 +75,44 @@ def _exists(name: str, dir_fd: int) -> bool:
 
 def _like_parent(fd: int, parent_fd: int, is_dir: bool) -> None:
     """Group and permissions as the folder it is in, so the share's users can
-    use it like files they made themselves."""
+    use it like files they made themselves. Running as a person (not root),
+    the group may not be theirs to give; the folder's setgid bit sets it then."""
     st = os.fstat(parent_fd)
-    os.fchown(fd, -1, st.st_gid)
+    try:
+        os.fchown(fd, -1, st.st_gid)
+    except PermissionError:
+        pass
     mode = st.st_mode & 0o7777 if is_dir else (st.st_mode & 0o666) | 0o600
-    os.fchmod(fd, mode)
+    try:
+        os.fchmod(fd, mode)
+    except PermissionError:
+        pass
+
+
+def list_dir(dir_path: str, root: str = DATA_ROOT) -> List[Dict[str, Any]]:
+    """What is in a folder: name, type, size, modified. Run as the person, the
+    kernel decides what they may see."""
+    dfd = open_dir(dir_path, root)
+    try:
+        entries = []
+        for name in os.listdir(dfd):
+            if name == TRASH_DIR:
+                continue
+            try:
+                st = os.lstat(name, dir_fd=dfd)
+            except OSError:
+                continue
+            kind = 'folder' if stat.S_ISDIR(st.st_mode) else 'file' if stat.S_ISREG(st.st_mode) else \
+                'link' if stat.S_ISLNK(st.st_mode) else 'other'
+            entries.append({'name': name, 'type': kind,
+                            'size_bytes': st.st_size if kind == 'file' else 0,
+                            'modified_at': datetime.fromtimestamp(st.st_mtime).astimezone().isoformat()})
+        entries.sort(key=lambda e: (e['type'] != 'folder', e['name'].lower()))
+        return entries
+    except PermissionError:
+        raise FileOpError('You do not have access to this folder.') from None
+    finally:
+        os.close(dfd)
 
 
 # ── Upload, new folder, rename ───────────────────────────────────────────────
