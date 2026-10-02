@@ -15,6 +15,27 @@ How to add an entry:
 
 ---
 
+## 2026-10-02 · Where am I signed in? Sign out everywhere else
+
+- **System › Security › Signed in:** every session with device ("Safari on
+  iPhone"), address, last use and when it signed in; "This browser" marked.
+  Sign out one, or "Sign out everywhere else" (confirm dialog).
+- **Backend:** sessions now record `created_at`, `last_seen_at`, `ip` and a
+  plain device name from the User-Agent (`describe_device`). Last use is
+  written at most every 5 minutes, so an open dashboard does not write the
+  sessions file on every poll. The list never contains a token: sessions are
+  identified by a public id (first 16 hex of SHA-256 of the token).
+  `GET /api/v1/auth/sessions`, `DELETE /api/v1/auth/sessions/<id>` (not the
+  current one: that is Log out), `POST /api/v1/auth/sessions/revoke-others`;
+  admin only, CSRF like every change.
+- **Tests no longer write `/var/lib/alvaos/sessions.json`:** an autouse
+  fixture in `conftest.py` points the sessions file to a temporary folder
+  (verified: the file is not created by a full test run). Removed from the
+  roadmap.
+- Tests: device names, listing without secrets, revoking one/others/current,
+  last-use throttling, API incl. CSRF. Checked in a browser at desktop and
+  phone width.
+
 ## 2026-10-02 · Disks test themselves, and say when they are failing
 
 - **Found:** SMART was only read when someone opened the Disks tab. A disk

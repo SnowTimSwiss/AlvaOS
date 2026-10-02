@@ -58,7 +58,7 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 ### Security
 - Keep the privilege helper strict: every new privileged command gets a policy rule and tests.
 - Validate everything that ends up in config files (`smb.conf`, `/etc/exports`, WireGuard, compose files).
-- Sessions: rate limits, 2FA, and a list of active sessions with "sign out everywhere".
+- Sessions: sign out sessions that were idle for a long time, and say on the login page when the NAS was last signed in to from somewhere else.
 - HTTPS by default on the LAN, with a local certificate and clear instructions for trusting it.
 - Regular dependency updates and a short security review for every PR that touches `priv_policy.py` or auth.
 
@@ -76,4 +76,3 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 
 ### Quality
 - Tests for every backend change. Browser checks at desktop and phone width for every UI change.
-- Fix the tests that write to `/var/lib/alvaos/sessions.json` on a developer machine.
