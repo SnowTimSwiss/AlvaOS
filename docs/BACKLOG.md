@@ -15,6 +15,18 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · Apps: own icons
+
+- Every catalog app has its own icon: a colour and a symbol for what it does
+  (Jellyfin play, Immich photo, Vaultwarden key, Pi-hole blocked shield, ...),
+  drawn with the bundled Lucide set (`APP_MARKS` in `apps.js`). Brand logos
+  are not shipped on purpose (their licences). Shown in the store, the
+  install dialog and, small, in the installed list.
+- Added the Lucide icons cloud, play, image, download, file-text, lock and
+  shield-ban to `lucide-icons.js` (same ISC source).
+- Apps without a mark (custom compose apps, new catalog entries) keep the
+  category icon. A new catalog app needs an entry in `APP_MARKS`.
+
 ## 2026-10-03 · Dashboard: Getting started
 
 - A "Getting started" list under the status line with the five things a new

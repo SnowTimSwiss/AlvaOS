@@ -262,8 +262,33 @@ function getCategoryIconMarkup(category) {
     return window.alvaIcon ? window.alvaIcon(iconName, '', 'aria-hidden="true"') : '';
 }
 
+// AlvaOS's own app icons: a colour and a symbol for what the app does. No
+// brand logos (their licences do not allow shipping them with AlvaOS).
+const APP_MARKS = {
+    nextcloud: ['#0b72b9', 'cloud'],
+    jellyfin: ['#6d3bb3', 'play'],
+    pihole: ['#b3312a', 'shield-ban'],
+    vaultwarden: ['#1d4fb8', 'key-round'],
+    immich: ['#c4561a', 'image'],
+    transmission: ['#a3283a', 'download'],
+    cloudflared: ['#c25a0c', 'globe'],
+    uptimekuma: ['#2b7d45', 'activity'],
+    ollama: ['#3b3f46', 'cpu'],
+    eurooffice: ['#22609e', 'file-text'],
+    wireguard: ['#7a1a1d', 'lock'],
+    openwebui: ['#2d3340', 'message-square'],
+};
+
+function appMark(appId) {
+    const mark = APP_MARKS[String(appId || '').toLowerCase()];
+    if (!mark || !window.alvaIcon) return '';
+    return `<span class="app-mark" style="--mark: ${mark[0]}">${window.alvaIcon(mark[1], '', 'aria-hidden="true"')}</span>`;
+}
+
 function getAppIcon(appOrCategory) {
     if (appOrCategory && typeof appOrCategory === 'object') {
+        const mark = appMark(appOrCategory.id || appOrCategory.app_id);
+        if (mark) return mark;
         const fallback = getCategoryIconMarkup(appOrCategory.category);
         const iconUrl = normalizeIconPath(appOrCategory.icon);
         if (!iconUrl) return fallback;
@@ -516,7 +541,7 @@ function renderInstalledList() {
                 onclick="selectInstalledApp('${escapeHtml(app.app_id)}')"
                 onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectInstalledApp('${escapeHtml(app.app_id)}'); }">
                 <div class="app-list-top">
-                    <div class="app-list-name">${escapeHtml(app.name || app.app_id)}</div>
+                    <div class="app-list-name">${appMark(app.app_id) ? `<span class="app-mini">${appMark(app.app_id)}</span>` : ''}${escapeHtml(app.name || app.app_id)}</div>
                     ${state.label ? `<span class="app-state ${state.key}">${escapeHtml(state.label)}</span>` : ''}
                 </div>
                 <div class="app-list-bottom">
