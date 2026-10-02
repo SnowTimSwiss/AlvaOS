@@ -19,7 +19,51 @@ CMD: Dict[str, str] = {
     "BTRFS": "/usr/bin/btrfs",
     "MKDIR": "/usr/bin/mkdir",
     "MV": "/usr/bin/mv",
+    "CP": "/usr/bin/cp",
+    "FIND": "/usr/bin/find",
 }
+
+# Must match priv_policy.FIND_LIST_FORMAT exactly.
+FIND_LIST_FORMAT = "%y\\t%s\\t%T@\\t%f\\0"
+FIND_TYPES = {"d": "folder", "f": "file", "l": "link"}
+
+
+def parse_find_listing(text: str) -> List[Dict[str, Any]]:
+    """Entries from `find DIR -mindepth 1 -maxdepth 1 -printf FIND_LIST_FORMAT`."""
+    entries = []
+    for record in (text or "").split("\0"):
+        parts = record.split("\t", 3)
+        if len(parts) != 4 or not parts[3]:
+            continue
+        kind, size, mtime, name = parts
+        try:
+            size_bytes = int(size)
+            modified = datetime.fromtimestamp(float(mtime), timezone.utc).isoformat()
+        except (ValueError, OverflowError, OSError):
+            continue
+        entries.append({"name": name, "type": FIND_TYPES.get(kind, "other"),
+                        "size_bytes": size_bytes, "modified_at": modified})
+    entries.sort(key=lambda e: (e["type"] != "folder", str(e["name"]).lower()))
+    return entries
+
+
+def clean_relative_path(path: Optional[str]) -> Optional[str]:
+    """A path inside a restore point: relative, no '..'. '' is the top."""
+    text = str(path or "").strip().strip("/")
+    if "\x00" in text or "\n" in text:
+        return None
+    parts = [part for part in text.split("/") if part not in ("", ".")]
+    if any(part == ".." for part in parts):
+        return None
+    return "/".join(parts)
+
+
+def restored_name(name: str, when: datetime, is_folder: bool = False) -> str:
+    """'holiday.jpg' -> 'holiday (restored 2026-10-01 0300).jpg'."""
+    stem, ext = os.path.splitext(name)
+    if not stem or is_folder:
+        stem, ext = name, ""
+    return f"{stem} (restored {when.strftime('%Y-%m-%d %H%M')}){ext}"
 
 DEFAULT_SETTINGS: Dict[str, Dict[str, Any]] = {
     # Pool Backup Settings
@@ -1420,6 +1464,80 @@ class BackupManager:
                 "failed": failed,
                 "status": "success" if not failed else ("partial" if created else "error"),
             }
+
+    # ── Single files from a restore point ────────────────────────────────
+
+    def _known_data_snapshot(self, snapshot_path: str) -> Optional[Dict]:
+        wanted = self._normalize_path(snapshot_path)
+        for entry in self.list_snapshots():
+            if (entry.get("snapshot_class") or "data") in ("data", "full_data") \
+                    and self._normalize_path(entry.get("snapshot_path")) == wanted:
+                return entry
+        return None
+
+    def _list_dir(self, path: str) -> Tuple[Optional[List[Dict[str, Any]]], str]:
+        res, err = self.run_command(
+            [CMD["FIND"], path, "-mindepth", "1", "-maxdepth", "1", "-printf", FIND_LIST_FORMAT], timeout=30)
+        if err or res is None or res.returncode != 0:
+            return None, err or "The folder could not be read."
+        return parse_find_listing(res.stdout), ""
+
+    def browse_snapshot(self, snapshot_path: str, rel_path: str = "") -> Tuple[bool, Dict]:
+        """What a folder looked like in a restore point, and which of its
+        entries are not in the folder any more."""
+        entry = self._known_data_snapshot(snapshot_path)
+        if not entry:
+            return False, {"error": "This restore point is not known."}
+        rel = clean_relative_path(rel_path)
+        if rel is None:
+            return False, {"error": "Invalid path."}
+        snap_root = self._normalize_path(entry.get("snapshot_path"))
+        then, err = self._list_dir(os.path.join(snap_root, rel) if rel else snap_root)
+        if then is None:
+            return False, {"error": err}
+        source = self._normalize_path(entry.get("source_path"))
+        now, _ = self._list_dir(os.path.join(source, rel) if rel else source)
+        current = {e["name"] for e in (now or [])}
+        for item in then:
+            item["exists_now"] = item["name"] in current if now is not None else None
+        return True, {"path": rel, "entries": then, "snapshot": entry, "folder_exists_now": now is not None}
+
+    def restore_item(self, snapshot_path: str, rel_path: str) -> Tuple[bool, Dict]:
+        """Copy one file or folder from a restore point back to where it was.
+        Nothing is overwritten: if the name is taken, the copy gets
+        '(restored <date>)' in its name."""
+        entry = self._known_data_snapshot(snapshot_path)
+        if not entry:
+            return False, {"error": "This restore point is not known."}
+        rel = clean_relative_path(rel_path)
+        if not rel:
+            return False, {"error": "Choose a file or folder to restore."}
+        parent_rel, name = os.path.split(rel)
+        source = self._normalize_path(entry.get("source_path"))
+        target_dir = os.path.join(source, parent_rel) if parent_rel else source
+        snap_root = self._normalize_path(entry.get("snapshot_path"))
+        then, _ = self._list_dir(os.path.join(snap_root, parent_rel) if parent_rel else snap_root)
+        item = next((e for e in then or [] if e["name"] == name), None)
+        if item is None:
+            return False, {"error": f'"{name}" is not in this restore point.'}
+        current, _ = self._list_dir(target_dir)
+        if current is None:
+            folder = parent_rel or os.path.basename(source)
+            return False, {"error": f'The folder "{folder}" is not there any more. Restore that folder instead.'}
+        taken = {e["name"] for e in current}
+        target_name = name
+        if target_name in taken:
+            when = self._parse_iso(entry.get("created_at")) or datetime.now(timezone.utc)
+            target_name = restored_name(name, when.astimezone(), item["type"] == "folder")
+            if target_name in taken:
+                return False, {"error": f'"{target_name}" is already there.'}
+        res, err = self.run_command(
+            [CMD["CP"], "-a", "--reflink=auto", "--no-clobber", "--",
+             os.path.join(snap_root, rel), os.path.join(target_dir, target_name)], timeout=3600)
+        if err or res is None or res.returncode != 0:
+            return False, {"error": err or "The copy did not work."}
+        return True, {"restored_as": os.path.join(parent_rel, target_name) if parent_rel else target_name,
+                      "renamed": target_name != name}
 
     def restore_snapshot(self, snapshot_path: str, source_path: Optional[str] = None) -> Tuple[bool, Dict]:
         snapshot = self._normalize_path(snapshot_path)

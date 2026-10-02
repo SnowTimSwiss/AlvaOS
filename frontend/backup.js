@@ -247,8 +247,11 @@ function renderDataSnapshots(items) {
                 <div class="snap-meta">${backupEscapeHtml(backupFormatDate(entry.created_at))}</div>
             </div>
             <div class="snap-actions">
+                <button class="btn-secondary backup-browse-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}" data-source-path="${backupEscapeHtml(entry.source_path || '')}" data-created-at="${backupEscapeHtml(entry.created_at || '')}">
+                    Get files
+                </button>
                 <button class="btn-secondary backup-restore-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}" data-source-path="${backupEscapeHtml(entry.source_path || '')}">
-                    Restore
+                    Restore all
                 </button>
                 <button class="btn-secondary backup-delete-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}">
                     Delete
@@ -989,7 +992,7 @@ async function runSystemBackupNow() {
 
 async function restoreDataSnapshot(snapshotPath, sourcePath) {
     if (!snapshotPath) return;
-    const ok = await window.showConfirm('Restore this snapshot?\nCurrent data will be replaced and moved to a pre-restore backup path.');
+    const ok = await window.showConfirm('Restore the whole folder to this point?\nThe current content is kept aside, not deleted. To get single files back, use "Get files" instead.');
     if (!ok) return;
     let pass = getRollbackPassphraseIfNeeded();
     if (pass.needsPrompt) {
@@ -1795,6 +1798,11 @@ function initBackupHandlers() {
         const deleteBtn = event.target.closest('.backup-delete-btn');
         if (deleteBtn) {
             deleteDataSnapshot(deleteBtn.dataset.snapshotPath || '');
+            return;
+        }
+        const browseBtn = event.target.closest('.backup-browse-btn');
+        if (browseBtn) {
+            window.openSnapshotBrowser(browseBtn.dataset.snapshotPath || '', browseBtn.dataset.sourcePath || '', browseBtn.dataset.createdAt || '');
             return;
         }
         const btn = event.target.closest('.backup-restore-btn');

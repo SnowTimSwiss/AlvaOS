@@ -897,6 +897,28 @@
             font-size: 0.82rem;
         }
 
+        .snap-browser { max-width: 640px; width: 100%; display: flex; flex-direction: column; max-height: min(88vh, 760px); }
+        .snap-browser-sub { margin: -4px 0 12px; color: var(--text-secondary); font-size: 0.88rem; }
+        .snap-browser-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+        .snap-crumbs { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; min-width: 0; font-size: 0.9rem; color: var(--text-tertiary); }
+        .snap-crumb { background: none; border: none; padding: 2px 4px; border-radius: 6px; color: var(--accent-primary); font: inherit; font-weight: 600; cursor: pointer; overflow-wrap: anywhere; }
+        .snap-crumb:last-child { color: var(--text-primary); }
+        .snap-crumb:hover { background: var(--bg-hover, var(--accent-primary-soft)); }
+        .snap-gone-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--text-secondary); cursor: pointer; }
+        .snap-browser-list { flex: 1 1 auto; min-height: 120px; overflow-y: auto; border: 1px solid var(--border-default); border-radius: var(--radius-default); }
+        .snap-file { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--border-subtle, var(--border-default)); }
+        .snap-file:last-child { border-bottom: none; }
+        .snap-file-ic { color: var(--text-tertiary); display: inline-flex; flex-shrink: 0; }
+        .snap-file-ic svg { width: 18px; height: 18px; }
+        .snap-file-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+        .snap-name, .snap-open { font-size: 0.92rem; overflow-wrap: anywhere; text-align: left; }
+        .snap-open { background: none; border: none; padding: 0; color: var(--accent-primary); font: inherit; font-weight: 600; cursor: pointer; }
+        .snap-file-meta { font-size: 0.78rem; color: var(--text-secondary); }
+        .snap-file.gone .snap-file-meta strong { color: var(--accent-warning); font-weight: 600; }
+        .snap-file .btn-secondary { padding: 0.35rem 0.7rem; font-size: 0.82rem; flex-shrink: 0; }
+        .snap-browser-empty { padding: 28px 16px; text-align: center; color: var(--text-secondary); font-size: 0.9rem; }
+        .snap-browser-note { margin: 10px 0 0; font-size: 0.8rem; color: var(--text-tertiary); line-height: 1.45; }
+
         .snap-badge {
             display: inline-flex;
             align-items: center;
@@ -942,6 +964,12 @@
             gap: 8px;
             flex-wrap: wrap;
             margin-top: 8px;
+        }
+
+        @media (max-width: 520px) {
+            .snap-row { flex-wrap: wrap; }
+            .snap-actions { width: 100%; }
+            .snap-actions .btn-secondary { flex: 1; }
         }
 
         @media (max-width: 760px) {
@@ -1125,7 +1153,7 @@
                         <div class="card-title">Restore points</div>
                         <button id="pool-snapshots-refresh-btn" class="btn-secondary">Refresh</button>
                     </div>
-                    <p class="metric-sub card-help">Pick a point in time to go back to. Restoring replaces the current data of that folder.</p>
+                    <p class="metric-sub card-help">Pick a point in time. "Get files" brings back single files or folders; "Restore all" puts the whole folder back as it was.</p>
                     <div id="pool-snapshots-list">
                         <div class="metric-sub">Loading snapshots...</div>
                     </div>
@@ -1459,6 +1487,7 @@
     <script src="nav.js"></script>
     <script src="password-toggle.js"></script>
     <script src="backup.js"></script>
+    <script src="snapshot-browser.js"></script>
 </body>
 
 </html>

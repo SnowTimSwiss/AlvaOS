@@ -108,6 +108,37 @@ def backup_snapshots():
 
     return jsonify({'success': True, 'snapshot': payload})
 
+@bp.route('/api/v1/backup/snapshots/browse', methods=['GET'])
+@require_auth(require_admin=True)
+def backup_snapshot_browse():
+    """One folder of a restore point, to pick single files from."""
+    if backup_manager is None:
+        return jsonify({'error': 'Backup manager not initialized'}), 500
+    snapshot_path = (request.args.get('snapshot_path') or '').strip()
+    if not snapshot_path:
+        return jsonify({'error': 'snapshot_path is required'}), 400
+    ok, payload = backup_manager.browse_snapshot(snapshot_path, request.args.get('path') or '')
+    if not ok:
+        return jsonify({'error': payload.get('error', 'The restore point could not be read')}), 400
+    return jsonify({'success': True, **payload})
+
+
+@bp.route('/api/v1/backup/snapshots/restore-item', methods=['POST'])
+@require_auth(require_admin=True)
+def backup_snapshot_restore_item():
+    """Copy one file or folder from a restore point back, without overwriting."""
+    if backup_manager is None:
+        return jsonify({'error': 'Backup manager not initialized'}), 500
+    data = request.get_json(silent=True) or {}
+    snapshot_path = str(data.get('snapshot_path') or '').strip()
+    if not snapshot_path:
+        return jsonify({'error': 'snapshot_path is required'}), 400
+    ok, payload = backup_manager.restore_item(snapshot_path, str(data.get('path') or ''))
+    if not ok:
+        return jsonify({'error': payload.get('error', 'The file was not restored')}), 400
+    return jsonify({'success': True, **payload})
+
+
 @bp.route('/api/v1/backup/system/snapshots', methods=['GET'])
 @require_auth
 def backup_system_snapshots():
