@@ -347,3 +347,41 @@ def test_files_app_is_turned_on_and_off_with_systemctl(backend, monkeypatch):
     assert data["enabled"] is True and data["running"] is True and data["port"] == 8090
     client.post("/api/v1/files-app", json={"enabled": False}, headers=headers)
     assert ["disable", "--now", "alvaos-files.service"] in calls
+
+
+def test_assistant_reads_through_the_admin_session(backend, monkeypatch, tmp_path):
+    import ai_assistant
+    module, state = backend
+    set_up(state)
+    monkeypatch.setattr(ai_assistant, "SETTINGS_FILE", str(tmp_path / "ai.json"))
+    token = auth_manager._create_session("root", role="admin")
+    headers = {"Authorization": token, "X-CSRF-Token": auth_manager.SESSIONS[token]["csrf_token"]}
+    client = module.app.test_client()
+    question = {"messages": [{"role": "user", "content": "How is my NAS?"}]}
+    assert client.post("/api/v1/ai/chat", json=question, headers=headers).status_code == 409
+    saved = client.post("/api/v1/ai/settings", json={"enabled": True, "base_url": "http://10.0.0.5:11434/v1"},
+                        headers=headers).get_json()
+    assert saved["enabled"] is True and "api_key" not in saved
+
+    class Answer:
+        status_code = 200
+
+        def __init__(self, message):
+            self.message = message
+
+        def json(self):
+            return {"choices": [{"message": self.message}]}
+
+    seen = []
+
+    def post(url, headers, json, timeout):
+        seen.append(json["messages"][-1])
+        if len(seen) == 1:
+            return Answer({"tool_calls": [{"id": "1", "function": {"name": "updates"}}]})
+        return Answer({"content": "All good."})
+
+    import requests
+    monkeypatch.setattr(requests, "post", post)
+    data = client.post("/api/v1/ai/chat", json=question, headers=headers).get_json()
+    assert data["reply"] == "All good." and data["looked_at"] == ["updates"]
+    assert seen[1]["role"] == "tool" and "answered 401" not in seen[1]["content"]

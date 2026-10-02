@@ -38,10 +38,10 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 - Quotas per share. Needs a decision first: Btrfs quotas (qgroups) can slow down big pools noticeably, especially with many snapshots.
 
 ### 4. AI
-- AI chatbot via ollama cloud integration or any other api.
-- you can toggle it completely off or on
-- new page in setup
-- it can do everything that a person can in the ui (permissions can be changed from read only to approve to NOT RECOMMENDED everything)
+- **Read-only assistant: done.** Settings › Assistant (off by default; Ollama at home, Ollama Cloud, OpenAI or any OpenAI-compatible API), chat panel in the top bar of every page, looks at the real state through a fixed list of read-only endpoints, secrets stripped.
+- Next: the "asks first" level. The assistant proposes a change (turn on backups, start a data check, update an app), the person sees exactly what will happen and presses OK; the call then goes through the normal endpoint with the CSRF token. Then "may do everything" (not recommended, clearly marked).
+- An optional step in first setup ("Want an assistant?").
+- Answers that stream word by word instead of arriving at once.
 
 ---
 
