@@ -11,7 +11,7 @@ from auth_manager import (
     require_auth,
 )
 
-from app_store import validate_install_paths
+from app_store import normalize_port_mappings, validate_install_paths
 from app_services import (
     docker_manager, app_store,
 )
@@ -54,21 +54,9 @@ def install_app():
     if not pool_path:
         return jsonify({'error': 'pool_path is required'}), 400
     
-    # Convert port mappings to int keys
-    if port_mappings:
-        if not isinstance(port_mappings, dict):
-            return jsonify({'error': 'port_mappings must be an object of source:target ports'}), 400
-        try:
-            normalized_port_mappings = {}
-            for k, v in port_mappings.items():
-                src = int(str(k).strip())
-                dst = int(str(v).strip())
-                if src <= 0 or dst <= 0:
-                    raise ValueError("ports must be positive integers")
-                normalized_port_mappings[src] = dst
-            port_mappings = normalized_port_mappings
-        except Exception:
-            return jsonify({'error': 'Invalid port_mappings format. Use positive integer source/target ports.'}), 400
+    port_mappings, port_error = normalize_port_mappings(port_mappings)
+    if port_error:
+        return jsonify({'error': port_error}), 400
     
     from storage_manager import load_pools_state
     problem = validate_install_paths(pool_path, volume_mappings, port_mappings, load_pools_state())
@@ -168,6 +156,30 @@ def update_app(app_id):
     if not success:
         return jsonify({'error': error}), 500
     return jsonify({'success': True, 'message': f'Update of "{app_id}" started'})
+
+@bp.route('/api/v1/apps/<app_id>/settings', methods=['POST'])
+@require_auth(require_admin=True)
+def reconfigure_app(app_id):
+    """Change the folders and ports of an installed app."""
+    data = request.get_json(silent=True) or {}
+    port_mappings, port_error = normalize_port_mappings(data.get('port_mappings') or {})
+    if port_error:
+        return jsonify({'error': port_error}), 400
+    volume_mappings = data.get('volume_mappings') or {}
+    installed = {a.get('app_id'): a for a in app_store.get_installed_apps()}
+    if app_id not in installed:
+        return jsonify({'error': f'App "{app_id}" is not installed'}), 404
+
+    from storage_manager import load_pools_state
+    problem = validate_install_paths(installed[app_id].get('pool_path'), volume_mappings, port_mappings,
+                                     load_pools_state())
+    if problem:
+        return jsonify({'error': problem}), 400
+
+    success, error = app_store.reconfigure_app(app_id, port_mappings, volume_mappings)
+    if not success:
+        return jsonify({'error': error}), 409
+    return jsonify({'success': True, 'message': f'New settings for "{app_id}" are being applied'})
 
 @bp.route('/api/v1/apps/<app_id>', methods=['DELETE'])
 @require_auth(require_admin=True)

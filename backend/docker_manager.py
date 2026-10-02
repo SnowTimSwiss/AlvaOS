@@ -426,11 +426,13 @@ class DockerManager:
         app_name: str,
         pool_path: str,
         project_name: Optional[str] = None,
-        callback: Optional[Callable[[str], None]] = None
+        callback: Optional[Callable[[str], None]] = None,
+        pull: bool = True
     ) -> Tuple[bool, Optional[str]]:
         """
         Update containers from a Docker Compose configuration.
-        Pulls new images first, then recreates containers while preserving volumes.
+        Pulls new images first (unless pull is False, for a settings change),
+        then recreates containers while preserving volumes.
 
         Args:
             compose_dict: Docker Compose configuration as dict
@@ -493,9 +495,10 @@ class DockerManager:
                     return False, error
                 return True, None
 
-            ok, err = run_step(['pull'], timeout=900)
-            if not ok:
-                return False, f"Failed to pull images: {err}"
+            if pull:
+                ok, err = run_step(['pull'], timeout=900)
+                if not ok:
+                    return False, f"Failed to pull images: {err}"
 
             ok, err = run_step(['up', '-d'], timeout=900)
             if not ok:

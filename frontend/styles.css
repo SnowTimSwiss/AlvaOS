@@ -1033,6 +1033,13 @@ button {
     font-size: 0.9rem;
 }
 
+/* A button that cannot be pressed right now has to look like it. */
+.btn-primary:disabled,
+.btn-secondary:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
 /* Inputs */
 input,
 select,
