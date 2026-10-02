@@ -233,3 +233,34 @@ def test_a_buddy_only_ever_gets_its_own_vault(paired_buddy, monkeypatch):
 
     deleted = client.delete("/api/v1/backup/buddy/peer/vault", headers=headers, environ_base=as_a)
     assert deleted.get_json()["deleted"] is True
+
+
+# ── First-run setup ──────────────────────────────────────────────────────────
+
+def test_setup_status_suggests_the_hostname_only_before_setup(backend):
+    module, state = backend
+    client = module.app.test_client()
+    (state / "setup_complete.json").unlink(missing_ok=True)
+    before = client.get("/api/v1/setup/status").get_json()
+    assert before["setup_complete"] is False and "hostname" in before
+    set_up(state)
+    after = client.get("/api/v1/setup/status").get_json()
+    assert after["setup_complete"] is True and "hostname" not in after
+
+
+def test_setup_refuses_unknown_time_zones(backend):
+    module, state = backend
+    (state / "setup_complete.json").unlink(missing_ok=True)
+    client = module.app.test_client()
+    for tz in ("../../etc/passwd", "Europe/Zurich; reboot", "", "x" * 80):
+        response = client.post("/api/v1/setup/complete", json={"password": "longenough", "timezone": tz})
+        assert response.status_code == 400, tz
+    set_up(state)
+
+
+def test_time_zone_names():
+    import api_auth
+    for ok in ("UTC", "Europe/Zurich", "America/Argentina/Buenos_Aires", "Etc/GMT+1"):
+        assert api_auth.TIMEZONE_RE.match(ok), ok
+    for bad in ("/etc/passwd", "Europe/../x", "Europe Zurich", "-UTC"):
+        assert not api_auth.TIMEZONE_RE.match(bad), bad

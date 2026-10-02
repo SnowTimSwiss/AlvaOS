@@ -19,7 +19,7 @@ Every page follows the same pattern as the reworked Dashboard, Storage and Backu
 ### 1. Remaining pages in the new pattern
 - **Apps:** installed apps with status, the address to open them, and Update/Stop/Remove. The store shows what an app needs (ports, folders) before installing. App data goes into pool folders the user picks.
 - **System:** split into Network, Time, Security, Alerts, Power and Logs as today, but each shows its state first and its settings second.
-- **Setup and login:** a first-run wizard ending in a usable NAS: name, admin password, first pool, first share, optional backup.
+- **Login:** the same calm look as the setup wizard, and say which NAS you are signing in to.
 - **Updates follow-up:** roll back automatically when `dpkg -i` fails or no service comes back after an update (`apply_update.sh` only reports the error today), and keep the package of the installed version in the cache even when it came from the installer or a USB stick, so "Go back" is always offered.
 
 ---

@@ -15,6 +15,42 @@ How to add an entry:
 
 ---
 
+## 2026-10-02 · Setup wizard that ends in a usable NAS
+
+- Five steps instead of three, and the NAS can be used at the end:
+  1. **Welcome** in two sentences.
+  2. **Name and password:** NAS name (suggested from the current hostname,
+     cleaned up as you type), admin password with live hints (length, too
+     easy, typed twice), time zone taken from the browser with a Change link
+     to every IANA zone (`Intl.supportedValuesOf`) instead of 47 hard-coded
+     ones. Continue completes setup (`/setup/complete`), then renames the NAS.
+  3. **Storage:** only empty disks are offered, all preselected. Two or more:
+     Mirrored (recommended, shows usable space) or Use all space. One: a note
+     that a second disk can mirror it later. Storage from an earlier install
+     can be kept (import). No free disk: Look again or skip. The button says
+     "Erase and set up storage" and the note above it says what is erased.
+  4. **Shared folder** "Files": "Me, with a name and password" (recommended,
+     creates a person, admin password by default) or "Everyone on my home
+     network" (guest). "Keep a restore point every day" is on by default and
+     turns on daily backups of that folder (30 kept).
+  5. **Done:** what was set up, what is left for later, and the addresses to
+     type on Windows and Mac.
+- Everything after the password can be skipped; the dashboard already shows
+  missing storage and backups as blue next steps.
+- **Backend:** `/setup/status` suggests the hostname before setup (not after).
+  `/setup/complete` now rejects time zones that are not IANA names present in
+  `/usr/share/zoneinfo`; before, any string went to `timedatectl`.
+- The wizard uses only existing endpoints (disks, pools, import, users,
+  shares, backup settings, hostname) with the session it gets from setup.
+- Tests: setup status and time zone cases in `test_api.py`. Walked through in a
+  browser with a mocked backend (two empty disks, no free disk) at desktop and
+  phone width, in both themes; checked the exact requests (token and CSRF on
+  each, the right pool, share and backup payloads).
+- **Note for next time:** never run on real disks. On a NAS check: pool
+  creation from the wizard, the share opening from Windows with the new
+  person, the hostname change (Samba and mDNS name), and importing a pool
+  from a previous install.
+
 ## 2026-10-02 · Light theme
 
 - AlvaOS now has a light theme. **Easy:** it follows the device (light or

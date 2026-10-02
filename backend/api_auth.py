@@ -8,6 +8,7 @@ import io
 import json
 import os
 import platform
+import re
 import secrets
 import socket
 import subprocess
@@ -116,13 +117,33 @@ def _refresh_totp_runtime():
         return False, str(e)
 
 
+TIMEZONE_RE = re.compile(r'^[A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+){0,2}$')
+ZONEINFO_DIR = '/usr/share/zoneinfo'
+
+
+def is_valid_timezone(value):
+    """An IANA name like Europe/Zurich that exists on this system."""
+    name = str(value or '')
+    if not TIMEZONE_RE.match(name) or len(name) > 64:
+        return False
+    if platform.system() != 'Linux' or not os.path.isdir(ZONEINFO_DIR):
+        return True
+    return os.path.isfile(os.path.join(ZONEINFO_DIR, name))
+
+
 @bp.route('/api/v1/setup/status', methods=['GET'])
 def get_setup_status():
     """Check if initial setup is required"""
-    return jsonify({
-        'setup_complete': is_setup_complete(),
+    complete = is_setup_complete()
+    payload = {
+        'setup_complete': complete,
         'version': VERSION
-    })
+    }
+    if not complete:
+        # The setup wizard suggests the current name. It is announced on the
+        # network anyway; after setup nothing extra is shown here.
+        payload['hostname'] = socket.gethostname() or ''
+    return jsonify(payload)
 
 @bp.route('/api/v1/setup/complete', methods=['POST'])
 def complete_setup():
@@ -141,6 +162,10 @@ def complete_setup():
         # Validate password strength
         if len(password) < 8:
             return jsonify({'error': 'Password must be at least 8 characters'}), 400
+
+        timezone_name = data.get('timezone')
+        if timezone_name is not None and not is_valid_timezone(timezone_name):
+            return jsonify({'error': 'Unknown time zone'}), 400
         
         # Change root password using subprocess with sudo
         try:
