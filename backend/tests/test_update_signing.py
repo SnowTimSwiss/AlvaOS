@@ -53,3 +53,29 @@ def test_garbage_signature_is_rejected(signed_package):
     sig_path.write_bytes(b"not base64 !!!")
     with pytest.raises(u.SignatureError):
         u.verify_installed_key(str(package), str(sig_path), str(key_path))
+
+
+def test_the_way_back_is_a_signed_package_of_the_installed_version(tmp_path):
+    import os
+    import time
+    versions = {}
+
+    def make(name, version, signed=True, age=0):
+        path = tmp_path / name
+        path.write_bytes(b"deb")
+        os.utime(path, (time.time() - age, time.time() - age))
+        if signed:
+            (tmp_path / (name + ".sig")).write_text("sig")
+        versions[str(path)] = version
+        return str(path)
+
+    old = make("alvaos_1.0.0_all.deb", "1.0.0", age=100)
+    older_copy = make("copy-of-1.0.0.deb", "1.0.0", age=500)
+    make("unsigned_1.0.0.deb", "1.0.0", signed=False)
+    new = make("alvaos_2.0.0_all.deb", "2.0.0")
+    found = u.packages_of_version(str(tmp_path), "1.0.0", exclude=new,
+                                               read_version=versions.get)
+    assert found == [old, older_copy]
+    assert u.packages_of_version(str(tmp_path), "2.0.0", exclude=new, read_version=versions.get) == []
+    assert u.packages_of_version(str(tmp_path), "", read_version=versions.get) == []
+    assert u.packages_of_version(str(tmp_path / "missing"), "1.0.0") == []
