@@ -15,6 +15,32 @@ How to add an entry:
 
 ---
 
+## 2026-10-02 · Light theme
+
+- AlvaOS now has a light theme. **Easy:** it follows the device (light or
+  dark, and switches live when the device does). **Powerful:** the account
+  menu has Appearance: Auto, Light, Dark, remembered per browser, so a phone
+  and a desktop can each look right. Login and setup follow it too.
+- `theme.js` is loaded in `<head>` of every page before `styles.css` and sets
+  `data-theme` and `color-scheme` on `<html>`, so there is no flash of the
+  wrong theme. Other tabs follow a change.
+- All fixed colours became tokens: `--track`, `--track-soft`, `--hairline`,
+  `--scrim`, `--shadow-sm/md/lg`, `--on-accent`, `--accent-primary-soft`,
+  `--accent-danger-soft`, `--accent-primary-ring`. `:root[data-theme="light"]`
+  only redefines tokens (GitHub-light palette, darker accents for contrast).
+  Consoles, logs and the compose editor stay dark on purpose
+  (`--console-bg/-fg`). Translucent accent tints in page styles were left as
+  they are; they work on both backgrounds.
+- **Fixed on the way:** the phone menu button from the navigation work used
+  `.menu-btn`, a class the Apps page already uses for its "..." menus, so the
+  hamburger showed on desktop there. It is now `.nav-menu-btn`.
+- Checked in a browser at desktop and phone width in both themes (dashboard in
+  three states, navigation, Updates, Backup, Apps, System, Login), plus:
+  device light, pick Dark, reload keeps Dark, Auto returns to light.
+- DESIGN.md and README describe both themes.
+- **Note for next time:** new styles must use tokens, never fixed colours;
+  check a new page with `colorScheme: 'light'` in Playwright.
+
 ## 2026-10-01 · Automatic updates and the watchdog really run
 
 - **Found:** `alvaos-update-checker.service` was a oneshot enabled for boot

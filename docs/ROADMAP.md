@@ -72,7 +72,6 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 - One visual language across all pages: cards, pills, buttons, dialogs, empty states.
 - Plain words instead of technical terms. The technical term appears in the details.
 - Every warning links to the page where it is fixed.
-- A light theme, built on the existing CSS tokens.
 - Accessibility: keyboard navigation, focus states, contrast.
 
 ### Quality

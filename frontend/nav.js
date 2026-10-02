@@ -126,13 +126,13 @@
             }
             menu.hidden = false;
             button.setAttribute('aria-expanded', 'true');
-            menu.querySelector('[role="menuitem"]')?.focus();
+            (menu.querySelector('[aria-checked="true"]') || menu.querySelector('[role^="menuitem"]'))?.focus();
         });
         document.addEventListener('click', (event) => {
             if (!menu.contains(event.target)) close(false);
         });
         menu.addEventListener('keydown', (event) => {
-            const items = Array.from(menu.querySelectorAll('[role="menuitem"]'));
+            const items = Array.from(menu.querySelectorAll('[role^="menuitem"]'));
             const index = items.indexOf(document.activeElement);
             if (event.key === 'Escape') {
                 event.preventDefault();
@@ -147,7 +147,25 @@
         });
     }
 
+    // ── Appearance (Auto / Light / Dark) ────────────────────────────────────
+
+    function setupTheme() {
+        const buttons = Array.from(document.querySelectorAll('[data-theme-choice]'));
+        if (!buttons.length || !window.alvaosTheme) return;
+        const sync = () => {
+            const choice = window.alvaosTheme.get();
+            buttons.forEach((b) => b.setAttribute('aria-checked', String(b.dataset.themeChoice === choice)));
+        };
+        buttons.forEach((b) => b.addEventListener('click', (event) => {
+            event.stopPropagation(); // keep the menu open to see the result
+            window.alvaosTheme.set(b.dataset.themeChoice);
+        }));
+        document.addEventListener('alvaos-theme', sync);
+        sync();
+    }
+
     function start() {
+        setupTheme();
         setupDrawer();
         setupAccount();
         loadName();
