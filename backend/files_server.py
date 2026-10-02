@@ -36,7 +36,6 @@ SESSIONS_FILE = os.path.join(STATE_DIR, 'files_sessions.json')
 SESSION_DAYS = 14
 COOKIE = 'alvaos_files'
 LINK_TTL_SECONDS = 600
-UPLOAD_LIMIT_BYTES = 4 * 1024 ** 3
 LOGIN_MAX_ATTEMPTS = 10
 LOGIN_WINDOW_SECONDS = 15 * 60
 
@@ -253,7 +252,7 @@ def me():
                     key=lambda s: s['name'].lower())
     nas = socket.gethostname().split('.')[0]
     return jsonify({'user': session['user'], 'role': session['role'], 'shares': shares,
-                    'nas_name': nas, 'upload_limit_bytes': UPLOAD_LIMIT_BYTES})
+                    'nas_name': nas})
 
 
 # ── Browsing and files ───────────────────────────────────────────────────────
@@ -422,19 +421,68 @@ def zip_folder():
     return _zip_response(stream, os.path.basename(rel) if rel else share['name'])
 
 
-@app.post('/api/upload')
-def upload():
+# Uploads arrive in pieces of up to PIECE_LIMIT_BYTES, so big files work, a
+# dropped connection continues where it stopped, and the web server never
+# holds more than one piece on the system disk.
+PIECE_LIMIT_BYTES = 64 * 1024 ** 2
+
+
+@app.get('/api/upload/status')
+def upload_status():
     session, refused = need_session()
     if refused:
         return refused
     _, path, _, bad = target(session, request.args, write=True)
     if bad:
         return bad
-    if (request.content_length or 0) > UPLOAD_LIMIT_BYTES:
-        return jsonify({'error': 'Files over 4 GB go through the shared folder on your computer.'}), 413
-    result, error = files_manager.upload(path, str(request.args.get('name') or ''), request.stream,
-                                         user=as_user(session))
-    return _helper_answer(result, error, 201)
+    return _helper_answer(*files_manager.run_helper(['files-part-size', path, str(request.args.get('name') or '')],
+                                                    user=as_user(session)))
+
+
+@app.post('/api/upload/piece')
+def upload_piece():
+    session, refused = need_session()
+    if refused:
+        return refused
+    _, path, _, bad = target(session, request.args, write=True)
+    if bad:
+        return bad
+    if (request.content_length or 0) > PIECE_LIMIT_BYTES:
+        return jsonify({'error': 'Pieces are at most 64 MB.'}), 413
+    offset = str(request.args.get('offset') or '0')
+    if not offset.isdigit():
+        return jsonify({'error': 'Invalid offset.'}), 400
+    return _helper_answer(*files_manager.pipe_helper(
+        ['files-part-write', path, str(request.args.get('name') or ''), offset], request.stream, user=as_user(session)))
+
+
+@app.post('/api/upload/finish')
+def upload_finish():
+    session, refused = need_session()
+    if refused:
+        return refused
+    data = request.get_json(silent=True) or {}
+    _, path, _, bad = target(session, data, write=True)
+    if bad:
+        return bad
+    size = str(data.get('size') if data.get('size') is not None else '')
+    if not size.isdigit():
+        return jsonify({'error': 'Invalid size.'}), 400
+    return _helper_answer(*files_manager.run_helper(['files-part-finish', path, str(data.get('name') or ''), size],
+                                                    user=as_user(session)), 201)
+
+
+@app.post('/api/upload/abort')
+def upload_abort():
+    session, refused = need_session()
+    if refused:
+        return refused
+    data = request.get_json(silent=True) or {}
+    _, path, _, bad = target(session, data, write=True)
+    if bad:
+        return bad
+    return _helper_answer(*files_manager.run_helper(['files-part-abort', path, str(data.get('name') or '')],
+                                                    user=as_user(session)))
 
 
 @app.post('/api/mkdir')
@@ -848,7 +896,7 @@ def main() -> None:
         return
     print(f'AlvaOS Files on port {PORT}')
     waitress.serve(app, host='0.0.0.0', port=PORT, threads=8, ident='AlvaOS Files',
-                   max_request_body_size=UPLOAD_LIMIT_BYTES)
+                   max_request_body_size=PIECE_LIMIT_BYTES + 1024 * 1024)
 
 
 if __name__ == '__main__':

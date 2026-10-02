@@ -179,3 +179,34 @@ def test_a_folder_zips_without_symlinks_hidden_files_or_trash(share):
     z = zipfile.ZipFile(io.BytesIO(buf.getvalue()))
     assert sorted(z.namelist()) == ["Films/a.mkv", "notes.txt"]
     assert z.read("Films/a.mkv") == b"film"
+
+
+def test_uploads_in_pieces_continue_and_never_overwrite(share):
+    import io
+    root, s_, outside = share
+    assert fo.part_size(s_, "big.bin", root) == 0
+    assert fo.part_write(s_, "big.bin", 0, io.BytesIO(b"aaaa"), root) == 4
+    with pytest.raises(fo.FileOpError, match="continues at 4"):
+        fo.part_write(s_, "big.bin", 0, io.BytesIO(b"x"), root)       # a piece sent twice
+    assert fo.part_size(s_, "big.bin", root) == 4                     # where to go on after a drop
+    assert fo.part_write(s_, "big.bin", 4, io.BytesIO(b"bb"), root) == 6
+    with pytest.raises(fo.FileOpError, match="not complete"):
+        fo.part_finish(s_, "big.bin", 10, root)
+    assert not any(e["name"].endswith(".alvaos-upload") for e in fo.list_dir(s_, root) if not e["name"].startswith("."))
+    fo.part_finish(s_, "big.bin", 6, root)
+    assert open(os.path.join(s_, "big.bin"), "rb").read() == b"aaaabb"
+    assert os.stat(os.path.join(s_, "big.bin")).st_mode & 0o777 == 0o660
+    with pytest.raises(fo.FileOpError, match="already there"):
+        fo.part_write(s_, "notes.txt", 0, io.BytesIO(b"x"), root)
+    fo.part_write(s_, "gone.bin", 0, io.BytesIO(b"x"), root)
+    fo.part_abort(s_, "gone.bin", root)
+    assert fo.part_size(s_, "gone.bin", root) == 0
+
+
+def test_a_symlink_in_place_of_the_part_file_is_refused(share):
+    import io
+    root, s_, outside = share
+    os.symlink(os.path.join(outside, "shadow"), os.path.join(s_, ".x.bin.alvaos-upload"))
+    with pytest.raises((fo.FileOpError, OSError)):
+        fo.part_write(s_, "x.bin", 0, io.BytesIO(b"pwn"), root)
+    assert open(os.path.join(outside, "shadow")).read() == "secret"

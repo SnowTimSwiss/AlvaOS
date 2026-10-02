@@ -146,6 +146,95 @@ def write_file(dir_path: str, name: str, src: BinaryIO, root: str = DATA_ROOT) -
         os.close(dfd)
 
 
+# Uploads in pieces: written into a hidden part file next to the final name,
+# renamed at the end. A dropped connection continues where it stopped.
+PART_SUFFIX = '.alvaos-upload'
+
+
+def _part_name(name: str) -> str:
+    check_name(name)
+    part = f'.{name}{PART_SUFFIX}'
+    if len(part.encode('utf-8', 'surrogateescape')) > 255:
+        raise FileOpError('That name is too long.')
+    return part
+
+
+def part_size(dir_path: str, name: str, root: str = DATA_ROOT) -> int:
+    part = _part_name(name)
+    dfd = open_dir(dir_path, root)
+    try:
+        try:
+            st = os.lstat(part, dir_fd=dfd)
+        except FileNotFoundError:
+            return 0
+        if not stat.S_ISREG(st.st_mode):
+            raise FileOpError('An unfinished upload of that name is in the way.')
+        return st.st_size
+    finally:
+        os.close(dfd)
+
+
+def part_write(dir_path: str, name: str, offset: int, src: BinaryIO, root: str = DATA_ROOT) -> int:
+    """Add one piece at `offset`, which must be where the part file ends.
+    Returns the new size."""
+    part = _part_name(name)
+    dfd = open_dir(dir_path, root)
+    try:
+        if _exists(name, dfd):
+            raise FileOpError(f'"{name}" is already there.')
+        flags = os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC
+        fd = os.open(part, flags, 0o600, dir_fd=dfd)
+        try:
+            st = os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode):
+                raise FileOpError('An unfinished upload of that name is in the way.')
+            if st.st_size != offset:
+                raise FileOpError(f'The upload continues at {st.st_size}, not at {offset}.')
+            os.lseek(fd, offset, os.SEEK_SET)
+            with os.fdopen(fd, 'wb', closefd=False) as out:
+                shutil.copyfileobj(src, out, 1024 * 1024)
+            return os.fstat(fd).st_size
+        finally:
+            os.close(fd)
+    finally:
+        os.close(dfd)
+
+
+def part_finish(dir_path: str, name: str, size: int, root: str = DATA_ROOT) -> None:
+    """The last piece arrived: give the file its name, never over another."""
+    part = _part_name(name)
+    dfd = open_dir(dir_path, root)
+    try:
+        try:
+            fd = os.open(part, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=dfd)
+        except FileNotFoundError:
+            raise FileOpError('This upload is not there any more.') from None
+        try:
+            if os.fstat(fd).st_size != size:
+                raise FileOpError('The upload is not complete yet.')
+            _like_parent(fd, dfd, is_dir=False)
+        finally:
+            os.close(fd)
+        if _exists(name, dfd):
+            raise FileOpError(f'"{name}" is already there.')
+        os.rename(part, name, src_dir_fd=dfd, dst_dir_fd=dfd)
+    finally:
+        os.close(dfd)
+
+
+def part_abort(dir_path: str, name: str, root: str = DATA_ROOT) -> None:
+    part = _part_name(name)
+    dfd = open_dir(dir_path, root)
+    try:
+        try:
+            if stat.S_ISREG(os.lstat(part, dir_fd=dfd).st_mode):
+                os.unlink(part, dir_fd=dfd)
+        except FileNotFoundError:
+            pass
+    finally:
+        os.close(dfd)
+
+
 def make_dir(dir_path: str, name: str, root: str = DATA_ROOT) -> None:
     check_name(name)
     dfd = open_dir(dir_path, root)

@@ -224,3 +224,21 @@ def test_folders_download_as_zip_as_the_person(client, monkeypatch):
     assert "Holidays.zip" in got.headers["Content-Disposition"]
     assert zipped == [("/mnt/alvaos/main/Family/Holidays", "ben")]
     assert client.get("/api/zip?share=Anna").status_code == 404
+
+
+
+def test_uploads_go_in_pieces_as_the_person(client, monkeypatch):
+    piped = []
+    monkeypatch.setattr(files_manager, "pipe_helper",
+                        lambda args, stream, chunk=1048576, user=None: (piped.append((args, stream.read(), user)) or {"size": 3}, ""))
+    sign_in(client, "anna", "anna-pass")
+    q = "share=Family&path=Holidays&name=film.mkv"
+    client.get(f"/api/upload/status?{q}")
+    assert client.calls[-1] == (["files-part-size", "/mnt/alvaos/main/Family/Holidays", "film.mkv"], "anna")
+    assert client.post(f"/api/upload/piece?{q}&offset=0", data=b"abc", headers=H).get_json()["size"] == 3
+    assert piped == [(["files-part-write", "/mnt/alvaos/main/Family/Holidays", "film.mkv", "0"], b"abc", "anna")]
+    assert client.post(f"/api/upload/piece?{q}&offset=-1", data=b"x", headers=H).status_code == 400
+    client.post("/api/upload/finish", json={"share": "Family", "path": "Holidays", "name": "film.mkv", "size": 3}, headers=H)
+    assert client.calls[-1] == (["files-part-finish", "/mnt/alvaos/main/Family/Holidays", "film.mkv", "3"], "anna")
+    sign_in(client, "ben", "ben-pass")      # read-only in Family
+    assert client.post(f"/api/upload/piece?{q}&offset=0", data=b"x", headers=H).status_code == 403

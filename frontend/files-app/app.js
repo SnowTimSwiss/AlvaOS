@@ -694,32 +694,74 @@
         $('uploads').hidden = !live.length;
         $('uploads').innerHTML = live.map((u) => `<div class="up-row ${u.state}"><div class="up-name"><span>${esc(u.name)}</span><span>${esc(u.label)}</span></div><div class="up-bar"><span style="width:${u.pct}%"></span></div></div>`).join('');
     }
-    function uploadOne(file, t) {
-        return new Promise((resolve) => {
-            const u = { name: file.name, pct: 0, state: '', label: 'Waiting…' };
-            uploads.push(u);
-            paintUploads();
-            const finish = (state, label) => {
-                Object.assign(u, { state, label, pct: 100, hideAt: Date.now() + (state === 'done' ? 4000 : 12000) });
-                paintUploads();
-                setTimeout(paintUploads, state === 'done' ? 4100 : 12100);
-                resolve(state === 'done');
-            };
-            if (file.size > (me?.upload_limit_bytes || 4 * 1024 ** 3)) { finish('failed', 'Over 4 GB: use the shared folder'); return; }
+    // Big files go in pieces. When the connection drops, the NAS says how much
+    // it has, and the upload continues from there.
+    const PIECE = 16 * 1024 * 1024;
+    const q = (t, name, extra) => new URLSearchParams({ share: t.share, path: t.path, name, ...(extra || {}) });
+
+    function sendPiece(t, file, offset, onProgress) {
+        return new Promise((resolve, reject) => {
+            const blob = file.slice(offset, Math.min(file.size, offset + PIECE));
             const xhr = new XMLHttpRequest();
-            xhr.open('POST', `/api/upload?${new URLSearchParams({ share: t.share, path: t.path, name: file.name })}`);
+            xhr.open('POST', `/api/upload/piece?${q(t, file.name, { offset: String(offset) })}`);
             xhr.setRequestHeader('X-AlvaOS-Files', '1');
             xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-            xhr.upload.onprogress = (e) => { if (e.lengthComputable) { u.pct = Math.round((e.loaded / e.total) * 100); u.label = `${u.pct}%`; paintUploads(); } };
+            xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(offset + e.loaded); };
             xhr.onload = () => {
-                let msg = '';
-                try { msg = JSON.parse(xhr.responseText || '{}').error || ''; } catch (_e) { /* not JSON */ }
-                if (xhr.status >= 200 && xhr.status < 300) finish('done', 'Done'); else finish('failed', msg || 'Did not upload');
+                let data = {};
+                try { data = JSON.parse(xhr.responseText || '{}'); } catch (_e) { /* not JSON */ }
+                if (xhr.status >= 200 && xhr.status < 300) resolve(Number(data.size));
+                else { const err = new Error(data.error || 'Did not upload'); err.retry = xhr.status >= 500 || xhr.status === 0; reject(err); }
             };
-            xhr.onerror = () => finish('failed', 'Connection lost');
-            xhr.send(file);
+            xhr.onerror = () => { const err = new Error('Connection lost'); err.retry = true; reject(err); };
+            xhr.send(blob);
         });
     }
+
+    async function uploadOne(file, t) {
+        const u = { name: file.name, pct: 0, state: '', label: 'Waiting…' };
+        uploads.push(u);
+        paintUploads();
+        const finish = (state, label) => {
+            Object.assign(u, { state, label, pct: 100, hideAt: Date.now() + (state === 'done' ? 4000 : 15000) });
+            paintUploads();
+            setTimeout(paintUploads, state === 'done' ? 4100 : 15100);
+            return state === 'done';
+        };
+        const progress = (sent) => {
+            u.pct = file.size ? Math.min(100, Math.round((sent / file.size) * 100)) : 100;
+            u.label = `${u.pct}%`;
+            paintUploads();
+        };
+        try {
+            // A leftover from an earlier, unrelated attempt must not be continued.
+            await api('upload/abort', { method: 'POST', json: { share: t.share, path: t.path, name: file.name } });
+            let offset = 0;
+            let tries = 0;
+            let first = true;   // an empty file is one empty piece
+            while (first || offset < file.size) {
+                try {
+                    offset = await sendPiece(t, file, offset, progress);
+                    first = false;
+                    tries = 0;
+                } catch (err) {
+                    if (!err.retry || tries >= 6) throw err;
+                    tries += 1;
+                    u.label = `Connection lost, trying again (${tries})…`;
+                    paintUploads();
+                    await new Promise((r) => setTimeout(r, Math.min(30000, 1500 * 2 ** tries)));
+                    offset = Number((await api(`upload/status?${q(t, file.name)}`)).size) || 0;
+                    first = false;
+                }
+            }
+            await api('upload/finish', { method: 'POST', json: { share: t.share, path: t.path, name: file.name, size: file.size } });
+            return finish('done', 'Done');
+        } catch (err) {
+            api('upload/abort', { method: 'POST', json: { share: t.share, path: t.path, name: file.name } }).catch(() => {});
+            return finish('failed', err.message || 'Did not upload');
+        }
+    }
+
     async function uploadFiles(files) {
         if (!files.length) return;
         if (access() !== 'write') { toast(`You can only look at "${share}".`, 'error'); return; }
