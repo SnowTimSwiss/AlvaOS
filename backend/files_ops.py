@@ -107,7 +107,7 @@ def list_dir(dir_path: str, root: str = DATA_ROOT) -> List[Dict[str, Any]]:
             entries.append({'name': name, 'type': kind,
                             'size_bytes': st.st_size if kind == 'file' else 0,
                             'modified_at': datetime.fromtimestamp(st.st_mtime).astimezone().isoformat()})
-        entries.sort(key=lambda e: (e['type'] != 'folder', e['name'].lower()))
+        entries.sort(key=lambda e: (e['type'] != 'folder', str(e['name']).lower()))
         return entries
     except PermissionError:
         raise FileOpError('You do not have access to this folder.') from None
