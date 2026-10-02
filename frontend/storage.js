@@ -212,6 +212,14 @@ function diskMeta(disk) {
     if (transport && transport !== 'unknown') parts.push(transport === 'nvme' ? 'NVMe' : transport.toUpperCase());
     if (disk.serial && disk.serial !== 'N/A') parts.push(`S/N ${disk.serial}`);
     if (disk.temp !== null && disk.temp !== undefined && disk.temp !== '') parts.push(`${disk.temp} °C`);
+    const test = disk.self_test;
+    if (test) {
+        const last = test.last_long && (!test.last_short || test.last_long >= test.last_short) ? test.last_long : test.last_short;
+        if (test.running) parts.push('Self-test running');
+        else if (test.last && test.last.passed === false) parts.push('Last self-test failed');
+        else if (last && test.last && test.last.passed === true) parts.push(`Self-test passed ${new Date(last).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`);
+        else if (last) parts.push(`Self-test started ${new Date(last).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`);
+    }
     return parts.join(' · ');
 }
 

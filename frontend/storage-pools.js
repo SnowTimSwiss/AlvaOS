@@ -11,7 +11,7 @@ let storagePoolsCache = [];
 let openedPoolId = '';
 const poolActivity = {};
 let poolActivityTimer = null;
-let healthSettings = { scrub: 'monthly', start_hour: 3 };
+let healthSettings = { scrub: 'monthly', start_hour: 3, smart: 'standard' };
 
 const PROTECTION = {
     single: { failures: 0, text: 'No protection: if a disk fails, the data on it is lost.' },
@@ -407,25 +407,44 @@ function renderHealthSchedule() {
     const hint = healthSettings.scrub === 'off'
         ? 'Damaged data is only found when a file is read. Turn this on unless you check by hand.'
         : `Starts at night around ${when}, one pool at a time, never while a disk is being replaced. Applies to all pools.`;
+    const smartOptions = [
+        ['standard', 'Quick weekly, full monthly (recommended)'],
+        ['short', 'Quick weekly only'],
+        ['off', 'Off'],
+    ].map(([value, label]) => `<option value="${value}"${(healthSettings.smart || 'standard') === value ? ' selected' : ''}>${label}</option>`).join('');
+    const smartHint = (healthSettings.smart || 'standard') === 'off'
+        ? 'Disks only report problems when they are already failing. Turn this on unless you test by hand.'
+        : (healthSettings.smart === 'short'
+            ? 'A quick test (about two minutes) every week at night. A full test reads the whole disk and finds more.'
+            : 'The disks test themselves at night and stay usable. A full test reads the whole disk (hours), one disk per night.');
     return `
         <div class="health-schedule">
             <label for="health-scrub">Check data automatically</label>
-            <select id="health-scrub" class="select-input" onchange="saveHealthSchedule(this.value)">${options}</select>
+            <select id="health-scrub" class="select-input" onchange="saveHealthSchedule({ scrub: this.value })">${options}</select>
         </div>
-        <div class="pool-line" style="font-size: 0.8rem; margin-top: 6px;">${escapeHtml(hint)}</div>`;
+        <div class="pool-line" style="font-size: 0.8rem; margin-top: 6px;">${escapeHtml(hint)}</div>
+        <div class="health-schedule" style="margin-top: 12px;">
+            <label for="health-smart">Test disks automatically</label>
+            <select id="health-smart" class="select-input" onchange="saveHealthSchedule({ smart: this.value })">${smartOptions}</select>
+        </div>
+        <div class="pool-line" style="font-size: 0.8rem; margin-top: 6px;">${escapeHtml(smartHint)}</div>`;
 }
 
-async function saveHealthSchedule(value) {
+async function saveHealthSchedule(change) {
     try {
         const response = await apiFetch(`${API_BASE}/storage/health-checks`, {
             method: 'POST',
             headers: { 'Authorization': localStorage.getItem('alvaos_token') || '', 'Content-Type': 'application/json' },
-            body: JSON.stringify({ scrub: value })
+            body: JSON.stringify(change)
         });
         const result = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(result.error || 'The setting was not saved.');
         healthSettings = result.settings || healthSettings;
-        showSuccess(value === 'off' ? 'Automatic data checks are off.' : `Data is now checked ${value === 'weekly' ? 'every week' : 'every month'}.`);
+        if ('scrub' in change) {
+            showSuccess(change.scrub === 'off' ? 'Automatic data checks are off.' : `Data is now checked ${change.scrub === 'weekly' ? 'every week' : 'every month'}.`);
+        } else {
+            showSuccess(change.smart === 'off' ? 'Automatic disk tests are off.' : 'Disk tests saved.');
+        }
     } catch (error) {
         showError(error.message);
     }

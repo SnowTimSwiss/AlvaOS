@@ -208,8 +208,9 @@ if __name__ == '__main__':
 
     # Nightly data checks (btrfs scrub) for every pool, monthly by default.
     if platform.system() == 'Linux':
-        from api_storage import make_health_scheduler
-        threading.Thread(target=make_health_scheduler().serve_forever, name='health-checks',
+        from api_storage import make_health_scheduler, make_smart_scheduler
+        threading.Thread(target=make_health_scheduler().serve_forever,
+                         kwargs={'smart': make_smart_scheduler()}, name='health-checks',
                          daemon=True).start()
 
     # wg-quick state does not survive a reboot; bring the buddy tunnel back up.

@@ -15,6 +15,35 @@ How to add an entry:
 
 ---
 
+## 2026-10-02 · Disks test themselves, and say when they are failing
+
+- **Found:** SMART was only read when someone opened the Disks tab. A disk
+  reporting "failing" raised no alert, and no self-test ever ran.
+- **Self-tests:** the health-check thread also starts SMART self-tests on pool
+  disks at night: quick weekly and full monthly by default ("Quick weekly
+  only" and "Off" in Storage › pool › Activity). One full test per night,
+  never on a pool that gets a data check that night. Disks are tracked by
+  serial number, since names like sdb can change.
+- **Readings** once a night, with `smartctl -n standby`, so a sleeping disk is
+  skipped instead of woken. ATA and NVMe are parsed (`parse_smart`).
+- **Alerts:** red "Disk … is failing" when the disk says so or a self-test
+  failed; amber "Disk … needs attention" for unreadable sectors (pending,
+  offline uncorrectable, NVMe media errors) and when reallocated sectors grow
+  beyond the count first seen. Old, stable reallocations do not nag.
+- Disks tab: "Self-test passed 3 Oct" / "Self-test running" / "Last
+  self-test failed" per disk.
+- **Privilege helper:** smartctl now also accepts exactly `-t short|long`,
+  `-l selftest` and `-n standby`; anything else stays refused (tests).
+- **Fixed on the way:** saving the data-check setting would have dropped
+  other settings in the same file; settings are merged now.
+- Tests: parsing (ATA, NVMe, standby), problem rules, scheduling (night only,
+  one long test per night, not during a data check, running tests, off),
+  baseline, alerts, policy. Checked in a browser: both settings save.
+- **Note for next time:** check on real disks (SATA, USB through a bridge,
+  NVMe) that `-t short` starts and that the JSON has the self-test log. A
+  USB bridge without SAT support cannot run self-tests; it is then simply
+  reported as "did not accept a self-test" in the log.
+
 ## 2026-10-02 · Storage that looks after itself: nightly data checks
 
 - **Found:** the welcome screen promises regular checks, but a data check

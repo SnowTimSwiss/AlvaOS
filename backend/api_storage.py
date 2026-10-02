@@ -2,6 +2,7 @@
 """Disks, pools and subvolumes."""
 
 # ── Standard library ──────────────────────────────────────────────────────────
+import json
 import os
 import platform
 import re
@@ -68,8 +69,20 @@ def get_disks():
     except Exception as e:
         print(f"Error getting disk info: {e}")
         return jsonify({'error': str(e)}), 500
+    records = health_checks.smart_records()
     for disk in disks:
         disk.update(_smart_summary(disk['name']))
+        serial = str(disk.get('serial') or '')
+        record = records.get(serial if serial and serial != 'N/A' else disk['name'])
+        if isinstance(record, dict):
+            reading = record.get('reading') or {}
+            disk['self_test'] = {
+                'last': reading.get('last_test'),
+                'running': bool(reading.get('test_running')),
+                'last_short': record.get('last_short'),
+                'last_long': record.get('last_long'),
+                'problem': health_checks.smart_problems(record),
+            }
     return jsonify({'disks': disks})
 
 
@@ -1019,6 +1032,53 @@ def _mounted_managed_pools():
     return result
 
 
+def _pool_disks_for_tests():
+    """Disks in managed pools, keyed by serial number (names like sdb can change)."""
+    disks = []
+    for disk in disk_inventory():
+        usage = disk.get('usage') or {}
+        if usage.get('role') != 'pool':
+            continue
+        serial = str(disk.get('serial') or '')
+        disks.append({
+            'key': serial if serial and serial != 'N/A' else disk['name'],
+            'name': disk['name'],
+            'path': disk['path'],
+            'model': disk.get('model'),
+            'pool_id': usage.get('pool_id'),
+        })
+    return disks
+
+
+def _smartctl(args, device):
+    """Run smartctl, retrying through a USB/SATA bridge. smartctl exits non-zero
+    for many harmless reasons (a bitmask), so the JSON output decides."""
+    variants = [[]] if os.path.basename(device).startswith('nvme') else [[], ['-d', 'sat']]
+    for extra in variants:
+        res, _ = run_sudo_command([CMD['SMARTCTL']] + args + extra + ['-j', device], timeout=30)
+        try:
+            payload = json.loads((res.stdout if res else '') or '{}')
+        except ValueError:
+            payload = {}
+        if payload.get('smart_status') or payload.get('power_mode') or payload.get('ata_smart_data') \
+                or payload.get('nvme_smart_health_information_log'):
+            return payload
+        if 'standby' in json.dumps(payload.get('smartctl', {}).get('messages', [])).lower():
+            return {'power_mode': 'STANDBY'}
+    return None
+
+
+def _start_self_test(device, kind):
+    payload = _smartctl(['-t', kind], device)
+    if payload is None:
+        return 'the disk did not accept a self-test'
+    return ''
+
+
+def _read_smart(device):
+    return _smartctl(['-n', 'standby', '-H', '-A', '-l', 'selftest'], device)
+
+
 def make_health_scheduler():
     """The nightly data-check scheduler, wired to the real btrfs commands."""
     return health_checks.HealthScheduler(
@@ -1027,6 +1087,12 @@ def make_health_scheduler():
         busy=_busy_with,
         start_scrub=lambda mount_point: _start_background([CMD['BTRFS'], 'scrub', 'start', '-B', mount_point]),
     )
+
+
+def make_smart_scheduler():
+    """Nightly SMART self-tests for pool disks, wired to smartctl."""
+    return health_checks.SmartScheduler(disks=_pool_disks_for_tests, start_test=_start_self_test,
+                                        read=_read_smart)
 
 
 @bp.route('/api/v1/storage/health-checks', methods=['GET', 'POST'])
@@ -1038,9 +1104,13 @@ def storage_health_checks():
             health_checks.save_settings(request.get_json(silent=True) or {})
         except ValueError as e:
             return jsonify({'error': str(e)}), 400
+    disks = {}
+    for key, record in health_checks.smart_records().items():
+        disks[key] = {**record, 'problem': health_checks.smart_problems(record)}
     return jsonify({
         'settings': health_checks.get_settings(),
         'pools': health_checks.last_results(),
+        'disks': disks,
     })
 
 
