@@ -170,13 +170,19 @@ def upload(dir_path: str, name: str, stream: Any, chunk: int = 1024 * 1024,
             if not data:
                 break
             proc.stdin.write(data)
-        proc.stdin.close()
+        proc.stdin.flush()
     except (BrokenPipeError, OSError):
         pass   # the helper refused or stopped; its answer says why
     except BaseException:
         proc.kill()   # the browser went away: the helper removes the half file
         raise
-    out, err = proc.communicate(timeout=120)
+    try:
+        out, err = proc.communicate(timeout=120)   # also closes stdin: the end of the upload
+    except ValueError:
+        # stdin was already broken (the helper refused early): read its answer.
+        out = proc.stdout.read() if proc.stdout else b''
+        err = proc.stderr.read() if proc.stderr else b''
+        proc.wait(timeout=120)
     return _result(proc.returncode, out, err)
 
 
