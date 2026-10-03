@@ -29,9 +29,10 @@ How to add an entry:
   following symlinks.
 - Shares made before get the setting once when the backend starts
   (`add_recycle_bins`, then one restart of smbd).
-- **Note for next time:** not tried against a real Samba here; on a NAS:
-  delete a file from Windows, check it appears in the Files trash and comes
-  back with "Put back".
+- Real test with Samba 4.19 and smbclient: two files deleted over SMB
+  landed in `.alvaos-trash/smb/` (keeping their folder), Files listed them
+  and put one back with its content; the trash folder shows as hidden (H)
+  to SMB clients. `testparm` accepts the generated section.
 
 ## 2026-10-03 · Plain words in the last technical messages
 
