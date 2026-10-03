@@ -54,13 +54,114 @@ TOOLS: List[Tuple[str, str, str]] = [
 ]
 TOOL_PATHS = {name: path for name, path, _ in TOOLS}
 
+LEVELS = ('read', 'ask')   # only look / propose changes the person confirms
+
+# What the assistant may propose at the "ask" level. It never runs one
+# itself: a proposal is shown in the chat with exactly what will happen, and
+# only the person's click runs it, through the normal endpoint with their
+# session and CSRF token (api_ai.py). Each builder checks its arguments
+# against the real state and returns (title, detail, method, path, body).
+ACTION_SPECS: Dict[str, Dict[str, Any]] = {
+    'backup_now': {
+        'description': 'Make restore points of the shared folders now (a backup on this NAS).',
+        'parameters': {},
+    },
+    'start_data_check': {
+        'description': 'Start a data check (scrub) of a storage pool: every block is read and bad copies are '
+                       'repaired from the good one. Takes hours; the NAS is slower meanwhile.',
+        'parameters': {'pool_id': {'type': 'string', 'description': 'The id of the pool from storage_pools.'}},
+    },
+    'restart_app': {
+        'description': 'Restart one app (container) that hangs or misbehaves.',
+        'parameters': {'container': {'type': 'string', 'description': 'Name or id of the container from app_containers.'}},
+    },
+    'check_services': {
+        'description': 'Check file sharing and apps now and restart what has stopped.',
+        'parameters': {},
+    },
+    'set_disk_sleep': {
+        'description': 'Let hard disks sleep after some minutes without use (0 = never).',
+        'parameters': {'minutes': {'type': 'integer', 'enum': [0, 10, 20, 30, 60]}},
+    },
+}
+
+
+def _find(items: Any, *keys: str) -> List[Dict[str, Any]]:
+    if isinstance(items, dict):
+        for key in keys:
+            if isinstance(items.get(key), list):
+                return [i for i in items[key] if isinstance(i, dict)]
+        return []
+    return [i for i in items if isinstance(i, dict)] if isinstance(items, list) else []
+
+
+def build_action(name: str, args: Dict[str, Any], read: Callable[[str], Tuple[int, Any]]) -> Dict[str, Any]:
+    """A proposal the person can confirm, or ValueError with why not."""
+    if name == 'backup_now':
+        return {'title': 'Make a backup now',
+                'detail': 'Restore points of your shared folders are made now. This takes a moment and changes '
+                          'no files.', 'method': 'POST', 'path': '/api/v1/backup/run', 'body': {'backup_type': 'pool'}}
+    if name == 'start_data_check':
+        wanted = str(args.get('pool_id') or '').strip()
+        _, data = read('/api/v1/storage/pools')
+        pool = next((p for p in _find(data, 'pools') if wanted and wanted in (str(p.get('id')), str(p.get('name')))),
+                    None)
+        if not pool or pool.get('is_system_pool'):
+            raise ValueError(f'There is no storage pool "{wanted}".')
+        return {'title': f'Start a data check of "{pool.get("name") or pool.get("id")}"',
+                'detail': 'Every block is read and bad copies are repaired from the good one. It takes a few '
+                          'hours, the NAS is a little slower meanwhile; you can stop it on the Storage page.',
+                'method': 'POST', 'path': f'/api/v1/storage/pools/{pool.get("id")}/scrub', 'body': {}}
+    if name == 'restart_app':
+        wanted = str(args.get('container') or '').strip()
+        _, data = read('/api/v1/containers')
+        found = None
+        for c in _find(data, 'containers'):
+            ident = str(c.get('ID') or c.get('id') or '')
+            label = str(c.get('Names') or c.get('name') or '')
+            if wanted and (wanted == label or (len(wanted) >= 6 and ident.startswith(wanted))):
+                found = (ident, label)
+                break
+        if not found or not re_container.match(found[0] or found[1]):
+            raise ValueError(f'There is no app container "{wanted}".')
+        ident, label = found[0] or found[1], found[1]
+        return {'title': f'Restart the app "{label or ident}"',
+                'detail': 'The app stops and starts again; it is away for a moment. Its data stays.',
+                'method': 'POST', 'path': f'/api/v1/containers/{ident}/restart', 'body': {}}
+    if name == 'check_services':
+        return {'title': 'Check file sharing and apps now',
+                'detail': 'AlvaOS checks its services and restarts what has stopped.',
+                'method': 'POST', 'path': '/api/v1/watchdog/check', 'body': {}}
+    if name == 'set_disk_sleep':
+        try:
+            minutes = int(str(args.get('minutes')))
+        except (TypeError, ValueError):
+            minutes = -1
+        if minutes not in (0, 10, 20, 30, 60):
+            raise ValueError('Disks can sleep after 10, 20, 30 or 60 minutes, or never (0).')
+        return {'title': 'Never let hard disks sleep' if minutes == 0 else
+                f'Let hard disks sleep after {minutes} minutes without use',
+                'detail': 'Applies to the spinning data disks; SSDs and the system disk are left alone.',
+                'method': 'POST', 'path': '/api/v1/storage/disk-power', 'body': {'spindown_minutes': minutes}}
+    raise ValueError(f'There is no action called {name}.')
+
+
+re_container = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$')
+
+ASK_PROMPT = (
+    ' You may also propose changes with the action tools. A proposal does not run: the person sees it in the '
+    'chat and has to confirm it. Propose only what they asked for or what clearly fixes a problem you found, one at a '
+    'time, and say in a sentence what it will do. Never say it is done.'
+)
+
 SYSTEM_PROMPT = (
     'You are the assistant built into AlvaOS, a home NAS. Answer in the language the person writes in, '
     'short and in plain words, for someone who is not a technician. Use the tools to look at the real state '
-    'of this NAS before you answer questions about it; do not guess numbers. You can only look, not change '
-    'anything: when something should be changed, say where in AlvaOS to do it (pages: Dashboard, Storage, '
-    'Files, Apps, Backup, Updates, Settings). Never ask for passwords.'
+    'of this NAS before you answer questions about it; do not guess numbers. When something should be changed '
+    'by hand, say where in AlvaOS to do it (pages: Dashboard, Storage, Files, Apps, Backup, Updates, Settings). '
+    'Never ask for passwords.'
 )
+READ_PROMPT = ' You can only look, not change anything.'
 
 
 # ── Settings ─────────────────────────────────────────────────────────────────
@@ -81,7 +182,7 @@ def load_settings(path: Optional[str] = None) -> Dict[str, Any]:
         'base_url': str(raw.get('base_url') or PROVIDERS[provider]['base_url']),
         'model': str(raw.get('model') or PROVIDERS[provider]['model']),
         'api_key': str(raw.get('api_key') or ''),
-        'level': 'read',
+        'level': raw.get('level') if raw.get('level') in LEVELS else 'read',
     }
 
 
@@ -116,6 +217,10 @@ def save_settings(current: Dict[str, Any], payload: Dict[str, Any],
         settings['api_key'] = ''
     if 'enabled' in payload:
         settings['enabled'] = bool(payload['enabled'])
+    if 'level' in payload:
+        if payload['level'] not in LEVELS:
+            return current, 'Choose what the assistant may do.'
+        settings['level'] = payload['level']
     if settings['enabled']:
         if not check_url(settings['base_url']):
             return current, 'Enter the address of the service, like http://192.168.1.20:11434/v1.'
@@ -134,10 +239,16 @@ def save_settings(current: Dict[str, Any], payload: Dict[str, Any],
 
 # ── Talking to the model ─────────────────────────────────────────────────────
 
-def tool_specs() -> List[Dict[str, Any]]:
-    return [{'type': 'function', 'function': {'name': name, 'description': description,
-                                              'parameters': {'type': 'object', 'properties': {}}}}
-            for name, _, description in TOOLS]
+def tool_specs(level: str = 'read') -> List[Dict[str, Any]]:
+    specs = [{'type': 'function', 'function': {'name': name, 'description': description,
+                                               'parameters': {'type': 'object', 'properties': {}}}}
+             for name, _, description in TOOLS]
+    if level == 'ask':
+        specs += [{'type': 'function', 'function': {
+            'name': name, 'description': 'PROPOSE (the person confirms): ' + spec['description'],
+            'parameters': {'type': 'object', 'properties': spec['parameters'],
+                           'required': list(spec['parameters'])}}} for name, spec in ACTION_SPECS.items()]
+    return specs
 
 
 def call_model(settings: Dict[str, Any], messages: List[Dict[str, Any]], post: Optional[Callable] = None,
@@ -151,7 +262,7 @@ def call_model(settings: Dict[str, Any], messages: List[Dict[str, Any]], post: O
         headers['Authorization'] = f"Bearer {settings['api_key']}"
     body: Dict[str, Any] = {'model': settings['model'], 'messages': messages, 'temperature': 0.2}
     if use_tools:
-        body['tools'] = tool_specs()
+        body['tools'] = tool_specs(settings.get('level', 'read'))
     res = post(settings['base_url'].rstrip('/') + '/chat/completions', headers=headers, json=body, timeout=120)
     if getattr(res, 'status_code', 200) >= 400:
         detail = ''
@@ -201,22 +312,48 @@ def clean_history(history: Any) -> List[Dict[str, str]]:
 
 def chat(settings: Dict[str, Any], history: Any, read: Callable[[str], Tuple[int, Any]],
          post: Optional[Callable] = None) -> Dict[str, Any]:
-    """Answer the last question. Returns {'reply', 'looked_at'}."""
-    messages: List[Dict[str, Any]] = [{'role': 'system', 'content': SYSTEM_PROMPT}] + clean_history(history)
+    """Answer the last question. Returns {'reply', 'looked_at', 'proposals'};
+    proposals (at the "ask" level) are changes the person still has to confirm."""
+    level = settings.get('level', 'read')
+    prompt = SYSTEM_PROMPT + (ASK_PROMPT if level == 'ask' else READ_PROMPT)
+    messages: List[Dict[str, Any]] = [{'role': 'system', 'content': prompt}] + clean_history(history)
     if len(messages) < 2 or messages[-1]['role'] != 'user':
         raise ValueError('Ask something first.')
     looked_at: List[str] = []
+    proposals: List[Dict[str, Any]] = []
+
+    def answer(message: Dict[str, Any]) -> Dict[str, Any]:
+        return {'reply': str(message.get('content') or '').strip() or '(No answer.)', 'looked_at': looked_at,
+                'proposals': proposals}
+
     for _ in range(MAX_ROUNDS):
         message = call_model(settings, messages, post)
         calls = message.get('tool_calls') or []
         if not calls:
-            return {'reply': str(message.get('content') or '').strip() or '(No answer.)', 'looked_at': looked_at}
+            return answer(message)
         messages.append({'role': 'assistant', 'content': message.get('content') or '', 'tool_calls': calls})
         for call in calls[:8]:
-            name = str(((call or {}).get('function') or {}).get('name') or '')
+            function = (call or {}).get('function') or {}
+            name = str(function.get('name') or '')
+            call_id = str((call or {}).get('id') or name)
+            if name in ACTION_SPECS:
+                if level != 'ask':
+                    result = {'error': 'You can only look, not change anything.'}
+                elif len(proposals) >= 3:
+                    result = {'error': 'Enough proposals for now; let the person decide first.'}
+                else:
+                    try:
+                        raw_args = function.get('arguments') or '{}'
+                        args = json.loads(raw_args) if isinstance(raw_args, str) else dict(raw_args)
+                        proposals.append(build_action(name, args if isinstance(args, dict) else {}, read))
+                        result = {'proposed': proposals[-1]['title'],
+                                  'note': 'Shown to the person; it runs only if they confirm.'}
+                    except (ValueError, TypeError) as e:
+                        result = {'error': str(e)}
+                messages.append({'role': 'tool', 'tool_call_id': call_id, 'content': json.dumps(result)})
+                continue
             looked_at.append(name)
-            messages.append({'role': 'tool', 'tool_call_id': str((call or {}).get('id') or name),
-                             'content': run_tool(name, read)})
+            messages.append({'role': 'tool', 'tool_call_id': call_id, 'content': run_tool(name, read)})
     message = call_model(settings, messages + [{'role': 'user', 'content': 'Answer now with what you found.'}],
                          post, use_tools=False)
-    return {'reply': str(message.get('content') or '').strip() or '(No answer.)', 'looked_at': looked_at}
+    return answer(message)

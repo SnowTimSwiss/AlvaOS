@@ -400,3 +400,37 @@ def test_a_bad_personal_folder_stops_before_the_person_is_made(backend, monkeypa
     res = module.app.test_client().post("/api/v1/users", headers=headers, json={
         "username": "anna", "password": "long enough", "personal_folder": {"pool_id": "missing", "limit_gb": 50}})
     assert res.status_code == 400 and "pool" in res.get_json()["error"] and made == []
+
+
+def test_assistant_proposals_run_only_on_the_persons_click(backend, monkeypatch, tmp_path):
+    import ai_assistant
+    import api_ai
+    module, state = backend
+    set_up(state)
+    monkeypatch.setattr(ai_assistant, "SETTINGS_FILE", str(tmp_path / "ai.json"))
+    token = auth_manager._create_session("root", role="admin")
+    headers = {"Authorization": token, "X-CSRF-Token": auth_manager.SESSIONS[token]["csrf_token"]}
+    client = module.app.test_client()
+    client.post("/api/v1/ai/settings", json={"enabled": True, "level": "ask", "base_url": "http://10.0.0.5:11434/v1"},
+                headers=headers)
+    monkeypatch.setattr(ai_assistant, "chat", lambda settings, history, read, post=None: {
+        "reply": "Shall I?", "looked_at": [], "proposals": [{
+            "title": "Check services", "detail": "d", "method": "POST", "path": "/api/v1/watchdog/check", "body": {}}]})
+    ran = []
+    import api_system
+    monkeypatch.setattr(api_system.watchdog_manager, "run_check", lambda: ran.append(1) or {"checked": 3})
+    answer = client.post("/api/v1/ai/chat", json={"messages": [{"role": "user", "content": "x"}]},
+                         headers=headers).get_json()
+    [proposal] = answer["proposals"]
+    assert set(proposal) == {"id", "title", "detail"} and ran == []          # nothing ran yet
+    other = auth_manager._create_session("root", role="admin")
+    refused = client.post(f"/api/v1/ai/actions/{proposal['id']}", json={"decision": "run"},
+                          headers={"Authorization": other, "X-CSRF-Token": auth_manager.SESSIONS[other]["csrf_token"]})
+    assert refused.status_code == 404 and ran == []                           # another session cannot run it
+    answer = client.post("/api/v1/ai/chat", json={"messages": [{"role": "user", "content": "x"}]},
+                         headers=headers).get_json()
+    pid = answer["proposals"][0]["id"]
+    done = client.post(f"/api/v1/ai/actions/{pid}", json={"decision": "run"}, headers=headers).get_json()
+    assert done["done"] is True and ran == [1]
+    assert client.post(f"/api/v1/ai/actions/{pid}", json={"decision": "run"}, headers=headers).status_code == 404
+    api_ai._proposals.clear()

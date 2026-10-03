@@ -2636,3 +2636,20 @@ body.ai-open .feedback-fab-wrap { display: none; }
 .upd-way-back svg { width: 18px; height: 18px; flex: none; color: var(--accent-success); margin-top: 1px; }
 .upd-way-back.warn svg { color: var(--accent-warning); }
 .upd-way-back strong { color: var(--text-primary); }
+.ai-level { border: none; padding: 0; margin: 4px 0 6px; }
+.ai-level legend { font-weight: 600; font-size: 0.85rem; margin-bottom: 6px; color: var(--text-primary); padding: 0; }
+.ai-level .choice { margin-bottom: 6px; }
+.ai-proposal { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--accent-primary); border-radius: var(--radius-default); background: var(--accent-primary-soft); display: flex; flex-direction: column; gap: 4px; }
+.ai-proposal span { color: var(--text-secondary); font-size: 0.85rem; }
+.ai-proposal em { font-style: normal; font-size: 0.85rem; color: var(--text-secondary); }
+.ai-proposal.done { border-color: var(--accent-success); }
+.ai-proposal.done em { color: var(--accent-success); }
+.ai-proposal.failed { border-color: var(--accent-danger); }
+.ai-proposal.failed em { color: var(--accent-danger); }
+.ai-proposal.skipped { opacity: 0.7; border-color: var(--border-default); background: transparent; }
+.ai-proposal-actions { display: flex; gap: 8px; margin-top: 6px; }
+.ai-level .choice { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--border-default); border-radius: var(--radius-default); padding: 10px 12px; cursor: pointer; }
+.ai-level .choice:has(input:checked) { border-color: var(--accent-primary); }
+.ai-level .choice input { width: auto; margin-top: 3px; accent-color: var(--accent-primary); }
+.ai-level .choice strong { display: block; color: var(--text-primary); }
+.ai-level .choice span { color: var(--text-secondary); font-size: 0.85rem; }

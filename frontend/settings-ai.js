@@ -44,6 +44,8 @@
         $('ai-url').value = settings.base_url;
         $('ai-model').value = settings.model;
         $('ai-key').value = '';
+        const level = document.querySelector(`input[name="ai-level"][value="${settings.level === 'ask' ? 'ask' : 'read'}"]`);
+        if (level) level.checked = true;
         syncProvider(false);
     }
 
@@ -53,6 +55,7 @@
             base_url: $('ai-url').value.trim(),
             model: $('ai-model').value.trim(),
             api_key: $('ai-key').value.trim(),
+            level: document.querySelector('input[name="ai-level"]:checked')?.value || 'read',
         };
     }
 

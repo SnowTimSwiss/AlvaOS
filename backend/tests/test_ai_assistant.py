@@ -96,7 +96,7 @@ def test_chat_looks_then_answers():
     reads = []
     answer = ai.chat(settings(), [{"role": "user", "content": "How full is my NAS?"}],
                      lambda p: reads.append(p) or (200, {"pools": [{"used_percent": 41}]}), post=post)
-    assert answer == {"reply": "Your pool is 41% full.", "looked_at": ["storage_pools"]}
+    assert answer == {"reply": "Your pool is 41% full.", "looked_at": ["storage_pools"], "proposals": []}
     assert reads == ["/api/v1/storage/pools"]
     assert asked[0]["messages"][0]["role"] == "system" and asked[0]["tools"]
     tool_message = asked[1]["messages"][-1]
@@ -139,3 +139,56 @@ def test_the_key_is_sent_as_bearer():
     ai.call_model(settings(api_key="sk-9", base_url="https://ollama.com/v1/"), [], post=post)
     assert seen["url"] == "https://ollama.com/v1/chat/completions"
     assert seen["headers"]["Authorization"] == "Bearer sk-9"
+
+
+def proposing(name, arguments):
+    """A model that proposes one action, then answers."""
+    rounds = []
+
+    def post(url, headers, json, timeout):
+        rounds.append(json)
+        if len(rounds) == 1:
+            return Answer({"tool_calls": [{"id": "p", "function": {"name": name, "arguments": arguments}}]})
+        return Answer({"content": "I proposed it."})
+
+    post.rounds = rounds
+    return post
+
+
+POOLS = {"pools": [{"id": "u1", "name": "main"}, {"id": "sys", "name": "system", "is_system_pool": True}]}
+
+
+def reader(path):
+    return 200, {"/api/v1/storage/pools": POOLS,
+                 "/api/v1/containers": {"containers": [{"ID": "abc123def456", "Names": "jellyfin"}]}}.get(path, {})
+
+
+def test_read_level_cannot_propose():
+    post = proposing("backup_now", "{}")
+    answer = ai.chat(settings(), [{"role": "user", "content": "back up"}], reader, post=post)
+    assert answer["proposals"] == []
+    assert "only look" in post.rounds[1]["messages"][-1]["content"]
+    assert not any(t["function"]["name"] == "backup_now" for t in post.rounds[0]["tools"])
+
+
+def test_ask_level_turns_actions_into_proposals_checked_against_the_nas():
+    post = proposing("start_data_check", '{"pool_id": "main"}')
+    answer = ai.chat(settings(level="ask"), [{"role": "user", "content": "check my pool"}], reader, post=post)
+    [p] = answer["proposals"]
+    assert p["path"] == "/api/v1/storage/pools/u1/scrub" and p["method"] == "POST" and "main" in p["title"]
+    assert "confirm" in post.rounds[0]["messages"][0]["content"]
+    for name, args in (("start_data_check", '{"pool_id": "system"}'), ("start_data_check", '{"pool_id": "x"}'),
+                       ("set_disk_sleep", '{"minutes": 7}'), ("restart_app", '{"container": "nope"}'),
+                       ("delete_everything", "{}")):
+        out = ai.chat(settings(level="ask"), [{"role": "user", "content": "?"}], reader, post=proposing(name, args))
+        assert out["proposals"] == [], name
+    out = ai.chat(settings(level="ask"), [{"role": "user", "content": "?"}], reader,
+                  post=proposing("restart_app", '{"container": "jellyfin"}'))
+    assert out["proposals"][0]["path"] == "/api/v1/containers/abc123def456/restart"
+
+
+def test_the_level_is_a_setting(tmp_path):
+    path = str(tmp_path / "ai.json")
+    s, problem = ai.save_settings(ai.load_settings(path), {"level": "ask"}, path=path)
+    assert problem == "" and ai.load_settings(path)["level"] == "ask"
+    assert ai.save_settings(s, {"level": "everything"}, path=path)[1]
