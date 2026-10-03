@@ -226,3 +226,47 @@ def serve_in_background(app, port: int, name: str, tls_dir: Optional[str] = None
     thread.start()
     print(f'{name} also on https port {port}')
     return thread
+
+
+# ── "HTTPS only" ─────────────────────────────────────────────────────────────
+# When on, the plain HTTP ports send people to HTTPS. Off by default: a device
+# that has not trusted the authority yet would only see a warning page.
+
+SETTINGS_FILE = '/var/lib/alvaos/https.json'
+_settings_cache: Dict[str, Any] = {'mtime': None, 'only': False}
+
+
+def https_only(path: Optional[str] = None) -> bool:
+    path = path or SETTINGS_FILE
+    try:
+        mtime = os.stat(path).st_mtime
+    except OSError:
+        return False
+    if _settings_cache['mtime'] != (path, mtime):
+        try:
+            import json
+            with open(path) as f:
+                _settings_cache['only'] = bool(json.load(f).get('only'))
+        except (OSError, ValueError, AttributeError):
+            _settings_cache['only'] = False
+        _settings_cache['mtime'] = (path, mtime)
+    return bool(_settings_cache['only'])
+
+
+def set_https_only(only: bool, path: Optional[str] = None) -> None:
+    import json
+    path = path or SETTINGS_FILE
+    tmp = f'{path}.tmp'
+    with open(tmp, 'w') as f:
+        json.dump({'only': bool(only)}, f)
+    os.replace(tmp, path)
+
+
+def redirect_to_https(request, port: int, keep: Tuple[str, ...] = ()):
+    """For a plain-HTTP request while "HTTPS only" is on: where to send it,
+    or None to let it through (HTTPS already, or one of `keep`)."""
+    if request.is_secure or not https_only() or request.path in keep:
+        return None
+    host = (request.host or '').rsplit(':', 1)[0] if not (request.host or '').endswith(']') else request.host
+    query = ('?' + request.query_string.decode('latin-1')) if request.query_string else ''
+    return f'https://{host}:{port}{request.path}{query}'

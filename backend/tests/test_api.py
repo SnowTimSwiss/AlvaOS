@@ -434,3 +434,29 @@ def test_assistant_proposals_run_only_on_the_persons_click(backend, monkeypatch,
     assert done["done"] is True and ran == [1]
     assert client.post(f"/api/v1/ai/actions/{pid}", json={"decision": "run"}, headers=headers).status_code == 404
     api_ai._proposals.clear()
+
+
+def test_https_only_redirects_plain_http_but_not_peers_or_the_certificate(backend, monkeypatch, tmp_path):
+    import tls_manager
+    module, state = backend
+    set_up(state)
+    monkeypatch.setattr(tls_manager, "SETTINGS_FILE", str(tmp_path / "https.json"))
+    token = auth_manager._create_session("root", role="admin")
+    headers = {"Authorization": token, "X-CSRF-Token": auth_manager.SESSIONS[token]["csrf_token"]}
+    lan = {"REMOTE_ADDR": "192.168.1.5"}
+    client = module.app.test_client()
+    turned = client.post("/api/v1/system/tls", json={"https_only": True}, headers=headers, environ_base=lan)
+    assert turned.status_code == 409                              # not from a plain-HTTP page
+    ok = client.post("/api/v1/system/tls", json={"https_only": True}, headers=headers, environ_base=lan,
+                     base_url="https://nas.local:8443")
+    assert ok.status_code == 200 and tls_manager.https_only()
+    res = client.get("/api/v1/system/info?x=1", headers=headers, environ_base=lan, base_url="http://nas.local:8080")
+    assert res.status_code == 308 and res.headers["Location"] == "https://nas.local:8443/api/v1/system/info?x=1"
+    assert client.get("/api/v1/system/tls/ca.crt", environ_base=lan).status_code != 308
+    assert client.get("/api/v1/backup/buddy/peer/status", environ_base=lan).status_code != 308
+    assert client.get("/api/v1/system/info", headers=headers).status_code != 308   # the NAS itself
+    off = client.post("/api/v1/system/tls", json={"https_only": False}, headers=headers, environ_base=lan)
+    assert off.status_code == 308                                 # plain HTTP is sent to HTTPS, also this
+    client.post("/api/v1/system/tls", json={"https_only": False}, headers=headers, environ_base=lan,
+                base_url="https://nas.local:8443")
+    assert not tls_manager.https_only()

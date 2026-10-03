@@ -374,6 +374,12 @@ METHODS = ['OPTIONS', 'GET', 'HEAD', 'PUT', 'DELETE', 'MKCOL', 'PROPFIND', 'PROP
 @app.route('/<path:raw>', methods=METHODS)
 def dav(raw):
     raw = '/' + raw
+    import tls_manager
+    if not request.is_secure and tls_manager.https_only() and (request.remote_addr or '') not in ('127.0.0.1', '::1'):
+        # File managers do not follow redirects reliably; say where to go.
+        host = (request.host or '').rsplit(':', 1)[0]
+        return Response(f'This NAS only answers over HTTPS: https://{host}:{tls_manager.PORTS["dav"]}/\n', 403,
+                        {'Content-Type': 'text/plain; charset=utf-8'})
     if request.method == 'OPTIONS':
         return Response(b'', 200, {'DAV': '1, 2', 'Allow': ', '.join(METHODS), 'MS-Author-Via': 'DAV'})
     session, refused = signed_in()

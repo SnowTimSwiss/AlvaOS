@@ -540,7 +540,20 @@ def unpair_telegram_alert_delivery():
 def tls_info():
     """The NAS's own HTTPS certificate: what it covers and its fingerprint."""
     import tls_manager
-    return jsonify({'success': True, **tls_manager.info()})
+    return jsonify({'success': True, **tls_manager.info(), 'https_only': tls_manager.https_only()})
+
+
+@bp.route('/api/v1/system/tls', methods=['POST'])
+@require_auth(require_admin=True)
+def tls_settings():
+    """Turn "HTTPS only" on or off. On only from a page opened over HTTPS:
+    then this device already trusts the NAS and nobody locks themselves out."""
+    import tls_manager
+    only = bool((request.get_json(silent=True) or {}).get('https_only'))
+    if only and not request.is_secure:
+        return jsonify({'error': 'Open AlvaOS with https:// first; then this device already trusts the NAS.'}), 409
+    tls_manager.set_https_only(only)
+    return jsonify({'success': True, 'https_only': only})
 
 
 @bp.route('/api/v1/system/tls/ca.crt', methods=['GET'])

@@ -59,3 +59,13 @@ def test_the_server_certificate_is_trusted_through_the_authority(tmp_path):
 
 def test_info_before_anything_exists(tmp_path):
     assert tls.info(str(tmp_path / "none"))["ready"] is False
+
+
+def test_https_only_setting_is_read_when_it_changes(tmp_path):
+    path = str(tmp_path / "https.json")
+    assert tls.https_only(path) is False
+    tls.set_https_only(True, path)
+    assert tls.https_only(path) is True
+    tls.set_https_only(False, path)
+    os.utime(path, (1, 1))   # a new mtime, whatever the clock
+    assert tls.https_only(path) is False

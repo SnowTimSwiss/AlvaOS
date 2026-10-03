@@ -15,6 +15,21 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · "HTTPS only"
+
+- Settings › Security › Set up devices › "HTTPS only": plain HTTP is then
+  answered with a 308 redirect to the HTTPS port (web interface 8080 → 8443,
+  Files 8090 → 9443); WebDAV on 8091 answers 403 with the HTTPS address,
+  because file managers do not follow redirects reliably.
+- It can only be turned on from a page opened over HTTPS, so the device
+  already trusts the NAS and nobody locks themselves out. Turning it off
+  works from HTTPS too (plain HTTP is redirected like everything else).
+- Never redirected: the authority certificate (new devices fetch it over
+  HTTP), Buddy Backup pairing and the peer API (other NAS over the tunnel),
+  and requests from the NAS itself (the assistant runs actions in-process).
+- `https.json` holds the switch; `tls_manager.https_only()` rereads it only
+  when it changes.
+
 ## 2026-10-03 · Background work gives way to people
 
 - Data checks (scrub) start in the idle I/O class (`btrfs scrub start -B -c

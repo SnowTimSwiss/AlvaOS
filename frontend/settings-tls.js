@@ -18,7 +18,7 @@
             dot.style.background = 'var(--text-secondary)';
             return;
         }
-        status.textContent = secure ? 'In use now' : 'Ready';
+        status.textContent = tls.https_only ? 'HTTPS only' : secure ? 'In use now' : 'Ready';
         dot.style.background = secure ? 'var(--accent-success)' : 'var(--accent-primary)';
         $('tls-desc').innerHTML = secure
             ? 'This page is encrypted. Devices that trust this NAS open it without a warning.'
@@ -48,6 +48,14 @@
                             ${STEPS.map(([who, how]) => `<details class="tls-os"><summary>${esc(who)}</summary><p>${esc(how)}</p></details>`).join('')}</li>
                         <li>Open <a href="${esc(httpsUrl())}">${esc(httpsUrl())}</a> and bookmark it.</li>
                     </ol>
+                    <label class="tls-only">
+                        <input type="checkbox" id="tls-only" ${tls.https_only ? 'checked' : ''} ${window.location.protocol === 'https:' ? '' : 'disabled'}>
+                        <span><strong>HTTPS only</strong>
+                        <small>${window.location.protocol === 'https:'
+        ? 'Plain http:// addresses send everyone to https://. Turn it on once every device you use trusts this NAS.'
+        : 'Open this page with https:// first; then you can turn this on without locking yourself out.'}</small></span>
+                    </label>
+                    <div class="pw-error" id="tls-error" role="alert"></div>
                     <details class="set-details" style="margin-top: 10px;">
                         <summary>Certificate details</summary>
                         <dl class="set-kv">
@@ -66,6 +74,25 @@
         overlay.querySelector('.modal-close-x').onclick = close;
         overlay.querySelector('[data-close]').onclick = close;
         if (window.attachModalDismiss) window.attachModalDismiss(overlay, close);
+        overlay.querySelector('#tls-only').addEventListener('change', async (event) => {
+            const on = event.target.checked;
+            overlay.querySelector('#tls-error').textContent = '';
+            try {
+                const res = await fetch(`${API_BASE}/system/tls`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ https_only: on }),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.error || 'That did not work.');
+                tls.https_only = data.https_only;
+                render();
+                window.showToast?.(on ? 'Only HTTPS from now on.' : 'Plain http:// works again.', 'success');
+            } catch (e) {
+                event.target.checked = !on;
+                overlay.querySelector('#tls-error').textContent = e.message;
+            }
+        });
     }
 
     async function load() {
