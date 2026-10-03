@@ -398,3 +398,27 @@ def test_upload_finish_passes_the_files_own_date(client):
                                 "anna")
     client.post("/api/upload/finish", json={"share": "Anna", "path": "", "name": "b.jpg", "size": 3}, headers=H)
     assert client.calls[-1][0][0] == "files-part-finish"
+
+
+def test_an_upload_link_can_have_a_size_limit(client, monkeypatch):
+    monkeypatch.setattr(files_manager, "list_entries", lambda path, user=None: ([], ""))
+    monkeypatch.setattr(files_manager, "run_helper", lambda args, timeout=600, user=None: ({"size": 0}, ""))
+    monkeypatch.setattr(files_manager, "pipe_helper", lambda args, stream, chunk=None, user=None: (
+        {"size": int(args[3]) + len(stream.read())}, ""))
+    sign_in(client, "anna", "anna-pass")
+    assert client.post("/api/links", json={"share": "Family", "path": "Inbox", "kind": "folder", "mode": "upload",
+                                           "max_gb": 3}, headers=H).status_code == 400
+    made = client.post("/api/links", json={"share": "Family", "path": "Inbox", "kind": "folder", "mode": "upload",
+                                           "max_gb": 1}, headers=H).get_json()
+    token = made["url"].split("/")[-1]
+    visitor = fs.app.test_client()
+    assert visitor.get(f"/api/public/{token}").get_json()["room_bytes"] == 1024 ** 3
+    links = fs._load_links()
+    links[token]["received"] = 1024 ** 3 - 10           # almost full
+    fs._save_links(links)
+    ok = visitor.post(f"/api/public/{token}/upload/piece?name=a.bin&offset=0", data=b"x" * 10, headers=H)
+    assert ok.status_code == 200
+    full = visitor.post(f"/api/public/{token}/upload/piece?name=b.bin&offset=0", data=b"y", headers=H)
+    assert full.status_code == 413
+    assert visitor.post(f"/api/public/{token}/upload/start", json={"name": "c.bin"}, headers=H).status_code == 413
+    assert visitor.get(f"/api/public/{token}").get_json()["room_bytes"] == 0

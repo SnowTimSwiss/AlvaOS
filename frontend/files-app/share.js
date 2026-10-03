@@ -177,6 +177,11 @@
     function showDrop() {
         $('pub-drop').hidden = false;
         $('pub-by').textContent = `${info.owner} asks you for files${info.nas_name ? ` · ${info.nas_name}` : ''}${info.expires_at ? ` · until ${new Date(info.expires_at).toLocaleDateString()}` : ''}`;
+        if (info.room_bytes != null) {
+            document.querySelector('.pub-drop-note').textContent = info.room_bytes > 0
+                ? `You can add up to ${sizeText(info.room_bytes)} more. What is already in this folder stays private.`
+                : 'This link has taken all it may. Ask the person who sent it for more room.';
+        }
         const zone = $('pub-drop-zone');
         $('pub-drop-input').addEventListener('change', (e) => { dropFiles(Array.from(e.target.files || [])); e.target.value = ''; });
         ['dragenter', 'dragover'].forEach((t) => zone.addEventListener(t, (e) => { e.preventDefault(); zone.classList.add('over'); }));
