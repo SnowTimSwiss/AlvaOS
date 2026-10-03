@@ -31,8 +31,160 @@ from shares_manager import (
 from storage_manager import load_pools_state
 
 from app_services import VERSION
+import share_quota
 
 bp = Blueprint('shares', __name__)
+
+def create_share(data, known_users, extra=None):
+    """Create a share from a request like POST /storage/shares. Returns
+    (answer, HTTP status). `extra` is stored with it (personal folders)."""
+    shares_state = load_shares_state()
+    share, problem = validate_share_request(data, load_pools_state(), shares_state, known_users)
+    if problem:
+        return {'error': problem}, 400
+    share_name, share_path, protocol = share['name'], share['path'], share['protocol']
+    read_only, guest_access = share['read_only'], share['guest_access']
+    smb_permissions = share['smb_permissions']
+
+    try:
+        share_id = f'share-{secrets.token_hex(4)}'
+
+        if platform.system() == 'Linux':
+            if share['new_folder'] and not os.path.exists(share_path):
+                _, err = run_sudo_command([CMD['BTRFS'], 'subvolume', 'create', share_path])
+                if err:
+                    return {'error': f'Could not create the folder {share_path}: {err}'}, 500
+            if not os.path.isdir(share_path):
+                return {'error': f'Folder does not exist: {share_path}'}, 400
+            if is_path_on_system_disk(share_path):
+                return {'error': f'Share path is on the system disk and is not allowed: {share_path}'}, 400
+
+            if protocol == 'nfs':
+                export_data = render_nfs_export(share_name, share_path, share['allowed_hosts'], read_only)
+                cmd = build_privileged_cmd([CMD['TEE'], '-a', '/etc/exports'])
+                subprocess.run(cmd, input=export_data, text=True, check=True, env={'LC_ALL': 'C'})
+                res, err = run_sudo_command([CMD['EXPORTFS'], '-ra'])
+                if err:
+                    return {'error': f'Failed to reload NFS: {err}'}, 500
+
+            elif protocol == 'smb':
+                ensure_samba_conf_exists()
+                ensure_samba_global_settings(guest_access)
+                disable_samba_homes_share()
+                smb_config = render_smb_share_config(
+                    share_name, share_path, read_only, guest_access, smb_permissions)
+                cmd = build_privileged_cmd([CMD['TEE'], '-a', '/etc/samba/smb.conf'])
+                subprocess.run(cmd, input=smb_config, text=True, check=True, env={'LC_ALL': 'C'})
+                res, err = run_sudo_command([CMD['SYSTEMCTL'], 'restart', 'smbd'])
+                if err:
+                    return {'error': f'Failed to restart Samba: {err}'}, 500
+
+        shares_state[share_id] = {
+            'id': share_id,
+            'name': share_name,
+            'path': share_path,
+            'protocol': protocol,
+            'read_only': read_only,
+            'guest_access': guest_access,
+            'allowed_hosts': share['allowed_hosts'],
+            'smb_permissions': smb_permissions,
+            'smb_group': f'alvaos_{share_id}',
+            'created_at': datetime.now().isoformat(),
+            'status': 'active',
+            **(extra or {}),
+        }
+        save_shares_state(shares_state)
+
+        if platform.system() == 'Linux' and protocol == 'smb':
+            apply_smb_permissions_to_fs(share_path, f'alvaos_{share_id}', smb_permissions, guest_access)
+            reconcile_samba_guest_settings(shares_state)
+
+        return {
+            'success': True,
+            'message': f'"{share_name}" is now shared on your network.',
+            'share_id': share_id
+        }, 200
+
+    except subprocess.TimeoutExpired:
+        return {'error': 'Share creation timed out'}, 500
+    except PermissionError:
+        return {'error': 'Permission denied. Backend needs sudo access.'}, 500
+    except Exception as e:
+        return {'error': f'Failed to create share: {str(e)}'}, 500
+
+
+def _pool_mount_for(path):
+    best = ''
+    for pool in load_pools_state().values():
+        mount = str((pool or {}).get('mount_point') or '') if isinstance(pool, dict) else ''
+        if mount and mount != '/' and (path == mount or path.startswith(mount.rstrip('/') + '/')) \
+                and len(mount) > len(best):
+            best = mount
+    return best
+
+
+def set_share_limit(share_id, limit_gb):
+    """Set or clear a share's space limit. Returns (answer, HTTP status)."""
+    limit, problem = share_quota.limit_from_gb(limit_gb)
+    if problem:
+        return {'error': problem}, 400
+    shares_state = load_shares_state()
+    share = shares_state.get(share_id)
+    if not isinstance(share, dict):
+        return {'error': 'Share not found'}, 404
+    mount = _pool_mount_for(str(share.get('path') or ''))
+    if not mount or share.get('path') == mount:
+        return {'error': 'A whole pool cannot have a space limit; give the share its own folder instead.'}, 400
+    if platform.system() == 'Linux':
+        problem = share_quota.apply_limit(share['path'], mount, limit, run_sudo_command, CMD['BTRFS'])
+        if problem:
+            return {'error': problem}, 409
+    share['quota_bytes'] = limit
+    save_shares_state(shares_state)
+    gb = f'{limit / share_quota.GB:g} GB' if limit else ''
+    return {'success': True, 'quota_bytes': limit,
+            'message': f'"{share["name"]}" can now hold up to {gb}.' if limit else
+            f'"{share["name"]}" has no space limit now.'}, 200
+
+
+def check_personal_folder(username, spec):
+    """Before a person is created: can they get a personal folder like this?
+    spec = {'pool_id', 'limit_gb'}. Returns '' or the problem."""
+    pool = load_pools_state().get(str(spec.get('pool_id') or ''))
+    if not isinstance(pool, dict) or not pool.get('mount_point') or pool.get('mount_point') == '/':
+        return 'Choose the pool for the personal folder.'
+    if any(str(s.get('name', '')).lower() == username.lower()
+           for s in load_shares_state().values() if isinstance(s, dict)):
+        return f'There is already a share called "{username}". Turn off the personal folder or rename that share.'
+    if os.path.lexists(os.path.join(pool['mount_point'], username)):
+        return f'The pool already has a folder called "{username}".'
+    _, problem = share_quota.limit_from_gb(spec.get('limit_gb'))
+    return problem
+
+
+def create_personal_folder(username, spec, known_users):
+    """A share only this person can open, in its own Btrfs folder, with an
+    optional space limit. Returns (answer, HTTP status)."""
+    payload, status = create_share({'name': username, 'protocol': 'smb', 'pool_id': spec.get('pool_id'),
+                                    'folder': username, 'new_folder': True,
+                                    'smb_permissions': {username: 'write'}},
+                                   known_users, extra={'personal_for': username})
+    if status != 200:
+        return payload, status
+    if share_quota.limit_from_gb(spec.get('limit_gb'))[0]:
+        limited, limit_status = set_share_limit(payload['share_id'], spec.get('limit_gb'))
+        if limit_status != 200:
+            return {**payload, 'warning': f'The folder was made, but without a limit: {limited["error"]}'}, 200
+    return payload, 200
+
+
+@bp.route('/api/v1/storage/shares/quota', methods=['PUT'])
+@require_auth(require_admin=True)
+def update_share_quota():
+    data = request.get_json(silent=True) or {}
+    payload, status = set_share_limit(str(data.get('share_id') or ''), data.get('limit_gb'))
+    return jsonify(payload), status
+
 
 @bp.route('/api/v1/storage/shares', methods=['GET', 'POST', 'DELETE'])
 @require_auth(require_admin=True)
@@ -42,84 +194,19 @@ def manage_shares():
     if request.method == 'GET':
         # Load shares from state file
         shares_state = load_shares_state()
-        shares = list(shares_state.values())
+        shares = [dict(s) for s in shares_state.values() if isinstance(s, dict)]
+        if platform.system() == 'Linux':
+            for share in shares:
+                if share.get('quota_bytes'):
+                    usage = share_quota.read_usage(share['path'], run_sudo_command, CMD['BTRFS'])
+                    if usage:
+                        share['used_bytes'] = usage['used_bytes']
         return jsonify({'shares': shares})
     
     elif request.method == 'POST':
         from api_auth import load_users_state  # avoids an import cycle at module load
-        shares_state = load_shares_state()
-        share, problem = validate_share_request(request.get_json(silent=True), load_pools_state(),
-                                                shares_state, set(load_users_state()))
-        if problem:
-            return jsonify({'error': problem}), 400
-        share_name, share_path, protocol = share['name'], share['path'], share['protocol']
-        read_only, guest_access = share['read_only'], share['guest_access']
-        smb_permissions = share['smb_permissions']
-
-        try:
-            share_id = f'share-{secrets.token_hex(4)}'
-
-            if platform.system() == 'Linux':
-                if share['new_folder'] and not os.path.exists(share_path):
-                    _, err = run_sudo_command([CMD['BTRFS'], 'subvolume', 'create', share_path])
-                    if err:
-                        return jsonify({'error': f'Could not create the folder {share_path}: {err}'}), 500
-                if not os.path.isdir(share_path):
-                    return jsonify({'error': f'Folder does not exist: {share_path}'}), 400
-                if is_path_on_system_disk(share_path):
-                    return jsonify({'error': f'Share path is on the system disk and is not allowed: {share_path}'}), 400
-
-                if protocol == 'nfs':
-                    export_data = render_nfs_export(share_name, share_path, share['allowed_hosts'], read_only)
-                    cmd = build_privileged_cmd([CMD['TEE'], '-a', '/etc/exports'])
-                    subprocess.run(cmd, input=export_data, text=True, check=True, env={'LC_ALL': 'C'})
-                    res, err = run_sudo_command([CMD['EXPORTFS'], '-ra'])
-                    if err:
-                        return jsonify({'error': f'Failed to reload NFS: {err}'}), 500
-
-                elif protocol == 'smb':
-                    ensure_samba_conf_exists()
-                    ensure_samba_global_settings(guest_access)
-                    disable_samba_homes_share()
-                    smb_config = render_smb_share_config(
-                        share_name, share_path, read_only, guest_access, smb_permissions)
-                    cmd = build_privileged_cmd([CMD['TEE'], '-a', '/etc/samba/smb.conf'])
-                    subprocess.run(cmd, input=smb_config, text=True, check=True, env={'LC_ALL': 'C'})
-                    res, err = run_sudo_command([CMD['SYSTEMCTL'], 'restart', 'smbd'])
-                    if err:
-                        return jsonify({'error': f'Failed to restart Samba: {err}'}), 500
-
-            shares_state[share_id] = {
-                'id': share_id,
-                'name': share_name,
-                'path': share_path,
-                'protocol': protocol,
-                'read_only': read_only,
-                'guest_access': guest_access,
-                'allowed_hosts': share['allowed_hosts'],
-                'smb_permissions': smb_permissions,
-                'smb_group': f'alvaos_{share_id}',
-                'created_at': datetime.now().isoformat(),
-                'status': 'active'
-            }
-            save_shares_state(shares_state)
-
-            if platform.system() == 'Linux' and protocol == 'smb':
-                apply_smb_permissions_to_fs(share_path, f'alvaos_{share_id}', smb_permissions, guest_access)
-                reconcile_samba_guest_settings(shares_state)
-
-            return jsonify({
-                'success': True,
-                'message': f'"{share_name}" is now shared on your network.',
-                'share_id': share_id
-            })
-
-        except subprocess.TimeoutExpired:
-            return jsonify({'error': 'Share creation timed out'}), 500
-        except PermissionError:
-            return jsonify({'error': 'Permission denied. Backend needs sudo access.'}), 500
-        except Exception as e:
-            return jsonify({'error': f'Failed to create share: {str(e)}'}), 500
+        payload, status = create_share(request.get_json(silent=True), set(load_users_state()))
+        return jsonify(payload), status
 
     elif request.method == 'DELETE':
         # Delete share

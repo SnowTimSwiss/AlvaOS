@@ -149,9 +149,12 @@ function renderUsers(users, shares = []) {
     users.forEach((user) => {
         const username = String(user?.username || '').trim();
         const access = sharesOfUser(username, shares);
-        const accessText = access.length
-            ? `Can open ${access.map((a) => `${a.name} (${a.role})`).join(', ')}`
-            : 'Not in any shared folder yet. Give access from the Shares tab.';
+        const personal = shares.find((share) => share.personal_for === username);
+        const others = access.filter((a) => !personal || a.name !== personal.name);
+        const accessText = [
+            personal ? `Personal folder "${personal.name}"${personal.quota_bytes ? `: ${personal.used_bytes != null ? `${usersGb(personal.used_bytes)} of ` : 'up to '}${usersGb(personal.quota_bytes)}` : ''}` : '',
+            others.length ? `Can open ${others.map((a) => `${a.name} (${a.role})`).join(', ')}` : (personal ? '' : 'Not in any shared folder yet. Give access from the Shares tab.'),
+        ].filter(Boolean).join(' · ');
 
         const row = document.createElement('div');
         row.className = 'disk-row user-row';
@@ -173,7 +176,23 @@ function renderUsers(users, shares = []) {
     });
 }
 
-function showCreateUserModal() {
+const PERSONAL_LIMITS = [['', 'No limit'], ['10', '10 GB'], ['50', '50 GB'], ['100', '100 GB'], ['250', '250 GB'], ['500', '500 GB'], ['1000', '1 TB'], ['other', 'Other...']];
+
+function usersGb(bytes) {
+    const gb = Number(bytes || 0) / 1024 ** 3;
+    if (gb < 1) return gb === 0 ? '0 GB' : `${Math.max(1, Math.round(gb * 1024))} MB`;
+    return gb >= 1000 ? `${(gb / 1024).toFixed(gb >= 10240 ? 0 : 1)} TB` : `${gb >= 10 ? Math.round(gb) : gb.toFixed(1)} GB`;
+}
+
+async function showCreateUserModal() {
+    let pools = [];
+    try {
+        const res = await usersApi('/storage/pools');
+        const data = res && res.ok ? await usersReadJson(res) : null;
+        pools = ((data && data.pools) || []).filter((p) => p.is_managed !== false && !p.is_system_pool && p.mount_point);
+    } catch (_e) {
+        pools = [];
+    }
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
 
@@ -190,6 +209,14 @@ function showCreateUserModal() {
         <div id="create-user-name-error" class="user-modal-error" style="display:none;"></div>
         <input type="password" id="create-user-pass-input" class="user-modal-input" placeholder="Password, at least 8 characters" autocomplete="new-password" />
         <div id="create-user-pass-error" class="user-modal-error" style="display:none;"></div>
+        ${pools.length ? `
+        <label class="personal-toggle"><input type="checkbox" id="personal-on" checked> A personal folder only they can open</label>
+        <div class="personal-opts" id="personal-opts">
+            ${pools.length > 1 ? `<label class="personal-field">On<select id="personal-pool" class="user-modal-input">${pools.map((p) => `<option value="${usersEscapeHtml(p.id)}">${usersEscapeHtml(p.name || p.id)}</option>`).join('')}</select></label>` : ''}
+            <label class="personal-field">Space limit<select id="personal-limit" class="user-modal-input">${PERSONAL_LIMITS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
+            <label class="personal-field" id="personal-other-field" hidden>Limit in GB<input type="number" id="personal-other" class="user-modal-input" min="1" step="1" placeholder="e.g. 200"></label>
+            <p class="user-modal-hint">The folder is called like the person. You can change the limit later under Storage › Shares.</p>
+        </div>` : ''}
         <div class="user-modal-actions">
             <button id="cancel-create-btn" class="btn-secondary">Cancel</button>
             <button id="confirm-create-btn" class="btn-primary">Add</button>
@@ -214,6 +241,16 @@ function showCreateUserModal() {
     };
 
     if (nameInput) nameInput.focus();
+    const personalOn = panel.querySelector('#personal-on');
+    const limitSelect = panel.querySelector('#personal-limit');
+    personalOn?.addEventListener('change', () => { panel.querySelector('#personal-opts').hidden = !personalOn.checked; });
+    limitSelect?.addEventListener('change', () => { panel.querySelector('#personal-other-field').hidden = limitSelect.value !== 'other'; });
+    const personalChoice = () => {
+        if (!personalOn || !personalOn.checked) return null;
+        const pool = panel.querySelector('#personal-pool')?.value || pools[0].id;
+        const limit = limitSelect.value === 'other' ? panel.querySelector('#personal-other').value : limitSelect.value;
+        return { pool_id: pool, limit_gb: limit ? Number(limit) : null };
+    };
 
     const close = () => modal.remove();
     if (cancelBtn) cancelBtn.addEventListener('click', close);
@@ -239,11 +276,16 @@ function showCreateUserModal() {
                 setFieldError(passError, 'Password must be at least 8 characters');
                 return;
             }
+            const personal = personalChoice();
+            if (personal && personal.limit_gb !== null && !(personal.limit_gb >= 1)) {
+                setFieldError(passError, 'Enter the space limit in GB, at least 1.');
+                return;
+            }
 
             confirmBtn.disabled = true;
             if (!confirmBtn.dataset.defaultLabel) confirmBtn.dataset.defaultLabel = confirmBtn.textContent || 'Create';
             confirmBtn.textContent = 'Creating...';
-            const created = await createUser(username, password);
+            const created = await createUser(username, password, personal);
             confirmBtn.disabled = false;
             confirmBtn.textContent = confirmBtn.dataset.defaultLabel;
 
@@ -254,10 +296,10 @@ function showCreateUserModal() {
     }
 }
 
-async function createUser(username, password) {
+async function createUser(username, password, personal = null) {
     const response = await usersApi('/users', {
         method: 'POST',
-        json: { username, password }
+        json: personal ? { username, password, personal_folder: personal } : { username, password }
     });
     const result = await usersReadJson(response);
 
@@ -268,6 +310,7 @@ async function createUser(username, password) {
     }
 
     usersNotify(result?.message || 'User created', 'success');
+    if (result?.warning) usersNotify(result.warning, 'warning');
     await loadUsers();
     return true;
 }

@@ -385,3 +385,17 @@ def test_assistant_reads_through_the_admin_session(backend, monkeypatch, tmp_pat
     data = client.post("/api/v1/ai/chat", json=question, headers=headers).get_json()
     assert data["reply"] == "All good." and data["looked_at"] == ["updates"]
     assert seen[1]["role"] == "tool" and "answered 401" not in seen[1]["content"]
+
+
+def test_a_bad_personal_folder_stops_before_the_person_is_made(backend, monkeypatch):
+    import api_auth
+    module, state = backend
+    set_up(state)
+    token = auth_manager._create_session("root", role="admin")
+    headers = {"Authorization": token, "X-CSRF-Token": auth_manager.SESSIONS[token]["csrf_token"]}
+    made = []
+    monkeypatch.setattr(api_auth, "run_sudo_command", lambda cmd, **kw: made.append(cmd) or (None, "no"))
+    monkeypatch.setattr(api_auth, "system_user_exists", lambda name: False)
+    res = module.app.test_client().post("/api/v1/users", headers=headers, json={
+        "username": "anna", "password": "long enough", "personal_folder": {"pool_id": "missing", "limit_gb": 50}})
+    assert res.status_code == 400 and "pool" in res.get_json()["error"] and made == []

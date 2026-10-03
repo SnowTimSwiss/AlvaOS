@@ -569,6 +569,12 @@ def manage_users():
             return jsonify({'error': 'Password must be at least 8 characters'}), 400
         if username in users_state or system_user_exists(username):
             return jsonify({'error': 'User already exists'}), 400
+        personal = data.get('personal_folder') if isinstance(data.get('personal_folder'), dict) else None
+        if personal:
+            import api_shares  # avoids an import cycle at module load
+            problem = api_shares.check_personal_folder(username, personal)
+            if problem:
+                return jsonify({'error': problem}), 400
 
         try:
             # Create system user
@@ -606,6 +612,13 @@ def manage_users():
             }
             save_users_state(users_state)
 
+            if personal:
+                folder, status = api_shares.create_personal_folder(username, personal, set(users_state))
+                if status != 200:
+                    return jsonify({'success': True, 'message': f'User "{username}" created',
+                                    'warning': f'The personal folder could not be made: {folder.get("error")}'})
+                return jsonify({'success': True, 'message': f'"{username}" was created with a personal folder.',
+                                'share_id': folder.get('share_id'), 'warning': folder.get('warning', '')})
             return jsonify({'success': True, 'message': f'User "{username}" created'})
         except Exception as e:
             return jsonify({'error': f'Failed to create user: {str(e)}'}), 500
@@ -664,7 +677,13 @@ def manage_users():
                 del users_state[username]
                 save_users_state(users_state)
 
-            return jsonify({'success': True, 'message': f'User "{username}" deleted'})
+            kept = [s.get('name') for s in shares_state.values()
+                    if isinstance(s, dict) and s.get('personal_for') == username]
+            message = f'User "{username}" deleted'
+            if kept:
+                message += (f'. Their personal folder "{kept[0]}" and its files are kept; '
+                            'delete that share under Storage when nobody needs it any more.')
+            return jsonify({'success': True, 'message': message})
         except Exception as e:
             return jsonify({'error': f'Failed to delete user: {str(e)}'}), 500
 

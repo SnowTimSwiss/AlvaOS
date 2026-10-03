@@ -15,6 +15,33 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · Personal folders and space limits
+
+- "Add a person" (Storage › Users) can give them a personal folder, on by
+  default when a pool exists: a share named like them, in its own Btrfs
+  subvolume `<pool>/<name>`, only they can open and edit it (marked
+  `personal_for`). Optional space limit: none, 10 GB ... 1 TB or any number.
+  The checks (pool, name not taken as share or folder, limit) run before the
+  account is made; if making the folder fails later, the person is still
+  created and the page shows why.
+- Any share in its own subvolume can get a limit under Storage › Shares ›
+  "Space limit" (`PUT /api/v1/storage/shares/quota`). The share card and the
+  person's row show "12 GB of 50 GB used" with a bar (warning colour from
+  85 %, red from 95 %).
+- `backend/share_quota.py`: Btrfs quota groups. The first limit on a pool
+  runs `btrfs quota enable`; limits are `btrfs qgroup limit BYTES|none`;
+  usage from `btrfs qgroup show -reF --raw`. A folder that is not a
+  subvolume (inode 256) is refused, so a limit never lands on a whole pool.
+  The helper allows only these forms.
+- Removing a person keeps their personal folder and files; the message says
+  so.
+- `create_share()` in `api_shares.py` is now shared by "Share a folder" and
+  personal folders.
+- **Note for next time:** not tried on real Btrfs here (no btrfs-progs in
+  the test container). On a NAS: create a person with a 1 GB limit, copy
+  2 GB into the folder over SMB, expect "disk full" at 1 GB, and check the
+  numbers on the share card.
+
 ## 2026-10-03 · AlvaOS Files: previous versions of a file
 
 - Right-click a file › "Previous versions…": every different state of that

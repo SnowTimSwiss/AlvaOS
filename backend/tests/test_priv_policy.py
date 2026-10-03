@@ -387,6 +387,10 @@ def test_btrfs_snapshot_and_backup_commands():
     allowed('/usr/bin/btrfs', 'subvolume', 'show', '/')
     allowed('/usr/bin/btrfs', 'filesystem', 'show')
     allowed('/usr/bin/btrfs', 'filesystem', 'usage', '/mnt/alvaos/main')
+    allowed('/usr/bin/btrfs', 'quota', 'enable', '/mnt/alvaos/main')
+    allowed('/usr/bin/btrfs', 'qgroup', 'limit', '107374182400', '/mnt/alvaos/main/anna')
+    allowed('/usr/bin/btrfs', 'qgroup', 'limit', 'none', '/mnt/alvaos/main/anna')
+    allowed('/usr/bin/btrfs', 'qgroup', 'show', '-reF', '--raw', '/mnt/alvaos/main/anna')
 
 
 @pytest.mark.parametrize('argv', [
@@ -404,6 +408,15 @@ def test_btrfs_snapshot_and_backup_commands():
     ['/usr/bin/btrfs', 'send', '../x'],
     ['/usr/bin/btrfs', 'property', 'set', '/', 'ro', 'true'],
     ['/usr/bin/btrfs', 'rescue', 'zero-log', '/dev/sda1'],
+    ['/usr/bin/btrfs', 'quota', 'disable', '/mnt/alvaos/main'],
+    ['/usr/bin/btrfs', 'quota', 'enable', '/'],
+    ['/usr/bin/btrfs', 'quota', 'enable', '/mnt/alvaos/main/anna'],
+    ['/usr/bin/btrfs', 'qgroup', 'limit', '0', '/mnt/alvaos/main/anna'],
+    ['/usr/bin/btrfs', 'qgroup', 'limit', '10G', '/mnt/alvaos/main/anna'],
+    ['/usr/bin/btrfs', 'qgroup', 'limit', '-e', '10', '/mnt/alvaos/main/anna'],
+    ['/usr/bin/btrfs', 'qgroup', 'limit', 'none', '/'],
+    ['/usr/bin/btrfs', 'qgroup', 'show', '/'],
+    ['/usr/bin/btrfs', 'qgroup', 'destroy', '0/257', '/mnt/alvaos/main'],
 ])
 def test_btrfs_abuse_is_denied(argv):
     denied(*argv)

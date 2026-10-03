@@ -908,6 +908,11 @@ def _rule_btrfs(sys_: System, args):
             _fail('btrfs filesystem resize: only DEVID:max is allowed')
         _pool_mountpoint(_clean_abs_path(rest[1]))
         return Plan(argv=list(args))
+    if group == 'qgroup' and action == 'show':
+        # Space used by one share and its limit.
+        if rest[:2] != ['-reF', '--raw'] or len(rest) != 3:
+            _fail('btrfs qgroup show: only -reF --raw PATH')
+        return Plan(argv=['qgroup', 'show', '-reF', '--raw', writable_path(sys_, rest[2])])
     if group == 'subvolume' and action in ('show', 'get-default', 'sync'):
         # sync only waits until deleted subvolumes are cleaned up.
         _expect(rest, readable_path)
@@ -918,6 +923,16 @@ def _rule_btrfs(sys_: System, args):
         return Plan(argv=list(args))
 
     # Modifications
+    if group == 'quota' and action == 'enable':
+        if len(rest) != 1:
+            _fail('btrfs quota enable takes the pool mount point')
+        _pool_mountpoint(_clean_abs_path(rest[0]))
+        return Plan(argv=list(args))
+    if group == 'qgroup' and action == 'limit':
+        # A share's space limit: a byte count or "none", on a folder in a pool.
+        if len(rest) != 2 or not (rest[0] == 'none' or re.match(r'^[1-9][0-9]{0,16}$', rest[0])):
+            _fail('btrfs qgroup limit: only BYTES|none PATH')
+        return Plan(argv=['qgroup', 'limit', rest[0], writable_path(sys_, rest[1])])
     if group == 'subvolume' and action == 'create':
         _expect(rest, lambda p: writable_path(sys_, p))
         return Plan(argv=list(args))
