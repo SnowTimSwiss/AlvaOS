@@ -30,7 +30,7 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 - **Share links**: done (read-only, password, expiry, one list). Next: upload-only links ("drop box").
 - **Phone access** through the web UI (installable as a PWA), plus WebDAV so native file apps and desktop clients can connect.
 - **Trash** per share (done in Files, 30 days), and "Previous versions" of a file in Files (the backend for this exists: `browse_snapshot`/`restore_item`, used by "Get files" on the Backup page).
-- **Search** by name, later by content.
+- **Search**: by name done (folder and below, as the person). Later: by content, and across all shares at once.
 - **Remote access** without port forwarding, over the existing WireGuard, with a simple "add this device" flow and QR code.
 - Lightweight: a few MB of code, no PHP and no extra database, and it does not run when nobody uses it.
 

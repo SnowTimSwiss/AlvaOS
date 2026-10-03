@@ -72,7 +72,7 @@ svg { display: block; }
 .me span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: var(--accent-text); display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.85rem; flex-shrink: 0; }
 .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.bar { display: flex; align-items: center; gap: 4px; padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.bar { position: relative; display: flex; align-items: center; gap: 4px; padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
 .crumbs { display: flex; align-items: center; gap: 2px; min-width: 0; flex: 1; overflow: hidden; font-size: 1.02rem; }
 .crumb { border: none; background: none; padding: 5px 7px; border-radius: 7px; cursor: pointer; white-space: nowrap; color: var(--muted); max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 .crumb:hover { background: var(--hover); color: var(--text); }
@@ -197,6 +197,9 @@ svg { display: block; }
     .row .rsize, .row .rdate { display: none; }
     .row .rsub { display: block; }
     .uploads { bottom: 12px; right: 12px; }
+    .search { display: none; }
+    .bar.find .search { display: flex; position: absolute; inset: 6px 8px; z-index: 5; background: var(--panel); }
+    .bar.find .search input { width: 100%; }
 }
 .rsub { display: none; font-size: 0.76rem; color: var(--muted); }
 .rtext { min-width: 0; }
@@ -239,3 +242,10 @@ body.public { display: flex; flex-direction: column; min-height: 100%; }
 .pub-folder-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
 .pub-folder-bar .crumbs { margin: 0; }
 .pub-folder-bar .btn { text-decoration: none; }
+
+/* Search results: where each one is */
+.where { font-size: 0.72rem; color: var(--muted); text-align: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rwhere { color: var(--muted); }
+.results-head { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding: 2px 4px 10px; color: var(--muted); font-size: 0.86rem; }
+.results-head button { margin-left: auto; white-space: nowrap; }
+.results-head svg { flex: none; }

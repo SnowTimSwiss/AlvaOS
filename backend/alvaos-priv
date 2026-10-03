@@ -342,6 +342,7 @@ def file_size(argv):
 # every folder on its open descriptor and never overwrites anything.
 FILES_OPS = {
     'files-list': (1, lambda a: {'entries': files_ops.list_dir(a[0])}),
+    'files-search': (2, lambda a: files_ops.search(a[0], a[1])),
     'files-write': (2, lambda a: {'written': files_ops.write_file(a[0], a[1], sys.stdin.buffer)}),
     'files-mkdir': (2, lambda a: files_ops.make_dir(a[0], a[1])),
     'files-rename': (3, lambda a: files_ops.rename(a[0], a[1], a[2])),

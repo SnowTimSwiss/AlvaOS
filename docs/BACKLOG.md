@@ -15,6 +15,21 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · AlvaOS Files: search
+
+- Typing in the search box filters the open folder at once; half a second
+  later (or on Enter) every folder below is searched by name too. All words
+  must be in the name, any case. Results show where they are; "Open" and
+  "Show in folder" (goes there and selects it). Changes happen in the folder,
+  so results are read-only. On a phone a search button opens the box.
+- New helper operation `files-search DIR QUERY`, run as the person: walks by
+  descriptor without following symlinks, one open descriptor per level,
+  skips folders they cannot open, the trash and unfinished uploads; stops at
+  200 results, 40 levels or 15 seconds ("type more to narrow it down").
+  `GET /api/search?share=&path=&q=` in the Files server.
+- Real test: a folder only root can open was left out of the results.
+- CI: the test job now installs Pillow (the thumbnail test failed there).
+
 ## 2026-10-03 · AI assistant (read-only)
 
 - Settings › Assistant: off by default. Pick a service (Ollama on your

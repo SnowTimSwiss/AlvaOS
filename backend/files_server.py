@@ -277,6 +277,29 @@ def list_folder():
     return jsonify({'share': share['name'], 'access': share['access'], 'path': rel, 'entries': entries})
 
 
+@app.get('/api/search')
+def search():
+    """Names below a folder of one share, as the person."""
+    session, refused = need_session()
+    if refused:
+        return refused
+    share, path, rel, bad = target(session, request.args)
+    if bad:
+        return bad
+    query = str(request.args.get('q') or '').strip()
+    if not query or len(query) > 200:
+        return jsonify({'error': 'Type what to look for.'}), 400
+    result, error = files_manager.run_helper(['files-search', path, query], timeout=30, user=as_user(session))
+    if result is None:
+        return jsonify({'error': error or 'The search did not work.'}), 409
+    results = []
+    for item in result.get('results') or []:
+        folder = '/'.join(p for p in (rel, str(item.get('folder') or '')) if p)
+        results.append({**item, 'folder': folder})
+    return jsonify({'share': share['name'], 'path': rel, 'query': query, 'results': results,
+                    'complete': bool(result.get('complete'))})
+
+
 @app.post('/api/link')
 def link():
     session, refused = need_session()
