@@ -15,6 +15,14 @@ How to add an entry:
 
 ---
 
+## 2026-10-04 · Remote access problems are alerts
+
+- "Remote access is not running" when it is on but the tunnel is down, and
+  "Your home's name is not updated" when DuckDNS failed for a day (or never
+  worked). Both link to Settings › Remote access and go out by email or
+  Telegram like the other warnings. Otherwise one finds out only when away
+  from home and nothing connects.
+
 ## 2026-10-04 · HTTPS certificate follows new addresses while running; remote access closes its router port
 
 - The server certificate was checked only when AlvaOS started, and the

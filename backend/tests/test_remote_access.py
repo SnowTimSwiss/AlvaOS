@@ -212,3 +212,26 @@ def test_turning_off_closes_the_port_in_the_router_and_on_opens_it(remote, monke
     assert asked[-1] == ["/usr/bin/upnpc", "-d", "51821", "UDP"]
     remote.configure({"enabled": True})
     assert "-a" in asked[-1]
+
+
+def test_problems_become_alerts(remote):
+    assert remote.problems() == []
+    remote.configure({"enabled": True, "endpoint": "home.example.net"})
+    assert remote.problems() == []
+    remote.interface_up = lambda: False
+    assert [p["alert_id"] for p in remote.problems()] == ["remote-access-down"]
+    remote.interface_up = lambda: True
+    remote.http_get = lambda *a, **k: Answer("KO")
+    remote.configure({"duckdns": {"domain": "myhome", "token": TOKEN}})   # never updated: at once
+    [problem] = remote.problems()
+    assert problem["alert_id"] == "remote-access-duckdns" and "myhome.duckdns.org" in problem["message"]
+
+
+def test_remote_access_problems_reach_the_alert_list(monkeypatch):
+    import alerts_manager
+    import app_services
+    monkeypatch.setattr(app_services.remote, "problems", lambda: [
+        {"alert_id": "remote-access-down", "severity": "warning", "title": "Remote access is not running", "message": "m"}])
+    alerts = alerts_manager._collect_system_alerts()
+    [found] = [a for a in alerts if a["id"] == "remote-access-down"]
+    assert found["route"] == "system.html#remote"
