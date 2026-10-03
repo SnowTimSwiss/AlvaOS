@@ -236,6 +236,25 @@ if __name__ == '__main__':
             _time.sleep(23 * 3600)
     threading.Thread(target=_purge_trash_daily, name='files-trash', daemon=True).start()
 
+    # The signed package of the running version belongs in the update cache:
+    # it is the way back when an update fails. After an install from the
+    # installer or a USB stick it is fetched from that version's release.
+    def _keep_way_back():
+        import platform as _platform
+        import time as _time
+        from app_services import update_manager
+        if _platform.system() != 'Linux':
+            return
+        _time.sleep(120)
+        for _ in range(28):           # a week of tries, then the next start
+            outcome = update_manager.ensure_way_back()
+            if outcome in ('ready', 'fetched', 'unknown version', 'no release for this version',
+                           'no signed package in the release', 'the release package has another version'):
+                print(f"Way back for updates: {outcome}")
+                return
+            _time.sleep(6 * 3600)
+    threading.Thread(target=_keep_way_back, name='update-way-back', daemon=True).start()
+
     # Problems by Telegram and email, also when nobody has the web page open.
     import alert_delivery
     threading.Thread(target=alert_delivery.serve_forever, name='alert-delivery', daemon=True).start()

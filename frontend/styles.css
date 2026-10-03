@@ -2632,3 +2632,7 @@ body.ai-open .feedback-fab-wrap { display: none; }
 .tls-os { margin: 6px 0 0; border: 1px solid var(--border-subtle); border-radius: var(--radius-default); padding: 6px 10px; }
 .tls-os summary { cursor: pointer; font-weight: 600; }
 .tls-os p { margin: 6px 0 2px; color: var(--text-secondary); font-size: 0.9rem; }
+.upd-way-back { display: flex; gap: 8px; align-items: flex-start; margin: 10px 0 2px; padding: 10px 12px; border-radius: var(--radius-default); background: var(--accent-primary-soft); color: var(--text-secondary); font-size: 0.88rem; line-height: 1.45; }
+.upd-way-back svg { width: 18px; height: 18px; flex: none; color: var(--accent-success); margin-top: 1px; }
+.upd-way-back.warn svg { color: var(--accent-warning); }
+.upd-way-back strong { color: var(--text-primary); }

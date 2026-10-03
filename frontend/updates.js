@@ -426,6 +426,15 @@ async function loadRollback() {
     const res = await apiFetch('/updates/rollback').catch(() => null);
     const data = await readJson(res);
     const versions = Array.isArray(data?.versions) ? data.versions : [];
+    const wayBack = $('upd-way-back');
+    if (wayBack && data && typeof data.way_back_ready === 'boolean') {
+        wayBack.hidden = false;
+        const current = escapeHtml(cleanVersion(data.current_version || ''));
+        wayBack.innerHTML = data.way_back_ready
+            ? `${window.alvaIcon ? window.alvaIcon('shield-check', '', 'aria-hidden="true"') : ''}<span><strong>Safety net ready.</strong> If an update fails, AlvaOS goes back to ${current} on its own.</span>`
+            : `${window.alvaIcon ? window.alvaIcon('triangle-alert', '', 'aria-hidden="true"') : ''}<span><strong>Safety net not ready yet.</strong> The signed package of ${current} is fetched from its release as soon as the NAS is online, so a failed update can go back to it.</span>`;
+        wayBack.classList.toggle('warn', !data.way_back_ready);
+    }
     const section = $('upd-rollback');
     section.hidden = versions.length === 0;
     if (!versions.length) return;

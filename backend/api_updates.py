@@ -103,6 +103,7 @@ def list_rollback_versions():
     return jsonify({
         'current_version': update_manager.get_current_version(),
         'versions': update_manager.list_rollback_candidates(),
+        'way_back_ready': update_manager.way_back_ready(),
     })
 
 @bp.route('/api/v1/updates/rollback', methods=['POST'])
