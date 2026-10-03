@@ -480,7 +480,8 @@
         }
 
         const more = $('status-more');
-        const rest = list.slice(1, 5);
+        // One next step is enough: the others are in "Getting started".
+        const rest = list.slice(1).filter((issue) => issue.level !== 'setup').slice(0, 4);
         if (rest.length === 0) {
             more.hidden = true;
             more.innerHTML = '';
