@@ -15,6 +15,16 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · AlvaOS Files: search in all shared folders
+
+- The search results have a switch: "In <this folder>" or "All shared
+  folders". All runs `files-search` once per share the person has, as the
+  person, up to 200 results in total; every result knows its share, so
+  opening, previews, download, versions and "Show in folder" work across
+  shares.
+- Real test: "beach" found a photo in Family and a document in Work (a
+  read-only share); the document opened, "Show in folder" switched to Work.
+
 ## 2026-10-03 · AlvaOS Files: upload links ("drop box")
 
 - Sharing a folder you can change offers "Only upload files into it (drop

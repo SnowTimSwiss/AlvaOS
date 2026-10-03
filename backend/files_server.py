@@ -279,25 +279,40 @@ def list_folder():
 
 @app.get('/api/search')
 def search():
-    """Names below a folder of one share, as the person."""
+    """Names below a folder of one share, or in every share of the person
+    (everywhere=1), always as the person."""
     session, refused = need_session()
     if refused:
         return refused
-    share, path, rel, bad = target(session, request.args)
-    if bad:
-        return bad
     query = str(request.args.get('q') or '').strip()
     if not query or len(query) > 200:
         return jsonify({'error': 'Type what to look for.'}), 400
-    result, error = files_manager.run_helper(['files-search', path, query], timeout=30, user=as_user(session))
-    if result is None:
-        return jsonify({'error': error or 'The search did not work.'}), 409
-    results = []
-    for item in result.get('results') or []:
-        folder = '/'.join(p for p in (rel, str(item.get('folder') or '')) if p)
-        results.append({**item, 'folder': folder})
-    return jsonify({'share': share['name'], 'path': rel, 'query': query, 'results': results,
-                    'complete': bool(result.get('complete'))})
+    if request.args.get('everywhere') == '1':
+        places = [(s, s['path'], '') for _, s in sorted(shares_for(session).items())]
+    else:
+        share, path, rel, bad = target(session, request.args)
+        if bad:
+            return bad
+        places = [(share, path, rel)]
+    results: List[Dict[str, Any]] = []
+    complete = True
+    for share, path, rel in places:
+        if len(results) >= SEARCH_LIMIT:
+            complete = False
+            break
+        result, error = files_manager.run_helper(['files-search', path, query], timeout=30, user=as_user(session))
+        if result is None:
+            if len(places) == 1:
+                return jsonify({'error': error or 'The search did not work.'}), 409
+            continue
+        complete = complete and bool(result.get('complete'))
+        for item in result.get('results') or []:
+            folder = '/'.join(p for p in (rel, str(item.get('folder') or '')) if p)
+            results.append({**item, 'folder': folder, 'share': share['name']})
+    if len(results) > SEARCH_LIMIT:
+        results, complete = results[:SEARCH_LIMIT], False
+    return jsonify({'path': places[0][2] if len(places) == 1 else '', 'query': query, 'results': results,
+                    'complete': complete})
 
 
 @app.post('/api/link')
@@ -489,6 +504,7 @@ def version_restore():
     return jsonify({'success': True, 'name': result.get('name')})
 
 
+SEARCH_LIMIT = 200
 THUMB_DIR = os.path.join(STATE_DIR, 'thumbs')
 THUMB_SIZE = 320
 THUMB_MAX_SOURCE_BYTES = 60 * 1024 ** 2

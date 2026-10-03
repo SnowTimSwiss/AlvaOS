@@ -247,7 +247,11 @@ body.public { display: flex; flex-direction: column; min-height: 100%; }
 .where { font-size: 0.72rem; color: var(--muted); text-align: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rwhere { color: var(--muted); }
 .results-head { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding: 2px 4px 10px; color: var(--muted); font-size: 0.86rem; }
-.results-head button { margin-left: auto; white-space: nowrap; }
+.results-head #results-close { margin-left: auto; white-space: nowrap; }
+.results-head { flex-wrap: wrap; }
+.scope { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.scope button { background: none; border: none; padding: 4px 10px; font: inherit; font-size: 0.82rem; color: var(--muted); cursor: pointer; }
+.scope button[aria-pressed="true"] { background: var(--hover); color: var(--text); font-weight: 600; }
 .results-head svg { flex: none; }
 
 /* Public upload link ("drop box") */
