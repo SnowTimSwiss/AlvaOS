@@ -15,6 +15,18 @@ How to add an entry:
 
 ---
 
+## 2026-10-04 · Installer: a fresh install has AlvaOS Files and all packages
+
+- The installer image copied only the files directly in `frontend/`; the
+  AlvaOS Files app lives in `frontend/files-app/`, so after a fresh install
+  Files had no page. Now the whole folder is copied.
+- `alvaos-files.service` was not put into the image either; now it is.
+- A fresh install lacked packages the update package depends on:
+  `python3-pil` (thumbnails), `python3-pyotp` and `python3-qrcode` (2FA).
+  Added, and `samba-vfs-modules` (the network trash) on both sides.
+- New test `tests/test_installer.py`: the installer installs every package
+  the .deb depends on, and carries the Files app and its service.
+
 ## 2026-10-04 · Assistant: sees more, can do more, works with small models
 
 - New things it can look at: the backup disk, Buddy Backup, HTTPS, signed-in
