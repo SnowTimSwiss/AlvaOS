@@ -59,7 +59,7 @@
                 </div>
                 <button type="button" class="gs-hide" aria-label="Hide getting started">Hide</button>
             </div>
-            <div class="gs-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${steps.length}" aria-valuenow="${doneCount}"><span style="width: ${Math.round(doneCount * 100 / steps.length)}%"></span></div>
+            <div class="gs-bar" role="progressbar" aria-label="Getting started: ${doneCount} of ${steps.length} done" aria-valuemin="0" aria-valuemax="${steps.length}" aria-valuenow="${doneCount}"><span style="width: ${Math.round(doneCount * 100 / steps.length)}%"></span></div>
             <ol class="gs-steps">
                 ${steps.map((s) => `
                     <li class="gs-step${s.done ? ' done' : ''}${s === next ? ' next' : ''}">

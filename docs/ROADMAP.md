@@ -64,7 +64,7 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 - One visual language across all pages: cards, pills, buttons, dialogs, empty states.
 - Plain words instead of technical terms. The technical term appears in the details.
 - Every warning links to the page where it is fixed.
-- Accessibility: keyboard navigation, focus states, contrast.
+- Accessibility: keyboard navigation, focus states, contrast. axe-core pass over all pages: done, no violations.
 
 ### Quality
 - Tests for every backend change. Browser checks at desktop and phone width for every UI change.

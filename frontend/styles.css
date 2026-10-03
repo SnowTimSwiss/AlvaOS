@@ -34,7 +34,7 @@
     /* Text */
     --text-primary: #e6edf3;
     --text-secondary: #8b949e;
-    --text-tertiary: #484f58;
+    --text-tertiary: #7d8590;                  /* 4.6:1 on cards: small print stays readable */
 
     /* Spacing System */
     --space-xs: 4px;
@@ -60,6 +60,7 @@
     --accent-primary-ring: rgba(88, 166, 255, 0.2);
     --accent-danger-soft: rgba(248, 81, 73, 0.1);
     --on-accent: #0d1117;                      /* text on amber/blue badges */
+    --accent-solid: #1f6feb;                   /* filled buttons: white text at 4.6:1 */
     --scrim: rgba(1, 4, 9, 0.75);              /* behind dialogs and drawers */
     --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.35);
     --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4);
@@ -89,13 +90,13 @@
 
     --accent-primary: #0969da;
     --accent-success: #1a7f37;
-    --accent-warning: #9a6700;
+    --accent-warning: #805700;
     --accent-danger: #cf222e;
     --brand-glow: rgba(9, 105, 218, 0.18);
 
     --text-primary: #1f2328;
     --text-secondary: #59636e;
-    --text-tertiary: #818b98;
+    --text-tertiary: #656d76;
 
     --track: rgba(31, 35, 40, 0.08);
     --track-soft: rgba(31, 35, 40, 0.03);
@@ -104,6 +105,7 @@
     --accent-primary-ring: rgba(9, 105, 218, 0.25);
     --accent-danger-soft: rgba(207, 34, 46, 0.08);
     --on-accent: #ffffff;
+    --accent-solid: #0969da;
     --scrim: rgba(31, 35, 40, 0.45);
     --shadow-sm: 0 1px 3px rgba(31, 35, 40, 0.12);
     --shadow-md: 0 8px 24px rgba(31, 35, 40, 0.14);
@@ -1013,7 +1015,7 @@ button {
 }
 
 .btn-primary {
-    background: var(--accent-primary);
+    background: var(--accent-solid, var(--accent-primary));
     color: white;
     border: none;
     padding: 0.5rem 1rem;
