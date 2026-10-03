@@ -15,6 +15,24 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · Backup disk: a second copy on a USB disk
+
+- Backup › Backup disk: choose a pool (usually a USB disk) that holds no
+  shared folders. Every 10 minutes, and on "Copy now", the newest restore
+  point of every source is copied there with Btrfs send/receive into
+  `.alvaos-copies/<source>/`, incremental against the newest copy both
+  sides have. A failed copy removes its half-received snapshot.
+- 30 copies per source are kept. The copies are restore points of class
+  `copy`: Restore and Files › Previous versions list them, rolling back a
+  whole folder to one is refused ("Get files" instead).
+- "Safely remove" unmounts the disk; it is mounted again by UUID when it
+  comes back. Alert "Connect your backup disk" after 7 days without a copy
+  (counted from when the backup disk was set up).
+- Code: `backend/backup_copy.py`, `/api/v1/backup/copy*`,
+  `frontend/backup-disk.js`.
+- **Note for next time:** send/receive and the mount were only tested with
+  mocks; the container has no Btrfs. Try it on a real NAS with a USB disk.
+
 ## 2026-10-03 · Five bugs from a code review of this PR
 
 - Previous versions failed for a file in 100 restore points: the Files

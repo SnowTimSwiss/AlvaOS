@@ -424,7 +424,7 @@ def _restore_points_for(file_path: str) -> List[Tuple[Dict[str, Any], str]]:
         return []
     found = []
     for entry in entries if isinstance(entries, list) else []:
-        if not isinstance(entry, dict) or (entry.get('snapshot_class') or 'data') not in ('data', 'full_data'):
+        if not isinstance(entry, dict) or (entry.get('snapshot_class') or 'data') not in ('data', 'full_data', 'copy'):
             continue
         source = os.path.normpath(str(entry.get('source_path') or '/'))
         snap = os.path.normpath(str(entry.get('snapshot_path') or ''))

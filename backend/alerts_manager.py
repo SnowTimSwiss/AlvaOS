@@ -451,6 +451,20 @@ def _collect_system_alerts():
     except Exception:
         pass
 
+    # The backup disk has not had a copy for a week (it was not connected).
+    try:
+        from app_services import backup_copier
+        copy = backup_copier.status()
+        if copy.get('enabled') and copy.get('stale'):
+            alerts.append(_build_alert_item(
+                alert_id='backup-disk-stale', severity='warning',
+                title='Connect your backup disk',
+                message=(f'"{copy.get("pool_name")}" has not had a copy of your restore points for a week. '
+                         'Connect it; the copy starts on its own.'),
+                route='backup.html', action_label='Open Backup'))
+    except Exception:
+        pass
+
     # Shares (personal folders) close to their space limit.
     try:
         import platform

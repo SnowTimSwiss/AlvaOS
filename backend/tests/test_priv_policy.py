@@ -688,3 +688,12 @@ def test_big_numbers_for_uploads_over_ten_gigabytes():
     assert p._int_arg("53687091200", 0, 10**15) == "53687091200"     # 50 GB offset
     with pytest.raises(p.PolicyError):
         p._int_arg("12345678901234567", 0, 10**17)                    # more than 16 digits
+
+
+def test_backup_disk_copies_are_allowed():
+    allowed('/usr/bin/btrfs', 'send', '-p', '/mnt/alvaos/main/.alvaos-snapshots/x/a', '/mnt/alvaos/main/.alvaos-snapshots/x/b')
+    assert allowed('/usr/bin/btrfs', 'receive', '/mnt/alvaos/usb/.alvaos-copies/main__Family').background
+    allowed('/usr/bin/mount', '-U', '0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0', '/mnt/alvaos/usb')
+    allowed('/usr/bin/umount', '/mnt/alvaos/usb')
+    allowed('/usr/bin/btrfs', 'subvolume', 'delete', '/mnt/alvaos/usb/.alvaos-copies/main__Family/a')
+    denied('/usr/bin/btrfs', 'receive', '/etc')

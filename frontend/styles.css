@@ -2660,3 +2660,11 @@ body.ai-open .feedback-fab-wrap { display: none; }
 .tls-only strong { display: block; color: var(--text-primary); }
 .tls-only small { display: block; margin-top: 2px; line-height: 1.4; color: var(--text-secondary); font-size: 0.85rem; }
 .tls-only:has(input:disabled) { opacity: 0.75; cursor: default; }
+.copy-choose { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 6px; }
+.copy-choose select { flex: 1 1 200px; }
+.copy-facts { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+.copy-facts > div:not(.copy-error) { display: flex; justify-content: space-between; gap: 12px; font-size: 0.9rem; }
+.copy-facts span { color: var(--text-secondary); }
+.copy-error { color: var(--accent-danger); font-size: 0.88rem; }
+.copy-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.copy-actions .btn-quiet { margin-left: auto; }

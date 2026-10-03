@@ -24,6 +24,8 @@ watchdog_manager = WatchdogManager()
 power_ups_manager = PowerUpsManager()
 backup_manager = BackupManager(run_sudo_command, load_pools_state)
 buddy_backup_manager = BuddyBackupManager(run_sudo_command)
+import backup_copy  # noqa: E402 - needs backup_manager
+backup_copier = backup_copy.BackupCopier(backup_manager, run_sudo_command, load_pools_state)
 
 # ── Version ───────────────────────────────────────────────────────────────────
 def get_version():

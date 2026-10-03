@@ -285,6 +285,10 @@ if __name__ == '__main__':
             _time.sleep(6 * 3600)
     threading.Thread(target=_keep_way_back, name='update-way-back', daemon=True).start()
 
+    # A second copy of the restore points on the backup disk, when it is there.
+    from app_services import backup_copier
+    threading.Thread(target=backup_copier.serve_forever, name='backup-copy', daemon=True).start()
+
     # Problems by Telegram and email, also when nobody has the web page open.
     import alert_delivery
     threading.Thread(target=alert_delivery.serve_forever, name='alert-delivery', daemon=True).start()
