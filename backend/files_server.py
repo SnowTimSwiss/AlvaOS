@@ -315,6 +315,25 @@ def search():
                     'complete': complete})
 
 
+@app.get('/api/media')
+def media():
+    """Photos and videos of one share (or a folder of it), newest first, as
+    the person: the Photos view."""
+    session, refused = need_session()
+    if refused:
+        return refused
+    share, path, rel, bad = target(session, request.args)
+    if bad:
+        return bad
+    result, error = files_manager.run_helper(['files-media', path], timeout=60, user=as_user(session))
+    if result is None:
+        return jsonify({'error': error or 'The photos could not be read.'}), 409
+    results = [{**item, 'folder': '/'.join(p for p in (rel, str(item.get('folder') or '')) if p),
+                'share': share['name']} for item in result.get('results') or []]
+    return jsonify({'share': share['name'], 'path': rel, 'results': results,
+                    'complete': bool(result.get('complete'))})
+
+
 @app.post('/api/link')
 def link():
     session, refused = need_session()
@@ -658,8 +677,19 @@ def upload_finish():
     size = str(data.get('size') if data.get('size') is not None else '')
     if not size.isdigit():
         return jsonify({'error': 'Invalid size.'}), 400
-    return _helper_answer(*files_manager.run_helper(['files-part-finish', path, str(data.get('name') or ''), size],
-                                                    user=as_user(session)), 201)
+    return _helper_answer(*files_manager.run_helper(_finish_args(path, data, size), user=as_user(session)), 201)
+
+
+def _finish_args(path: str, data: Dict[str, Any], size: str) -> List[str]:
+    """files-part-finish, with the file's own date when the browser sent it."""
+    name = str(data.get('name') or '')
+    try:
+        mtime = int(float(data.get('modified') or 0) / 1000)   # JavaScript File.lastModified, in ms
+    except (TypeError, ValueError):
+        mtime = 0
+    if mtime > 0:
+        return ['files-part-finish-dated', path, name, size, str(mtime)]
+    return ['files-part-finish', path, name, size]
 
 
 @app.post('/api/upload/abort')
@@ -1136,8 +1166,7 @@ def public_upload_finish(token):
     size = str(data.get('size') if data.get('size') is not None else '')
     if not size.isdigit():
         return jsonify({'error': 'Invalid size.'}), 400
-    return _helper_answer(*files_manager.run_helper(['files-part-finish', base, str(data.get('name') or ''), size],
-                                                    user=owner), 201)
+    return _helper_answer(*files_manager.run_helper(_finish_args(base, data, size), user=owner), 201)
 
 
 @app.get('/alvaos-ca.crt')

@@ -366,6 +366,7 @@ def file_size(argv):
 FILES_OPS = {
     'files-list': (1, lambda a: {'entries': files_ops.list_dir(a[0])}),
     'files-search': (2, lambda a: files_ops.search(a[0], a[1])),
+    'files-media': (1, lambda a: files_ops.media(a[0])),
     'files-versions': (None, lambda a: {'versions': files_ops.versions(a[0], a[1:])}),
     'files-restore-version': (4, lambda a: {'name': files_ops.restore_version(a[0], a[1], a[2], a[3])}),
     'files-write': (2, lambda a: {'written': files_ops.write_file(a[0], a[1], sys.stdin.buffer)}),
@@ -378,6 +379,8 @@ FILES_OPS = {
         a[0], a[1], int(policy._int_arg(a[2], 0, 10**15)), sys.stdin.buffer)}),
     'files-part-finish': (3, lambda a: files_ops.part_finish(a[0], a[1], int(policy._int_arg(a[2], 0, 10**15)))),
     'files-part-abort': (2, lambda a: files_ops.part_abort(a[0], a[1])),
+    'files-part-finish-dated': (4, lambda a: files_ops.part_finish(
+        a[0], a[1], int(policy._int_arg(a[2], 0, 10**15)), mtime=int(policy._int_arg(a[3], 0, 10**11)))),
     'files-trash': (3, lambda a: {'id': files_ops.trash(a[0], a[1], a[2])}),
     'files-trash-list': (1, lambda a: {'items': files_ops.list_trash(a[0])}),
     'files-trash-restore': (2, lambda a: files_ops.restore(a[0], a[1])),

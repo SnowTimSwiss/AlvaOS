@@ -272,3 +272,29 @@ def test_versions_and_restoring_one_as_a_copy(share, tmp_path):
         fo.restore_version(snap, "notes.txt", s, new, root)
     with pytest.raises(fo.FileOpError, match="Only files"):
         fo.restore_version(snap, "link.txt", s, "x.txt", root)
+
+
+def test_media_lists_photos_and_videos_newest_first(share):
+    root, s, outside = share
+    os.makedirs(os.path.join(s, "Films", "2023"))
+    os.makedirs(os.path.join(s, ".hidden"))
+    for rel, t in (("Films/2023/old.JPG", 100), ("Films/clip.mp4", 300), ("new.heic", 500),
+                   (".hidden/secret.jpg", 600), ("notes.txt", 700), ("Films/.x.jpg.alvaos-upload", 800)):
+        path = os.path.join(s, rel)
+        open(path, "w").close()
+        os.utime(path, (t, t))
+    os.symlink(outside, os.path.join(s, "Films", "link"))
+    out = fo.media(s, root)
+    assert [(r["folder"], r["name"]) for r in out["results"]] == [("", "new.heic"), ("Films", "clip.mp4"),
+                                                                  ("Films/2023", "old.JPG")]
+    assert out["complete"] is True
+    assert len(fo.media(s, root, limit=2)["results"]) == 2 and fo.media(s, root, limit=2)["complete"] is False
+
+
+def test_a_finished_upload_keeps_its_own_date(share):
+    root, s, _ = share
+    for name, mtime, expect in (("old.jpg", 1600000000, 1600000000), ("bogus.jpg", 5, None)):
+        fo.part_write(s, name, 0, io.BytesIO(b"abc"), root)
+        fo.part_finish(s, name, 3, root, mtime=mtime)
+        got = int(os.stat(os.path.join(s, name)).st_mtime)
+        assert got == expect if expect else got > 1600000000      # nonsense dates are ignored

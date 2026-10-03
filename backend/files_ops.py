@@ -174,6 +174,62 @@ def search(dir_path: str, query: str, root: str = DATA_ROOT, limit: int = SEARCH
     return {'results': found, 'complete': state['complete']}
 
 
+MEDIA_TYPES = ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif', '.avif', '.bmp',
+               '.mp4', '.mov', '.m4v', '.webm', '.mkv', '.3gp')
+MEDIA_LIMIT = 5000
+
+
+def media(dir_path: str, root: str = DATA_ROOT, limit: int = MEDIA_LIMIT,
+          seconds: float = SEARCH_SECONDS) -> Dict[str, Any]:
+    """Photos and videos below a folder, newest first, for the Photos view.
+    Like search: no symlinks, skips what the person cannot open, hidden
+    folders, the trash and unfinished uploads; stops at `limit` or `seconds`."""
+    deadline = time.monotonic() + seconds
+    found: List[Dict[str, Any]] = []
+    state = {'complete': True}
+
+    def walk(dfd: int, rel: str, depth: int) -> None:
+        try:
+            names = os.listdir(dfd)
+        except OSError:
+            return
+        for name in names:
+            if time.monotonic() > deadline:
+                state['complete'] = False
+                return
+            if name.startswith('.') or name.endswith(PART_SUFFIX):
+                continue
+            try:
+                st = os.lstat(name, dir_fd=dfd)
+            except OSError:
+                continue
+            if stat.S_ISREG(st.st_mode) and name.lower().endswith(MEDIA_TYPES):
+                found.append({'name': name, 'folder': rel, 'type': 'file', 'size_bytes': st.st_size,
+                              'modified_at': datetime.fromtimestamp(st.st_mtime).astimezone().isoformat(),
+                              '_t': st.st_mtime})
+            elif stat.S_ISDIR(st.st_mode) and depth < SEARCH_DEPTH:
+                try:
+                    sub = _open_subdir(name, dfd)
+                except OSError:
+                    continue
+                try:
+                    walk(sub, f'{rel}/{name}' if rel else name, depth + 1)
+                finally:
+                    os.close(sub)
+
+    dfd = open_dir(dir_path, root)
+    try:
+        walk(dfd, '', 0)
+    finally:
+        os.close(dfd)
+    found.sort(key=lambda e: e['_t'], reverse=True)
+    if len(found) > limit:
+        found, state['complete'] = found[:limit], False
+    for item in found:
+        del item['_t']
+    return {'results': found, 'complete': state['complete']}
+
+
 # ── Upload, new folder, rename ───────────────────────────────────────────────
 
 def write_file(dir_path: str, name: str, src: BinaryIO, root: str = DATA_ROOT) -> int:
@@ -259,8 +315,13 @@ def part_write(dir_path: str, name: str, offset: int, src: BinaryIO, root: str =
         os.close(dfd)
 
 
-def part_finish(dir_path: str, name: str, size: int, root: str = DATA_ROOT) -> None:
-    """The last piece arrived: give the file its name, never over another."""
+EARLIEST_MTIME = 315532800   # 1980-01-01: older dates from a browser are not real
+
+
+def part_finish(dir_path: str, name: str, size: int, root: str = DATA_ROOT, mtime: Optional[int] = None) -> None:
+    """The last piece arrived: give the file its name, never over another.
+    With `mtime` (seconds), the file keeps the date it had on the device it
+    came from, so a photo lands in the right month in the Photos view."""
     part = _part_name(name)
     dfd = open_dir(dir_path, root)
     try:
@@ -272,6 +333,8 @@ def part_finish(dir_path: str, name: str, size: int, root: str = DATA_ROOT) -> N
             if os.fstat(fd).st_size != size:
                 raise FileOpError('The upload is not complete yet.')
             _like_parent(fd, dfd, is_dir=False)
+            if mtime is not None and EARLIEST_MTIME <= mtime <= time.time() + 86400:
+                os.utime(fd, (mtime, mtime))
         finally:
             os.close(fd)
         if _exists(name, dfd):
