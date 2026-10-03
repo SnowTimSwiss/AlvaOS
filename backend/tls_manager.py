@@ -29,6 +29,13 @@ PORTS = {'web': 8443, 'files': 9443, 'dav': 9444}
 
 _lock = threading.Lock()
 
+# What the authority may sign for at all (X.509 name constraints, enforced by
+# browsers): this NAS's own name, home-network domains and private addresses.
+# A stolen authority key can then not be used to impersonate other websites.
+PERMITTED_DOMAINS = ('local', 'lan', 'home', 'home.arpa', 'internal', 'localhost')
+PERMITTED_NETWORKS = ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '127.0.0.0/8', '100.64.0.0/10',
+                      '169.254.0.0/16')
+
 
 def paths(tls_dir: Optional[str] = None) -> Dict[str, str]:
     base = tls_dir or TLS_DIR
@@ -85,6 +92,10 @@ def _make_ca(p: Dict[str, str], host: str):
             .not_valid_before(now - datetime.timedelta(minutes=5))
             .not_valid_after(now + datetime.timedelta(days=CA_DAYS))
             .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+            .add_extension(x509.NameConstraints(
+                permitted_subtrees=[x509.DNSName(host)] + [x509.DNSName(d) for d in PERMITTED_DOMAINS]
+                + [x509.IPAddress(ipaddress.ip_network(n)) for n in PERMITTED_NETWORKS],
+                excluded_subtrees=None), critical=True)
             .add_extension(x509.KeyUsage(digital_signature=True, key_cert_sign=True, crl_sign=True,
                                          content_commitment=False, key_encipherment=False,
                                          data_encipherment=False, key_agreement=False,
@@ -120,6 +131,22 @@ def _not_after(cert) -> datetime.datetime:
     return value if value is not None else cert.not_valid_after.replace(tzinfo=datetime.timezone.utc)
 
 
+def permitted(ca, names: List[str], ips: List[str]) -> Tuple[List[str], List[str]]:
+    """The names and addresses the authority may sign for (all of them for an
+    authority made before name constraints)."""
+    from cryptography import x509
+    try:
+        constraints = ca.extensions.get_extension_for_class(x509.NameConstraints).value
+    except x509.ExtensionNotFound:
+        return names, ips
+    trees = constraints.permitted_subtrees or []
+    domains = [str(t.value).lower() for t in trees if isinstance(t, x509.DNSName)]
+    networks = [t.value for t in trees if isinstance(t, x509.IPAddress)]
+    ok_names = [n for n in names if any(n.lower() == d or n.lower().endswith('.' + d) for d in domains)]
+    ok_ips = [ip for ip in ips if any(ipaddress.ip_address(ip) in net for net in networks)]
+    return ok_names, ok_ips
+
+
 def _make_server_cert(p: Dict[str, str], names: List[str], ips: List[str]) -> None:
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
@@ -132,6 +159,7 @@ def _make_server_cert(p: Dict[str, str], names: List[str], ips: List[str]) -> No
     ca = _load_cert(p['ca.crt'])
     key = ec.generate_private_key(ec.SECP256R1())
     now = _now()
+    names, ips = permitted(ca, names, ips)
     san = [x509.DNSName(n) for n in names] + [x509.IPAddress(ipaddress.ip_address(ip)) for ip in ips]
     cert = (x509.CertificateBuilder()
             .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, names[0] if names else 'alvaos')]))
@@ -172,8 +200,9 @@ def ensure_certificates(tls_dir: Optional[str] = None, names: Optional[List[str]
         renew = server is None or not os.path.exists(p['server.key'])
         if not renew:
             have_names, have_ips = _cert_names(server)
+            want_names, want_ips = permitted(_load_cert(p['ca.crt']), names, ips)
             renew = (_not_after(server) - _now() < datetime.timedelta(days=RENEW_DAYS)
-                     or not set(names) <= set(have_names) or not set(ips) <= set(have_ips))
+                     or not set(want_names) <= set(have_names) or not set(want_ips) <= set(have_ips))
         if renew:
             _make_server_cert(p, names, ips)
     return p
