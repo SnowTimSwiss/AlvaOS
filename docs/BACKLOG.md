@@ -15,6 +15,24 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · Deleting over the network goes to the trash
+
+- Writable SMB shares get Samba's `vfs_recycle`: a file deleted in Windows
+  Explorer or the macOS Finder is moved to `<share>/.alvaos-trash/smb/<its
+  folder>/` (versions as "Copy #2 of …", the time of deleting as the file's
+  time; temp files, `~$` Office locks, Thumbs.db and .DS_Store are not
+  kept). The trash folder is hidden from computers.
+- The Files trash lists these too ("deleted from a computer"), puts them
+  back into their folder (name taken: "… (restored)"; folder gone: the
+  share), and empties them after 30 days with the rest. Ids are
+  `smb:<path>`; every part is checked as a single name and opened without
+  following symlinks.
+- Shares made before get the setting once when the backend starts
+  (`add_recycle_bins`, then one restart of smbd).
+- **Note for next time:** not tried against a real Samba here; on a NAS:
+  delete a file from Windows, check it appears in the Files trash and comes
+  back with "Put back".
+
 ## 2026-10-03 · Plain words in the last technical messages
 
 - Five messages still spoke Btrfs: "No eligible subvolume sources found",

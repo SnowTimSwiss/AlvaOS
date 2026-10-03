@@ -894,9 +894,9 @@
             let items = [];
             let error = '';
             try { items = (await api(`trash?share=${encodeURIComponent(forShare)}`)).items || []; } catch (err) { error = err.message; }
-            wrap.innerHTML = `<div class="dialog wide"><h2>Trash of ${esc(forShare)}</h2><p>Deleted items stay here for 30 days.</p>
+            wrap.innerHTML = `<div class="dialog wide"><h2>Trash of ${esc(forShare)}</h2><p>Deleted items stay here for 30 days, also what was deleted from a computer over the network.</p>
                 <div class="trash-list">${error ? esc(error) : items.length ? items.map((it) => `<div class="trash-row"><div><strong>${esc(it.name)}</strong>
-                <small>From ${esc([forShare, ...(it.folder ? it.folder.split('/') : [])].join(' › '))} · ${esc(when(it.deleted_at))}${it.type === 'file' ? ` · ${bytes(it.size_bytes)}` : ''}</small></div>
+                <small>From ${esc([forShare, ...(it.folder ? it.folder.split('/') : [])].join(' › '))} · ${esc(when(it.deleted_at))}${it.type === 'file' ? ` · ${bytes(it.size_bytes)}` : ''}${it.from_network ? ' · deleted from a computer' : ''}</small></div>
                 ${access() === 'write' ? `<button type="button" class="btn" data-restore="${esc(it.id)}">${icon('undo')}Put back</button>` : ''}</div>`).join('') : '<div class="empty" style="padding:30px 0">The trash is empty.</div>'}</div>
                 <div class="actions">${me?.role === 'admin' && items.length ? '<button type="button" class="btn danger" data-empty>Empty trash</button>' : ''}<button type="button" class="btn primary" data-close>Done</button></div></div>`;
             wrap.querySelector('[data-close]').onclick = () => { wrap.hidden = true; wrap.innerHTML = ''; if (share === forShare) load(); };

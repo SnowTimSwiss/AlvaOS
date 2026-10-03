@@ -202,3 +202,16 @@ def test_old_share_accounts_lose_their_login_shell(monkeypatch):
     monkeypatch.setattr(shm, 'run_sudo_command', lambda cmd, **kw: calls.append(cmd) or (None, None))
     shm.lock_share_user_shells(['anna', 'tim', 'gone'])
     assert calls == [['/usr/sbin/usermod', '-s', '/usr/sbin/nologin', 'anna']]
+
+
+def test_network_deletes_go_to_the_trash_of_writable_shares():
+    import shares_manager as sm
+    writable = sm.render_smb_share_config("Family", "/mnt/alvaos/main/Family", False, False, {"anna": "write"})
+    assert "recycle:repository = .alvaos-trash/smb" in writable and "hide files = /.alvaos-trash/" in writable
+    reading = sm.render_smb_share_config("Media", "/mnt/alvaos/main/Media", True, False, {"anna": "read"})
+    assert "recycle" not in reading
+    conf = "[global]\n\n# AlvaOS Share: Family\n[Family]\n    path = /x\n\n# AlvaOS Share: New\n[New]\n" + writable.split("[Family]\n", 1)[1]
+    state = {"1": {"name": "Family", "protocol": "smb", "smb_permissions": {"anna": "write"}},
+             "2": {"name": "New", "protocol": "smb", "smb_permissions": {"anna": "write"}},
+             "3": {"name": "Media", "protocol": "smb", "read_only": True, "smb_permissions": {"anna": "read"}}}
+    assert sm.missing_recycle_bin(conf, state) == ["Family"]
