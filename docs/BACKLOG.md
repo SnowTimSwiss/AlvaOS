@@ -15,6 +15,16 @@ How to add an entry:
 
 ---
 
+## 2026-10-04 · Tests no longer write into /var/lib/alvaos
+
+- Importing `app_services` makes the backup and buddy managers, which wrote
+  their state files into `/var/lib/alvaos` of the machine running the tests
+  (and test notifications into `notifications.json`). A developer machine,
+  or a NAS someone runs the tests on, got test buddies and 200 test
+  notifications.
+- Both managers now honour `ALVAOS_STATE_DIR`; `tests/conftest.py` points it
+  at a temporary folder and redirects the alert and notification files.
+
 ## 2026-10-04 · Backup page lists the copies on the backup disk; a test checklist
 
 - The copies on the backup disk were registered as restore points but the

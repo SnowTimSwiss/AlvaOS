@@ -98,7 +98,8 @@ class BuddyBackupManager:
         self._ensure_defaults()
 
     def _resolve_state_dir(self) -> str:
-        preferred = Path("/var/lib/alvaos")
+        # ALVAOS_STATE_DIR: the tests keep their state out of /var/lib/alvaos.
+        preferred = Path(os.environ.get("ALVAOS_STATE_DIR") or "/var/lib/alvaos")
         try:
             preferred.mkdir(parents=True, exist_ok=True)
             probe = preferred / ".alvaos_buddy_write_test"
