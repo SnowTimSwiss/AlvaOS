@@ -29,6 +29,7 @@ from auth_manager import (
     _destroy_session, _destroy_all_sessions, require_auth,
     _check_rate_limit, _reset_rate_limit,
     list_sessions, revoke_session_by_id, revoke_other_sessions,
+    record_signin, record_failed_signin,
 )
 from password_utils import hash_password, verify_password
 from shares_manager import (
@@ -252,6 +253,7 @@ def login():
 
         is_valid, needs_rehash = verify_password(password, auth_data)
         if not is_valid:
+            record_failed_signin()
             return jsonify({'error': 'Invalid password'}), 401
 
         # Transparently upgrade legacy/weaker hashes on successful login,
@@ -279,7 +281,8 @@ def login():
         return jsonify({
             'token': token,
             'csrf_token': SESSIONS.get(token, {}).get('csrf_token', ''),
-            'success': True
+            'success': True,
+            'last_signin': record_signin(),
         })
 
     except Exception as e:
@@ -306,6 +309,7 @@ def complete_2fa_login():
         return jsonify({'error': '2FA not configured on server'}), 400
 
     if not _verify_totp(totp_secret, code):
+        record_failed_signin()
         return jsonify({'error': 'Invalid 2FA code'}), 401
 
     del TEMP_2FA_TOKENS[temp_token]
@@ -313,7 +317,8 @@ def complete_2fa_login():
     return jsonify({
         'token': token,
         'csrf_token': SESSIONS.get(token, {}).get('csrf_token', ''),
-        'success': True
+        'success': True,
+        'last_signin': record_signin(),
     })
 
 @bp.route('/api/v1/auth/logout', methods=['POST'])

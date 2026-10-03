@@ -127,3 +127,35 @@ def test_last_use_is_written_at_most_every_few_minutes(monkeypatch):
     am._touch_session(session)
     assert writes == [1]
     am.SESSIONS.clear()
+
+
+def test_a_session_nobody_used_for_hours_ends():
+    token = am._create_session("root")
+    try:
+        am.SESSIONS[token]["last_seen_at"] = (am._utc_now() - am.timedelta(hours=am.IDLE_HOURS - 1)).isoformat()
+        assert am._get_session(token) is not None
+        am.SESSIONS[token]["last_seen_at"] = (am._utc_now() - am.timedelta(hours=am.IDLE_HOURS + 1)).isoformat()
+        assert am._get_session(token) is None and token not in am.SESSIONS
+    finally:
+        am.SESSIONS.pop(token, None)
+
+
+def test_signin_history_tells_about_the_last_one_and_wrong_passwords(tmp_path):
+    from flask import Flask
+    log = str(tmp_path / "log.json")
+    app = Flask(__name__)
+    with app.test_request_context(environ_base={"REMOTE_ADDR": "192.168.1.30"},
+                                  headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0) Firefox/120.0"}):
+        first = am.record_signin(log)
+    assert first == {"previous": None, "failed": 0, "failed_from": []}
+    with app.test_request_context(environ_base={"REMOTE_ADDR": "10.0.0.9"}):
+        am.record_failed_signin(log)
+        am.record_failed_signin(log)
+    with app.test_request_context(environ_base={"REMOTE_ADDR": "192.168.1.40"}):
+        second = am.record_signin(log)
+    assert second["previous"]["ip"] == "192.168.1.30" and second["previous"]["device"] == "Firefox on Windows"
+    assert second["failed"] == 2 and second["failed_from"] == ["10.0.0.9"]
+    assert am.record_signin(log)["failed"] == 0            # counted once
+    import os
+    import stat
+    assert stat.S_IMODE(os.stat(log).st_mode) == 0o600

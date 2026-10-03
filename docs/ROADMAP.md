@@ -50,7 +50,7 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 ### Security
 - Keep the privilege helper strict: every new privileged command gets a policy rule and tests.
 - Validate everything that ends up in config files (`smb.conf`, `/etc/exports`, WireGuard, compose files).
-- Sessions: sign out sessions that were idle for a long time, and say on the login page when the NAS was last signed in to from somewhere else.
+- Sessions: idle sign-out (8 h) and "last sign-in / wrong passwords since" after signing in: done.
 - HTTPS on the LAN with the NAS's own authority and instructions: done (next to HTTP). Next: an "HTTPS only" switch that sends http:// to https://.
 - Regular dependency updates and a short security review for every PR that touches `priv_policy.py` or auth.
 
