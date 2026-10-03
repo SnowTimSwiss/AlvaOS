@@ -15,6 +15,15 @@ How to add an entry:
 
 ---
 
+## 2026-10-04 · CI checks the installer's package names in Debian trixie
+
+- The installer installs Debian trixie and asks apt for ~35 packages in one
+  command; one name that does not exist there stops the installation. New
+  CI job `installer-packages` (container `debian:trixie`) runs
+  `scripts/ci/check_installer_packages.sh`: every name must be known to
+  `apt-cache`.
+- The test job installs `qrcode` (the remote access QR codes are tested).
+
 ## 2026-10-04 · Remote access problems are alerts
 
 - "Remote access is not running" when it is on but the tunnel is down, and
