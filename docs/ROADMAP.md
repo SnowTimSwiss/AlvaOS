@@ -35,7 +35,7 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 - Lightweight: a few MB of code, no PHP and no extra database, and it does not run when nobody uses it.
 
 ### 3. Storage follow-ups
-- Quotas per share. Needs a decision first: Btrfs quotas (qgroups) can slow down big pools noticeably, especially with many snapshots.
+- **Quotas per share and personal folders: done** (Btrfs qgroups, only switched on for a pool once a limit is set there). Next: a notification when a folder is nearly full, and a check on a real pool with many restore points how much slower qgroups make it.
 
 ### 4. AI
 - **Read-only assistant: done.** Settings › Assistant (off by default; Ollama at home, Ollama Cloud, OpenAI or any OpenAI-compatible API), chat panel in the top bar of every page, looks at the real state through a fixed list of read-only endpoints, secrets stripped.
