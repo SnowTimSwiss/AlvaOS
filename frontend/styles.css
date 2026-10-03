@@ -2686,3 +2686,6 @@ body.ai-open .feedback-fab-wrap { display: none; }
 .remote-qr { display: block; width: 220px; max-width: 100%; margin: 10px 0 4px; background: #fff; padding: 8px; border-radius: 8px; }
 .remote-once { margin-top: 14px; padding: 10px 12px; border-radius: 8px; background: var(--bg-surface);
     border: 1px solid var(--border-default); font-size: 0.88rem; }
+
+/* The floating Feedback button must not cover the last buttons of a page. */
+body.has-feedback-fab .content-scroll { padding-bottom: 72px; }
