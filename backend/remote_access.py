@@ -195,17 +195,20 @@ class RemoteAccess:
                 state['enabled'] = bool(payload.get('enabled'))
             if state['enabled'] and not _wg_quick():
                 return False, 'WireGuard is not installed on this NAS (package wireguard-tools).'
-            old_port = self.load()['port']
+            before = self.load()
+            old_port = before['port']
             port_changed = state['port'] != old_port
+            switched = state['enabled'] != before['enabled']
             self._server_key(state)
             self._save(state)
             ok, message = self._apply(state)
         if duck_changed:
             self.update_duckdns()
-        if ok and port_changed and state['upnp'] and _upnpc():
-            self.run_local([_upnpc() or 'upnpc', '-d', str(old_port), 'UDP'])   # no forgotten open port
-            if state['enabled']:
-                self.open_router_port()
+        if state['upnp'] and _upnpc() and (port_changed or (switched and not state['enabled'])):
+            # No forgotten open port in the router: off closes it, a new port replaces it.
+            self.run_local([_upnpc() or 'upnpc', '-d', str(old_port), 'UDP'])
+        if ok and state['upnp'] and state['enabled'] and (port_changed or switched):
+            self.open_router_port()
         return ok, message
 
     def _apply(self, state: Dict[str, Any]) -> Tuple[bool, str]:

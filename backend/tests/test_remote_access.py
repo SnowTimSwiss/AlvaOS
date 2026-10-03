@@ -201,3 +201,14 @@ def test_an_unreachable_duckdns_is_said_plainly(remote):
     remote.http_get = boom
     remote.configure({"duckdns": {"domain": "myhome", "token": TOKEN}})
     assert "could not be reached" in remote.status()["duckdns"]["last_error"]
+
+
+def test_turning_off_closes_the_port_in_the_router_and_on_opens_it(remote, monkeypatch):
+    remote.configure({"enabled": True})
+    asked = with_router(remote, monkeypatch, {"-s": ROUTER_STATUS,
+                                              "-a": "external 84.12.34.56:51821 UDP is redirected to internal 192.168.1.20:51821 (duration=0)"})
+    assert remote.open_router_port()[0]
+    remote.configure({"enabled": False})
+    assert asked[-1] == ["/usr/bin/upnpc", "-d", "51821", "UDP"]
+    remote.configure({"enabled": True})
+    assert "-a" in asked[-1]
