@@ -812,7 +812,7 @@ def _save_links(links: Dict[str, Dict[str, Any]]) -> None:
 
 def _public_link(link: Dict[str, Any], token: str) -> Dict[str, Any]:
     return {'id': link['id'], 'url': f'/s/{token}', 'share': link['share'], 'path': link['path'],
-            'name': link['name'], 'kind': link['kind'], 'owner': link['owner'],
+            'name': link['name'], 'kind': link['kind'], 'mode': link.get('mode', 'view'), 'owner': link['owner'],
             'created_at': link['created_at'], 'expires_at': link.get('expires_at'),
             'has_password': bool(link.get('password'))}
 
@@ -838,10 +838,15 @@ def create_link():
     if password and len(password) < 4:
         return jsonify({'error': 'Use at least 4 characters for the link password.'}), 400
     kind = 'folder' if data.get('kind') == 'folder' else 'file'
+    mode = 'upload' if data.get('mode') == 'upload' else 'view'
+    if mode == 'upload' and kind != 'folder':
+        return jsonify({'error': 'Upload links are for folders.'}), 400
+    if mode == 'upload' and share['access'] != 'write':
+        return jsonify({'error': f'You can only look at "{share["name"]}", so nobody can upload there through you.'}), 403
     from password_utils import hash_password
     token = secrets.token_urlsafe(18)
     link = {'id': secrets.token_hex(6), 'share': share['name'], 'path': rel, 'name': os.path.basename(rel),
-            'kind': kind, 'owner': session['user'], 'role': session['role'], 'created_at': _now().isoformat(),
+            'kind': kind, 'mode': mode, 'owner': session['user'], 'role': session['role'], 'created_at': _now().isoformat(),
             'expires_at': (_now() + timedelta(days=days)).isoformat() if days else None,
             'password': hash_password(password) if password else None}
     with _lock:
@@ -885,8 +890,9 @@ def _unlock_value(token: str) -> str:
     return hmac.new(_secret(), token.encode(), hashlib.sha256).hexdigest()
 
 
-def opened_link(token: str):
-    """(link, base path, owner account, error response) for a visitor."""
+def opened_link(token: str, upload: bool = False):
+    """(link, base path, owner account, error response) for a visitor.
+    Upload links ("drop box") only take files; view links only give them."""
     with _lock:
         link = _load_links().get(token)
     if not link:
@@ -896,9 +902,11 @@ def opened_link(token: str):
         import hmac
         if not hmac.compare_digest(request.cookies.get(f'alvaos_link_{link["id"]}', ''), _unlock_value(token)):
             return link, None, None, (jsonify({'error': 'This link needs a password.', 'needs_password': True}), 401)
+    if upload != (link.get('mode') == 'upload'):
+        return None, None, None, (jsonify({'error': 'This link does not allow that.'}), 403)
     owner = {'user': link['owner'], 'role': link.get('role', 'user')}
     share = shares_for(owner).get(link['share'])
-    if not share:
+    if not share or (upload and share['access'] != 'write'):
         return None, None, None, (jsonify({'error': 'This link does not work any more.'}), 404)
     base, _, error = files_manager.resolve({'s': share}, share['name'], link['path'])
     if error or base is None:
@@ -918,10 +926,12 @@ def _inside_link(link: Dict[str, Any], base: str, sub: str):
 
 @app.get('/api/public/<token>')
 def public_info(token):
-    link, _, _, bad = opened_link(token)
+    with _lock:
+        stored = _load_links().get(token) or {}
+    link, _, _, bad = opened_link(token, upload=stored.get('mode') == 'upload')
     if bad:
         return bad
-    return jsonify({'name': link['name'], 'kind': link['kind'], 'owner': link['owner'],
+    return jsonify({'name': link['name'], 'kind': link['kind'], 'mode': link.get('mode', 'view'), 'owner': link['owner'],
                     'expires_at': link.get('expires_at'), 'nas_name': socket.gethostname().split('.')[0]})
 
 
@@ -1019,6 +1029,79 @@ def public_zip(token):
     if stream is None:
         return jsonify({'error': error or 'This folder could not be read.'}), 404
     return _zip_response(stream, os.path.basename(rel) if rel else link['name'])
+
+
+# ── Upload links ("drop box"): visitors add files, see nothing ─────────────
+
+def _drop_target(token: str):
+    """(folder, owner, error) for a visitor's upload request."""
+    if request.method != 'GET' and request.headers.get('X-AlvaOS-Files') != '1':
+        return None, None, (jsonify({'error': 'Request refused.'}), 403)
+    _, base, owner, bad = opened_link(token, upload=True)
+    return base, owner, bad
+
+
+def _free_upload_name(base: str, owner: Optional[str], name: str) -> Tuple[Optional[str], int, str]:
+    """The name an upload is saved under, never over an existing file:
+    "photo.jpg", then "photo (2).jpg", ... An unfinished upload with that name
+    is continued. Returns (name, bytes already there, error)."""
+    entries, error = files_manager.list_entries(base, user=owner)
+    if entries is None:
+        return None, 0, error or 'The folder could not be read.'
+    taken = {str(e.get('name')) for e in entries}
+    stem, ext = os.path.splitext(name)
+    if not stem:
+        stem, ext = name, ''
+    for n in range(1, 1000):
+        candidate = name if n == 1 else f'{stem} ({n}){ext}'
+        if candidate in taken:
+            continue
+        result, error = files_manager.run_helper(['files-part-size', base, candidate], user=owner)
+        if result is None:
+            return None, 0, error
+        return candidate, int(result.get('size') or 0), ''
+    return None, 0, 'Too many files with this name.'
+
+
+@app.post('/api/public/<token>/upload/start')
+def public_upload_start(token):
+    base, owner, bad = _drop_target(token)
+    if bad:
+        return bad
+    name = str((request.get_json(silent=True) or {}).get('name') or '').strip()
+    if not name or '/' in name or '\x00' in name or name.startswith('.') or len(name.encode()) > 240:
+        return jsonify({'error': 'This file name cannot be used.'}), 400
+    chosen, size, error = _free_upload_name(base, owner, name)
+    if chosen is None:
+        return jsonify({'error': error}), 409
+    return jsonify({'name': chosen, 'size': size})
+
+
+@app.post('/api/public/<token>/upload/piece')
+def public_upload_piece(token):
+    base, owner, bad = _drop_target(token)
+    if bad:
+        return bad
+    if (request.content_length or 0) > PIECE_LIMIT_BYTES:
+        return jsonify({'error': 'Pieces are at most 64 MB.'}), 413
+    offset = str(request.args.get('offset') or '0')
+    if not offset.isdigit():
+        return jsonify({'error': 'Invalid offset.'}), 400
+    return _helper_answer(*files_manager.pipe_helper(
+        ['files-part-write', base, str(request.args.get('name') or ''), offset], request.stream, user=owner))
+
+
+@app.post('/api/public/<token>/upload/finish')
+def public_upload_finish(token):
+    base, owner, bad = _drop_target(token)
+    if bad:
+        return bad
+    data = request.get_json(silent=True) or {}
+    size = str(data.get('size') if data.get('size') is not None else '')
+    if not size.isdigit():
+        return jsonify({'error': 'Invalid size.'}), 400
+    return _helper_answer(*files_manager.run_helper(['files-part-finish', base, str(data.get('name') or ''), size],
+                                                    user=owner), 201)
 
 
 @app.get('/s/<token>')

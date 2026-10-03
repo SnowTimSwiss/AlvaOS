@@ -15,6 +15,19 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · AlvaOS Files: upload links ("drop box")
+
+- Sharing a folder you can change offers "Only upload files into it (drop
+  box)". Visitors get a page with a drop zone; they see nothing of what is
+  in the folder (list, file, thumbnail and ZIP answer 403 for such links),
+  and a view link cannot upload. Files land as the link's maker, in pieces
+  that continue after a dropped connection; a taken name becomes
+  "photo (2).jpg", an unfinished upload of the same name is continued.
+- `POST /api/public/<token>/upload/start|piece|finish` (with the
+  X-AlvaOS-Files header). Links list shows "Upload only".
+- Real test: a guest on a phone uploaded two files into a folder that
+  already had photo.jpg; the folder listing stayed refused.
+
 ## 2026-10-03 · Personal folders: pool is chosen, warning when nearly full
 
 - "Add a person": the pool for the personal folder is always chosen by hand

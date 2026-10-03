@@ -8,6 +8,8 @@
         video: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="m10 8 6 4-6 4Z"/>',
         download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
         x: '<path d="M18 6 6 18M6 6l12 12"/>',
+        upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/>',
+        check: '<path d="M20 6 9 17l-5-5"/>',
     };
     const icon = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n] || P.file}</svg>`;
     document.querySelectorAll('[data-icon]').forEach((el) => { el.innerHTML = icon(el.dataset.icon); });
@@ -113,6 +115,75 @@
         }
     });
 
+    // ── Upload links ("drop box") ─────────────────────────────────────────
+    const PIECE = 16 * 1024 * 1024;
+    const H = { 'X-AlvaOS-Files': '1' };
+    const sizeText = (n) => (n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(1)} GB` : n >= 1024 ** 2 ? `${(n / 1024 ** 2).toFixed(1)} MB` : `${Math.ceil(n / 1024)} KB`);
+
+    function sendPiece(name, offset, blob, onProgress) {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', `${base}/upload/piece?${new URLSearchParams({ name, offset: String(offset) })}`);
+            xhr.setRequestHeader('X-AlvaOS-Files', '1');
+            xhr.upload.onprogress = (e) => onProgress(e.loaded);
+            xhr.onload = () => (xhr.status < 300 ? resolve() : reject(new Error((() => { try { return JSON.parse(xhr.responseText).error; } catch (_e) { return ''; } })() || 'The upload did not work.')));
+            xhr.onerror = () => reject(new Error('The connection dropped.'));
+            xhr.send(blob);
+        });
+    }
+
+    async function dropOne(file) {
+        const row = document.createElement('li');
+        row.innerHTML = `<span class="pub-drop-name">${esc(file.name)}</span><span class="pub-drop-state">Waiting…</span><span class="pub-drop-bar"><span></span></span>`;
+        $('pub-drop-list').prepend(row);
+        const state = row.querySelector('.pub-drop-state');
+        const bar = row.querySelector('.pub-drop-bar span');
+        let tries = 0;
+        for (;;) {
+            try {
+                const started = await get(`${base}/upload/start`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...H }, body: JSON.stringify({ name: file.name }) });
+                let offset = started.size || 0;
+                while (offset < file.size) {
+                    const blob = file.slice(offset, Math.min(file.size, offset + PIECE));
+                    await sendPiece(started.name, offset, blob, (n) => {
+                        const pct = Math.round(((offset + n) / file.size) * 100);
+                        bar.style.width = `${pct}%`;
+                        state.textContent = `${pct} %`;
+                    });
+                    offset += blob.size;
+                }
+                await get(`${base}/upload/finish`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...H }, body: JSON.stringify({ name: started.name, size: file.size }) });
+                bar.style.width = '100%';
+                row.classList.add('done');
+                state.innerHTML = `${icon('check')} ${esc(sizeText(file.size))}${started.name !== file.name ? ` · saved as ${esc(started.name)}` : ''}`;
+                return;
+            } catch (err) {
+                tries += 1;
+                if (tries > 5 || err.data) {
+                    row.classList.add('failed');
+                    state.textContent = err.message;
+                    return;
+                }
+                state.textContent = 'Connection lost, trying again…';
+                await new Promise((r) => setTimeout(r, 1500 * tries));
+            }
+        }
+    }
+
+    async function dropFiles(files) {
+        for (const file of files) await dropOne(file);
+    }
+
+    function showDrop() {
+        $('pub-drop').hidden = false;
+        $('pub-by').textContent = `${info.owner} asks you for files${info.nas_name ? ` · ${info.nas_name}` : ''}${info.expires_at ? ` · until ${new Date(info.expires_at).toLocaleDateString()}` : ''}`;
+        const zone = $('pub-drop-zone');
+        $('pub-drop-input').addEventListener('change', (e) => { dropFiles(Array.from(e.target.files || [])); e.target.value = ''; });
+        ['dragenter', 'dragover'].forEach((t) => zone.addEventListener(t, (e) => { e.preventDefault(); zone.classList.add('over'); }));
+        ['dragleave', 'drop'].forEach((t) => zone.addEventListener(t, () => zone.classList.remove('over')));
+        zone.addEventListener('drop', (e) => { e.preventDefault(); dropFiles(Array.from(e.dataTransfer?.files || [])); });
+    }
+
     async function start() {
         try {
             info = await get(base);
@@ -124,6 +195,7 @@
         $('pub-name').textContent = info.name;
         $('pub-by').textContent = `Shared by ${info.owner}${info.nas_name ? ` from ${info.nas_name}` : ''}${info.expires_at ? ` · until ${new Date(info.expires_at).toLocaleDateString()}` : ''}`;
         document.title = `${info.name} · shared with you`;
+        if (info.mode === 'upload') { document.title = `Send files to ${info.owner}`; showDrop(); return; }
         if (info.kind === 'folder') showFolder(); else showFile();
     }
     start();
