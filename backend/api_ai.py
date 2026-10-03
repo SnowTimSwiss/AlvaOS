@@ -50,7 +50,7 @@ def ai_chat():
     data = request.get_json(silent=True) or {}
     token = request.headers.get('Authorization', '')
     try:
-        answer = ai_assistant.chat(settings, data.get('messages'), _reader(token))
+        answer = ai_assistant.chat(settings, data.get('messages'), _reader(token), page=str(data.get('page') or ''))
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
     except Exception as e:  # noqa: BLE001 - the service is outside AlvaOS

@@ -1,8 +1,9 @@
 // The AlvaOS assistant: a chat panel in the top bar, once it is turned on in
-// Settings › Assistant. It can look at this NAS but not change anything.
+// Settings › Assistant. It looks at this NAS; at the "ask" level it also
+// suggests changes, which run only when the person presses "Do it".
 (function () {
     const HISTORY_KEY = 'alvaos_ai_history';
-    const SUGGESTIONS = ['How is my NAS doing?', 'Are my backups working?', 'How full are my disks?'];
+    const SUGGESTIONS = ['How is my NAS doing?', 'Are my backups working?', 'How full are my disks?', 'Why did something fail?'];
     const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     let history = [];
     let panel = null;
@@ -18,12 +19,22 @@
         try { sessionStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(-30))); } catch (_e) { /* storage off */ }
     }
 
+    // Pages the assistant may link to (ai_assistant.PAGES); other links stay text.
+    const PAGES = ['index.html', 'storage.html', 'files.html', 'apps.html', 'backup.html', 'updates.html', 'system.html'];
+    const pageLink = (_m, label, href) => {
+        const [file, anchor = ''] = href.split('#');
+        if (!PAGES.includes(file) || !/^[a-z=-]{0,20}$/.test(anchor)) return label;
+        return `<a href="${file}${anchor ? `#${anchor}` : ''}" class="ai-page-link">${label}</a>`;
+    };
+
     // Replies are plain text with a little Markdown. Everything is escaped
-    // first; only bold, code and lists are turned back into markup.
+    // first; only bold, code, lists and links to AlvaOS pages are turned back
+    // into markup.
     function format(text) {
         const inline = (line) => esc(line)
             .replace(/`([^`]+)`/g, '<code>$1</code>')
-            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+            .replace(/\[([^\]]{1,60})\]\(([a-z]+\.html(?:#[a-z=-]*)?)\)/g, pageLink);
         const out = [];
         let list = null;
         for (const raw of String(text || '').split('\n')) {
@@ -117,7 +128,10 @@
             const res = await fetch(`${API_BASE}/ai/chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ messages: history.filter((m) => !m.error).map(({ role, content }) => ({ role, content })) }),
+                body: JSON.stringify({
+                    messages: history.filter((m) => !m.error).map(({ role, content }) => ({ role, content })),
+                    page: window.location.pathname.split('/').pop() || 'index.html',
+                }),
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.error || 'The assistant could not answer.');
