@@ -9,6 +9,12 @@ import os
 import sys
 
 BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+# The backup and buddy managers are made when app_services is imported; keep
+# what they write out of /var/lib/alvaos (a developer machine, or a NAS).
+if not os.environ.get("ALVAOS_STATE_DIR"):
+    import tempfile
+    os.environ["ALVAOS_STATE_DIR"] = tempfile.mkdtemp(prefix="alvaos-test-state-")
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
@@ -26,3 +32,9 @@ def _private_sessions_file(tmp_path, monkeypatch):
         return
     monkeypatch.setattr(auth_manager, "SESSIONS_FILE", str(tmp_path / "sessions.json"))
     monkeypatch.setattr(auth_manager, "SIGNIN_LOG_FILE", str(tmp_path / "signin_log.json"))
+    try:
+        import alerts_manager
+    except Exception:  # noqa: BLE001 - a missing optional dependency
+        return
+    monkeypatch.setattr(alerts_manager, "NOTIFICATIONS_STATE_FILE", str(tmp_path / "notifications.json"))
+    monkeypatch.setattr(alerts_manager, "ALERTS_STATE_FILE", str(tmp_path / "alerts.json"))
