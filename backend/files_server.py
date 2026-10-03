@@ -1172,6 +1172,18 @@ def asset(name):
     return send_from_directory(APP_ROOT, name)
 
 
+@app.before_request
+def send_to_https():
+    """While "HTTPS only" is on (Settings › Security), plain HTTP is
+    redirected; the certificate stays reachable for new devices."""
+    if (request.remote_addr or '') in ('127.0.0.1', '::1'):
+        return None
+    import tls_manager
+    from flask import redirect
+    target = tls_manager.redirect_to_https(request, tls_manager.PORTS['files'], keep=('/alvaos-ca.crt',))
+    return redirect(target, code=308) if target else None
+
+
 @app.after_request
 def headers(response):
     response.headers.setdefault('X-Content-Type-Options', 'nosniff')

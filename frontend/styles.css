@@ -2653,3 +2653,8 @@ body.ai-open .feedback-fab-wrap { display: none; }
 .ai-level .choice input { width: auto; margin-top: 3px; accent-color: var(--accent-primary); }
 .ai-level .choice strong { display: block; color: var(--text-primary); }
 .ai-level .choice span { color: var(--text-secondary); font-size: 0.85rem; }
+.tls-only { display: flex; gap: 10px; align-items: flex-start; margin-top: 14px; padding: 10px 12px; border: 1px solid var(--border-default); border-radius: var(--radius-default); cursor: pointer; }
+.tls-only input { width: auto; margin-top: 3px; accent-color: var(--accent-primary); }
+.tls-only strong { display: block; color: var(--text-primary); }
+.tls-only small { display: block; margin-top: 2px; line-height: 1.4; color: var(--text-secondary); font-size: 0.85rem; }
+.tls-only:has(input:disabled) { opacity: 0.75; cursor: default; }

@@ -12,7 +12,7 @@ import secrets
 import atexit
 
 # ── Third-party ───────────────────────────────────────────────────────────────
-from flask import Flask, Response, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, redirect, request, send_from_directory
 
 # ── AlvaOS managers ───────────────────────────────────────────────────────────
 from common import (
@@ -113,6 +113,25 @@ CSRF_EXEMPT_PATHS = frozenset({
 CSRF_EXEMPT_PREFIXES = ('/api/v1/backup/buddy/peer/',)
 
 SAFE_HTTP_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS'})
+
+
+# Never sent to HTTPS: other NAS (pairing and the Buddy Backup peer API come
+# over the tunnel by HTTP), the certificate a new device still has to trust,
+# and the NAS itself (the assistant and local scripts call the API in-process
+# or on localhost).
+HTTPS_ONLY_EXEMPT_PATHS = ('/api/v1/system/tls/ca.crt', '/api/v1/backup/pairing/accept',
+                           '/api/v1/backup/pairing/remove/accept')
+
+
+@app.before_request
+def send_to_https():
+    """While "HTTPS only" is on, plain HTTP is answered with a redirect."""
+    path = request.path or ''
+    if path.startswith(CSRF_EXEMPT_PREFIXES) or (request.remote_addr or '') in ('127.0.0.1', '::1'):
+        return None
+    import tls_manager
+    target = tls_manager.redirect_to_https(request, tls_manager.PORTS['web'], keep=HTTPS_ONLY_EXEMPT_PATHS)
+    return redirect(target, code=308) if target else None
 
 
 @app.before_request

@@ -365,3 +365,14 @@ def test_search_everywhere_goes_through_each_share_as_the_person(client, monkeyp
     assert [a[1] for a, _ in seen] == ["/mnt/alvaos/main/Anna", "/mnt/alvaos/main/Family"]
     assert all(user == "anna" for _, user in seen)
     assert [(r["share"], r["name"]) for r in data["results"]] == [("Anna", "x.jpg"), ("Family", "x.jpg")]
+
+
+def test_https_only_sends_files_to_https_but_keeps_the_certificate(client, monkeypatch, tmp_path):
+    import tls_manager
+    monkeypatch.setattr(tls_manager, "SETTINGS_FILE", str(tmp_path / "https.json"))
+    tls_manager.set_https_only(True)
+    lan = {"REMOTE_ADDR": "192.168.1.5"}
+    res = client.get("/api/me", environ_base=lan, base_url="http://nas:8090")
+    assert res.status_code == 308 and res.headers["Location"] == "https://nas:9443/api/me"
+    assert client.get("/alvaos-ca.crt", environ_base=lan).status_code != 308
+    assert client.get("/api/me", environ_base=lan, base_url="https://nas:9443").status_code == 401
