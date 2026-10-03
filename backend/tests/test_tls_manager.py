@@ -69,3 +69,58 @@ def test_https_only_setting_is_read_when_it_changes(tmp_path):
     tls.set_https_only(False, path)
     os.utime(path, (1, 1))   # a new mtime, whatever the clock
     assert tls.https_only(path) is False
+
+
+def test_the_authority_can_only_sign_for_home_names_and_private_addresses(tmp_path):
+    d = str(tmp_path / "tls")
+    p = tls.ensure_certificates(d, names=["nas", "nas.local", "localhost", "evil.example.com"],
+                                ips=["127.0.0.1", "192.168.1.20", "8.8.8.8"])
+    about = tls.info(d)
+    assert "evil.example.com" not in about["names"] and "8.8.8.8" not in about["addresses"]
+    assert {"nas", "nas.local", "localhost"} <= set(about["names"]) and "192.168.1.20" in about["addresses"]
+    # Nothing to renew afterwards although the public name and address are "missing".
+    first = open(p["server.crt"]).read()
+    tls.ensure_certificates(d, names=["nas", "nas.local", "localhost", "evil.example.com"],
+                            ips=["127.0.0.1", "192.168.1.20", "8.8.8.8"])
+    assert open(p["server.crt"]).read() == first
+    # And a certificate for a foreign name, signed with the stolen key, fails in a real TLS client.
+    import datetime
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+    ca_key = serialization.load_pem_private_key(open(p["ca.key"], "rb").read(), password=None)
+    ca = x509.load_pem_x509_certificate(open(p["ca.crt"], "rb").read())
+    key = ec.generate_private_key(ec.SECP256R1())
+    now = datetime.datetime.now(datetime.timezone.utc)
+    forged = (x509.CertificateBuilder().subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "bank.example")]))
+              .issuer_name(ca.subject).public_key(key.public_key()).serial_number(1)
+              .not_valid_before(now - datetime.timedelta(minutes=1)).not_valid_after(now + datetime.timedelta(days=1))
+              .add_extension(x509.SubjectAlternativeName([x509.DNSName("bank.example")]), critical=False)
+              .sign(ca_key, hashes.SHA256()))
+    forged_dir = tmp_path / "forged"
+    forged_dir.mkdir()
+    (forged_dir / "server.crt").write_bytes(forged.public_bytes(serialization.Encoding.PEM))
+    (forged_dir / "server.key").write_bytes(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                                                              serialization.NoEncryption()))
+    server_ctx = tls.ssl_context(str(forged_dir))
+    client_ctx = ssl.create_default_context(cafile=p["ca.crt"])
+    import socket
+    import threading
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+
+    def serve():
+        conn, _ = listener.accept()
+        try:
+            with server_ctx.wrap_socket(conn, server_side=True):
+                pass
+        except (ssl.SSLError, OSError):
+            pass
+
+    threading.Thread(target=serve, daemon=True).start()
+    with socket.create_connection(listener.getsockname()) as raw:
+        with pytest.raises(ssl.SSLCertVerificationError):
+            client_ctx.wrap_socket(raw, server_hostname="bank.example")
+    listener.close()

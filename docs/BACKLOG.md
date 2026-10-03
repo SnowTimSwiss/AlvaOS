@@ -15,6 +15,21 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · HTTPS authority limited to the home network
+
+- The NAS's certificate authority now carries X.509 name constraints: it may
+  only sign for its own host name, home-network domains (`.local`, `.lan`,
+  `.home`, `.home.arpa`, `.internal`, `localhost`) and private addresses
+  (10/8, 172.16/12, 192.168/16, 127/8, 100.64/10, 169.254/16). Browsers
+  enforce this, so even a stolen authority key cannot be used to pose as
+  another website to the devices that trust the NAS.
+- The server certificate only lists names and addresses the authority may
+  sign for (a public address of the NAS is left out instead of making the
+  certificate invalid). An authority made before this keeps working as
+  before.
+- Test: a certificate for `bank.example` signed with the authority key is
+  refused by a real TLS client.
+
 ## 2026-10-03 · First setup: what can be turned on later
 
 - The last page of the setup wizard lists three extras with links instead
