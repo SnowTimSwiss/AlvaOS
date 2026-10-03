@@ -34,6 +34,7 @@
         undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
         link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
         copy: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+        clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
     };
     const icon = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[name] || P.file}</svg>`;
     const paintIcons = (root) => (root || document).querySelectorAll('[data-icon]').forEach((el) => { if (!el.firstChild) el.innerHTML = icon(el.dataset.icon); });
@@ -64,6 +65,12 @@
         const today = new Date();
         if (d.toDateString() === today.toDateString()) return `Today ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
         return d.toLocaleDateString([], { day: 'numeric', month: 'short', year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
+    }
+
+    function whenExact(iso) {
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return '';
+        return `${when(iso).replace(/^Today .*/, 'Today')}, ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
     }
 
     // ── Talking to the NAS ─────────────────────────────────────────────────
@@ -400,6 +407,7 @@
         if (!sel.length && !found) rows.push(`<button type="button" data-ctx="zip-here">${icon('archive')}Download this folder as ZIP</button>`);
         if (canWrite && one) rows.push(`<button type="button" data-ctx="rename">${icon('pen')}Rename</button>`);
         if (one) rows.push(`<button type="button" data-ctx="share">${icon('link')}Share link…</button>`);
+        if (one && one.type === 'file') rows.push(`<button type="button" data-ctx="versions">${icon('clock')}Previous versions…</button>`);
         if (canWrite && sel.length) rows.push(`<button type="button" data-ctx="move">${icon('folder')}Move to…</button>`, `<button type="button" data-ctx="copy">${icon('copy')}Copy to…</button>`);
         if (canWrite && sel.length) rows.push('<hr>', `<button type="button" class="danger" data-ctx="delete">${icon('trash')}Delete</button>`);
         if (!sel.length && canWrite) rows.push(`<button type="button" data-ctx="upload">${icon('upload')}Upload files</button>`, `<button type="button" data-ctx="folder">${icon('folder-plus')}New folder</button>`);
@@ -433,6 +441,7 @@
         if (name === 'move' && sel.length) moveDialog(sel);
         if (name === 'copy' && sel.length) moveDialog(sel, true);
         if (name === 'share' && sel.length === 1) shareDialog(sel[0]);
+        if (name === 'versions' && sel.length === 1) versionsDialog(sel[0]);
         if (name === 'upload') $('file-input').click();
         if (name === 'folder') newFolder();
     }
@@ -618,6 +627,51 @@
             }
         };
         $('ln-days').focus();
+    }
+
+    // Older states of one file, from the restore points (Backup page).
+    async function versionsDialog(entry) {
+        const wrap = $('dialog');
+        const filePath = rel(entry);
+        const canWrite = (me?.shares || []).find((x) => x.name === share)?.access === 'write';
+        const close = () => { wrap.hidden = true; wrap.innerHTML = ''; };
+        wrap.innerHTML = `<div class="dialog wide"><h2>Previous versions of "${esc(entry.name)}"</h2><p>Looking in the restore points…</p></div>`;
+        wrap.hidden = false;
+        let versions = [];
+        let error = '';
+        try { versions = (await api(`versions?${new URLSearchParams({ share, path: filePath })}`)).versions || []; } catch (err) { error = err.message; }
+        if (wrap.hidden) return;
+        wrap.innerHTML = `<div class="dialog wide"><h2>Previous versions of "${esc(entry.name)}"</h2>
+            <p>${versions.length ? `Saved by the restore points.${canWrite ? ' "Restore" puts the old version next to this file, with the date in its name; nothing is overwritten.' : ''}` : ''}</p>
+            <div class="trash-list">${error ? esc(error) : versions.length ? versions.map((v) => `<div class="trash-row"><div><strong>${icon('clock')} Changed ${esc(whenExact(v.modified_at))}</strong>
+                <small>${esc(bytes(v.size_bytes))} · in the restore point of ${esc(when(v.created_at))}</small></div>
+                <div style="display:flex;gap:6px"><button type="button" class="btn" data-open="${esc(v.id)}">${icon('open')}<span class="hide-phone">Open</span></button>${canWrite ? `<button type="button" class="btn" data-restore="${esc(v.id)}">Restore</button>` : ''}</div></div>`).join('')
+                : '<div class="empty" style="padding:30px 0">No older version of this file. Restore points keep the state of a shared folder; turn them on under Backup in AlvaOS.</div>'}</div>
+            <div class="notice" id="ver-error"></div>
+            <div class="actions"><button type="button" class="btn primary" data-close>Done</button></div></div>`;
+        wrap.querySelector('[data-close]').onclick = close;
+        wrap.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', async () => {
+            const w = window.open('', '_blank');
+            try {
+                const link = await api('versions/link', { method: 'POST', json: { share, path: filePath, id: b.dataset.open, inline: true } });
+                if (w) w.location.href = link.url; else location.href = link.url;
+            } catch (err) {
+                if (w) w.close();
+                $('ver-error').textContent = err.message;
+            }
+        }));
+        wrap.querySelectorAll('[data-restore]').forEach((b) => b.addEventListener('click', async () => {
+            b.disabled = true;
+            try {
+                const done = await api('versions/restore', { method: 'POST', json: { share, path: filePath, id: b.dataset.restore } });
+                close();
+                toast(`Restored as "${done.name}".`);
+                if (!found) load();
+            } catch (err) {
+                b.disabled = false;
+                $('ver-error').textContent = err.message;
+            }
+        }));
     }
 
     $('links-nav').addEventListener('click', async () => {

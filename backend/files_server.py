@@ -358,6 +358,137 @@ def get_file(token):
     return Response(stream, status=206 if part else 200, mimetype=mime, headers=headers, direct_passthrough=True)
 
 
+# ── Previous versions (from restore points) ─────────────────────────────────
+
+SNAPSHOTS_FILE = os.path.join(STATE_DIR, 'backup_snapshots.json')
+MAX_VERSION_POINTS = 100
+
+
+def _restore_points_for(file_path: str) -> List[Tuple[Dict[str, Any], str]]:
+    """(restore point, folder in it that held the file), newest first."""
+    try:
+        with open(SNAPSHOTS_FILE) as f:
+            entries = json.load(f)
+    except (OSError, ValueError):
+        return []
+    found = []
+    for entry in entries if isinstance(entries, list) else []:
+        if not isinstance(entry, dict) or (entry.get('snapshot_class') or 'data') not in ('data', 'full_data'):
+            continue
+        source = os.path.normpath(str(entry.get('source_path') or '/'))
+        snap = os.path.normpath(str(entry.get('snapshot_path') or ''))
+        if not snap.startswith('/mnt/') or not file_path.startswith(source.rstrip('/') + '/'):
+            continue
+        inner = os.path.relpath(os.path.dirname(file_path), source)
+        found.append((entry, snap if inner == '.' else os.path.join(snap, inner)))
+    found.sort(key=lambda item: str(item[0].get('created_at') or ''), reverse=True)
+    return found[:MAX_VERSION_POINTS]
+
+
+def _point_id(entry: Dict[str, Any]) -> str:
+    return hashlib.sha256(str(entry.get('snapshot_path') or '').encode()).hexdigest()[:16]
+
+
+def _versions(session, data):
+    """(share, file path, versions newest first, error response)."""
+    share, path, rel, bad = target(session, data)
+    if bad:
+        return None, None, [], bad
+    if not rel:
+        return None, None, [], (jsonify({'error': 'Choose a file.'}), 400)
+    points = _restore_points_for(path)
+    name = os.path.basename(path)
+    if not points:
+        return share, path, [], None
+    result, error = files_manager.run_helper(
+        ['files-versions', name, os.path.dirname(path)] + [folder for _, folder in points],
+        timeout=60, user=as_user(session))
+    if result is None:
+        return None, None, [], (jsonify({'error': error or 'The restore points could not be read.'}), 409)
+    found = result.get('versions') or []
+    current = found[0] if found else None
+    seen = {(current['size_bytes'], current['modified_at'])} if current else set()
+    versions = []
+    for (entry, folder), item in zip(points, found[1:], strict=False):
+        if not item or (item['size_bytes'], item['modified_at']) in seen:
+            continue
+        seen.add((item['size_bytes'], item['modified_at']))
+        versions.append({'id': _point_id(entry), 'created_at': entry.get('created_at'), 'folder': folder,
+                         'size_bytes': item['size_bytes'], 'modified_at': item['modified_at']})
+    return share, path, versions, None
+
+
+@app.get('/api/versions')
+def list_versions():
+    session, refused = need_session()
+    if refused:
+        return refused
+    _, _, versions, bad = _versions(session, request.args)
+    if bad:
+        return bad
+    return jsonify({'versions': [{k: v for k, v in item.items() if k != 'folder'} for item in versions]})
+
+
+def _chosen_version(session, data):
+    share, path, versions, bad = _versions(session, data)
+    if bad:
+        return None, None, None, bad
+    chosen = next((v for v in versions if v['id'] == str(data.get('id') or '')), None)
+    if not chosen:
+        return None, None, None, (jsonify({'error': 'This version is not there any more.'}), 404)
+    return share, path, chosen, None
+
+
+@app.post('/api/versions/link')
+def version_link():
+    session, refused = need_session()
+    if refused:
+        return refused
+    data = request.get_json(silent=True) or {}
+    _, path, chosen, bad = _chosen_version(session, data)
+    if bad:
+        return bad
+    name = os.path.basename(path)
+    token = secrets.token_urlsafe(32)
+    with _lock:
+        _links[token] = {'path': os.path.join(chosen['folder'], name), 'name': name, 'user': as_user(session),
+                         'inline': bool(data.get('inline')), 'expires': time.time() + LINK_TTL_SECONDS}
+    return jsonify({'url': f'/api/get/{token}', 'expires_in': LINK_TTL_SECONDS})
+
+
+def restored_name(name: str, when: datetime) -> str:
+    """'plan.txt' -> 'plan (restored 2026-10-01 0300).txt' (as on the Backup page)."""
+    stem, ext = os.path.splitext(name)
+    if not stem:
+        stem, ext = name, ''
+    return f"{stem} (restored {when.strftime('%Y-%m-%d %H%M')}){ext}"
+
+
+@app.post('/api/versions/restore')
+def version_restore():
+    """The old version is copied next to the file; nothing is overwritten."""
+    session, refused = need_session()
+    if refused:
+        return refused
+    data = request.get_json(silent=True) or {}
+    share, path, chosen, bad = _chosen_version(session, data)
+    if bad:
+        return bad
+    if share['access'] != 'write':
+        return jsonify({'error': f'You can only look at "{share["name"]}", not change it.'}), 403
+    try:
+        when = datetime.fromisoformat(str(chosen['created_at'])).astimezone()
+    except ValueError:
+        when = datetime.now().astimezone()
+    name = os.path.basename(path)
+    result, error = files_manager.run_helper(
+        ['files-restore-version', chosen['folder'], name, os.path.dirname(path), restored_name(name, when)],
+        timeout=3600, user=as_user(session))
+    if result is None:
+        return jsonify({'error': error or 'The old version could not be restored.'}), 409
+    return jsonify({'success': True, 'name': result.get('name')})
+
+
 THUMB_DIR = os.path.join(STATE_DIR, 'thumbs')
 THUMB_SIZE = 320
 THUMB_MAX_SOURCE_BYTES = 60 * 1024 ** 2

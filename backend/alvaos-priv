@@ -338,11 +338,14 @@ def file_size(argv):
     return 0
 
 
-# AlvaOS Files: name -> (number of arguments, function). files_ops checks
+# AlvaOS Files: name -> (number of arguments, function); None means a name
+# and 1 to 100 folders. files_ops checks
 # every folder on its open descriptor and never overwrites anything.
 FILES_OPS = {
     'files-list': (1, lambda a: {'entries': files_ops.list_dir(a[0])}),
     'files-search': (2, lambda a: files_ops.search(a[0], a[1])),
+    'files-versions': (None, lambda a: {'versions': files_ops.versions(a[0], a[1:])}),
+    'files-restore-version': (4, lambda a: {'name': files_ops.restore_version(a[0], a[1], a[2], a[3])}),
     'files-write': (2, lambda a: {'written': files_ops.write_file(a[0], a[1], sys.stdin.buffer)}),
     'files-mkdir': (2, lambda a: files_ops.make_dir(a[0], a[1])),
     'files-rename': (3, lambda a: files_ops.rename(a[0], a[1], a[2])),
@@ -397,7 +400,7 @@ def files_zip(argv):
 
 def files_op(name, argv):
     count, run = FILES_OPS[name]
-    if len(argv) != count:
+    if (count is None and not 2 <= len(argv) <= 101) or (count is not None and len(argv) != count):
         deny([name] + list(argv), f'usage: {name} with {count} arguments')
     try:
         result = run(argv)
