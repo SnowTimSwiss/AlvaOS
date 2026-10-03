@@ -54,6 +54,9 @@ How to add an entry:
   e.g. BFQ).
 - Photo thumbnails in Files are made in two worker threads with nice 10
   instead of in the request thread at normal priority.
+- Buddy Backup transfers (`btrfs send` and `receive`) run with nice 10 and
+  the idle I/O class: the policy marks them `background`, the helper lowers
+  itself before it becomes the command (`give_way`, ioprio_set by syscall).
 
 ## 2026-10-03 · Sign-in: idle sessions end, the last sign-in is shown
 

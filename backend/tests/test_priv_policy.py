@@ -676,3 +676,9 @@ def test_files_app_service_can_be_switched_and_nothing_else():
         allowed('/usr/bin/systemctl', *args, 'alvaos-files.service')
     denied('/usr/bin/systemctl', 'enable', '--now', 'ssh.service')
     denied('/usr/bin/systemctl', 'disable', '--now', 'alvaos.service')
+
+
+def test_backup_transfers_give_way_to_people():
+    assert allowed('/usr/bin/btrfs', 'send', '/mnt/alvaos/main/.alvaos-buddy-media-1').background
+    assert allowed('/usr/bin/btrfs', 'receive', '/mnt/alvaos/main/restore').background
+    assert not allowed('/usr/bin/btrfs', 'subvolume', 'show', '/').background
