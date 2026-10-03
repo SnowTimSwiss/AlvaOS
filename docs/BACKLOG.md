@@ -15,6 +15,15 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · Upload links with a size limit
+
+- An upload link ("drop box") can take up to 1, 5 (preselected), 20 or 100
+  GB in all, or as much as the folder has room for. Every piece counts
+  (`received` in the link); when the limit is reached, start and piece
+  answer 413 with a plain sentence. The guest page says how much room is
+  left; the list of links shows "x of y".
+- Real test: a 1 GB link counted exactly the bytes of two uploads.
+
 ## 2026-10-03 · Deleting over the network goes to the trash
 
 - Writable SMB shares get Samba's `vfs_recycle`: a file deleted in Windows
@@ -85,9 +94,8 @@ How to add an entry:
   assistant actions run with the person's session and CSRF token and only
   as stored by the server; the public certificate download holds no
   secret; HTTPS-only never redirects the Buddy Backup peers.
-- **Note for next time:** an upload link ("drop box") takes as much as the
-  share can hold; only a space limit on that share caps it. A per-link size
-  limit would be the next step if people hand such links out widely.
+- An upload link ("drop box") could take as much as the share could hold;
+  it now has a size limit (entry above).
 
 ## 2026-10-03 · HTTPS authority limited to the home network
 

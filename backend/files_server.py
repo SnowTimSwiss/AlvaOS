@@ -844,6 +844,7 @@ def trash_empty():
 LINKS_FILE = os.path.join(STATE_DIR, 'files_links.json')
 SECRET_FILE = os.path.join(STATE_DIR, 'files_secret')
 LINK_DAYS = (0, 1, 7, 30, 90)
+DROP_LIMITS_GB = (0, 1, 5, 20, 100)   # how much an upload link takes in all; 0 = up to the share's space
 
 
 def _secret() -> bytes:
@@ -878,7 +879,8 @@ def _save_links(links: Dict[str, Dict[str, Any]]) -> None:
 
 def _public_link(link: Dict[str, Any], token: str) -> Dict[str, Any]:
     return {'id': link['id'], 'url': f'/s/{token}', 'share': link['share'], 'path': link['path'],
-            'name': link['name'], 'kind': link['kind'], 'mode': link.get('mode', 'view'), 'owner': link['owner'],
+            'name': link['name'], 'kind': link['kind'], 'mode': link.get('mode', 'view'),
+            'max_bytes': link.get('max_bytes'), 'received': link.get('received', 0), 'owner': link['owner'],
             'created_at': link['created_at'], 'expires_at': link.get('expires_at'),
             'has_password': bool(link.get('password'))}
 
@@ -909,10 +911,17 @@ def create_link():
         return jsonify({'error': 'Upload links are for folders.'}), 400
     if mode == 'upload' and share['access'] != 'write':
         return jsonify({'error': f'You can only look at "{share["name"]}", so nobody can upload there through you.'}), 403
+    try:
+        max_gb = int(data.get('max_gb') or 0) if mode == 'upload' else 0
+    except (TypeError, ValueError):
+        max_gb = -1
+    if max_gb not in DROP_LIMITS_GB:
+        return jsonify({'error': 'Choose how much people may upload.'}), 400
     from password_utils import hash_password
     token = secrets.token_urlsafe(18)
     link = {'id': secrets.token_hex(6), 'share': share['name'], 'path': rel, 'name': os.path.basename(rel),
-            'kind': kind, 'mode': mode, 'owner': session['user'], 'role': session['role'], 'created_at': _now().isoformat(),
+            'kind': kind, 'mode': mode, 'max_bytes': max_gb * 1024 ** 3 if max_gb else None, 'received': 0,
+            'owner': session['user'], 'role': session['role'], 'created_at': _now().isoformat(),
             'expires_at': (_now() + timedelta(days=days)).isoformat() if days else None,
             'password': hash_password(password) if password else None}
     with _lock:
@@ -997,7 +1006,9 @@ def public_info(token):
     link, _, _, bad = opened_link(token, upload=stored.get('mode') == 'upload')
     if bad:
         return bad
-    return jsonify({'name': link['name'], 'kind': link['kind'], 'mode': link.get('mode', 'view'), 'owner': link['owner'],
+    room = None if not link.get('max_bytes') else max(0, int(link['max_bytes']) - int(link.get('received') or 0))
+    return jsonify({'name': link['name'], 'kind': link['kind'], 'mode': link.get('mode', 'view'), 'room_bytes': room,
+                    'owner': link['owner'],
                     'expires_at': link.get('expires_at'), 'nas_name': socket.gethostname().split('.')[0]})
 
 
@@ -1137,10 +1148,30 @@ def public_upload_start(token):
     name = str((request.get_json(silent=True) or {}).get('name') or '').strip()
     if not name or '/' in name or '\x00' in name or name.startswith('.') or len(name.encode()) > 240:
         return jsonify({'error': 'This file name cannot be used.'}), 400
+    if not _room_left(token, 1):
+        return jsonify({'error': 'This link has taken all it may. Ask the person who sent it for more room.'}), 413
     chosen, size, error = _free_upload_name(base, owner, name)
     if chosen is None:
         return jsonify({'error': error}), 409
     return jsonify({'name': chosen, 'size': size})
+
+
+def _room_left(token: str, adding: int) -> bool:
+    """Whether an upload link with a size limit can take `adding` more bytes."""
+    with _lock:
+        link = _load_links().get(token) or {}
+    limit = link.get('max_bytes')
+    return not limit or int(link.get('received') or 0) + adding <= int(limit)
+
+
+def _count_received(token: str, added: int) -> None:
+    if added <= 0:
+        return
+    with _lock:
+        links = _load_links()
+        if token in links:
+            links[token]['received'] = int(links[token].get('received') or 0) + added
+            _save_links(links)
 
 
 @app.post('/api/public/<token>/upload/piece')
@@ -1148,13 +1179,19 @@ def public_upload_piece(token):
     base, owner, bad = _drop_target(token)
     if bad:
         return bad
-    if (request.content_length or 0) > PIECE_LIMIT_BYTES:
+    length = request.content_length or 0
+    if length > PIECE_LIMIT_BYTES:
         return jsonify({'error': 'Pieces are at most 64 MB.'}), 413
     offset = str(request.args.get('offset') or '0')
     if not offset.isdigit():
         return jsonify({'error': 'Invalid offset.'}), 400
-    return _helper_answer(*files_manager.pipe_helper(
-        ['files-part-write', base, str(request.args.get('name') or ''), offset], request.stream, user=owner))
+    if not length or not _room_left(token, length):
+        return jsonify({'error': 'This link has taken all it may. Ask the person who sent it for more room.'}), 413
+    result, error = files_manager.pipe_helper(
+        ['files-part-write', base, str(request.args.get('name') or ''), offset], request.stream, user=owner)
+    if result is not None:
+        _count_received(token, int(result.get('size') or 0) - int(offset))
+    return _helper_answer(result, error)
 
 
 @app.post('/api/public/<token>/upload/finish')

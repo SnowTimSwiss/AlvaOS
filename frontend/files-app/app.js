@@ -643,7 +643,10 @@
         wrap.innerHTML = `<form class="dialog" novalidate><h2>Share "${esc(entry.name)}"</h2>
             ${canDrop ? `<label class="field">People with the link can<select id="ln-mode" class="sel">
                 <option value="view">Look at and download what is in it</option>
-                <option value="upload">Only upload files into it (drop box)</option></select></label>` : ''}
+                <option value="upload">Only upload files into it (drop box)</option></select></label>
+                <label class="field" id="ln-max-field" hidden>They may upload<select id="ln-max" class="sel">
+                <option value="0">As much as the folder has room for</option><option value="1">Up to 1 GB in all</option>
+                <option value="5" selected>Up to 5 GB in all</option><option value="20">Up to 20 GB in all</option><option value="100">Up to 100 GB in all</option></select></label>` : ''}
             <p id="ln-what">Anyone with the link can ${entry.type === 'folder' ? 'look at and download what is in this folder' : 'look at and download this file'}. They cannot change anything.</p>
             <label class="field">Works for<select id="ln-days" class="sel">
                 <option value="1">1 day</option><option value="7" selected>7 days</option><option value="30">30 days</option>
@@ -655,6 +658,7 @@
         const close = () => { wrap.hidden = true; wrap.innerHTML = ''; };
         wrap.querySelector('[data-cancel]').onclick = close;
         $('ln-mode')?.addEventListener('change', () => {
+            $('ln-max-field').hidden = $('ln-mode').value !== 'upload';
             $('ln-what').textContent = $('ln-mode').value === 'upload'
                 ? 'Anyone with the link can add files to this folder. They cannot see, open or change what is in it; files with the same name are kept side by side.'
                 : 'Anyone with the link can look at and download what is in this folder. They cannot change anything.';
@@ -662,7 +666,7 @@
         wrap.querySelector('form').onsubmit = async (e) => {
             e.preventDefault();
             try {
-                const link = await api('links', { method: 'POST', json: { share: sh(entry), path: rel(entry), kind: entry.type, mode: $('ln-mode')?.value || 'view', days: Number($('ln-days').value), password: $('ln-pass').value } });
+                const link = await api('links', { method: 'POST', json: { share: sh(entry), path: rel(entry), kind: entry.type, mode: $('ln-mode')?.value || 'view', max_gb: Number($('ln-max')?.value || 0), days: Number($('ln-days').value), password: $('ln-pass').value } });
                 const url = fullUrl(link.url);
                 wrap.innerHTML = `<div class="dialog"><h2>Link ready</h2>
                     <p>${link.expires_at ? `Works until ${esc(when(link.expires_at))}` : 'Works until you remove it'}${link.has_password ? ', with a password' : ''}. You find it again under Shared links.</p>
@@ -775,7 +779,7 @@
             try { links = (await api('links')).links || []; } catch (err) { error = err.message; }
             wrap.innerHTML = `<div class="dialog wide"><h2>Shared links</h2><p>Links you made. Anyone with a link can open what it points to until it expires or you remove it.</p>
                 <div class="trash-list">${error ? esc(error) : links.length ? links.map((l) => `<div class="trash-row"><div><strong>${icon(l.kind === 'folder' ? 'folder' : 'file')} ${esc(l.name)}</strong>
-                <small>${l.mode === 'upload' ? 'Upload only · ' : ''}${esc([l.share, ...l.path.split('/').slice(0, -1)].join(' › '))} · ${l.expires_at ? `until ${esc(when(l.expires_at))}` : 'no end date'}${l.has_password ? ' · password' : ''}${me?.role === 'admin' && l.owner !== me.user ? ` · by ${esc(l.owner)}` : ''}</small></div>
+                <small>${l.mode === 'upload' ? `Upload only${l.max_bytes ? ` (${bytes(l.received || 0)} of ${bytes(l.max_bytes)})` : l.received ? ` (${bytes(l.received)} received)` : ''} · ` : ''}${esc([l.share, ...l.path.split('/').slice(0, -1)].join(' › '))} · ${l.expires_at ? `until ${esc(when(l.expires_at))}` : 'no end date'}${l.has_password ? ' · password' : ''}${me?.role === 'admin' && l.owner !== me.user ? ` · by ${esc(l.owner)}` : ''}</small></div>
                 <div style="display:flex;gap:6px"><button type="button" class="btn" data-copy="${esc(l.url)}">${icon('copy')}<span class="hide-phone">Copy</span></button><button type="button" class="btn danger" data-del="${esc(l.id)}">Remove</button></div></div>`).join('') : '<div class="empty" style="padding:30px 0">No shared links yet. Right-click a file or folder and choose "Share link".</div>'}</div>
                 <div class="actions"><button type="button" class="btn primary" data-close>Done</button></div></div>`;
             wrap.querySelector('[data-close]').onclick = () => { wrap.hidden = true; wrap.innerHTML = ''; };
