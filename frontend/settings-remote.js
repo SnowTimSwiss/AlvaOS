@@ -5,6 +5,7 @@
     const $ = (id) => document.getElementById(id);
     const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     let state = null;
+    let warning = '';   // why the home may not be reachable from outside (CGNAT, two routers)
 
     async function api(path, options = {}) {
         const res = await fetch(`${API_BASE}${path}`, {
@@ -63,8 +64,12 @@
             </div>
             <div class="set-row">
                 <div class="set-text"><div class="set-label">In your router</div>
-                    <div class="set-desc">Forward <strong>UDP port ${esc(state.port)}</strong> to <strong>${esc(lan)}</strong> (this NAS). Often under "Port forwarding", "Port sharing" or "NAT". Nothing else needs to be opened.</div></div>
+                    <div class="set-desc">${state.upnp
+        ? `Your router forwards <strong>UDP port ${esc(state.port)}</strong> to this NAS; AlvaOS asked it automatically and renews it every day.`
+        : `Forward <strong>UDP port ${esc(state.port)}</strong> to <strong>${esc(lan)}</strong> (this NAS). Often under "Port forwarding", "Port sharing" or "NAT". Nothing else needs to be opened.`}</div></div>
+                <div class="set-action">${state.upnp_installed && !state.upnp ? '<button type="button" class="btn-secondary" id="remote-upnp">Open it automatically</button>' : ''}</div>
             </div>
+            ${warning ? `<div class="remote-warning" role="alert">${esc(warning)}</div>` : ''}
             <h3 class="remote-subtitle">Devices</h3>
             <div class="remote-devices">${state.devices.length ? state.devices.map((d) => `
                 <div class="remote-device">
@@ -82,11 +87,27 @@
         $('remote-find').addEventListener('click', async () => {
             try {
                 const data = await api('/remote-access/public-address', { method: 'POST', body: '{}' });
-                $('remote-endpoint').value = data.address;
-                window.showToast?.('Found. Press Save. A name from a dynamic DNS service keeps working when this address changes.', 'info');
+                const typed = data.address || $('remote-endpoint').value;
+                warning = data.warning || '';
+                render();
+                $('remote-endpoint').value = typed;
+                if (data.address) window.showToast?.('Found. Press Save. A name from a dynamic DNS service keeps working when this address changes.', 'info');
             } catch (e) {
                 window.showToast?.(e.message, 'error');
             }
+        });
+        $('remote-upnp')?.addEventListener('click', async (event) => {
+            event.target.disabled = true;
+            event.target.textContent = 'Asking the router...';
+            try {
+                const data = await api('/remote-access/router', { method: 'POST', body: '{}' });
+                state = data;
+                warning = data.warning || '';
+                window.showToast?.(data.message, 'success');
+            } catch (e) {
+                window.showToast?.(e.message, 'error');
+            }
+            render();
         });
         $('remote-add').addEventListener('submit', async (event) => {
             event.preventDefault();

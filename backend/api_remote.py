@@ -45,13 +45,37 @@ def remote_remove_device(device_id):
 @bp.route('/api/v1/remote-access/public-address', methods=['POST'])
 @require_auth(require_admin=True)
 def remote_public_address():
-    """Asks a public service which address the home has (only on this button)."""
+    """The internet address of the home: from the router when it says (UPnP),
+    else from a public service (only on this button). With a warning when it
+    cannot be reached from outside (shared by the provider, or a second router)."""
     import ipaddress
 
-    import requests
-    try:
-        text = requests.get('https://api.ipify.org', timeout=10).text.strip()
-        ipaddress.ip_address(text)
-    except Exception:  # noqa: BLE001 - offline, blocked or a strange answer
-        return jsonify({'error': 'The public address could not be found. Look it up in your router.'}), 502
-    return jsonify({'success': True, 'address': text})
+    import remote_access
+    from app_services import remote
+    router = remote.router()
+    wan = router.get('wan_ip') or ''
+    warning = remote_access.address_warning(wan) if wan else ''
+    address = wan if wan and not warning else ''
+    if not address:
+        import requests
+        try:
+            text = requests.get('https://api.ipify.org', timeout=10).text.strip()
+            ipaddress.ip_address(text)
+            address = text
+        except Exception:  # noqa: BLE001 - offline, blocked or a strange answer
+            if not warning:
+                return jsonify({'error': 'The public address could not be found. Look it up in your router.'}), 502
+    return jsonify({'success': True, 'address': address, 'warning': warning})
+
+
+@bp.route('/api/v1/remote-access/router', methods=['POST'])
+@require_auth(require_admin=True)
+def remote_open_router_port():
+    """Ask the router to forward the port (UPnP)."""
+    import remote_access
+    from app_services import remote
+    ok, message, router = remote.open_router_port()
+    warning = remote_access.address_warning(router.get('wan_ip') or '')
+    if not ok:
+        return jsonify({'error': message, 'warning': warning}), 409
+    return jsonify({'success': True, 'message': message, 'warning': warning, **remote.status()})

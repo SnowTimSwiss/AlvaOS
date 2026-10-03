@@ -15,6 +15,21 @@ How to add an entry:
 
 ---
 
+## 2026-10-04 · Remote access: the router opens the port by itself (UPnP), CGNAT is explained
+
+- "Open it automatically" asks the router over UPnP (`upnpc` from
+  miniupnpc, runs as the service user, no helper needed) to forward the
+  UDP port to the NAS; permanent first, a 7-day lease for routers that
+  refuse that; renewed at start and every day. A changed port removes the
+  old mapping first. Refusals are shown with the router's reason.
+- "Find it" first asks the router for its internet address (no outside
+  service), then api.ipify.org.
+- When the router's internet address is in 100.64.0.0/10 (the provider
+  shares it, CGNAT) or private (a second router in front), the page says
+  why nothing from outside can arrive and what to ask for.
+- miniupnpc added to the installer and the package dependencies.
+- **Note for next time:** only tested against recorded `upnpc` answers.
+
 ## 2026-10-04 · The Feedback button no longer covers the last row
 
 - On phones the floating Feedback button sat on the last buttons of a page
