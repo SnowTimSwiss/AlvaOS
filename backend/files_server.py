@@ -83,11 +83,23 @@ def _save_sessions(sessions: Dict[str, Dict[str, Any]]) -> None:
     os.replace(tmp, SESSIONS_FILE)
 
 
+def _password_tag(user: str, role: str) -> str:
+    """A fingerprint of the stored password: when it changes (or the person
+    is removed), their Files sessions end, also in browsers signed in before."""
+    stored = _read_json(AUTH_FILE) if role == 'admin' else _read_json(USERS_FILE).get(user)
+    if not isinstance(stored, dict):
+        return ''
+    value = stored if role == 'admin' else stored.get('files_auth')
+    if not value:
+        return ''
+    return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()[:24]
+
+
 def _new_session(user: str, role: str) -> str:
     token = secrets.token_urlsafe(32)
     with _lock:
         sessions = _load_sessions()
-        sessions[_key(token)] = {'user': user, 'role': role,
+        sessions[_key(token)] = {'user': user, 'role': role, 'tag': _password_tag(user, role),
                                  'expires_at': (_now() + timedelta(days=SESSION_DAYS)).isoformat()}
         _save_sessions(sessions)
     return token
@@ -101,6 +113,11 @@ def current() -> Optional[Dict[str, Any]]:
         sessions = _load_sessions()
         session = sessions.get(_key(token))
         if not session:
+            return None
+        tag = _password_tag(session.get('user', ''), session.get('role', ''))
+        if not tag or tag != session.get('tag'):
+            del sessions[_key(token)]           # password changed or person removed
+            _save_sessions(sessions)
             return None
         # People keep using Files: renew at most once an hour.
         renewed = (_now() + timedelta(days=SESSION_DAYS)).isoformat()

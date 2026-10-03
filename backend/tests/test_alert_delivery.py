@@ -138,3 +138,25 @@ def test_email_is_sent_with_starttls_and_login_errors_are_explained():
     ok, error = ad.send_email(email, "s", "b", smtp_module=FakeModule)
     FakeSMTP.fail_login = False
     assert not ok and "app password" in error
+
+
+def test_settings_saved_while_sending_are_kept(tmp_path):
+    path = str(tmp_path / "d.json")
+    state = ad.load_state(path)
+    state["report"]["weekly"] = False
+    ad.save_state(state, path)
+    ad.run_once(collect=lambda: [DISK], now=datetime(2026, 10, 1, 12), path=path, send=lambda s, a, b: ["email"],
+                pools=lambda: [])
+
+    def slow_send(state, subject, body):
+        # Meanwhile the admin sets up email on the settings page.
+        changed = ad.load_state(path)
+        changed["email"]["recipient"] = "new@example.com"
+        changed["report"]["weekly"] = True
+        ad.save_state(changed, path)
+        return ["email"]
+
+    after = ad.run_once(collect=lambda: [DISK], now=datetime(2026, 10, 1, 12, 5), path=path, send=slow_send,
+                        pools=lambda: [])
+    assert after["email"]["recipient"] == "new@example.com" and after["report"]["weekly"] is True
+    assert after["sent"] == ["smart-sdb"]

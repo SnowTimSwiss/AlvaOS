@@ -274,8 +274,10 @@ def missing_recycle_bin(smb_conf, shares_state):
     for share in shares_state.values():
         if not isinstance(share, dict) or share.get('protocol') != 'smb' or not share.get('name'):
             continue
-        perms = normalize_smb_permissions(share.get('smb_permissions'))
-        writable = not share.get('read_only') or any(r == 'write' for r in perms.values())
+        # Exactly the shares whose section would get the trash when written now.
+        writable = 'recycle:repository' in render_smb_share_config(
+            share['name'], share.get('path', ''), share.get('read_only', False), share.get('guest_access', False),
+            share.get('smb_permissions', {}))
         match = re.search(rf'\n\[{re.escape(share["name"])}\]\n(.*?)(?=\n\[|\n# AlvaOS Share:|\Z)', '\n' + smb_conf,
                           re.DOTALL)
         if writable and match and 'recycle:repository' not in match.group(1):

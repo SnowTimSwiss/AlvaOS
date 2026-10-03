@@ -1,5 +1,6 @@
 """AlvaOS Files: browsing and downloading shared folders (files_manager.py, alvaos-priv read-file)."""
 
+import json
 import importlib.machinery
 import importlib.util
 import os
@@ -107,3 +108,10 @@ def test_upload_reports_a_refusal_from_the_helper(monkeypatch):
     monkeypatch.setattr(fm, "_helper_cmd", lambda args, user=None: [sys.executable, "-c", script])
     result, error = fm.upload("/mnt/alvaos/main/Media", "a.bin", io.BytesIO(b"x" * 5_000_000), chunk=65536)
     assert result is None and "already there" in error
+
+
+def test_versions_take_the_current_folder_and_100_restore_points(capsys):
+    helper = load_helper()
+    argv = ["a.txt", "/mnt/alvaos/main/x"] + [f"/mnt/alvaos/main/.alvaos-snapshots/x/{i}" for i in range(100)]
+    assert helper.files_op("files-versions", argv) == 0
+    assert len(json.loads(capsys.readouterr().out)["versions"]) == 101

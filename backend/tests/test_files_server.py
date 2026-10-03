@@ -422,3 +422,17 @@ def test_an_upload_link_can_have_a_size_limit(client, monkeypatch):
     assert full.status_code == 413
     assert visitor.post(f"/api/public/{token}/upload/start", json={"name": "c.bin"}, headers=H).status_code == 413
     assert visitor.get(f"/api/public/{token}").get_json()["room_bytes"] == 0
+
+
+def test_a_new_password_or_removal_ends_files_sessions(client, tmp_path):
+    sign_in(client, "anna", "anna-pass")
+    assert client.get("/api/me").status_code == 200
+    users = json.loads((tmp_path / "users.json").read_text())
+    users["anna"]["files_auth"] = hash_password("changed-pass")
+    (tmp_path / "users.json").write_text(json.dumps(users))
+    assert client.get("/api/me").status_code == 401
+    sign_in(client, "anna", "changed-pass")
+    assert client.get("/api/me").status_code == 200
+    del users["anna"]
+    (tmp_path / "users.json").write_text(json.dumps(users))
+    assert client.get("/api/me").status_code == 401

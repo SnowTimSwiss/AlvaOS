@@ -215,3 +215,13 @@ def test_network_deletes_go_to_the_trash_of_writable_shares():
              "2": {"name": "New", "protocol": "smb", "smb_permissions": {"anna": "write"}},
              "3": {"name": "Media", "protocol": "smb", "read_only": True, "smb_permissions": {"anna": "read"}}}
     assert sm.missing_recycle_bin(conf, state) == ["Family"]
+
+
+def test_a_share_everyone_may_only_read_is_not_restarted_for_every_start():
+    import shares_manager as sm
+    section = sm.render_smb_share_config("Docs", "/mnt/alvaos/main/Docs", False, False, {"anna": "read"})
+    assert "recycle" not in section
+    conf = "[global]\n\n# AlvaOS Share: Docs" + section.split("# AlvaOS Share: Docs", 1)[1]
+    state = {"1": {"name": "Docs", "path": "/mnt/alvaos/main/Docs", "protocol": "smb", "read_only": False,
+                   "smb_permissions": {"anna": "read"}}}
+    assert sm.missing_recycle_bin(conf, state) == []
