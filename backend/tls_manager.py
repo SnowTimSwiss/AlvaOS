@@ -32,6 +32,7 @@ _lock = threading.Lock()
 # What the authority may sign for at all (X.509 name constraints, enforced by
 # browsers): this NAS's own name, home-network domains and private addresses.
 # A stolen authority key can then not be used to impersonate other websites.
+RECHECK_SECONDS = 3600   # addresses and the end date are looked at hourly
 PERMITTED_DOMAINS = ('local', 'lan', 'home', 'home.arpa', 'internal', 'localhost')
 PERMITTED_NETWORKS = ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '127.0.0.0/8', '100.64.0.0/10',
                       '169.254.0.0/16')
@@ -235,6 +236,30 @@ def ssl_context(tls_dir: Optional[str] = None) -> ssl.SSLContext:
     return context
 
 
+def refresh(context: ssl.SSLContext, tls_dir: Optional[str] = None, seen: Optional[float] = None) -> Optional[float]:
+    """Renew the server certificate when the addresses changed (a new DHCP
+    lease, the remote access tunnel) or it ends soon, and hand the new one to
+    the running server: new connections get it, open ones keep theirs.
+    Returns the certificate file's time, to pass in next time."""
+    p = paths(tls_dir)
+    try:
+        ensure_certificates(tls_dir)
+        mtime = os.path.getmtime(p['server.crt'])
+        if seen is not None and mtime != seen:
+            context.load_cert_chain(p['server.crt'], p['server.key'])
+        return mtime
+    except Exception as e:  # noqa: BLE001 - keep serving the certificate it has
+        print(f'HTTPS certificate not renewed: {e}')
+        return seen
+
+
+def keep_fresh(context: ssl.SSLContext, tls_dir: Optional[str] = None, stop: Optional[threading.Event] = None) -> None:
+    stop = stop or threading.Event()
+    seen = refresh(context, tls_dir)
+    while not stop.wait(RECHECK_SECONDS):
+        seen = refresh(context, tls_dir, seen)
+
+
 def serve_in_background(app, port: int, name: str, tls_dir: Optional[str] = None) -> Optional[threading.Thread]:
     """HTTPS for a WSGI app on `port`, next to its plain HTTP port."""
     try:
@@ -247,13 +272,14 @@ def serve_in_background(app, port: int, name: str, tls_dir: Optional[str] = None
             def log_request(self, code: Any = '-', size: Any = '-') -> None:
                 pass   # the HTTP side logs already
 
-        server = make_server('0.0.0.0', port, app, threaded=True, request_handler=Handler,
-                             ssl_context=ssl_context(tls_dir))
+        context = ssl_context(tls_dir)
+        server = make_server('0.0.0.0', port, app, threaded=True, request_handler=Handler, ssl_context=context)
     except Exception as e:  # noqa: BLE001 - HTTPS is extra; HTTP keeps working without it
         print(f'HTTPS for {name} not started on port {port}: {e}')
         return None
     thread = threading.Thread(target=server.serve_forever, name=f'https-{name}', daemon=True)
     thread.start()
+    threading.Thread(target=keep_fresh, args=(context, tls_dir), name=f'https-{name}-renew', daemon=True).start()
     print(f'{name} also on https port {port}')
     return thread
 

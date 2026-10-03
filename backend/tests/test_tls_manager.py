@@ -124,3 +124,32 @@ def test_the_authority_can_only_sign_for_home_names_and_private_addresses(tmp_pa
         with pytest.raises(ssl.SSLCertVerificationError):
             client_ctx.wrap_socket(raw, server_hostname="bank.example")
     listener.close()
+
+
+def _served_addresses(context, ca_file):
+    """The addresses in the certificate a new connection gets from `context`."""
+    import socket
+    import threading
+    a, b = socket.socketpair()
+    server = threading.Thread(target=lambda: context.wrap_socket(a, server_side=True).close(), daemon=True)
+    server.start()
+    client_ctx = ssl.create_default_context(cafile=ca_file)
+    client_ctx.check_hostname = False
+    with client_ctx.wrap_socket(b) as tls_sock:
+        cert = tls_sock.getpeercert()
+    server.join(5)
+    return {value for kind, value in cert.get("subjectAltName", ()) if kind == "IP Address"}
+
+
+def test_a_running_server_gets_the_renewed_certificate(tmp_path, monkeypatch):
+    d = str(tmp_path / "tls")
+    monkeypatch.setattr(tls, "local_names", lambda: (["nas"], ["127.0.0.1", "192.168.1.20"]))
+    tls.ensure_certificates(d)
+    context = tls.ssl_context(d)
+    seen = tls.refresh(context, d)
+    assert "100.96.96.1" not in _served_addresses(context, tls.paths(d)["ca.crt"])
+    # Remote access turns on: a new address appears while the server runs.
+    monkeypatch.setattr(tls, "local_names", lambda: (["nas"], ["127.0.0.1", "192.168.1.20", "100.96.96.1"]))
+    os.utime(tls.paths(d)["server.crt"], (1, 1))      # the file time must differ even within one second
+    tls.refresh(context, d, seen)
+    assert "100.96.96.1" in _served_addresses(context, tls.paths(d)["ca.crt"])

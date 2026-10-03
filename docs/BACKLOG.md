@@ -15,6 +15,18 @@ How to add an entry:
 
 ---
 
+## 2026-10-04 · HTTPS certificate follows new addresses while running; remote access closes its router port
+
+- The server certificate was checked only when AlvaOS started, and the
+  running HTTPS servers kept the one they had. A new address (DHCP, or the
+  remote access tunnel 100.96.96.1) gave certificate warnings until a
+  restart, and a NAS running past the certificate's end would have served
+  an expired one. Now checked hourly (`tls_manager.keep_fresh`); a renewed
+  certificate is loaded into the running server for new connections.
+  Tested with a real TLS handshake.
+- Turning remote access off now removes the port mapping it asked the
+  router for (UPnP); turning it on asks again.
+
 ## 2026-10-04 · Remote access: DuckDNS built in
 
 - Most homes get a new internet address now and then, and the devices'
