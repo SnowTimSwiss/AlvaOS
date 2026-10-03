@@ -15,6 +15,13 @@ How to add an entry:
 
 ---
 
+## 2026-10-04 · The Feedback button no longer covers the last row
+
+- On phones the floating Feedback button sat on the last buttons of a page
+  (e.g. "Remove" in Remote access, "Stop using it" on the backup disk).
+  While it is shown, `body.has-feedback-fab` gives the page 72 px more room
+  at the end; dismissing it takes the room away again.
+
 ## 2026-10-04 · Tests no longer write into /var/lib/alvaos
 
 - Importing `app_services` makes the backup and buddy managers, which wrote
