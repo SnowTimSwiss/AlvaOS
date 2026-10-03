@@ -15,6 +15,34 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · AlvaOS Files over WebDAV (port 8091)
+
+- `backend/files_dav.py`: the shares in Finder (Connect to Server), GNOME
+  Files (`dav://nas:8091/`), Windows and WebDAV file apps on phones. Same
+  name and password as for the shares (HTTP Basic, checked like the Files
+  sign-in, remembered for 10 minutes so not every request runs PBKDF2; the
+  same failed-attempt limit). The admin account is refused there (it would
+  act as root, and WebDAV cannot ask for a two-step code).
+- PROPFIND (root = one folder per share), GET/HEAD with ranges, PUT, MKCOL,
+  DELETE, MOVE, COPY (inside one share), LOCK/UNLOCK (acknowledged, so
+  Finder and Windows write), PROPPATCH (acknowledged). Every change runs as
+  the person through the existing helper operations. Nothing is
+  overwritten in place: PUT writes a hidden part file, the old file goes to
+  the trash, then the new one is renamed into place; DELETE and replacing
+  MOVE/COPY also go through the trash.
+- It runs in the same process as the Files app, but on Werkzeug's threaded
+  server: Waitress reads whole request bodies before the app sees them,
+  which would park big uploads on the system disk. Werkzeug streams them,
+  chunked ones too.
+- Files app: "Connect a computer" in the sidebar shows the address and the
+  steps for Mac, Linux, Windows and phones.
+- Real test with curl: a 30 MB chunked PUT arrived with the same SHA-256,
+  overwrite left the old file in the trash, MKCOL/MOVE/COPY/DELETE worked,
+  a read-only share refused PUT, a wrong password got 401.
+- **Note for next time:** Windows' WebDAV client only does Basic sign-in over
+  HTTPS by default, so on Windows SMB stays the way; this changes with HTTPS.
+  Try Finder on a real Mac once (it is picky about LOCK and PROPFIND).
+
 ## 2026-10-03 · AlvaOS Files: search in all shared folders
 
 - The search results have a switch: "In <this folder>" or "All shared

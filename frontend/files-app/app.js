@@ -35,6 +35,7 @@
         link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
         copy: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
         clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+        monitor: '<rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/>',
     };
     const icon = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[name] || P.file}</svg>`;
     const paintIcons = (root) => (root || document).querySelectorAll('[data-icon]').forEach((el) => { if (!el.firstChild) el.innerHTML = icon(el.dataset.icon); });
@@ -692,6 +693,27 @@
             }
         }));
     }
+
+    // WebDAV (files_dav.py, port 8091): the same folders in Finder, Windows
+    // Explorer or a file app on a phone.
+    $('connect-nav').addEventListener('click', () => {
+        closeSide();
+        const url = `http://${location.hostname}:8091/`;
+        const wrap = $('dialog');
+        wrap.innerHTML = `<div class="dialog wide"><h2>Open your folders on a computer</h2>
+            <p>Your shared folders also open in the file manager of a computer or phone, with the same name and password as here (WebDAV).${me?.role === 'admin' ? ' The admin account cannot be used there; sign in as one of the people from Storage › Users.' : ''}</p>
+            <div class="linkbox"><input readonly value="${esc(url)}" id="dav-url"><button type="button" class="btn primary" id="dav-copy">${icon('copy')}Copy</button></div>
+            <div class="howto">
+                <p><strong>Mac:</strong> Finder › Go › Connect to Server, paste the address.</p>
+                <p><strong>Linux:</strong> Files › Other Locations, enter <code>dav://${esc(location.hostname)}:8091/</code>.</p>
+                <p><strong>Windows:</strong> This PC › Map network drive › "Connect to a Web site…", paste the address. Windows only allows this over HTTPS unless it is set up for it; on Windows the shared folders (\\\\${esc(location.hostname)}) are the easier way.</p>
+                <p><strong>Phone:</strong> a file app with WebDAV, like Documents (iPhone) or Solid Explorer (Android).</p>
+            </div>
+            <div class="actions"><button type="button" class="btn primary" data-close>Done</button></div></div>`;
+        wrap.hidden = false;
+        $('dav-copy').onclick = () => copy(url);
+        wrap.querySelector('[data-close]').onclick = () => { wrap.hidden = true; wrap.innerHTML = ''; };
+    });
 
     $('links-nav').addEventListener('click', async () => {
         closeSide();

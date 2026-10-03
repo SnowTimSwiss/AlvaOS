@@ -1156,9 +1156,13 @@ def main() -> None:
     try:
         import waitress
     except ImportError:
+        import files_dav
+        files_dav.serve_in_background()
         app.run(host='0.0.0.0', port=PORT)
         return
     print(f'AlvaOS Files on port {PORT}')
+    import files_dav
+    files_dav.serve_in_background()
     waitress.serve(app, host='0.0.0.0', port=PORT, threads=8, ident='AlvaOS Files',
                    max_request_body_size=PIECE_LIMIT_BYTES + 1024 * 1024)
 

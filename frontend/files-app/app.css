@@ -271,3 +271,7 @@ body.public { display: flex; flex-direction: column; min-height: 100%; }
 .pub-drop-bar { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
 .pub-drop-bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
 .pub-drop-list li.done .pub-drop-bar { display: none; }
+.howto { font-size: 0.88rem; color: var(--muted); margin: 6px 0 14px; }
+.howto p { margin: 0 0 8px; }
+.howto strong { color: var(--text); }
+.howto code { font-size: 0.85em; background: var(--hover); padding: 1px 4px; border-radius: 4px; }
