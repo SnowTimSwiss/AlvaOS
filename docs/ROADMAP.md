@@ -28,7 +28,7 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 - **AlvaOS Files app** (port 8090, built in, turned on under Apps). Done: everyone signs in with their share password and gets their shares with their rights (Linux checks them), grid with thumbnails, viewer, uploads of any size in pieces that continue after a dropped connection, new folder, rename, trash. Next: HTTPS (needs a decision: a self-signed certificate means a browser warning once).
 - **Preview** of images, video, audio, PDF and text; photo thumbnails generated in the background.
 - **Share links**: done (read-only or upload-only "drop box", password, expiry, one list).
-- **Phone access** through the web UI (installable as a PWA), plus WebDAV so native file apps and desktop clients can connect.
+- **WebDAV**: done (port 8091, as the person). **Phone access** through the web UI works; installing it as an app (PWA) needs HTTPS.
 - **Trash** per share and **Previous versions** of a file: done in Files.
 - **Search**: by name done (folder and below, or all shared folders, as the person). Later: by content.
 - **Remote access** without port forwarding, over the existing WireGuard, with a simple "add this device" flow and QR code.
