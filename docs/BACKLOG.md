@@ -15,6 +15,29 @@ How to add an entry:
 
 ---
 
+## 2026-10-04 · Assistant: sees more, can do more, works with small models
+
+- New things it can look at: the backup disk, Buddy Backup, HTTPS, signed-in
+  devices, the system log and the log of one app, SMART details of one disk.
+  Logs are masked first (passwords, keys, tokens, user:password@ in
+  addresses, long random strings). Tools with an argument (`app_log`,
+  `disk_health`) check it against a pattern before it goes into the path.
+- New proposals (the person confirms each): make a shared folder for some
+  people or everyone, give or take one person's access, set a space limit,
+  turn on AlvaOS Files, copy to the backup disk now. Each is checked against
+  the real state (pool exists and is not the system, name free, people
+  exist, nobody locked out of a folder).
+- It knows which page is open and links pages like `[Backup](backup.html)`;
+  the chat shows links only to AlvaOS pages, anything else stays text.
+- Small local models sometimes write a tool call as JSON text instead of
+  making one; such text is now read as a call when it names a known tool.
+- Clear messages for: service not reachable (with the Ollama hint
+  `OLLAMA_HOST=0.0.0.0`), too slow, wrong API key, model not pulled.
+- Test: every proposal and every read tool points at a real route with the
+  right method (`test_every_assistant_proposal_points_at_a_real_endpoint`).
+- **Note for next time:** not tried with a real model (no model downloads in
+  the build container). Worth a run with Ollama llama3.1 / qwen2.5 on a NAS.
+
 ## 2026-10-03 · Backup disk: four fixes after a second look
 
 - "Safely remove" was undone by the 10-minute check: if the disk stayed

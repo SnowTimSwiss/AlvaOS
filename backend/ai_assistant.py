@@ -52,8 +52,26 @@ TOOLS: List[Tuple[str, str, str]] = [
     ('time', '/api/v1/system/time', 'Date, time and time zone'),
     ('services', '/api/v1/watchdog/status', 'Whether file sharing and apps are running'),
     ('files_app', '/api/v1/files-app', 'Whether AlvaOS Files is on'),
+    ('backup_disk', '/api/v1/backup/copy', 'The USB backup disk: chosen or not, connected, last copy, problems'),
+    ('buddy_backup', '/api/v1/backup/pairing/status', 'Buddy Backup: whether a second NAS is paired and reachable'),
+    ('https', '/api/v1/system/tls', 'The HTTPS certificate of this NAS and whether "HTTPS only" is on'),
+    ('signed_in_devices', '/api/v1/auth/sessions', 'Where AlvaOS is signed in: device, address, last use'),
+    ('system_log', '/api/v1/system/logs', 'The last lines of the system log (secrets masked), to find out why '
+                                          'something failed'),
 ]
 TOOL_PATHS = {name: path for name, path, _ in TOOLS}
+
+# Read tools that need one argument: name -> (description, argument, what it is,
+# allowed values, path). The value is checked before it goes into the path.
+PARAM_TOOLS: Dict[str, Tuple[str, str, str, 're.Pattern[str]', str]] = {
+    'app_log': ('The last lines of one app\'s log (secrets masked), to find out why it misbehaves',
+                'container', 'Name or id of the container from app_containers',
+                re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$'), '/api/v1/containers/{}/logs?lines=60'),
+    'disk_health': ('SMART details of one disk: errors, temperature, hours, reallocated sectors',
+                    'disk', 'The disk name from disks, like sda or nvme0n1',
+                    re.compile(r'^[a-z][a-z0-9]{1,15}$'), '/api/v1/storage/disks/{}/smart'),
+}
+LOG_TOOLS = {'system_log', 'app_log'}
 
 LEVELS = ('read', 'ask')   # only look / propose changes the person confirms
 
@@ -96,6 +114,41 @@ ACTION_SPECS: Dict[str, Dict[str, Any]] = {
         'description': 'Let hard disks sleep after some minutes without use (0 = never).',
         'parameters': {'minutes': {'type': 'integer', 'enum': [0, 10, 20, 30, 60]}},
     },
+    'create_shared_folder': {
+        'description': 'Make a new shared folder on a pool, for some people (they can read and change files) '
+                       'or for everyone on the home network.',
+        'parameters': {
+            'name': {'type': 'string', 'description': 'Folder name: letters, numbers, - and _, no spaces.'},
+            'pool_id': {'type': 'string', 'description': 'The id or name of the pool from storage_pools.'},
+            'people': {'type': 'array', 'items': {'type': 'string'},
+                       'description': 'Usernames from people who may open it. Leave empty with everyone=true.'},
+            'everyone': {'type': 'boolean', 'description': 'Everyone on the home network may open it.'},
+        },
+        'required': ['name', 'pool_id'],
+    },
+    'set_folder_access': {
+        'description': 'Give one person access to a shared folder (read, or read and change), or take it away.',
+        'parameters': {
+            'folder': {'type': 'string', 'description': 'Name of the shared folder from shared_folders.'},
+            'person': {'type': 'string', 'description': 'Username from people.'},
+            'access': {'type': 'string', 'enum': ['read', 'write', 'none']},
+        },
+    },
+    'set_folder_limit': {
+        'description': 'Set how much space a shared folder may use, in GB (0 = no limit).',
+        'parameters': {
+            'folder': {'type': 'string', 'description': 'Name of the shared folder from shared_folders.'},
+            'gigabytes': {'type': 'number', 'description': 'The limit in GB, 0 for no limit.'},
+        },
+    },
+    'turn_on_files_app': {
+        'description': 'Turn on AlvaOS Files: the people open their folders in the browser and share links.',
+        'parameters': {},
+    },
+    'copy_to_backup_disk': {
+        'description': 'Copy the newest restore points to the connected USB backup disk now.',
+        'parameters': {},
+    },
 }
 
 
@@ -115,12 +168,7 @@ def build_action(name: str, args: Dict[str, Any], read: Callable[[str], Tuple[in
                 'detail': 'Restore points of your shared folders are made now. This takes a moment and changes '
                           'no files.', 'method': 'POST', 'path': '/api/v1/backup/run', 'body': {'backup_type': 'pool'}}
     if name == 'start_data_check':
-        wanted = str(args.get('pool_id') or '').strip()
-        _, data = read('/api/v1/storage/pools')
-        pool = next((p for p in _find(data, 'pools') if wanted and wanted in (str(p.get('id')), str(p.get('name')))),
-                    None)
-        if not pool or pool.get('is_system_pool'):
-            raise ValueError(f'There is no storage pool "{wanted}".')
+        pool = _pool(args.get('pool_id'), read)
         return {'title': f'Start a data check of "{pool.get("name") or pool.get("id")}"',
                 'detail': 'Every block is read and bad copies are repaired from the good one. It takes a few '
                           'hours, the NAS is a little slower meanwhile; you can stop it on the Storage page.',
@@ -191,7 +239,113 @@ def build_action(name: str, args: Dict[str, Any], read: Callable[[str], Tuple[in
                 f'Let hard disks sleep after {minutes} minutes without use',
                 'detail': 'Applies to the spinning data disks; SSDs and the system disk are left alone.',
                 'method': 'POST', 'path': '/api/v1/storage/disk-power', 'body': {'spindown_minutes': minutes}}
+    if name == 'create_shared_folder':
+        folder = str(args.get('name') or '').strip()
+        if not re.match(r'^[A-Za-z0-9_-]{1,63}$', folder):
+            raise ValueError('Folder names use letters, numbers, "-" and "_", no spaces (up to 63 characters).')
+        _, shares = read('/api/v1/storage/shares')
+        if any(str(s.get('name') or '').lower() == folder.lower() for s in _find(shares, 'shares')):
+            raise ValueError(f'There is already a shared folder "{folder}".')
+        pool = _pool(args.get('pool_id'), read)
+        everyone = args.get('everyone') is True
+        people = _people(args.get('people'), read)
+        if not everyone and not people:
+            raise ValueError('Say who may open the folder: some people, or everyone on the home network.')
+        who = 'everyone on your home network' if everyone else \
+            (', '.join(people[:-1]) + ' and ' + people[-1] if len(people) > 1 else people[0])
+        return {'title': f'Make the shared folder "{folder}" on "{pool.get("name") or pool.get("id")}"',
+                'detail': f'A new, empty folder that {who} can open and change from their computers.',
+                'method': 'POST', 'path': '/api/v1/storage/shares',
+                'body': {'name': folder, 'protocol': 'smb', 'pool_id': pool.get('id'), 'folder': folder,
+                         'new_folder': True, 'guest_access': everyone,
+                         'smb_permissions': {p: 'write' for p in people}}}
+    if name == 'set_folder_access':
+        share = _share(args.get('folder'), read)
+        person = (_people([args.get('person')], read) or [''])[0]
+        access = str(args.get('access') or '')
+        if not person:
+            raise ValueError(f'There is no person "{args.get("person")}".')
+        if access not in ('read', 'write', 'none'):
+            raise ValueError('Access is read, write or none.')
+        if share.get('protocol') != 'smb':
+            raise ValueError('Access per person is only for folders shared with Windows/Mac file sharing (SMB).')
+        perms = {str(k): str(v) for k, v in (share.get('smb_permissions') or {}).items()}
+        perms.pop(person, None)
+        if access != 'none':
+            perms[person] = access
+        if not share.get('guest_access') and not any(v in ('read', 'write') for v in perms.values()):
+            raise ValueError('Then nobody could open the folder any more; give someone else access first.')
+        what = {'read': 'may open and read', 'write': 'may open and change', 'none': 'can no longer open'}[access]
+        return {'title': f'{person} {what} "{share.get("name")}"',
+                'detail': 'Changes who can open the folder over the network and in AlvaOS Files.',
+                'method': 'PUT', 'path': '/api/v1/storage/shares/permissions',
+                'body': {'share_id': share.get('id'), 'smb_permissions': perms,
+                         'guest_access': bool(share.get('guest_access'))}}
+    if name == 'set_folder_limit':
+        share = _share(args.get('folder'), read)
+        try:
+            gb = float(str(args.get('gigabytes')))
+        except (TypeError, ValueError):
+            gb = -1
+        if gb < 0 or gb > 1_000_000:
+            raise ValueError('Give the limit in GB, or 0 for no limit.')
+        size = f'{gb:g} GB'
+        return {'title': f'No space limit for "{share.get("name")}"' if gb == 0 else
+                f'Limit "{share.get("name")}" to {size}',
+                'detail': 'Files already there stay. When the limit is reached, nothing more can be added.'
+                          if gb else 'The folder can use all free space of its pool.',
+                'method': 'PUT', 'path': '/api/v1/storage/shares/quota',
+                'body': {'share_id': share.get('id'), 'limit_gb': gb}}
+    if name == 'turn_on_files_app':
+        return {'title': 'Turn on AlvaOS Files',
+                'detail': 'The people can open their folders in the browser, upload and share links. '
+                          'You can turn it off again in Files.',
+                'method': 'POST', 'path': '/api/v1/files-app', 'body': {'enabled': True}}
+    if name == 'copy_to_backup_disk':
+        _, data = read('/api/v1/backup/copy')
+        data = data if isinstance(data, dict) else {}
+        if not data.get('enabled'):
+            raise ValueError('There is no backup disk yet; choose one on the Backup page.')
+        if not data.get('connected'):
+            raise ValueError('The backup disk is not connected.')
+        return {'title': 'Copy to the backup disk now',
+                'detail': 'The newest restore points are copied to the USB disk. Leave it connected until '
+                          'the Backup page says the copy is done.',
+                'method': 'POST', 'path': '/api/v1/backup/copy/run', 'body': {}}
     raise ValueError(f'There is no action called {name}.')
+
+
+def _pool(wanted: Any, read: Callable[[str], Tuple[int, Any]]) -> Dict[str, Any]:
+    wanted = str(wanted or '').strip()
+    _, data = read('/api/v1/storage/pools')
+    pool = next((p for p in _find(data, 'pools') if wanted and wanted in (str(p.get('id')), str(p.get('name')))),
+                None)
+    if not pool or pool.get('is_system_pool'):
+        raise ValueError(f'There is no storage pool "{wanted}".')
+    return pool
+
+
+def _share(wanted: Any, read: Callable[[str], Tuple[int, Any]]) -> Dict[str, Any]:
+    wanted = str(wanted or '').strip().lower()
+    _, data = read('/api/v1/storage/shares')
+    share = next((s for s in _find(data, 'shares') if wanted and wanted in
+                  (str(s.get('name') or '').lower(), str(s.get('id') or '').lower())), None)
+    if not share:
+        raise ValueError(f'There is no shared folder "{wanted}".')
+    return share
+
+
+def _people(wanted: Any, read: Callable[[str], Tuple[int, Any]]) -> List[str]:
+    names = [str(n).strip() for n in (wanted if isinstance(wanted, list) else []) if str(n or '').strip()]
+    if not names:
+        return []
+    _, data = read('/api/v1/users')
+    known = {str(u.get('username') or u.get('name') or ''): u for u in _find(data, 'users')}
+    lower = {k.lower(): k for k in known if k}
+    unknown = [n for n in names if n.lower() not in lower]
+    if unknown:
+        raise ValueError(f'There is no person called {", ".join(unknown)}.')
+    return sorted({lower[n.lower()] for n in names})
 
 
 re_container = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$')
@@ -291,11 +445,17 @@ def tool_specs(level: str = 'read') -> List[Dict[str, Any]]:
     specs = [{'type': 'function', 'function': {'name': name, 'description': description,
                                                'parameters': {'type': 'object', 'properties': {}}}}
              for name, _, description in TOOLS]
+    specs += [{'type': 'function', 'function': {
+        'name': name, 'description': description,
+        'parameters': {'type': 'object', 'properties': {arg: {'type': 'string', 'description': arg_desc}},
+                       'required': [arg]}}}
+        for name, (description, arg, arg_desc, _, _) in PARAM_TOOLS.items()]
     if level == 'ask':
         specs += [{'type': 'function', 'function': {
             'name': name, 'description': 'PROPOSE (the person confirms): ' + spec['description'],
             'parameters': {'type': 'object', 'properties': spec['parameters'],
-                           'required': list(spec['parameters'])}}} for name, spec in ACTION_SPECS.items()]
+                           'required': spec.get('required', list(spec['parameters']))}}}
+            for name, spec in ACTION_SPECS.items()]
     return specs
 
 
@@ -311,13 +471,28 @@ def call_model(settings: Dict[str, Any], messages: List[Dict[str, Any]], post: O
     body: Dict[str, Any] = {'model': settings['model'], 'messages': messages, 'temperature': 0.2}
     if use_tools:
         body['tools'] = tool_specs(settings.get('level', 'read'))
-    res = post(settings['base_url'].rstrip('/') + '/chat/completions', headers=headers, json=body, timeout=120)
+    url = settings['base_url'].rstrip('/') + '/chat/completions'
+    try:
+        res = post(url, headers=headers, json=body, timeout=180)
+    except Exception as e:  # noqa: BLE001 - requests raises many kinds
+        kind = type(e).__name__
+        if 'Timeout' in kind:
+            raise RuntimeError('The AI service took too long to answer. A smaller model answers faster.') from e
+        if 'Connection' in kind:
+            raise RuntimeError(f'AlvaOS cannot reach the AI service at {settings["base_url"]}. Is it running, and '
+                               'reachable from the NAS? (For Ollama on another computer: OLLAMA_HOST=0.0.0.0)') from e
+        raise
     if getattr(res, 'status_code', 200) >= 400:
         detail = ''
         try:
             detail = str((res.json().get('error') or {}).get('message') or '')
         except Exception:  # noqa: BLE001 - any body
             detail = str(getattr(res, 'text', ''))[:200]
+        if res.status_code == 401:
+            raise RuntimeError('The AI service does not accept the API key. Check it in Settings › Assistant.')
+        if res.status_code == 404 and 'model' in detail.lower():
+            raise RuntimeError(f'The AI service does not know the model "{settings["model"]}". '
+                               f'(For Ollama: ollama pull {settings["model"]})')
         raise RuntimeError(f'The AI service answered {res.status_code}{": " + detail if detail else ""}')
     data = res.json()
     message = ((data.get('choices') or [{}])[0] or {}).get('message') or {}
@@ -338,12 +513,42 @@ def redact(data: Any) -> Any:
     return data
 
 
-def run_tool(name: str, read: Callable[[str], Tuple[int, Any]]) -> str:
+SECRET_TEXT = [
+    (re.compile(r'(?i)\bbearer\s+\S+'), 'Bearer (hidden)'),
+    (re.compile(r'(?i)\b(pass(?:word|wd)?|secret|token|api[_-]?key|auth(?:orization)?|cookie|session)'
+                r'(\s*[=:]\s*|\s+)("[^"]*"|\'[^\']*\'|\S+)'), r'\1\2(hidden)'),
+    (re.compile(r'[A-Za-z0-9+/_-]{32,}={0,2}'), '(hidden)'),     # long keys and tokens
+    (re.compile(r'://[^/\s:@]+:[^/\s@]+@'), '://(hidden)@'),     # user:password@ in addresses
+]
+
+
+def mask_text(data: Any) -> Any:
+    """Masks what looks like a password, key or token inside log text."""
+    if isinstance(data, str):
+        for pattern, replacement in SECRET_TEXT:
+            data = pattern.sub(replacement, data)
+        return data
+    if isinstance(data, dict):
+        return {k: mask_text(v) for k, v in data.items()}
+    if isinstance(data, list):
+        return [mask_text(v) for v in data]
+    return data
+
+
+def run_tool(name: str, read: Callable[[str], Tuple[int, Any]], args: Optional[Dict[str, Any]] = None) -> str:
     path = TOOL_PATHS.get(name)
+    if name in PARAM_TOOLS:
+        _, arg, _, allowed, template = PARAM_TOOLS[name]
+        value = str((args or {}).get(arg) or '').strip()
+        if not allowed.match(value):
+            return json.dumps({'error': f'Give {arg} as it appears in the list.'})
+        path = template.format(value)
     if not path:
         return json.dumps({'error': f'There is no tool called {name}.'})
     status, data = read(path)
     data = redact(data)
+    if name in LOG_TOOLS:
+        data = mask_text(data)
     text = json.dumps(data, default=str, ensure_ascii=False)
     if status >= 400:
         return json.dumps({'error': f'{path} answered {status}', 'detail': text[:500]})
@@ -358,12 +563,63 @@ def clean_history(history: Any) -> List[Dict[str, str]]:
     return out[-MAX_HISTORY:]
 
 
+def _args(function: Dict[str, Any]) -> Dict[str, Any]:
+    raw = function.get('arguments') or '{}'
+    try:
+        args = json.loads(raw) if isinstance(raw, str) else dict(raw)
+    except (ValueError, TypeError):
+        return {}
+    return args if isinstance(args, dict) else {}
+
+
+def calls_in_text(content: Any) -> List[Dict[str, Any]]:
+    """Small local models sometimes write a tool call as JSON text instead of
+    making one. Read it as a call when it names one of the tools."""
+    text = str(content or '').strip()
+    fenced = re.match(r'^```(?:json)?\s*(.*?)\s*```$', text, re.S)
+    text = fenced.group(1) if fenced else text
+    if not text.startswith(('{', '[')):
+        return []
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return []
+    known = set(TOOL_PATHS) | set(PARAM_TOOLS) | set(ACTION_SPECS)
+    calls = []
+    for i, item in enumerate(data if isinstance(data, list) else [data]):
+        if not isinstance(item, dict):
+            continue
+        inner = item.get('function')
+        call: Dict[str, Any] = inner if isinstance(inner, dict) else item
+        name = str(call.get('name') or '')
+        args = call.get('arguments', call.get('parameters', {}))
+        if name in known:
+            calls.append({'id': f'text-{i}', 'type': 'function',
+                          'function': {'name': name, 'arguments': json.dumps(args if isinstance(args, dict) else {})}})
+    return calls
+
+
+# The pages the assistant can point to; links to anything else are not shown.
+PAGES = {
+    'index.html': 'Dashboard', 'storage.html': 'Storage', 'files.html': 'Files', 'apps.html': 'Apps',
+    'backup.html': 'Backup', 'updates.html': 'Updates', 'system.html': 'Settings',
+}
+LINK_PROMPT = (
+    ' When the person should do something by hand, link the page like [Backup](backup.html). Pages: '
+    'index.html (Dashboard), storage.html#pools, storage.html#disks, storage.html#shares (shared folders), '
+    'storage.html#users (people), files.html, apps.html, backup.html, updates.html, system.html#network, '
+    'system.html#security, system.html#alerts, system.html#power, system.html#assistant, system.html#logs.'
+)
+
+
 def chat(settings: Dict[str, Any], history: Any, read: Callable[[str], Tuple[int, Any]],
-         post: Optional[Callable] = None) -> Dict[str, Any]:
+         post: Optional[Callable] = None, page: str = '') -> Dict[str, Any]:
     """Answer the last question. Returns {'reply', 'looked_at', 'proposals'};
     proposals (at the "ask" level) are changes the person still has to confirm."""
     level = settings.get('level', 'read')
-    prompt = SYSTEM_PROMPT + (ASK_PROMPT if level == 'ask' else READ_PROMPT)
+    prompt = SYSTEM_PROMPT + (ASK_PROMPT if level == 'ask' else READ_PROMPT) + LINK_PROMPT
+    if page in PAGES:
+        prompt += f' The person has the {PAGES[page]} page open.'
     messages: List[Dict[str, Any]] = [{'role': 'system', 'content': prompt}] + clean_history(history)
     if len(messages) < 2 or messages[-1]['role'] != 'user':
         raise ValueError('Ask something first.')
@@ -376,7 +632,7 @@ def chat(settings: Dict[str, Any], history: Any, read: Callable[[str], Tuple[int
 
     for _ in range(MAX_ROUNDS):
         message = call_model(settings, messages, post)
-        calls = message.get('tool_calls') or []
+        calls = message.get('tool_calls') or calls_in_text(message.get('content'))
         if not calls:
             return answer(message)
         messages.append({'role': 'assistant', 'content': message.get('content') or '', 'tool_calls': calls})
@@ -391,9 +647,7 @@ def chat(settings: Dict[str, Any], history: Any, read: Callable[[str], Tuple[int
                     result = {'error': 'Enough proposals for now; let the person decide first.'}
                 else:
                     try:
-                        raw_args = function.get('arguments') or '{}'
-                        args = json.loads(raw_args) if isinstance(raw_args, str) else dict(raw_args)
-                        proposals.append(build_action(name, args if isinstance(args, dict) else {}, read))
+                        proposals.append(build_action(name, _args(function), read))
                         result = {'proposed': proposals[-1]['title'],
                                   'note': 'Shown to the person; it runs only if they confirm.'}
                     except (ValueError, TypeError) as e:
@@ -401,7 +655,8 @@ def chat(settings: Dict[str, Any], history: Any, read: Callable[[str], Tuple[int
                 messages.append({'role': 'tool', 'tool_call_id': call_id, 'content': json.dumps(result)})
                 continue
             looked_at.append(name)
-            messages.append({'role': 'tool', 'tool_call_id': call_id, 'content': run_tool(name, read)})
+            messages.append({'role': 'tool', 'tool_call_id': call_id,
+                             'content': run_tool(name, read, _args(function))})
     message = call_model(settings, messages + [{'role': 'user', 'content': 'Answer now with what you found.'}],
                          post, use_tools=False)
     return answer(message)

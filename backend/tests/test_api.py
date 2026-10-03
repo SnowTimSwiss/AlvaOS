@@ -413,7 +413,7 @@ def test_assistant_proposals_run_only_on_the_persons_click(backend, monkeypatch,
     client = module.app.test_client()
     client.post("/api/v1/ai/settings", json={"enabled": True, "level": "ask", "base_url": "http://10.0.0.5:11434/v1"},
                 headers=headers)
-    monkeypatch.setattr(ai_assistant, "chat", lambda settings, history, read, post=None: {
+    monkeypatch.setattr(ai_assistant, "chat", lambda settings, history, read, post=None, page="": {
         "reply": "Shall I?", "looked_at": [], "proposals": [{
             "title": "Check services", "detail": "d", "method": "POST", "path": "/api/v1/watchdog/check", "body": {}}]})
     ran = []
@@ -460,3 +460,34 @@ def test_https_only_redirects_plain_http_but_not_peers_or_the_certificate(backen
     client.post("/api/v1/system/tls", json={"https_only": False}, headers=headers, environ_base=lan,
                 base_url="https://nas.local:8443")
     assert not tls_manager.https_only()
+
+
+def test_every_assistant_proposal_points_at_a_real_endpoint(backend):
+    import ai_assistant
+    module, _ = backend
+    pools = {"pools": [{"id": "u1", "name": "main"}]}
+    shares = {"shares": [{"id": "share-1", "name": "Family", "protocol": "smb", "smb_permissions": {"anna": "write"}}]}
+    state = {
+        "/api/v1/storage/pools": pools, "/api/v1/storage/shares": shares,
+        "/api/v1/users": {"users": [{"username": "anna"}, {"username": "ben"}]},
+        "/api/v1/containers": {"containers": [{"ID": "abc123def456", "Names": "jellyfin"}]},
+        "/api/v1/apps/installed": {"apps": [{"app_id": "jellyfin"}]},
+        "/api/v1/backup/copy": {"enabled": True, "connected": True},
+        "/api/v1/updates/alvaos/check": {"update_available": True, "latest_version": "1.0", "release": {"assets": [
+            {"name": "a.deb", "browser_download_url": "https://x/a.deb"},
+            {"name": "a.deb.sig", "browser_download_url": "https://x/a.deb.sig"}]}},
+    }
+    args = {"start_data_check": {"pool_id": "main"}, "restart_app": {"container": "jellyfin"},
+            "turn_on_automatic_backups": {"every": "day"}, "update_app": {"app_id": "jellyfin"},
+            "set_disk_sleep": {"minutes": 20}, "create_shared_folder": {"name": "X", "pool_id": "u1", "everyone": True},
+            "set_folder_access": {"folder": "Family", "person": "ben", "access": "read"},
+            "set_folder_limit": {"folder": "Family", "gigabytes": 10}}
+    adapter = module.app.url_map.bind("localhost")
+    for name in ai_assistant.ACTION_SPECS:
+        action = ai_assistant.build_action(name, args.get(name, {}), lambda p: (200, state.get(p, {})))
+        endpoint, _ = adapter.match(action["path"], method=action["method"])   # raises when there is none
+        assert endpoint, name
+    for name, path, _ in ai_assistant.TOOLS:
+        assert adapter.match(path, method="GET"), name
+    for name, (_, _, _, _, template) in ai_assistant.PARAM_TOOLS.items():
+        assert adapter.match(template.format("sda").split("?")[0], method="GET"), name
