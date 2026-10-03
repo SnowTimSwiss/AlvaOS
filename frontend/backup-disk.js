@@ -43,17 +43,17 @@
             return;
         }
         const stale = state.stale;
-        pill(state.connected ? (state.last_error ? 'Last copy failed' : 'Connected') : stale ? 'Not connected for a week' : 'Not connected',
-            state.last_error ? 'bad' : stale ? 'warn' : state.connected ? 'ok' : '');
+        pill(state.running ? 'Copying…' : state.ejected ? 'Safe to unplug' : state.connected ? (state.last_error ? 'Last copy failed' : 'Connected') : stale ? 'Not connected for a week' : 'Not connected',
+            state.running ? '' : state.ejected ? 'ok' : state.last_error ? 'bad' : stale ? 'warn' : state.connected ? 'ok' : '');
         body.innerHTML = `
-            <p class="metric-sub card-help">"${esc(state.pool_name)}" keeps a second copy of your restore points. ${state.connected ? 'It is connected; new restore points are copied on their own.' : 'Connect it now and then; copying starts on its own.'}</p>
+            <p class="metric-sub card-help">"${esc(state.pool_name)}" keeps a second copy of your restore points. ${state.ejected ? 'It was safely removed and can be unplugged now.' : state.connected ? 'It is connected; new restore points are copied on their own.' : 'Connect it now and then; copying starts on its own.'}</p>
             <div class="copy-facts">
                 <div><span>Last copy</span><strong>${state.last_copy_at ? esc(when(state.last_copy_at)) : 'Not yet'}</strong></div>
-                ${state.last_error ? `<div class="copy-error">${esc(state.last_error)}</div>` : ''}
+                ${state.last_error && !state.running ? `<div class="copy-error">${esc(state.last_error)}</div>` : ''}
             </div>
             <div class="copy-actions">
-                ${state.connected ? '<button type="button" class="btn-primary" id="copy-run">Copy now</button>' : ''}
-                ${state.mounted ? '<button type="button" class="btn-secondary" id="copy-eject">Safely remove</button>' : ''}
+                ${state.connected && !state.running ? '<button type="button" class="btn-primary" id="copy-run">Copy now</button>' : ''}
+                ${state.mounted && !state.running ? '<button type="button" class="btn-secondary" id="copy-eject">Safely remove</button>' : ''}
                 <button type="button" class="btn-secondary btn-quiet" id="copy-off">Stop using it</button>
             </div>`;
         $('copy-run')?.addEventListener('click', () => act(async () => { await api('/backup/copy/run', { method: 'POST', json: {} }); watch(); }, 'Copying to the backup disk. This can take a while the first time.'));
@@ -74,12 +74,12 @@
     // After "Copy now": look again a few times until the copy is done.
     function watch() {
         clearInterval(polling);
+        polling = 0;
         let rounds = 0;
-        const before = state && state.last_copy_at;
         polling = setInterval(async () => {
             rounds += 1;
             await load();
-            if ((state && state.last_copy_at !== before) || (state && state.last_error) || rounds > 60) clearInterval(polling);
+            if (!state || !state.running || rounds > 720) { clearInterval(polling); polling = 0; }
         }, 5000);
     }
 
@@ -92,6 +92,7 @@
             return;
         }
         render();
+        if (state.running && !polling) watch();   // a copy started by itself or in another tab
     }
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);

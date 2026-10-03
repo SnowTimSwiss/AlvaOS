@@ -83,6 +83,9 @@ class BackupCopier:
         self.settings_path = settings_path
         self.device_present = device_present or (lambda uuid: os.path.exists(f'/dev/disk/by-uuid/{uuid}'))
         self.is_mounted = is_mounted or os.path.ismount
+        # After "Safely remove" the disk stays unmounted until it was
+        # unplugged (or "Copy now" is pressed), even if it is still there.
+        self.ejected = False
 
     # ── Settings and state ───────────────────────────────────────────────
 
@@ -144,6 +147,7 @@ class BackupCopier:
                 stale = False
         return {**settings, 'pool_name': pool.get('name') or settings['pool_id'], 'connected': connected,
                 'mounted': bool(mount) and connected and self.is_mounted(mount), 'stale': stale,
+                'running': _lock.locked(), 'ejected': self.ejected and connected,
                 'choices': self.choices()}
 
     # ── Mounting ─────────────────────────────────────────────────────────
@@ -170,10 +174,15 @@ class BackupCopier:
         mount = str(pool.get('mount_point') or '')
         if not mount or not self.is_mounted(mount):
             return True, 'The backup disk can be unplugged.'
-        with _lock:   # never in the middle of a copy; umount writes everything out first
+        if not _lock.acquire(blocking=False):   # never in the middle of a copy
+            return False, 'A copy is running. Wait until it is done, then remove the disk.'
+        try:   # umount writes everything out first
             res, err = self.run([CMD['UMOUNT'], mount], timeout=120)
-        if err or not res or res.returncode != 0:
-            return False, 'The backup disk is still in use. Try again in a moment.'
+            if err or not res or res.returncode != 0:
+                return False, 'The backup disk is still in use. Try again in a moment.'
+            self.ejected = True
+        finally:
+            _lock.release()
         return True, 'The backup disk can be unplugged.'
 
     # ── Copying ──────────────────────────────────────────────────────────
@@ -206,6 +215,7 @@ class BackupCopier:
         if not _lock.acquire(blocking=False):
             return {'copied': [], 'error': 'A copy is running already.'}
         try:
+            self.ejected = False
             settings = self.settings()
             settings['last_try_at'] = _now().isoformat()
             mount, error = self._mount()
@@ -267,14 +277,18 @@ class BackupCopier:
     def needs_copy(self) -> bool:
         settings = self.settings()
         if not settings['enabled'] or not self.device_present(settings['pool_id']):
+            self.ejected = False   # unplugged: the next time it is back, copy again
             return False
-        copied = {os.path.basename(str(e.get('snapshot_path') or ''))
+        if self.ejected:
+            return False
+        # Folders backed up in the same run share snapshot names; compare per folder.
+        copied = {(str(e.get('source_path') or ''), os.path.basename(str(e.get('snapshot_path') or '')))
                   for e in self.backup.list_snapshots(snapshot_class='copy')}
         newest: Dict[str, str] = {}
         for entry in self.backup.list_snapshots(snapshot_class='data'):
             newest.setdefault(str(entry.get('source_path') or ''),
                               os.path.basename(str(entry.get('snapshot_path') or '')))
-        return any(name not in copied for name in newest.values())
+        return any((source, name) not in copied for source, name in newest.items())
 
     def serve_forever(self, stop: Optional[threading.Event] = None) -> None:
         """Copy whenever the disk is there and something new is waiting."""

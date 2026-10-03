@@ -15,6 +15,21 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · Backup disk: four fixes after a second look
+
+- "Safely remove" was undone by the 10-minute check: if the disk stayed
+  plugged in and a new restore point came, it was mounted again, so pulling
+  it later was not safe. It now stays unmounted until it was unplugged or
+  "Copy now" is pressed; the card says "Safe to unplug".
+- Folders backed up in the same run share snapshot names; the check
+  compared only names, so a failed copy of one folder was not tried again
+  until the next restore point. Now compared per folder.
+- "Safely remove" during a copy waited for the copy to end (hours the first
+  time). Now it says a copy is running.
+- The page stopped following "Copy now" right away when an earlier copy had
+  failed. The status now says whether a copy is running ("Copying…"); the
+  page follows it until it ends, also one that started by itself.
+
 ## 2026-10-03 · Backup disk: a second copy on a USB disk
 
 - Backup › Backup disk: choose a pool (usually a USB disk) that holds no

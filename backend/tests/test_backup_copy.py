@@ -141,3 +141,33 @@ def test_a_week_without_a_copy_is_noticed(setup):
 def test_slug_names_a_folder_per_source():
     assert bc.slug("/mnt/alvaos/main/Family") == "main__Family"
     assert bc.slug("/mnt/alvaos/main/a b") == "main__a_b"
+
+
+def test_a_safely_removed_disk_is_not_mounted_again_until_unplugged(setup):
+    copier, backup, ran, pipes, tmp_path = setup
+    copier.configure({"pool_id": "usb-uuid-0000000000000000000000"})
+    assert copier.needs_copy()
+    assert copier.eject()[0] and copier.ejected
+    assert not copier.needs_copy()                      # still plugged in: left alone
+    copier.device_present = lambda uuid: False          # unplugged ...
+    assert not copier.needs_copy() and not copier.ejected
+    copier.device_present = lambda uuid: True           # ... and back
+    assert copier.needs_copy()
+
+
+def test_folders_with_the_same_snapshot_name_are_copied_each(setup):
+    copier, backup, ran, pipes, tmp_path = setup
+    copier.configure({"pool_id": "usb-uuid-0000000000000000000000"})
+    backup.entries.append(entry("/mnt/alvaos/main/Photos", "20261002-030000-auto", 2))
+    backup.entries.append({**entry("/mnt/alvaos/main/Family", "20261002-030000-auto", 2),
+                           "id": "c", "snapshot_class": "copy"})
+    assert copier.needs_copy()                          # Photos is not on the disk yet
+
+
+def test_the_disk_is_not_removed_during_a_copy(setup):
+    copier, *_ = setup
+    copier.configure({"pool_id": "usb-uuid-0000000000000000000000"})
+    with bc._lock:
+        ok, message = copier.eject()
+    assert not ok and message.startswith("A copy is running")
+    assert copier.eject()[0]
