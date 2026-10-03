@@ -22,7 +22,7 @@ jobs:
           python -m pip install --upgrade pip
           # Enough to import the whole backend (API tests load every blueprint);
           # docker, waitress and the 2FA libraries are not needed for the suite.
-          pip install pytest flask pyyaml cryptography psutil requests
+          pip install pytest flask pyyaml cryptography psutil requests pillow
 
       # The backend keeps its state in /var/lib/alvaos, owned by the service
       # user on a NAS. Give the CI user the same layout.
