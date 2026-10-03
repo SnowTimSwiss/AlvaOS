@@ -356,11 +356,15 @@ def _collect_system_alerts():
 
     try:
         pools_state = load_pools_state()
+        import backup_copy
+        backup_disk = backup_copy.backup_disk_pool()
         if isinstance(pools_state, dict):
             for pool_id, pool_data in pools_state.items():
                 mount_point = str((pool_data or {}).get('mount_point') or '').strip()
                 if not mount_point:
                     continue
+                if backup_disk and str(pool_id) == backup_disk and not os.path.ismount(mount_point):
+                    continue   # the backup disk is unplugged most of the time; it has its own warning
                 pool_name = str((pool_data or {}).get('name') or pool_id)
                 if not os.path.ismount(mount_point):
                     alerts.append(_build_alert_item(

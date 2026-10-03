@@ -61,6 +61,13 @@ def save_settings(settings: Dict[str, Any], path: Optional[str] = None) -> Dict[
     return settings
 
 
+def backup_disk_pool(path: Optional[str] = None) -> str:
+    """The pool that is the backup disk, or ''. It is unplugged most of the
+    time, so it is not a pool that is "missing"."""
+    settings = load_settings(path)
+    return settings['pool_id'] if settings['enabled'] else ''
+
+
 def slug(source_path: str) -> str:
     """A folder name for one source: /mnt/alvaos/main/Family -> main__Family."""
     parts = [p for p in source_path.split('/') if p][2:] or ['root']

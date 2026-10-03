@@ -154,7 +154,9 @@
     }
 
     function renderStorage(system, alertsPayload) {
-        const pools = Array.isArray(system?.storage_pools) ? system.storage_pools : [];
+        // The backup disk is a pool too, but it is unplugged most of the time
+        // and holds copies, not the files: it is shown on the Backup page.
+        const pools = (Array.isArray(system?.storage_pools) ? system.storage_pools : []).filter((p) => !p.is_backup_disk);
         if (pools.length === 0) {
             setCard('storage', {
                 state: 'setup',

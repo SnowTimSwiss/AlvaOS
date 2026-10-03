@@ -74,6 +74,15 @@ function poolState(pool) {
     const members = poolMembers(pool);
     const missing = Math.max(members.filter((m) => m.missing).length, Number(pool.missing_count || 0));
     const failing = members.filter((m) => !m.missing && ((diskForMember(m) || {}).smart_status === 'failed' || memberErrors(pool, m) > 0));
+    if (pool.is_backup_disk && pool.mounted === false) {
+        return { pill: '<span class="pill">Backup disk</span>', tone: '', line: { tone: 'info', text: 'Not connected. That is normal: connect it now and then, and AlvaOS copies your restore points to it.' } };
+    }
+    if (pool.is_backup_disk && pool.status !== 'degraded') {
+        return { pill: '<span class="pill ok">Backup disk</span>', tone: '', line: null };
+    }
+    if (pool.status === 'missing') {
+        return { pill: '<span class="pill bad">Not connected</span>', tone: 'attention', line: { tone: 'bad', text: 'The disks of this pool are not connected. Connect them and restart the NAS; your files on them are not lost.' } };
+    }
     if (pool.is_managed === false && !pool.is_system_pool) {
         return { pill: '<span class="pill warn">Not imported</span>', tone: 'notice', line: { tone: 'warn', text: 'Found on disks connected to this NAS. Import it to use its data.' } };
     }

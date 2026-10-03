@@ -79,12 +79,14 @@ storage healthy, one shared folder.
 1. Backup › turn on automatic restore points (every hour).
 2. "Back up now"; then change a file and restore the old version, also a
    whole folder.
-3. **Backup disk (only on a real machine):** plug in disk 4 / a USB disk,
-   make it a pool in Storage (only that disk), then Backup › Backup disk ›
-   choose it › "Copy now". The card shows "Copying…" and then the time of
+3. **Backup disk (only on a real machine):** plug in disk 4 / a USB disk.
+   Backup › Backup disk offers it: "Erase and use as backup disk", type
+   ERASE; the first copy starts by itself. The card shows "Copying…" and then the time of
    the last copy. "Safely remove" › the card says "Safe to unplug"; unplug
    it; plug it in again: after at most 10 minutes it copies again.
-   Restore › the copies are listed ("on the backup disk").
+   Restore points › the copies are listed ("On the backup disk"); "Get
+   files" works while it is connected. Unplugged, Storage shows it as
+   "Backup disk · Not connected" and no alarm goes off.
 4. Buddy Backup with a second AlvaOS (a second VM) if you have one.
 
 ## 7. Remote access (only on a real machine with a router)

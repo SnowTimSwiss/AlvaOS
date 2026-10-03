@@ -137,6 +137,8 @@ def get_system_info():
     try:
         pools_state = load_pools_state()
         checks = health_checks.last_results()
+        import backup_copy
+        backup_disk = backup_copy.backup_disk_pool()
         for pool_id, pool_data in pools_state.items():
             mount_point = pool_data.get('mount_point')
             if not mount_point:
@@ -147,6 +149,7 @@ def get_system_info():
                 'name': pool_data.get('name', pool_id),
                 'mount_point': mount_point,
                 'mounted': bool(os.path.ismount(mount_point)),
+                'is_backup_disk': bool(backup_disk) and str(pool_id) == backup_disk,
             }
             check = checks.get(str(pool_id))
             if isinstance(check, dict):
