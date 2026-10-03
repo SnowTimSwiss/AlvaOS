@@ -132,3 +132,12 @@ def test_locks_are_acknowledged(client):
     res = client.open("/Family/a.txt", method="LOCK", headers=ANNA, data="<lockinfo/>")
     assert res.status_code == 200 and res.headers["Lock-Token"].startswith("<opaquelocktoken:")
     assert client.open("/Family/a.txt", method="UNLOCK", headers=ANNA).status_code == 204
+
+
+def test_a_new_password_ends_remembered_sign_ins_at_once(client, tmp_path):
+    assert client.open("/", method="PROPFIND", headers=ANNA).status_code == 207
+    users = json.loads((tmp_path / "users.json").read_text())
+    users["anna"]["files_auth"] = hash_password("a-new-password")
+    (tmp_path / "users.json").write_text(json.dumps(users))
+    assert client.open("/", method="PROPFIND", headers=ANNA).status_code == 401
+    assert client.open("/", method="PROPFIND", headers=auth("anna", "a-new-password")).status_code == 207

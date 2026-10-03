@@ -38,7 +38,8 @@ PART_SUFFIX = '.alvaos-upload'
 
 app = Flask(__name__)
 _cred_lock = threading.Lock()
-_good_credentials: Dict[str, Tuple[str, float]] = {}   # sha256(name:password) -> (name, until)
+# sha256(name:password) -> (name, until, the stored hash it was checked against)
+_good_credentials: Dict[str, Tuple[str, float, str]] = {}
 
 
 # ── Signing in (HTTP Basic, checked like the Files app) ─────────────────────
@@ -46,6 +47,11 @@ _good_credentials: Dict[str, Tuple[str, float]] = {}   # sha256(name:password) -
 def _challenge(message: str = 'Sign in with your name and password for the shared folders.'):
     return Response(message + '\n', 401, {'WWW-Authenticate': f'Basic realm="{REALM}", charset="UTF-8"',
                                          'Content-Type': 'text/plain; charset=utf-8'})
+
+
+def _stored_hash(user: str) -> str:
+    entry = fs._read_json(fs.USERS_FILE).get(user)
+    return str(entry.get('files_auth')) if isinstance(entry, dict) else ''
 
 
 def signed_in() -> Tuple[Optional[Dict[str, Any]], Optional[Response]]:
@@ -58,8 +64,8 @@ def signed_in() -> Tuple[Optional[Dict[str, Any]], Optional[Response]]:
     now = time.time()
     with _cred_lock:
         known = _good_credentials.get(key)
-        if known and known[1] > now:
-            return {'user': known[0], 'role': 'user'}, None
+    if known and known[1] > now and known[2] == _stored_hash(known[0]):
+        return {'user': known[0], 'role': 'user'}, None   # a changed password ends this at once
     if name == 'admin':
         return None, _challenge('The admin account cannot be used here. Sign in as a person from Storage › Users.')
     if fs._limited(request.remote_addr or ''):
@@ -70,7 +76,7 @@ def signed_in() -> Tuple[Optional[Dict[str, Any]], Optional[Response]]:
     with _cred_lock:
         for k in [k for k, v in _good_credentials.items() if v[1] < now]:
             del _good_credentials[k]
-        _good_credentials[key] = (who[0], now + CREDENTIAL_SECONDS)
+        _good_credentials[key] = (who[0], now + CREDENTIAL_SECONDS, _stored_hash(who[0]))
     return {'user': who[0], 'role': who[1]}, None
 
 
