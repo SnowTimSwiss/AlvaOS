@@ -514,3 +514,24 @@ def test_copies_on_the_backup_disk_say_whether_the_disk_is_there(backend, monkey
     token = auth_manager._create_session("root", role="admin")
     res = module.app.test_client().get("/api/v1/backup/snapshots?snapshot_class=copy", headers={"Authorization": token})
     assert [s["available"] for s in res.get_json()["snapshots"]] == [True, False]
+
+
+def test_pools_whose_disks_are_gone_say_so(backend, monkeypatch, tmp_path):
+    import api_storage
+    import backup_copy
+    module, state = backend
+    set_up(state)
+    pools = {"lost": {"name": "main", "mount_point": str(tmp_path / "main")},
+             "usb-1": {"name": "backup", "mount_point": str(tmp_path / "usb")}}
+    (tmp_path / "main").mkdir()
+    monkeypatch.setattr(api_storage, "detect_btrfs_pools", lambda: ([], None))
+    monkeypatch.setattr(api_storage, "load_pools_state", lambda: pools)
+    monkeypatch.setattr(backup_copy, "backup_disk_pool", lambda path=None: "usb-1")
+    with api_storage._storage_cache_lock:
+        api_storage.STORAGE_CACHE["pools"]["expires"] = 0
+    token = auth_manager._create_session("root", role="admin")
+    got = {p["id"]: p for p in module.app.test_client().get(
+        "/api/v1/storage/pools", headers={"Authorization": token}).get_json()["pools"]}
+    assert got["lost"]["status"] == "missing" and got["lost"]["mounted"] is False
+    assert got["lost"]["total_size"] == "Unknown"            # not the size of the system disk
+    assert got["usb-1"]["is_backup_disk"] and not got["lost"]["is_backup_disk"]

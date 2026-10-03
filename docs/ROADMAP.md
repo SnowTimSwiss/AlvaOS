@@ -39,7 +39,7 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 - **Quotas per share and personal folders: done** (Btrfs qgroups, only switched on for a pool once a limit is set there). Warning when a folder is nearly full: done. Next: a check on a real pool with many restore points how much slower qgroups make it.
 
 ### 3b. Backup to a USB disk
-- **Done (needs a test on real Btrfs).** Backup › Backup disk: pick a pool on a USB disk, AlvaOS copies the newest restore point of every source there (Btrfs send/receive, incremental) whenever the disk is connected, keeps 30 per source, "Safely remove" unmounts it. Copies show up in Restore and Files › Previous versions ("Get files"); a warning appears after a week without a copy. Next: make a fresh USB disk a backup disk in one step (formatting after a clear confirmation), today it has to be a pool first.
+- **Done (needs a test on real Btrfs).** Backup › Backup disk: pick a pool on a USB disk, AlvaOS copies the newest restore point of every source there (Btrfs send/receive, incremental) whenever the disk is connected, keeps 30 per source, "Safely remove" unmounts it. Copies show up in the restore points ("On the backup disk") and Files › Previous versions ("Get files"); a warning appears after a week without a copy. A fresh USB disk becomes the backup disk in one step (erase after typing ERASE): done.
 
 ### 4. AI
 - **Read-only assistant: done.** Settings › Assistant (off by default; Ollama at home, Ollama Cloud, OpenAI or any OpenAI-compatible API), chat panel in the top bar of every page, looks at the real state through a fixed list of read-only endpoints, secrets stripped.

@@ -171,3 +171,19 @@ def test_the_disk_is_not_removed_during_a_copy(setup):
         ok, message = copier.eject()
     assert not ok and message.startswith("A copy is running")
     assert copier.eject()[0]
+
+
+def test_an_unplugged_backup_disk_is_not_a_missing_pool(tmp_path, monkeypatch):
+    import alerts_manager
+    settings = tmp_path / "copy.json"
+    bc.save_settings({"enabled": True, "pool_id": "usb-1"}, str(settings))
+    monkeypatch.setattr(bc, "SETTINGS_FILE", str(settings))
+    pools = {"usb-1": {"name": "backup", "mount_point": str(tmp_path / "usb")},
+             "lost": {"name": "main", "mount_point": str(tmp_path / "main")}}
+    import storage_manager
+    monkeypatch.setattr(storage_manager, "load_pools_state", lambda: pools)
+    ids = {a["id"] for a in alerts_manager._collect_system_alerts()}
+    assert "pool-lost-unmounted" in ids and "pool-usb-1-unmounted" not in ids
+    assert bc.backup_disk_pool() == "usb-1"
+    bc.save_settings({"enabled": False, "pool_id": "usb-1"}, str(settings))
+    assert bc.backup_disk_pool() == ""

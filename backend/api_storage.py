@@ -182,6 +182,14 @@ def wipe_disk(disk_name):
     invalidate_storage_cache('disks', 'pools')
     return jsonify({'success': True, 'message': f'{disk_path} was erased and is ready for a pool.'})
 
+def _mark_backup_disk(pools):
+    """Copies of the pools, the backup disk marked (Backup › Backup disk)."""
+    import backup_copy
+    backup_disk = backup_copy.backup_disk_pool()
+    return [{**p, 'is_backup_disk': bool(backup_disk) and str(p.get('id')) == backup_disk}
+            if isinstance(p, dict) else p for p in pools]
+
+
 @bp.route('/api/v1/storage/pools', methods=['GET', 'POST', 'DELETE'])
 @require_auth(require_admin=True)
 def manage_pools():
@@ -192,7 +200,7 @@ def manage_pools():
         current_time = time.time()
         with _storage_cache_lock:
             if STORAGE_CACHE['pools']['expires'] > current_time:
-                return jsonify({'pools': STORAGE_CACHE['pools']['data']})
+                return jsonify({'pools': _mark_backup_disk(STORAGE_CACHE['pools']['data'])})
 
         pools = []
         
@@ -328,12 +336,15 @@ def manage_pools():
                         'total_size': 'Unknown',
                         'used_size': 'Unknown',
                         'raid_level': 'Single' if raid_level == 'single' else raid_level.upper(),
-                        'status': 'healthy',
+                        # Not found by btrfs and not mounted: its disks are not there.
+                        'status': 'healthy' if mount_point and os.path.ismount(mount_point) else 'missing',
                         'is_system_pool': mount_point == '/',
                         'is_managed': bool(mount_point)
                     }
                     if mount_point:
                         pool_entry['mount_point'] = mount_point
+                    if mount_point and os.path.ismount(mount_point):
+                        # Not mounted, df would report the disk the empty folder is on (the system disk).
                         try:
                             df_res = subprocess.run([CMD['DF'], '-h', mount_point], capture_output=True, text=True, timeout=2)
                             if df_res.returncode == 0:
@@ -356,10 +367,11 @@ def manage_pools():
 
         for pool in pools:
             pool.update(_usage_bytes(pool.get('mount_point')))
+            pool['mounted'] = bool(pool.get('mount_point')) and os.path.ismount(str(pool.get('mount_point')))
 
         with _storage_cache_lock:
             STORAGE_CACHE['pools'] = {'data': pools, 'expires': current_time + CACHE_TTL}
-        return jsonify({'pools': pools})
+        return jsonify({'pools': _mark_backup_disk(pools)})
 
     # CSRF required for state-changing operations
     session = _get_current_session()

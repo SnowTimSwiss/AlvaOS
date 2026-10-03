@@ -15,6 +15,22 @@ How to add an entry:
 
 ---
 
+## 2026-10-04 · Backup disk in one step; an unplugged backup disk is no alarm; missing pools say so
+
+- Backup › Backup disk lists empty disks (a USB disk just plugged in):
+  "Erase and use as backup disk" (type ERASE) makes a pool of it, chooses
+  it and starts the first copy. No detour through Storage any more.
+- An unplugged backup disk (the normal case) raised the critical alert
+  "Pool is not mounted" (also by email/Telegram) and made the dashboard say
+  "Offline". The backup disk pool is now marked (`is_backup_disk` in
+  `/storage/pools` and the system info), skipped by that alert and the
+  dashboard storage card, and shown in Storage as "Backup disk · Not
+  connected. That is normal". It has its own warning after 7 days.
+- Pools whose disks are gone were listed as "Healthy", and with the size of
+  the system disk (df on the empty mount folder). Now `status: missing`,
+  "Not connected" in Storage, no df on a folder that is not mounted, and a
+  `mounted` field for every pool.
+
 ## 2026-10-04 · CI checks the installer's package names in Debian trixie
 
 - The installer installs Debian trixie and asks apt for ~35 packages in one
