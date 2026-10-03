@@ -40,7 +40,7 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 ### 4. AI
 - **Read-only assistant: done.** Settings › Assistant (off by default; Ollama at home, Ollama Cloud, OpenAI or any OpenAI-compatible API), chat panel in the top bar of every page, looks at the real state through a fixed list of read-only endpoints, secrets stripped.
 - **"Suggests, I confirm" level: done** (backup now, data check, restart an app, check services, disk sleep). Also automatic backups, updating an app and installing an AlvaOS update. Next: "may do everything" (not recommended, clearly marked).
-- An optional step in first setup ("Want an assistant?").
+- Mentioned at the end of first setup, with Files and HTTPS: done (no extra step).
 - Answers that stream word by word instead of arriving at once.
 
 ---

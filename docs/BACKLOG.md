@@ -15,6 +15,13 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · First setup: what can be turned on later
+
+- The last page of the setup wizard lists three extras with links instead
+  of an extra step: AlvaOS Files (Apps), the assistant (Settings ›
+  Assistant) and the encrypted connection (Settings › Security). Setup
+  stays as short as it was.
+
 ## 2026-10-03 · Assistant: three more things it can suggest
 
 - Turn on automatic restore points (every hour, day or week), update an
