@@ -15,6 +15,17 @@ How to add an entry:
 
 ---
 
+## 2026-10-04 · Backup page lists the copies on the backup disk; a test checklist
+
+- The copies on the backup disk were registered as restore points but the
+  Backup page only asked for class `data`, so they never showed up there.
+  Now listed with "On the backup disk", only "Get files" (no "Restore all",
+  no Delete: they are thinned out on their own). The API adds `available`
+  for copies; "Get files" is greyed out while the disk is not connected.
+- `docs/TESTING.md`: a walk through everything by hand, in the order a new
+  owner would do it, with what should happen; steps that need a real
+  machine are marked.
+
 ## 2026-10-04 · First run on the installed layout: three fixes
 
 - Ran the backend and the Files server from `/opt/alvaos` as
