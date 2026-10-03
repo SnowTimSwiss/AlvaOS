@@ -15,6 +15,22 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · Updates: the way back is always there
+
+- The update cache now always keeps the signed package of the version that
+  is running; `cleanup_cache` (newest three) skips it. Before, downloading
+  three newer versions without installing them could delete it, and a
+  failed update then had nothing to go back to.
+- An install from the installer (which copies files, it does not install a
+  package) or a USB stick left no package of the running version at all.
+  Two minutes after the start, the backend now fetches it with its
+  signature from that version's GitHub release (`ensure_way_back`), retrying
+  every 6 hours for a week while offline. The helper checks the signature
+  when it is used, as for every update; a package of another version is
+  thrown away.
+- Updates › Settings shows "Safety net ready" or what is still missing
+  (`way_back_ready` in `GET /api/v1/updates/rollback`).
+
 ## 2026-10-03 · HTTPS on the home network, Files installable as an app
 
 - `backend/tls_manager.py`: every NAS makes its own certificate authority

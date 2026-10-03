@@ -17,7 +17,7 @@ Every page follows the same pattern as the reworked Dashboard, Storage and Backu
 ## Now
 
 ### 1. Remaining pages in the new pattern
-- **Updates follow-up:** keep the package of the installed version in the update cache even when it came from the installer or a USB stick (with its signature), so going back, by hand or automatically after a failed update, is always possible.
+- All pages follow it (Dashboard, Storage, Files, Apps, Backup, Updates, Settings, sign-in, setup). Keeping the update package of the running version for going back: done.
 
 ---
 
