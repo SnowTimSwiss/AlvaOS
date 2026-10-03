@@ -15,6 +15,14 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · Plain words in the last technical messages
+
+- Five messages still spoke Btrfs: "No eligible subvolume sources found",
+  "Create Btrfs pools/subvolumes first", "Local incoming data path
+  (subvolume)", "Restoring a full system snapshot prepares a rollback" and a
+  bare "Subvolume" label. They now say what it means for the person; the
+  Btrfs term stays only in the app details, in brackets.
+
 ## 2026-10-03 · AlvaOS Files: Photos, and files keep their date
 
 - "Photos" in the Files sidebar: every picture and video of the open

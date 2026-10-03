@@ -169,7 +169,7 @@ function renderSources() {
     const container = document.getElementById('backup-sources');
     if (!container) return;
     if (!backupSources.length) {
-        container.innerHTML = '<div class="metric-sub">No available backup sources found. Create Btrfs pools/subvolumes first.</div>';
+        container.innerHTML = '<div class="metric-sub">Nothing to back up yet. Create a storage pool and a shared folder first.</div>';
         return;
     }
 
@@ -193,7 +193,7 @@ function renderBuddyPeerSourcePicker(nodeId, configuredSources = []) {
     const buddySources = (Array.isArray(backupSources) ? backupSources : [])
         .filter((source) => String(source?.kind || '').toLowerCase() === 'subvolume');
     if (!buddySources.length) {
-        return '<div class="metric-sub">No eligible subvolume sources found.</div>';
+        return '<div class="metric-sub">No shared folders to choose from yet.</div>';
     }
     return `
         <div class="buddy-peer-sources">
