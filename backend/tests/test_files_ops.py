@@ -298,3 +298,28 @@ def test_a_finished_upload_keeps_its_own_date(share):
         fo.part_finish(s, name, 3, root, mtime=mtime)
         got = int(os.stat(os.path.join(s, name)).st_mtime)
         assert got == expect if expect else got > 1600000000      # nonsense dates are ignored
+
+
+def test_files_deleted_over_the_network_are_in_the_trash(share):
+    root, s, outside = share
+    fo.make_dir(s, "Docs", root)
+    smb = os.path.join(s, ".alvaos-trash", "smb", "Docs")
+    os.makedirs(smb)
+    for name, t in (("report.txt", 2000000000), ("Copy #1 of report.txt", 2000000100), ("old.txt", 100)):
+        path = os.path.join(smb, name)
+        open(path, "w").write(name)
+        os.utime(path, (t, t))
+    os.symlink(outside, os.path.join(smb, "link"))
+    items = [i for i in fo.list_trash(s, root) if i["id"].startswith("smb:")]
+    assert [(i["folder"], i["name"]) for i in items] == [("Docs", "report.txt"), ("Docs", "report.txt"), ("Docs", "old.txt")]
+    assert all(i["from_network"] for i in items)
+    back = fo.restore(s, "smb:Docs/report.txt", root)
+    assert back == {"folder": "Docs", "name": "report.txt"}
+    again = fo.restore(s, "smb:Docs/Copy #1 of report.txt", root)
+    assert again["name"] == "report (restored).txt"
+    assert open(os.path.join(s, "Docs", "report (restored).txt")).read() == "Copy #1 of report.txt"
+    for bad in ("smb:../etc/passwd", "smb:Docs/../../x", "smb:Docs/link", "smb:"):
+        with pytest.raises(fo.FileOpError):
+            fo.restore(s, bad, root)
+    assert fo.purge(s, 30, root) == 1                      # old.txt, from 1970
+    assert not os.path.exists(os.path.join(smb, "old.txt"))

@@ -14,6 +14,7 @@ TRASH_DAYS are removed for good.
 
 import json
 import os
+import re
 import secrets
 import shutil
 import stat
@@ -747,11 +748,162 @@ def list_trash(share_root: str, root: str = DATA_ROOT) -> List[Dict[str, Any]]:
                     })
                 finally:
                     os.close(ifd)
+            items += _smb_trash_items(tfd)
         finally:
             os.close(tfd)
+        items.sort(key=lambda i: str(i['deleted_at']), reverse=True)
         return items
     finally:
         os.close(sfd)
+
+
+# Files deleted over the network (Samba vfs_recycle, see shares_manager.py)
+# land in <trash>/smb/<their folder>/<name>; "Copy #2 of name" when the same
+# name was deleted before. Their id is "smb:<path>"; the time of deleting is
+# the file's time (recycle:touch_mtime).
+SMB_TRASH = 'smb'
+SMB_TRASH_LIMIT = 2000
+_SMB_COPY = re.compile(r'^Copy #\d+ of (.+)$')
+
+
+def _smb_trash_items(tfd: int) -> List[Dict[str, Any]]:
+    try:
+        rfd = _open_subdir(SMB_TRASH, tfd)
+    except OSError:
+        return []
+    items: List[Dict[str, Any]] = []
+
+    def walk(dfd: int, rel: str, depth: int) -> None:
+        try:
+            names = os.listdir(dfd)
+        except OSError:
+            return
+        for name in names:
+            if len(items) >= SMB_TRASH_LIMIT:
+                return
+            try:
+                st = os.lstat(name, dir_fd=dfd)
+            except OSError:
+                continue
+            path = f'{rel}/{name}' if rel else name
+            if stat.S_ISREG(st.st_mode):
+                original = _SMB_COPY.match(name)
+                items.append({'id': f'smb:{path}', 'name': original.group(1) if original else name, 'folder': rel,
+                              'type': 'file', 'size_bytes': st.st_size, 'from_network': True,
+                              'deleted_at': datetime.fromtimestamp(st.st_mtime).isoformat()})
+            elif stat.S_ISDIR(st.st_mode) and depth < SEARCH_DEPTH:
+                try:
+                    sub = _open_subdir(name, dfd)
+                except OSError:
+                    continue
+                try:
+                    walk(sub, path, depth + 1)
+                finally:
+                    os.close(sub)
+
+    try:
+        walk(rfd, '', 0)
+    finally:
+        os.close(rfd)
+    return items
+
+
+def _smb_parts(item_id: str) -> List[str]:
+    parts = item_id[len('smb:'):].split('/')
+    for part in parts:
+        check_name(part)
+    return parts
+
+
+def _restore_smb(sfd: int, tfd: int, item_id: str, root: str) -> Dict[str, str]:
+    parts = _smb_parts(item_id)
+    fds = []
+    try:
+        dfd = _open_subdir(SMB_TRASH, tfd)
+        fds.append(dfd)
+        for part in parts[:-1]:
+            dfd = _open_subdir(part, dfd)
+            fds.append(dfd)
+        stored = parts[-1]
+        try:
+            if not stat.S_ISREG(os.lstat(stored, dir_fd=dfd).st_mode):
+                raise FileOpError('This item is not in the trash any more.')
+        except FileNotFoundError:
+            raise FileOpError('This item is not in the trash any more.') from None
+        original = _SMB_COPY.match(stored)
+        name = original.group(1) if original else stored
+        folder = '/'.join(parts[:-1])
+        share_real = _real(sfd)
+        try:
+            target_fd = open_dir(os.path.join(share_real, folder), root) if folder else os.dup(sfd)
+            if not _inside(_real(target_fd), share_real):
+                os.close(target_fd)
+                raise FileOpError('Invalid folder.')
+        except FileOpError:
+            folder = ''
+            target_fd = os.dup(sfd)
+        try:
+            target = name
+            if _exists(target, target_fd):
+                stem, ext = os.path.splitext(name)
+                if not stem:
+                    stem, ext = name, ''
+                target = f'{stem} (restored){ext}'
+                n = 2
+                while _exists(target, target_fd):
+                    target = f'{stem} (restored {n}){ext}'
+                    n += 1
+            os.rename(stored, target, src_dir_fd=dfd, dst_dir_fd=target_fd)
+        finally:
+            os.close(target_fd)
+        return {'folder': folder, 'name': target}
+    finally:
+        for fd in reversed(fds):
+            os.close(fd)
+
+
+def _purge_smb(tfd: int, limit: datetime, everything: bool) -> int:
+    """Remove network-deleted files older than `limit`, then empty folders."""
+    try:
+        rfd = _open_subdir(SMB_TRASH, tfd)
+    except OSError:
+        return 0
+    removed = 0
+
+    def walk(dfd: int, depth: int) -> None:
+        nonlocal removed
+        for name in os.listdir(dfd):
+            try:
+                st = os.lstat(name, dir_fd=dfd)
+            except OSError:
+                continue
+            if stat.S_ISDIR(st.st_mode) and depth < SEARCH_DEPTH:
+                try:
+                    sub = _open_subdir(name, dfd)
+                except OSError:
+                    continue
+                try:
+                    walk(sub, depth + 1)
+                    empty = not os.listdir(sub)
+                finally:
+                    os.close(sub)
+                if empty:
+                    try:
+                        os.rmdir(name, dir_fd=dfd)
+                    except OSError:
+                        pass
+            elif everything or datetime.fromtimestamp(st.st_mtime) < limit:
+                try:
+                    os.unlink(name, dir_fd=dfd)
+                    removed += 1
+                except OSError:
+                    pass
+
+    try:
+        walk(rfd, 0)
+    finally:
+        os.close(rfd)
+    return removed
 
 
 def _check_stamp(stamp: str) -> str:
@@ -763,6 +915,19 @@ def _check_stamp(stamp: str) -> str:
 def restore(share_root: str, stamp: str, root: str = DATA_ROOT) -> Dict[str, str]:
     """Put an item back where it was. If the name is taken there, it comes back
     as "name (restored)"; if its folder is gone, it comes back to the share."""
+    if isinstance(stamp, str) and stamp.startswith('smb:'):
+        _smb_parts(stamp)
+        sfd = open_dir(share_root, root)
+        try:
+            tfd = _open_trash(sfd, create=False)
+            if tfd is None:
+                raise FileOpError('The trash is empty.')
+            try:
+                return _restore_smb(sfd, tfd, stamp, root)
+            finally:
+                os.close(tfd)
+        finally:
+            os.close(sfd)
     _check_stamp(stamp)
     sfd = open_dir(share_root, root)
     try:
@@ -825,6 +990,7 @@ def purge(share_root: str, days: int, root: str = DATA_ROOT, now: Optional[datet
         removed = 0
         limit = (now or datetime.now()) - timedelta(days=max(0, int(days)))
         try:
+            removed += _purge_smb(tfd, limit, not days)
             for stamp in os.listdir(tfd):
                 when = _stamp_time(stamp)
                 if when is None or (days and when > limit):

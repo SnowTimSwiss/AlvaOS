@@ -241,6 +241,17 @@ if __name__ == '__main__':
         threading.Thread(target=disk_power.apply_saved, args=(disk_inventory, run_sudo_command),
                          name='disk-power', daemon=True).start()
 
+    # Shares made before network deletes went to the trash get it once.
+    def _add_recycle_bins():
+        from shares_manager import add_recycle_bins, load_shares_state
+        try:
+            added = add_recycle_bins(load_shares_state())
+            if added:
+                print(f"Network deletes now go to the trash for: {', '.join(added)}")
+        except Exception as e:
+            print(f"Could not add the network trash to shares: {e}")
+    threading.Thread(target=_add_recycle_bins, name='smb-recycle', daemon=True).start()
+
     # AlvaOS Files: what has been in a share's trash for 30 days goes for good.
     def _purge_trash_daily():
         import time as _time

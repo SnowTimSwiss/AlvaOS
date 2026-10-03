@@ -252,6 +252,55 @@ def disable_samba_homes_share():
         print(f"Error disabling Samba homes share: {e}")
 
 
+# Deleting over the network (Windows, macOS) moves the file into the share's
+# trash, which AlvaOS Files shows and empties after 30 days (files_ops.py).
+RECYCLE_LINES = [
+    '    vfs objects = recycle',
+    '    recycle:repository = .alvaos-trash/smb',
+    '    recycle:keeptree = yes',
+    '    recycle:versions = yes',
+    '    recycle:touch_mtime = yes',
+    '    recycle:directory_mode = 2770',
+    '    recycle:exclude = *.tmp,~$*,.~lock.*#,Thumbs.db,.DS_Store',
+    '    recycle:exclude_dir = .alvaos-trash',
+    '    hide files = /.alvaos-trash/',
+]
+
+
+def missing_recycle_bin(smb_conf, shares_state):
+    """Names of writable SMB shares whose section in smb.conf has no trash yet
+    (made before AlvaOS moved network deletes to the trash)."""
+    names = []
+    for share in shares_state.values():
+        if not isinstance(share, dict) or share.get('protocol') != 'smb' or not share.get('name'):
+            continue
+        perms = normalize_smb_permissions(share.get('smb_permissions'))
+        writable = not share.get('read_only') or any(r == 'write' for r in perms.values())
+        match = re.search(rf'\n\[{re.escape(share["name"])}\]\n(.*?)(?=\n\[|\n# AlvaOS Share:|\Z)', '\n' + smb_conf,
+                          re.DOTALL)
+        if writable and match and 'recycle:repository' not in match.group(1):
+            names.append(share['name'])
+    return names
+
+
+def add_recycle_bins(shares_state):
+    """Once after an update: give existing shares the network trash."""
+    if platform.system() != 'Linux':
+        return []
+    res, err = run_sudo_command([CMD['CAT'], '/etc/samba/smb.conf'])
+    if err or not res:
+        return []
+    names = missing_recycle_bin(res.stdout, shares_state)
+    for share in shares_state.values():
+        if isinstance(share, dict) and share.get('name') in names:
+            update_samba_share_section(share['name'], render_smb_share_config(
+                share['name'], share['path'], share.get('read_only', False), share.get('guest_access', False),
+                share.get('smb_permissions', {})))
+    if names:
+        run_sudo_command([CMD['SYSTEMCTL'], 'restart', 'smbd'])
+    return names
+
+
 def render_smb_share_config(share_name, share_path, read_only, guest_access, permissions):
     """Render Samba share config with optional per-user permissions."""
     permissions = normalize_smb_permissions(permissions)
@@ -276,6 +325,9 @@ def render_smb_share_config(share_name, share_path, read_only, guest_access, per
         '    create mask = 0644',
         '    directory mask = 0755'
     ]
+
+    if not read_only or (use_permissions and write_users):
+        lines += RECYCLE_LINES
 
     if use_permissions:
         # Add guest account when enabled
