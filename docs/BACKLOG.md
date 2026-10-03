@@ -15,6 +15,16 @@ How to add an entry:
 
 ---
 
+## 2026-10-04 · Remote access: DuckDNS built in
+
+- Most homes get a new internet address now and then, and the devices'
+  configurations name the address. Remote access › "Your address changes?":
+  a DuckDNS name and token; AlvaOS updates it at once and every 10 minutes
+  and uses `<name>.duckdns.org` as the public address.
+- The token is stored with the other remote access secrets (0600) and never
+  shown again or sent to the page or the assistant. Errors ("refused",
+  "could not be reached") are shown under the name.
+
 ## 2026-10-04 · Remote access: the router opens the port by itself (UPnP), CGNAT is explained
 
 - "Open it automatically" asks the router over UPnP (`upnpc` from

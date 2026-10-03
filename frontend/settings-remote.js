@@ -50,6 +50,7 @@
             return;
         }
         const lan = (state.lan_addresses || [])[0] || 'this NAS';
+        const duck = state.duckdns || {};
         body.innerHTML = `
             <div class="set-row">
                 <div class="set-text"><div class="set-label"><label for="remote-endpoint">Public address of your home</label></div>
@@ -62,6 +63,19 @@
                     <button type="button" class="btn-primary" id="remote-save">Save</button>
                 </div>
             </div>
+            <details class="remote-ddns"${duck.domain ? ' open' : ''}>
+                <summary>${duck.domain ? `DuckDNS keeps <strong>${esc(duck.domain)}.duckdns.org</strong> up to date` : 'Your address changes? Get a free name from DuckDNS'}</summary>
+                <p class="set-desc">Most internet connections get a new address now and then. Make a free name at <span class="mono-text">duckdns.org</span> (sign in, add a domain) and enter it here with the token shown there; AlvaOS updates it every 10 minutes.</p>
+                <div class="remote-ddns-form">
+                    <label>Name <span class="remote-ddns-name"><input type="text" id="duck-domain" value="${esc(duck.domain)}" placeholder="myhome" autocomplete="off" spellcheck="false"><span>.duckdns.org</span></span></label>
+                    <label>Token <input type="password" id="duck-token" placeholder="${duck.domain ? 'Saved. Type to replace it.' : 'a1b2c3d4-…'}" autocomplete="off" spellcheck="false"></label>
+                    <div class="remote-ddns-actions">
+                        <button type="button" class="btn-primary" id="duck-save">Save</button>
+                        ${duck.domain ? '<button type="button" class="btn-secondary btn-quiet" id="duck-off">Stop using DuckDNS</button>' : ''}
+                    </div>
+                </div>
+                ${duck.domain ? `<p class="set-desc">${duck.last_error ? `<span class="remote-bad">${esc(duck.last_error)}</span>` : duck.last_update ? `Last updated ${esc(new Date(duck.last_update).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }))}.` : 'Not updated yet.'}</p>` : ''}
+            </details>
             <div class="set-row">
                 <div class="set-text"><div class="set-label">In your router</div>
                     <div class="set-desc">${state.upnp
@@ -96,6 +110,9 @@
                 window.showToast?.(e.message, 'error');
             }
         });
+        $('duck-save').addEventListener('click', () => save({ duckdns: { domain: $('duck-domain').value.trim(), token: $('duck-token').value.trim() } },
+            'Saved. The name now points to your home.'));
+        $('duck-off')?.addEventListener('click', () => save({ duckdns: null }, 'DuckDNS is no longer updated.'));
         $('remote-upnp')?.addEventListener('click', async (event) => {
             event.target.disabled = true;
             event.target.textContent = 'Asking the router...';

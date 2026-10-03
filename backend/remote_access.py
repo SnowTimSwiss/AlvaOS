@@ -24,6 +24,7 @@ import secrets
 import shutil
 import subprocess
 import threading
+import time
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -42,6 +43,11 @@ WEB_PORT = 8080
 UPNP_NAME = 'AlvaOS remote access'
 UPNP_LEASE_FALLBACK = 7 * 24 * 3600   # for routers that refuse permanent mappings
 CGNAT = ipaddress.ip_network('100.64.0.0/10')
+DUCKDNS_URL = 'https://www.duckdns.org/update'
+DUCKDNS_DOMAIN_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,62}$')
+DUCKDNS_TOKEN_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+CHECK_SECONDS = 600            # how often the dynamic address is updated
+UPNP_EVERY = 24 * 3600         # and the router asked again
 
 _lock = threading.Lock()
 
@@ -93,9 +99,11 @@ class RemoteAccess:
     def __init__(self, run_command: Callable, settings_path: Optional[str] = None,
                  config_path: Optional[str] = None, interface_up: Optional[Callable[[], bool]] = None,
                  lan_addresses: Optional[Callable[[], List[str]]] = None,
-                 run_local: Optional[Callable[[List[str]], str]] = None):
+                 run_local: Optional[Callable[[List[str]], str]] = None,
+                 http_get: Optional[Callable[..., Any]] = None):
         self.run = run_command
         self.run_local = run_local or _run_local   # upnpc needs no privileges
+        self.http_get = http_get
         self.settings_path = settings_path or SETTINGS_FILE
         self.config_path = config_path or CONFIG_PATH
         self.interface_up = interface_up or (lambda: os.path.exists(f'/sys/class/net/{INTERFACE}'))
@@ -115,8 +123,11 @@ class RemoteAccess:
             port = int(data.get('port') or DEFAULT_PORT)
         except (TypeError, ValueError):
             port = DEFAULT_PORT
+        raw_duck = data.get('duckdns')
+        duck: Dict[str, Any] = raw_duck if isinstance(raw_duck, dict) else {}
         return {'enabled': bool(data.get('enabled')), 'endpoint': str(data.get('endpoint') or ''),
                 'upnp': bool(data.get('upnp')),
+                'duckdns': {k: str(duck.get(k) or '') for k in ('domain', 'token', 'last_update', 'last_error')},
                 'port': port if 1024 <= port <= 65535 else DEFAULT_PORT,
                 'private_key': str(data.get('private_key') or ''), 'devices': devices}
 
@@ -142,6 +153,8 @@ class RemoteAccess:
         return {'enabled': state['enabled'], 'running': state['enabled'] and self.interface_up(),
                 'endpoint': state['endpoint'], 'port': state['port'], 'nas_address': NAS_ADDRESS,
                 'open_url': f'http://{NAS_ADDRESS}:{WEB_PORT}', 'lan_addresses': self.lan_addresses(),
+                'duckdns': {'domain': state['duckdns']['domain'], 'last_update': state['duckdns']['last_update'],
+                            'last_error': state['duckdns']['last_error']},   # never the token
                 'devices': devices, 'wireguard_installed': bool(_wg_quick()), 'upnp': state['upnp'],
                 'upnp_installed': bool(_upnpc())}
 
@@ -163,6 +176,21 @@ class RemoteAccess:
                 if not 1024 <= port <= 65535 or port == 51820:
                     return False, 'Choose a port between 1024 and 65535 (51820 is used by Buddy Backup).'
                 state['port'] = port
+            duck_changed = False
+            if 'duckdns' in payload:
+                duck = payload.get('duckdns') or {}
+                if not duck or not str(duck.get('domain') or '').strip():
+                    state['duckdns'] = {'domain': '', 'token': '', 'last_update': '', 'last_error': ''}
+                else:
+                    domain = str(duck.get('domain') or '').strip().lower().removesuffix('.duckdns.org')
+                    token = str(duck.get('token') or '').strip().lower() or state['duckdns']['token']
+                    if not DUCKDNS_DOMAIN_RE.match(domain):
+                        return False, 'Enter the DuckDNS name, like "myhome" for myhome.duckdns.org.'
+                    if not DUCKDNS_TOKEN_RE.match(token):
+                        return False, 'Enter the token from duckdns.org (it looks like a1b2c3d4-…).'
+                    state['duckdns'] = {'domain': domain, 'token': token, 'last_update': '', 'last_error': ''}
+                    state['endpoint'] = f'{domain}.duckdns.org'
+                    duck_changed = True
             if 'enabled' in payload:
                 state['enabled'] = bool(payload.get('enabled'))
             if state['enabled'] and not _wg_quick():
@@ -172,6 +200,8 @@ class RemoteAccess:
             self._server_key(state)
             self._save(state)
             ok, message = self._apply(state)
+        if duck_changed:
+            self.update_duckdns()
         if ok and port_changed and state['upnp'] and _upnpc():
             self.run_local([_upnpc() or 'upnpc', '-d', str(old_port), 'UDP'])   # no forgotten open port
             if state['enabled']:
@@ -221,18 +251,51 @@ class RemoteAccess:
             ok, message = self._apply(state)
             if not ok:
                 print(f'Remote access: {message}')
-        # A router forgets mappings when it restarts, and some only give them
-        # for a week: ask again now and every day.
+        # The dynamic address is kept up to date every few minutes; a router
+        # forgets port mappings when it restarts, so it is asked every day.
+        stop = stop or threading.Event()
+        last_upnp = 0.0
         while True:
             state = self.load()
-            if state['enabled'] and state['upnp']:
+            if state['duckdns']['domain']:
+                self.update_duckdns()
+            now = time.monotonic()
+            if state['enabled'] and state['upnp'] and (not last_upnp or now - last_upnp >= UPNP_EVERY):
+                last_upnp = now
                 ok, message, _ = self.open_router_port()
                 if not ok:
                     print(f'Remote access, router: {message}')
-            if stop is not None and stop.wait(24 * 3600):
+            if stop.wait(CHECK_SECONDS):
                 return
-            if stop is None:
-                threading.Event().wait(24 * 3600)
+
+    def update_duckdns(self) -> Tuple[bool, str]:
+        """Tell DuckDNS the home's current address (it sees it from the request)."""
+        with _lock:
+            state = self.load()
+            duck = state['duckdns']
+            if not duck['domain'] or not duck['token']:
+                return False, 'DuckDNS is not set up.'
+        get = self.http_get
+        if get is None:
+            import requests
+            get = requests.get
+        try:
+            res = get(DUCKDNS_URL, params={'domains': duck['domain'], 'token': duck['token'], 'ip': ''}, timeout=15)
+            answer = str(getattr(res, 'text', '')).strip()
+        except Exception as e:  # noqa: BLE001 - offline, DNS, TLS
+            answer, error = '', f'DuckDNS could not be reached ({type(e).__name__}).'
+        else:
+            error = '' if answer.startswith('OK') else \
+                'DuckDNS refused the update: check the name and the token.'
+        with _lock:
+            state = self.load()
+            if state['duckdns']['domain'] != duck['domain']:
+                return False, 'Changed meanwhile.'
+            state['duckdns']['last_error'] = error
+            if not error:
+                state['duckdns']['last_update'] = _now()
+            self._save(state)
+        return not error, error or f'{duck["domain"]}.duckdns.org points to your home.'
 
     # ── Devices ──────────────────────────────────────────────────────────
 

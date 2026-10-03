@@ -89,10 +89,14 @@ storage healthy, one shared folder.
 
 ## 7. Remote access (only on a real machine with a router)
 
-1. Settings › Remote access › turn on. "Find it" fills in the public address
-   (better: a dynamic DNS name like `xyz.duckdns.org`). Save.
-2. In the router, forward the UDP port shown (51821) to the NAS address
-   shown.
+1. Settings › Remote access › turn on. "Find it" fills in the public address.
+   Better: make a free name at duckdns.org and enter it with its token under
+   "Your address changes?"; "Last updated" appears within a few seconds.
+   If the page warns about CGNAT, remote access cannot work with this
+   internet connection until the provider gives a public IPv4 address.
+2. "Open it automatically" (UPnP; on a FRITZ!Box allow it first for the NAS
+   under Internet › Permit Access). Otherwise forward the UDP port shown
+   (51821) to the NAS address shown by hand.
 3. "Add a device" › name it › on the phone install WireGuard › scan the QR
    code. Turn off Wi-Fi on the phone (use mobile data), switch the tunnel
    on, open `http://100.96.96.1:8080`. AlvaOS opens; Files is at
