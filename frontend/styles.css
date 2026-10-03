@@ -2691,3 +2691,13 @@ body.ai-open .feedback-fab-wrap { display: none; }
 body.has-feedback-fab .content-scroll { padding-bottom: 72px; }
 .remote-warning { margin: 8px 0 4px; padding: 10px 12px; border-radius: 8px; font-size: 0.88rem;
     border: 1px solid var(--accent-warning); color: var(--text-primary); }
+.remote-ddns { margin: 4px 0 8px; padding: 10px 0; border-bottom: 1px solid var(--border-subtle); }
+.remote-ddns summary { cursor: pointer; font-size: 0.9rem; }
+.remote-ddns-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; align-items: end; }
+.remote-ddns-form label { display: grid; gap: 4px; font-size: 0.85rem; min-width: 0; }
+.remote-ddns-form input { width: 100%; min-width: 0; }
+.remote-ddns-name { display: flex; align-items: center; gap: 6px; }
+.remote-ddns-name span { color: var(--text-secondary); white-space: nowrap; }
+.remote-ddns-actions { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
+.remote-bad { color: var(--accent-danger); }
+@media (max-width: 640px) { .remote-ddns-form { grid-template-columns: 1fr; } }

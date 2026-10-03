@@ -161,3 +161,43 @@ def test_shared_or_double_nat_addresses_are_explained():
     assert "CGNAT" in ra.address_warning("100.71.4.2")
     assert "behind another router" in ra.address_warning("192.168.178.20")
     assert ra.address_warning("84.12.34.56") == "" and ra.address_warning("home.example.net") == ""
+
+
+class Answer:
+    def __init__(self, text):
+        self.text = text
+
+
+TOKEN = "a1b2c3d4-0000-1111-2222-333344445555"
+
+
+def test_duckdns_keeps_the_address_and_never_shows_the_token(remote, tmp_path):
+    asked = []
+    remote.http_get = lambda url, params, timeout: asked.append((url, params)) or Answer("OK")
+    ok, message = remote.configure({"enabled": True, "duckdns": {"domain": "MyHome.duckdns.org", "token": TOKEN}})
+    assert ok, message
+    assert asked == [(ra.DUCKDNS_URL, {"domains": "myhome", "token": TOKEN, "ip": ""})]
+    status = remote.status()
+    assert status["endpoint"] == "myhome.duckdns.org" and status["duckdns"]["last_update"]
+    assert TOKEN not in str(status)
+    # Saving again without the token keeps it.
+    assert remote.configure({"duckdns": {"domain": "myhome", "token": ""}})[0]
+    assert remote.load()["duckdns"]["token"] == TOKEN
+    remote.http_get = lambda url, params, timeout: Answer("KO")
+    assert not remote.update_duckdns()[0]
+    assert "refused" in remote.status()["duckdns"]["last_error"]
+    assert remote.configure({"duckdns": None})[0] and remote.load()["duckdns"]["token"] == ""
+
+
+def test_bad_duckdns_settings_are_refused(remote):
+    remote.http_get = lambda *a, **k: Answer("OK")
+    assert not remote.configure({"duckdns": {"domain": "my home", "token": TOKEN}})[0]
+    assert not remote.configure({"duckdns": {"domain": "myhome", "token": "nope"}})[0]
+
+
+def test_an_unreachable_duckdns_is_said_plainly(remote):
+    def boom(*a, **k):
+        raise ConnectionError("down")
+    remote.http_get = boom
+    remote.configure({"duckdns": {"domain": "myhome", "token": TOKEN}})
+    assert "could not be reached" in remote.status()["duckdns"]["last_error"]

@@ -31,7 +31,7 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 - **WebDAV** (8091, HTTPS 9444) and **installing Files as an app** (PWA, over HTTPS): done.
 - **Trash** per share (also for files deleted over SMB) and **Previous versions** of a file: done in Files.
 - **Search**: by name done (folder and below, or all shared folders, as the person). Later: by content.
-- **Remote access: first step done.** Settings › Remote access: WireGuard with "add this device", QR code for phones, a file for computers, last connected, remove. Needs one forwarded UDP port. UPnP (the router opens the port by itself) and a CGNAT warning: done. Next: optional "also reach the home network"; without any port only with a relay (Tailscale/Headscale or an own one).
+- **Remote access: first step done.** Settings › Remote access: WireGuard with "add this device", QR code for phones, a file for computers, last connected, remove. Needs one forwarded UDP port. UPnP (the router opens the port by itself), a CGNAT warning and DuckDNS: done. Next: optional "also reach the home network"; without any port only with a relay (Tailscale/Headscale or an own one).
 - **Native apps** for phone, PC and Mac (later): mainly Files and the other built-in apps, the system pages too; they bring the tunnel with them and open the NAS in their own window.
 - Lightweight: a few MB of code, no PHP and no extra database, and it does not run when nobody uses it.
 
