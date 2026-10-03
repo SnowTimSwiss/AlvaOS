@@ -806,3 +806,35 @@ if (document.readyState === 'loading') {
 } else {
     initNotificationCenter();
 }
+
+// Right after signing in: when and from where the previous sign-in was, and
+// wrong passwords tried since (auth_manager.record_signin). Shown once.
+(function showLastSignin() {
+    let info = null;
+    try {
+        info = JSON.parse(sessionStorage.getItem('alvaos_last_signin') || 'null');
+        sessionStorage.removeItem('alvaos_last_signin');
+    } catch (_e) {
+        return;
+    }
+    if (!info) return;
+    const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const when = (iso) => {
+        const d = new Date(iso);
+        return Number.isNaN(d.getTime()) ? '' : d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+    };
+    const show = () => {
+        if (typeof window.showToast !== 'function') return;
+        const prev = info.previous;
+        const parts = [];
+        if (prev) parts.push(`Last sign-in: ${esc(when(prev.at))}, ${esc(prev.device || 'unknown device')}${prev.ip ? ` from ${esc(prev.ip)}` : ''}.`);
+        if (info.failed > 0) {
+            parts.push(`<strong>${Number(info.failed)} wrong password${info.failed === 1 ? '' : 's'}</strong> since then${(info.failed_from || []).length ? ` (from ${info.failed_from.map(esc).join(', ')})` : ''}. If that was not you, change the password.`);
+        }
+        if (!parts.length) return;
+        window.showToast(parts.join(' '), info.failed > 0 ? 'warning' : 'info',
+            info.failed > 0 ? { link: 'system.html#security' } : {});
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => setTimeout(show, 600));
+    else setTimeout(show, 600);
+})();

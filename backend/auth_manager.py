@@ -22,6 +22,9 @@ from password_utils import hash_password
 SETUP_STATUS_FILE = '/var/lib/alvaos/setup_complete.json'
 AUTH_FILE = '/var/lib/alvaos/auth.json'
 SESSIONS_FILE = '/var/lib/alvaos/sessions.json'
+SIGNIN_LOG_FILE = '/var/lib/alvaos/signin_log.json'
+IDLE_HOURS = 8           # a session nobody used for this long ends (closed browser, lost laptop)
+FAILED_KEPT = 50
 
 # ── Session state ─────────────────────────────────────────────────────────────
 # token -> {username, role, expires_at, csrf_token}
@@ -126,7 +129,8 @@ def _load_sessions():
 def _purge_expired_sessions():
     """Remove sessions that have passed their expiry time."""
     now = _utc_now()
-    expired = [t for t, s in SESSIONS.items() if _parse_iso(s.get('expires_at')) and _parse_iso(s['expires_at']) < now]
+    expired = [t for t, s in SESSIONS.items()
+               if (_parse_iso(s.get('expires_at')) and _parse_iso(s['expires_at']) < now) or _idle(s, now)]
     for t in expired:
         del SESSIONS[t]
     expired_temp = [t for t, s in TEMP_2FA_TOKENS.items() if _parse_iso(s.get('expires_at')) and _parse_iso(s['expires_at']) < now]
@@ -180,6 +184,52 @@ def _create_session(username, role='admin'):
                        'created_at': now.isoformat(), 'last_seen_at': now.isoformat(), **_client_details()}
     _save_sessions()
     return token
+
+
+# ── Sign-in history ───────────────────────────────────────────────────────────
+# Shown right after signing in (never on the sign-in page, which anyone on the
+# network can open): when and from where the last sign-in was, and how many
+# wrong passwords were tried since.
+
+def _read_signin_log(path=None):
+    try:
+        with open(path or SIGNIN_LOG_FILE) as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_signin_log(data, path=None):
+    path = path or SIGNIN_LOG_FILE
+    try:
+        ensure_directories()
+        tmp = f'{path}.tmp'
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'w') as f:
+            json.dump(data, f)
+        os.replace(tmp, path)
+    except OSError as e:
+        print(f"Warning: could not write the sign-in log: {e}")
+
+
+def record_failed_signin(path=None):
+    data = _read_signin_log(path)
+    failed = [f for f in data.get('failed', []) if isinstance(f, dict)][-(FAILED_KEPT - 1):]
+    failed.append({'at': _utc_now().isoformat(), **_client_details()})
+    data['failed'] = failed
+    _write_signin_log(data, path)
+
+
+def record_signin(path=None):
+    """Note this sign-in; returns what the person should know about the
+    previous one: {'previous': {...} | None, 'failed': n, 'failed_from': [...]}."""
+    data = _read_signin_log(path)
+    failed = [f for f in data.get('failed', []) if isinstance(f, dict)]
+    previous = data.get('last') if isinstance(data.get('last'), dict) else None
+    _write_signin_log({'last': {'at': _utc_now().isoformat(), **_client_details()}, 'failed': []}, path)
+    return {'previous': previous, 'failed': len(failed),
+            'failed_from': sorted({str(f.get('ip') or '') for f in failed if f.get('ip')})[:5]}
 
 
 def _touch_session(session):
@@ -237,13 +287,18 @@ def revoke_other_sessions(keep_token):
     return len(others)
 
 
+def _idle(session, now):
+    last = _parse_iso(session.get('last_seen_at'))
+    return bool(last and now - last > timedelta(hours=IDLE_HOURS))
+
+
 def _get_session(token):
-    """Return session dict if valid and not expired, else None."""
+    """Return session dict if valid, not expired and not idle too long, else None."""
     if not token or token not in SESSIONS:
         return None
     session = SESSIONS[token]
     expires = _parse_iso(session.get('expires_at'))
-    if expires and expires < _utc_now():
+    if (expires and expires < _utc_now()) or _idle(session, _utc_now()):
         del SESSIONS[token]
         _save_sessions()
         return None

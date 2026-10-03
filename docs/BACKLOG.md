@@ -15,6 +15,18 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · Sign-in: idle sessions end, the last sign-in is shown
+
+- A session nobody used for 8 hours ends (`IDLE_HOURS`), on top of the 24
+  hour limit; an open page keeps itself alive by its polling, so this only
+  hits closed browsers and forgotten laptops.
+- `signin_log.json` (0600) keeps the last successful sign-in (time, device,
+  address) and the wrong passwords and 2FA codes since. Right after signing
+  in, a note says when and from where the previous sign-in was; wrong
+  passwords since then are a warning with the addresses, linking to
+  Settings › Security. Shown once per sign-in, never on the sign-in page
+  itself, which anyone on the network can open.
+
 ## 2026-10-03 · Assistant: suggests changes, the person confirms each one
 
 - Settings › Assistant › "What it may do": Only look (default) or Suggest
