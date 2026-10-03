@@ -1,11 +1,20 @@
 """The AlvaOS assistant API (admins). See ai_assistant.py."""
 
+import secrets
+import threading
+import time
+from typing import Any, Dict
+
 from flask import Blueprint, current_app, jsonify, request
 
 import ai_assistant
 from auth_manager import require_auth
 
 bp = Blueprint('ai', __name__)
+
+PROPOSAL_SECONDS = 600
+_lock = threading.Lock()
+_proposals: Dict[str, Dict[str, Any]] = {}   # id -> {'action', 'token', 'expires'}: changes waiting for the person's click
 
 
 @bp.route('/api/v1/ai/settings', methods=['GET', 'POST'])
@@ -46,7 +55,40 @@ def ai_chat():
         return jsonify({'error': str(e)}), 400
     except Exception as e:  # noqa: BLE001 - the service is outside AlvaOS
         return jsonify({'error': f'The assistant could not answer: {e}'}), 502
-    return jsonify({'success': True, **answer})
+    shown = []
+    now = time.time()
+    with _lock:
+        for key in [k for k, v in _proposals.items() if v['expires'] < now]:
+            del _proposals[key]
+        for action in answer.pop('proposals', []):
+            pid = secrets.token_urlsafe(12)
+            _proposals[pid] = {'action': action, 'token': token, 'expires': now + PROPOSAL_SECONDS}
+            shown.append({'id': pid, 'title': action['title'], 'detail': action['detail']})
+    return jsonify({'success': True, **answer, 'proposals': shown})
+
+
+@bp.route('/api/v1/ai/actions/<proposal_id>', methods=['POST'])
+@require_auth(require_admin=True)
+def ai_action(proposal_id):
+    """The person's answer to a proposal: run it, or drop it. Runs through the
+    normal endpoint with this session and its CSRF token, so it is exactly as
+    if the person had pressed the button on that page."""
+    token = request.headers.get('Authorization', '')
+    with _lock:
+        pending = _proposals.pop(proposal_id, None)
+    if not pending or pending['expires'] < time.time() or pending['token'] != token:
+        return jsonify({'error': 'This proposal is no longer open. Ask again.'}), 404
+    if (request.get_json(silent=True) or {}).get('decision') != 'run':
+        return jsonify({'success': True, 'done': False, 'message': 'Left as it is.'})
+    action = pending['action']
+    res = current_app.test_client().open(
+        action['path'], method=action['method'], json=action['body'],
+        headers={'Authorization': token, 'X-CSRF-Token': request.headers.get('X-CSRF-Token', '')})
+    data = res.get_json(silent=True) or {}
+    if res.status_code >= 400:
+        return jsonify({'error': str(data.get('error') or f'That did not work ({res.status_code}).')}), 409
+    return jsonify({'success': True, 'done': True,
+                    'message': str(data.get('message') or f'Done: {action["title"]}.')})
 
 
 @bp.route('/api/v1/ai/test', methods=['POST'])

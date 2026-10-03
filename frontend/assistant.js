@@ -7,6 +7,7 @@
     let history = [];
     let panel = null;
     let busy = false;
+    let level = 'read';
 
     function loadHistory() {
         try { history = JSON.parse(sessionStorage.getItem(HISTORY_KEY) || '[]') || []; } catch (_e) { history = []; }
@@ -51,17 +52,57 @@
             list.innerHTML = `
                 <div class="ai-welcome">
                     <p>Ask about this NAS in your own words. The assistant looks at the real state of your disks,
-                    backups, apps and updates. It cannot change anything.</p>
+                    backups, apps and updates. It changes nothing on its own${level === 'ask' ? '; when it suggests something, you decide' : ''}.</p>
                     <div class="ai-suggestions">${SUGGESTIONS.map((s) => `<button type="button" class="ai-chip">${esc(s)}</button>`).join('')}</div>
                 </div>`;
             list.querySelectorAll('.ai-chip').forEach((b) => b.addEventListener('click', () => ask(b.textContent)));
             return;
         }
-        list.innerHTML = history.map((m) => (m.role === 'user'
+        list.innerHTML = history.filter((m) => !m.note).map((m) => (m.role === 'user'
             ? `<div class="ai-msg ai-user">${esc(m.content)}</div>`
-            : `<div class="ai-msg ai-bot${m.error ? ' ai-error' : ''}">${format(m.content)}${looked(m.looked_at)}</div>`)).join('')
+            : `<div class="ai-msg ai-bot${m.error ? ' ai-error' : ''}">${format(m.content)}${looked(m.looked_at)}${proposalsHtml(m)}</div>`)).join('')
             + (busy ? '<div class="ai-msg ai-bot ai-thinking" role="status">Looking<span>.</span><span>.</span><span>.</span></div>' : '');
+        list.querySelectorAll('[data-decide]').forEach((b) => b.addEventListener('click', () => decide(b.dataset.id, b.dataset.decide)));
         list.scrollTop = list.scrollHeight;
+    }
+
+    // A change the assistant suggests. It runs only when the person presses
+    // "Do it"; the NAS runs exactly what is described, with their session.
+    function proposalsHtml(m) {
+        return (m.proposals || []).map((p) => `
+            <div class="ai-proposal${p.state ? ` ${p.state}` : ''}">
+                <strong>${esc(p.title)}</strong>
+                <span>${esc(p.detail)}</span>
+                ${p.state ? `<em>${esc(p.result || '')}</em>` : `<div class="ai-proposal-actions">
+                    <button type="button" class="btn-primary" data-decide="run" data-id="${esc(p.id)}">Do it</button>
+                    <button type="button" class="btn-secondary" data-decide="skip" data-id="${esc(p.id)}">No</button></div>`}
+            </div>`).join('');
+    }
+
+    async function decide(id, decision) {
+        const item = history.flatMap((m) => m.proposals || []).find((p) => p.id === id);
+        if (!item || item.state) return;
+        item.state = 'busy';
+        item.result = decision === 'run' ? 'Working…' : '';
+        render();
+        try {
+            const res = await fetch(`${API_BASE}/ai/actions/${encodeURIComponent(id)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ decision }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || 'That did not work.');
+            item.state = data.done ? 'done' : 'skipped';
+            item.result = data.done ? data.message : 'Not done.';
+        } catch (e) {
+            item.state = 'failed';
+            item.result = e.message;
+        }
+        // The assistant knows what happened in the next answer.
+        history.push({ role: 'user', content: `[${item.state === 'done' ? 'Done' : item.state === 'skipped' ? 'I said no to' : 'It failed'}: ${item.title}. ${item.result}]`, note: true });
+        saveHistory();
+        render();
     }
 
     async function ask(text) {
@@ -80,7 +121,7 @@
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.error || 'The assistant could not answer.');
-            history.push({ role: 'assistant', content: data.reply, looked_at: data.looked_at });
+            history.push({ role: 'assistant', content: data.reply, looked_at: data.looked_at, proposals: data.proposals || [] });
         } catch (e) {
             history.push({ role: 'assistant', content: e.message, error: true });
         } finally {
@@ -170,7 +211,9 @@
         if (!actions || document.getElementById('ai-btn')) return;
         try {
             const res = await fetch(`${API_BASE}/ai/settings`);
-            if (!res.ok || !(await res.json()).enabled) return;
+            const data = res.ok ? await res.json() : {};
+            if (!data.enabled) return;
+            level = data.level || 'read';
         } catch (_e) {
             return;
         }

@@ -516,7 +516,7 @@
             <div class="tab-panel" id="tab-assistant">
                 <section class="set-group">
                     <h2 class="set-group-title">Assistant</h2>
-                    <p class="set-group-desc">Ask about this NAS in your own words, from the button at the top of every page. The assistant looks at the real state of disks, backups, apps and updates. For now it can only look, never change anything.</p>
+                    <p class="set-group-desc">Ask about this NAS in your own words, from the button at the top of every page. The assistant looks at the real state of disks, backups, apps and updates. It only looks, unless you let it suggest changes that you confirm one by one.</p>
                     <div class="set-row">
                         <div class="set-text"><div class="set-label"><label for="ai-enabled">Assistant</label></div><div class="set-desc" id="ai-summary">Off. Needs an AI service, set up below.</div></div>
                         <div class="set-value"><label class="toggle"><input type="checkbox" id="ai-enabled"><span class="toggle-slider"></span></label></div>
@@ -533,6 +533,11 @@
                         <label class="pw-field" id="ai-key-field">API key
                             <input type="password" id="ai-key" autocomplete="new-password" spellcheck="false">
                             <small>Stored on this NAS only, never shown again.</small></label>
+                        <fieldset class="ai-level">
+                            <legend>What it may do</legend>
+                            <label class="choice"><input type="radio" name="ai-level" value="read" checked><div><strong>Only look</strong><span>It reads how the NAS is doing and explains where to change things.</span></div></label>
+                            <label class="choice"><input type="radio" name="ai-level" value="ask"><div><strong>Suggest changes, I confirm each one</strong><span>For example make a backup now, check a pool or restart an app. Nothing happens until you press "Do it" in the chat.</span></div></label>
+                        </fieldset>
                         <div class="pw-error" id="ai-error" role="alert"></div>
                         <div class="pw-ok" id="ai-ok" role="status"></div>
                         <div class="modal-actions">

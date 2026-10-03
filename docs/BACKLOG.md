@@ -15,6 +15,25 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · Assistant: suggests changes, the person confirms each one
+
+- Settings › Assistant › "What it may do": Only look (default) or Suggest
+  changes, I confirm each one.
+- At the second level the model gets five action tools (`ACTION_SPECS`):
+  make a backup now, start a data check of a pool, restart an app, check
+  services, let disks sleep. Calling one runs nothing: `build_action` checks
+  the arguments against the real state (the pool exists and is not the
+  system pool, the container exists, the minutes are allowed) and turns it
+  into a proposal with a plain description; at most three per answer.
+- `api_ai.py` keeps proposals 10 minutes, bound to the session that asked.
+  `POST /api/v1/ai/actions/<id>` with "run" sends exactly the stored request
+  through the normal endpoint, with that session and its CSRF token; another
+  session or an old id gets 404; each proposal runs once.
+- The chat shows each proposal as a card with "Do it" and "No"; the outcome
+  stays in the card and is passed to the assistant in the next turn.
+- The system prompt now differs per level, so "only look" is no longer said
+  to a model that may propose.
+
 ## 2026-10-03 · Updates: the way back is always there
 
 - The update cache now always keeps the signed package of the version that
