@@ -158,6 +158,31 @@ class RemoteAccess:
                 'devices': devices, 'wireguard_installed': bool(_wg_quick()), 'upnp': state['upnp'],
                 'upnp_installed': bool(_upnpc())}
 
+    def problems(self) -> List[Dict[str, str]]:
+        """What keeps remote access from working, for the alerts."""
+        state = self.load()
+        if not state['enabled']:
+            return []
+        out = []
+        if not self.interface_up():
+            out.append({'alert_id': 'remote-access-down', 'severity': 'warning',
+                        'title': 'Remote access is not running',
+                        'message': 'Your devices cannot reach this NAS from outside. Turn remote access off and on '
+                                   'again in Settings; if that does not help, restart the NAS.'})
+        duck = state['duckdns']
+        if duck['domain'] and duck['last_error']:
+            try:
+                since = datetime.fromisoformat(duck['last_update']) if duck['last_update'] else None
+            except ValueError:
+                since = None
+            if since is None or (datetime.now(timezone.utc) - since).total_seconds() > 24 * 3600:
+                out.append({'alert_id': 'remote-access-duckdns', 'severity': 'warning',
+                            'title': 'Your home\'s name is not updated',
+                            'message': f'{duck["domain"]}.duckdns.org could not be updated for a day: '
+                                       f'{duck["last_error"]} When your internet address changes, your devices '
+                                       'no longer find home.'})
+        return out
+
     # ── Settings ─────────────────────────────────────────────────────────
 
     def configure(self, payload: Dict[str, Any]) -> Tuple[bool, str]:

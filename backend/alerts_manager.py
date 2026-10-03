@@ -465,6 +465,14 @@ def _collect_system_alerts():
     except Exception:
         pass
 
+    # Remote access is on but would not work from outside.
+    try:
+        from app_services import remote
+        for problem in remote.problems():
+            alerts.append(_build_alert_item(route='system.html#remote', action_label='Open remote access', **problem))
+    except Exception:
+        pass
+
     # Shares (personal folders) close to their space limit.
     try:
         import platform
