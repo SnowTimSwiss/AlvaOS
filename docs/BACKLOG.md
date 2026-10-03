@@ -15,6 +15,36 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · HTTPS on the home network, Files installable as an app
+
+- `backend/tls_manager.py`: every NAS makes its own certificate authority
+  (EC P-256, 10 years) and a server certificate it signs for the NAS's
+  names (`host`, `host.local`, `localhost`) and IPv4 addresses (825 days).
+  The server certificate is made again when it ends within 30 days or no
+  longer covers the current names and addresses; the authority stays, so
+  devices keep trusting it. Keys 0600 in `/var/lib/alvaos/tls`; a file lock
+  because the backend and Files start at the same time.
+- HTTPS runs next to HTTP, nothing that worked stops: web interface 8443,
+  Files 9443, Files WebDAV 9444. Waitress cannot do TLS, so these ports use
+  Werkzeug's threaded server with a 120 s connection timeout; the client
+  address stays real (login limits keep working).
+- Settings › Security: "Encrypted connection (HTTPS)" with the address, a
+  download of the authority certificate (`/api/v1/system/tls/ca.crt`,
+  public on purpose; Files serves it too at `/alvaos-ca.crt`) and steps for
+  Windows, Mac, iPhone/iPad, Android and Linux/Firefox, plus fingerprint and
+  covered names.
+- Links to Files (Apps, Files page) and the WebDAV address in Files follow
+  the page: https opens Files on 9443 and WebDAV on 9444 (`davs://`).
+- Files is installable as an app (PWA) over HTTPS: a service worker keeps
+  only the app itself (never files or API answers) so it opens fast and
+  shows the NAS is away when it is.
+- Real test: Files and WebDAV over HTTPS checked with curl against the
+  authority (by name and by IP), a 20 MB upload piece over HTTPS arrived
+  intact; a client that does not trust the authority is refused.
+- **Note for next time:** "HTTPS only" (sending http:// to https://) is the
+  next step once people have trusted the authority; not on by default,
+  because a device that has not trusted it would see a warning page.
+
 ## 2026-10-03 · AlvaOS Files over WebDAV (port 8091)
 
 - `backend/files_dav.py`: the shares in Finder (Connect to Server), GNOME

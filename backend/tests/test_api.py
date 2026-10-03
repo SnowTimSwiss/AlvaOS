@@ -22,6 +22,7 @@ PUBLIC = {
     "/api/v1/auth/2fa/complete",
     "/api/v1/backup/pairing/accept",
     "/api/v1/backup/pairing/remove/accept",
+    "/api/v1/system/tls/ca.crt",          # the public certificate to trust, no secret
 }
 PEER_PREFIX = "/api/v1/backup/buddy/peer/"   # authenticated with X-Buddy-Secret
 

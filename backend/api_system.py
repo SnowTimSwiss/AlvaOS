@@ -535,6 +535,31 @@ def unpair_telegram_alert_delivery():
         'message': 'Telegram pairing removed'
     })
 
+@bp.route('/api/v1/system/tls', methods=['GET'])
+@require_auth
+def tls_info():
+    """The NAS's own HTTPS certificate: what it covers and its fingerprint."""
+    import tls_manager
+    return jsonify({'success': True, **tls_manager.info()})
+
+
+@bp.route('/api/v1/system/tls/ca.crt', methods=['GET'])
+def tls_authority():
+    """The certificate of this NAS's own authority, to trust on a device.
+    Public on purpose: it holds no secret, and a phone that wants to trust
+    the NAS is not signed in yet."""
+    import tls_manager
+    from flask import Response
+    try:
+        with open(tls_manager.paths()['ca.crt'], 'rb') as f:
+            data = f.read()
+    except OSError:
+        return jsonify({'error': 'HTTPS is not set up yet. Restart AlvaOS once.'}), 404
+    host = socket.gethostname().split('.')[0] or 'alvaos'
+    return Response(data, mimetype='application/x-x509-ca-cert',
+                    headers={'Content-Disposition': f'attachment; filename="alvaos-{host}.crt"'})
+
+
 @bp.route('/api/v1/system/time', methods=['GET', 'POST'])
 @require_auth(require_admin=True)
 def system_time():

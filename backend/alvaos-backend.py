@@ -256,6 +256,10 @@ if __name__ == '__main__':
     except ImportError:
         waitress = None  # type: ignore[assignment]
 
+    # HTTPS next to HTTP, with this NAS's own certificate (tls_manager.py).
+    import tls_manager
+    tls_manager.serve_in_background(app, tls_manager.PORTS['web'], 'AlvaOS')
+
     if waitress is not None:
         waitress.serve(app, host='0.0.0.0', port=8080, threads=8, ident='AlvaOS')
     else:

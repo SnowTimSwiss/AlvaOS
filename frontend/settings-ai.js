@@ -21,7 +21,7 @@
 
     function syncProvider(fill) {
         const id = $('ai-provider').value;
-        const preset = settings.providers[id] || {};
+        const preset = (settings.providers || {})[id] || {};
         $('ai-provider-hint').textContent = HINTS[id] || '';
         if (fill) {
             $('ai-url').value = preset.base_url || '';
@@ -38,7 +38,7 @@
             ? `On. Answers come from ${settings.model} at ${new URL(settings.base_url).host}.`
             : 'Off. Needs an AI service, set up below.';
         const select = $('ai-provider');
-        select.innerHTML = Object.entries(settings.providers)
+        select.innerHTML = Object.entries(settings.providers || {})
             .map(([id, p]) => `<option value="${id}">${window.escapeHtml ? window.escapeHtml(p.label) : p.label}</option>`).join('');
         select.value = settings.provider;
         $('ai-url').value = settings.base_url;

@@ -14,6 +14,7 @@ bp = Blueprint('files', __name__)
 
 UNIT = 'alvaos-files.service'
 PORT = 8090
+HTTPS_PORT = 9443   # tls_manager.PORTS['files']
 
 
 def _systemctl(*args):
@@ -27,7 +28,7 @@ def files_app_state():
     from api_auth import load_users_state
     waiting = sorted(name for name, info in load_users_state().items()
                      if isinstance(info, dict) and not info.get('files_auth'))
-    return {'enabled': enabled == 'enabled', 'running': active == 'active', 'port': PORT,
+    return {'enabled': enabled == 'enabled', 'running': active == 'active', 'port': PORT, 'https_port': HTTPS_PORT,
             'people_without_password': waiting}
 
 
