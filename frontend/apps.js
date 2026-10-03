@@ -728,7 +728,7 @@ async function renderInspector() {
                             <div class="inspector-value mono-text">${escapeHtml(selected.pool_path || '-')}</div>
                         </div>
                         <div>
-                            <div class="inspector-label">Subvolume</div>
+                            <div class="inspector-label">Folder (Btrfs subvolume)</div>
                             <div class="inspector-value mono-text">${escapeHtml(selected.parent_subvolume || '-')}</div>
                         </div>
                         <div>
