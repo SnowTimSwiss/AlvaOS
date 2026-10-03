@@ -249,3 +249,21 @@ body.public { display: flex; flex-direction: column; min-height: 100%; }
 .results-head { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding: 2px 4px 10px; color: var(--muted); font-size: 0.86rem; }
 .results-head button { margin-left: auto; white-space: nowrap; }
 .results-head svg { flex: none; }
+
+/* Public upload link ("drop box") */
+.pub-drop { max-width: 560px; margin: 0 auto; width: 100%; }
+.pub-drop-zone { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 44px 20px; border: 2px dashed var(--line); border-radius: 16px; background: var(--panel); cursor: pointer; text-align: center; color: var(--muted); }
+.pub-drop-zone svg { width: 40px; height: 40px; color: var(--accent); }
+.pub-drop-zone strong { color: var(--text); font-size: 1.1rem; }
+.pub-drop-zone.over, .pub-drop-zone:hover { border-color: var(--accent); }
+.pub-drop-note { color: var(--muted); font-size: 0.85rem; text-align: center; margin: 10px 0 16px; }
+.pub-drop-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.pub-drop-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.pub-drop-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.pub-drop-state { color: var(--muted); font-size: 0.85rem; display: inline-flex; align-items: center; gap: 4px; }
+.pub-drop-state svg { width: 14px; height: 14px; }
+.pub-drop-list li.done .pub-drop-state { color: var(--ok, #1a7f37); }
+.pub-drop-list li.failed .pub-drop-state { color: var(--danger); }
+.pub-drop-bar { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.pub-drop-bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.pub-drop-list li.done .pub-drop-bar { display: none; }

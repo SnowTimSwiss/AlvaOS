@@ -309,3 +309,47 @@ def test_previous_versions_come_from_restore_points(client, monkeypatch, tmp_pat
     assert done["name"].startswith("plan (restored 2026-10-01 ") and done["name"].endswith(").txt")
     assert client.post("/api/versions/restore", json={"share": "Family", "path": "Docs/plan.txt", "id": "nope"},
                        headers=H).status_code == 404
+
+
+def test_upload_links_take_files_and_show_nothing(client, monkeypatch):
+    calls = []
+    existing = [{"name": "photo.jpg", "type": "file"}, {"name": "photo (2).jpg", "type": "file"}]
+    monkeypatch.setattr(files_manager, "list_entries", lambda path, user=None: (existing, ""))
+
+    def helper(args, timeout=600, user=None):
+        calls.append((args, user))
+        return ({"size": 0} if args[0] == "files-part-size" else {}), ""
+
+    monkeypatch.setattr(files_manager, "run_helper", helper)
+    monkeypatch.setattr(files_manager, "pipe_helper",
+                        lambda args, stream, chunk=None, user=None: (calls.append((args, user)) or {"size": 3}, ""))
+    sign_in(client, "ben", "ben-pass")                  # ben can only read Family
+    refused = client.post("/api/links", json={"share": "Family", "path": "Inbox", "kind": "folder", "mode": "upload"},
+                          headers=H)
+    assert refused.status_code == 403
+    sign_in(client, "anna", "anna-pass")
+    assert client.post("/api/links", json={"share": "Family", "path": "a.txt", "kind": "file", "mode": "upload"},
+                       headers=H).status_code == 400
+    made = client.post("/api/links", json={"share": "Family", "path": "Inbox", "kind": "folder", "mode": "upload"},
+                       headers=H).get_json()
+    token = made["url"].split("/")[-1]
+    assert made["mode"] == "upload"
+
+    visitor = fs.app.test_client()
+    assert visitor.get(f"/api/public/{token}").get_json()["mode"] == "upload"
+    for what in ("list", "file?path=photo.jpg", "zip", "thumb?path=photo.jpg"):
+        assert visitor.get(f"/api/public/{token}/{what}").status_code == 403, what
+    assert visitor.post(f"/api/public/{token}/upload/start", json={"name": "x.jpg"}).status_code == 403  # header
+    for bad in ("", "../x", ".hidden", "a/b"):
+        assert visitor.post(f"/api/public/{token}/upload/start", json={"name": bad}, headers=H).status_code == 400
+    started = visitor.post(f"/api/public/{token}/upload/start", json={"name": "photo.jpg"}, headers=H).get_json()
+    assert started == {"name": "photo (3).jpg", "size": 0}          # never over an existing file
+    visitor.post(f"/api/public/{token}/upload/piece?name=photo (3).jpg&offset=0", data=b"abc", headers=H)
+    visitor.post(f"/api/public/{token}/upload/finish", json={"name": "photo (3).jpg", "size": 3}, headers=H)
+    inbox = "/mnt/alvaos/main/Family/Inbox"
+    assert (["files-part-write", inbox, "photo (3).jpg", "0"], "anna") in calls
+    assert calls[-1] == (["files-part-finish", inbox, "photo (3).jpg", "3"], "anna")
+
+    view = client.post("/api/links", json={"share": "Family", "path": "Inbox", "kind": "folder"}, headers=H).get_json()
+    vtoken = view["url"].split("/")[-1]
+    assert visitor.post(f"/api/public/{vtoken}/upload/start", json={"name": "x.jpg"}, headers=H).status_code == 403

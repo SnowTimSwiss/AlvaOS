@@ -27,7 +27,7 @@ Every page follows the same pattern as the reworked Dashboard, Storage and Backu
 Everything people use Nextcloud for at home, built into AlvaOS and working on the same folders as the shares. No separate app, no database server.
 - **AlvaOS Files app** (port 8090, built in, turned on under Apps). Done: everyone signs in with their share password and gets their shares with their rights (Linux checks them), grid with thumbnails, viewer, uploads of any size in pieces that continue after a dropped connection, new folder, rename, trash. Next: HTTPS (needs a decision: a self-signed certificate means a browser warning once).
 - **Preview** of images, video, audio, PDF and text; photo thumbnails generated in the background.
-- **Share links**: done (read-only, password, expiry, one list). Next: upload-only links ("drop box").
+- **Share links**: done (read-only or upload-only "drop box", password, expiry, one list).
 - **Phone access** through the web UI (installable as a PWA), plus WebDAV so native file apps and desktop clients can connect.
 - **Trash** per share and **Previous versions** of a file: done in Files.
 - **Search**: by name done (folder and below, as the person). Later: by content, and across all shares at once.

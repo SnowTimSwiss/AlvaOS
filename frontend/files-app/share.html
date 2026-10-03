@@ -33,6 +33,17 @@
             <a class="btn primary" id="pub-download" href="#" download><span data-icon="download"></span>Download</a>
         </section>
 
+        <section class="pub-drop" id="pub-drop" hidden>
+            <label class="pub-drop-zone" id="pub-drop-zone">
+                <span data-icon="upload"></span>
+                <strong>Drop files here</strong>
+                <span>or click to choose them</span>
+                <input type="file" id="pub-drop-input" multiple hidden>
+            </label>
+            <p class="pub-drop-note">You can only add files. What is already in this folder stays private.</p>
+            <ul class="pub-drop-list" id="pub-drop-list" aria-live="polite"></ul>
+        </section>
+
         <section class="pub-folder" id="pub-folder" hidden>
             <div class="pub-folder-bar"><nav class="crumbs" id="pub-crumbs" aria-label="Folder"></nav>
                 <a class="btn" id="pub-zip" href="#" download><span data-icon="download"></span>Download all</a></div>
