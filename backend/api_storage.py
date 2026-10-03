@@ -1011,7 +1011,7 @@ def scrub_pool(pool_id):
     busy = _busy_with(_pool_activity(mount_point))
     if busy:
         return jsonify({'error': f'{busy}. Try again when it is done.'}), 409
-    failed = _start_background([CMD['BTRFS'], 'scrub', 'start', '-B', mount_point])
+    failed = _start_background([CMD['BTRFS'], 'scrub', 'start', '-B', '-c', '3', mount_point])
     if failed:
         return jsonify({'error': f'The data check did not start: {failed}'}), 500
     return jsonify({'success': True, 'message': 'Data check started. The pool stays usable meanwhile.'})
@@ -1080,7 +1080,7 @@ def make_health_scheduler():
         pools=_mounted_managed_pools,
         activity=_pool_activity,
         busy=_busy_with,
-        start_scrub=lambda mount_point: _start_background([CMD['BTRFS'], 'scrub', 'start', '-B', mount_point]),
+        start_scrub=lambda mount_point: _start_background([CMD['BTRFS'], 'scrub', 'start', '-B', '-c', '3', mount_point]),
     )
 
 

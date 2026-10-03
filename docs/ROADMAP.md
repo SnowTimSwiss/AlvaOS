@@ -57,7 +57,7 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 ### Lightweight
 - Runs well on 2 GB RAM and old CPUs.
 - No framework, no build step, no external assets.
-- Background work (thumbnails, scrub, backups) runs at low priority.
+- Background work runs at low priority: scrub (idle I/O class) and thumbnails (nice 10) done; next the Buddy Backup transfer.
 - Measure idle CPU, memory and disk wake-ups, and keep them low.
 
 ### UI and UX

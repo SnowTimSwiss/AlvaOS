@@ -244,6 +244,7 @@ def test_pool_maintenance_commands():
     allowed('/usr/bin/btrfs', 'replace', 'start', '-B', '/dev/sdb', '/dev/sdd', '/mnt/alvaos/main')
     allowed('/usr/bin/btrfs', 'replace', 'status', '-1', '/mnt/alvaos/main')
     allowed('/usr/bin/btrfs', 'scrub', 'start', '-B', '/mnt/alvaos/main')
+    allowed('/usr/bin/btrfs', 'scrub', 'start', '-B', '-c', '3', '/mnt/alvaos/main')
     allowed('/usr/bin/btrfs', 'scrub', 'status', '/mnt/alvaos/main')
     allowed('/usr/bin/btrfs', 'scrub', 'cancel', '/mnt/alvaos/main')
     allowed('/usr/bin/btrfs', 'balance', 'status', '/mnt/alvaos/main')
@@ -256,6 +257,8 @@ def test_pool_maintenance_commands():
     ['/usr/bin/btrfs', 'replace', 'start', '-B', '-f', '2', '/dev/sdd', '/mnt/alvaos/main'],
     ['/usr/bin/btrfs', 'replace', 'start', '-B', '0; id', '/dev/sdd', '/mnt/alvaos/main'],
     ['/usr/bin/btrfs', 'scrub', 'start', '/etc'],
+    ['/usr/bin/btrfs', 'scrub', 'start', '-B', '-c', '1', '/mnt/alvaos/main'],
+    ['/usr/bin/btrfs', 'scrub', 'start', '-B', '-c', '3', '/etc'],
     ['/usr/bin/btrfs', 'device', 'stats', '-z', '/mnt/alvaos/main'],
 ])
 def test_pool_maintenance_abuse_is_denied(argv):
