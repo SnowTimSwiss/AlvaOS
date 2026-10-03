@@ -245,7 +245,7 @@ function builtInFilesCard() {
     if (availableCategoryFilter !== 'all' && availableCategoryFilter !== 'Productivity') return '';
     if (query && !'alvaos files shared folders photos documents cloud'.includes(query)) return '';
     const state = filesAppState;
-    const url = state ? `${window.location.protocol}//${window.location.hostname}:${state.port}/` : '';
+    const url = state ? `${window.location.protocol}//${window.location.hostname}:${window.location.protocol === 'https:' ? (state.https_port || 9443) : state.port}/` : '';
     const button = !state
         ? ''
         : state.enabled

@@ -14,7 +14,7 @@
     function render(state) {
         const actions = $('fl-actions');
         if (state.enabled) {
-            const url = appUrl(state.port);
+            const url = appUrl(window.location.protocol === 'https:' ? (state.https_port || 9443) : state.port);
             actions.innerHTML = `
                 <a class="btn-primary" href="${esc(url)}" target="_blank" rel="noopener">Open Files</a>
                 <span class="fl-addr">${esc(url.replace(/^https?:\/\//, '').replace(/\/$/, ''))}</span>

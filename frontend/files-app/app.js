@@ -698,15 +698,16 @@
     // Explorer or a file app on a phone.
     $('connect-nav').addEventListener('click', () => {
         closeSide();
-        const url = `http://${location.hostname}:8091/`;
+        const secure = location.protocol === 'https:';
+        const url = secure ? `https://${location.hostname}:9444/` : `http://${location.hostname}:8091/`;
         const wrap = $('dialog');
         wrap.innerHTML = `<div class="dialog wide"><h2>Open your folders on a computer</h2>
             <p>Your shared folders also open in the file manager of a computer or phone, with the same name and password as here (WebDAV).${me?.role === 'admin' ? ' The admin account cannot be used there; sign in as one of the people from Storage › Users.' : ''}</p>
             <div class="linkbox"><input readonly value="${esc(url)}" id="dav-url"><button type="button" class="btn primary" id="dav-copy">${icon('copy')}Copy</button></div>
             <div class="howto">
                 <p><strong>Mac:</strong> Finder › Go › Connect to Server, paste the address.</p>
-                <p><strong>Linux:</strong> Files › Other Locations, enter <code>dav://${esc(location.hostname)}:8091/</code>.</p>
-                <p><strong>Windows:</strong> This PC › Map network drive › "Connect to a Web site…", paste the address. Windows only allows this over HTTPS unless it is set up for it; on Windows the shared folders (\\\\${esc(location.hostname)}) are the easier way.</p>
+                <p><strong>Linux:</strong> Files › Other Locations, enter <code>${secure ? `davs://${esc(location.hostname)}:9444/` : `dav://${esc(location.hostname)}:8091/`}</code>.</p>
+                <p><strong>Windows:</strong> This PC › Map network drive › "Connect to a Web site…", paste the address. ${secure ? 'This works once the NAS certificate is trusted (Settings › Security in AlvaOS).' : `Windows only signs in to WebDAV over HTTPS: open Files with https:// first. The shared folders (\\\\${esc(location.hostname)}) also work.`}</p>
                 <p><strong>Phone:</strong> a file app with WebDAV, like Documents (iPhone) or Solid Explorer (Android).</p>
             </div>
             <div class="actions"><button type="button" class="btn primary" data-close>Done</button></div></div>`;
@@ -1055,6 +1056,11 @@
         const wanted = me.shares.find((s) => s.name === q.get('share'));
         go(wanted ? wanted.name : me.shares[0].name, wanted ? q.get('path') || '' : '', false);
         history.replaceState(null, '', hashFor(share, path));
+    }
+
+    // Installable as an app where the browser allows it (HTTPS or localhost).
+    if ('serviceWorker' in navigator && window.isSecureContext) {
+        navigator.serviceWorker.register('/sw.js').catch(() => { /* fine without */ });
     }
 
     paintIcons();

@@ -1120,6 +1120,19 @@ def public_upload_finish(token):
                                                     user=owner), 201)
 
 
+@app.get('/alvaos-ca.crt')
+def authority_certificate():
+    """The NAS's own authority, to trust on a phone (see Settings › Security)."""
+    import tls_manager
+    try:
+        with open(tls_manager.paths()['ca.crt'], 'rb') as f:
+            data = f.read()
+    except OSError:
+        return jsonify({'error': 'HTTPS is not set up yet.'}), 404
+    return Response(data, mimetype='application/x-x509-ca-cert',
+                    headers={'Content-Disposition': 'attachment; filename="alvaos.crt"'})
+
+
 @app.get('/s/<token>')
 def share_page(token):
     return send_from_directory(APP_ROOT, 'share.html')
@@ -1157,12 +1170,18 @@ def main() -> None:
         import waitress
     except ImportError:
         import files_dav
+        import tls_manager
         files_dav.serve_in_background()
+        tls_manager.serve_in_background(app, tls_manager.PORTS['files'], 'AlvaOS Files')
+        tls_manager.serve_in_background(files_dav.app, tls_manager.PORTS['dav'], 'AlvaOS Files WebDAV')
         app.run(host='0.0.0.0', port=PORT)
         return
     print(f'AlvaOS Files on port {PORT}')
     import files_dav
+    import tls_manager
     files_dav.serve_in_background()
+    tls_manager.serve_in_background(app, tls_manager.PORTS['files'], 'AlvaOS Files')
+    tls_manager.serve_in_background(files_dav.app, tls_manager.PORTS['dav'], 'AlvaOS Files WebDAV')
     waitress.serve(app, host='0.0.0.0', port=PORT, threads=8, ident='AlvaOS Files',
                    max_request_body_size=PIECE_LIMIT_BYTES + 1024 * 1024)
 

@@ -404,6 +404,11 @@
                         </div>
                     </div>
                     <div class="set-row">
+                        <div class="set-text"><div class="set-label">Encrypted connection (HTTPS)</div><div class="set-desc" id="tls-desc">Open AlvaOS with https:// so nobody on the network can read along. Each device trusts this NAS once.</div></div>
+                        <div class="set-value"><span class="status-dot" id="tls-dot" style="background:var(--text-secondary);" aria-hidden="true"></span><span id="tls-status" role="status" aria-live="polite">Checking...</span></div>
+                        <div class="set-action"><button id="tls-setup-btn" class="btn-secondary">Set up devices</button></div>
+                    </div>
+                    <div class="set-row">
                         <div class="set-text"><div class="set-label">Command line (SSH)</div><div class="set-desc">Off unless you need a terminal on this machine. Anyone with the admin password can then log in over the network.</div></div>
                         <div class="set-value"><span class="status-dot" id="ssh-status-dot" style="background:var(--text-secondary);" aria-hidden="true"></span><span id="ssh-status-text" role="status" aria-live="polite">Checking...</span></div>
                         <div class="set-action">
@@ -589,6 +594,7 @@
     <script src="settings-email.js"></script>
     <script src="settings-disks.js"></script>
     <script src="settings-ai.js"></script>
+    <script src="settings-tls.js"></script>
 </body>
 
 </html>

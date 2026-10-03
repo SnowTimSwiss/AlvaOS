@@ -2626,3 +2626,9 @@ details.upd-section { margin-bottom: 10px; }
 .ai-settings { max-width: 520px; margin-top: 12px; }
 .ai-settings .modal-actions { justify-content: flex-start; }
 body.ai-open .feedback-fab-wrap { display: none; }
+.tls-steps { padding-left: 20px; margin: 12px 0 0; }
+.tls-steps > li { margin-bottom: 14px; }
+.tls-steps a.btn-primary { display: inline-block; text-decoration: none; margin-top: 2px; }
+.tls-os { margin: 6px 0 0; border: 1px solid var(--border-subtle); border-radius: var(--radius-default); padding: 6px 10px; }
+.tls-os summary { cursor: pointer; font-weight: 600; }
+.tls-os p { margin: 6px 0 2px; color: var(--text-secondary); font-size: 0.9rem; }
