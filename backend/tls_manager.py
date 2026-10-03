@@ -141,7 +141,8 @@ def permitted(ca, names: List[str], ips: List[str]) -> Tuple[List[str], List[str
         return names, ips
     trees = constraints.permitted_subtrees or []
     domains = [str(t.value).lower() for t in trees if isinstance(t, x509.DNSName)]
-    networks = [t.value for t in trees if isinstance(t, x509.IPAddress)]
+    networks = [t.value for t in trees if isinstance(t, x509.IPAddress)
+                and isinstance(t.value, (ipaddress.IPv4Network, ipaddress.IPv6Network))]
     ok_names = [n for n in names if any(n.lower() == d or n.lower().endswith('.' + d) for d in domains)]
     ok_ips = [ip for ip in ips if any(ipaddress.ip_address(ip) in net for net in networks)]
     return ok_names, ok_ips
