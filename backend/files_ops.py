@@ -390,6 +390,55 @@ def _copy_file_at(src_dir_fd: int, name: str, dst_dir_fd: int, new_name: str) ->
         os.close(sfd)
 
 
+def versions(name: str, dirs: List[str], root: str = DATA_ROOT) -> List[Optional[Dict[str, Any]]]:
+    """For each folder (a restore point's copy of one folder), whether it
+    holds a regular file `name`: its size and modification time, or None."""
+    check_name(name)
+    out: List[Optional[Dict[str, Any]]] = []
+    for dir_path in dirs:
+        try:
+            dfd = open_dir(dir_path, root)
+        except (FileOpError, OSError):
+            out.append(None)
+            continue
+        try:
+            st = os.lstat(name, dir_fd=dfd)
+            out.append({'size_bytes': st.st_size,
+                        'modified_at': datetime.fromtimestamp(st.st_mtime).astimezone().isoformat()}
+                       if stat.S_ISREG(st.st_mode) else None)
+        except OSError:
+            out.append(None)
+        finally:
+            os.close(dfd)
+    return out
+
+
+def restore_version(src_dir: str, name: str, dst_dir: str, new_name: str, root: str = DATA_ROOT) -> str:
+    """Copy one file from a restore point next to the current one, under a
+    new name. Never over anything."""
+    check_name(name)
+    check_name(new_name)
+    sfd = open_dir(src_dir, root)
+    try:
+        dfd = open_dir(dst_dir, root)
+        try:
+            try:
+                st = os.lstat(name, dir_fd=sfd)
+            except FileNotFoundError:
+                raise FileOpError(f'"{name}" is not in this restore point.') from None
+            if not stat.S_ISREG(st.st_mode):
+                raise FileOpError('Only files can be restored here.')
+            try:
+                _copy_file_at(sfd, name, dfd, new_name)
+            except FileExistsError:
+                raise FileOpError(f'"{new_name}" is already there.') from None
+            return new_name
+        finally:
+            os.close(dfd)
+    finally:
+        os.close(sfd)
+
+
 def _copy_tree_at(src_fd: int, dst_fd: int) -> None:
     """Copy what is inside src_fd into dst_fd: files and folders, never
     symlinks, nothing the person cannot read."""

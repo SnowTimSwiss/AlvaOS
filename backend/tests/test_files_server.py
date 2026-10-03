@@ -261,3 +261,51 @@ def test_search_runs_as_the_person_and_gives_share_paths(client, monkeypatch):
     data = client.get("/api/search?share=Family&path=Photos&q=a").get_json()
     assert seen == [(["files-search", "/mnt/alvaos/main/Family/Photos", "a"], "ben")]
     assert data["results"][0]["folder"] == "Photos/2024" and data["complete"] is True
+
+
+def test_previous_versions_come_from_restore_points(client, monkeypatch, tmp_path):
+    points = [
+        {"source_path": "/mnt/alvaos/main/Family", "snapshot_path": "/mnt/alvaos/main/.alvaos-snapshots/F/a",
+         "created_at": "2026-10-01T03:00:00+00:00", "snapshot_class": "data"},
+        {"source_path": "/mnt/alvaos/main/Family", "snapshot_path": "/mnt/alvaos/main/.alvaos-snapshots/F/b",
+         "created_at": "2026-10-02T03:00:00+00:00", "snapshot_class": "data"},
+        {"source_path": "/mnt/alvaos/main", "snapshot_path": "/mnt/alvaos/main/.alvaos-snapshots/__root__/c",
+         "created_at": "2026-09-01T03:00:00+00:00"},
+        {"source_path": "/", "snapshot_path": "/.snapshots/sys", "snapshot_class": "system"},
+        {"source_path": "/mnt/alvaos/main/Anna", "snapshot_path": "/mnt/alvaos/main/.alvaos-snapshots/A/a"},
+    ]
+    (tmp_path / "snaps.json").write_text(json.dumps(points))
+    monkeypatch.setattr(fs, "SNAPSHOTS_FILE", str(tmp_path / "snaps.json"))
+    seen = []
+    now = {"size_bytes": 5, "modified_at": "2026-10-02T10:00:00+02:00"}
+    old = {"size_bytes": 3, "modified_at": "2026-09-30T10:00:00+02:00"}
+
+    def helper(args, timeout=600, user=None):
+        seen.append((args, user))
+        if args[0] == "files-versions":
+            return {"versions": [now, now, old, None]}, ""   # current, b (same), a (older), c (gone)
+        return {"name": args[-1]}, ""
+
+    monkeypatch.setattr(files_manager, "run_helper", helper)
+    sign_in(client, "ben", "ben-pass")
+    data = client.get("/api/versions?share=Family&path=Docs/plan.txt").get_json()
+    assert seen[0] == (["files-versions", "plan.txt", "/mnt/alvaos/main/Family/Docs",
+                        "/mnt/alvaos/main/.alvaos-snapshots/F/b/Docs", "/mnt/alvaos/main/.alvaos-snapshots/F/a/Docs",
+                        "/mnt/alvaos/main/.alvaos-snapshots/__root__/c/Family/Docs"], "ben")
+    assert [v["created_at"][:10] for v in data["versions"]] == ["2026-10-01"]
+    assert "folder" not in data["versions"][0]
+    vid = data["versions"][0]["id"]
+    url = client.post("/api/versions/link", json={"share": "Family", "path": "Docs/plan.txt", "id": vid},
+                      headers=H).get_json()["url"]
+    assert fs._links[url.rsplit("/", 1)[1]]["path"] == "/mnt/alvaos/main/.alvaos-snapshots/F/a/Docs/plan.txt"
+    refused = client.post("/api/versions/restore", json={"share": "Family", "path": "Docs/plan.txt", "id": vid},
+                          headers=H)
+    assert refused.status_code == 403                                   # ben can only read Family
+    client.post("/api/logout", headers=H)
+    sign_in(client, "anna", "anna-pass")
+    done = client.post("/api/versions/restore", json={"share": "Family", "path": "Docs/plan.txt", "id": vid},
+                       headers=H).get_json()
+    assert seen[-1][0][0] == "files-restore-version" and seen[-1][1] == "anna"
+    assert done["name"].startswith("plan (restored 2026-10-01 ") and done["name"].endswith(").txt")
+    assert client.post("/api/versions/restore", json={"share": "Family", "path": "Docs/plan.txt", "id": "nope"},
+                       headers=H).status_code == 404

@@ -253,3 +253,22 @@ def test_search_stops_at_the_limit_and_needs_words(share):
     assert len(out["results"]) == 3 and out["complete"] is False
     with pytest.raises(fo.FileOpError):
         fo.search(s, "   ", root)
+
+
+def test_versions_and_restoring_one_as_a_copy(share, tmp_path):
+    root, s, outside = share
+    snap = os.path.join(root, "main", ".alvaos-snapshots", "Media", "20261001-030000-auto")
+    os.makedirs(snap)
+    with open(os.path.join(snap, "notes.txt"), "w") as f:
+        f.write("older text")
+    os.symlink(os.path.join(outside, "shadow"), os.path.join(snap, "link.txt"))
+    out = fo.versions("notes.txt", [s, snap, os.path.join(root, "gone"), outside], root)
+    assert out[0]["size_bytes"] == 3 and out[1]["size_bytes"] == 10 and out[2] is None and out[3] is None
+    assert fo.versions("link.txt", [snap], root) == [None]
+    new = fo.restore_version(snap, "notes.txt", s, "notes (restored 2026-10-01 0300).txt", root)
+    assert open(os.path.join(s, new)).read() == "older text"
+    assert open(os.path.join(s, "notes.txt")).read() == "old"
+    with pytest.raises(fo.FileOpError, match="already there"):
+        fo.restore_version(snap, "notes.txt", s, new, root)
+    with pytest.raises(fo.FileOpError, match="Only files"):
+        fo.restore_version(snap, "link.txt", s, "x.txt", root)

@@ -15,6 +15,21 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · AlvaOS Files: previous versions of a file
+
+- Right-click a file › "Previous versions…": every different state of that
+  file in the restore points (newest first, with its time and size). "Open"
+  shows it, "Restore" copies it next to the file as
+  "name (restored <date>).ext"; nothing is overwritten.
+- The Files server reads `backup_snapshots.json`, works out where the file
+  was in each restore point (also for restore points of a whole pool) and
+  asks the helper, as the person, which of those hold the file
+  (`files-versions NAME DIR...`, at most 100). Same size and time as a newer
+  one = the same version, shown once. Restoring is
+  `files-restore-version`, also as the person; only with write access.
+- Real test with a restore point built by hand: two older versions listed,
+  opened, one restored with the right content.
+
 ## 2026-10-03 · AlvaOS Files: search
 
 - Typing in the search box filters the open folder at once; half a second
