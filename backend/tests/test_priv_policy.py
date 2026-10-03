@@ -682,3 +682,9 @@ def test_backup_transfers_give_way_to_people():
     assert allowed('/usr/bin/btrfs', 'send', '/mnt/alvaos/main/.alvaos-buddy-media-1').background
     assert allowed('/usr/bin/btrfs', 'receive', '/mnt/alvaos/main/restore').background
     assert not allowed('/usr/bin/btrfs', 'subvolume', 'show', '/').background
+
+
+def test_big_numbers_for_uploads_over_ten_gigabytes():
+    assert p._int_arg("53687091200", 0, 10**15) == "53687091200"     # 50 GB offset
+    with pytest.raises(p.PolicyError):
+        p._int_arg("12345678901234567", 0, 10**17)                    # more than 16 digits

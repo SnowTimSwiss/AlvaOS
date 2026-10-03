@@ -26,7 +26,7 @@ Every page follows the same pattern as the reworked Dashboard, Storage and Backu
 ### 2. AlvaOS Files: a native, lightweight file cloud
 Everything people use Nextcloud for at home, built into AlvaOS and working on the same folders as the shares. No separate app, no database server.
 - **AlvaOS Files app** (port 8090, HTTPS 9443, built in, turned on under Apps): done.
-- **Preview** of images, video, audio, PDF and text; photo thumbnails generated in the background.
+- **Preview** of images, video, audio, PDF and text; **Photos** timeline by month: done. Next: the date from the photo itself (EXIF) instead of the file date, and video thumbnails.
 - **Share links**: done (read-only or upload-only "drop box", password, expiry, one list).
 - **WebDAV** (8091, HTTPS 9444) and **installing Files as an app** (PWA, over HTTPS): done.
 - **Trash** per share and **Previous versions** of a file: done in Files.

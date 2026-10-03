@@ -15,6 +15,24 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · AlvaOS Files: Photos, and files keep their date
+
+- "Photos" in the Files sidebar: every picture and video of the open
+  shared folder, newest first, grouped by month, as square tiles; a click
+  opens the viewer, arrows go through all of them. New helper operation
+  `files-media DIR` (as the person, like search: no symlinks, skips hidden
+  folders, the trash and unfinished uploads; at most 5000, 15 seconds),
+  `GET /api/media?share=`.
+- Uploads keep the date the file had on the device (`File.lastModified`,
+  helper `files-part-finish-dated`), in the app and through drop-box links,
+  so photos land in the right month. Dates before 1980 or in the future are
+  ignored.
+- Bug fix: numbers passed to the helper were limited to 10 digits, so an
+  upload past 10 GB (piece offset, final size) and seeking past 10 GB in a
+  video failed. Now 16 digits, still with each operation's own bounds.
+- Real test: 38 photos and a video over five months shown in order; a photo
+  uploaded with a July 2024 date appeared under July 2024.
+
 ## 2026-10-03 · Accessibility pass with axe-core
 
 - Every page of the web interface (both themes, also the Shares, Users,

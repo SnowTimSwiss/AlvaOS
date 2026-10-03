@@ -167,6 +167,7 @@
         found = null;
         $('search').value = '';
         $('main').querySelector('.bar').classList.remove('find');
+        $('photos-nav').classList.remove('active');
         selected = new Set();
         anchor = -1;
         if (push && location.hash !== hashFor(share, path)) history.pushState(null, '', hashFor(share, path));
@@ -231,8 +232,25 @@
         $('new-btn').hidden = access() !== 'write';
         $('view-grid').setAttribute('aria-pressed', view === 'grid');
         $('view-list').setAttribute('aria-pressed', view === 'list');
-        if (found && !shown.length) {
+        if (found && !shown.length && foundInfo.photos) {
+            items.innerHTML = `<div class="empty">${icon('image')}<strong>No photos or videos yet</strong>Pictures you put anywhere in "${esc(share)}" show up here, newest first.</div>`;
+        } else if (found && !shown.length) {
             items.innerHTML = `<div class="empty">${icon('search')}<strong>Nothing found</strong>No name here or in a folder below contains "${esc(foundInfo.q)}".</div>`;
+        } else if (found && foundInfo.photos) {
+            // The Photos view: a timeline by month, only pictures, no names.
+            let month = '';
+            items.className = 'items grid photos';
+            items.innerHTML = shown.map((e, i) => {
+                const d = new Date(e.modified_at);
+                const label = Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString([], { month: 'long', year: 'numeric' });
+                const head = label !== month ? `<div class="month">${esc(label)}</div>` : '';
+                month = label;
+                const k = kindOf(e);
+                const thumb = THUMB.test(e.name)
+                    ? `<img loading="lazy" decoding="async" alt="${esc(e.name)}" src="/api/thumb?share=${encodeURIComponent(sh(e))}&path=${encodeURIComponent(rel(e))}&v=${encodeURIComponent(e.modified_at || '')}" data-fallback="${k}">`
+                    : `<span class="pvideo">${icon(k)}</span>`;
+                return `${head}<div class="ptile" data-i="${i}" title="${esc(rel(e))}">${thumb}</div>`;
+            }).join('');
         } else if (!shown.length) {
             items.innerHTML = q
                 ? `<div class="empty">${icon('search')}<strong>Nothing found</strong>No name in this folder contains "${esc(q)}".</div>`
@@ -260,6 +278,13 @@
         }
         items.querySelectorAll('img[data-fallback]').forEach((img) => img.addEventListener('error', () => {
             const k = img.dataset.fallback;
+            if (img.parentElement?.classList.contains('ptile')) {
+                const box = document.createElement('span');
+                box.className = 'pvideo';
+                box.innerHTML = icon(k);
+                img.replaceWith(box);
+                return;
+            }
             const box = document.createElement(img.classList.contains('rthumb') ? 'span' : 'div');
             box.className = img.classList.contains('rthumb') ? `ricon kind-${k}` : `thumb icon kind-${k}`;
             box.innerHTML = icon(k);
@@ -269,7 +294,10 @@
             const head = document.createElement('div');
             head.className = 'results-head';
             const here = path ? path.split('/').pop() : share;
-            head.innerHTML = `${icon('search').replace('<svg', '<svg width="16" height="16"')}<span>${found.length}${foundInfo.complete ? '' : '+'} found for "${esc(foundInfo.q)}"${foundInfo.complete ? '' : ' · type more to narrow it down'}</span>
+            head.innerHTML = foundInfo.photos
+                ? `${icon('image').replace('<svg', '<svg width="16" height="16"')}<span>${found.length}${foundInfo.complete ? '' : '+'} photos and videos in ${esc(share)}, newest first</span>
+                <button type="button" class="link" id="results-close">Back to the folder</button>`
+                : `${icon('search').replace('<svg', '<svg width="16" height="16"')}<span>${found.length}${foundInfo.complete ? '' : '+'} found for "${esc(foundInfo.q)}"${foundInfo.complete ? '' : ' · type more to narrow it down'}</span>
                 <span class="scope" role="group" aria-label="Where to search"><button type="button" data-scope="here" aria-pressed="${!searchAll}">In ${esc(here)}</button><button type="button" data-scope="all" aria-pressed="${searchAll}">All shared folders</button></span>
                 <button type="button" class="link" id="results-close">Back to the folder</button>`;
             items.prepend(head);
@@ -301,7 +329,7 @@
             $('sel-delete').hidden = !canWrite;
             $('sel-download').hidden = false;
         }
-        if (found) { $('status').textContent = 'Search results · open one, or "Show in folder" to change it'; return; }
+        if (found) { $('status').textContent = foundInfo.photos ? 'Photos · click one to look through them' : 'Search results · open one, or "Show in folder" to change it'; return; }
         $('status').textContent = [folders ? `${folders} folder${folders === 1 ? '' : 's'}` : '',
             files.length ? `${files.length} file${files.length === 1 ? '' : 's'} (${bytes(files.reduce((s, e) => s + (e.size_bytes || 0), 0))})` : '',
             access() === 'read' ? 'You can look at this folder, not change it' : ''].filter(Boolean).join(' · ');
@@ -338,7 +366,8 @@
         if (!item) { selected = new Set(); paintSelection(); return; }
         const i = Number(item.dataset.i);
         // Touch: a tap opens, like on a phone. Mouse: click selects, double-click opens.
-        if (coarse.matches && !selected.size) open(shown[i]);
+        // In Photos a click opens the picture, like in any photo app.
+        if ((found && foundInfo.photos && !(e.ctrlKey || e.metaKey || e.shiftKey)) || (coarse.matches && !selected.size)) open(shown[i]);
         else select(i, e);
     });
     $('items').addEventListener('dblclick', (e) => {
@@ -494,6 +523,7 @@
     function clearSearch() {
         $('search').value = '';
         found = null;
+        $('photos-nav').classList.remove('active');
         searchId++;
         $('main').querySelector('.bar').classList.remove('find');
         selected = new Set();
@@ -513,7 +543,7 @@
         setTimeout(() => clearInterval(wait), 5000);
     }
     $('search').addEventListener('input', () => {
-        if (found) { found = null; selected = new Set(); }
+        if (found) { found = null; selected = new Set(); $('photos-nav').classList.remove('active'); }
         searchId++;
         render();
         clearTimeout(searchTimer);
@@ -714,6 +744,25 @@
         wrap.hidden = false;
         $('dav-copy').onclick = () => copy(url);
         wrap.querySelector('[data-close]').onclick = () => { wrap.hidden = true; wrap.innerHTML = ''; };
+    });
+
+    // Photos: every picture and video of the open shared folder, newest first.
+    $('photos-nav').addEventListener('click', async () => {
+        closeSide();
+        $('search').value = '';
+        const id = ++searchId;
+        $('items').innerHTML = '<div class="empty">Looking for photos…</div>';
+        document.querySelectorAll('.side-item').forEach((b) => b.classList.toggle('active', b.id === 'photos-nav'));
+        try {
+            const data = await api(`media?${new URLSearchParams({ share })}`);
+            if (id !== searchId) return;
+            found = data.results || [];
+            foundInfo = { q: '', complete: !!data.complete, photos: true };
+            selected = new Set();
+            render();
+        } catch (err) {
+            toast(err.message, 'error');
+        }
     });
 
     $('links-nav').addEventListener('click', async () => {
@@ -934,7 +983,7 @@
                     first = false;
                 }
             }
-            await api('upload/finish', { method: 'POST', json: { share: t.share, path: t.path, name: file.name, size: file.size } });
+            await api('upload/finish', { method: 'POST', json: { share: t.share, path: t.path, name: file.name, size: file.size, modified: file.lastModified } });
             return finish('done', 'Done');
         } catch (err) {
             api('upload/abort', { method: 'POST', json: { share: t.share, path: t.path, name: file.name } }).catch(() => {});

@@ -275,3 +275,15 @@ body.public { display: flex; flex-direction: column; min-height: 100%; }
 .howto p { margin: 0 0 8px; }
 .howto strong { color: var(--text); }
 .howto code { font-size: 0.85em; background: var(--hover); padding: 1px 4px; border-radius: 4px; }
+
+/* Photos view: a timeline of pictures by month */
+.items.photos { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px; }
+.items.photos .month { grid-column: 1 / -1; font-weight: 700; font-size: 0.95rem; padding: 14px 2px 4px; }
+.items.photos .results-head + .month { padding-top: 0; }
+.ptile { aspect-ratio: 1; overflow: hidden; border-radius: 6px; background: var(--hover); cursor: pointer; position: relative; outline-offset: 2px; }
+.ptile img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .15s; }
+.ptile:hover img { transform: scale(1.03); }
+.ptile.selected { outline: 3px solid var(--accent); }
+.pvideo { display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; color: var(--muted); }
+.pvideo svg { width: 34px; height: 34px; }
+@media (max-width: 760px) { .items.photos { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 3px; } }

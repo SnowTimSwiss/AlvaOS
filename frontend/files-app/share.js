@@ -152,7 +152,7 @@
                     });
                     offset += blob.size;
                 }
-                await get(`${base}/upload/finish`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...H }, body: JSON.stringify({ name: started.name, size: file.size }) });
+                await get(`${base}/upload/finish`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...H }, body: JSON.stringify({ name: started.name, size: file.size, modified: file.lastModified }) });
                 bar.style.width = '100%';
                 row.classList.add('done');
                 state.innerHTML = `${icon('check')} ${esc(sizeText(file.size))}${started.name !== file.name ? ` · saved as ${esc(started.name)}` : ''}`;

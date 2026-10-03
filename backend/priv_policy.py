@@ -324,7 +324,7 @@ def _share_group(system: System, group: str, must_exist: bool = True) -> str:
 
 
 def _int_arg(value: str, lo: int = 0, hi: int = 10**9) -> str:
-    if not re.fullmatch(r'\d{1,10}', value or '') or not lo <= int(value) <= hi:
+    if not re.fullmatch(r'\d{1,16}', value or '') or not lo <= int(value) <= hi:
         _fail(f'Invalid number: {value!r}')
     return value
 

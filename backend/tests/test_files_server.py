@@ -376,3 +376,25 @@ def test_https_only_sends_files_to_https_but_keeps_the_certificate(client, monke
     assert res.status_code == 308 and res.headers["Location"] == "https://nas:9443/api/me"
     assert client.get("/alvaos-ca.crt", environ_base=lan).status_code != 308
     assert client.get("/api/me", environ_base=lan, base_url="https://nas:9443").status_code == 401
+
+
+def test_photos_view_reads_one_share_as_the_person(client, monkeypatch):
+    seen = []
+    monkeypatch.setattr(files_manager, "run_helper", lambda args, timeout=600, user=None: (
+        seen.append((args, user)) or {"results": [{"name": "a.jpg", "folder": "2024", "type": "file"}],
+                                      "complete": True}, ""))
+    sign_in(client, "ben", "ben-pass")
+    data = client.get("/api/media?share=Family").get_json()
+    assert seen == [(["files-media", "/mnt/alvaos/main/Family"], "ben")]
+    assert data["results"][0]["folder"] == "2024" and data["results"][0]["share"] == "Family"
+    assert client.get("/api/media?share=Anna").status_code == 404
+
+
+def test_upload_finish_passes_the_files_own_date(client):
+    sign_in(client, "anna", "anna-pass")
+    client.post("/api/upload/finish", json={"share": "Anna", "path": "", "name": "a.jpg", "size": 3,
+                                            "modified": 1600000000123}, headers=H)
+    assert client.calls[-1] == (["files-part-finish-dated", "/mnt/alvaos/main/Anna", "a.jpg", "3", "1600000000"],
+                                "anna")
+    client.post("/api/upload/finish", json={"share": "Anna", "path": "", "name": "b.jpg", "size": 3}, headers=H)
+    assert client.calls[-1][0][0] == "files-part-finish"
