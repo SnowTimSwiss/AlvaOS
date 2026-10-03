@@ -353,3 +353,15 @@ def test_upload_links_take_files_and_show_nothing(client, monkeypatch):
     view = client.post("/api/links", json={"share": "Family", "path": "Inbox", "kind": "folder"}, headers=H).get_json()
     vtoken = view["url"].split("/")[-1]
     assert visitor.post(f"/api/public/{vtoken}/upload/start", json={"name": "x.jpg"}, headers=H).status_code == 403
+
+
+def test_search_everywhere_goes_through_each_share_as_the_person(client, monkeypatch):
+    seen = []
+    monkeypatch.setattr(files_manager, "run_helper", lambda args, timeout=600, user=None: (
+        seen.append((args, user)) or {"results": [{"name": "x.jpg", "folder": "", "type": "file"}],
+                                      "complete": True}, ""))
+    sign_in(client, "anna", "anna-pass")
+    data = client.get("/api/search?everywhere=1&q=x").get_json()
+    assert [a[1] for a, _ in seen] == ["/mnt/alvaos/main/Anna", "/mnt/alvaos/main/Family"]
+    assert all(user == "anna" for _, user in seen)
+    assert [(r["share"], r["name"]) for r in data["results"]] == [("Anna", "x.jpg"), ("Family", "x.jpg")]

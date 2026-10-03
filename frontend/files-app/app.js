@@ -110,6 +110,7 @@
     let loadId = 0;
     let found = null;       // search results below the folder, or null
     let foundInfo = { q: '', complete: true };
+    let searchAll = false;   // false: this folder and below; true: every shared folder
     let searchId = 0;
     // Results come from many folders: they are opened or shown in their
     // folder, changes happen there.
@@ -239,16 +240,16 @@
             items.innerHTML = shown.map((e, i) => {
                 const k = kindOf(e);
                 const thumb = THUMB.test(e.name)
-                    ? `<div class="thumb"><img loading="lazy" decoding="async" alt="" src="/api/thumb?share=${encodeURIComponent(share)}&path=${encodeURIComponent(rel(e))}&v=${encodeURIComponent(e.modified_at || '')}" data-fallback="${k}"></div>`
+                    ? `<div class="thumb"><img loading="lazy" decoding="async" alt="" src="/api/thumb?share=${encodeURIComponent(sh(e))}&path=${encodeURIComponent(rel(e))}&v=${encodeURIComponent(e.modified_at || '')}" data-fallback="${k}"></div>`
                     : `<div class="thumb icon kind-${k}">${icon(k === 'folder' ? 'folder-fill' : k)}</div>`;
-                return `<div class="tile" data-i="${i}" title="${esc(found ? rel(e) : e.name)}" draggable="${access() === 'write'}">${thumb}<div class="name">${esc(e.name)}</div>${found ? `<div class="where">${esc(where(e).split(' › ').pop())}</div>` : ''}
+                return `<div class="tile" data-i="${i}" title="${esc(found ? rel(e) : e.name)}" draggable="${access() === 'write'}">${thumb}<div class="name">${esc(e.name)}</div>${found ? `<div class="where">${esc(searchAll ? where(e) : where(e).split(' › ').pop())}</div>` : ''}
                     <button type="button" class="more" data-more="${i}" aria-label="More for ${esc(e.name)}">${icon('more')}</button></div>`;
             }).join('');
         } else {
             items.innerHTML = `<div class="head"><span></span><span>Name</span><span style="text-align:right">Size</span><span>Modified</span><span></span></div>` + shown.map((e, i) => {
                 const k = kindOf(e);
                 const lead = THUMB.test(e.name)
-                    ? `<img class="rthumb" loading="lazy" alt="" src="/api/thumb?share=${encodeURIComponent(share)}&path=${encodeURIComponent(rel(e))}&v=${encodeURIComponent(e.modified_at || '')}" data-fallback="${k}">`
+                    ? `<img class="rthumb" loading="lazy" alt="" src="/api/thumb?share=${encodeURIComponent(sh(e))}&path=${encodeURIComponent(rel(e))}&v=${encodeURIComponent(e.modified_at || '')}" data-fallback="${k}">`
                     : `<span class="ricon kind-${k}">${icon(k === 'folder' ? 'folder-fill' : k)}</span>`;
                 const size = e.type === 'folder' ? '' : bytes(e.size_bytes);
                 return `<div class="row" data-i="${i}" draggable="${access() === 'write'}">${lead}<div class="rtext"><div class="rname">${esc(e.name)}</div>${found ? `<div class="rsub rwhere" style="display:block">${esc(where(e))}</div>` : `<div class="rsub">${esc([size, when(e.modified_at)].filter(Boolean).join(' · '))}</div>`}</div>
@@ -266,15 +267,23 @@
         if (found) {
             const head = document.createElement('div');
             head.className = 'results-head';
-            head.innerHTML = `${icon('search').replace('<svg', '<svg width="16" height="16"')}<span>${found.length}${foundInfo.complete ? '' : '+'} found for "${esc(foundInfo.q)}" in ${esc(path ? path.split('/').pop() : share)} and below${foundInfo.complete ? '' : ' · type more to narrow it down'}</span><button type="button" class="link" id="results-close">Back to the folder</button>`;
+            const here = path ? path.split('/').pop() : share;
+            head.innerHTML = `${icon('search').replace('<svg', '<svg width="16" height="16"')}<span>${found.length}${foundInfo.complete ? '' : '+'} found for "${esc(foundInfo.q)}"${foundInfo.complete ? '' : ' · type more to narrow it down'}</span>
+                <span class="scope" role="group" aria-label="Where to search"><button type="button" data-scope="here" aria-pressed="${!searchAll}">In ${esc(here)}</button><button type="button" data-scope="all" aria-pressed="${searchAll}">All shared folders</button></span>
+                <button type="button" class="link" id="results-close">Back to the folder</button>`;
             items.prepend(head);
             head.querySelector('#results-close').addEventListener('click', clearSearch);
+            head.querySelectorAll('[data-scope]').forEach((b) => b.addEventListener('click', () => {
+                searchAll = b.dataset.scope === 'all';
+                deepSearch();
+            }));
         }
         paintSelection();
     }
 
     const rel = (e) => (e.folder !== undefined ? (e.folder ? `${e.folder}/${e.name}` : e.name) : (path ? `${path}/${e.name}` : e.name));
-    const where = (e) => [share, ...(e.folder ? e.folder.split('/') : [])].join(' › ');
+    const sh = (e) => e.share || share;
+    const where = (e) => [sh(e), ...(e.folder ? e.folder.split('/') : [])].join(' › ');
 
     function paintSelection() {
         $('items').querySelectorAll('[data-i]').forEach((el) => el.classList.toggle('selected', selected.has(shown[Number(el.dataset.i)]?.name)));
@@ -352,7 +361,7 @@
 
     async function open(entry) {
         if (!entry) return;
-        if (entry.type === 'folder') { go(share, rel(entry)); return; }
+        if (entry.type === 'folder') { go(sh(entry), rel(entry)); return; }
         if (/\.pdf$/i.test(entry.name)) {
             const w = window.open('', '_blank');
             try { const url = await link(entry, true); if (w) w.location.href = url; else location.href = url; } catch (err) { if (w) w.close(); toast(err.message, 'error'); }
@@ -364,12 +373,12 @@
     }
 
     async function link(entry, inline) {
-        return (await api('link', { method: 'POST', json: { share, path: rel(entry), inline: !!inline } })).url;
+        return (await api('link', { method: 'POST', json: { share: sh(entry), path: rel(entry), inline: !!inline } })).url;
     }
 
-    function zipDownload(folderPath) {
+    function zipDownload(folderPath, inShare = share) {
         const a = document.createElement('a');
-        a.href = `/api/zip?${new URLSearchParams({ share, path: folderPath })}`;
+        a.href = `/api/zip?${new URLSearchParams({ share: inShare, path: folderPath })}`;
         a.download = '';
         document.body.appendChild(a);
         a.click();
@@ -378,7 +387,7 @@
     }
 
     async function download(list) {
-        for (const entry of list.filter((e) => e.type === 'folder')) zipDownload(rel(entry));
+        for (const entry of list.filter((e) => e.type === 'folder')) zipDownload(rel(entry), sh(entry));
         for (const entry of list.filter((e) => e.type === 'file')) {
             try {
                 const a = document.createElement('a');
@@ -434,7 +443,7 @@
         if (name === 'open') open(sel[0]);
         if (name === 'reveal' && sel.length === 1) reveal(sel[0]);
         if (name === 'download') download(sel);
-        if (name === 'zip' && sel.length === 1) zipDownload(rel(sel[0]));
+        if (name === 'zip' && sel.length === 1) zipDownload(rel(sel[0]), sh(sel[0]));
         if (name === 'zip-here') zipDownload(path);
         if (name === 'rename' && sel.length === 1) rename(sel[0]);
         if (name === 'delete' && sel.length) remove(sel);
@@ -470,7 +479,7 @@
         const id = ++searchId;
         $('status').textContent = 'Searching…';
         try {
-            const data = await api(`search?${new URLSearchParams({ share, path, q })}`);
+            const data = await api(`search?${new URLSearchParams(searchAll ? { everywhere: '1', q } : { share, path, q })}`);
             if (id !== searchId || $('search').value.trim() !== q) return;
             found = (data.results || []).filter((e) => !e.name.startsWith('.'));
             foundInfo = { q, complete: !!data.complete };
@@ -491,7 +500,7 @@
     }
     function reveal(entry) {
         const folder = entry.folder || '';
-        go(share, folder);
+        go(sh(entry), folder);
         const name = entry.name;
         const wait = setInterval(() => {
             const i = shown.findIndex((x) => x.name === name);
@@ -599,7 +608,7 @@
 
     function shareDialog(entry) {
         const wrap = $('dialog');
-        const canDrop = entry.type === 'folder' && (me?.shares || []).find((x) => x.name === share)?.access === 'write';
+        const canDrop = entry.type === 'folder' && (me?.shares || []).find((x) => x.name === sh(entry))?.access === 'write';
         wrap.innerHTML = `<form class="dialog" novalidate><h2>Share "${esc(entry.name)}"</h2>
             ${canDrop ? `<label class="field">People with the link can<select id="ln-mode" class="sel">
                 <option value="view">Look at and download what is in it</option>
@@ -622,7 +631,7 @@
         wrap.querySelector('form').onsubmit = async (e) => {
             e.preventDefault();
             try {
-                const link = await api('links', { method: 'POST', json: { share, path: rel(entry), kind: entry.type, mode: $('ln-mode')?.value || 'view', days: Number($('ln-days').value), password: $('ln-pass').value } });
+                const link = await api('links', { method: 'POST', json: { share: sh(entry), path: rel(entry), kind: entry.type, mode: $('ln-mode')?.value || 'view', days: Number($('ln-days').value), password: $('ln-pass').value } });
                 const url = fullUrl(link.url);
                 wrap.innerHTML = `<div class="dialog"><h2>Link ready</h2>
                     <p>${link.expires_at ? `Works until ${esc(when(link.expires_at))}` : 'Works until you remove it'}${link.has_password ? ', with a password' : ''}. You find it again under Shared links.</p>
@@ -642,13 +651,14 @@
     async function versionsDialog(entry) {
         const wrap = $('dialog');
         const filePath = rel(entry);
-        const canWrite = (me?.shares || []).find((x) => x.name === share)?.access === 'write';
+        const inShare = sh(entry);
+        const canWrite = (me?.shares || []).find((x) => x.name === inShare)?.access === 'write';
         const close = () => { wrap.hidden = true; wrap.innerHTML = ''; };
         wrap.innerHTML = `<div class="dialog wide"><h2>Previous versions of "${esc(entry.name)}"</h2><p>Looking in the restore points…</p></div>`;
         wrap.hidden = false;
         let versions = [];
         let error = '';
-        try { versions = (await api(`versions?${new URLSearchParams({ share, path: filePath })}`)).versions || []; } catch (err) { error = err.message; }
+        try { versions = (await api(`versions?${new URLSearchParams({ share: inShare, path: filePath })}`)).versions || []; } catch (err) { error = err.message; }
         if (wrap.hidden) return;
         wrap.innerHTML = `<div class="dialog wide"><h2>Previous versions of "${esc(entry.name)}"</h2>
             <p>${versions.length ? `Saved by the restore points.${canWrite ? ' "Restore" puts the old version next to this file, with the date in its name; nothing is overwritten.' : ''}` : ''}</p>
@@ -662,7 +672,7 @@
         wrap.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', async () => {
             const w = window.open('', '_blank');
             try {
-                const link = await api('versions/link', { method: 'POST', json: { share, path: filePath, id: b.dataset.open, inline: true } });
+                const link = await api('versions/link', { method: 'POST', json: { share: inShare, path: filePath, id: b.dataset.open, inline: true } });
                 if (w) w.location.href = link.url; else location.href = link.url;
             } catch (err) {
                 if (w) w.close();
@@ -672,7 +682,7 @@
         wrap.querySelectorAll('[data-restore]').forEach((b) => b.addEventListener('click', async () => {
             b.disabled = true;
             try {
-                const done = await api('versions/restore', { method: 'POST', json: { share, path: filePath, id: b.dataset.restore } });
+                const done = await api('versions/restore', { method: 'POST', json: { share: inShare, path: filePath, id: b.dataset.restore } });
                 close();
                 toast(`Restored as "${done.name}".`);
                 if (!found) load();
