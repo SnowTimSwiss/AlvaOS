@@ -101,3 +101,63 @@ def test_turning_off_stops_the_tunnel(remote):
 def test_keys_are_real_wireguard_keys():
     private, public = ra.new_keypair()
     assert ra.KEY_RE.match(private) and ra.KEY_RE.match(public) and ra.public_key_of(private) == public
+
+
+ROUTER_STATUS = """Found valid IGD : http://192.168.1.1:49000/igdupnp/control/WANIPConn1
+Local LAN ip address : 192.168.1.20
+Connection Type : IP_Routed
+Status : Connected, uptime=86400s, LastConnectionError : ERROR_NONE
+ExternalIPAddress = 84.12.34.56
+"""
+
+
+def with_router(remote, monkeypatch, answers):
+    asked = []
+    monkeypatch.setattr(ra, "_upnpc", lambda: "/usr/bin/upnpc")
+
+    def run_local(argv):
+        asked.append(argv)
+        if argv[1] == "-s":
+            return answers.get("-s", "")
+        if "-a" in argv:
+            return answers["-a"].pop(0) if isinstance(answers["-a"], list) else answers["-a"]
+        return ""
+    remote.run_local = run_local
+    return asked
+
+
+def test_the_router_opens_the_port_by_upnp(remote, monkeypatch):
+    remote.configure({"enabled": True, "endpoint": "home.example.net"})
+    asked = with_router(remote, monkeypatch, {"-s": ROUTER_STATUS,
+                                              "-a": "external 84.12.34.56:51821 UDP is redirected to internal 192.168.1.20:51821 (duration=0)"})
+    ok, message, info = remote.open_router_port()
+    assert ok and "51821" in message and info["wan_ip"] == "84.12.34.56"
+    assert asked[-1] == ["/usr/bin/upnpc", "-e", "AlvaOS remote access", "-a", "192.168.1.20", "51821", "51821", "UDP", "0"]
+    assert remote.status()["upnp"] is True
+    remote.configure({"port": 51900})                         # a new port: the old mapping goes
+    assert ["/usr/bin/upnpc", "-d", "51821", "UDP"] in asked and asked[-1][6] == "51900"
+
+
+def test_a_router_that_wants_a_lease_gets_one(remote, monkeypatch):
+    remote.configure({"enabled": True})
+    asked = with_router(remote, monkeypatch, {"-s": ROUTER_STATUS, "-a": [
+        "AddPortMapping(51821, 51821, 192.168.1.20) failed with code 725 (OnlyPermanentLeasesSupported)",
+        "external 84.12.34.56:51821 UDP is redirected to internal 192.168.1.20:51821 (duration=604800)"]})
+    assert remote.open_router_port()[0] and asked[-1][-1] == str(7 * 24 * 3600)
+
+
+def test_no_router_or_a_refusal_is_said_plainly(remote, monkeypatch):
+    remote.configure({"enabled": True})
+    with_router(remote, monkeypatch, {"-s": "No IGD UPnP Device found on the network !"})
+    ok, message, _ = remote.open_router_port()
+    assert not ok and "did not answer" in message
+    with_router(remote, monkeypatch, {"-s": ROUTER_STATUS,
+                                      "-a": "AddPortMapping(51821, 51821, 192.168.1.20) failed with code 718 (ConflictInMappingEntry)"})
+    ok, message, _ = remote.open_router_port()
+    assert not ok and "ConflictInMappingEntry (718)" in message and not remote.status()["upnp"]
+
+
+def test_shared_or_double_nat_addresses_are_explained():
+    assert "CGNAT" in ra.address_warning("100.71.4.2")
+    assert "behind another router" in ra.address_warning("192.168.178.20")
+    assert ra.address_warning("84.12.34.56") == "" and ra.address_warning("home.example.net") == ""

@@ -22,6 +22,7 @@ import os
 import re
 import secrets
 import shutil
+import subprocess
 import threading
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -38,6 +39,9 @@ NAME_RE = re.compile(r'^[\w .\'()-]{1,40}$', re.UNICODE)
 HOST_RE = re.compile(r'^(?=.{1,253}$)([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$')
 KEY_RE = re.compile(r'^[A-Za-z0-9+/]{43}=$')
 WEB_PORT = 8080
+UPNP_NAME = 'AlvaOS remote access'
+UPNP_LEASE_FALLBACK = 7 * 24 * 3600   # for routers that refuse permanent mappings
+CGNAT = ipaddress.ip_network('100.64.0.0/10')
 
 _lock = threading.Lock()
 
@@ -88,8 +92,10 @@ def qr_svg(text: str) -> str:
 class RemoteAccess:
     def __init__(self, run_command: Callable, settings_path: Optional[str] = None,
                  config_path: Optional[str] = None, interface_up: Optional[Callable[[], bool]] = None,
-                 lan_addresses: Optional[Callable[[], List[str]]] = None):
+                 lan_addresses: Optional[Callable[[], List[str]]] = None,
+                 run_local: Optional[Callable[[List[str]], str]] = None):
         self.run = run_command
+        self.run_local = run_local or _run_local   # upnpc needs no privileges
         self.settings_path = settings_path or SETTINGS_FILE
         self.config_path = config_path or CONFIG_PATH
         self.interface_up = interface_up or (lambda: os.path.exists(f'/sys/class/net/{INTERFACE}'))
@@ -110,6 +116,7 @@ class RemoteAccess:
         except (TypeError, ValueError):
             port = DEFAULT_PORT
         return {'enabled': bool(data.get('enabled')), 'endpoint': str(data.get('endpoint') or ''),
+                'upnp': bool(data.get('upnp')),
                 'port': port if 1024 <= port <= 65535 else DEFAULT_PORT,
                 'private_key': str(data.get('private_key') or ''), 'devices': devices}
 
@@ -135,7 +142,8 @@ class RemoteAccess:
         return {'enabled': state['enabled'], 'running': state['enabled'] and self.interface_up(),
                 'endpoint': state['endpoint'], 'port': state['port'], 'nas_address': NAS_ADDRESS,
                 'open_url': f'http://{NAS_ADDRESS}:{WEB_PORT}', 'lan_addresses': self.lan_addresses(),
-                'devices': devices, 'wireguard_installed': bool(_wg_quick())}
+                'devices': devices, 'wireguard_installed': bool(_wg_quick()), 'upnp': state['upnp'],
+                'upnp_installed': bool(_upnpc())}
 
     # ── Settings ─────────────────────────────────────────────────────────
 
@@ -159,9 +167,16 @@ class RemoteAccess:
                 state['enabled'] = bool(payload.get('enabled'))
             if state['enabled'] and not _wg_quick():
                 return False, 'WireGuard is not installed on this NAS (package wireguard-tools).'
+            old_port = self.load()['port']
+            port_changed = state['port'] != old_port
             self._server_key(state)
             self._save(state)
-            return self._apply(state)
+            ok, message = self._apply(state)
+        if ok and port_changed and state['upnp'] and _upnpc():
+            self.run_local([_upnpc() or 'upnpc', '-d', str(old_port), 'UDP'])   # no forgotten open port
+            if state['enabled']:
+                self.open_router_port()
+        return ok, message
 
     def _apply(self, state: Dict[str, Any]) -> Tuple[bool, str]:
         """Write the config and bring the tunnel up (or down when off)."""
@@ -198,13 +213,26 @@ class RemoteAccess:
             f.write(self.render_config(state))
         os.replace(tmp, self.config_path)
 
-    def start(self) -> None:
-        """At startup: wg-quick state does not survive a reboot."""
+    def start(self, stop: Optional[threading.Event] = None) -> None:
+        """At startup: wg-quick state does not survive a reboot. Runs on in
+        its own thread to keep the router's port mapping (UPnP) alive."""
         state = self.load()
         if state['enabled'] and not self.interface_up():
             ok, message = self._apply(state)
             if not ok:
                 print(f'Remote access: {message}')
+        # A router forgets mappings when it restarts, and some only give them
+        # for a week: ask again now and every day.
+        while True:
+            state = self.load()
+            if state['enabled'] and state['upnp']:
+                ok, message, _ = self.open_router_port()
+                if not ok:
+                    print(f'Remote access, router: {message}')
+            if stop is not None and stop.wait(24 * 3600):
+                return
+            if stop is None:
+                threading.Event().wait(24 * 3600)
 
     # ── Devices ──────────────────────────────────────────────────────────
 
@@ -260,6 +288,45 @@ class RemoteAccess:
             ok, message = self._apply(state)
             return ok, ('The device can no longer connect.' if ok else message)
 
+    # ── The router ───────────────────────────────────────────────────────
+
+    def router(self) -> Dict[str, Any]:
+        """What the router says over UPnP: is it there, the NAS's address on
+        the home network and the router's own internet address."""
+        upnpc = _upnpc()
+        if not upnpc:
+            return {'found': False}
+        out = self.run_local([upnpc, '-s'])
+        lan = re.search(r'Local LAN ip address\s*:\s*([0-9.]+)', out)
+        wan = re.search(r'ExternalIPAddress\s*=\s*([0-9a-fA-F.:]+)', out)
+        return {'found': 'Found valid IGD' in out or bool(wan), 'lan_ip': lan.group(1) if lan else '',
+                'wan_ip': wan.group(1) if wan else ''}
+
+    def open_router_port(self) -> Tuple[bool, str, Dict[str, Any]]:
+        """Ask the router to forward the port (UPnP). Returns (ok, message, router)."""
+        if not _upnpc():
+            return False, 'This NAS cannot talk to routers (package miniupnpc). Forward the port by hand.', {}
+        with _lock:
+            state = self.load()
+            info = self.router()
+            if not info.get('found'):
+                return False, ('Your router did not answer. Automatic port opening (UPnP) is off or not '
+                               'supported there; forward the port by hand, or turn on UPnP in the router.'), info
+            lan = info.get('lan_ip') or (self.lan_addresses() or [''])[0]
+            port = str(state['port'])
+            problem = ''
+            for lease in ('0', str(UPNP_LEASE_FALLBACK)):
+                out = self.run_local([_upnpc() or 'upnpc', '-e', UPNP_NAME, '-a', lan, port, port, 'UDP', lease])
+                if 'is redirected to internal' in out:
+                    state['upnp'] = True
+                    self._save(state)
+                    return True, f'Your router now forwards UDP port {port} to this NAS.', info
+                failed = re.search(r'failed with code (\d+) \(([^)]*)\)', out)
+                problem = f'{failed.group(2)} ({failed.group(1)})' if failed else (out.strip().splitlines() or [''])[-1]
+                if failed and failed.group(1) == '718':
+                    break   # the port is taken by another device: a lease does not help
+            return False, f'The router refused: {problem}. Forward the port by hand.', info
+
     # ── Seen ─────────────────────────────────────────────────────────────
 
     def _handshakes(self) -> Dict[str, str]:
@@ -292,6 +359,34 @@ def _detect(names: List[str]) -> Optional[str]:
 
 def _wg_quick() -> Optional[str]:
     return _detect(['/usr/bin/wg-quick', '/usr/sbin/wg-quick']) or shutil.which('wg-quick')
+
+
+def _upnpc() -> Optional[str]:
+    return _detect(['/usr/bin/upnpc']) or shutil.which('upnpc')
+
+
+def _run_local(argv: List[str]) -> str:
+    try:
+        res = subprocess.run(argv, capture_output=True, text=True, timeout=20, env={'LC_ALL': 'C'})
+    except (OSError, subprocess.TimeoutExpired):
+        return ''
+    return (res.stdout or '') + (res.stderr or '')
+
+
+def address_warning(address: str) -> str:
+    """Why this internet address cannot be reached from outside, or ''."""
+    try:
+        ip = ipaddress.ip_address(address)
+    except ValueError:
+        return ''
+    if ip.version == 4 and ip in CGNAT:
+        return ('Your internet provider shares one internet address among many customers (CGNAT). Then a '
+                'forwarded port cannot be reached from outside. Ask your provider for a public IPv4 address '
+                '(often free, sometimes called "dual stack" or "public IP").')
+    if ip.is_private:
+        return ('Your router is behind another router (for example a provider box in front of your own). '
+                'Forward the port on both, or put the first one into bridge mode.')
+    return ''
 
 
 def _wg() -> Optional[str]:
