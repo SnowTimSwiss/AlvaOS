@@ -15,6 +15,21 @@ How to add an entry:
 
 ---
 
+## 2026-10-04 · First run on the installed layout: three fixes
+
+- Ran the backend and the Files server from `/opt/alvaos` as
+  `install-system.sh` lays it out, went through setup and every page with
+  the real API: no script errors, every page and file loads.
+- Setup, storage step: "Look again" (no free disk) tried to create a pool
+  and showed "At least one device is required". `withBusy` changed the
+  button text before `submitStorage` checked it; now decided before.
+- Renaming the NAS replaced the old name as plain text in `/etc/hosts`
+  (also inside other names, or "localhost"). Now whole names only
+  (`replace_host_name`, tested).
+- Dashboard on a new NAS showed three "next steps" (storage, then backups
+  before there is any storage, then "Getting started"). The list under the
+  status line now shows only problems; setup steps are in "Getting started".
+
 ## 2026-10-04 · Remote access over WireGuard (Settings › Remote access)
 
 - Turn it on, enter the public address of the home (dynamic DNS name or

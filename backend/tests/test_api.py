@@ -491,3 +491,12 @@ def test_every_assistant_proposal_points_at_a_real_endpoint(backend):
         assert adapter.match(path, method="GET"), name
     for name, (_, _, _, _, template) in ai_assistant.PARAM_TOOLS.items():
         assert adapter.match(template.format("sda").split("?")[0], method="GET"), name
+
+
+def test_renaming_the_nas_touches_only_its_own_name_in_hosts():
+    from api_system import replace_host_name
+    assert replace_host_name("127.0.0.1\tlocalhost", "local", "nas") == "127.0.0.1\tlocalhost"
+    assert replace_host_name("192.168.1.5 nas nas.home nasty", "nas", "alva") == "192.168.1.5\talva\talva.home\tnasty"
+    assert replace_host_name("::1 localhost ip6-localhost", "localhost", "x") == "::1 localhost ip6-localhost"
+    assert replace_host_name("# nas is here", "nas", "alva") == "# nas is here"
+    assert replace_host_name("10.0.0.1 nas # the nas", "nas", "alva") == "10.0.0.1\talva # the nas"

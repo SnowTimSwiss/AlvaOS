@@ -974,6 +974,20 @@ def system_ssh_access():
     return jsonify({'success': True, **_read_ssh_access_state()})
 
 
+def replace_host_name(line, old, new):
+    """Rename a host in one /etc/hosts line: whole names only, never
+    localhost, and comments stay as they are."""
+    body, hash_, comment = line.partition('#')
+    fields = body.split()
+    if len(fields) < 2 or not old or old == 'localhost':
+        return line
+    renamed = [fields[0]] + [new if name == old else (new + name[len(old):] if name.startswith(old + '.') else name)
+                             for name in fields[1:]]
+    if renamed == fields:
+        return line
+    return '\t'.join(renamed) + (f' {hash_}{comment}' if hash_ else '')
+
+
 @bp.route('/api/v1/system/hostname', methods=['PUT'])
 @require_auth(require_admin=True)
 def set_hostname():
@@ -1016,7 +1030,7 @@ def set_hostname():
                         new_lines.append(f'127.0.1.1\t{new_hostname}')
                         found_local_ip = True
                     else:
-                        new_lines.append(line.replace(old_hostname, new_hostname))
+                        new_lines.append(replace_host_name(line, old_hostname, new_hostname))
                 
                 if not found_local_ip:
                     new_lines.append(f'127.0.1.1\t{new_hostname}')
