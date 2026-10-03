@@ -112,6 +112,9 @@ class Plan:
     stage: Dict[int, str] = field(default_factory=dict)
     # Directories the helper must create (root-owned) before execution.
     make_dirs: List[str] = field(default_factory=list)
+    # Long transfers that should give way to people using the NAS: the helper
+    # runs them with nice 10 and the idle I/O class.
+    background: bool = False
 
 
 # ── System inspection (overridable for tests) ────────────────────────────────
@@ -960,14 +963,14 @@ def _rule_btrfs(sys_: System, args):
         if len(args) == 2:
             # Stream to stdout: the backend pipes it straight into the upload.
             readable_path(args[1])
-            return Plan(argv=list(args))
+            return Plan(argv=list(args), background=True)
         if len(args) == 4 and args[1] == '-p':
             # Incremental stream to stdout against a kept base snapshot.
             readable_path(args[2])
             readable_path(args[3])
-            return Plan(argv=list(args))
+            return Plan(argv=list(args), background=True)
         _expect(args[1:], '-f', lambda p: writable_path(sys_, p), readable_path)
-        return Plan(argv=list(args))
+        return Plan(argv=list(args), background=True)
     if group == 'receive':
         if len(args) == 2:
             # Stream from stdin: restores pipe the download straight in.
@@ -977,7 +980,7 @@ def _rule_btrfs(sys_: System, args):
             target = _clean_abs_path(args[3])
         if not (_pool_mountpoint(target, strict=False) or any(_strictly_within(target, r) for r in WRITE_ROOTS)):
             _fail('btrfs receive target not allowed')
-        return Plan(argv=list(args))
+        return Plan(argv=list(args), background=True)
     if group == 'device' and action == 'add':
         if len(rest) < 2:
             _fail('btrfs device add needs devices and a mount point')

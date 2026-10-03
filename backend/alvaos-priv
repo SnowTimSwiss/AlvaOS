@@ -151,6 +151,25 @@ def stage_files(plan, cleanup):
             raise policy.PolicyError(f'Unknown staging kind {kind}')
 
 
+IOPRIO_SET = {'x86_64': 251, 'aarch64': 30, 'armv7l': 314, 'i686': 289}
+
+
+def give_way():
+    """Lower this process (and what it becomes) to nice 10 and the idle I/O
+    class, best effort."""
+    try:
+        os.nice(10)
+    except OSError:
+        pass
+    try:
+        import ctypes
+        number = IOPRIO_SET.get(os.uname().machine)
+        if number:
+            ctypes.CDLL(None, use_errno=True).syscall(number, 1, 0, 3 << 13)   # WHO_PROCESS, self, IDLE
+    except (OSError, AttributeError):
+        pass
+
+
 def run_command(argv):
     env_pairs = []
     while argv and argv[0] == '--env':
@@ -192,6 +211,9 @@ def run_command(argv):
             shutil.rmtree(path, ignore_errors=True)
         sys.stderr.write(f'alvaos-priv: command not installed: {plan.argv[0]}\n')
         return 127
+
+    if plan.background:
+        give_way()
 
     if not cleanup and stdin_data is None:
         # Nothing to feed or clean up: become the command, so output streams
