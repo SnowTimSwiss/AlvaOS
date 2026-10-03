@@ -15,6 +15,27 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · Five bugs from a code review of this PR
+
+- Previous versions failed for a file in 100 restore points: the Files
+  server sends the name, the current folder and up to 100 folders, the
+  helper took at most 101 arguments. Now 102.
+- Files sessions in a browser outlived a password change or the removal of
+  the person (and renewed themselves for 14 days). A session now carries a
+  fingerprint of the stored password; when it changes or is gone, the
+  session ends. Sessions from before this change end once.
+- WebDAV counted every uncached sign-in, also correct ones, towards the
+  per-address limit it shared with the Files login; Finder or a few
+  devices behind one router could be locked out with the right password.
+  Now only wrong passwords count, in WebDAV's own counter.
+- A writable share where everyone may only read never got the network
+  trash lines, but the start-up check expected them, so Samba was
+  restarted at every backend start. The check now asks the same function
+  that writes the section.
+- Email settings saved while the background check was sending (up to ~20
+  s) were overwritten by its older copy. The loop now writes back only
+  what it owns (sent problems, report time, last error) onto a fresh copy.
+
 ## 2026-10-03 · Upload links with a size limit
 
 - An upload link ("drop box") can take up to 1, 5 (preselected), 20 or 100

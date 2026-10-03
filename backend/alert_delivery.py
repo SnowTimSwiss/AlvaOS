@@ -310,7 +310,15 @@ def run_once(collect: Optional[Callable[[], List[Dict[str, Any]]]] = None,
             subject, body = report_message(alerts, pools(), name)
             if send(state, subject, body):
                 state['report']['last_sent_at'] = _now_iso()
-        return save_state(state, path)
+        # Sending can take a while; settings saved meanwhile (Settings ›
+        # Notifications) win. Only what this loop owns is written back.
+        fresh = load_state(path)
+        fresh['seen'], fresh['sent'] = state['seen'], state['sent']
+        fresh['report']['last_sent_at'] = state['report'].get('last_sent_at')
+        for key in ('last_error', 'last_sent_at'):
+            if key in state['email']:
+                fresh['email'][key] = state['email'][key]
+        return save_state(fresh, path)
 
 
 def serve_forever(interval: int = CHECK_INTERVAL_SECONDS) -> None:

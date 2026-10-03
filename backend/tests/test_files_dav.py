@@ -141,3 +141,14 @@ def test_a_new_password_ends_remembered_sign_ins_at_once(client, tmp_path):
     (tmp_path / "users.json").write_text(json.dumps(users))
     assert client.open("/", method="PROPFIND", headers=ANNA).status_code == 401
     assert client.open("/", method="PROPFIND", headers=auth("anna", "a-new-password")).status_code == 207
+
+
+def test_only_wrong_passwords_count_towards_the_limit(client):
+    dav._failures.clear()
+    for _ in range(30):                                        # many right sign-ins, no cache hits
+        dav._good_credentials.clear()
+        assert client.open("/", method="PROPFIND", headers=ANNA).status_code == 207
+    for _ in range(dav.MAX_FAILURES):
+        assert client.open("/", method="PROPFIND", headers=auth("anna", "nope")).status_code == 401
+    assert client.open("/", method="PROPFIND", headers=auth("anna", "nope")).status_code == 429
+    dav._failures.clear()

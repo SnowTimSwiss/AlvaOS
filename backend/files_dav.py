@@ -49,6 +49,25 @@ def _challenge(message: str = 'Sign in with your name and password for the share
                                          'Content-Type': 'text/plain; charset=utf-8'})
 
 
+# Only wrong passwords count: Finder and Windows send many requests at once,
+# and several devices at home share one address.
+FAILURE_WINDOW = 15 * 60
+MAX_FAILURES = 10
+_failures: Dict[str, List[float]] = {}
+
+
+def _too_many_failures(ip: str, now: float) -> bool:
+    with _cred_lock:
+        recent = [t for t in _failures.get(ip, []) if now - t < FAILURE_WINDOW]
+        _failures[ip] = recent
+        return len(recent) >= MAX_FAILURES
+
+
+def _note_failure(ip: str, now: float) -> None:
+    with _cred_lock:
+        _failures.setdefault(ip, []).append(now)
+
+
 def _stored_hash(user: str) -> str:
     entry = fs._read_json(fs.USERS_FILE).get(user)
     return str(entry.get('files_auth')) if isinstance(entry, dict) else ''
@@ -68,10 +87,12 @@ def signed_in() -> Tuple[Optional[Dict[str, Any]], Optional[Response]]:
         return {'user': known[0], 'role': 'user'}, None   # a changed password ends this at once
     if name == 'admin':
         return None, _challenge('The admin account cannot be used here. Sign in as a person from Storage › Users.')
-    if fs._limited(request.remote_addr or ''):
-        return None, Response('Too many attempts. Wait a few minutes.\n', 429)
+    ip = request.remote_addr or ''
+    if _too_many_failures(ip, now):
+        return None, Response('Too many wrong passwords. Wait a few minutes.\n', 429)
     who, error, _ = fs.check_login(name, password, '')
     if not who:
+        _note_failure(ip, now)
         return None, _challenge(error or 'That name or password is not right.')
     with _cred_lock:
         for k in [k for k, v in _good_credentials.items() if v[1] < now]:
