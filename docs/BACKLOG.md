@@ -15,6 +15,15 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · Assistant: three more things it can suggest
+
+- Turn on automatic restore points (every hour, day or week), update an
+  installed app, install the newest AlvaOS version (only a signed release
+  asset; the safety net goes back on its own if it fails). Each is checked
+  against the real state before it is shown, and still runs only on "Do it".
+- New read tool `alvaos_update_check` so it can tell whether a newer
+  version exists.
+
 ## 2026-10-03 · "HTTPS only"
 
 - Settings › Security › Set up devices › "HTTPS only": plain HTTP is then

@@ -45,7 +45,8 @@ TOOLS: List[Tuple[str, str, str]] = [
     ('restore_points', '/api/v1/backup/snapshots', 'Restore points (snapshots) of folders'),
     ('apps', '/api/v1/apps/installed', 'Installed apps and their versions'),
     ('app_containers', '/api/v1/containers', 'Running and stopped app containers'),
-    ('updates', '/api/v1/updates/status', 'Whether an AlvaOS update is available or running'),
+    ('updates', '/api/v1/updates/status', 'Whether an AlvaOS update is running and how the last one went'),
+    ('alvaos_update_check', '/api/v1/updates/alvaos/check', 'Whether a newer AlvaOS version is available'),
     ('update_history', '/api/v1/updates/history', 'Past updates'),
     ('network', '/api/v1/system/network', 'Network addresses and interfaces'),
     ('time', '/api/v1/system/time', 'Date, time and time zone'),
@@ -77,6 +78,18 @@ ACTION_SPECS: Dict[str, Dict[str, Any]] = {
     },
     'check_services': {
         'description': 'Check file sharing and apps now and restart what has stopped.',
+        'parameters': {},
+    },
+    'turn_on_automatic_backups': {
+        'description': 'Turn on automatic restore points of the shared folders.',
+        'parameters': {'every': {'type': 'string', 'enum': ['hour', 'day', 'week']}},
+    },
+    'update_app': {
+        'description': 'Update one installed app to its newest version.',
+        'parameters': {'app_id': {'type': 'string', 'description': 'The app_id from apps.'}},
+    },
+    'install_alvaos_update': {
+        'description': 'Install the newest AlvaOS version (from alvaos_update_check).',
         'parameters': {},
     },
     'set_disk_sleep': {
@@ -132,6 +145,41 @@ def build_action(name: str, args: Dict[str, Any], read: Callable[[str], Tuple[in
         return {'title': 'Check file sharing and apps now',
                 'detail': 'AlvaOS checks its services and restarts what has stopped.',
                 'method': 'POST', 'path': '/api/v1/watchdog/check', 'body': {}}
+    if name == 'turn_on_automatic_backups':
+        minutes = {'hour': 60, 'day': 1440, 'week': 10080}.get(str(args.get('every') or 'day'))
+        if not minutes:
+            raise ValueError('Backups can run every hour, day or week.')
+        every = {60: 'every hour', 1440: 'every day', 10080: 'every week'}[minutes]
+        return {'title': f'Make restore points automatically, {every}',
+                'detail': 'AlvaOS keeps restore points of your shared folders and thins out old ones on its own. '
+                          'You can change it on the Backup page.',
+                'method': 'POST', 'path': '/api/v1/backup/settings',
+                'body': {'pool_backup': {'enabled': True, 'interval_minutes': minutes}}}
+    if name == 'update_app':
+        wanted = str(args.get('app_id') or '').strip()
+        _, data = read('/api/v1/apps/installed')
+        app = next((a for a in _find(data, 'apps', 'installed') if wanted and wanted in
+                    (str(a.get('app_id')), str(a.get('name')))), None)
+        if not app or not re_container.match(str(app.get('app_id') or '')):
+            raise ValueError(f'There is no installed app "{wanted}".')
+        return {'title': f'Update the app "{app.get("name") or app.get("app_id")}"',
+                'detail': 'The newest version is downloaded and the app restarts. Its data and settings stay.',
+                'method': 'POST', 'path': f'/api/v1/apps/{app.get("app_id")}/update', 'body': {}}
+    if name == 'install_alvaos_update':
+        _, data = read('/api/v1/updates/alvaos/check')
+        data = data if isinstance(data, dict) else {}
+        assets = {str(a.get('name')): str(a.get('browser_download_url') or '')
+                  for a in _find((data.get('release') or {}), 'assets')}
+        deb = next((n for n in assets if n.endswith('.deb') and f'{n}.sig' in assets
+                    and assets[n].startswith('https://')), None)
+        if not data.get('update_available') or not deb:
+            raise ValueError('No newer signed AlvaOS version is available.')
+        version = str(data.get('latest_version') or '')
+        return {'title': f'Install AlvaOS {version}',
+                'detail': 'The update is downloaded, its signature checked and it is installed. The web page is '
+                          'away for a minute or two; if anything fails, AlvaOS goes back on its own.',
+                'method': 'POST', 'path': '/api/v1/updates/alvaos/apply', 'body': {'url': assets[deb],
+                                                                                    'version': version}}
     if name == 'set_disk_sleep':
         try:
             minutes = int(str(args.get('minutes')))

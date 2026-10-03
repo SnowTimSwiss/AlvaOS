@@ -192,3 +192,27 @@ def test_the_level_is_a_setting(tmp_path):
     s, problem = ai.save_settings(ai.load_settings(path), {"level": "ask"}, path=path)
     assert problem == "" and ai.load_settings(path)["level"] == "ask"
     assert ai.save_settings(s, {"level": "everything"}, path=path)[1]
+
+
+def test_more_actions_are_checked_too():
+    state = {
+        "/api/v1/apps/installed": {"apps": [{"app_id": "jellyfin", "name": "Jellyfin"}]},
+        "/api/v1/updates/alvaos/check": {"update_available": True, "latest_version": "v0.9.1", "release": {"assets": [
+            {"name": "alvaos_0.9.1_all.deb", "browser_download_url": "https://github.com/x/alvaos_0.9.1_all.deb"},
+            {"name": "alvaos_0.9.1_all.deb.sig", "browser_download_url": "https://github.com/x/alvaos_0.9.1_all.deb.sig"}]}},
+    }
+
+    def read(path):
+        return 200, state.get(path, {})
+
+    backups = ai.build_action("turn_on_automatic_backups", {"every": "day"}, read)
+    assert backups["body"] == {"pool_backup": {"enabled": True, "interval_minutes": 1440}}
+    assert ai.build_action("update_app", {"app_id": "Jellyfin"}, read)["path"] == "/api/v1/apps/jellyfin/update"
+    update = ai.build_action("install_alvaos_update", {}, read)
+    assert update["body"]["url"].endswith("alvaos_0.9.1_all.deb") and "0.9.1" in update["title"]
+    for name, args in (("turn_on_automatic_backups", {"every": "minute"}), ("update_app", {"app_id": "x"})):
+        with pytest.raises(ValueError):
+            ai.build_action(name, args, read)
+    state["/api/v1/updates/alvaos/check"]["update_available"] = False
+    with pytest.raises(ValueError, match="No newer"):
+        ai.build_action("install_alvaos_update", {}, read)
