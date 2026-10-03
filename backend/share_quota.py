@@ -70,3 +70,34 @@ def read_usage(path: str, run: Callable, btrfs: str = 'btrfs') -> Optional[Dict[
     if err or res is None or res.returncode != 0:
         return None
     return parse_qgroup_show(res.stdout)
+
+
+NEARLY_FULL = 0.90
+FULL = 0.99
+
+
+def limit_alerts(shares, usage: Callable[[str], Optional[Dict[str, Optional[int]]]]):
+    """(alert id, severity, title, message, route) for shares close to their
+    limit. `usage(path)` reads what a share holds now."""
+    out = []
+    for share in shares:
+        if not isinstance(share, dict) or not share.get('quota_bytes'):
+            continue
+        now = usage(str(share.get('path') or ''))
+        if not now:
+            continue
+        limit = now.get('limit_bytes') or share['quota_bytes']
+        used = now.get('used_bytes') or 0
+        share_part = used / limit if limit else 0
+        if share_part < NEARLY_FULL:
+            continue
+        who = f'The personal folder of {share["personal_for"]}' if share.get('personal_for') else f'"{share.get("name")}"'
+        gb = limit / GB
+        if share_part >= FULL:
+            out.append((f'share-{share.get("id")}-full', 'critical', f'{who} is full',
+                        f'It holds its limit of {gb:g} GB; saving new files there fails. '
+                        'Delete files or raise the limit.', 'storage.html#shares'))
+        else:
+            out.append((f'share-{share.get("id")}-nearly-full', 'warning', f'{who} is nearly full',
+                        f'{round(share_part * 100)} % of its {gb:g} GB limit is used.', 'storage.html#shares'))
+    return out

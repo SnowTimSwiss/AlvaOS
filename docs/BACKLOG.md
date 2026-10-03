@@ -15,6 +15,15 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · Personal folders: pool is chosen, warning when nearly full
+
+- "Add a person": the pool for the personal folder is always chosen by hand
+  (with its free space); nothing is preselected.
+- A share with a space limit raises a warning at 90 % and a critical alert
+  at 99 % ("The personal folder of anna is nearly full"), on the dashboard,
+  the bell, and by email/Telegram like other problems
+  (`share_quota.limit_alerts`).
+
 ## 2026-10-03 · Personal folders and space limits
 
 - "Add a person" (Storage › Users) can give them a personal folder, on by

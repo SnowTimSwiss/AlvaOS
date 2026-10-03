@@ -451,6 +451,21 @@ def _collect_system_alerts():
     except Exception:
         pass
 
+    # Shares (personal folders) close to their space limit.
+    try:
+        import platform
+        if platform.system() == 'Linux':
+            import share_quota
+            from common import CMD, run_sudo_command
+            from shares_manager import load_shares_state
+            for alert_id, severity, title, message, route in share_quota.limit_alerts(
+                    load_shares_state().values(),
+                    lambda path: share_quota.read_usage(path, run_sudo_command, CMD['BTRFS'])):
+                alerts.append(_build_alert_item(alert_id=alert_id, severity=severity, title=title,
+                                                message=message, route=route, action_label='Open shares'))
+    except Exception:
+        pass
+
     alerts.sort(key=lambda item: (
         ALERT_SEVERITY_PRIORITY.get(str(item.get('severity', 'info')).lower(), 9),
         str(item.get('title', ''))

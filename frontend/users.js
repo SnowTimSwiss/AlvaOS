@@ -212,9 +212,10 @@ async function showCreateUserModal() {
         ${pools.length ? `
         <label class="personal-toggle"><input type="checkbox" id="personal-on" checked> A personal folder only they can open</label>
         <div class="personal-opts" id="personal-opts">
-            ${pools.length > 1 ? `<label class="personal-field">On<select id="personal-pool" class="user-modal-input">${pools.map((p) => `<option value="${usersEscapeHtml(p.id)}">${usersEscapeHtml(p.name || p.id)}</option>`).join('')}</select></label>` : ''}
+            <label class="personal-field">On pool<select id="personal-pool" class="user-modal-input"><option value="">Choose a pool...</option>${pools.map((p) => `<option value="${usersEscapeHtml(p.id)}">${usersEscapeHtml(p.name || p.id)}${p.free_bytes ? ` (${usersGb(p.free_bytes)} free)` : ''}</option>`).join('')}</select></label>
             <label class="personal-field">Space limit<select id="personal-limit" class="user-modal-input">${PERSONAL_LIMITS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
             <label class="personal-field" id="personal-other-field" hidden>Limit in GB<input type="number" id="personal-other" class="user-modal-input" min="1" step="1" placeholder="e.g. 200"></label>
+            <div id="personal-error" class="user-modal-error" style="display:none;"></div>
             <p class="user-modal-hint">The folder is called like the person. You can change the limit later under Storage › Shares.</p>
         </div>` : ''}
         <div class="user-modal-actions">
@@ -247,7 +248,7 @@ async function showCreateUserModal() {
     limitSelect?.addEventListener('change', () => { panel.querySelector('#personal-other-field').hidden = limitSelect.value !== 'other'; });
     const personalChoice = () => {
         if (!personalOn || !personalOn.checked) return null;
-        const pool = panel.querySelector('#personal-pool')?.value || pools[0].id;
+        const pool = panel.querySelector('#personal-pool').value;
         const limit = limitSelect.value === 'other' ? panel.querySelector('#personal-other').value : limitSelect.value;
         return { pool_id: pool, limit_gb: limit ? Number(limit) : null };
     };
@@ -263,6 +264,7 @@ async function showCreateUserModal() {
             const password = String(passInput?.value || '');
             setFieldError(nameError, '');
             setFieldError(passError, '');
+            setFieldError(panel.querySelector('#personal-error'), '');
 
             if (!username) {
                 setFieldError(nameError, 'A name is required');
@@ -277,8 +279,13 @@ async function showCreateUserModal() {
                 return;
             }
             const personal = personalChoice();
+            if (personal && !personal.pool_id) {
+                setFieldError(panel.querySelector('#personal-error'), 'Choose the pool for the personal folder.');
+                panel.querySelector('#personal-pool').focus();
+                return;
+            }
             if (personal && personal.limit_gb !== null && !(personal.limit_gb >= 1)) {
-                setFieldError(passError, 'Enter the space limit in GB, at least 1.');
+                setFieldError(panel.querySelector('#personal-error'), 'Enter the space limit in GB, at least 1.');
                 return;
             }
 
