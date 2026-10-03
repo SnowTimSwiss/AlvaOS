@@ -43,12 +43,14 @@ import api_auth
 import api_backup
 import api_ai
 import api_files
+import api_remote
 import api_shares
 import api_storage
 import api_system
 import api_updates
 
-for _module in (api_auth, api_system, api_updates, api_storage, api_shares, api_backup, api_apps, api_files, api_ai):
+for _module in (api_auth, api_system, api_updates, api_storage, api_shares, api_backup, api_apps, api_files, api_ai,
+                api_remote):
     app.register_blueprint(_module.bp)
 
 # ── Frontend serving ──────────────────────────────────────────────────────────
@@ -292,6 +294,10 @@ if __name__ == '__main__':
     # Problems by Telegram and email, also when nobody has the web page open.
     import alert_delivery
     threading.Thread(target=alert_delivery.serve_forever, name='alert-delivery', daemon=True).start()
+
+    # Remote access: the tunnel comes back after a reboot when it is on.
+    from app_services import remote
+    threading.Thread(target=remote.start, name='remote-access', daemon=True).start()
 
     # wg-quick state does not survive a reboot; bring the buddy tunnel back up.
     threading.Thread(target=buddy_backup_manager.start_tunnel_if_paired, daemon=True).start()

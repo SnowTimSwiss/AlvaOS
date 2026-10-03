@@ -584,6 +584,12 @@ def test_wireguard_commands():
     denied('/usr/bin/wg', 'genkey')   # keys are generated in-process now
     denied('/usr/bin/wg-quick', 'up', '/tmp/evil.conf')
     denied('/usr/bin/wg', 'set', 'buddy0', 'private-key', '/etc/shadow')
+    assert allowed('/usr/bin/wg-quick', 'down', '/var/lib/alvaos/wireguard/remote0.conf').stage == {1: 'wg'}
+    allowed('/usr/bin/wg', 'show', 'remote0', 'latest-handshakes')
+    denied('/usr/bin/wg', 'show', 'remote0', 'dump')            # would print the private key
+    denied('/usr/bin/wg', 'show', 'remote0', 'private-key')
+    denied('/usr/bin/wg', 'show', 'buddy0', 'latest-handshakes', 'x')
+    denied('/usr/bin/wg-quick', 'up', '/var/lib/alvaos/wireguard/remote1.conf')
 
 
 def test_wg_config_rejects_hooks():

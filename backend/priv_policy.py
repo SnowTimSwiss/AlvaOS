@@ -54,8 +54,10 @@ SCAN_MOUNT_BASE = '/run/alvaos-scan'
 # Root-owned staging directory for files that are checked before use.
 STAGING_DIR = '/run/alvaos-priv'
 
-# The only WireGuard config the helper will bring up or down.
+# The only WireGuard configs the helper will bring up or down: the Buddy
+# Backup tunnel and remote access (remote_access.py).
 WG_CONFIG_PATH = '/var/lib/alvaos/wireguard/buddy0.conf'
+WG_REMOTE_CONFIG_PATH = '/var/lib/alvaos/wireguard/remote0.conf'
 
 UPDATE_CACHE_DIR = '/var/lib/alvaos/updates'
 COMPOSE_DIR = '/var/lib/alvaos/compose'
@@ -1178,12 +1180,16 @@ def _rule_ip(sys_: System, args):
 
 
 def _rule_wg(sys_: System, args):
-    _expect(args, 'show', 'buddy0')
+    # Never `show ... dump` or `private-key`: those print the private key.
+    if len(args) == 3:
+        _expect(args, 'show', 'remote0', 'latest-handshakes')
+    else:
+        _expect(args, 'show', 'buddy0')
     return Plan(argv=list(args))
 
 
 def _rule_wg_quick(sys_: System, args):
-    _expect(args, {'up', 'down'}, WG_CONFIG_PATH)
+    _expect(args, {'up', 'down'}, {WG_CONFIG_PATH, WG_REMOTE_CONFIG_PATH})
     return Plan(argv=list(args), stage={1: 'wg'})
 
 

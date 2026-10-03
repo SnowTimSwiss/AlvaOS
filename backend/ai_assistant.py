@@ -55,6 +55,8 @@ TOOLS: List[Tuple[str, str, str]] = [
     ('backup_disk', '/api/v1/backup/copy', 'The USB backup disk: chosen or not, connected, last copy, problems'),
     ('buddy_backup', '/api/v1/backup/pairing/status', 'Buddy Backup: whether a second NAS is paired and reachable'),
     ('https', '/api/v1/system/tls', 'The HTTPS certificate of this NAS and whether "HTTPS only" is on'),
+    ('remote_access', '/api/v1/remote-access', 'Remote access over WireGuard: on or off, the router port, the '
+                                               'devices and when they last connected'),
     ('signed_in_devices', '/api/v1/auth/sessions', 'Where AlvaOS is signed in: device, address, last use'),
     ('system_log', '/api/v1/system/logs', 'The last lines of the system log (secrets masked), to find out why '
                                           'something failed'),
@@ -608,6 +610,7 @@ LINK_PROMPT = (
     ' When the person should do something by hand, link the page like [Backup](backup.html). Pages: '
     'index.html (Dashboard), storage.html#pools, storage.html#disks, storage.html#shares (shared folders), '
     'storage.html#users (people), files.html, apps.html, backup.html, updates.html, system.html#network, '
+    'system.html#remote (remote access), '
     'system.html#security, system.html#alerts, system.html#power, system.html#assistant, system.html#logs.'
 )
 
