@@ -15,6 +15,20 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · Accessibility pass with axe-core
+
+- Every page of the web interface (both themes, also the Shares, Users,
+  Security and Assistant tabs, sign-in and setup) and AlvaOS Files (sign-in,
+  app, share link, drop box) checked with axe-core: no violations left.
+- Fixed: small grey text (`--text-tertiary`) now reaches 4.5:1 in both
+  themes; filled buttons in dark mode use a deeper blue (`--accent-solid`,
+  white text 4.6:1 instead of 2.5:1); yellow pills in light mode 5.3:1; the
+  Getting started progress bar has a name; Files has one `main` landmark and
+  a level-one heading, the share page too.
+- **Note for next time:** the audit script lives outside the repo (Playwright
+  + axe-core from npm in the scratchpad); a CI job for it would need npm in
+  CI, which the project avoids so far.
+
 ## 2026-10-03 · Security review of today's changes
 
 - WebDAV remembered a correct sign-in for 10 minutes, also after the
