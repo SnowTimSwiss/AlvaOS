@@ -17,6 +17,7 @@ import os
 import secrets
 import shutil
 import stat
+import time
 from datetime import datetime, timedelta
 from typing import Any, BinaryIO, Dict, List, Optional
 
@@ -113,6 +114,64 @@ def list_dir(dir_path: str, root: str = DATA_ROOT) -> List[Dict[str, Any]]:
         raise FileOpError('You do not have access to this folder.') from None
     finally:
         os.close(dfd)
+
+
+SEARCH_LIMIT = 200
+SEARCH_SECONDS = 15
+SEARCH_DEPTH = 40
+
+
+def search(dir_path: str, query: str, root: str = DATA_ROOT, limit: int = SEARCH_LIMIT,
+           seconds: float = SEARCH_SECONDS) -> Dict[str, Any]:
+    """Files and folders below a folder whose name holds every word of the
+    query (any case). Never follows symlinks; folders the person cannot open
+    are skipped. Stops at `limit` results, SEARCH_DEPTH levels or after
+    `seconds`. Only one descriptor per level is open at a time."""
+    words = [w for w in str(query or '').lower().split() if w][:8]
+    if not words or len(query) > 200:
+        raise FileOpError('Type what to look for.')
+    deadline = time.monotonic() + seconds
+    found: List[Dict[str, Any]] = []
+    state = {'complete': True}
+
+    def walk(dfd: int, rel: str, depth: int) -> None:
+        try:
+            names = sorted(os.listdir(dfd))
+        except OSError:
+            return
+        for name in names:
+            if len(found) >= limit or time.monotonic() > deadline:
+                state['complete'] = False
+                return
+            if name == TRASH_DIR or name.endswith(PART_SUFFIX):
+                continue
+            try:
+                st = os.lstat(name, dir_fd=dfd)
+            except OSError:
+                continue
+            is_dir = stat.S_ISDIR(st.st_mode)
+            lower = name.lower()
+            if all(w in lower for w in words) and (is_dir or stat.S_ISREG(st.st_mode)):
+                found.append({'name': name, 'folder': rel, 'type': 'folder' if is_dir else 'file',
+                              'size_bytes': 0 if is_dir else st.st_size,
+                              'modified_at': datetime.fromtimestamp(st.st_mtime).astimezone().isoformat()})
+            if is_dir and depth < SEARCH_DEPTH:
+                try:
+                    sub = _open_subdir(name, dfd)
+                except OSError:
+                    continue
+                try:
+                    walk(sub, f'{rel}/{name}' if rel else name, depth + 1)
+                finally:
+                    os.close(sub)
+
+    dfd = open_dir(dir_path, root)
+    try:
+        walk(dfd, '', 0)
+    finally:
+        os.close(dfd)
+    found.sort(key=lambda e: (e['type'] != 'folder', str(e['name']).lower(), str(e['folder'])))
+    return {'results': found, 'complete': state['complete']}
 
 
 # ── Upload, new folder, rename ───────────────────────────────────────────────

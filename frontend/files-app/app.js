@@ -101,7 +101,12 @@
     let view = 'grid';
     try { view = localStorage.getItem('alvaos_files_view') || 'grid'; } catch (_e) { /* storage off */ }
     let loadId = 0;
-    const access = () => (me?.shares || []).find((s) => s.name === share)?.access || 'read';
+    let found = null;       // search results below the folder, or null
+    let foundInfo = { q: '', complete: true };
+    let searchId = 0;
+    // Results come from many folders: they are opened or shown in their
+    // folder, changes happen there.
+    const access = () => (found ? 'read' : (me?.shares || []).find((s) => s.name === share)?.access || 'read');
 
     // ── Sign in ────────────────────────────────────────────────────────────
     function showSignin() {
@@ -150,6 +155,9 @@
     function go(s, p, push = true) {
         share = s;
         path = p || '';
+        found = null;
+        $('search').value = '';
+        $('main').querySelector('.bar').classList.remove('find');
         selected = new Set();
         anchor = -1;
         if (push && location.hash !== hashFor(share, path)) history.pushState(null, '', hashFor(share, path));
@@ -206,14 +214,17 @@
     }
 
     function render() {
-        const q = $('search').value.trim().toLowerCase();
-        shown = entries.filter((e) => !q || e.name.toLowerCase().includes(q));
-        shown.sort((a, b) => (a.type === 'folder' ? 0 : 1) - (b.type === 'folder' ? 0 : 1) || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+        const q = found ? '' : $('search').value.trim().toLowerCase();
+        shown = found ? found.slice() : entries.filter((e) => !q || e.name.toLowerCase().includes(q));
+        if (!found) shown.sort((a, b) => (a.type === 'folder' ? 0 : 1) - (b.type === 'folder' ? 0 : 1) || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
         const items = $('items');
         items.className = `items ${view}`;
+        $('new-btn').hidden = access() !== 'write';
         $('view-grid').setAttribute('aria-pressed', view === 'grid');
         $('view-list').setAttribute('aria-pressed', view === 'list');
-        if (!shown.length) {
+        if (found && !shown.length) {
+            items.innerHTML = `<div class="empty">${icon('search')}<strong>Nothing found</strong>No name here or in a folder below contains "${esc(foundInfo.q)}".</div>`;
+        } else if (!shown.length) {
             items.innerHTML = q
                 ? `<div class="empty">${icon('search')}<strong>Nothing found</strong>No name in this folder contains "${esc(q)}".</div>`
                 : `<div class="empty">${icon('folder')}<strong>This folder is empty</strong>${access() === 'write' ? 'Drop files here, or use New › Upload files.' : ''}</div>`;
@@ -223,7 +234,7 @@
                 const thumb = THUMB.test(e.name)
                     ? `<div class="thumb"><img loading="lazy" decoding="async" alt="" src="/api/thumb?share=${encodeURIComponent(share)}&path=${encodeURIComponent(rel(e))}&v=${encodeURIComponent(e.modified_at || '')}" data-fallback="${k}"></div>`
                     : `<div class="thumb icon kind-${k}">${icon(k === 'folder' ? 'folder-fill' : k)}</div>`;
-                return `<div class="tile" data-i="${i}" title="${esc(e.name)}" draggable="${access() === 'write'}">${thumb}<div class="name">${esc(e.name)}</div>
+                return `<div class="tile" data-i="${i}" title="${esc(found ? rel(e) : e.name)}" draggable="${access() === 'write'}">${thumb}<div class="name">${esc(e.name)}</div>${found ? `<div class="where">${esc(where(e).split(' › ').pop())}</div>` : ''}
                     <button type="button" class="more" data-more="${i}" aria-label="More for ${esc(e.name)}">${icon('more')}</button></div>`;
             }).join('');
         } else {
@@ -233,7 +244,7 @@
                     ? `<img class="rthumb" loading="lazy" alt="" src="/api/thumb?share=${encodeURIComponent(share)}&path=${encodeURIComponent(rel(e))}&v=${encodeURIComponent(e.modified_at || '')}" data-fallback="${k}">`
                     : `<span class="ricon kind-${k}">${icon(k === 'folder' ? 'folder-fill' : k)}</span>`;
                 const size = e.type === 'folder' ? '' : bytes(e.size_bytes);
-                return `<div class="row" data-i="${i}" draggable="${access() === 'write'}">${lead}<div class="rtext"><div class="rname">${esc(e.name)}</div><div class="rsub">${esc([size, when(e.modified_at)].filter(Boolean).join(' · '))}</div></div>
+                return `<div class="row" data-i="${i}" draggable="${access() === 'write'}">${lead}<div class="rtext"><div class="rname">${esc(e.name)}</div>${found ? `<div class="rsub rwhere" style="display:block">${esc(where(e))}</div>` : `<div class="rsub">${esc([size, when(e.modified_at)].filter(Boolean).join(' · '))}</div>`}</div>
                     <span class="rsize">${esc(size)}</span><span class="rdate">${esc(when(e.modified_at))}</span>
                     <button type="button" class="more" data-more="${i}" aria-label="More for ${esc(e.name)}">${icon('more')}</button></div>`;
             }).join('');
@@ -245,10 +256,18 @@
             box.innerHTML = icon(k);
             (img.classList.contains('rthumb') ? img : img.parentElement).replaceWith(box);
         }, { once: true }));
+        if (found) {
+            const head = document.createElement('div');
+            head.className = 'results-head';
+            head.innerHTML = `${icon('search').replace('<svg', '<svg width="16" height="16"')}<span>${found.length}${foundInfo.complete ? '' : '+'} found for "${esc(foundInfo.q)}" in ${esc(path ? path.split('/').pop() : share)} and below${foundInfo.complete ? '' : ' · type more to narrow it down'}</span><button type="button" class="link" id="results-close">Back to the folder</button>`;
+            items.prepend(head);
+            head.querySelector('#results-close').addEventListener('click', clearSearch);
+        }
         paintSelection();
     }
 
-    const rel = (e) => (path ? `${path}/${e.name}` : e.name);
+    const rel = (e) => (e.folder !== undefined ? (e.folder ? `${e.folder}/${e.name}` : e.name) : (path ? `${path}/${e.name}` : e.name));
+    const where = (e) => [share, ...(e.folder ? e.folder.split('/') : [])].join(' › ');
 
     function paintSelection() {
         $('items').querySelectorAll('[data-i]').forEach((el) => el.classList.toggle('selected', selected.has(shown[Number(el.dataset.i)]?.name)));
@@ -265,6 +284,7 @@
             $('sel-delete').hidden = !canWrite;
             $('sel-download').hidden = false;
         }
+        if (found) { $('status').textContent = 'Search results · open one, or "Show in folder" to change it'; return; }
         $('status').textContent = [folders ? `${folders} folder${folders === 1 ? '' : 's'}` : '',
             files.length ? `${files.length} file${files.length === 1 ? '' : 's'} (${bytes(files.reduce((s, e) => s + (e.size_bytes || 0), 0))})` : '',
             access() === 'read' ? 'You can look at this folder, not change it' : ''].filter(Boolean).join(' · ');
@@ -374,9 +394,10 @@
         const one = sel.length === 1 ? sel[0] : null;
         const rows = [];
         if (one) rows.push(`<button type="button" data-ctx="open">${icon(one.type === 'folder' ? 'folder' : 'open')}Open</button>`);
+        if (one && found) rows.push(`<button type="button" data-ctx="reveal">${icon('folder')}Show in folder</button>`);
         if (sel.some((e) => e.type === 'file')) rows.push(`<button type="button" data-ctx="download">${icon('download')}Download</button>`);
         if (one && one.type === 'folder') rows.push(`<button type="button" data-ctx="zip">${icon('archive')}Download as ZIP</button>`);
-        if (!sel.length) rows.push(`<button type="button" data-ctx="zip-here">${icon('archive')}Download this folder as ZIP</button>`);
+        if (!sel.length && !found) rows.push(`<button type="button" data-ctx="zip-here">${icon('archive')}Download this folder as ZIP</button>`);
         if (canWrite && one) rows.push(`<button type="button" data-ctx="rename">${icon('pen')}Rename</button>`);
         if (one) rows.push(`<button type="button" data-ctx="share">${icon('link')}Share link…</button>`);
         if (canWrite && sel.length) rows.push(`<button type="button" data-ctx="move">${icon('folder')}Move to…</button>`, `<button type="button" data-ctx="copy">${icon('copy')}Copy to…</button>`);
@@ -403,6 +424,7 @@
     function action(name) {
         const sel = selectedEntries();
         if (name === 'open') open(sel[0]);
+        if (name === 'reveal' && sel.length === 1) reveal(sel[0]);
         if (name === 'download') download(sel);
         if (name === 'zip' && sel.length === 1) zipDownload(rel(sel[0]));
         if (name === 'zip-here') zipDownload(path);
@@ -429,7 +451,66 @@
     $('view-grid').addEventListener('click', () => setView('grid'));
     $('view-list').addEventListener('click', () => setView('list'));
     function setView(v) { view = v; try { localStorage.setItem('alvaos_files_view', v); } catch (_e) { /* off */ } render(); }
-    $('search').addEventListener('input', render);
+    // Typing filters this folder at once; a moment later (or on Enter) the
+    // folders below are searched too.
+    let searchTimer = 0;
+    async function deepSearch() {
+        clearTimeout(searchTimer);
+        const q = $('search').value.trim();
+        if (q.length < 2) return;
+        const id = ++searchId;
+        $('status').textContent = 'Searching…';
+        try {
+            const data = await api(`search?${new URLSearchParams({ share, path, q })}`);
+            if (id !== searchId || $('search').value.trim() !== q) return;
+            found = (data.results || []).filter((e) => !e.name.startsWith('.'));
+            foundInfo = { q, complete: !!data.complete };
+            selected = new Set();
+            anchor = -1;
+            render();
+        } catch (err) {
+            if (id === searchId) $('status').textContent = err.message;
+        }
+    }
+    function clearSearch() {
+        $('search').value = '';
+        found = null;
+        searchId++;
+        $('main').querySelector('.bar').classList.remove('find');
+        selected = new Set();
+        render();
+    }
+    function reveal(entry) {
+        const folder = entry.folder || '';
+        go(share, folder);
+        const name = entry.name;
+        const wait = setInterval(() => {
+            const i = shown.findIndex((x) => x.name === name);
+            if (i < 0) return;
+            clearInterval(wait);
+            select(i);
+            $('items').querySelector(`[data-i="${i}"]`)?.scrollIntoView({ block: 'nearest' });
+        }, 100);
+        setTimeout(() => clearInterval(wait), 5000);
+    }
+    $('search').addEventListener('input', () => {
+        if (found) { found = null; selected = new Set(); }
+        searchId++;
+        render();
+        clearTimeout(searchTimer);
+        if ($('search').value.trim().length >= 2) searchTimer = setTimeout(deepSearch, 500);
+    });
+    $('search').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); deepSearch(); }
+        if (e.key === 'Escape') { e.preventDefault(); clearSearch(); $('search').blur(); }
+    });
+    $('search-btn').addEventListener('click', () => {
+        $('main').querySelector('.bar').classList.add('find');
+        $('search').focus();
+    });
+    $('search').addEventListener('blur', () => {
+        if (!$('search').value) $('main').querySelector('.bar').classList.remove('find');
+    });
 
     // ── Dialogs ────────────────────────────────────────────────────────────
     function ask({ title, text, value, okLabel, danger }) {
@@ -837,11 +918,12 @@
         if (!$('dialog').hidden || $('app').hidden) return;
         if (e.target.closest('input, textarea')) { if (e.key === 'Escape') e.target.blur(); return; }
         const sel = selectedEntries();
-        if (e.key === 'Escape') { hideMenus(); selected = new Set(); paintSelection(); }
+        if (e.key === 'Escape' && found && !selected.size) clearSearch();
+        else if (e.key === 'Escape') { hideMenus(); selected = new Set(); paintSelection(); }
         else if (e.key === 'Enter' && sel.length === 1) open(sel[0]);
         else if ((e.key === 'Delete' || (e.key === 'Backspace' && e.metaKey)) && sel.length && access() === 'write') remove(sel);
         else if (e.key === 'F2' && sel.length === 1 && access() === 'write') { e.preventDefault(); rename(sel[0]); }
-        else if (e.key === 'Backspace' || (e.altKey && e.key === 'ArrowUp')) { e.preventDefault(); up(); }
+        else if (e.key === 'Backspace' || (e.altKey && e.key === 'ArrowUp')) { e.preventDefault(); if (found) clearSearch(); else up(); }
         else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); selected = new Set(shown.map((x) => x.name)); paintSelection(); }
         else if (['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'].includes(e.key) && shown.length) {
             e.preventDefault();

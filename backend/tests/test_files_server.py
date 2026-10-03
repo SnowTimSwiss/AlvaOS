@@ -248,3 +248,16 @@ def test_copy_runs_as_the_person_in_one_share(client):
     sign_in(client, "anna", "anna-pass")
     client.post("/api/copy", json={"share": "Family", "path": "", "names": ["a.jpg"], "to": ""}, headers=H)
     assert client.calls[-1] == (["files-copy", "/mnt/alvaos/main/Family", "a.jpg", "/mnt/alvaos/main/Family"], "anna")
+
+
+def test_search_runs_as_the_person_and_gives_share_paths(client, monkeypatch):
+    seen = []
+    monkeypatch.setattr(files_manager, "run_helper", lambda args, timeout=600, user=None: (
+        seen.append((args, user)) or {"results": [{"name": "a.jpg", "folder": "2024", "type": "file"}],
+                                      "complete": True}, ""))
+    sign_in(client, "ben", "ben-pass")
+    assert client.get("/api/search?share=Family&q=").status_code == 400
+    assert client.get("/api/search?share=Anna&q=a").status_code == 404
+    data = client.get("/api/search?share=Family&path=Photos&q=a").get_json()
+    assert seen == [(["files-search", "/mnt/alvaos/main/Family/Photos", "a"], "ben")]
+    assert data["results"][0]["folder"] == "Photos/2024" and data["complete"] is True

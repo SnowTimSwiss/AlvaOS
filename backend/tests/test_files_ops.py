@@ -227,3 +227,29 @@ def test_copy_files_and_folders_without_symlinks_or_overwriting(share):
     with pytest.raises(fo.FileOpError):
         fo.copy(s_, "evil", s_, root)          # not a file in the share root
     assert open(os.path.join(outside, "shadow")).read() == "secret"
+
+
+def test_search_finds_names_below_a_folder(share, tmp_path):
+    root, s, outside = share
+    os.makedirs(os.path.join(s, "Films", "Summer 2024"))
+    open(os.path.join(s, "Films", "Summer 2024", "beach-summer.MP4"), "w").close()
+    open(os.path.join(s, "Films", ".beach-summer.mp4.alvaos-upload"), "w").close()
+    os.symlink(outside, os.path.join(s, "Films", "summer-link"))
+    fo.make_dir(s, "Old summer", root)
+    fo.trash(s, s, "Old summer", root)
+    out = fo.search(s, "SUMMER", root)
+    assert out["complete"] is True
+    assert [(r["folder"], r["name"], r["type"]) for r in out["results"]] == [
+        ("Films", "Summer 2024", "folder"), ("Films/Summer 2024", "beach-summer.MP4", "file")]
+    assert [r["name"] for r in fo.search(s, "beach summer", root)["results"]] == ["beach-summer.MP4"]
+    assert fo.search(os.path.join(s, "Films"), "shadow", root)["results"] == []
+
+
+def test_search_stops_at_the_limit_and_needs_words(share):
+    root, s, _ = share
+    for i in range(5):
+        open(os.path.join(s, f"photo{i}.jpg"), "w").close()
+    out = fo.search(s, "photo", root, limit=3)
+    assert len(out["results"]) == 3 and out["complete"] is False
+    with pytest.raises(fo.FileOpError):
+        fo.search(s, "   ", root)
