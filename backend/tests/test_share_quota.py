@@ -95,3 +95,17 @@ def test_personal_folder_checks_and_creation(shares, monkeypatch):
     assert made["name"] == "anna" and made["path"] == "/mnt/alvaos/main/anna"
     assert made["smb_permissions"] == {"anna": "write"} and made["personal_for"] == "anna"
     assert made["quota_bytes"] == 50 * q.GB
+
+
+def test_nearly_full_and_full_folders_are_reported():
+    shares = [
+        {"id": "a", "name": "anna", "path": "/a", "quota_bytes": 100 * q.GB, "personal_for": "anna"},
+        {"id": "b", "name": "Media", "path": "/b", "quota_bytes": 100 * q.GB},
+        {"id": "c", "name": "Free", "path": "/c", "quota_bytes": 100 * q.GB},
+        {"id": "d", "name": "NoLimit", "path": "/d"},
+    ]
+    used = {"/a": 92, "/b": 100, "/c": 10, "/d": 99}
+    out = q.limit_alerts(shares, lambda p: {"used_bytes": used[p] * q.GB, "limit_bytes": 100 * q.GB})
+    assert [(a[0], a[1]) for a in out] == [("share-a-nearly-full", "warning"), ("share-b-full", "critical")]
+    assert out[0][2] == "The personal folder of anna is nearly full" and "92 %" in out[0][3]
+    assert q.limit_alerts(shares, lambda p: None) == []
