@@ -500,3 +500,17 @@ def test_renaming_the_nas_touches_only_its_own_name_in_hosts():
     assert replace_host_name("::1 localhost ip6-localhost", "localhost", "x") == "::1 localhost ip6-localhost"
     assert replace_host_name("# nas is here", "nas", "alva") == "# nas is here"
     assert replace_host_name("10.0.0.1 nas # the nas", "nas", "alva") == "10.0.0.1\talva # the nas"
+
+
+def test_copies_on_the_backup_disk_say_whether_the_disk_is_there(backend, monkeypatch, tmp_path):
+    import api_backup
+    module, state = backend
+    set_up(state)
+    there = tmp_path / "copy-1"
+    there.mkdir()
+    entries = [{"snapshot_path": str(there), "snapshot_class": "copy"},
+               {"snapshot_path": str(tmp_path / "unplugged"), "snapshot_class": "copy"}]
+    monkeypatch.setattr(api_backup.backup_manager, "list_snapshots", lambda source_path=None, snapshot_class=None: entries)
+    token = auth_manager._create_session("root", role="admin")
+    res = module.app.test_client().get("/api/v1/backup/snapshots?snapshot_class=copy", headers={"Authorization": token})
+    assert [s["available"] for s in res.get_json()["snapshots"]] == [True, False]

@@ -111,6 +111,8 @@ def backup_snapshots():
         if snapshot_class and snapshot_class not in ('data', 'system', 'full_data', 'copy'):
             return jsonify({'error': 'Invalid snapshot_class'}), 400
         snapshots = backup_manager.list_snapshots(source_path=source_path, snapshot_class=snapshot_class)
+        if snapshot_class == 'copy':   # copies on the backup disk: only there while it is connected
+            snapshots = [{**s, 'available': os.path.isdir(str(s.get('snapshot_path') or ''))} for s in snapshots]
         return jsonify({'snapshots': snapshots})
 
     if request.method == 'DELETE':
