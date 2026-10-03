@@ -15,6 +15,21 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · Security review of today's changes
+
+- WebDAV remembered a correct sign-in for 10 minutes, also after the
+  password was changed. The remembered entry is now bound to the stored
+  password hash; a new password ends it at once (test).
+- HTTPS authority restricted by name constraints (entry below).
+- Looked at and fine: WebDAV paths and the Destination header go through
+  the same `resolve` as the app (no `..`), names in PROPFIND are escaped;
+  assistant actions run with the person's session and CSRF token and only
+  as stored by the server; the public certificate download holds no
+  secret; HTTPS-only never redirects the Buddy Backup peers.
+- **Note for next time:** an upload link ("drop box") takes as much as the
+  share can hold; only a space limit on that share caps it. A per-link size
+  limit would be the next step if people hand such links out widely.
+
 ## 2026-10-03 · HTTPS authority limited to the home network
 
 - The NAS's certificate authority now carries X.509 name constraints: it may
