@@ -15,6 +15,15 @@ How to add an entry:
 
 ---
 
+## 2026-10-03 · Background work gives way to people
+
+- Data checks (scrub) start in the idle I/O class (`btrfs scrub start -B -c
+  3`); the helper allows exactly that and the old form. Copying files over
+  the network goes first (where the disk scheduler honours I/O classes,
+  e.g. BFQ).
+- Photo thumbnails in Files are made in two worker threads with nice 10
+  instead of in the request thread at normal priority.
+
 ## 2026-10-03 · Sign-in: idle sessions end, the last sign-in is shown
 
 - A session nobody used for 8 hours ends (`IDLE_HOURS`), on top of the 24

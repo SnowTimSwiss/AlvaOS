@@ -1001,7 +1001,11 @@ def _rule_btrfs(sys_: System, args):
         _expect(rest, '-1', lambda p: _pool_mountpoint(_clean_abs_path(p)))
         return Plan(argv=list(args))
     if group == 'scrub' and action == 'start':
-        _expect(rest, '-B', lambda p: _pool_mountpoint(_clean_abs_path(p)))
+        # -c 3: the idle I/O class, so people using the NAS come first.
+        if rest[1:3] == ['-c', '3']:
+            _expect(rest, '-B', '-c', '3', lambda p: _pool_mountpoint(_clean_abs_path(p)))
+        else:
+            _expect(rest, '-B', lambda p: _pool_mountpoint(_clean_abs_path(p)))
         return Plan(argv=list(args))
     if (group == 'scrub' and action in ('status', 'cancel')) or (group, action) in (
             ('balance', 'status'), ('device', 'stats')):

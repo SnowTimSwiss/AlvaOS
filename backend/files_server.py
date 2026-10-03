@@ -511,6 +511,26 @@ THUMB_MAX_SOURCE_BYTES = 60 * 1024 ** 2
 THUMB_TYPES = ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp')
 
 
+def _low_priority() -> None:
+    """Runs in each thumbnail worker: decoding photos must not slow down
+    people copying files (on Linux nice applies per thread)."""
+    try:
+        os.setpriority(os.PRIO_PROCESS, threading.get_native_id(), 10)
+    except (AttributeError, OSError):
+        pass
+
+
+_thumb_workers = None
+
+
+def _thumbnail_pool():
+    global _thumb_workers
+    if _thumb_workers is None:
+        from concurrent.futures import ThreadPoolExecutor
+        _thumb_workers = ThreadPoolExecutor(max_workers=2, thread_name_prefix='thumbs', initializer=_low_priority)
+    return _thumb_workers
+
+
 def make_thumbnail(data: bytes) -> Optional[bytes]:
     """A small JPEG. Decoded here, in this unprivileged process, never in the
     helper; Pillow's pixel limit stops decompression bombs."""
@@ -557,7 +577,7 @@ def _thumb_response(path: str, user: Optional[str], stamp: str):
     stream, _ = files_manager.open_stream(path, user=user)
     if stream is None:
         return jsonify({'error': 'No preview for this file.'}), 404
-    thumb = make_thumbnail(b''.join(stream))
+    thumb = _thumbnail_pool().submit(make_thumbnail, b''.join(stream)).result(timeout=60)
     if thumb is None:
         return jsonify({'error': 'No preview for this file.'}), 404
     try:
