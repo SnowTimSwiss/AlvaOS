@@ -15,6 +15,29 @@ How to add an entry:
 
 ---
 
+## 2026-10-04 · Remote access over WireGuard (Settings › Remote access)
+
+- Turn it on, enter the public address of the home (dynamic DNS name or
+  address; "Find it" asks api.ipify.org, only on that button), forward the
+  shown UDP port (51821) in the router to the shown NAS address.
+- "Add a device" makes a key pair for the phone or laptop and shows its
+  WireGuard configuration once: QR code (phone app) and a file (computer).
+  The device's private key is never stored; the NAS keeps its public key and
+  a pre-shared key. Devices list with "Connected now / Last connected" (from
+  `wg show remote0 latest-handshakes`) and Remove.
+- The tunnel is `remote0`, 100.96.96.0/24, NAS 100.96.96.1; clients get
+  `AllowedIPs = 100.96.96.1/32`, so only the NAS is reached, also the apps
+  on their ports. Buddy Backup keeps buddy0 / 100.95.95.x / 51820.
+- Keys are made with `cryptography` (X25519), no `wg genkey`. Config and
+  settings are 0600. The helper runs wg-quick only for buddy0.conf and
+  remote0.conf, refuses PostUp and other hooks, and allows `wg show remote0
+  latest-handshakes` but not `dump` or `private-key` (they print keys).
+- Brought up again at boot. The assistant can look at it (`remote_access`).
+- **Note for next time:** not tried with a real tunnel (the build container
+  has no WireGuard module). UPnP to open the router port by itself would
+  save the router step; an option "also reach the home network" would need
+  forwarding and NAT.
+
 ## 2026-10-04 · Installer: a fresh install has AlvaOS Files and all packages
 
 - The installer image copied only the files directly in `frontend/`; the
