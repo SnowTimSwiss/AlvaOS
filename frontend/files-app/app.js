@@ -167,7 +167,7 @@
         found = null;
         $('search').value = '';
         $('main').querySelector('.bar').classList.remove('find');
-        $('photos-nav').classList.remove('active');
+        leavePhotos();
         selected = new Set();
         anchor = -1;
         if (push && location.hash !== hashFor(share, path)) history.pushState(null, '', hashFor(share, path));
@@ -523,7 +523,7 @@
     function clearSearch() {
         $('search').value = '';
         found = null;
-        $('photos-nav').classList.remove('active');
+        leavePhotos();
         searchId++;
         $('main').querySelector('.bar').classList.remove('find');
         selected = new Set();
@@ -543,7 +543,7 @@
         setTimeout(() => clearInterval(wait), 5000);
     }
     $('search').addEventListener('input', () => {
-        if (found) { found = null; selected = new Set(); $('photos-nav').classList.remove('active'); }
+        if (found) { found = null; selected = new Set(); leavePhotos(); }
         searchId++;
         render();
         clearTimeout(searchTimer);
@@ -750,13 +750,21 @@
         wrap.querySelector('[data-close]').onclick = () => { wrap.hidden = true; wrap.innerHTML = ''; };
     });
 
-    // Photos: every picture and video of the open shared folder, newest first.
-    $('photos-nav').addEventListener('click', async () => {
+    // Photos, a Hub app of its own (opened from the app bar): every picture
+    // and video of the open shared folder, newest first.
+    let inPhotos = false;
+    function leavePhotos() {
+        inPhotos = false;
+        markRail();
+    }
+    async function showPhotos() {
         closeSide();
         $('search').value = '';
         const id = ++searchId;
+        inPhotos = true;
+        markRail();
         $('items').innerHTML = '<div class="empty">Looking for photos…</div>';
-        document.querySelectorAll('.side-item').forEach((b) => b.classList.toggle('active', b.id === 'photos-nav'));
+        document.querySelectorAll('.side-item').forEach((b) => b.classList.remove('active'));
         try {
             const data = await api(`media?${new URLSearchParams({ share })}`);
             if (id !== searchId) return;
@@ -767,7 +775,7 @@
         } catch (err) {
             toast(err.message, 'error');
         }
-    });
+    }
 
     $('links-nav').addEventListener('click', async () => {
         closeSide();
@@ -1092,8 +1100,6 @@
     function renderRail() {
         hubApps = (me.hub && me.hub.apps) || [];
         const rail = $('rail');
-        const photos = hubApps.some((a) => a.id === 'photos');
-        $('photos-nav').hidden = !photos;
         if (hubApps.length < 2) {
             rail.hidden = true;
             $('app').classList.remove('with-rail');
@@ -1104,20 +1110,18 @@
         rail.hidden = false;
         $('app').classList.add('with-rail');
         rail.querySelectorAll('[data-app]').forEach((b) => b.addEventListener('click', () => {
-            if (b.dataset.app === 'photos') $('photos-nav').click();
+            if (b.dataset.app === 'photos') showPhotos();
             else go(share, path);
         }));
         markRail();
     }
     function markRail() {
-        const current = $('photos-nav').classList.contains('active') ? 'photos' : 'files';
+        const current = inPhotos ? 'photos' : 'files';
         $('rail').querySelectorAll('[data-app]').forEach((b) => {
             if (b.dataset.app === current) b.setAttribute('aria-current', 'page');
             else b.removeAttribute('aria-current');
         });
     }
-    // Keep the bar in step with the sidebar (Photos opened or left from anywhere).
-    new MutationObserver(markRail).observe($('photos-nav'), { attributes: true, attributeFilter: ['class'] });
 
     // ── Start ──────────────────────────────────────────────────────────────
     async function start() {
@@ -1137,7 +1141,7 @@
         if (!hubApps.some((a) => a.id === 'files')) {
             $('crumbs').innerHTML = '';
             $('share-list').innerHTML = '';
-            ['photos-nav', 'links-nav', 'trash-nav', 'connect-nav', 'new-btn'].forEach((id) => { $(id).hidden = true; });
+            ['links-nav', 'trash-nav', 'connect-nav', 'new-btn'].forEach((id) => { $(id).hidden = true; });
             $('items').innerHTML = `<div class="empty">${icon('grid')}<strong>No apps for you yet</strong>Ask whoever runs this NAS to turn on Files for you in the Hub.</div>`;
             return;
         }

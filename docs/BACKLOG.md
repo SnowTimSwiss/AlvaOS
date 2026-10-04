@@ -43,6 +43,8 @@ How to add an entry:
 - The App Store no longer lists AlvaOS Hub/Files as a built-in tile;
   searching it for files, photos, hub, cloud or drive shows a pointer to the
   Hub page instead.
+- Photos is no longer a button in the Files sidebar: it is its own Hub app
+  and opens from the app bar only.
 - **Note for next time:** next Hub apps: Calendar and Contacts (Radicale).
 
 ## 2026-10-04 · Roadmap: AlvaOS Hub and the Files plan
