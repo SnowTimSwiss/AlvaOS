@@ -71,7 +71,37 @@ def _hub_state(people):
         'libraries_to_choose': sorted(s['name'] for s in shares
                                       if not s.get('personal_for') and not s.get('hub_for') and s.get('protocol', 'smb') == 'smb'),
         'personal_folders': personal, 'needs_personal_folder': needs_personal,
+        'chat_service': _chat_service(),
     }
+
+
+def _chat_service():
+    """The AI service Chat talks to (Settings › Assistant), without its key."""
+    import hub_chat
+    service, problem = hub_chat.connection()
+    from urllib.parse import urlparse
+    return {'ready': not problem, 'model': service['model'], 'host': urlparse(service['base_url']).netloc,
+            'provider': service['provider']}
+
+
+@bp.route('/api/v1/hub/chat-models', methods=['GET'])
+@require_auth(require_admin=True)
+def chat_models():
+    """The models the AI service offers, to choose from for Chat."""
+    import requests
+
+    import hub_chat
+    service, problem = hub_chat.connection()
+    if problem:
+        return jsonify({'error': problem}), 409
+    headers = {'Authorization': f"Bearer {service['api_key']}"} if service.get('api_key') else {}
+    try:
+        res = requests.get(service['base_url'].rstrip('/') + '/models', headers=headers, timeout=15)
+        data = res.json() if res.status_code < 400 else {}
+    except Exception:  # noqa: BLE001 - requests raises many kinds; the page lets the admin type names
+        data = {}
+    found = sorted({str(m.get('id')) for m in (data.get('data') or []) if isinstance(m, dict) and m.get('id')})
+    return jsonify({'models': found[:300]})
 
 
 def _make_app_folders(app_id, people, settings):
@@ -124,7 +154,7 @@ def hub():
     keeps data; the cache pool; personal folders for people who need one.
 
     POST {'enabled': bool}: the Hub (its service) on or off.
-    POST {'apps': {id: {'enabled', 'people', 'location', 'libraries'}}}: change apps.
+    POST {'apps': {id: {'enabled', 'people', 'location', 'libraries', 'models'}}}: change apps.
     POST {'storage': {'cache_pool': id or ''}}: where caches go.
     POST {'personal_folders': {'pool_id', 'limit_gb'}}: make the missing personal folders."""
     import api_shares

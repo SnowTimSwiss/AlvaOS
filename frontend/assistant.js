@@ -20,7 +20,7 @@
     }
 
     // Pages the assistant may link to (ai_assistant.PAGES); other links stay text.
-    const PAGES = ['index.html', 'storage.html', 'files.html', 'apps.html', 'backup.html', 'updates.html', 'system.html'];
+    const PAGES = ['index.html', 'storage.html', 'files.html', 'apps.html', 'backup.html', 'updates.html', 'system.html', 'vms.html'];
     const pageLink = (_m, label, href) => {
         const [file, anchor = ''] = href.split('#');
         if (!PAGES.includes(file) || !/^[a-z=-]{0,20}$/.test(anchor)) return label;

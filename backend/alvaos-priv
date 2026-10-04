@@ -11,6 +11,7 @@ alvaos-priv — the only program the AlvaOS backend may run as root.
                                                             (the same, as one person: Linux checks their rights)
     sudo -n /opt/alvaos/bin/alvaos-priv vault-open NAME HOST EXPORT MODE   (key on stdin)
     sudo -n /opt/alvaos/bin/alvaos-priv vault-close NAME
+    sudo -n /opt/alvaos/bin/alvaos-priv vm-setup | vm-prepare ID | vm-delete ID | vm-isos   (virtual machines, see vm_ops.py)
 
 Every command line is checked by priv_policy before it runs. Nothing is ever
 passed to a shell. Denials exit with status 126 and are logged to
@@ -36,6 +37,7 @@ import priv_policy as policy  # noqa: E402
 import update_signing  # noqa: E402
 import files_ops  # noqa: E402
 import vault_ops  # noqa: E402
+import vm_ops  # noqa: E402
 
 DENIED_EXIT = 126
 MAX_STDIN = 1024 * 1024
@@ -362,7 +364,7 @@ def file_size(argv):
 
 # AlvaOS Files: name -> (number of arguments, function); None means a name
 # and 1 to 101 folders (the current one and up to 100 restore points). files_ops checks
-# every folder on its open descriptor and never overwrites anything.
+# every folder on its open descriptor and never overwrites anything but Hub app data.
 FILES_OPS = {
     'files-list': (1, lambda a: {'entries': files_ops.list_dir(a[0])}),
     'files-search': (2, lambda a: files_ops.search(a[0], a[1])),
@@ -385,6 +387,10 @@ FILES_OPS = {
     'files-trash-list': (1, lambda a: {'items': files_ops.list_trash(a[0])}),
     'files-trash-restore': (2, lambda a: files_ops.restore(a[0], a[1])),
     'files-trash-purge': (2, lambda a: {'removed': files_ops.purge(a[0], int(policy._int_arg(a[1], 0, 3650)))}),
+    # Hub apps (Calendar, Chat): their JSON files below ".alvaos/" of a share.
+    'files-data-read': (2, lambda a: files_ops.read_app_data(a[0], a[1])),
+    'files-data-write': (2, lambda a: {'written': files_ops.write_app_data(a[0], a[1], sys.stdin.buffer)}),
+    'files-data-delete': (2, lambda a: files_ops.delete_app_data(a[0], a[1])),
 }
 
 
@@ -467,6 +473,8 @@ def main():
         return files_zip(args[1:])
     if args and args[0] in FILES_OPS:
         return files_op(args[0], args[1:])
+    if args and args[0] in vm_ops.HELPER_OPS:
+        return vm_ops.helper_main(args)
     if args[:1] in (['vault-open'], ['vault-close']):
         # Buddy Backup vaults: attach, unlock and mount, or the reverse.
         stdin = sys.stdin.buffer.read(1024) if args[0] == 'vault-open' else b''

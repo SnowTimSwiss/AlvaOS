@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Virtual machines - AlvaOS</title>
+    <script src="theme.js"></script>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="notifications.css">
+    <style>
+        .vm-hero { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 22px; align-items: center; background: var(--bg-card); border: 1px solid var(--border-default); border-radius: var(--radius-lg); padding: 26px; }
+        .vm-hero-ic { width: 76px; height: 76px; border-radius: 20px; display: grid; place-items: center; background: var(--accent-primary-soft); color: var(--accent-primary); }
+        .vm-hero-ic svg { width: 38px; height: 38px; }
+        .vm-hero h1 { margin: 0 0 6px; font-size: 1.45rem; }
+        .vm-hero p { margin: 0; color: var(--text-secondary); line-height: 1.5; }
+        .vm-hero-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; align-items: center; }
+        .vm-card { margin-top: 14px; background: var(--bg-card); border: 1px solid var(--border-default); border-radius: var(--radius-lg); padding: 18px 20px; }
+        .vm-card h2 { margin: 0 0 4px; font-size: 1.05rem; }
+        .vm-card > p { margin: 0 0 12px; color: var(--text-secondary); font-size: 0.9rem; line-height: 1.5; }
+        .vm-note { margin-top: 12px; padding: 12px 14px; border-radius: var(--radius-default); background: color-mix(in srgb, var(--accent-warning) 12%, transparent); font-size: 0.88rem; line-height: 1.45; }
+        .vm-note.bad { background: color-mix(in srgb, var(--accent-danger) 12%, transparent); }
+        .vm-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+        .vm-row select, .vm-row input { padding: 7px 9px; }
+        .vm-list { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+        .vm { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 14px; align-items: center; background: var(--bg-card); border: 1px solid var(--border-default); border-radius: var(--radius-lg); padding: 16px 18px; }
+        .vm-ic { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: var(--bg-hover); color: var(--text-secondary); }
+        .vm-ic svg { width: 22px; height: 22px; }
+        .vm.is-running .vm-ic { background: color-mix(in srgb, var(--accent-success) 16%, transparent); color: var(--accent-success); }
+        .vm.is-failed .vm-ic { background: color-mix(in srgb, var(--accent-danger) 14%, transparent); color: var(--accent-danger); }
+        .vm-name { font-weight: 600; font-size: 1rem; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .vm-state { display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; font-weight: 500; color: var(--text-secondary); }
+        .vm-state .status-dot { margin: 0; }
+        .vm-state .idle { width: 8px; height: 8px; border-radius: 50%; background: var(--text-tertiary); }
+        .vm-meta { color: var(--text-secondary); font-size: 0.86rem; margin-top: 3px; }
+        .vm-problem { color: var(--accent-danger); font-size: 0.86rem; margin-top: 6px; }
+        .vm-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+        .vm-actions button { white-space: nowrap; }
+        .btn-quiet { background: none; border-color: transparent; color: var(--text-secondary); }
+        .btn-quiet:hover { background: var(--bg-hover); color: var(--text-primary); }
+        .btn-danger-quiet { background: none; border: 1px solid transparent; color: var(--accent-danger); padding: 0.5rem 0.8rem; border-radius: var(--radius-btn); cursor: pointer; font-size: 0.9rem; }
+        .btn-danger-quiet:hover { background: color-mix(in srgb, var(--accent-danger) 10%, transparent); }
+        .vm-link { background: none; border: 0; padding: 0 4px; color: var(--accent-primary); cursor: pointer; text-decoration: underline; font: inherit; }
+        .vm-empty { text-align: center; padding: 34px 20px; color: var(--text-secondary); }
+        .vm-empty strong { display: block; color: var(--text-primary); font-size: 1.05rem; margin-bottom: 6px; }
+        .vm-progress { display: flex; align-items: center; gap: 12px; margin-top: 12px; color: var(--text-secondary); }
+        .vm-spin { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border-default); border-top-color: var(--accent-primary); animation: vm-spin 0.9s linear infinite; }
+        @keyframes vm-spin { to { transform: rotate(360deg); } }
+        /* Dialogs */
+        .vm-dialog { width: min(560px, calc(100vw - 24px)); max-height: calc(100vh - 32px); overflow-y: auto; }
+        .vm-dialog .modal-body { display: flex; flex-direction: column; gap: 14px; text-align: left; }
+        .vm-field { display: flex; flex-direction: column; gap: 6px; font-size: 0.88rem; font-weight: 600; }
+        .vm-field input, .vm-field select { padding: 8px 10px; font-weight: 400; }
+        .vm-field small { font-weight: 400; color: var(--text-secondary); line-height: 1.4; }
+        .vm-os { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+        .vm-os label { position: relative; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border-default); border-radius: var(--radius-default); cursor: pointer; font-weight: 500; }
+        .vm-os input { position: absolute; opacity: 0; pointer-events: none; }
+        .vm-os label:has(input:checked) { border-color: var(--accent-primary); background: var(--accent-primary-soft); }
+        .vm-os label:has(input:focus-visible) { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
+        .vm-os svg { width: 20px; height: 20px; color: var(--text-secondary); }
+        .vm-summary { display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 10px 12px; border-radius: var(--radius-default); background: var(--bg-hover); font-size: 0.9rem; }
+        .vm-more { border-top: 1px solid var(--border-subtle); padding-top: 4px; }
+        .vm-more > summary { cursor: pointer; padding: 10px 0; font-size: 0.88rem; color: var(--text-secondary); }
+        .vm-more > summary:hover { color: var(--text-primary); }
+        .vm-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+        .vm-check { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; font-weight: 400; cursor: pointer; }
+        .vm-check input { width: auto; margin: 0; }
+        .vm-ports { display: flex; flex-direction: column; gap: 6px; }
+        .vm-port { display: flex; gap: 6px; align-items: center; font-weight: 400; }
+        .vm-port input { width: 7.5rem; }
+        .vm-port select { padding: 8px 6px; }
+        .vm-error { color: var(--accent-danger); font-size: 0.88rem; min-height: 1.2em; }
+        /* The screen */
+        .vm-screen { position: fixed; inset: 0; z-index: 200; background: #000; display: flex; flex-direction: column; }
+        .vm-screen-bar { display: flex; gap: 8px; align-items: center; padding: 8px 12px; background: #161b22; color: #e6edf3; font-size: 0.9rem; }
+        .vm-screen-bar strong { margin-right: auto; }
+        .vm-screen-bar button { background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 8px; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 0.85rem; }
+        .vm-screen-bar button:hover { background: #30363d; }
+        .vm-screen-view { position: relative; flex: 1; min-height: 0; }
+        .vm-screen-msg[hidden] { display: none; }
+        .vm-screen-msg { position: absolute; inset: 0; display: grid; place-items: center; color: #e6edf3; text-align: center; padding: 20px; pointer-events: none; }
+        @media (max-width: 760px) {
+            .vm-hero { grid-template-columns: 1fr; padding: 20px; }
+            .vm-hero-ic { width: 56px; height: 56px; }
+            .vm { grid-template-columns: 44px minmax(0, 1fr); }
+            .vm-actions { grid-column: 1 / -1; justify-content: flex-start; }
+            .vm-os, .vm-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+
+<body>
+
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
+    <!-- Sidebar: same on every page (generated, keep in sync) -->
+    <aside class="sidebar" id="sidebar">
+        <a class="brand" href="index.html" aria-label="Go to the dashboard">
+            <svg class="brand-mark" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span class="brand-text">
+                <span class="brand-name" id="brand-name">AlvaOS</span>
+                <span class="brand-status" id="brand-status"><span class="status-dot online" aria-hidden="true"></span><span id="brand-status-text">Online</span></span>
+            </span>
+        </a>
+
+        <nav aria-label="Main">
+            <a href="index.html" class="nav-link"><i data-lucide="house" aria-hidden="true"></i> Dashboard</a>
+            <a href="storage.html" class="nav-link"><i data-lucide="hard-drive" aria-hidden="true"></i> Storage</a>
+            <a href="files.html" class="nav-link"><i data-lucide="layers" aria-hidden="true"></i> Hub</a>
+            <a href="apps.html" class="nav-link"><i data-lucide="blocks" aria-hidden="true"></i> Apps</a>
+            <a href="vms.html" class="nav-link active" aria-current="page"><i data-lucide="server" aria-hidden="true"></i> Virtual machines</a>
+            <a href="backup.html" class="nav-link"><i data-lucide="shield-check" aria-hidden="true"></i> Backup</a>
+            <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw" aria-hidden="true"></i> Updates <span class="nav-badge" id="updates-nav-badge" style="display:none;">1</span></a>
+            <div class="nav-spacer"></div>
+            <a href="system.html" class="nav-link"><i data-lucide="settings" aria-hidden="true"></i> Settings</a>
+        </nav>
+    </aside>
+    <div class="nav-scrim" id="nav-scrim" hidden></div>
+
+    <!-- Main Content -->
+    <div class="main">
+        <header class="topbar">
+            <button type="button" class="nav-menu-btn" id="menu-btn" aria-controls="sidebar" aria-expanded="false" aria-label="Open menu">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <div class="page-title">Virtual machines</div>
+            <div class="topbar-actions" id="topbar-actions">
+                <div class="account">
+                    <button type="button" class="account-btn" id="account-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" aria-label="Account">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="10" r="3"/><path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662"/></svg>
+                    </button>
+                    <div class="account-menu" id="account-menu" role="menu" hidden>
+                        <div class="account-who">Signed in as <strong>Administrator</strong></div>
+                        <div class="account-theme" role="group" aria-label="Appearance">
+                            <span class="account-theme-label">Appearance</span>
+                            <div class="seg">
+                                <button type="button" role="menuitemradio" aria-checked="true" data-theme-choice="auto">Auto</button>
+                                <button type="button" role="menuitemradio" aria-checked="false" data-theme-choice="light">Light</button>
+                                <button type="button" role="menuitemradio" aria-checked="false" data-theme-choice="dark">Dark</button>
+                            </div>
+                        </div>
+                        <a role="menuitem" href="system.html#security">Password and security</a>
+                        <button type="button" role="menuitem" onclick="alvaosLogout()">Log out</button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+                <main class="content-scroll" id="main-content" tabindex="-1">
+            <section class="vm-hero">
+                <div class="vm-hero-ic" id="vm-hero-ic"></div>
+                <div>
+                    <h1>Virtual machines</h1>
+                    <p>Run Windows, Linux or anything else inside this NAS, each in its own window in the browser. The disks are normal files in a shared folder, so restore points and backups cover them too.</p>
+                    <div class="vm-hero-actions" id="vm-actions"></div>
+                </div>
+            </section>
+            <div id="vm-setup"></div>
+            <div class="vm-list" id="vm-list"></div>
+            <footer class="dash-footer">
+                <div>AlvaOS {{VERSION}}</div>
+            </footer>
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script src="lucide-icons.js"></script>
+    <script src="icons.js"></script>
+    <script src="notifications.js"></script>
+    <script src="feedback.js"></script>
+    <script src="app.js"></script>
+    <script src="nav.js"></script>
+    <script src="assistant.js"></script>
+    <script src="vms.js"></script>
+</body>
+
+</html>

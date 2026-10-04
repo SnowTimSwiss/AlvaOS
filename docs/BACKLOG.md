@@ -15,6 +15,66 @@ How to add an entry:
 
 ---
 
+## 2026-10-04 · Virtual machines (docs/VMS.md)
+
+- New admin page **Virtual machines** (`vms.html`, `vms.js`, in the
+  navigation): set up once (installs QEMU, UEFI firmware and a TPM on request
+  and makes the shared folder `VMs` on a pool), new machine (Windows 11,
+  Windows 10, Linux, other; sensible cores/memory/disk per system, details under
+  "More options"), start, shut down (power button of the guest), restart,
+  switch off, delete, settings (installer, cores, memory, ports, start with
+  the NAS) and **the screen in the browser** (noVNC, vendored under
+  `frontend/vendor/novnc`, bundled as one file).
+- QEMU/KVM without libvirt: `vm_ops.py` builds the command line from a
+  description it checks again (the backend writes, never passes a command);
+  systemd template unit `alvaos-vm@.service` as the account `alvaos-vm`
+  (created by the installer and the package), `ExecStop` presses the
+  power button and waits. `alvaos-priv` got `vm-setup|vm-prepare|vm-delete|
+  vm-isos`; the policy allows `systemctl` only for `alvaos-vm@<8 hex>.service`.
+- `vm_manager.py` (state, setup job, create/update/delete/actions, memory and
+  space checks), `api_vms.py` (`/api/v1/vms*`, admin only), `vm_console.py`
+  (one-time tickets, a door on 8085/9445 that only copies bytes after the
+  check; the web UI's CSP got `connect-src` for those ports).
+- Disks are qcow2 files in `VMs/<id>/` (also UEFI variables, TPM state), so
+  restore points, backups and limits apply. New packages are listed in
+  `scripts/ci/optional-packages.txt`.
+- Checked here only with fakes (no KVM in this environment); the page was
+  driven in a browser against the real door with a fake VNC server. A real
+  run is step 8b of `docs/TESTING.md`.
+- Note for next time: `-sandbox` for QEMU, a bridge network and a virtio
+  driver ISO are left out on purpose until they can be tried on hardware.
+- Roadmap: thought through and written down (not built): UPS (NUT), access
+  without a router setting (Tailscale, Cloudflare Tunnel) and a warm
+  standby NAS instead of automatic failover (`ROADMAP.md` 2c).
+
+## 2026-10-04 · Hub: Calendar (like Google Calendar) and Chat (like ChatGPT)
+
+- **Calendar** (`hub_calendar.py`, `files-app/calendar.js|css`): day, week
+  (3 days on a phone), month and schedule; little month; calendars with
+  Google's colours, shown or hidden; tasks with or without a day (in the
+  calendar and in a tasks panel); repeating events; click or drag to make
+  an event, drag to move, pull to lengthen; detail card and full editor;
+  Google's keys. Own calendars in `.alvaos/calendar/calendar.json` of the
+  personal folder; family calendars in shared folders the admin marks
+  ("Shared family calendars" on the Hub page), changed by whoever may
+  change the folder.
+- **Chat** (`hub_chat.py`, `files-app/chat.js|css`): chats on the left,
+  model top left, "Think" on or off with low/medium/high, the answer
+  streamed (NDJSON), thinking folded, Markdown. No tools: it cannot see or
+  change the NAS. Uses the AI service of Settings › Assistant (key stays on
+  the NAS); on the Hub page the admin turns it on (off at first), chooses
+  who sees it and which models (`/api/v1/hub/chat-models` asks the
+  service). Chats in `.alvaos/chat/`.
+- Hub app data: `hub_data.py` reads and writes small JSON files as the
+  person through new helper operations `files-data-read|write|delete`
+  (below `.alvaos/`, replaced whole, 16 MB at most). `need_session(app)`
+  checks the right app. The Hub shell (`app.js`) opens Calendar and Chat as
+  views of their own (`#app=calendar`), each with the person and "Sign out"
+  in its sidebar.
+- Note for next time: CalDAV (phones syncing) needs the calendars as
+  `.ics`; the JSON file is the place to convert from. Changing one repeat
+  changes the whole series (no exceptions yet).
+
 ## 2026-10-04 · Hub: where apps keep data (docs/HUB.md and the settings)
 
 - `docs/HUB.md`: the reference for the Hub: Hub apps vs store apps, who sees

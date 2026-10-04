@@ -51,7 +51,9 @@ TOOLS: List[Tuple[str, str, str]] = [
     ('network', '/api/v1/system/network', 'Network addresses and interfaces'),
     ('time', '/api/v1/system/time', 'Date, time and time zone'),
     ('services', '/api/v1/watchdog/status', 'Whether file sharing and apps are running'),
-    ('hub', '/api/v1/hub', 'AlvaOS Hub: on or off, its apps (Files, Photos) and who sees each'),
+    ('virtual_machines', '/api/v1/vms', 'Virtual machines: whether they can run here, and each machine with its state, '
+                                       'cores, memory and disk'),
+    ('hub', '/api/v1/hub', 'AlvaOS Hub: on or off, its apps (Files, Photos, Calendar, Chat) and who sees each'),
     ('backup_disk', '/api/v1/backup/copy', 'The USB backup disk: chosen or not, connected, last copy, problems'),
     ('buddy_backup', '/api/v1/backup/pairing/status', 'Buddy Backup: whether a second NAS is paired and reachable'),
     ('https', '/api/v1/system/tls', 'The HTTPS certificate of this NAS and whether "HTTPS only" is on'),
@@ -605,12 +607,12 @@ def calls_in_text(content: Any) -> List[Dict[str, Any]]:
 # The pages the assistant can point to; links to anything else are not shown.
 PAGES = {
     'index.html': 'Dashboard', 'storage.html': 'Storage', 'files.html': 'Hub', 'apps.html': 'Apps',
-    'backup.html': 'Backup', 'updates.html': 'Updates', 'system.html': 'Settings',
+    'backup.html': 'Backup', 'updates.html': 'Updates', 'system.html': 'Settings', 'vms.html': 'Virtual machines',
 }
 LINK_PROMPT = (
     ' When the person should do something by hand, link the page like [Backup](backup.html). Pages: '
     'index.html (Dashboard), storage.html#pools, storage.html#disks, storage.html#shares (shared folders), '
-    'storage.html#users (people), files.html (AlvaOS Hub: Files, Photos), apps.html, backup.html, updates.html, system.html#network, '
+    'storage.html#users (people), files.html (AlvaOS Hub: Files, Photos, Calendar, Chat), apps.html, vms.html (virtual machines), backup.html, updates.html, system.html#network, '
     'system.html#remote (remote access), system.html#graphics (graphics cards and drivers), '
     'system.html#security, system.html#alerts, system.html#power, system.html#assistant, system.html#logs.'
 )

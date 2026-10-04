@@ -13,7 +13,7 @@ libraries); and the pool for caches such as thumbnails.
 
 Settings live in /var/lib/alvaos/hub.json; both the admin backend and the
 Hub server (same service account) read it. Without the file every app is on
-for everyone, personal data goes to the personal folder and caches stay on
+for everyone (but Chat, which needs an AI service first), personal data goes to the personal folder and caches stay on
 the system disk, which is how Files behaved before the Hub.
 """
 
@@ -27,8 +27,11 @@ NAME = 'AlvaOS Hub'
 
 # The Hub apps there are. `needs`: apps it is part of (Photos shows the
 # pictures in the shared folders, so it needs Files). `personal`: the folder
-# it keeps each person's own data in (None: it keeps none); `libraries`: it
-# also reads shared folders the admin marks. Order = order in the bar.
+# it keeps each person's own data in (None: it keeps none; a hidden folder
+# for data not meant to be opened by hand); `libraries`: it also reads shared
+# folders the admin marks; `models`: the admin chooses AI models for it;
+# `off_at_first`: off until the admin turns it on (Chat needs an AI service
+# first). Order = order in the bar.
 APPS: List[Dict[str, Any]] = [
     {'id': 'files', 'name': 'Files', 'icon': 'folder',
      'description': 'The shared folders in the browser: open, upload, share links, trash and previous versions.',
@@ -36,9 +39,17 @@ APPS: List[Dict[str, Any]] = [
     {'id': 'photos', 'name': 'Photos', 'icon': 'image',
      'description': 'Everyone\'s own photos and the family\'s photo libraries, newest first, by month.',
      'needs': ['files'], 'personal': 'Photos', 'libraries': True},
+    {'id': 'calendar', 'name': 'Calendar', 'icon': 'calendar',
+     'description': 'Everyone\'s own calendars and tasks, and family calendars in shared folders.',
+     'needs': [], 'personal': '.alvaos/calendar', 'libraries': True},
+    {'id': 'chat', 'name': 'Chat', 'icon': 'message-circle',
+     'description': 'Chat with an AI model, like ChatGPT. It cannot see or change anything on the NAS.',
+     'needs': [], 'personal': '.alvaos/chat', 'libraries': False, 'models': True, 'off_at_first': True},
 ]
 CACHE_FOLDER = '.alvaos-hub'   # at the top of the cache pool, not shared
 SHARE_NAME_RE = re.compile(r'^[A-Za-z0-9_-]{1,63}$')
+MODEL_RE = re.compile(r'^[A-Za-z0-9._:/@+-]{1,120}$')
+MAX_MODELS = 20
 APP_IDS = [a['id'] for a in APPS]
 USER_RE = re.compile(r'^[a-z_][a-z0-9_-]{0,31}$')
 
@@ -58,7 +69,7 @@ def load(path: Optional[str] = None) -> Dict[str, Any]:
         entry: Dict[str, Any] = item if isinstance(item, dict) else {}
         people = entry.get('people')
         apps[app['id']] = {
-            'enabled': bool(entry.get('enabled', True)),
+            'enabled': bool(entry.get('enabled', not app.get('off_at_first'))),
             'people': sorted({str(p) for p in people if USER_RE.match(str(p))}) if isinstance(people, list) else None,
         }
         if app['personal']:
@@ -67,6 +78,11 @@ def load(path: Optional[str] = None) -> Dict[str, Any]:
             libs = entry.get('libraries')
             apps[app['id']]['libraries'] = sorted({str(n) for n in libs if SHARE_NAME_RE.match(str(n))}) \
                 if isinstance(libs, list) else []
+        if app.get('models'):
+            # Models people may choose in Chat; empty: the one in Settings › Assistant.
+            models = entry.get('models')
+            apps[app['id']]['models'] = list(dict.fromkeys(str(m) for m in models if MODEL_RE.match(str(m))))[:MAX_MODELS] \
+                if isinstance(models, list) else []
     raw_storage = raw.get('storage') if isinstance(raw, dict) else None
     storage: Dict[str, Any] = raw_storage if isinstance(raw_storage, dict) else {}
     return {'apps': apps, 'storage': {'cache_pool': str(storage.get('cache_pool') or '')}}
@@ -84,7 +100,7 @@ def save(payload: Dict[str, Any], known_people: Iterable[str], path: Optional[st
          pools: Optional[Dict[str, Any]] = None, shares: Optional[Iterable[str]] = None
          ) -> Tuple[Optional[Dict[str, Any]], str]:
     """Change apps and where they keep things:
-    {'apps': {id: {'enabled', 'people', 'location', 'libraries'}}, 'storage': {'cache_pool'}}.
+    {'apps': {id: {'enabled', 'people', 'location', 'libraries', 'models'}}, 'storage': {'cache_pool'}}.
     `pools` (id -> pool) and `shares` (names) are what may be chosen."""
     path = path or SETTINGS_FILE
     settings = load(path)
@@ -144,6 +160,15 @@ def save(payload: Dict[str, Any], known_people: Iterable[str], path: Optional[st
             if not isinstance(libs, list) or not set(map(str, libs)) <= share_names:
                 return None, 'Choose shared folders that exist.'
             entry['libraries'] = sorted({str(n) for n in libs})
+        if 'models' in change:
+            if not app.get('models'):
+                return None, f'{app["name"]} uses no AI models.'
+            models = change['models']
+            if not isinstance(models, list) or not all(MODEL_RE.match(str(m)) for m in models):
+                return None, 'Enter model names like llama3.1 or gpt-4o-mini.'
+            if len(models) > MAX_MODELS:
+                return None, f'Choose at most {MAX_MODELS} models.'
+            entry['models'] = list(dict.fromkeys(str(m) for m in models))
     storage = payload.get('storage')
     if isinstance(storage, dict) and 'cache_pool' in storage:
         pool_id = str(storage.get('cache_pool') or '')
@@ -181,6 +206,7 @@ def overview(settings: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """Every app with its settings, for the admin pages."""
     settings = settings or load()
     return [{**{k: a[k] for k in ('id', 'name', 'icon', 'description', 'needs', 'personal', 'libraries')},
+             'models_choice': bool(a.get('models')),
              **settings['apps'][a['id']]} for a in APPS]
 
 

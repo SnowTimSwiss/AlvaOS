@@ -21,7 +21,7 @@ next is tracked in `ROADMAP.md` (section 2) and `BACKLOG.md`.
 
 | | Hub apps | Store apps |
 |---|---|---|
-| Examples | Files, Photos; later Calendar, Contacts, Chat, Notes | Jellyfin, Immich, OpenWebUI, ... |
+| Examples | Files, Photos, Calendar, Chat; later Contacts, Notes | Jellyfin, Immich, OpenWebUI, ... |
 | Made by | AlvaOS | others |
 | Runs as | a module inside the Hub process | its own Docker container |
 | Sign-in | the NAS sign-in | the app's own |
@@ -86,6 +86,57 @@ The Hub page says so while the cache is on the system disk.
   put it) and every **photo library** they may read, together, newest first.
 - Uploads from the phone (with the native apps) go to their own photos.
 
+### Calendar
+
+- Like Google Calendar: day, week (3 days on a phone), month and schedule;
+  a little month on the left; calendars with Google's colours that can be
+  shown or hidden; tasks with or without a day (shown in the calendar on
+  their day, and in a tasks panel); events that repeat (every day, weekday,
+  week, month, year, optionally until a day). Click or drag in the grid to
+  make an event, drag to move it, pull the lower edge to make it longer.
+  Keys as in Google: `t` today, `d` `w` `m` `a` views, `j` `k` forward and
+  back, `c` new.
+- **Own calendars** in `.alvaos/calendar/calendar.json` in the personal
+  folder (hidden: it is not meant to be opened by hand), or at the top of
+  `<person>-calendar` when the admin gave Calendar a pool of its own. One
+  file holds the person's calendars, events and tasks.
+- **Family calendars:** each shared folder the admin marks gets a calendar
+  (`<folder>/.alvaos/calendar/calendar.json`). Who may open the folder sees
+  it, who may change the folder changes it; read-only people only look.
+- Times are local times of the NAS, whole days are dates (last day
+  included). A repeating event is stored once; changing or moving one
+  repeat changes them all (the editor says so).
+- Next: CalDAV, so phones and Outlook sync on their own (calendars as
+  `.ics`, Radicale-compatible), and Contacts next to it.
+
+### Chat
+
+- Like the first ChatGPT: chats on the left (Today, Yesterday, ...),
+  the model top left, a box with "Think" on or off and how hard (low,
+  medium, high), the answer streaming in, thinking shown folded ("Thought
+  for 8 seconds"). Markdown with code blocks, tables and lists.
+- **Only a chat.** It has no tools: it cannot see or change anything on the
+  NAS. The assistant in the admin pages (Settings › Assistant) is a
+  different thing for the owner.
+- **Where it is set up, and by whom:** the admin only.
+  - The AI service (Ollama at home, Ollama Cloud, OpenAI or another
+    OpenAI-compatible service), its address and key are set once in
+    **Settings › Assistant**, shared with the assistant. The key stays on
+    the NAS and never reaches the browser.
+  - On the **Hub page**: Chat on or off (off until the admin turns it on,
+    since it needs an AI service), who sees it, and which models people
+    may choose (ticked from the list the service offers, or typed).
+    Without a choice it is the model set in Settings › Assistant.
+  - People choose only the model (from that list), thinking and effort.
+- Chats in `.alvaos/chat/` in the personal folder (or `<person>-chat`):
+  `chats.json` (the list) and `chat-<id>.json` per chat. Only that person
+  can read them, over the network too.
+- Thinking: sent as `reasoning_effort` (low/medium/high; for Ollama "none"
+  when off); when the model or service does not know it, Chat asks again
+  without and says so. Thinking comes from `reasoning`/`reasoning_content`
+  or `<think>…</think>` in the answer.
+- Later, powerful when needed: several AI services, limits per person.
+
 ### Space limits
 
 - **Per person in total:** the limit of their personal folder.
@@ -116,6 +167,12 @@ when they are created (Storage › People).
 - Caches go to one Hub cache place on a pool; the system disk only until the
   admin chooses one.
 - No third-party code inside the Hub.
+- Hub app data that is not meant to be opened by hand (calendar, chats)
+  goes into a hidden `.alvaos/<app>/` folder, as JSON, written as the person
+  through the helper (`files-data-read|write|delete`, the only helper
+  operations that replace a file; small files only).
+- Chat's AI service is the admin's choice, in one place (Settings ›
+  Assistant); people never see keys.
 
 ## Settings file
 
@@ -128,7 +185,12 @@ service account):
     "files":  {"enabled": true, "people": null},
     "photos": {"enabled": true, "people": ["anna", "ben"],
                "location": {"mode": "personal"},
-               "libraries": ["Family"]}
+               "libraries": ["Family"]},
+    "calendar": {"enabled": true, "people": null,
+                 "location": {"mode": "personal"}, "libraries": ["Family"]},
+    "chat":   {"enabled": true, "people": ["anna"],
+               "location": {"mode": "personal"},
+               "models": ["llama3.1", "qwen3:8b"]}
   },
   "storage": {"cache_pool": "a1b2-..."}
 }
@@ -138,8 +200,11 @@ service account):
 - `location`: `{"mode": "personal"}` or `{"mode": "pool", "pool_id": "...",
   "limit_gb": 500}` (limit optional).
 - `libraries`: names of shared folders the app reads for everyone who may
-  read them.
+  read them (Photos: photo libraries; Calendar: family calendars).
+- `models` (Chat): the models people may choose; empty for the one in
+  Settings › Assistant.
 - `storage.cache_pool`: empty for the system disk.
 
-Without the file every app is on for everyone, personal data goes to the
-personal folder and the cache stays on the system disk.
+Without the file every app is on for everyone (Chat stays off until the
+admin turns it on), personal data goes to the personal folder and the cache
+stays on the system disk.

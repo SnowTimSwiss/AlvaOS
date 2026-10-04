@@ -300,3 +300,13 @@ body.public { display: flex; flex-direction: column; min-height: 100%; }
 .pvideo { display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; color: var(--muted); }
 .pvideo svg { width: 34px; height: 34px; }
 @media (max-width: 760px) { .items.photos { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 3px; } }
+
+/* Calendar and Chat take the place of the Files sidebar and list. */
+.app.in-view { grid-template-columns: minmax(0, 1fr); }
+.app.in-view.with-rail { grid-template-columns: 72px minmax(0, 1fr); }
+.app.in-view > .side, .app.in-view > .main, .app.in-view > .scrim { display: none !important; }
+.view { min-width: 0; min-height: 0; height: 100%; }
+@media (max-width: 760px) {
+    .app.in-view, .app.in-view.with-rail { grid-template-columns: 1fr; }
+    .app.in-view.with-rail .view { height: calc(100% - 0px); }
+}

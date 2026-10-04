@@ -24,4 +24,7 @@ def test_the_installer_image_carries_the_files_app_and_its_service():
     build = read("installer/build.sh")
     assert 'cp -r "${SCRIPT_DIR}/../frontend/"*' in build          # files-app/ is a folder
     assert "scripts/alvaos-files.service" in build
+    assert "scripts/alvaos-vm@.service" in build
+    assert "alvaos-vm@.service" in read("installer/install-system.sh")
+    assert "useradd -r -g alvaos" in read("installer/install-system.sh")
     assert "alvaos-files.service" in read("installer/install-system.sh")

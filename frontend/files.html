@@ -34,6 +34,11 @@
         .hub-people { display: flex; flex-wrap: wrap; gap: 6px 14px; width: 100%; }
         .hub-people label { display: inline-flex; gap: 6px; align-items: center; }
         .hub-needs { color: var(--text-tertiary); font-size: 0.82rem; margin-top: 4px; }
+        .hub-chat { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; font-size: 0.88rem; color: var(--text-secondary); line-height: 1.45; }
+        .hub-chat strong { display: inline; color: var(--text-primary); }
+        .hub-chat a { color: var(--accent-primary); }
+        .hub-link { background: none; border: 0; padding: 0 4px; color: var(--accent-primary); font: inherit; cursor: pointer; text-decoration: underline; }
+        .hub-models { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; padding: 12px 14px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md, 10px); }
         .hub-st { border-top: 1px solid var(--border-subtle); }
         .hub-st-head { display: flex; align-items: center; gap: 10px; }
         .hub-st-toggle { flex: 1; min-width: 0; display: grid; grid-template-columns: 36px minmax(0, 1fr) 20px; gap: 12px; align-items: center; padding: 12px 0; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
@@ -89,6 +94,7 @@
             <a href="storage.html" class="nav-link"><i data-lucide="hard-drive" aria-hidden="true"></i> Storage</a>
             <a href="files.html" class="nav-link active" aria-current="page"><i data-lucide="layers" aria-hidden="true"></i> Hub</a>
             <a href="apps.html" class="nav-link"><i data-lucide="blocks" aria-hidden="true"></i> Apps</a>
+            <a href="vms.html" class="nav-link"><i data-lucide="server" aria-hidden="true"></i> Virtual machines</a>
             <a href="backup.html" class="nav-link"><i data-lucide="shield-check" aria-hidden="true"></i> Backup</a>
             <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw" aria-hidden="true"></i> Updates <span class="nav-badge" id="updates-nav-badge" style="display:none;">1</span></a>
             <div class="nav-spacer"></div>

@@ -53,6 +53,65 @@
             </div>`;
     }
 
+    // Chat: the AI service it talks to (Settings › Assistant) and the models people may choose.
+    let modelsOpen = false;
+    let offered = null;   // what the AI service has, once asked
+    function modelsHtml(app) {
+        const service = state.chat_service || {};
+        const chosen = app.models || [];
+        const service_line = service.ready
+            ? `Answers come from ${esc(service.host)}, the AI service in <a href="system.html#assistant">Settings › Assistant</a>. Its key stays on the NAS.`
+            : 'It needs an AI service first: set one up in <a href="system.html#assistant">Settings › Assistant</a> (Ollama at home, or a service with a key).';
+        const names = chosen.length ? chosen : [service.model].filter(Boolean);
+        let editor = '';
+        if (modelsOpen) {
+            const all = [...new Set([...(offered || []), ...chosen, service.model].filter(Boolean))];
+            editor = `
+                <div class="hub-models">
+                    ${offered === null ? '<p class="hub-st-note">Asking the AI service which models it has…</p>' : ''}
+                    <div class="hub-people" role="group" aria-label="Models in Chat">${all.map((m) => `
+                        <label><input type="checkbox" data-model value="${esc(m)}"${names.includes(m) ? ' checked' : ''}> ${esc(m)}</label>`).join('')}</div>
+                    <div class="hub-form">
+                        <label>Another <input type="text" id="hub-model-add" placeholder="like qwen3:8b" spellcheck="false" aria-label="Another model"></label>
+                        <button type="button" class="btn-secondary" id="hub-models-save">Save</button>
+                        <button type="button" class="btn-secondary btn-quiet" id="hub-models-cancel">Cancel</button>
+                    </div>
+                </div>`;
+        }
+        return `
+            <div class="hub-chat">
+                <div>${service_line}</div>
+                ${service.ready ? `<div>Models to choose from: <strong>${esc(names.join(', ') || 'none')}</strong>${chosen.length ? '' : ' (the one in Settings › Assistant)'}
+                    ${modelsOpen ? '' : '<button type="button" class="hub-link" id="hub-models-open">Change</button>'}</div>${editor}` : ''}
+            </div>`;
+    }
+    function bindModels() {
+        const open = $('hub-models-open');
+        if (open) open.addEventListener('click', async () => {
+            modelsOpen = true;
+            renderApps();
+            try {
+                const res = await fetch(`${API_BASE}/hub/chat-models`);
+                const data = await res.json().catch(() => ({}));
+                offered = res.ok ? data.models || [] : [];
+            } catch (_e) {
+                offered = [];
+            }
+            if (modelsOpen) renderApps();
+        });
+        const cancel = $('hub-models-cancel');
+        if (cancel) cancel.addEventListener('click', () => { modelsOpen = false; renderApps(); });
+        const save = $('hub-models-save');
+        if (save) save.addEventListener('click', async () => {
+            const chosen = [...document.querySelectorAll('[data-model]:checked')].map((b) => b.value);
+            const extra = $('hub-model-add').value.trim();
+            if (extra && !chosen.includes(extra)) chosen.push(extra);
+            if (!chosen.length) { window.showToast('Choose at least one model.', 'info'); return; }
+            modelsOpen = false;
+            await change('chat', { models: chosen }, chosen.length === 1 ? `Chat uses ${chosen[0]}.` : `People choose from ${chosen.length} models in Chat.`);
+        });
+    }
+
     function renderApps() {
         $('hub-apps').hidden = !state.enabled;
         const names = Object.fromEntries((state.apps || []).map((a) => [a.id, a.name]));
@@ -64,6 +123,7 @@
                     <div class="hub-desc">${esc(app.description)}</div>
                     ${app.needs.length ? `<div class="hub-needs">Part of ${esc(app.needs.map((n) => names[n] || n).join(', '))}: only there while that is on.</div>` : ''}
                     ${whoHtml(app)}
+                    ${app.models_choice && app.enabled ? modelsHtml(app) : ''}
                 </div>
                 <label class="toggle" title="${app.enabled ? 'On' : 'Off'}"><input type="checkbox" data-app="${esc(app.id)}"${app.enabled ? ' checked' : ''} aria-label="${esc(app.name)} in the Hub"><span class="toggle-slider"></span></label>
             </div>`).join('');
@@ -85,6 +145,7 @@
             }
             change(id, { people: chosen }, '');
         }));
+        bindModels();
     }
 
     const poolOptions = (chosen) => (state.pools || []).map((p) =>
@@ -127,7 +188,7 @@
             <p class="hub-st-note">Only that person can open their folder, over the network too.</p>`
             : '<p class="hub-st-note">Set up storage first: Storage › Pools.</p>';
         return row('personal', 'users', 'Personal folders',
-            `${esc(list(missing))} ${missing.length === 1 ? 'has' : 'have'} none yet, so their own photos have nowhere to go.`, body,
+            `${esc(list(missing))} ${missing.length === 1 ? 'has' : 'have'} none yet, so ${esc(list((state.apps || []).filter((a) => a.enabled && a.personal).map((a) => a.name)))} cannot keep their things.`, body,
             { tone: 'warn', action: pools.length ? '<button type="button" class="btn-primary hub-st-act" id="hub-pf-make">Make them</button>' : '' });
     }
 
@@ -135,13 +196,16 @@
         const all = state.libraries_to_choose || [];
         return apps.map((app) => {
             const chosen = app.libraries || [];
+            const what = { photos: ['the pictures of these folders', 'Only everyone\'s own photos are shown.', 'photo libraries'],
+                calendar: ['a family calendar for each of these folders', 'Only everyone\'s own calendars.', 'family calendars'] }[app.id]
+                || [`these folders in ${app.name}`, 'None yet.', `folders in ${app.name}`];
             const body = all.length ? `
-                <p class="hub-st-note">Everyone sees the pictures of these folders in ${esc(app.name)}, if they may open the folder.</p>
+                <p class="hub-st-note">Everyone sees ${esc(what[0])} in ${esc(app.name)}, if they may open the folder${app.id === 'calendar' ? ', and changes it if they may change the folder' : ''}.</p>
                 <div class="hub-people" role="group" aria-label="${esc(app.name)} libraries">${all.map((n) => `
                     <label><input type="checkbox" data-library="${esc(app.id)}" value="${esc(n)}"${chosen.includes(n) ? ' checked' : ''}> ${esc(n)}</label>`).join('')}</div>`
                 : '<p class="hub-st-note">There are no shared folders yet: Storage › Shared folders.</p>';
-            return row(`lib-${app.id}`, app.icon, `Shared ${app.id === 'photos' ? 'photo libraries' : `folders in ${app.name}`}`,
-                chosen.length ? esc(list(chosen)) : 'None yet. Only everyone\'s own photos are shown.', body);
+            return row(`lib-${app.id}`, app.icon, `Shared ${what[2]}`,
+                chosen.length ? esc(list(chosen)) : `None yet. ${esc(what[1])}`, body);
         }).join('');
     }
 
@@ -160,7 +224,7 @@
                     <div class="hub-form">
                         <label>${esc(app.name)}
                             <select data-place="${esc(app.id)}" aria-label="Where ${esc(app.name)} keeps everyone's own data">
-                                <option value=""${onPool ? '' : ' selected'}>In the personal folder (${esc(app.personal)})</option>
+                                <option value=""${onPool ? '' : ' selected'}>In the personal folder (${esc(app.personal.startsWith('.') ? `hidden folder ${app.personal}` : app.personal)})</option>
                                 ${(state.pools || []).map((p) => `<option value="${esc(p.id)}"${onPool && loc.pool_id === p.id ? ' selected' : ''}>A folder per person on ${esc(p.name)}</option>`).join('')}
                             </select>
                         </label>

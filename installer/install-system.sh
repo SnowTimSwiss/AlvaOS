@@ -972,7 +972,7 @@ FSTAB_EOF
         cp /opt/alvaos/scripts/setup_sudoers.sh /mnt/opt/alvaos/scripts/ 2>/dev/null || true
         cp /opt/alvaos/scripts/sudoers.alvaos /mnt/opt/alvaos/scripts/ 2>/dev/null || true
         chmod +x /mnt/opt/alvaos/scripts/*.sh 2>/dev/null || true
-        for unit in alvaos-update-checker.service alvaos-update-checker.timer alvaos-watchdog.service alvaos-watchdog.timer alvaos-files.service; do
+        for unit in alvaos-update-checker.service alvaos-update-checker.timer alvaos-watchdog.service alvaos-watchdog.timer alvaos-files.service alvaos-vm@.service; do
             [ -f "/opt/alvaos/scripts/${unit}" ] && cp "/opt/alvaos/scripts/${unit}" /mnt/etc/systemd/system/
         done
     fi
@@ -1050,6 +1050,8 @@ SSH_EOF
 
     update_progress "Finalizing configuration..."
     chroot /mnt useradd -r -s /usr/sbin/nologin -d /var/lib/alvaos -M alvaos >> "$INSTALL_LOG" 2>&1 || true
+    # Virtual machines run as their own account (backend/vm_ops.py)
+    chroot /mnt useradd -r -g alvaos -s /usr/sbin/nologin -d /nonexistent -M alvaos-vm >> "$INSTALL_LOG" 2>&1 || true
     mkdir -p /mnt/var/lib/alvaos/compose /mnt/var/lib/alvaos/updates
     # Code stays root-owned: parts of it (watchdog, update script, privilege
     # helper) run as root. Only state, logs and config belong to the service.

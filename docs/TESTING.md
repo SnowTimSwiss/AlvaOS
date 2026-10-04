@@ -57,7 +57,7 @@ storage healthy, one shared folder.
 ## 4. AlvaOS Hub and Files (in the browser)
 
 1. Hub page › turn on AlvaOS Hub › open it (port 8090). The app bar shows
-   Files and Photos. On the Hub page set Photos to "Only some people" and
+   Files, Photos and Calendar (Chat after it is turned on). On the Hub page set Photos to "Only some people" and
    untick someone: they no longer see Photos; turn Files off for them: they
    see "No apps for you yet", and WebDAV refuses them.
 2. Sign in as `anna`. Upload photos (also a big file, > 1 GB, and stop
@@ -74,6 +74,19 @@ storage healthy, one shared folder.
    private window and upload into the drop box.
 6. On a phone: open it, "Add to home screen" (needs HTTPS, step 9).
 7. WebDAV: Windows "Map network drive" or Finder › `http://alva-test:8091`.
+8. Calendar (as `anna`, who has a personal folder): drag in the week to
+   make an event, drag it to another day, pull its lower edge; make one
+   that repeats every week; add a calendar "Work" in another colour and
+   hide it; add a task with a day (it shows in the calendar) and tick it in
+   the tasks panel. Hub page › Where things are kept › Shared family
+   calendars: tick "Family": anna changes it, someone with read-only
+   access only looks. Try month, schedule and the 3 days on a phone.
+9. Chat: Settings › Assistant: set up an AI service (Ollama at home is
+   enough). Hub page › Chat: turn it on, Change › tick two models. In the
+   Hub: a new chat, switch the model, "Think" on with "High" (a thinking
+   model like qwen3 shows "Thought for … seconds"), stop an answer, rename
+   and delete a chat. Ask it about the NAS: it does not know and cannot
+   change anything.
 
 ## 5. People and space limits
 
@@ -119,6 +132,28 @@ storage healthy, one shared folder.
 
 1. Apps › install one (e.g. Jellyfin), open it, restart it, update it.
 2. Uninstall it; its data folder stays unless you choose otherwise.
+
+## 8b. Virtual machines (a computer with VT-x/AMD-V, on, in the BIOS)
+
+1. Virtual machines › *Set up*, choose a pool: QEMU and the firmware are
+   installed, and Storage › Shared folders lists `VMs`. On a machine without
+   virtualization the page says why and offers nothing else.
+2. Put a Linux installer (.iso) into `VMs/ISOs` (the Hub › Files as
+   administrator uploads it). *New virtual machine* › Linux, the installer,
+   Create › Start › *Open screen*: the installer shows, the keyboard and mouse
+   work. Install, then Settings › Installer: None, start again: it boots from
+   its disk.
+3. *Shut down* asks the guest to power off (it does, within a minute);
+   *Switch off* stops it at once. Restart the NAS with a machine running and
+   "start with the NAS" on: it stops cleanly before the disks go, and
+   starts again afterwards.
+4. A Windows 11 machine (the ISO in `VMs/ISOs`): the installer starts without
+   complaining about the TPM or Secure Boot. Forward a port (3389) and
+   reach it from another computer.
+5. Delete a machine: its folder in `VMs` is gone. Space limits and restore
+   points of `VMs` work like for any shared folder.
+6. HTTPS: open the admin page over `https://` and the screen: it uses port
+   9445 (the NAS's certificate has to be trusted there too).
 
 ## 9. HTTPS
 
