@@ -119,8 +119,11 @@ cp "${REPO_ROOT}/scripts/setup_sudoers.sh" "${PKG_DIR}/opt/alvaos/scripts/"
 cp "${REPO_ROOT}/scripts/sudoers.alvaos" "${PKG_DIR}/opt/alvaos/scripts/"
 chmod +x "${PKG_DIR}/opt/alvaos/scripts/update_checker.sh" "${PKG_DIR}/opt/alvaos/scripts/apply_update.sh" "${PKG_DIR}/opt/alvaos/scripts/setup_sudoers.sh"
 
-# Copy update checker unit
+# Copy update checker and watchdog units (each run by its timer)
 cp "${REPO_ROOT}/scripts/alvaos-update-checker.service" "${PKG_DIR}/etc/systemd/system/"
+cp "${REPO_ROOT}/scripts/alvaos-update-checker.timer" "${PKG_DIR}/etc/systemd/system/"
+cp "${REPO_ROOT}/backend/alvaos-watchdog.service" "${PKG_DIR}/etc/systemd/system/"
+cp "${REPO_ROOT}/backend/alvaos-watchdog.timer" "${PKG_DIR}/etc/systemd/system/"
 
 log "Creating configuration files..."
 # Create version file
@@ -234,7 +237,10 @@ systemctl daemon-reload
 
 # Enable services
 systemctl enable alvaos.service
-systemctl enable alvaos-update-checker.service
+# The update checker used to run only at boot; a timer now runs it daily.
+systemctl disable alvaos-update-checker.service >/dev/null 2>&1 || true
+systemctl enable --now alvaos-update-checker.timer || true
+systemctl enable --now alvaos-watchdog.timer || true
 
 echo "AlvaOS system package installed successfully!"
 echo "To start services: sudo systemctl start alvaos"

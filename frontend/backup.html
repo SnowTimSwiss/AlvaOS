@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AlvaOS - Backup</title>
+    <script src="theme.js"></script>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="notifications.css">
     <style>
@@ -593,6 +594,18 @@
             margin: 0;
         }
 
+        .keep-last-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
+            font-size: 0.88rem;
+        }
+
+        .keep-last-row[hidden] { display: none; }
+
+        .keep-last-row input { width: 90px; }
+
         .auto-row .auto-interval {
             width: auto;
             min-width: 150px;
@@ -884,6 +897,28 @@
             font-size: 0.82rem;
         }
 
+        .snap-browser { max-width: 640px; width: 100%; display: flex; flex-direction: column; max-height: min(88vh, 760px); }
+        .snap-browser-sub { margin: -4px 0 12px; color: var(--text-secondary); font-size: 0.88rem; }
+        .snap-browser-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+        .snap-crumbs { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; min-width: 0; font-size: 0.9rem; color: var(--text-tertiary); }
+        .snap-crumb { background: none; border: none; padding: 2px 4px; border-radius: 6px; color: var(--accent-primary); font: inherit; font-weight: 600; cursor: pointer; overflow-wrap: anywhere; }
+        .snap-crumb:last-child { color: var(--text-primary); }
+        .snap-crumb:hover { background: var(--bg-hover, var(--accent-primary-soft)); }
+        .snap-gone-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--text-secondary); cursor: pointer; }
+        .snap-browser-list { flex: 1 1 auto; min-height: 120px; overflow-y: auto; border: 1px solid var(--border-default); border-radius: var(--radius-default); }
+        .snap-file { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--border-subtle, var(--border-default)); }
+        .snap-file:last-child { border-bottom: none; }
+        .snap-file-ic { color: var(--text-tertiary); display: inline-flex; flex-shrink: 0; }
+        .snap-file-ic svg { width: 18px; height: 18px; }
+        .snap-file-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+        .snap-name, .snap-open { font-size: 0.92rem; overflow-wrap: anywhere; text-align: left; }
+        .snap-open { background: none; border: none; padding: 0; color: var(--accent-primary); font: inherit; font-weight: 600; cursor: pointer; }
+        .snap-file-meta { font-size: 0.78rem; color: var(--text-secondary); }
+        .snap-file.gone .snap-file-meta strong { color: var(--accent-warning); font-weight: 600; }
+        .snap-file .btn-secondary { padding: 0.35rem 0.7rem; font-size: 0.82rem; flex-shrink: 0; }
+        .snap-browser-empty { padding: 28px 16px; text-align: center; color: var(--text-secondary); font-size: 0.9rem; }
+        .snap-browser-note { margin: 10px 0 0; font-size: 0.8rem; color: var(--text-tertiary); line-height: 1.45; }
+
         .snap-badge {
             display: inline-flex;
             align-items: center;
@@ -929,6 +964,12 @@
             gap: 8px;
             flex-wrap: wrap;
             margin-top: 8px;
+        }
+
+        @media (max-width: 520px) {
+            .snap-row { flex-wrap: wrap; }
+            .snap-actions { width: 100%; }
+            .snap-actions .btn-secondary { flex: 1; }
         }
 
         @media (max-width: 760px) {
@@ -1005,35 +1046,55 @@
 <body>
 
     <a class="skip-link" href="#main-content">Skip to main content</a>
-    <aside class="sidebar">
-        <div class="logo-area">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false">
-                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round"
-                    stroke-linejoin="round" style="color: var(--accent-primary);" />
+    <!-- Sidebar: same on every page (generated, keep in sync) -->
+    <aside class="sidebar" id="sidebar">
+        <a class="brand" href="index.html" aria-label="Go to the dashboard">
+            <svg class="brand-mark" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
-            <div class="logo-text">AlvaOS</div>
-        </div>
+            <span class="brand-text">
+                <span class="brand-name" id="brand-name">AlvaOS</span>
+                <span class="brand-status" id="brand-status"><span class="status-dot online" aria-hidden="true"></span><span id="brand-status-text">Online</span></span>
+            </span>
+        </a>
 
         <nav aria-label="Main">
             <a href="index.html" class="nav-link"><i data-lucide="house" aria-hidden="true"></i> Dashboard</a>
             <a href="storage.html" class="nav-link"><i data-lucide="hard-drive" aria-hidden="true"></i> Storage</a>
             <a href="apps.html" class="nav-link"><i data-lucide="blocks" aria-hidden="true"></i> Apps</a>
-            <a href="backup.html" class="nav-link active" aria-current="page"><i data-lucide="refresh-cw" aria-hidden="true"></i> Backup</a>
-            <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw" aria-hidden="true"></i> Updates <span class="nav-badge"
-                    id="updates-nav-badge" style="display:none;">!</span></a>
-            <div style="flex:1"></div>
-            <a href="system.html" class="nav-link"><i data-lucide="settings" aria-hidden="true"></i> System</a>
-            <button type="button" class="nav-link nav-logout" onclick="alvaosLogout()"><i data-lucide="log-out" aria-hidden="true"></i> Log out</button>
+            <a href="backup.html" class="nav-link active" aria-current="page"><i data-lucide="shield-check" aria-hidden="true"></i> Backup</a>
+            <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw" aria-hidden="true"></i> Updates <span class="nav-badge" id="updates-nav-badge" style="display:none;">1</span></a>
+            <div class="nav-spacer"></div>
+            <a href="system.html" class="nav-link"><i data-lucide="settings" aria-hidden="true"></i> Settings</a>
         </nav>
     </aside>
+    <div class="nav-scrim" id="nav-scrim" hidden></div>
 
+    <!-- Main Content -->
     <div class="main">
         <header class="topbar">
-            <div class="breadcrumbs">System / <span>Backup</span></div>
-            <div class="status-badge" style="gap:10px;">
-                <div class="status-badge" style="border:none; background:transparent; padding:0;">
-                    <div class="status-dot" aria-hidden="true"></div>
-                    <span>Online</span>
+            <button type="button" class="nav-menu-btn" id="menu-btn" aria-controls="sidebar" aria-expanded="false" aria-label="Open menu">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <div class="page-title">Backup</div>
+            <div class="topbar-actions" id="topbar-actions">
+                <div class="account">
+                    <button type="button" class="account-btn" id="account-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" aria-label="Account">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="10" r="3"/><path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662"/></svg>
+                    </button>
+                    <div class="account-menu" id="account-menu" role="menu" hidden>
+                        <div class="account-who">Signed in as <strong>Administrator</strong></div>
+                        <div class="account-theme" role="group" aria-label="Appearance">
+                            <span class="account-theme-label">Appearance</span>
+                            <div class="seg">
+                                <button type="button" role="menuitemradio" aria-checked="true" data-theme-choice="auto">Auto</button>
+                                <button type="button" role="menuitemradio" aria-checked="false" data-theme-choice="light">Light</button>
+                                <button type="button" role="menuitemradio" aria-checked="false" data-theme-choice="dark">Dark</button>
+                            </div>
+                        </div>
+                        <a role="menuitem" href="system.html#security">Password and security</a>
+                        <button type="button" role="menuitem" onclick="alvaosLogout()">Log out</button>
+                    </div>
                 </div>
             </div>
         </header>
@@ -1092,7 +1153,7 @@
                         <div class="card-title">Restore points</div>
                         <button id="pool-snapshots-refresh-btn" class="btn-secondary">Refresh</button>
                     </div>
-                    <p class="metric-sub card-help">Pick a point in time to go back to. Restoring replaces the current data of that folder.</p>
+                    <p class="metric-sub card-help">Pick a point in time. "Get files" brings back single files or folders; "Restore all" puts the whole folder back as it was.</p>
                     <div id="pool-snapshots-list">
                         <div class="metric-sub">Loading snapshots...</div>
                     </div>
@@ -1103,8 +1164,17 @@
                     <summary><i data-lucide="settings-2" aria-hidden="true"></i> More options: folders, retention, location <i data-lucide="chevron-down" class="chev" aria-hidden="true"></i></summary>
                     <div class="advanced-body">
                         <div class="setting-group">
-                            <label class="setting-label" for="pool-keep-last">Retention (keep last)</label>
-                            <input id="pool-keep-last" type="number" min="1" max="200" value="30" class="select-input">
+                            <label class="setting-label" for="pool-retention">Which restore points to keep</label>
+                            <select id="pool-retention" class="select-input">
+                                <option value="smart">Smart (recommended)</option>
+                                <option value="count">Only the newest ones</option>
+                            </select>
+                            <p class="metric-sub" id="pool-retention-help">Every one from the last day, then one per day for a month, one per week for 3 months and one per month for a year.</p>
+                            <div id="pool-keep-last-row" class="keep-last-row" hidden>
+                                <label for="pool-keep-last">Keep the newest</label>
+                                <input id="pool-keep-last" type="number" min="1" max="200" value="30" class="select-input">
+                                <span>per folder</span>
+                            </div>
                         </div>
                         <div class="setting-group">
                             <label class="setting-label" for="pool-target-path">Save location</label>
@@ -1414,8 +1484,10 @@
     <script src="notifications.js"></script>
     <script src="feedback.js"></script>
     <script src="app.js"></script>
+    <script src="nav.js"></script>
     <script src="password-toggle.js"></script>
     <script src="backup.js"></script>
+    <script src="snapshot-browser.js"></script>
 </body>
 
 </html>

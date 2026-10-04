@@ -228,6 +228,7 @@ if [ "$install_failed" -ne 0 ]; then
   exit 1
 fi
 
+PACKAGE_VERSION="$(dpkg-deb -f "$PACKAGE_PATH" Version 2>/dev/null || true)"
 python3 - <<PY
 import json
 from datetime import datetime, timezone
@@ -236,6 +237,7 @@ history_path = "/var/lib/alvaos/update_history.json"
 entry = {
     "type": "alvaos",
     "package": "${PACKAGE_PATH}",
+    "version": "${PACKAGE_VERSION}",
     "timestamp": datetime.now(timezone.utc).isoformat()
 }
 

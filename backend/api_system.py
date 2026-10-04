@@ -15,6 +15,7 @@ import psutil
 from flask import Blueprint, jsonify, request
 
 # ── AlvaOS managers ───────────────────────────────────────────────────────────
+import health_checks
 from common import (
     CMD, PRIV_HELPER, run_sudo_command, build_privileged_cmd, is_root_user,
     _utc_now, _now_iso, _parse_iso,
@@ -43,6 +44,33 @@ from app_services import (
 )
 
 bp = Blueprint('system', __name__)
+
+def _io_counters():
+    """Bytes moved over the network and to/from disks since boot."""
+    info: dict = {'net_bytes_sent': None, 'net_bytes_recv': None,
+            'disk_read_bytes': None, 'disk_write_bytes': None}
+    try:
+        net = psutil.net_io_counters(pernic=True) or {}
+        sent = recv = 0
+        for name, counters in net.items():
+            # Loopback and container bridges are internal traffic, not the LAN.
+            if name == 'lo' or name.startswith(('docker', 'veth', 'br-')):
+                continue
+            sent += counters.bytes_sent
+            recv += counters.bytes_recv
+        info['net_bytes_sent'] = sent
+        info['net_bytes_recv'] = recv
+    except Exception:
+        pass
+    try:
+        disk = psutil.disk_io_counters()
+        if disk is not None:
+            info['disk_read_bytes'] = disk.read_bytes
+            info['disk_write_bytes'] = disk.write_bytes
+    except Exception:
+        pass
+    return info
+
 
 @bp.route('/api/v1/system/info', methods=['GET'])
 @require_auth
@@ -108,6 +136,7 @@ def get_system_info():
     pool_storage_info = []
     try:
         pools_state = load_pools_state()
+        checks = health_checks.last_results()
         for pool_id, pool_data in pools_state.items():
             mount_point = pool_data.get('mount_point')
             if not mount_point:
@@ -119,6 +148,9 @@ def get_system_info():
                 'mount_point': mount_point,
                 'mounted': bool(os.path.ismount(mount_point)),
             }
+            check = checks.get(str(pool_id))
+            if isinstance(check, dict):
+                pool_entry['last_check'] = check
 
             if pool_entry['mounted']:
                 try:
@@ -173,6 +205,10 @@ def get_system_info():
         'hostname': hostname,
         'ip_address': ip_address,
     }
+
+    # Cumulative counters; the dashboard turns two samples into a rate, so the
+    # backend never has to sleep or keep state between requests.
+    io_info = _io_counters()
     
     # System Information
     boot_time = datetime.fromtimestamp(psutil.boot_time())
@@ -197,6 +233,7 @@ def get_system_info():
         'disk': disk_info,
         'storage_pools': pool_storage_info,
         'network': network_info,
+        'io': io_info,
         'system': system_info,
     })
 

@@ -8,6 +8,7 @@ import io
 import json
 import os
 import platform
+import re
 import secrets
 import socket
 import subprocess
@@ -27,6 +28,7 @@ from auth_manager import (
     _create_session, _get_current_session, _purge_expired_sessions,
     _destroy_session, _destroy_all_sessions, require_auth,
     _check_rate_limit, _reset_rate_limit,
+    list_sessions, revoke_session_by_id, revoke_other_sessions,
 )
 from password_utils import hash_password, verify_password
 from shares_manager import (
@@ -116,13 +118,33 @@ def _refresh_totp_runtime():
         return False, str(e)
 
 
+TIMEZONE_RE = re.compile(r'^[A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+){0,2}$')
+ZONEINFO_DIR = '/usr/share/zoneinfo'
+
+
+def is_valid_timezone(value):
+    """An IANA name like Europe/Zurich that exists on this system."""
+    name = str(value or '')
+    if not TIMEZONE_RE.match(name) or len(name) > 64:
+        return False
+    if platform.system() != 'Linux' or not os.path.isdir(ZONEINFO_DIR):
+        return True
+    return os.path.isfile(os.path.join(ZONEINFO_DIR, name))
+
+
 @bp.route('/api/v1/setup/status', methods=['GET'])
 def get_setup_status():
     """Check if initial setup is required"""
-    return jsonify({
-        'setup_complete': is_setup_complete(),
+    complete = is_setup_complete()
+    payload = {
+        'setup_complete': complete,
         'version': VERSION
-    })
+    }
+    if not complete:
+        # The setup wizard suggests the current name. It is announced on the
+        # network anyway; after setup nothing extra is shown here.
+        payload['hostname'] = socket.gethostname() or ''
+    return jsonify(payload)
 
 @bp.route('/api/v1/setup/complete', methods=['POST'])
 def complete_setup():
@@ -141,6 +163,10 @@ def complete_setup():
         # Validate password strength
         if len(password) < 8:
             return jsonify({'error': 'Password must be at least 8 characters'}), 400
+
+        timezone_name = data.get('timezone')
+        if timezone_name is not None and not is_valid_timezone(timezone_name):
+            return jsonify({'error': 'Unknown time zone'}), 400
         
         # Change root password using subprocess with sudo
         try:
@@ -301,6 +327,86 @@ def logout():
     token = request.headers.get('Authorization', '').strip()
     _destroy_session(token)
     return jsonify({'success': True})
+
+@bp.route('/api/v1/auth/password', methods=['POST'])
+@require_auth(require_admin=True)
+def change_admin_password():
+    """Change the admin password: the current one is checked first. Every other
+    session is signed out; this one stays, so the person is not thrown out."""
+    client_ip = request.remote_addr or 'unknown'
+    allowed, retry_after = _check_rate_limit(client_ip)
+    if not allowed:
+        return jsonify({'error': f'Too many attempts. Try again in {retry_after}s.'}), 429
+
+    data = request.get_json(silent=True) or {}
+    current = str(data.get('current_password') or '')
+    new = str(data.get('new_password') or '')
+    if len(new) < 8:
+        return jsonify({'error': 'The new password needs at least 8 characters.'}), 400
+    if new == current:
+        return jsonify({'error': 'The new password is the same as the current one.'}), 400
+
+    try:
+        with open(AUTH_FILE, 'r') as f:
+            auth_data = json.load(f)
+    except (OSError, ValueError):
+        return jsonify({'error': 'The password file could not be read.'}), 500
+    valid, _ = verify_password(current, auth_data)
+    if not valid:
+        return jsonify({'error': 'The current password is not right.'}), 403
+    _reset_rate_limit(client_ip)
+
+    if platform.system() == 'Linux':
+        try:
+            process = subprocess.Popen(
+                build_privileged_cmd([CMD['CHPASSWD']]),
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, env={'LC_ALL': 'C'},
+            )
+            _, stderr = process.communicate(input=f'root:{new}\n', timeout=10)
+            if process.returncode != 0:
+                return jsonify({'error': f'The password could not be set: {stderr.strip()}'}), 500
+        except Exception as e:
+            return jsonify({'error': f'The password could not be set: {e}'}), 500
+        sync_samba_password('root', new)
+
+    # Keep everything else in the file (the 2FA secret lives there too).
+    auth_data.update(hash_password(new))
+    with open(AUTH_FILE, 'w') as f:
+        json.dump(auth_data, f)
+
+    token = request.headers.get('Authorization', '').strip()
+    signed_out = revoke_other_sessions(token)
+    return jsonify({'success': True, 'signed_out': signed_out})
+
+
+@bp.route('/api/v1/auth/sessions', methods=['GET'])
+@require_auth(require_admin=True)
+def get_sessions():
+    """Where AlvaOS is signed in: device, address, last use."""
+    token = request.headers.get('Authorization', '').strip()
+    return jsonify({'sessions': list_sessions(token)})
+
+
+@bp.route('/api/v1/auth/sessions/<session_id>', methods=['DELETE'])
+@require_auth(require_admin=True)
+def delete_session(session_id):
+    token = request.headers.get('Authorization', '').strip()
+    outcome = revoke_session_by_id(session_id, keep_token=token)
+    if outcome == 'current':
+        return jsonify({'error': 'Use Log out to end this session.'}), 400
+    if outcome == 'unknown':
+        return jsonify({'error': 'This session has already ended.'}), 404
+    return jsonify({'success': True})
+
+
+@bp.route('/api/v1/auth/sessions/revoke-others', methods=['POST'])
+@require_auth(require_admin=True)
+def revoke_others():
+    """Sign out everywhere else, e.g. after using a borrowed computer."""
+    token = request.headers.get('Authorization', '').strip()
+    return jsonify({'success': True, 'signed_out': revoke_other_sessions(token)})
+
 
 @bp.route('/api/v1/auth/2fa/status', methods=['GET'])
 @require_auth

@@ -20,6 +20,10 @@ from common import _utc_now, _now_iso, _parse_iso, _safe_int, _read_cpu_temperat
 ALERTS_STATE_FILE = '/var/lib/alvaos/alerts.json'
 NOTIFICATIONS_STATE_FILE = '/var/lib/alvaos/notifications.json'
 NOTIFICATIONS_MAX_ENTRIES = 200
+# Old notifications expire so the bell shows what matters now, not a backlog.
+# Read or dismissed entries go after a week, everything else after a month.
+NOTIFICATIONS_READ_TTL_DAYS = 7
+NOTIFICATIONS_MAX_AGE_DAYS = 30
 _notifications_lock = threading.Lock()
 
 # ── Thresholds ────────────────────────────────────────────────────────────────
@@ -393,6 +397,60 @@ def _collect_system_alerts():
     except Exception:
         pass
 
+    # Results of the last data check per pool (recorded by health_checks; no
+    # btrfs call here, so the alert poll stays cheap).
+    try:
+        import health_checks
+        pools_state = load_pools_state() if isinstance(load_pools_state(), dict) else {}
+        for pool_id, result in health_checks.last_results().items():
+            if pool_id not in pools_state or not isinstance(result, dict):
+                continue
+            pool_name = str((pools_state.get(pool_id) or {}).get('name') or pool_id)
+            uncorrectable = result.get('uncorrectable') or 0
+            errors = result.get('errors') or 0
+            if uncorrectable:
+                alerts.append(_build_alert_item(
+                    alert_id=f'pool-{pool_id}-scrub-damaged',
+                    severity='critical',
+                    title='The data check found damaged files',
+                    message=(f'{uncorrectable} block(s) in "{pool_name}" could not be repaired. '
+                             'Restore the affected files from a backup and look at the disks.'),
+                    route=f'storage.html#pool={pool_id}',
+                    action_label='Open pool'
+                ))
+            elif errors:
+                alerts.append(_build_alert_item(
+                    alert_id=f'pool-{pool_id}-scrub-repaired',
+                    severity='warning',
+                    title='A disk returned bad data',
+                    message=(f'The data check repaired {errors} problem(s) in "{pool_name}" from the '
+                             'other copy. This often means a disk is wearing out.'),
+                    route=f'storage.html#pool={pool_id}',
+                    action_label='Open pool'
+                ))
+    except Exception:
+        pass
+
+    # What the disks themselves report (recorded at night by the self-test
+    # scheduler, so no disk is woken up here).
+    try:
+        import health_checks
+        for key, record in health_checks.smart_records().items():
+            problem = health_checks.smart_problems(record) if isinstance(record, dict) else None
+            if not problem:
+                continue
+            label = ' '.join(str(x) for x in (record.get('model'), f"({record.get('name')})" if record.get('name') else '') if x)
+            alerts.append(_build_alert_item(
+                alert_id=f'disk-{key}-smart',
+                severity=problem['severity'],
+                title=f"Disk {label or key} needs attention" if problem['severity'] == 'warning' else f"Disk {label or key} is failing",
+                message=problem['text'],
+                route='storage.html#disks',
+                action_label='Open disks'
+            ))
+    except Exception:
+        pass
+
     alerts.sort(key=lambda item: (
         ALERT_SEVERITY_PRIORITY.get(str(item.get('severity', 'info')).lower(), 9),
         str(item.get('title', ''))
@@ -496,9 +554,36 @@ def _save_notifications_raw(notifications):
         print(f"Error saving notifications: {e}")
 
 
+def _prune_expired(notifications, now=None):
+    """Drop entries that are too old to matter. Entries without a readable
+    timestamp are kept, so a malformed file never silently loses alerts."""
+    now = now or _utc_now()
+    kept = []
+    for entry in notifications:
+        if not isinstance(entry, dict):
+            continue
+        ts = _parse_iso(entry.get('ts'))
+        if ts is None:
+            kept.append(entry)
+            continue
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=now.tzinfo)
+        age_days = (now - ts).total_seconds() / 86400
+        if age_days > NOTIFICATIONS_MAX_AGE_DAYS:
+            continue
+        if (entry.get('read') or entry.get('dismissed')) and age_days > NOTIFICATIONS_READ_TTL_DAYS:
+            continue
+        kept.append(entry)
+    return kept
+
+
 def load_notifications():
     with _notifications_lock:
-        return _load_notifications_raw()
+        notifications = _load_notifications_raw()
+        pruned = _prune_expired(notifications)
+        if len(pruned) != len(notifications):
+            _save_notifications_raw(pruned)
+        return pruned
 
 
 def push_notification(severity, title, message, source='system', dismissible=True, link=None, fingerprint=None):
@@ -513,7 +598,7 @@ def push_notification(severity, title, message, source='system', dismissible=Tru
         severity = 'info'
 
     with _notifications_lock:
-        notifications = _load_notifications_raw()
+        notifications = _prune_expired(_load_notifications_raw())
 
         if fingerprint:
             for existing in notifications:

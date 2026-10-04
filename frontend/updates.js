@@ -1,21 +1,23 @@
-// API_BASE is defined in app.js or global scope
+// AlvaOS Updates page.
+//
+// The first screen says in one sentence whether AlvaOS is up to date, shows
+// what is new when it is not, and offers one button. System packages, going
+// back to an earlier version, USB installs, history and settings are folded
+// away below. API_BASE comes from app.js.
 
-let lastRelease = null;
+let lastCheck = null;          // last /updates/alvaos/check answer
+let debianState = null;        // last /updates/debian/check answer
 let statusPoll = null;
 let reconnectPoll = null;
-let updateTransitionActive = false;
-let updateTransitionDisconnected = false;
-let debianOsUpgradeState = null;
+let transitionActive = false;
+let transitionDisconnected = false;
 
-function getToken() {
-    return localStorage.getItem('alvaos_token') || '';
-}
+const $ = (id) => document.getElementById(id);
 
 async function apiFetch(path, options = {}) {
     const skipAuthRedirect = !!options.skipAuthRedirect;
     delete options.skipAuthRedirect;
     const headers = options.headers || {};
-    headers['Authorization'] = getToken();
     if (options.json) {
         headers['Content-Type'] = 'application/json';
         options.body = JSON.stringify(options.json);
@@ -29,665 +31,584 @@ async function apiFetch(path, options = {}) {
     return res;
 }
 
-function setStatus(text) {
-    const el = document.getElementById('update-status');
-    if (el) el.textContent = text;
+async function readJson(res) {
+    if (!res) return null;
+    try {
+        return await res.json();
+    } catch (_err) {
+        return null;
+    }
 }
 
 function apiErrorMessage(res, data, fallback) {
-    if (data && typeof data.error === 'string' && data.error.trim()) {
-        return data.error.trim();
-    }
+    if (data && typeof data.error === 'string' && data.error.trim()) return data.error.trim();
     if (!res) return fallback;
-    if (res.status === 401) return 'Authentication required. Please log in again.';
-    if (res.status === 403) return 'Admin privileges required for this action.';
-    if (res.status >= 500) return 'Backend update operation failed. Check backend logs.';
+    if (res.status === 403) return 'Only an administrator can do this.';
+    if (res.status >= 500) return `${fallback}. The details are in Settings › Diagnostics.`;
     return fallback;
 }
 
-function setProgress(active, percent = 0) {
-    const bar = document.getElementById('alvaos-update-progress');
-    if (!bar) return;
-    if (active) {
-        bar.classList.add('indeterminate');
-        bar.style.width = `${Math.min(100, Math.max(0, percent))}%`;
-    } else {
-        bar.classList.remove('indeterminate');
-        bar.style.width = '0%';
+function plural(n, one, many) {
+    return `${n} ${n === 1 ? one : (many || `${one}s`)}`;
+}
+
+function timeAgo(value) {
+    const t = new Date(value).getTime();
+    if (!Number.isFinite(t)) return '';
+    const min = Math.round((Date.now() - t) / 60000);
+    if (min < 1) return 'just now';
+    if (min < 60) return `${plural(min, 'minute')} ago`;
+    const hours = Math.round(min / 60);
+    if (hours < 24) return `${plural(hours, 'hour')} ago`;
+    const days = Math.round(hours / 24);
+    if (days === 1) return 'yesterday';
+    if (days < 30) return `${days} days ago`;
+    return `on ${new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`;
+}
+
+function cleanVersion(tag) {
+    return String(tag || '').trim().replace(/^v(?=\d)/i, '');
+}
+
+// ── Status line ─────────────────────────────────────────────────────────────
+
+function setStatus(level, title, sub, { install = false, check = true } = {}) {
+    const box = $('upd-status');
+    box.dataset.level = level;
+    const iconName = { ok: 'circle-check-big', info: 'circle-arrow-up', warn: 'triangle-alert', bad: 'circle-alert', loading: 'loader-circle' }[level] || 'info';
+    $('upd-status-icon').innerHTML = window.alvaIcon ? window.alvaIcon(iconName, '', 'aria-hidden="true"') : '';
+    if (window.renderAlvaIcons) window.renderAlvaIcons($('upd-status-icon'));
+    $('upd-title').textContent = title;
+    $('upd-sub').textContent = sub;
+    $('upd-install-btn').hidden = !install;
+    $('upd-check-btn').hidden = !check;
+}
+
+// Release notes are Markdown from GitHub. Show headings, lists and paragraphs
+// as plain text structure; never as HTML.
+function renderNotes(markdown) {
+    const body = $('upd-notes-body');
+    body.innerHTML = '';
+    const lines = String(markdown || '').replace(/\r/g, '').split('\n');
+    let list = null;
+    let para = [];
+    const flushPara = () => {
+        if (para.length) {
+            const p = document.createElement('p');
+            p.textContent = para.join(' ');
+            body.appendChild(p);
+            para = [];
+        }
+    };
+    const strip = (text) => text.replace(/\*\*|__|`/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').trim();
+    lines.forEach((raw) => {
+        const line = raw.trim();
+        const heading = line.match(/^#{1,6}\s+(.*)$/);
+        const item = line.match(/^[-*+]\s+(.*)$/);
+        if (!line) {
+            flushPara();
+            list = null;
+        } else if (heading) {
+            flushPara();
+            list = null;
+            const h = document.createElement('h3');
+            h.textContent = strip(heading[1]);
+            body.appendChild(h);
+        } else if (item) {
+            flushPara();
+            if (!list) {
+                list = document.createElement('ul');
+                body.appendChild(list);
+            }
+            const li = document.createElement('li');
+            li.textContent = strip(item[1]);
+            list.appendChild(li);
+        } else {
+            list = null;
+            para.push(strip(line));
+        }
+    });
+    flushPara();
+    if (!body.childNodes.length) {
+        const p = document.createElement('p');
+        p.textContent = 'This release has no notes.';
+        body.appendChild(p);
     }
 }
 
-function setCurrentVersion(version) {
-    const el = document.getElementById('current-version');
-    if (el) el.textContent = version || '-';
+function renderCheck(data) {
+    lastCheck = data;
+    const current = cleanVersion(data?.current_version);
+    if (current && current !== 'unknown') $('upd-current-version').textContent = current;
+
+    if (data?.update_available && data.release) {
+        const latest = cleanVersion(data.latest_version || data.release.tag_name);
+        setStatus('info', `AlvaOS ${latest} is ready to install`,
+            `You have ${current || 'an older version'}. See what changed below.`, { install: true, check: false });
+        $('upd-notes-title').textContent = `What's new in ${latest}`;
+        $('upd-notes-date').textContent = data.release.published_at ? `Released ${timeAgo(data.release.published_at)}` : '';
+        renderNotes(data.release.body);
+        $('upd-notes').hidden = false;
+    } else {
+        $('upd-notes').hidden = true;
+        const warning = data?.warning ? ' (from the last successful check)' : '';
+        setStatus('ok', `AlvaOS ${current || ''} is up to date`.replace('  ', ' '),
+            `Checked ${timeAgo(new Date())}${warning}.`, { check: true });
+    }
 }
 
-function formatDebianRelease(info) {
-    const version = String(info && info.version ? info.version : '').trim();
-    const codename = String(info && info.codename ? info.codename : '').trim();
-    if (version && codename) return `Debian ${version} (${codename})`;
-    if (version) return `Debian ${version}`;
-    if (codename) return codename;
-    return 'unknown';
+async function checkAlvaos(force = false) {
+    const channel = $('set-channel')?.value || 'stable';
+    if (force) {
+        $('upd-check-btn').disabled = true;
+        $('upd-check-btn').textContent = 'Checking...';
+    }
+    try {
+        const res = await apiFetch(`/updates/alvaos/check?channel=${encodeURIComponent(channel)}${force ? '&force=1' : ''}`);
+        if (!res) return;
+        const data = await readJson(res);
+        if (!res.ok || !data || data.error) {
+            $('upd-notes').hidden = true;
+            setStatus('warn', 'Could not look for updates',
+                'AlvaOS could not reach GitHub. Check the internet connection, or install from a USB stick below.', { check: true });
+            if (data?.current_version) $('upd-current-version').textContent = cleanVersion(data.current_version);
+            return;
+        }
+        if (window.setUpdateIndicators) {
+            window.setUpdateIndicators({ available: !!data.update_available, version: data.latest_version || '', checkedAt: Date.now() });
+        }
+        renderCheck(data);
+    } catch (_err) {
+        setStatus('warn', 'Could not look for updates', 'The NAS did not answer. Try again in a moment.', { check: true });
+    } finally {
+        $('upd-check-btn').disabled = false;
+        $('upd-check-btn').textContent = 'Check now';
+    }
 }
 
-function renderDebianOsUpgrade(osUpgrade) {
-    debianOsUpgradeState = osUpgrade || null;
-    const statusEl = document.getElementById('debian-os-upgrade-status');
-    const btn = document.getElementById('debian-os-upgrade-btn');
-    if (!statusEl || !btn) return;
+function debAssetUrl(release) {
+    const deb = (release?.assets || []).find((a) => String(a.name || '').endsWith('.deb'));
+    return deb ? deb.browser_download_url : null;
+}
 
-    if (!osUpgrade || osUpgrade.error) {
-        statusEl.textContent = osUpgrade && osUpgrade.error
-            ? `OS release upgrade check failed: ${osUpgrade.error}`
-            : 'OS release upgrade status unavailable.';
-        btn.disabled = true;
-        btn.textContent = 'Upgrade OS Release';
+async function installAlvaos() {
+    const release = lastCheck?.release;
+    const url = debAssetUrl(release);
+    if (!url) {
+        window.showToast('This release has no installable package yet. Try again later.', 'warning');
         return;
     }
+    const version = cleanVersion(lastCheck.latest_version || release.tag_name);
+    const ok = await window.showConfirm(`Install AlvaOS ${version}?\nAlvaOS downloads the update, checks its signature and installs it. The web interface restarts; your files, apps and settings stay.`, { confirmLabel: 'Install' });
+    if (!ok) return;
 
-    const currentLabel = formatDebianRelease(osUpgrade.current || {});
-    const target = osUpgrade.target || {};
-    const targetLabel = formatDebianRelease(target);
-    if (osUpgrade.available && target.codename) {
-        const stepwiseNote = osUpgrade.stepwise ? ' Stepwise upgrade required.' : '';
-        statusEl.textContent = `OS release upgrade available: ${currentLabel} -> ${targetLabel}.${stepwiseNote}`;
-        btn.disabled = false;
-        btn.textContent = `Upgrade to ${targetLabel}`;
-    } else {
-        statusEl.textContent = `Current OS release: ${currentLabel}. No release upgrade available.`;
-        btn.disabled = true;
-        btn.textContent = 'Upgrade OS Release';
+    $('upd-install-btn').disabled = true;
+    showProgress(5, 'Starting the download...');
+    try {
+        const res = await apiFetch('/updates/alvaos/apply', { method: 'POST', json: { url, version: release.tag_name || '' } });
+        if (!res) return;
+        const data = (await readJson(res)) || {};
+        if (!res.ok || !data.success) {
+            hideProgress();
+            setStatus('bad', 'The update did not install', apiErrorMessage(res, data, 'Installing failed'), { install: true, check: true });
+            $('upd-install-btn').textContent = 'Try again';
+            loadRollback();
+            return;
+        }
+        if (window.setUpdateIndicators) window.setUpdateIndicators({ available: false, version: '', checkedAt: Date.now() });
+        startTransition(`Installing AlvaOS ${version}`);
+    } catch (_err) {
+        hideProgress();
+        setStatus('bad', 'The update did not install', 'The NAS did not answer. Try again in a moment.', { install: true, check: true });
+    } finally {
+        $('upd-install-btn').disabled = false;
     }
 }
 
-function ensureUpdateTransitionOverlay() {
-    let overlay = document.getElementById('update-transition-overlay');
-    if (overlay) return overlay;
+// ── Progress and reconnecting while AlvaOS restarts ─────────────────────────
 
-    if (!document.getElementById('update-transition-style')) {
-        const style = document.createElement('style');
-        style.id = 'update-transition-style';
-        style.textContent = `
-            @keyframes alvaos-update-spin { 100% { transform: rotate(360deg); } }
-        `;
-        document.head.appendChild(style);
-    }
-
-    overlay = document.createElement('div');
-    overlay.id = 'update-transition-overlay';
-    overlay.style.cssText = `
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.85);
-        z-index: 25000;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 16px;
-    `;
-    overlay.innerHTML = `
-        <div style="text-align:center; color:white; max-width:640px;">
-            <div style="width:52px; height:52px; margin:0 auto 16px auto; border:4px solid rgba(255,255,255,0.25); border-top-color:#fff; border-radius:50%; animation: alvaos-update-spin 1s linear infinite;"></div>
-            <h2 id="update-transition-title" style="margin:0 0 8px 0; font-size:1.5rem; font-weight:700;">Preparing update</h2>
-            <p id="update-transition-message" style="margin:0; color:rgba(255,255,255,0.85); line-height:1.4;">
-                Please do not reload or close.
-            </p>
-        </div>
-    `;
-    document.body.appendChild(overlay);
-    return overlay;
+function showProgress(percent, text) {
+    $('upd-progress').hidden = false;
+    $('upd-progress-bar').style.width = `${Math.max(3, Math.min(100, percent))}%`;
+    $('upd-progress-text').textContent = text;
 }
 
-function setUpdateTransitionMessage(title, message) {
-    const overlay = ensureUpdateTransitionOverlay();
-    const titleEl = overlay.querySelector('#update-transition-title');
-    const messageEl = overlay.querySelector('#update-transition-message');
-    if (titleEl) titleEl.textContent = title;
-    if (messageEl) messageEl.textContent = message;
+function hideProgress() {
+    $('upd-progress').hidden = true;
 }
 
-function clearUpdateTransition() {
-    if (statusPoll) {
-        clearInterval(statusPoll);
-        statusPoll = null;
-    }
-    if (reconnectPoll) {
-        clearInterval(reconnectPoll);
-        reconnectPoll = null;
-    }
-    updateTransitionActive = false;
-    updateTransitionDisconnected = false;
-    document.getElementById('update-transition-overlay')?.remove();
+function startTransition(title) {
+    transitionActive = true;
+    transitionDisconnected = false;
+    setStatus('loading', title, 'Keep this page open. It reconnects by itself when AlvaOS is back.', { check: false });
+    showProgress(10, 'Preparing...');
+    pollStatus();
 }
 
-function beginUpdateTransition(label) {
-    if (reconnectPoll) {
-        clearInterval(reconnectPoll);
-        reconnectPoll = null;
-    }
-    updateTransitionActive = true;
-    updateTransitionDisconnected = false;
-    setUpdateTransitionMessage(
-        'Installing update',
-        `${label} started. Please wait, services are being restarted.`
-    );
+function markDisconnected() {
+    if (!transitionActive || transitionDisconnected) return;
+    transitionDisconnected = true;
+    showProgress(90, 'AlvaOS is restarting. Reconnecting...');
 }
 
-function markUpdateDisconnected() {
-    if (!updateTransitionActive || updateTransitionDisconnected) return;
-    updateTransitionDisconnected = true;
-    setUpdateTransitionMessage(
-        'Restoring connection',
-        'The update process is restarting AlvaOS. The web interface will reconnect automatically shortly.'
-    );
-}
-
-function startReconnectPoll() {
-    if (!updateTransitionActive || reconnectPoll) return;
+function startReconnect() {
+    if (reconnectPoll) return;
     reconnectPoll = setInterval(async () => {
         try {
-            const res = await fetch(`${API_BASE}/system/info`, {
-                headers: { Authorization: getToken() },
-                cache: 'no-store'
-            });
-            if (res.ok) {
+            const res = await fetch(`${API_BASE}/system/info`, { cache: 'no-store' });
+            if (res.ok || res.status === 401) {
                 clearInterval(reconnectPoll);
                 reconnectPoll = null;
-                setUpdateTransitionMessage('Update completed', 'Web interface is reloading...');
+                showProgress(100, 'Done. Reloading...');
                 setTimeout(() => {
-                    window.location.reload();
-                }, 700);
-                return;
-            }
-            if (res.status === 401) {
-                clearInterval(reconnectPoll);
-                reconnectPoll = null;
-                setUpdateTransitionMessage('Update completed', 'Please log in again...');
-                setTimeout(() => {
-                    window.location.href = '/login.html';
+                    window.location.href = res.status === 401 ? '/login.html' : 'updates.html';
                 }, 700);
             }
-        } catch (err) {
+        } catch (_err) {
             // still restarting
         }
     }, 2500);
 }
 
-async function readJson(res) {
-    if (!res) return null;
-    try {
-        return await res.json();
-    } catch (err) {
-        return null;
-    }
-}
-
-function renderRelease(release, updateAvailable, latestVersion) {
-    const card = document.getElementById('update-available-card');
-    if (!card) return;
-    if (!updateAvailable || !release) {
-        card.style.display = 'none';
-        return;
-    }
-    card.style.display = 'block';
-    const latestEl = document.getElementById('latest-version');
-    const notesEl = document.getElementById('release-notes');
-    if (latestEl) latestEl.textContent = latestVersion || release.tag_name || '-';
-    if (notesEl) notesEl.textContent = release.body || 'No release notes.';
-}
-
-async function checkAlvaosUpdates(forceRefresh = false) {
-    const channel = document.getElementById('update-channel-select')?.value || 'stable';
-    lastRelease = null;
-    setStatus(`Checking ${channel} channel...`);
-    try {
-        const forceParam = forceRefresh ? '&force=1' : '';
-        const res = await apiFetch(`/updates/alvaos/check?channel=${encodeURIComponent(channel)}${forceParam}`);
-        if (!res) return;
-        const data = await readJson(res);
-        if (data && data.current_version) {
-            setCurrentVersion(data.current_version);
-        }
-        if (!res.ok || !data || data.error) {
-            renderRelease(null, false, null);
-            setStatus('Update check failed');
-            window.showToast(apiErrorMessage(res, data, 'Update check failed'), 'error');
-            return;
-        }
-        if (window.setUpdateIndicators) {
-            window.setUpdateIndicators({
-                available: !!data.update_available,
-                version: data.latest_version || '',
-                checkedAt: Date.now()
-            });
-        }
-        renderRelease(data.release, data.update_available, data.latest_version);
-        lastRelease = data.release;
-        setStatus(data.update_available ? 'Update available' : 'Up to date');
-    } catch (err) {
-        renderRelease(null, false, null);
-        setStatus('Update check failed');
-        window.showToast('Update check failed', 'error');
-    }
-}
-
-function getDebAssetUrl(release) {
-    if (!release || !release.assets) return null;
-    const deb = release.assets.find(a => String(a.name || '').endsWith('.deb'));
-    return deb ? deb.browser_download_url : null;
-}
-
-async function applyAlvaosUpdate() {
-    if (!lastRelease) {
-        window.showToast('No update selected.', 'warning');
-        return;
-    }
-    const url = getDebAssetUrl(lastRelease);
-    if (!url) {
-        window.showToast('No .deb asset found in release.', 'error');
-        return;
-    }
-    const ok = await window.showConfirm('Install AlvaOS update?\nThe system will install the update package.');
-    if (!ok) return;
-
-    setStatus('Installing update...');
-    setProgress(true, 10);
-    try {
-        const res = await apiFetch('/updates/alvaos/apply', {
-            method: 'POST',
-            json: { url, version: lastRelease.tag_name || '' }
-        });
-        if (!res) return;
-        const data = (await readJson(res)) || {};
-        if (!res.ok || !data.success) {
-            window.showToast(apiErrorMessage(res, data, 'Update failed'), 'error');
-            setStatus('Install failed');
-            return;
-        }
-        if (window.setUpdateIndicators) {
-            window.setUpdateIndicators({
-                available: false,
-                version: '',
-                checkedAt: Date.now()
-            });
-        }
-        window.showToast('Update started', 'success');
-        beginUpdateTransition('AlvaOS-Update');
-        setProgress(true, 25);
-        pollUpdateStatus();
-    } catch (err) {
-        window.showToast('Update failed', 'error');
-        setStatus('Install failed');
-    }
-}
-
-async function checkDebianUpdates() {
-    const list = document.getElementById('debian-updates-list');
-    if (list) list.innerHTML = '<div class="metric-sub">Checking...</div>';
-    try {
-        const res = await apiFetch('/updates/debian/check');
-        if (!res) return;
-        const data = await readJson(res);
-        if (!res.ok || !data || data.error) {
-            if (list) list.innerHTML = '<div class="metric-sub">Could not check for updates right now. Your system is unchanged - try again in a moment.</div>';
-            renderDebianOsUpgrade(null);
-            window.showToast(apiErrorMessage(res, data, 'Debian check failed'), 'error');
-            return;
-        }
-
-        renderDebianOsUpgrade(data.os_upgrade || null);
-        const updates = data.updates || [];
-        if (!updates.length) {
-            if (list) list.innerHTML = '<div class="metric-sub">No updates available.</div>';
-            return;
-        }
-        list.innerHTML = '';
-        updates.forEach(pkg => {
-            const row = document.createElement('div');
-            row.className = 'list-item';
-            row.innerHTML = `
-                <label style="display:flex; gap:8px; align-items:center;">
-                    <input type="checkbox" class="debian-package" value="${escapeHtml(pkg.package)}">
-                    <span>${escapeHtml(pkg.package)}</span>
-                </label>
-                <span class="mono-text">${escapeHtml(pkg.version)}</span>
-            `;
-            list.appendChild(row);
-        });
-    } catch (err) {
-        if (list) list.innerHTML = '<div class="metric-sub">Could not check for updates right now. Your system is unchanged - try again in a moment.</div>';
-        renderDebianOsUpgrade(null);
-        window.showToast('Debian check failed', 'error');
-    }
-}
-
-async function applyDebianUpdates() {
-    const boxes = Array.from(document.querySelectorAll('.debian-package:checked'));
-    if (!boxes.length) {
-        window.showToast('Select at least one package.', 'warning');
-        return;
-    }
-    const packages = boxes.map(b => b.value);
-    const ok = await window.showConfirm('Apply Debian updates?\nSelected packages will be installed.');
-    if (!ok) return;
-
-    try {
-        const res = await apiFetch('/updates/debian/apply', {
-            method: 'POST',
-            json: { packages }
-        });
-        if (!res) return;
-        const data = (await readJson(res)) || {};
-        if (!res.ok || !data.success) {
-            window.showToast(apiErrorMessage(res, data, 'Debian updates failed'), 'error');
-            return;
-        }
-        window.showToast('Debian updates started', 'success');
-        pollUpdateStatus();
-        await Promise.all([checkDebianUpdates(), loadUpdateHistory()]);
-    } catch (err) {
-        window.showToast('Debian updates failed', 'error');
-    }
-}
-
-async function applyAllDebianUpdates() {
-    const ok = await window.showConfirm('Apply all Debian updates?\nAll currently available package updates will be installed.');
-    if (!ok) return;
-
-    try {
-        const res = await apiFetch('/updates/debian/apply', {
-            method: 'POST',
-            json: {}
-        });
-        if (!res) return;
-        const data = (await readJson(res)) || {};
-        if (!res.ok || !data.success) {
-            window.showToast(apiErrorMessage(res, data, 'Applying all Debian updates failed'), 'error');
-            return;
-        }
-        window.showToast('All Debian updates started', 'success');
-        pollUpdateStatus();
-        await Promise.all([checkDebianUpdates(), loadUpdateHistory()]);
-    } catch (err) {
-        window.showToast('Applying all Debian updates failed', 'error');
-    }
-}
-
-async function applyDebianOsUpgrade() {
-    const osUpgrade = debianOsUpgradeState;
-    const target = osUpgrade && osUpgrade.target ? osUpgrade.target : null;
-    if (!osUpgrade || !osUpgrade.available || !target || !target.codename) {
-        window.showToast('No Debian OS release upgrade available.', 'warning');
-        return;
-    }
-
-    const currentLabel = formatDebianRelease(osUpgrade.current || {});
-    const targetLabel = formatDebianRelease(target);
-    const ok = await window.showConfirm(
-        `Upgrade Debian OS release?\n${currentLabel} -> ${targetLabel}\n\nThis may take a long time and can require a reboot.`
-    );
-    if (!ok) return;
-
-    setStatus(`Upgrading OS to ${targetLabel}...`);
-    try {
-        const res = await apiFetch('/updates/debian/os-upgrade', {
-            method: 'POST',
-            json: { target_codename: target.codename }
-        });
-        if (!res) return;
-        const data = (await readJson(res)) || {};
-        if (!res.ok || !data.success) {
-            window.showToast(apiErrorMessage(res, data, 'Debian OS upgrade failed'), 'error');
-            return;
-        }
-        window.showToast('Debian OS upgrade completed. Reboot recommended.', 'success');
-        pollUpdateStatus();
-        await Promise.all([checkDebianUpdates(), loadUpdateHistory()]);
-    } catch (err) {
-        window.showToast('Debian OS upgrade failed', 'error');
-    }
-}
-
-async function scanOfflinePackages(listId, packageType) {
-    const list = document.getElementById(listId);
-    if (list) list.innerHTML = '<div class="metric-sub">Scanning...</div>';
-    try {
-        const res = await apiFetch('/updates/offline/scan', { method: 'POST', json: {} });
-        if (!res) return;
-        const data = await readJson(res);
-        if (!res.ok || !data) {
-            if (list) list.innerHTML = '<div class="metric-sub">Could not read the USB stick. Check that it is plugged in and uses FAT32, NTFS, EXT4 or exFAT.</div>';
-            window.showToast(apiErrorMessage(res, data, 'Offline scan failed'), 'error');
-            return;
-        }
-        const packages = (data.packages || []).filter(pkg => pkg.type === packageType);
-        if (!packages.length) {
-            if (list) list.innerHTML = `
-                <div class="metric-sub">
-                    No ${packageType === 'alvaos' ? 'AlvaOS' : 'system'} packages found.<br>
-                    <small style="opacity:0.8;">Make sure your USB stick uses a supported filesystem (FAT32, NTFS, EXT4, exFAT) and the .deb package is in a top-level directory.</small>
-                </div>
-            `;
-            return;
-        }
-        list.innerHTML = '';
-        packages.forEach(pkg => {
-            const row = document.createElement('div');
-            row.className = 'list-item';
-            row.innerHTML = `
-                <div style="display:flex; flex-direction:column;">
-                    <span>${escapeHtml(pkg.name)}</span>
-                    <span class="metric-sub">${escapeHtml(pkg.path)}</span>
-                </div>
-                <button class="btn-secondary" data-offline-path="${escapeHtml(pkg.path)}">Install</button>
-            `;
-            list.appendChild(row);
-        });
-
-        list.querySelectorAll('button[data-offline-path]').forEach(btn => {
-            btn.addEventListener('click', () => applyOfflinePackage(btn.dataset.offlinePath, listId, packageType));
-        });
-    } catch (err) {
-        if (list) list.innerHTML = '<div class="metric-sub">Could not read the USB stick. Check that it is plugged in and uses FAT32, NTFS, EXT4 or exFAT.</div>';
-        window.showToast('Offline scan failed', 'error');
-    }
-}
-
-async function applyOfflinePackage(path, listId, packageType) {
-    const ok = await window.showConfirm('Install offline update?\nThis will install the selected package.');
-    if (!ok) return;
-    try {
-        const res = await apiFetch('/updates/offline/apply', {
-            method: 'POST',
-            json: { path }
-        });
-        if (!res) return;
-        const data = (await readJson(res)) || {};
-        if (!res.ok || !data.success) {
-            window.showToast(apiErrorMessage(res, data, 'Offline update failed'), 'error');
-            return;
-        }
-        if (packageType === 'alvaos') {
-            window.showToast('Offline update started', 'success');
-            beginUpdateTransition('Offline-Update');
-            pollUpdateStatus();
-        } else {
-            window.showToast('Package installed', 'success');
-            await Promise.all([scanOfflinePackages(listId, packageType), loadUpdateHistory()]);
-        }
-    } catch (err) {
-        window.showToast('Offline update failed', 'error');
-    }
-}
-
-async function loadUpdateHistory() {
-    const list = document.getElementById('history-list');
-    if (list) list.innerHTML = '<div class="metric-sub">Loading...</div>';
-    const res = await apiFetch('/updates/history');
-    if (!res) return;
-    const data = await readJson(res);
-    if (!res.ok || !data) {
-        if (list) list.innerHTML = '<div class="metric-sub">No update history.</div>';
-        return;
-    }
-    const history = data.history || [];
-    if (!history.length) {
-        if (list) list.innerHTML = '<div class="metric-sub">No update history.</div>';
-        return;
-    }
-    list.innerHTML = '';
-    history.slice().reverse().forEach(entry => {
-        const row = document.createElement('div');
-        row.className = 'list-item';
-        row.innerHTML = `
-            <div style="display:flex; flex-direction:column;">
-                <span>${escapeHtml(entry.type || 'update')} ${entry.package ? `- ${escapeHtml(entry.package)}` : ''}</span>
-                <span class="metric-sub">${escapeHtml(entry.timestamp || '')}</span>
-            </div>
-            <span class="mono-text">${escapeHtml(entry.packages ? entry.packages.length + ' pkgs' : '')}</span>
-        `;
-        list.appendChild(row);
-    });
-}
-
-async function loadSettings() {
-    const res = await apiFetch('/updates/settings');
-    if (!res) return;
-    const data = await readJson(res);
-    if (!res.ok || !data) return;
-    const auto = document.getElementById('settings-auto-check');
-    const autoApply = document.getElementById('settings-auto-apply');
-    const autoApplyDebian = document.getElementById('settings-auto-apply-debian');
-    const channel = document.getElementById('settings-channel');
-    if (auto) auto.checked = !!data.auto_check;
-    if (autoApply) autoApply.checked = !!data.auto_apply;
-    if (autoApplyDebian) autoApplyDebian.checked = !!data.auto_apply_debian;
-    if (channel) channel.value = data.channel || 'stable';
-    const channelSelect = document.getElementById('update-channel-select');
-    if (channelSelect) channelSelect.value = data.channel || 'stable';
-}
-
-async function saveSettings() {
-    const auto = document.getElementById('settings-auto-check')?.checked || false;
-    const autoApply = document.getElementById('settings-auto-apply')?.checked || false;
-    const autoApplyDebian = document.getElementById('settings-auto-apply-debian')?.checked || false;
-    const channel = document.getElementById('settings-channel')?.value || 'stable';
-    const res = await apiFetch('/updates/settings', {
-        method: 'POST',
-        json: { auto_check: auto, auto_apply: autoApply, auto_apply_debian: autoApplyDebian, channel }
-    });
-    if (!res) return;
-    if (!res.ok) {
-        window.showToast('Failed to save settings', 'error');
-        return;
-    }
-    window.showToast('Settings saved', 'success');
-}
-
-async function pollUpdateStatus() {
+function stopStatusPoll() {
     if (statusPoll) clearInterval(statusPoll);
+    statusPoll = null;
+}
+
+function pollStatus() {
+    stopStatusPoll();
     statusPoll = setInterval(async () => {
         try {
-            const res = await apiFetch('/updates/status', {
-                skipAuthRedirect: updateTransitionActive
-            });
+            const res = await apiFetch('/updates/status', { skipAuthRedirect: transitionActive });
             if (!res) return;
-
-            if (updateTransitionActive && (res.status === 401 || res.status >= 500)) {
-                markUpdateDisconnected();
-                if (statusPoll) {
-                    clearInterval(statusPoll);
-                    statusPoll = null;
-                }
-                startReconnectPoll();
+            if (transitionActive && (res.status === 401 || res.status >= 500)) {
+                markDisconnected();
+                stopStatusPoll();
+                startReconnect();
                 return;
             }
-
             const data = await readJson(res);
             if (!res.ok || !data) return;
-
+            if (data.status === 'error') {
+                stopStatusPoll();
+                transitionActive = false;
+                hideProgress();
+                setStatus('bad', 'The update did not install', data.details?.error || data.message || 'Installing failed.', { install: !!lastCheck?.update_available, check: true });
+                loadRollback();
+                return;
+            }
             if (data.status && data.status !== 'idle') {
-                setStatus(data.message || data.status);
-                const percent = data.progress && typeof data.progress.percent === 'number'
-                    ? data.progress.percent
-                    : (data.status === 'downloading' ? 35 : 60);
-                setProgress(true, percent);
-                if (updateTransitionActive) {
-                    setUpdateTransitionMessage(
-                        'Installing update',
-                        data.message || 'Update in progress...'
-                    );
-                }
-            } else if (data.status === 'idle') {
-                setStatus('Idle');
-                setProgress(false, 0);
-                clearInterval(statusPoll);
-                statusPoll = null;
-                if (window.setUpdateIndicators) {
-                    window.setUpdateIndicators({
-                        available: false,
-                        version: '',
-                        checkedAt: Date.now()
-                    });
-                }
-                if (updateTransitionActive) {
-                    if (updateTransitionDisconnected) {
-                        startReconnectPoll();
-                    } else {
-                        setUpdateTransitionMessage('Update completed', 'Web interface is reloading...');
-                        setTimeout(() => {
-                            window.location.reload();
-                        }, 700);
-                    }
+                const percent = typeof data.progress?.percent === 'number' ? data.progress.percent : 50;
+                showProgress(percent, data.message || 'Working...');
+            } else if (data.status === 'idle' && transitionActive) {
+                stopStatusPoll();
+                if (transitionDisconnected) {
+                    startReconnect();
+                } else {
+                    showProgress(100, 'Done. Reloading...');
+                    setTimeout(() => window.location.reload(), 700);
                 }
             }
-        } catch (err) {
-            if (updateTransitionActive) {
-                markUpdateDisconnected();
-                if (statusPoll) {
-                    clearInterval(statusPoll);
-                    statusPoll = null;
-                }
-                startReconnectPoll();
+        } catch (_err) {
+            if (transitionActive) {
+                markDisconnected();
+                stopStatusPoll();
+                startReconnect();
             }
         }
     }, 3000);
 }
 
-function initTabs() {
-    const buttons = document.querySelectorAll('.tab-btn');
-    buttons.forEach(btn => {
-        btn.addEventListener('click', () => {
-            buttons.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            const tab = btn.dataset.tab;
-            document.querySelectorAll('.tab-panel').forEach(panel => {
-                panel.classList.toggle('active', panel.id === `tab-${tab}`);
-            });
-        });
-    });
+// ── System packages (Debian) ────────────────────────────────────────────────
+
+function debianLabel(info) {
+    const version = String(info?.version || '').trim();
+    const codename = String(info?.codename || '').trim();
+    if (version && codename) return `Debian ${version} (${codename})`;
+    return version ? `Debian ${version}` : (codename || 'Debian');
 }
 
-function initHandlers() {
-    document.getElementById('check-updates-btn')?.addEventListener('click', () => checkAlvaosUpdates(true));
-    document.getElementById('download-install-btn')?.addEventListener('click', applyAlvaosUpdate);
-    document.getElementById('debian-check-btn')?.addEventListener('click', checkDebianUpdates);
-    document.getElementById('debian-apply-btn')?.addEventListener('click', applyDebianUpdates);
-    document.getElementById('debian-apply-all-btn')?.addEventListener('click', applyAllDebianUpdates);
-    document.getElementById('debian-os-upgrade-btn')?.addEventListener('click', applyDebianOsUpgrade);
-    document.getElementById('offline-alvaos-scan-btn')?.addEventListener('click', () => scanOfflinePackages('offline-alvaos-list', 'alvaos'));
-    document.getElementById('offline-system-scan-btn')?.addEventListener('click', () => scanOfflinePackages('offline-system-list', 'system'));
-    document.getElementById('settings-save-btn')?.addEventListener('click', saveSettings);
+async function checkDebian() {
+    try {
+        const res = await apiFetch('/updates/debian/check');
+        if (!res) return;
+        const data = await readJson(res);
+        if (!res.ok || !data || data.error) {
+            $('upd-system-text').textContent = 'Could not check the base system right now. Nothing was changed.';
+            $('upd-system-install').hidden = true;
+            $('upd-system-more').hidden = true;
+            return;
+        }
+        debianState = data;
+        const updates = Array.isArray(data.updates) ? data.updates : [];
+        if (!updates.length) {
+            $('upd-system-text').textContent = `${debianLabel(data.os_upgrade?.current)} is up to date.`;
+            $('upd-system-install').hidden = true;
+            $('upd-system-more').hidden = true;
+        } else {
+            $('upd-system-text').textContent = `${plural(updates.length, 'package update')} ready, mostly security and bug fixes.`;
+            $('upd-system-install').hidden = false;
+            $('upd-system-more').hidden = false;
+            const list = $('upd-system-list');
+            list.innerHTML = '';
+            updates.forEach((pkg) => {
+                const row = document.createElement('label');
+                row.className = 'upd-pkg';
+                row.innerHTML = `<input type="checkbox" class="upd-pkg-box" value="${escapeHtml(pkg.package)}"><span>${escapeHtml(pkg.package)}</span><span class="mono-text">${escapeHtml(pkg.version || '')}</span>`;
+                list.appendChild(row);
+            });
+        }
+        const os = data.os_upgrade;
+        if (os?.available && os.target?.codename) {
+            $('upd-os-upgrade').hidden = false;
+            $('upd-os-upgrade-text').textContent = `A new Debian release is available: ${debianLabel(os.target)}.${os.stepwise ? ' It is installed one release at a time.' : ''}`;
+        } else {
+            $('upd-os-upgrade').hidden = true;
+        }
+    } catch (_err) {
+        $('upd-system-text').textContent = 'Could not check the base system right now. Nothing was changed.';
+    }
+}
+
+async function applyDebian(packages) {
+    const count = packages ? packages.length : (debianState?.updates || []).length;
+    const ok = await window.showConfirm(`Install ${plural(count, 'system package update')}?\nThis usually takes a minute and needs no restart.`, { confirmLabel: 'Install' });
+    if (!ok) return;
+    $('upd-system-install').disabled = true;
+    $('upd-system-text').textContent = 'Installing system updates...';
+    try {
+        const res = await apiFetch('/updates/debian/apply', { method: 'POST', json: packages ? { packages } : {} });
+        if (!res) return;
+        const data = (await readJson(res)) || {};
+        if (!res.ok || !data.success) {
+            window.showToast(apiErrorMessage(res, data, 'System updates did not install'), 'error');
+        } else {
+            window.showToast('System updates installed', 'success');
+        }
+    } catch (_err) {
+        window.showToast('System updates did not install', 'error');
+    } finally {
+        $('upd-system-install').disabled = false;
+        await Promise.all([checkDebian(), loadHistory()]);
+    }
+}
+
+async function applyOsUpgrade() {
+    const os = debianState?.os_upgrade;
+    if (!os?.available || !os.target?.codename) return;
+    const ok = await window.showConfirm(
+        `Upgrade to ${debianLabel(os.target)}?\nThis takes a long time and needs a restart afterwards. Make sure a backup has run first.`,
+        { confirmLabel: 'Upgrade', danger: true }
+    );
+    if (!ok) return;
+    $('upd-os-upgrade-btn').disabled = true;
+    $('upd-os-upgrade-text').textContent = 'Upgrading the base system. This can take a long time...';
+    try {
+        const res = await apiFetch('/updates/debian/os-upgrade', { method: 'POST', json: { target_codename: os.target.codename } });
+        if (!res) return;
+        const data = (await readJson(res)) || {};
+        if (!res.ok || !data.success) {
+            window.showToast(apiErrorMessage(res, data, 'The release upgrade did not finish'), 'error');
+        } else {
+            window.showToast('Release upgrade done. Restart the NAS in Settings › Power.', 'success');
+        }
+    } catch (_err) {
+        window.showToast('The release upgrade did not finish', 'error');
+    } finally {
+        $('upd-os-upgrade-btn').disabled = false;
+        await Promise.all([checkDebian(), loadHistory()]);
+    }
+}
+
+// ── Going back to an earlier version ────────────────────────────────────────
+
+async function loadRollback() {
+    const res = await apiFetch('/updates/rollback').catch(() => null);
+    const data = await readJson(res);
+    const versions = Array.isArray(data?.versions) ? data.versions : [];
+    const section = $('upd-rollback');
+    section.hidden = versions.length === 0;
+    if (!versions.length) return;
+    const list = $('upd-rollback-list');
+    list.innerHTML = versions.map((v) => `
+        <div class="upd-row">
+            <div><strong>AlvaOS ${escapeHtml(cleanVersion(v.version))}</strong><small>Downloaded ${escapeHtml(timeAgo(v.downloaded_at))}</small></div>
+            <button type="button" class="btn-secondary" data-rollback="${escapeHtml(v.version)}">Go back</button>
+        </div>`).join('');
+    list.querySelectorAll('[data-rollback]').forEach((btn) => btn.addEventListener('click', () => rollback(btn.dataset.rollback)));
+}
+
+async function rollback(version) {
+    const ok = await window.showConfirm(
+        `Go back to AlvaOS ${cleanVersion(version)}?\nThe earlier version is installed the same way as an update. Your files and apps stay. Settings that the newer version changed may not carry over.`,
+        { confirmLabel: 'Go back' }
+    );
+    if (!ok) return;
+    try {
+        const res = await apiFetch('/updates/rollback', { method: 'POST', json: { version } });
+        if (!res) return;
+        const data = (await readJson(res)) || {};
+        if (!res.ok || !data.success) {
+            window.showToast(apiErrorMessage(res, data, 'Going back did not work'), 'error');
+            return;
+        }
+        $('upd-rollback').open = false;
+        startTransition(`Going back to AlvaOS ${cleanVersion(version)}`);
+    } catch (_err) {
+        window.showToast('Going back did not work', 'error');
+    }
+}
+
+// ── USB stick ───────────────────────────────────────────────────────────────
+
+async function scanOffline() {
+    const list = $('upd-offline-list');
+    list.innerHTML = '<div class="metric-sub">Looking...</div>';
+    try {
+        const res = await apiFetch('/updates/offline/scan', { method: 'POST', json: {} });
+        if (!res) return;
+        const data = await readJson(res);
+        if (!res.ok || !data) {
+            list.innerHTML = '<div class="metric-sub">Could not read the USB stick. Check that it is plugged in and uses FAT32, exFAT, NTFS or ext4.</div>';
+            return;
+        }
+        const packages = Array.isArray(data.packages) ? data.packages : [];
+        if (!packages.length) {
+            list.innerHTML = '<div class="metric-sub">No packages found. The .deb file has to be in the top folder of the stick.</div>';
+            return;
+        }
+        list.innerHTML = packages.map((pkg) => `
+            <div class="upd-row">
+                <div><strong>${escapeHtml(pkg.name)}</strong><small>${pkg.type === 'alvaos' ? 'AlvaOS update' : 'System package'} &middot; ${escapeHtml(pkg.path)}</small></div>
+                <button type="button" class="btn-secondary" data-offline="${escapeHtml(pkg.path)}" data-type="${escapeHtml(pkg.type)}">Install</button>
+            </div>`).join('');
+        list.querySelectorAll('[data-offline]').forEach((btn) => btn.addEventListener('click', () => applyOffline(btn.dataset.offline, btn.dataset.type)));
+    } catch (_err) {
+        list.innerHTML = '<div class="metric-sub">Could not read the USB stick.</div>';
+    }
+}
+
+async function applyOffline(path, type) {
+    const ok = await window.showConfirm('Install this package?\nAlvaOS packages are checked for a valid signature before they are installed.', { confirmLabel: 'Install' });
+    if (!ok) return;
+    try {
+        const res = await apiFetch('/updates/offline/apply', { method: 'POST', json: { path } });
+        if (!res) return;
+        const data = (await readJson(res)) || {};
+        if (!res.ok || !data.success) {
+            window.showToast(apiErrorMessage(res, data, 'The package did not install'), 'error');
+            return;
+        }
+        if (type === 'alvaos') {
+            $('upd-offline').open = false;
+            startTransition('Installing AlvaOS from the USB stick');
+        } else {
+            window.showToast('Package installed', 'success');
+            loadHistory();
+        }
+    } catch (_err) {
+        window.showToast('The package did not install', 'error');
+    }
+}
+
+// ── History ─────────────────────────────────────────────────────────────────
+
+function historyText(entry) {
+    if (entry.type === 'alvaos') {
+        const version = entry.version
+            || (String(entry.package || '').match(/_(\d[\w.+~-]*?)(?:_[a-z0-9]+)?\.deb$/i) || [])[1];
+        return version ? `AlvaOS ${cleanVersion(version)} installed` : 'AlvaOS update installed';
+    }
+    if (entry.type === 'debian') {
+        const n = Array.isArray(entry.packages) ? entry.packages.length : 0;
+        return n ? `${plural(n, 'system package')} updated` : 'System packages updated';
+    }
+    if (entry.type === 'debian-os') return `Upgraded to ${debianLabel(entry.to || entry.target)}`;
+    if (entry.package) return `${String(entry.package).split('/').pop()} installed`;
+    return 'System updated';
+}
+
+async function loadHistory() {
+    const list = $('upd-history-list');
+    const res = await apiFetch('/updates/history').catch(() => null);
+    const data = await readJson(res);
+    const history = Array.isArray(data?.history) ? data.history.slice().reverse() : [];
+    if (!history.length) {
+        list.innerHTML = '<div class="metric-sub">Nothing installed through this page yet.</div>';
+        return;
+    }
+    list.innerHTML = history.slice(0, 20).map((entry) => `
+        <div class="upd-row">
+            <div><strong>${escapeHtml(historyText(entry))}</strong><small title="${escapeHtml(entry.timestamp || '')}">${escapeHtml(timeAgo(entry.timestamp))}</small></div>
+        </div>`).join('');
+}
+
+// ── Settings (saved on change) ──────────────────────────────────────────────
+
+async function loadSettings() {
+    const res = await apiFetch('/updates/settings').catch(() => null);
+    const data = await readJson(res);
+    if (!res?.ok || !data) return;
+    $('set-auto-check').checked = !!data.auto_check;
+    $('set-auto-apply').checked = !!data.auto_apply;
+    $('set-auto-apply-debian').checked = !!data.auto_apply_debian;
+    $('set-channel').value = data.channel || 'stable';
+}
+
+async function saveSettings() {
+    const payload = {
+        auto_check: $('set-auto-check').checked,
+        auto_apply: $('set-auto-apply').checked,
+        auto_apply_debian: $('set-auto-apply-debian').checked,
+        channel: $('set-channel').value,
+    };
+    const res = await apiFetch('/updates/settings', { method: 'POST', json: payload }).catch(() => null);
+    if (!res || !res.ok) {
+        window.showToast('The setting was not saved. Try again.', 'error');
+        await loadSettings();
+        return;
+    }
+    window.showToast('Saved', 'success');
+}
+
+// ── Start ───────────────────────────────────────────────────────────────────
+
+async function resumeIfBusy() {
+    const res = await apiFetch('/updates/status').catch(() => null);
+    const data = await readJson(res);
+    if (data && ['downloading', 'installing'].includes(data.status)) {
+        startTransition('An update is being installed');
+        return true;
+    }
+    return false;
 }
 
 async function init() {
-    initTabs();
-    initHandlers();
+    $('upd-check-btn').addEventListener('click', () => checkAlvaos(true));
+    $('upd-install-btn').addEventListener('click', installAlvaos);
+    $('upd-system-install').addEventListener('click', () => applyDebian(null));
+    $('upd-system-install-selected').addEventListener('click', () => {
+        const packages = Array.from(document.querySelectorAll('.upd-pkg-box:checked')).map((b) => b.value);
+        if (!packages.length) {
+            window.showToast('Tick at least one package.', 'info', { record: false });
+            return;
+        }
+        applyDebian(packages);
+    });
+    $('upd-os-upgrade-btn').addEventListener('click', applyOsUpgrade);
+    $('upd-offline-scan').addEventListener('click', scanOffline);
+    ['set-auto-check', 'set-auto-apply', 'set-auto-apply-debian'].forEach((id) => $(id).addEventListener('change', saveSettings));
+    $('set-channel').addEventListener('change', async () => {
+        await saveSettings();
+        checkAlvaos(true);
+    });
+
     await loadSettings();
-    await checkAlvaosUpdates();
-    await checkDebianUpdates();
-    await loadUpdateHistory();
+    if (await resumeIfBusy()) return;
+    await checkAlvaos(false);
+    checkDebian();
+    loadRollback();
+    loadHistory();
 }
 
 if (document.readyState === 'loading') {

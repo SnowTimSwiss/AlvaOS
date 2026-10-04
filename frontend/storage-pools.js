@@ -11,6 +11,7 @@ let storagePoolsCache = [];
 let openedPoolId = '';
 const poolActivity = {};
 let poolActivityTimer = null;
+let healthSettings = { scrub: 'monthly', start_hour: 3, smart: 'standard' };
 
 const PROTECTION = {
     single: { failures: 0, text: 'No protection: if a disk fails, the data on it is lost.' },
@@ -84,7 +85,7 @@ function poolState(pool) {
             line: {
                 tone: 'bad',
                 text: redundant
-                    ? `${missing || 'A'} disk${missing > 1 ? 's are' : ' is'} missing. The pool still works, but is no longer protected. Replace the disk.`
+                    ? `${missing || 'A'} disk${missing > 1 ? 's are' : ' is'} missing. ${pool.mounted_degraded_at ? 'AlvaOS started the pool without it so your files stay reachable, but' : 'The pool still works, but'} it is no longer protected. Replace the disk soon.`
                     : 'A disk is missing and this pool has no protection. Data on that disk is gone; restore it from a backup.'
             },
             needsReplace: redundant
@@ -153,6 +154,7 @@ async function loadPools() {
         storagePoolsCache = (Array.isArray(data.pools) ? data.pools : []).filter((pool) => (
             pool && (pool.is_managed !== false || !ignored.has(String(pool.id || '')))
         ));
+        await loadHealthSettings();
         renderPools();
         await loadPoolActivity();
     } catch (error) {
@@ -200,6 +202,7 @@ function renderPools() {
         const detail = document.getElementById('pool-detail');
         detail.hidden = false;
         detail.innerHTML = renderPoolDetail(pool);
+        if (!pool.is_system_pool && typeof loadPoolSpace === 'function') loadPoolSpace(pool.id);
         return;
     }
     showPoolsView();
@@ -320,7 +323,10 @@ function renderPoolDetail(pool) {
                 <div><div class="k">Size</div><div class="v">${escapeHtml(usage.total)}</div></div>
             </div>
             <div class="pool-line" style="margin-top: 14px;">${icon('shield-check')}<span>${escapeHtml(protection.text)}${protection.failures === 0 && !system ? ' Add a second disk to mirror it.' : ''}</span></div>
+            ${system ? '' : renderPoolOffers(pool, running)}
         </section>
+
+        ${system || typeof renderPoolSpace !== 'function' ? '' : `<section class="pool-section" id="pool-space" data-pool="${escapeHtml(pool.id)}">${renderPoolSpace(pool.id)}</section>`}
 
         ${system ? '' : renderActivitySection(pool, act)}
 
@@ -352,6 +358,68 @@ function renderPoolDetail(pool) {
         </details>`;
 }
 
+// Things worth doing that only apply sometimes: unused space after a disk
+// was replaced by a bigger one, and parity pools with parity metadata.
+function growableSpace(pool) {
+    return poolMembers(pool).reduce((sum, member) => {
+        if (member.missing || !member.path) return sum;
+        const disk = storageDisksCache.find((d) => d.path === member.path);
+        const extra = Number(disk?.size_bytes || 0) - Number(member.size_bytes || 0);
+        return extra >= 1024 ** 3 ? sum + extra : sum;
+    }, 0);
+}
+
+function renderPoolOffers(pool, running) {
+    const id = jsArg(pool.id);
+    const rows = [];
+    const extra = growableSpace(pool);
+    if (extra) {
+        rows.push(`<div class="pool-offer">${icon('circle-arrow-up')}<span>A disk in this pool is bigger than the part the pool uses: ${escapeHtml(formatBytes(extra))} are unused.</span>
+            <button type="button" class="btn-secondary" onclick="growPool('${id}')" ${running ? 'disabled title="Wait until the current job is done"' : ''}>Use the extra space</button></div>`);
+    }
+    const level = String(pool.raid_level || '').toUpperCase();
+    const meta = String(pool.metadata_profile || '').toUpperCase();
+    if (['RAID5', 'RAID6'].includes(level) && ['RAID5', 'RAID6'].includes(meta)) {
+        rows.push(`<div class="pool-offer warn">${icon('triangle-alert')}<span>The folder structure of this pool is stored with parity, which Btrfs does not recommend: a power cut while writing can damage it. Keeping it mirrored takes a few minutes and little space.</span>
+            <button type="button" class="btn-secondary" onclick="mirrorPoolMetadata('${id}')" ${running ? 'disabled title="Wait until the current job is done"' : ''}>Mirror the folder structure</button></div>`);
+    }
+    const weak = Object.keys(pool.unprotected || {});
+    const degraded = pool.status === 'degraded' || Number(pool.missing_count || 0) > 0;
+    if (weak.length && !degraded) {
+        rows.push(`<div class="pool-offer warn">${icon('shield-plus')}<span>Some ${weak.includes('data') ? 'files were' : 'of the folder structure was'} written while a disk was missing and ${weak.includes('data') ? 'have' : 'has'} only one copy. Copy ${weak.includes('data') ? 'them' : 'it'} onto the other disks to protect ${weak.includes('data') ? 'them' : 'it'} again.</span>
+            <button type="button" class="btn-secondary" onclick="restorePoolProtection('${id}')" ${running ? 'disabled title="Wait until the current job is done"' : ''}>Restore protection</button></div>`);
+    }
+    return rows.join('');
+}
+
+async function restorePoolProtection(poolId) {
+    try {
+        showSuccess((await poolPost(poolId, 'restore-protection', {})).message);
+    } catch (error) {
+        showError(error.message);
+    }
+    loadPools();
+}
+
+async function growPool(poolId) {
+    try {
+        showSuccess((await poolPost(poolId, 'grow', {})).message);
+    } catch (error) {
+        showError(error.message);
+    }
+    loadPools();
+}
+
+async function mirrorPoolMetadata(poolId) {
+    if (!await showConfirm('Mirror the folder structure?\nThe pool stays usable. Btrfs rewrites the folder structure in the background; this takes a few minutes.', { confirmLabel: 'Start' })) return;
+    try {
+        showSuccess((await poolPost(poolId, 'mirror-metadata', {})).message);
+    } catch (error) {
+        showError(error.message);
+    }
+    loadPools();
+}
+
 function renderActivitySection(pool, act) {
     const id = jsArg(pool.id);
     const rows = [];
@@ -378,7 +446,75 @@ function renderActivitySection(pool, act) {
     if (!Object.keys(act).length) {
         rows.push(`<div class="pool-line">${icon('info')}<span>Activity is shown once the pool is mounted.</span></div>`);
     }
+    rows.push(renderHealthSchedule());
     return `<section class="pool-section"><h3>Activity</h3>${rows.join('<div style="height: 12px;"></div>')}</section>`;
+}
+
+// How often every pool gets a data check (one setting for all pools).
+async function loadHealthSettings() {
+    try {
+        const response = await apiFetch(`${API_BASE}/storage/health-checks`, {
+            headers: { 'Authorization': localStorage.getItem('alvaos_token') || '' }
+        });
+        if (response.ok) healthSettings = (await response.json()).settings || healthSettings;
+    } catch (_error) {
+        // Keep the default; the select still shows it.
+    }
+}
+
+function renderHealthSchedule() {
+    const hour = Number(healthSettings.start_hour ?? 3);
+    const when = `${String(hour).padStart(2, '0')}:00`;
+    const options = [
+        ['monthly', 'Monthly (recommended)'],
+        ['weekly', 'Weekly'],
+        ['off', 'Off'],
+    ].map(([value, label]) => `<option value="${value}"${healthSettings.scrub === value ? ' selected' : ''}>${label}</option>`).join('');
+    const hint = healthSettings.scrub === 'off'
+        ? 'Damaged data is only found when a file is read. Turn this on unless you check by hand.'
+        : `Starts at night around ${when}, one pool at a time, never while a disk is being replaced. Applies to all pools.`;
+    const smartOptions = [
+        ['standard', 'Quick weekly, full monthly (recommended)'],
+        ['short', 'Quick weekly only'],
+        ['off', 'Off'],
+    ].map(([value, label]) => `<option value="${value}"${(healthSettings.smart || 'standard') === value ? ' selected' : ''}>${label}</option>`).join('');
+    const smartHint = (healthSettings.smart || 'standard') === 'off'
+        ? 'Disks only report problems when they are already failing. Turn this on unless you test by hand.'
+        : (healthSettings.smart === 'short'
+            ? 'A quick test (about two minutes) every week at night. A full test reads the whole disk and finds more.'
+            : 'The disks test themselves at night and stay usable. A full test reads the whole disk (hours), one disk per night.');
+    return `
+        <div class="health-schedule">
+            <label for="health-scrub">Check data automatically</label>
+            <select id="health-scrub" class="select-input" onchange="saveHealthSchedule({ scrub: this.value })">${options}</select>
+        </div>
+        <div class="pool-line" style="font-size: 0.8rem; margin-top: 6px;">${escapeHtml(hint)}</div>
+        <div class="health-schedule" style="margin-top: 12px;">
+            <label for="health-smart">Test disks automatically</label>
+            <select id="health-smart" class="select-input" onchange="saveHealthSchedule({ smart: this.value })">${smartOptions}</select>
+        </div>
+        <div class="pool-line" style="font-size: 0.8rem; margin-top: 6px;">${escapeHtml(smartHint)}</div>`;
+}
+
+async function saveHealthSchedule(change) {
+    try {
+        const response = await apiFetch(`${API_BASE}/storage/health-checks`, {
+            method: 'POST',
+            headers: { 'Authorization': localStorage.getItem('alvaos_token') || '', 'Content-Type': 'application/json' },
+            body: JSON.stringify(change)
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || 'The setting was not saved.');
+        healthSettings = result.settings || healthSettings;
+        if ('scrub' in change) {
+            showSuccess(change.scrub === 'off' ? 'Automatic data checks are off.' : `Data is now checked ${change.scrub === 'weekly' ? 'every week' : 'every month'}.`);
+        } else {
+            showSuccess(change.smart === 'off' ? 'Automatic disk tests are off.' : 'Disk tests saved.');
+        }
+    } catch (error) {
+        showError(error.message);
+    }
+    renderPools();
 }
 
 function progressRow(label, percent, hint) {

@@ -2,6 +2,7 @@
 """Disks, pools and subvolumes."""
 
 # ── Standard library ──────────────────────────────────────────────────────────
+import json
 import os
 import platform
 import re
@@ -14,6 +15,7 @@ import psutil
 from flask import Blueprint, jsonify, request
 
 # ── AlvaOS managers ───────────────────────────────────────────────────────────
+import health_checks
 from common import (
     CMD, run_sudo_command, build_privileged_cmd, format_bytes_gib,
 )
@@ -29,7 +31,7 @@ from storage_manager import (
     load_pools_state, save_pools_state,
     detect_btrfs_pools, sanitize_pool_name,
     _collect_smart_report, disk_inventory, find_disk, check_disks_for_pool,
-    parse_scrub_status, parse_replace_status, parse_balance_status, parse_device_stats,
+    parse_scrub_status, parse_usage_profiles, unprotected_profiles, growable_members, parse_show_members, parse_replace_status, parse_balance_status, parse_device_stats,
 )
 
 
@@ -37,6 +39,21 @@ bp = Blueprint('storage', __name__)
 
 # Names for new pools (the create dialog checks the same rule).
 POOL_NAME_RE = re.compile(r'^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$')
+
+POOL_PROFILES = ('single', 'raid0', 'raid1', 'raid1c3', 'raid1c4', 'raid5', 'raid6', 'raid10')
+
+
+def mkfs_profile_args(raid_level):
+    """mkfs.btrfs -d/-m arguments for a pool profile.
+
+    Btrfs parity (raid5/raid6) is still not recommended for metadata: a crash
+    during a write can damage it (the "write hole"). As the Btrfs
+    documentation advises, data uses parity but metadata is mirrored with at
+    least as many copies as the parity can lose disks."""
+    if raid_level == 'single':
+        return []
+    metadata = {'raid5': 'raid1', 'raid6': 'raid1c3'}.get(raid_level, raid_level)
+    return ['-d', raid_level, '-m', metadata]
 
 NOT_ON_NAS = 'Storage management is only available on the AlvaOS NAS itself (Linux).'
 
@@ -52,8 +69,20 @@ def get_disks():
     except Exception as e:
         print(f"Error getting disk info: {e}")
         return jsonify({'error': str(e)}), 500
+    records = health_checks.smart_records()
     for disk in disks:
         disk.update(_smart_summary(disk['name']))
+        serial = str(disk.get('serial') or '')
+        record = records.get(serial if serial and serial != 'N/A' else disk['name'])
+        if isinstance(record, dict):
+            reading = record.get('reading') or {}
+            disk['self_test'] = {
+                'last': reading.get('last_test'),
+                'running': bool(reading.get('test_running')),
+                'last_short': record.get('last_short'),
+                'last_long': record.get('last_long'),
+                'problem': health_checks.smart_problems(record),
+            }
     return jsonify({'disks': disks})
 
 
@@ -188,6 +217,8 @@ def manage_pools():
                         pool['mount_point'] = mount_point
                         if mount_point == '/':
                             pool['is_system_pool'] = True
+                    if pool_state.get('mounted_degraded_at'):
+                        pool['mounted_degraded_at'] = pool_state['mounted_degraded_at']
 
                     if pool['devices']:
                         try:
@@ -201,20 +232,13 @@ def manage_pools():
                             usage_res, _ = run_sudo_command([CMD['BTRFS'], 'filesystem', 'usage', usage_target], timeout=5)
                             if usage_res and usage_res.returncode == 0:
                                 u_out = usage_res.stdout
-                                if 'RAID1C3' in u_out:
-                                    pool['raid_level'] = 'RAID1C3'
-                                elif 'RAID1C4' in u_out:
-                                    pool['raid_level'] = 'RAID1C4'
-                                elif 'RAID10' in u_out:
-                                    pool['raid_level'] = 'RAID10'
-                                elif 'RAID1' in u_out:
-                                    pool['raid_level'] = 'RAID1'
-                                elif 'RAID5' in u_out:
-                                    pool['raid_level'] = 'RAID5'
-                                elif 'RAID6' in u_out:
-                                    pool['raid_level'] = 'RAID6'
-                                elif 'RAID0' in u_out:
-                                    pool['raid_level'] = 'RAID0'
+                                profiles = parse_usage_profiles(u_out)
+                                if profiles.get('data'):
+                                    data_profile = profiles['data']
+                                    pool['raid_level'] = 'Single' if data_profile in ('SINGLE', 'DUP') else data_profile
+                                if profiles.get('metadata'):
+                                    pool['metadata_profile'] = profiles['metadata']
+                                pool['unprotected'] = unprotected_profiles(u_out)
 
                                 # Prefer explicit sizes when present
                                 used_match = re.search(r"Used:\s+(\d+\.?\d*[TiGkMBP]i?B)", u_out)
@@ -361,6 +385,11 @@ def manage_pools():
         if not devices or len(devices) == 0:
             return jsonify({'error': 'At least one device is required'}), 400
         
+        if raid_level not in POOL_PROFILES:
+            return jsonify({'error': 'Unknown protection level'}), 400
+        if raid_level in ('raid0', 'raid10') and len(devices) < 2:
+            return jsonify({'error': f'{raid_level.upper()} requires at least 2 devices'}), 400
+
         # Validate RAID level requirements
         if raid_level == 'raid1' and len(devices) < 2:
             return jsonify({'error': 'RAID1 requires at least 2 devices'}), 400
@@ -396,9 +425,8 @@ def manage_pools():
                 # Build mkfs.btrfs command
                 cmd = [CMD['MKFS_BTRFS'], '-f', '-L', pool_name]
                 
-                # Add RAID level
-                if raid_level != 'single':
-                    cmd.extend(['-d', raid_level, '-m', raid_level])
+                # Add RAID level (parity profiles keep metadata mirrored)
+                cmd.extend(mkfs_profile_args(raid_level))
                 
                 # Add devices
                 cmd.extend(devices)
@@ -987,6 +1015,206 @@ def scrub_pool(pool_id):
     if failed:
         return jsonify({'error': f'The data check did not start: {failed}'}), 500
     return jsonify({'success': True, 'message': 'Data check started. The pool stays usable meanwhile.'})
+
+
+def _mounted_managed_pools():
+    """{pool_id: state entry} for managed pools that are mounted (not the system)."""
+    result = {}
+    for pool_id, info in load_pools_state().items():
+        mount_point = str((info or {}).get('mount_point') or '') if isinstance(info, dict) else ''
+        if mount_point and mount_point != '/' and _is_mounted(mount_point):
+            result[str(pool_id)] = info
+    return result
+
+
+def _pool_disks_for_tests():
+    """Disks in managed pools, keyed by serial number (names like sdb can change)."""
+    disks = []
+    for disk in disk_inventory():
+        usage = disk.get('usage') or {}
+        if usage.get('role') != 'pool':
+            continue
+        serial = str(disk.get('serial') or '')
+        disks.append({
+            'key': serial if serial and serial != 'N/A' else disk['name'],
+            'name': disk['name'],
+            'path': disk['path'],
+            'model': disk.get('model'),
+            'pool_id': usage.get('pool_id'),
+        })
+    return disks
+
+
+def _smartctl(args, device):
+    """Run smartctl, retrying through a USB/SATA bridge. smartctl exits non-zero
+    for many harmless reasons (a bitmask), so the JSON output decides."""
+    variants = [[]] if os.path.basename(device).startswith('nvme') else [[], ['-d', 'sat']]
+    for extra in variants:
+        res, _ = run_sudo_command([CMD['SMARTCTL']] + args + extra + ['-j', device], timeout=30)
+        try:
+            payload = json.loads((res.stdout if res else '') or '{}')
+        except ValueError:
+            payload = {}
+        if payload.get('smart_status') or payload.get('power_mode') or payload.get('ata_smart_data') \
+                or payload.get('nvme_smart_health_information_log'):
+            return payload
+        if 'standby' in json.dumps(payload.get('smartctl', {}).get('messages', [])).lower():
+            return {'power_mode': 'STANDBY'}
+    return None
+
+
+def _start_self_test(device, kind):
+    payload = _smartctl(['-t', kind], device)
+    if payload is None:
+        return 'the disk did not accept a self-test'
+    return ''
+
+
+def _read_smart(device):
+    return _smartctl(['-n', 'standby', '-H', '-A', '-l', 'selftest'], device)
+
+
+def make_health_scheduler():
+    """The nightly data-check scheduler, wired to the real btrfs commands."""
+    return health_checks.HealthScheduler(
+        pools=_mounted_managed_pools,
+        activity=_pool_activity,
+        busy=_busy_with,
+        start_scrub=lambda mount_point: _start_background([CMD['BTRFS'], 'scrub', 'start', '-B', mount_point]),
+    )
+
+
+def make_smart_scheduler():
+    """Nightly SMART self-tests for pool disks, wired to smartctl."""
+    return health_checks.SmartScheduler(disks=_pool_disks_for_tests, start_test=_start_self_test,
+                                        read=_read_smart)
+
+
+@bp.route('/api/v1/storage/health-checks', methods=['GET', 'POST'])
+@require_auth(require_admin=True)
+def storage_health_checks():
+    """How often pools get a data check, and the last result per pool."""
+    if request.method == 'POST':
+        try:
+            health_checks.save_settings(request.get_json(silent=True) or {})
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
+    disks = {}
+    for key, record in health_checks.smart_records().items():
+        disks[key] = {**record, 'problem': health_checks.smart_problems(record)}
+    return jsonify({
+        'settings': health_checks.get_settings(),
+        'pools': health_checks.last_results(),
+        'disks': disks,
+    })
+
+
+def _pool_members(mount_point):
+    show_out, _ = _btrfs_output(['filesystem', 'show', mount_point])
+    return parse_show_members(show_out)
+
+
+@bp.route('/api/v1/storage/pools/<pool_id>/grow', methods=['POST'])
+@require_auth(require_admin=True)
+def grow_pool(pool_id):
+    """Use the whole disk for members that sit on a bigger disk than the pool
+    uses (after replacing a disk with a larger one)."""
+    pool_info, error = _mounted_managed_pool(pool_id)
+    if error:
+        return error
+    mount_point = pool_info['mount_point']
+    busy = _busy_with(_pool_activity(mount_point))
+    if busy:
+        return jsonify({'error': f'{busy}. Try again when it is done.'}), 409
+    candidates = growable_members(_pool_members(mount_point), disk_inventory())
+    if not candidates:
+        return jsonify({'error': 'There is no unused space on the disks of this pool.'}), 409
+    for member in candidates:
+        _, err = _btrfs_output(['filesystem', 'resize', f"{member['devid']}:max", mount_point], timeout=60)
+        if err:
+            return jsonify({'error': f"Could not grow {member['path']}: {err}"}), 500
+    invalidate_storage_cache('pools')
+    extra = sum(m['extra_bytes'] for m in candidates)
+    return jsonify({'success': True, 'extra_bytes': extra,
+                    'message': f'The pool now uses the whole disk{"s" if len(candidates) > 1 else ""}.'})
+
+
+_space_scanner = None
+
+
+def _space():
+    global _space_scanner
+    if _space_scanner is None:
+        from app_services import backup_manager
+        from space_report import SpaceScanner
+        _space_scanner = SpaceScanner(run_sudo_command, backup_manager.list_snapshots)
+    return _space_scanner
+
+
+@bp.route('/api/v1/storage/pools/<pool_id>/space', methods=['GET', 'POST'])
+@require_auth(require_admin=True)
+def pool_space(pool_id):
+    """What uses the space on a pool. POST starts a scan in the background."""
+    pool_info, error = _mounted_managed_pool(pool_id)
+    if error:
+        return error
+    if request.method == 'POST':
+        ok, message = _space().start(pool_id, pool_info['mount_point'])
+        if not ok:
+            return jsonify({'error': message}), 409
+    return jsonify({'success': True, **_space().report(pool_id)})
+
+
+@bp.route('/api/v1/storage/pools/<pool_id>/restore-protection', methods=['POST'])
+@require_auth(require_admin=True)
+def restore_pool_protection(pool_id):
+    """Data written while a disk was missing has fewer copies than the rest of
+    the pool. Once all disks are back, convert just those parts (soft)."""
+    pool_info, error = _mounted_managed_pool(pool_id)
+    if error:
+        return error
+    mount_point = pool_info['mount_point']
+    live = next((p for p in detect_btrfs_pools()[0] if str(p.get('id', '')).lower() == pool_id.lower()), None)
+    if live and (live.get('missing_count') or any(m.get('missing') for m in live.get('members') or [])):
+        return jsonify({'error': 'Replace the missing disk first.'}), 409
+    usage_out, _ = _btrfs_output(['filesystem', 'usage', mount_point])
+    weak = unprotected_profiles(usage_out)
+    if not weak:
+        return jsonify({'error': 'All data in this pool is protected.'}), 409
+    busy = _busy_with(_pool_activity(mount_point))
+    if busy:
+        return jsonify({'error': f'{busy}. Try again when it is done.'}), 409
+    args = [f'-{kind[0]}convert={profile},soft' for kind, profile in sorted(weak.items())]
+    failed = _start_background([CMD['BTRFS'], 'balance', 'start', *args, mount_point])
+    if failed:
+        return jsonify({'error': f'It did not start: {failed}'}), 500
+    invalidate_storage_cache('pools')
+    return jsonify({'success': True,
+                    'message': 'Copying the unprotected parts. The pool stays usable; this takes a while.'})
+
+
+@bp.route('/api/v1/storage/pools/<pool_id>/mirror-metadata', methods=['POST'])
+@require_auth(require_admin=True)
+def mirror_pool_metadata(pool_id):
+    """For an older parity pool: keep the folder structure (metadata) mirrored
+    instead of on parity, as the Btrfs documentation advises."""
+    pool_info, error = _mounted_managed_pool(pool_id)
+    if error:
+        return error
+    mount_point = pool_info['mount_point']
+    usage_out, _ = _btrfs_output(['filesystem', 'usage', mount_point])
+    profiles = parse_usage_profiles(usage_out)
+    target = {'RAID5': 'raid1', 'RAID6': 'raid1c3'}.get(profiles.get('metadata', ''))
+    if not target:
+        return jsonify({'error': 'The folder structure of this pool is already kept safely.'}), 409
+    busy = _busy_with(_pool_activity(mount_point))
+    if busy:
+        return jsonify({'error': f'{busy}. Try again when it is done.'}), 409
+    failed = _start_background([CMD['BTRFS'], 'balance', 'start', f'-mconvert={target}', mount_point])
+    if failed:
+        return jsonify({'error': f'It did not start: {failed}'}), 500
+    invalidate_storage_cache('pools')
+    return jsonify({'success': True, 'message': 'Started. The pool stays usable; this takes a few minutes.'})
 
 
 @bp.route('/api/v1/storage/pools/<pool_id>/replace', methods=['POST'])

@@ -4,683 +4,613 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AlvaOS - Welcome Wizard</title>
+    <title>AlvaOS - Set up your NAS</title>
+    <script src="theme.js"></script>
     <link rel="stylesheet" href="styles.css">
     <style>
         body {
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             justify-content: center;
             min-height: 100vh;
-            padding: 1rem;
+            height: auto;
+            overflow: auto;
+            padding: 6vh 16px 32px;
             background: var(--bg-body);
         }
 
-        .setup-container {
-            max-width: 550px;
+        .wizard {
             width: 100%;
+            max-width: 560px;
+        }
+
+        .wizard-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 18px;
+            color: var(--text-primary);
+            font-weight: 600;
+            font-size: 1.05rem;
+        }
+
+        .wizard-brand svg { color: var(--accent-primary); }
+
+        .wizard-progress {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 14px;
+        }
+
+        .wizard-progress span {
+            flex: 1;
+            height: 4px;
+            border-radius: 999px;
+            background: var(--track);
+        }
+
+        .wizard-progress span.done { background: var(--accent-primary); }
+
+        .wizard-step-label {
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+
+        .wizard-card {
             background: var(--bg-card);
             border: 1px solid var(--border-default);
             border-radius: var(--radius-lg);
-            padding: 2.5rem;
-            position: relative;
-            overflow: hidden;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            padding: 28px;
+            box-shadow: var(--shadow-md);
         }
 
-        .logo {
-            text-align: center;
-            margin-bottom: 2rem;
+        .wizard-card h1 {
+            font-size: 1.45rem;
+            font-weight: 650;
+            margin: 0 0 6px;
         }
 
-        .logo h1 {
-            font-size: 2.5rem;
-            font-weight: 700;
-            color: var(--text-primary);
-            margin-bottom: 0.5rem;
-            letter-spacing: -0.02em;
-            background: linear-gradient(135deg, var(--accent-primary), #60efff);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+        .wizard-card p.lead {
+            color: var(--text-secondary);
+            margin: 0 0 22px;
+            line-height: 1.5;
         }
 
-        /* Stepper */
-        .stepper {
+        .step { display: none; }
+        .step.active { display: block; }
+
+        .field { margin-bottom: 16px; }
+
+        .field > label,
+        .field > .label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .field input[type="text"],
+        .field input[type="password"],
+        .field select {
+            width: 100%;
+        }
+
+        .field small {
+            display: block;
+            margin-top: 6px;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .field small.bad { color: var(--accent-danger); }
+        .field small.good { color: var(--accent-success); }
+
+        .row-text {
             display: flex;
+            align-items: baseline;
             justify-content: space-between;
-            margin-bottom: 2.5rem;
-            position: relative;
+            gap: 10px;
+            font-size: 0.88rem;
+            padding: 10px 12px;
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-default);
+            background: var(--bg-body);
         }
 
-        .stepper::before {
-            content: '';
-            position: absolute;
-            top: 15px;
-            left: 0;
-            right: 0;
-            height: 2px;
-            background: var(--border-default);
-            z-index: 1;
+        .linklike {
+            background: none;
+            border: none;
+            padding: 0;
+            color: var(--accent-primary);
+            font: inherit;
+            font-size: 0.85rem;
+            cursor: pointer;
         }
 
-        .step {
-            width: 32px;
-            height: 32px;
+        .choice-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .choice {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 14px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-default);
+            cursor: pointer;
             background: var(--bg-card);
-            border: 2px solid var(--border-default);
+        }
+
+        .choice:hover { border-color: var(--border-hover); }
+
+        .choice:has(input:checked) {
+            border-color: var(--accent-primary);
+            background: var(--accent-primary-soft);
+        }
+
+        .choice input { width: auto; margin: 0; accent-color: var(--accent-primary); }
+        .choice strong { display: block; font-size: 0.92rem; }
+        .choice small { display: block; color: var(--text-secondary); font-size: 0.8rem; margin-top: 2px; }
+        .choice .meta { font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap; }
+
+        .note {
+            font-size: 0.85rem;
+            line-height: 1.45;
+            padding: 10px 12px;
+            border-radius: var(--radius-default);
+            margin: 12px 0 0;
+            background: var(--accent-primary-soft);
+            color: var(--text-primary);
+        }
+
+        .note.warn {
+            background: color-mix(in srgb, var(--accent-warning) 12%, transparent);
+        }
+
+        .error-box {
+            font-size: 0.86rem;
+            padding: 10px 12px;
+            border-radius: var(--radius-default);
+            margin-bottom: 14px;
+            background: var(--accent-danger-soft);
+            border: 1px solid color-mix(in srgb, var(--accent-danger) 40%, transparent);
+            color: var(--text-primary);
+        }
+
+        .error-box:empty { display: none; }
+
+        details.more { margin-top: 14px; }
+
+        details.more summary {
+            cursor: pointer;
+            font-size: 0.85rem;
+            color: var(--accent-primary);
+            margin-bottom: 10px;
+        }
+
+        .wizard-nav {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-top: 24px;
+        }
+
+        .wizard-nav .spacer { flex: 1; }
+
+        .wizard-nav .btn-primary,
+        .wizard-nav .btn-secondary {
+            padding: 0.6rem 1.15rem;
+        }
+
+        .btn-quiet {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font: inherit;
+            font-size: 0.88rem;
+            cursor: pointer;
+            padding: 0.6rem 0.4rem;
+        }
+
+        .btn-quiet:hover { color: var(--text-primary); }
+
+        .btn-exit {
+            padding-left: 0;
+            font-size: 0.84rem;
+            text-decoration: underline;
+            text-underline-offset: 3px;
+            text-decoration-color: var(--border-default);
+        }
+
+        @media (max-width: 520px) {
+            .btn-exit { order: 3; flex: 1 1 100%; text-align: center; }
+        }
+
+        .done-list {
+            list-style: none;
+            margin: 0 0 18px;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .done-list li {
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+            font-size: 0.92rem;
+        }
+
+        .done-list .mark {
+            width: 20px;
+            height: 20px;
             border-radius: 50%;
+            flex-shrink: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: 700;
+            background: color-mix(in srgb, var(--accent-success) 18%, transparent);
+            color: var(--accent-success);
+        }
+
+        .done-list .mark.later {
+            background: var(--track);
+            color: var(--text-secondary);
+        }
+
+        .done-list small { display: block; color: var(--text-secondary); font-size: 0.82rem; }
+
+        .address {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 8px 12px;
+            margin-top: 6px;
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-default);
+            background: var(--bg-body);
+        }
+
+        .address code {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            overflow-wrap: anywhere;
+        }
+
+        .address .who { font-size: 0.78rem; color: var(--text-secondary); white-space: nowrap; }
+
+        .busy {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-top: 14px;
+        }
+
+        .busy::before {
+            content: "";
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            border: 2px solid var(--track);
+            border-top-color: var(--accent-primary);
+            animation: spin 0.9s linear infinite;
+        }
+
+        .busy[hidden] { display: none; }
+
+        .wizard-foot {
+            margin-top: 16px;
+            text-align: center;
+            font-size: 0.78rem;
+            color: var(--text-tertiary);
+        }
+
+        /* ── Welcome: the one screen that may be a little special ── */
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            pointer-events: none;
+            background:
+                radial-gradient(60vmax 40vmax at 15% -10%, color-mix(in srgb, var(--accent-primary) 16%, transparent), transparent 70%),
+                radial-gradient(50vmax 35vmax at 110% 110%, color-mix(in srgb, var(--accent-success) 10%, transparent), transparent 70%);
+            transition: opacity 0.6s ease;
+        }
+
+        body:not(.on-welcome)::before { opacity: 0.45; }
+
+        body.on-welcome .wizard-progress,
+        body.on-welcome .wizard-step-label,
+        body.on-welcome .wizard-brand { visibility: hidden; }
+
+        .welcome { text-align: center; padding: 8px 4px 0; }
+
+        .welcome-mark {
+            width: 84px;
+            height: 84px;
+            margin: 0 auto 18px;
+            border-radius: 24px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-weight: 700;
-            font-size: 0.8rem;
-            color: var(--text-tertiary);
-            z-index: 2;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        /* Border and colour mark the active step. No glow: the design
-           guidelines rule out neon effects and box-shadow spread. */
-        .step.active {
-            border-color: var(--accent-primary);
             color: var(--accent-primary);
+            background: linear-gradient(160deg, color-mix(in srgb, var(--accent-primary) 22%, transparent), color-mix(in srgb, var(--accent-primary) 6%, transparent));
+            border: 1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent);
         }
 
-        .step.completed {
-            background: var(--accent-primary);
-            border-color: var(--accent-primary);
-            color: white;
+        .welcome-mark svg { width: 46px; height: 46px; overflow: visible; }
+
+        .welcome-mark .layer {
+            opacity: 0;
+            transform: translateY(-6px);
+            animation: layer-in 0.7s cubic-bezier(.2, .7, .2, 1) forwards;
         }
 
-        /* Wizard Sections */
-        .wizard-step {
-            display: none;
-            animation: slideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        .welcome-mark .layer-1 { animation-delay: 0.1s; }
+        .welcome-mark .layer-2 { animation-delay: 0.3s; }
+        .welcome-mark .layer-3 { animation-delay: 0.5s; }
+
+        @keyframes layer-in {
+            to { opacity: 1; transform: none; }
         }
 
-        .wizard-step.active {
-            display: block;
+        .welcome h1 {
+            font-size: 1.9rem;
+            letter-spacing: -0.02em;
+            margin-bottom: 8px;
         }
 
-        @keyframes slideIn {
-            from { opacity: 0; transform: translateX(20px); }
-            to { opacity: 1; transform: translateX(0); }
-        }
-
-        .wizard-step h2 {
-            font-size: 1.5rem;
-            margin-bottom: 0.75rem;
-            color: var(--text-primary);
-        }
-
-        .wizard-step p {
+        .welcome-tagline {
             color: var(--text-secondary);
-            margin-bottom: 1.5rem;
-            line-height: 1.6;
+            font-size: 1.02rem;
+            margin: 0 auto 26px;
+            max-width: 26em;
+            line-height: 1.5;
         }
 
-        .form-group {
-            margin-bottom: 1.5rem;
-            position: relative;
-        }
-
-        .form-group label {
-            display: block;
-            margin-bottom: 0.5rem;
-            font-weight: 600;
-            font-size: 0.875rem;
-            color: var(--text-secondary);
-        }
-
-        .form-group input, .form-group select {
-            width: 100%;
-            padding: 0.75rem;
-            background: var(--bg-body);
-            border: 1px solid var(--border-default);
-            border-radius: var(--radius-default);
-            color: var(--text-primary);
-            font-family: inherit;
-            font-size: 0.95rem;
-            transition: all 0.2s;
-        }
-
-        .form-group input:focus, .form-group select:focus {
-            outline: none;
-            border-color: var(--accent-primary);
-            box-shadow: 0 0 0 3px rgba(58, 134, 255, 0.1);
-        }
-
-        .password-requirements {
-            margin-top: 0.5rem;
-            padding: 0.75rem;
-            background: var(--bg-hover);
-            border-radius: var(--radius-default);
-            font-size: 0.85rem;
-        }
-
-        .password-requirements ul {
-            margin: 0.5rem 0 0 1.25rem;
-            color: var(--text-secondary);
-            list-style-type: none;
+        .welcome-points {
+            list-style: none;
+            margin: 0;
             padding: 0;
-        }
-
-        .password-requirements li {
-            margin-bottom: 0.25rem;
             display: flex;
-            align-items: center;
-            gap: 0.5rem;
+            flex-direction: column;
+            gap: 10px;
+            text-align: left;
         }
 
-        .password-requirements li::before {
-            content: 'o';
-            font-size: 0.8rem;
-        }
-
-        .password-requirements li.valid {
-            color: var(--accent-success);
-        }
-
-        .password-requirements li.valid::before {
-            content: '+';
-        }
-
-        /* Searchable timezone combobox */
-        .timezone-dropdown {
-            position: absolute;
-            top: calc(100% + 4px);
-            left: 0;
-            right: 0;
-            max-height: 260px;
-            overflow-y: auto;
-            background: var(--bg-card);
-            border: 1px solid var(--border-default);
-            border-radius: var(--radius-default);
-            box-shadow: 0 8px 24px rgba(0,0,0,0.35);
-            z-index: 10;
-        }
-
-        .timezone-group-label {
-            padding: 0.4rem 0.75rem;
-            font-size: 0.75rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.03em;
-            color: var(--text-tertiary);
-        }
-
-        .timezone-option {
-            padding: 0.6rem 0.75rem;
-            font-size: 0.9rem;
-            color: var(--text-primary);
-            cursor: pointer;
-        }
-
-        .timezone-option:hover,
-        .timezone-option.highlighted {
-            background: var(--bg-hover);
-        }
-
-        .timezone-empty {
-            padding: 0.75rem;
-            font-size: 0.85rem;
-            color: var(--text-tertiary);
-        }
-
-        /* Nav Buttons */
-        .wizard-nav {
+        .welcome-points li {
             display: flex;
-            justify-content: flex-end;
-            gap: 1rem;
-            margin-top: 2rem;
-            padding-top: 1.5rem;
-            border-top: 1px solid var(--border-default);
-        }
-
-        .btn {
-            padding: 0.75rem 1.5rem;
-            background: var(--accent-primary);
-            color: white;
-            border: none;
-            border-radius: var(--radius-btn);
-            font-weight: 600;
-            font-size: 0.95rem;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .btn:hover:not(:disabled) {
-            opacity: 0.9;
-            transform: translateY(-1px);
-        }
-
-        .btn:active:not(:disabled) {
-            transform: translateY(0);
-        }
-
-        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .btn-secondary {
-            background: transparent;
-            color: var(--text-secondary);
-            border: 1px solid var(--border-default);
-        }
-        .btn-secondary:hover:not(:disabled) {
-            background: var(--bg-hover);
-            color: var(--text-primary);
-        }
-
-        .error-message {
-            background: rgba(248, 81, 73, 0.15);
-            color: var(--accent-danger);
-            border: 1px solid rgba(248, 81, 73, 0.3);
-            padding: 0.875rem;
-            border-radius: var(--radius-default);
-            margin-bottom: 1rem;
-            font-size: 0.875rem;
-        }
-
-        .success-message {
-            background: rgba(35, 134, 54, 0.15);
-            color: var(--accent-success);
-            border: 1px solid rgba(35, 134, 54, 0.3);
-            padding: 1.5rem;
+            gap: 14px;
+            align-items: flex-start;
+            padding: 14px 16px;
+            border: 1px solid var(--border-subtle);
             border-radius: var(--radius-lg);
-            text-align: center;
+            background: color-mix(in srgb, var(--bg-body) 55%, transparent);
+            opacity: 0;
+            animation: layer-in 0.6s ease forwards;
         }
 
-        .setup-spinner {
-            width: 2rem;
-            height: 2rem;
-            margin: 1rem auto 0;
-            border: 2px solid var(--border-default);
-            border-top-color: var(--accent-primary);
-            border-radius: 50%;
-            animation: setupSpin 1s linear infinite;
+        .welcome-points li:nth-child(1) { animation-delay: 0.55s; }
+        .welcome-points li:nth-child(2) { animation-delay: 0.7s; }
+        .welcome-points li:nth-child(3) { animation-delay: 0.85s; }
+
+        .welcome-icon {
+            width: 36px;
+            height: 36px;
+            flex-shrink: 0;
+            border-radius: 10px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--accent-primary);
+            background: var(--accent-primary-soft);
         }
 
-        @keyframes setupSpin {
-            100% { transform: rotate(360deg); }
+        .welcome-icon svg { width: 19px; height: 19px; }
+        .welcome-points strong { display: block; font-size: 0.95rem; margin-bottom: 2px; }
+        .welcome-points small { display: block; color: var(--text-secondary); font-size: 0.84rem; line-height: 1.45; }
+
+        .welcome-meta {
+            margin: 20px 0 0;
+            font-size: 0.8rem;
+            color: var(--text-tertiary);
+        }
+
+        body.on-welcome .wizard-nav { justify-content: center; }
+        body.on-welcome .wizard-nav .spacer { display: none; }
+        body.on-welcome #btn-next { min-width: 220px; padding: 0.75rem 1.4rem; font-size: 1rem; }
+
+        @media (prefers-reduced-motion: reduce) {
+            .welcome-mark .layer,
+            .welcome-points li { animation: none; opacity: 1; transform: none; }
+        }
+
+        @media (max-width: 520px) {
+            .welcome h1 { font-size: 1.55rem; }
+            body.on-welcome #btn-next { min-width: 0; }
+        }
+
+        @media (max-width: 520px) {
+            body { padding-top: 16px; }
+            .wizard-card { padding: 20px 16px; }
+            .wizard-nav { flex-wrap: wrap; }
+            .wizard-nav .btn-primary { flex: 1 1 100%; order: -1; }
         }
     </style>
 </head>
 
-<body>
-    <div class="setup-container">
-        <div class="logo">
-            <h1>AlvaOS</h1>
+<body class="on-welcome">
+    <main class="wizard">
+        <div class="wizard-brand">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            AlvaOS
         </div>
 
-        <div class="stepper">
-            <div class="step active" data-step="1">1</div>
-            <div class="step" data-step="2">2</div>
-            <div class="step" data-step="3">3</div>
-        </div>
+        <div class="wizard-progress" id="progress" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+        <div class="wizard-step-label" id="step-label">Step 1 of 5</div>
 
-        <div id="error-container"></div>
+        <div class="wizard-card">
+            <div class="error-box" id="error" role="alert"></div>
 
-        <!-- Step 1: Welcome -->
-        <div class="wizard-step active" id="wizard-step-1">
-            <h2>Welcome to AlvaOS!</h2>
-            <p>Let's get your system secured and ready to use. This will only take a minute.</p>
-        </div>
+            <!-- 1. Welcome -->
+            <section class="step active welcome" data-step="welcome">
+                <div class="welcome-mark" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                        <path class="layer layer-3" d="M2 17l10 5 10-5" />
+                        <path class="layer layer-2" d="M2 12l10 5 10-5" />
+                        <path class="layer layer-1" d="M12 2L2 7l10 5 10-5-10-5z" />
+                    </svg>
+                </div>
+                <h1>Welcome to AlvaOS</h1>
+                <p class="welcome-tagline">Your files, your apps and your backups. At home, and yours.</p>
 
-        <!-- Step 2: Password -->
-        <div class="wizard-step" id="wizard-step-2">
-            <h2>Security Configuration</h2>
-            <p>Please choose a secure password for the <strong>root</strong> account. This password provides full administrative access to your system.</p>
-
-            <div class="form-group">
-                <label for="password">New Root Password</label>
-                <input type="password" id="password" required autocomplete="new-password" placeholder="********">
-            </div>
-            <div class="form-group">
-                <label for="password-confirm">Confirm Password</label>
-                <input type="password" id="password-confirm" required autocomplete="new-password" placeholder="********">
-            </div>
-
-            <div class="password-requirements">
-                <strong>Password Requirements:</strong>
-                <ul>
-                    <li id="req-length">At least 8 characters</li>
-                    <li id="req-match">Passwords match</li>
+                <ul class="welcome-points">
+                    <li>
+                        <span class="welcome-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
+                        </span>
+                        <span><strong>Storage that looks after itself</strong><small>Mirrored disks, regular checks and a calm warning before anything goes wrong.</small></span>
+                    </li>
+                    <li>
+                        <span class="welcome-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                        </span>
+                        <span><strong>One folder on every device</strong><small>Open it from Windows, Mac, Linux and phones, like any drive.</small></span>
+                    </li>
+                    <li>
+                        <span class="welcome-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
+                        </span>
+                        <span><strong>Backups, also at a friend's</strong><small>Daily restore points here, and an encrypted copy on a buddy's NAS.</small></span>
+                    </li>
                 </ul>
+
+                <p class="welcome-meta">About two minutes &middot; Nothing is erased without asking you</p>
+            </section>
+
+            <!-- 2. Name and password -->
+            <section class="step" data-step="account">
+                <h1>Name and password</h1>
+                <p class="lead">The name is how this NAS shows up on your network. The password protects everything on it.</p>
+                <div class="field">
+                    <label for="nas-name">Name</label>
+                    <input type="text" id="nas-name" autocomplete="off" spellcheck="false" maxlength="63" placeholder="alva-home">
+                    <small id="nas-name-hint">Letters, numbers and "-". Your computers will find it as <span id="nas-name-preview">alva-home</span>.</small>
+                </div>
+                <div class="field">
+                    <label for="password">Admin password</label>
+                    <input type="password" id="password" autocomplete="new-password">
+                    <small id="password-hint">At least 8 characters. A short sentence is easy to remember and hard to guess.</small>
+                </div>
+                <div class="field">
+                    <label for="password-confirm">Type it again</label>
+                    <input type="password" id="password-confirm" autocomplete="new-password">
+                    <small id="confirm-hint">&nbsp;</small>
+                </div>
+                <div class="field">
+                    <span class="label">Time zone</span>
+                    <div class="row-text" id="tz-summary">
+                        <span><span id="tz-name">UTC</span> <span style="color:var(--text-secondary)">(from this browser)</span></span>
+                        <button type="button" class="linklike" id="tz-change">Change</button>
+                    </div>
+                    <select id="tz-select" class="select-input" hidden aria-label="Time zone"></select>
+                </div>
+            </section>
+
+            <!-- 3. Storage -->
+            <section class="step" data-step="storage">
+                <h1>Storage</h1>
+                <p class="lead" id="storage-lead">AlvaOS keeps your files on the disks you choose here.</p>
+                <div id="storage-body"></div>
+                <div class="busy" id="storage-busy" hidden>Looking for disks...</div>
+            </section>
+
+            <!-- 4. Shared folder -->
+            <section class="step" data-step="share">
+                <h1>A shared folder</h1>
+                <p class="lead">Your computers and phones open this folder over the network, like a drive.</p>
+                <div id="share-body">
+                    <div class="field">
+                        <label for="share-name">Folder name</label>
+                        <input type="text" id="share-name" value="Files" autocomplete="off" spellcheck="false" maxlength="63">
+                        <small id="share-name-hint">Letters, numbers, "-" and "_", no spaces.</small>
+                    </div>
+                    <div class="field">
+                        <span class="label">Who can open it?</span>
+                        <div class="choice-list">
+                            <label class="choice">
+                                <input type="radio" name="share-access" value="person" checked>
+                                <span><strong>Me, with a name and password</strong><small>Recommended. Add more people later in Storage &rsaquo; People.</small></span>
+                                <span></span>
+                            </label>
+                            <label class="choice">
+                                <input type="radio" name="share-access" value="everyone">
+                                <span><strong>Everyone on my home network</strong><small>No password. Anyone on your Wi-Fi can open and change the files.</small></span>
+                                <span></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div id="person-fields">
+                        <div class="field">
+                            <label for="person-name">Your name for signing in</label>
+                            <input type="text" id="person-name" autocomplete="off" spellcheck="false" maxlength="32" placeholder="e.g. alex">
+                            <small id="person-name-hint">Lowercase letters and numbers.</small>
+                        </div>
+                        <label class="choice" style="grid-template-columns:auto 1fr;">
+                            <input type="checkbox" id="person-same-password" checked>
+                            <span><strong>Use the admin password</strong><small>One password to remember. You can change it later.</small></span>
+                        </label>
+                        <div class="field" id="person-password-field" hidden style="margin-top:12px;">
+                            <label for="person-password">Password for the folder</label>
+                            <input type="password" id="person-password" autocomplete="new-password">
+                            <small>At least 8 characters.</small>
+                        </div>
+                    </div>
+                    <label class="choice" style="grid-template-columns:auto 1fr; margin-top:16px;">
+                        <input type="checkbox" id="share-backup" checked>
+                        <span><strong>Keep a restore point every day</strong><small>If a file is deleted or overwritten, get yesterday's version back. Uses little space.</small></span>
+                    </label>
+                </div>
+                <div class="busy" id="share-busy" hidden>Creating the folder...</div>
+            </section>
+
+            <!-- 5. Done -->
+            <section class="step" data-step="done">
+                <h1>Your NAS is ready</h1>
+                <p class="lead">Here is what was set up.</p>
+                <ul class="done-list" id="done-list"></ul>
+                <div id="done-addresses"></div>
+            </section>
+
+            <div class="wizard-nav">
+                <button type="button" class="btn-secondary" id="btn-back" hidden>Back</button>
+                <button type="button" class="btn-quiet btn-exit" id="btn-exit" hidden title="Your NAS is set up enough to sign in. Storage, shares and backups are on the dashboard.">Set up the rest myself</button>
+                <span class="spacer"></span>
+                <button type="button" class="btn-quiet" id="btn-skip" hidden>Skip for now</button>
+                <button type="button" class="btn-primary" id="btn-next">Get started</button>
             </div>
         </div>
 
-        <!-- Step 3: Timezone & Finish -->
-        <div class="wizard-step" id="wizard-step-3">
-            <h2>Regional Settings</h2>
-            <p>Specify your preferred timezone to ensure system logs and scheduled tasks use the correct local time. You can change this later in System Settings.</p>
-
-            <div class="form-group">
-                <label for="timezone-input">Timezone</label>
-                <input type="text" id="timezone-input" autocomplete="off" placeholder="Search timezone...">
-                <input type="hidden" id="timezone-value" value="UTC">
-                <div id="timezone-dropdown" class="timezone-dropdown" style="display:none;"></div>
-            </div>
-        </div>
-
-        <div class="wizard-nav">
-            <button class="btn btn-secondary" id="btn-prev" style="display: none;">Back</button>
-            <button class="btn" id="btn-next">Continue</button>
-        </div>
-
-        <div style="margin-top: 2rem; text-align: center; font-size: 0.8rem; color: var(--text-tertiary); font-family: var(--font-mono);">
-            AlvaOS {{VERSION}}
-        </div>
-    </div>
+        <div class="wizard-foot">AlvaOS {{VERSION}}</div>
+    </main>
 
     <script src="password-toggle.js"></script>
-        <script>
-        const API_BASE = '/api/v1';
-        const TOTAL_STEPS = 3;
-        let currentStep = 1;
-
-        const TIMEZONES = [
-            { region: 'UTC', value: 'UTC', label: 'UTC (Universal Coordinated Time)' },
-            { region: 'Europe', value: 'Europe/London', label: 'Europe/London (GMT/BST)' },
-            { region: 'Europe', value: 'Europe/Lisbon', label: 'Europe/Lisbon (WET/WEST)' },
-            { region: 'Europe', value: 'Europe/Paris', label: 'Europe/Paris (CET/CEST)' },
-            { region: 'Europe', value: 'Europe/Berlin', label: 'Europe/Berlin (CET/CEST)' },
-            { region: 'Europe', value: 'Europe/Rome', label: 'Europe/Rome (CET/CEST)' },
-            { region: 'Europe', value: 'Europe/Madrid', label: 'Europe/Madrid (CET/CEST)' },
-            { region: 'Europe', value: 'Europe/Amsterdam', label: 'Europe/Amsterdam (CET/CEST)' },
-            { region: 'Europe', value: 'Europe/Zurich', label: 'Europe/Zurich (CET/CEST)' },
-            { region: 'Europe', value: 'Europe/Stockholm', label: 'Europe/Stockholm (CET/CEST)' },
-            { region: 'Europe', value: 'Europe/Warsaw', label: 'Europe/Warsaw (CET/CEST)' },
-            { region: 'Europe', value: 'Europe/Helsinki', label: 'Europe/Helsinki (EET/EEST)' },
-            { region: 'Europe', value: 'Europe/Athens', label: 'Europe/Athens (EET/EEST)' },
-            { region: 'Europe', value: 'Europe/Istanbul', label: 'Europe/Istanbul (TRT)' },
-            { region: 'Europe', value: 'Europe/Moscow', label: 'Europe/Moscow (MSK)' },
-            { region: 'Americas', value: 'America/New_York', label: 'America/New_York (EST/EDT)' },
-            { region: 'Americas', value: 'America/Chicago', label: 'America/Chicago (CST/CDT)' },
-            { region: 'Americas', value: 'America/Denver', label: 'America/Denver (MST/MDT)' },
-            { region: 'Americas', value: 'America/Los_Angeles', label: 'America/Los_Angeles (PST/PDT)' },
-            { region: 'Americas', value: 'America/Anchorage', label: 'America/Anchorage (AKST/AKDT)' },
-            { region: 'Americas', value: 'America/Toronto', label: 'America/Toronto (EST/EDT)' },
-            { region: 'Americas', value: 'America/Vancouver', label: 'America/Vancouver (PST/PDT)' },
-            { region: 'Americas', value: 'America/Sao_Paulo', label: 'America/Sao_Paulo (BRT)' },
-            { region: 'Americas', value: 'America/Argentina/Buenos_Aires', label: 'America/Buenos_Aires (ART)' },
-            { region: 'Americas', value: 'America/Mexico_City', label: 'America/Mexico_City (CST/CDT)' },
-            { region: 'Americas', value: 'America/Bogota', label: 'America/Bogota (COT)' },
-            { region: 'Americas', value: 'Pacific/Honolulu', label: 'Pacific/Honolulu (HST)' },
-            { region: 'Asia & Pacific', value: 'Asia/Dubai', label: 'Asia/Dubai (GST)' },
-            { region: 'Asia & Pacific', value: 'Asia/Kolkata', label: 'Asia/Kolkata (IST)' },
-            { region: 'Asia & Pacific', value: 'Asia/Dhaka', label: 'Asia/Dhaka (BST)' },
-            { region: 'Asia & Pacific', value: 'Asia/Bangkok', label: 'Asia/Bangkok (ICT)' },
-            { region: 'Asia & Pacific', value: 'Asia/Singapore', label: 'Asia/Singapore (SGT)' },
-            { region: 'Asia & Pacific', value: 'Asia/Shanghai', label: 'Asia/Shanghai (CST)' },
-            { region: 'Asia & Pacific', value: 'Asia/Hong_Kong', label: 'Asia/Hong_Kong (HKT)' },
-            { region: 'Asia & Pacific', value: 'Asia/Taipei', label: 'Asia/Taipei (CST)' },
-            { region: 'Asia & Pacific', value: 'Asia/Seoul', label: 'Asia/Seoul (KST)' },
-            { region: 'Asia & Pacific', value: 'Asia/Tokyo', label: 'Asia/Tokyo (JST)' },
-            { region: 'Asia & Pacific', value: 'Australia/Perth', label: 'Australia/Perth (AWST)' },
-            { region: 'Asia & Pacific', value: 'Australia/Adelaide', label: 'Australia/Adelaide (ACST/ACDT)' },
-            { region: 'Asia & Pacific', value: 'Australia/Sydney', label: 'Australia/Sydney (AEST/AEDT)' },
-            { region: 'Asia & Pacific', value: 'Pacific/Auckland', label: 'Pacific/Auckland (NZST/NZDT)' },
-            { region: 'Africa & Middle East', value: 'Africa/Cairo', label: 'Africa/Cairo (EET)' },
-            { region: 'Africa & Middle East', value: 'Africa/Johannesburg', label: 'Africa/Johannesburg (SAST)' },
-            { region: 'Africa & Middle East', value: 'Africa/Lagos', label: 'Africa/Lagos (WAT)' },
-            { region: 'Africa & Middle East', value: 'Africa/Nairobi', label: 'Africa/Nairobi (EAT)' },
-            { region: 'Africa & Middle East', value: 'Asia/Jerusalem', label: 'Asia/Jerusalem (IST/IDT)' },
-            { region: 'Africa & Middle East', value: 'Asia/Riyadh', label: 'Asia/Riyadh (AST)' }
-        ];
-
-        const els = {
-            steps: document.querySelectorAll('.wizard-step'),
-            stepIndicators: document.querySelectorAll('.step'),
-            btnPrev: document.getElementById('btn-prev'),
-            btnNext: document.getElementById('btn-next'),
-            password: document.getElementById('password'),
-            confirm: document.getElementById('password-confirm'),
-            tzInput: document.getElementById('timezone-input'),
-            tzValue: document.getElementById('timezone-value'),
-            tzDropdown: document.getElementById('timezone-dropdown'),
-            error: document.getElementById('error-container')
-        };
-
-        function showSetupError(message) {
-            els.error.textContent = '';
-            const box = document.createElement('div');
-            box.className = 'error-message';
-            box.textContent = String(message || 'Setup failed');
-            els.error.appendChild(box);
-        }
-
-        async function init() {
-            try {
-                const statusRes = await fetch(`${API_BASE}/setup/status`);
-                if (statusRes.ok) {
-                    const status = await statusRes.json();
-                    if (status.setup_complete) {
-                        const token = localStorage.getItem('alvaos_token');
-                        window.location.href = token ? '/' : '/login.html';
-                        return false;
-                    }
-                }
-            } catch (_e) {
-                // Continue and show setup UI even if status check fails.
-            }
-            return true;
-        }
-
-        function updateWizardUI() {
-            els.steps.forEach((step, idx) => {
-                step.classList.toggle('active', idx + 1 === currentStep);
-            });
-
-            els.stepIndicators.forEach((ind, idx) => {
-                const stepNum = idx + 1;
-                ind.classList.toggle('active', stepNum === currentStep);
-                ind.classList.toggle('completed', stepNum < currentStep);
-            });
-
-            els.btnPrev.style.display = currentStep > 1 ? 'block' : 'none';
-            els.btnNext.textContent = currentStep === TOTAL_STEPS ? 'Complete Setup' : 'Continue';
-
-            validateCurrentStep();
-        }
-
-        function validateCurrentStep() {
-            let isValid = true;
-            if (currentStep === 2) {
-                const password = els.password.value;
-                const confirm = els.confirm.value;
-                const lengthValid = password.length >= 8;
-                const matchValid = password === confirm && password.length > 0;
-
-                document.getElementById('req-length').className = lengthValid ? 'valid' : '';
-                document.getElementById('req-match').className = matchValid ? 'valid' : '';
-
-                isValid = lengthValid && matchValid;
-            }
-            els.btnNext.disabled = !isValid;
-        }
-
-        els.btnNext.addEventListener('click', async () => {
-            if (currentStep < TOTAL_STEPS) {
-                currentStep++;
-                updateWizardUI();
-            } else {
-                finishSetup();
-            }
-        });
-
-        els.btnPrev.addEventListener('click', () => {
-            if (currentStep > 1) {
-                currentStep--;
-                updateWizardUI();
-            }
-        });
-
-        async function finishSetup() {
-            els.btnNext.disabled = true;
-            els.btnNext.textContent = 'Applying...';
-            els.error.textContent = '';
-
-            try {
-                const response = await fetch(`${API_BASE}/setup/complete`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        password: els.password.value,
-                        timezone: els.tzValue.value
-                    })
-                });
-
-                const data = await response.json();
-                if (!response.ok) throw new Error(data.error || 'Setup failed');
-
-                localStorage.setItem('alvaos_token', data.token);
-                if (data.csrf_token) {
-                    localStorage.setItem('alvaos_csrf_token', data.csrf_token);
-                } else {
-                    localStorage.removeItem('alvaos_csrf_token');
-                }
-                document.querySelector('.setup-container').innerHTML = `
-                    <div class="logo"><h1>AlvaOS</h1></div>
-                    <div class="success-message">
-                        <h2 style="margin-bottom: 1rem;">Setup Complete!</h2>
-                        <p style="margin-bottom: 1rem; color: var(--text-primary);">Setting up your AlvaOS workspace...</p>
-                        <div class="setup-spinner"></div>
-                    </div>
-                `;
-
-                setTimeout(() => window.location.href = '/', 2000);
-            } catch (error) {
-                showSetupError(error.message);
-                els.btnNext.disabled = false;
-                els.btnNext.textContent = 'Complete Setup';
-            }
-        }
-
-        [els.password, els.confirm].forEach((input) => {
-            input.addEventListener('input', validateCurrentStep);
-        });
-
-        // ── Searchable timezone combobox ──────────────────────────────────
-        let tzHighlightIndex = -1;
-        let tzVisibleItems = [];
-
-        function selectTimezone(tz) {
-            els.tzValue.value = tz.value;
-            els.tzInput.value = tz.label;
-            closeTzDropdown();
-        }
-
-        function closeTzDropdown() {
-            els.tzDropdown.style.display = 'none';
-            tzHighlightIndex = -1;
-        }
-
-        function renderTzDropdown(filterText) {
-            const query = filterText.trim().toLowerCase();
-            const matches = query
-                ? TIMEZONES.filter((tz) => tz.label.toLowerCase().includes(query) || tz.value.toLowerCase().includes(query))
-                : TIMEZONES;
-
-            tzVisibleItems = matches;
-            tzHighlightIndex = -1;
-            els.tzDropdown.innerHTML = '';
-
-            if (!matches.length) {
-                const empty = document.createElement('div');
-                empty.className = 'timezone-empty';
-                empty.textContent = 'No matching timezone';
-                els.tzDropdown.appendChild(empty);
-                els.tzDropdown.style.display = 'block';
-                return;
-            }
-
-            let lastRegion = null;
-            matches.forEach((tz) => {
-                if (!query && tz.region !== lastRegion) {
-                    const groupLabel = document.createElement('div');
-                    groupLabel.className = 'timezone-group-label';
-                    groupLabel.textContent = tz.region;
-                    els.tzDropdown.appendChild(groupLabel);
-                    lastRegion = tz.region;
-                }
-
-                const option = document.createElement('div');
-                option.className = 'timezone-option';
-                option.textContent = tz.label;
-                option.addEventListener('mousedown', (event) => {
-                    event.preventDefault();
-                    selectTimezone(tz);
-                });
-                els.tzDropdown.appendChild(option);
-            });
-
-            els.tzDropdown.style.display = 'block';
-        }
-
-        function highlightTzOption(index) {
-            const options = els.tzDropdown.querySelectorAll('.timezone-option');
-            options.forEach((opt) => opt.classList.remove('highlighted'));
-            if (index >= 0 && options[index]) {
-                options[index].classList.add('highlighted');
-                options[index].scrollIntoView({ block: 'nearest' });
-            }
-        }
-
-        els.tzInput.addEventListener('focus', () => {
-            // The field shows the default ("UTC") label until the user picks something
-            // else. Clear it on focus so the first keystroke replaces it directly,
-            // instead of requiring the user to delete "UTC" themselves first.
-            if (els.tzInput.value === defaultTzLabel()) {
-                els.tzInput.value = '';
-            }
-            renderTzDropdown(els.tzInput.value);
-        });
-        els.tzInput.addEventListener('input', () => renderTzDropdown(els.tzInput.value));
-        els.tzInput.addEventListener('blur', () => {
-            // If the user left the field empty without picking anything, restore the
-            // default label for display; the hidden value already still holds the
-            // fallback (UTC) timezone that will be submitted.
-            if (els.tzInput.value.trim() === '') {
-                els.tzInput.value = defaultTzLabel();
-            }
-        });
-
-        els.tzInput.addEventListener('keydown', (event) => {
-            if (els.tzDropdown.style.display === 'none') return;
-            if (event.key === 'ArrowDown') {
-                event.preventDefault();
-                tzHighlightIndex = Math.min(tzHighlightIndex + 1, tzVisibleItems.length - 1);
-                highlightTzOption(tzHighlightIndex);
-            } else if (event.key === 'ArrowUp') {
-                event.preventDefault();
-                tzHighlightIndex = Math.max(tzHighlightIndex - 1, 0);
-                highlightTzOption(tzHighlightIndex);
-            } else if (event.key === 'Enter') {
-                event.preventDefault();
-                if (tzHighlightIndex >= 0 && tzVisibleItems[tzHighlightIndex]) {
-                    selectTimezone(tzVisibleItems[tzHighlightIndex]);
-                } else if (tzVisibleItems.length === 1) {
-                    selectTimezone(tzVisibleItems[0]);
-                }
-            } else if (event.key === 'Escape') {
-                closeTzDropdown();
-            }
-        });
-
-        document.addEventListener('click', (event) => {
-            if (!els.tzDropdown.contains(event.target) && event.target !== els.tzInput) {
-                closeTzDropdown();
-            }
-        });
-
-        function defaultTzLabel() {
-            return TIMEZONES[0].label;
-        }
-
-        // Default to UTC until the user picks something else.
-        els.tzInput.value = defaultTzLabel();
-
-        init().then((shouldRender) => {
-            if (shouldRender) updateWizardUI();
-        });
-    </script>
+    <script src="setup.js"></script>
 </body>
+
 </html>
