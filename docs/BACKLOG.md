@@ -15,6 +15,30 @@ How to add an entry:
 
 ---
 
+## 2026-10-04 · AlvaOS Hub: the frame, with Files and Photos as its first apps
+
+- The Files app is now **AlvaOS Hub** (same service and ports, 8090/9443):
+  sign-in page, title and the installed app (PWA) say AlvaOS Hub. An app bar
+  (left on a computer, along the bottom on a phone) switches between the Hub
+  apps; it stays hidden while someone sees only one app.
+- `backend/hub_apps.py`: the Hub apps (Files; Photos, which is part of Files)
+  and `/var/lib/alvaos/hub.json` with, per app, on or off and who sees it
+  (everyone, or a list of people; the admin account sees every app that is
+  on). Without the file everything is on for everyone, as before.
+- Enforced on the server, not only hidden: every Files API call answers 403
+  (`app_off`) for someone who may not use Files; WebDAV refuses them too;
+  share links do not open while Files is off. `/api/me` returns the apps the
+  person sees.
+- Admin pages: the "Files" page is now **Hub** (navigation, `files.html`
+  kept as the address): turn the Hub on or off, open it, and "Apps in the
+  Hub" with a switch per app and "Who sees it: Everyone / Only some people"
+  with a tick per person. API `/api/v1/hub`. The Apps page card and setup
+  say AlvaOS Hub; the assistant reads the Hub (`hub`) and links its page.
+- Tested against the real Hub server with two people: Anna sees Files and
+  Photos, Ben only Files, then nothing (with a plain message).
+- **Note for next time:** the Hub still uses the Files icon; a Hub icon of
+  its own would help. Next Hub apps: Calendar and Contacts (Radicale).
+
 ## 2026-10-04 · Roadmap: AlvaOS Hub and the Files plan
 
 - Decided: "AlvaOS Hub": one address and one sign-in for the household.

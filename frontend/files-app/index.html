@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Files</title>
+    <title>AlvaOS Hub</title>
     <meta name="theme-color" content="#1f5fd1">
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -15,8 +15,8 @@
     <main class="signin" id="signin" hidden>
         <form class="signin-card" id="signin-form" novalidate>
             <img class="signin-logo" src="icon.svg" alt="" width="56" height="56">
-            <h1>Files</h1>
-            <p class="signin-sub" id="signin-sub">Sign in with your name and password for the shared folders.</p>
+            <h1>AlvaOS Hub</h1>
+            <p class="signin-sub" id="signin-sub">Sign in with your name and password.</p>
             <div class="notice" id="signin-error" role="alert"></div>
             <label class="field" id="field-user">Name<input id="in-user" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>
             <label class="field" id="field-pass">Password<input id="in-pass" type="password" autocomplete="current-password" required></label>
@@ -27,6 +27,8 @@
 
     <!-- The app -->
     <div class="app" id="app" hidden>
+        <!-- The Hub's apps (hub_apps.py). Only shown with more than one app. -->
+        <nav class="rail" id="rail" aria-label="AlvaOS Hub" hidden></nav>
         <aside class="side" id="side">
             <div class="side-head">
                 <img src="icon.svg" alt="" width="30" height="30">

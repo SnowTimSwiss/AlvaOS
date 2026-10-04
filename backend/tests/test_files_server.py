@@ -436,3 +436,25 @@ def test_a_new_password_or_removal_ends_files_sessions(client, tmp_path):
     del users["anna"]
     (tmp_path / "users.json").write_text(json.dumps(users))
     assert client.get("/api/me").status_code == 401
+
+
+def test_the_hub_shows_each_person_their_apps_and_closes_files_when_it_is_off(client):
+    import hub_apps
+    sign_in(client, "ben", "ben-pass")
+    me = client.get("/api/me").get_json()
+    assert me["hub"]["name"] == "AlvaOS Hub" and [a["id"] for a in me["hub"]["apps"]] == ["files", "photos"]
+    hub_apps.save({"apps": {"files": {"people": ["anna"]}}}, ["anna", "ben"])
+    me = client.get("/api/me").get_json()
+    assert me["hub"]["apps"] == [] and me["shares"] == []                 # signed in, but nothing for ben
+    refused = client.get("/api/list?share=Family")
+    assert refused.status_code == 403 and refused.get_json()["app_off"]
+    assert client.post("/api/mkdir", json={"share": "Family", "path": "", "name": "x"}, headers=H).status_code == 403
+    sign_in(client, "anna", "anna-pass")
+    assert client.get("/api/list?share=Family").status_code == 200
+
+
+def test_share_links_stop_while_files_is_off(client):
+    import hub_apps
+    hub_apps.save({"apps": {"files": {"enabled": False}}}, ["anna", "ben"])
+    assert client.get("/api/public/whatever").status_code == 404
+    assert client.get("/s/whatever").status_code == 404

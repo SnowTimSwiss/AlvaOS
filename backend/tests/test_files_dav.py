@@ -152,3 +152,10 @@ def test_only_wrong_passwords_count_towards_the_limit(client):
         assert client.open("/", method="PROPFIND", headers=auth("anna", "nope")).status_code == 401
     assert client.open("/", method="PROPFIND", headers=auth("anna", "nope")).status_code == 429
     dav._failures.clear()
+
+
+def test_webdav_is_part_of_files_in_the_hub(client):
+    import hub_apps
+    hub_apps.save({"apps": {"files": {"people": ["anna"]}}}, ["anna", "ben"])
+    assert client.open("/", method="PROPFIND", headers=BEN).status_code == 403
+    assert client.open("/", method="PROPFIND", headers=ANNA).status_code == 207

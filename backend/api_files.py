@@ -41,3 +41,28 @@ def files_app():
         if err:
             return jsonify({'error': f'AlvaOS Files could not be turned {"on" if on else "off"}: {err}'}), 500
     return jsonify({'success': True, **files_app_state()})
+
+
+@bp.route('/api/v1/hub', methods=['GET', 'POST'])
+@require_auth(require_admin=True)
+def hub():
+    """AlvaOS Hub: on or off, and per Hub app on or off and who sees it.
+
+    POST {'enabled': bool} turns the Hub (its service) on or off;
+    POST {'apps': {id: {'enabled': bool, 'people': None or [names]}}} changes apps."""
+    import hub_apps
+    from api_auth import load_users_state
+    people = sorted(load_users_state())
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or {}
+        if 'enabled' in data:
+            on = bool(data.get('enabled'))
+            _, err = _systemctl('enable' if on else 'disable', '--now')
+            if err:
+                return jsonify({'error': f'AlvaOS Hub could not be turned {"on" if on else "off"}: {err}'}), 500
+        if 'apps' in data:
+            _, problem = hub_apps.save({'apps': data.get('apps')}, people)
+            if problem:
+                return jsonify({'error': problem}), 400
+    return jsonify({'success': True, 'name': hub_apps.NAME, **files_app_state(), 'apps': hub_apps.overview(),
+                    'people': people})

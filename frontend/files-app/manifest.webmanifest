@@ -1,7 +1,7 @@
 {
-  "name": "AlvaOS Files",
-  "short_name": "Files",
-  "description": "The shared folders of your AlvaOS NAS.",
+  "name": "AlvaOS Hub",
+  "short_name": "Hub",
+  "description": "Files, photos and more from your AlvaOS NAS.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

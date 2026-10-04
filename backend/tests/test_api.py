@@ -5,6 +5,7 @@ layer: nothing is reachable before setup, every endpoint needs a session,
 state changes need the CSRF token, admin endpoints need an admin.
 """
 
+import subprocess
 import importlib.util
 import os
 
@@ -535,3 +536,25 @@ def test_pools_whose_disks_are_gone_say_so(backend, monkeypatch, tmp_path):
     assert got["lost"]["status"] == "missing" and got["lost"]["mounted"] is False
     assert got["lost"]["total_size"] == "Unknown"            # not the size of the system disk
     assert got["usb-1"]["is_backup_disk"] and not got["lost"]["is_backup_disk"]
+
+
+def test_the_admin_turns_hub_apps_on_and_off_and_chooses_who_sees_them(backend, monkeypatch, tmp_path):
+    import api_auth
+    import api_files
+    module, state = backend
+    set_up(state)
+    monkeypatch.setattr(api_files, "run_sudo_command",
+                        lambda cmd, timeout=30: (subprocess.CompletedProcess(cmd, 0, "enabled\n", ""), None))
+    monkeypatch.setattr(api_auth, "load_users_state", lambda: {"anna": {}, "ben": {}})
+    token = auth_manager._create_session("root", role="admin")
+    headers = {"Authorization": token, "X-CSRF-Token": auth_manager.SESSIONS[token]["csrf_token"]}
+    client = module.app.test_client()
+    hub = client.get("/api/v1/hub", headers=headers).get_json()
+    assert hub["name"] == "AlvaOS Hub" and hub["people"] == ["anna", "ben"]
+    assert [a["id"] for a in hub["apps"]] == ["files", "photos"] and hub["apps"][0]["enabled"]
+    changed = client.post("/api/v1/hub", json={"apps": {"photos": {"enabled": False}, "files": {"people": ["anna"]}}},
+                          headers=headers).get_json()
+    apps = {a["id"]: a for a in changed["apps"]}
+    assert apps["photos"]["enabled"] is False and apps["files"]["people"] == ["anna"]
+    bad = client.post("/api/v1/hub", json={"apps": {"files": {"people": ["eve"]}}}, headers=headers)
+    assert bad.status_code == 400 and "eve" in bad.get_json()["error"]

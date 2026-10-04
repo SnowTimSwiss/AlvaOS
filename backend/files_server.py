@@ -25,6 +25,7 @@ from urllib.parse import quote
 from flask import Flask, Response, jsonify, request, send_from_directory
 
 import files_manager
+import hub_apps
 from password_utils import verify_password
 
 PORT = 8090
@@ -162,6 +163,10 @@ def as_user(session: Dict[str, Any]) -> Optional[str]:
     return None if session['role'] == 'admin' else session['user']
 
 
+# Asked without any Hub app: who is signed in, and which apps they see.
+HUB_PATHS = ('/api/me',)
+
+
 def need_session():
     session = current()
     if not session:
@@ -169,6 +174,10 @@ def need_session():
     if request.method != 'GET' and request.headers.get('X-AlvaOS-Files') != '1':
         # Only the Files page sends this header; another website cannot (no CORS).
         return None, (jsonify({'error': 'Request refused.'}), 403)
+    if request.path not in HUB_PATHS and not hub_apps.allowed('files', session['user'], session['role']):
+        # Everything else here is Files: the admin may have turned it off, or not for this person.
+        return None, (jsonify({'error': 'Files is not turned on for you. Ask the person who looks after the NAS.',
+                               'app_off': True}), 403)
     return session, None
 
 
@@ -265,11 +274,14 @@ def me():
     session, refused = need_session()
     if refused:
         return refused
+    settings = hub_apps.load()
+    apps = hub_apps.visible(session['user'], session['role'], settings)
+    files_on = any(a['id'] == 'files' for a in apps)
     shares = sorted(({'name': s['name'], 'access': s['access']} for s in shares_for(session).values()),
-                    key=lambda s: s['name'].lower())
+                    key=lambda s: s['name'].lower()) if files_on else []
     nas = socket.gethostname().split('.')[0]
     return jsonify({'user': session['user'], 'role': session['role'], 'shares': shares,
-                    'nas_name': nas})
+                    'nas_name': nas, 'hub': {'name': hub_apps.NAME, 'apps': apps}})
 
 
 # ── Browsing and files ───────────────────────────────────────────────────────
@@ -1253,6 +1265,14 @@ def asset(name):
     if name.startswith('api/'):
         return jsonify({'error': 'Not found'}), 404
     return send_from_directory(APP_ROOT, name)
+
+
+@app.before_request
+def public_links_need_files():
+    """Share links are part of Files: while Files is off in the Hub, they do not open."""
+    if request.path.startswith(('/api/public/', '/s/')) and not hub_apps.load()['apps']['files']['enabled']:
+        return jsonify({'error': 'This link does not work at the moment.'}), 404
+    return None
 
 
 @app.before_request

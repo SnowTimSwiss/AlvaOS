@@ -84,7 +84,7 @@ def signed_in() -> Tuple[Optional[Dict[str, Any]], Optional[Response]]:
     with _cred_lock:
         known = _good_credentials.get(key)
     if known and known[1] > now and known[2] == _stored_hash(known[0]):
-        return {'user': known[0], 'role': 'user'}, None   # a changed password ends this at once
+        return _admit(known[0], 'user')   # a changed password ends this at once
     if name == 'admin':
         return None, _challenge('The admin account cannot be used here. Sign in as a person from Storage › Users.')
     ip = request.remote_addr or ''
@@ -98,7 +98,15 @@ def signed_in() -> Tuple[Optional[Dict[str, Any]], Optional[Response]]:
         for k in [k for k, v in _good_credentials.items() if v[1] < now]:
             del _good_credentials[k]
         _good_credentials[key] = (who[0], now + CREDENTIAL_SECONDS, _stored_hash(who[0]))
-    return {'user': who[0], 'role': who[1]}, None
+    return _admit(who[0], who[1])
+
+
+def _admit(user: str, role: str):
+    """WebDAV belongs to Files: only for people who may use Files in the Hub."""
+    import hub_apps
+    if not hub_apps.allowed('files', user, role):
+        return None, Response('Files is not turned on for you. Ask the person who looks after the NAS.\n', 403)
+    return {'user': user, 'role': role}, None
 
 
 # ── Paths: /<share>/<folder>/<name> ─────────────────────────────────────────

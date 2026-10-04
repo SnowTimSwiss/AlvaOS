@@ -237,13 +237,13 @@ function renderAvailableApps() {
     }).join('');
 }
 
-// AlvaOS Files is built in: nothing to download, "Turn on" starts its service.
+// AlvaOS Hub (with Files) is built in: nothing to download, "Turn on" starts its service.
 let filesAppState = null;
 
 function builtInFilesCard() {
     const query = normalizeSearchText(availableSearchQuery);
     if (availableCategoryFilter !== 'all' && availableCategoryFilter !== 'Productivity') return '';
-    if (query && !'alvaos files shared folders photos documents cloud'.includes(query)) return '';
+    if (query && !'alvaos hub files shared folders photos documents cloud'.includes(query)) return '';
     const state = filesAppState;
     const url = state ? `${window.location.protocol}//${window.location.hostname}:${window.location.protocol === 'https:' ? (state.https_port || 9443) : state.port}/` : '';
     const button = !state
@@ -254,8 +254,8 @@ function builtInFilesCard() {
     return `
         <div class="app-card" onclick="window.location.href='files.html'">
             <div class="app-icon" style="background: none;"><img src="files-app/icon.svg" alt="" style="width: 100%; height: 100%;"></div>
-            <div class="app-name">AlvaOS Files</div>
-            <div class="app-description">Your shared folders as an app: photos, videos and documents in any browser, for everyone with their own password.</div>
+            <div class="app-name">AlvaOS Hub</div>
+            <div class="app-description">One address for everyone at home: Files, Photos and more in any browser, each with their own password. You choose the apps.</div>
             <div class="app-needs">Built into AlvaOS · opens port ${escapeHtml(state ? state.port : 8090)}${state && state.enabled ? ' · on' : ''}</div>
             <div class="app-footer">
                 <span class="app-footer-meta">Built in</span>
@@ -283,9 +283,9 @@ async function turnOnFilesApp(button) {
             body: JSON.stringify({ enabled: true }),
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || 'AlvaOS Files did not start.');
+        if (!res.ok) throw new Error(data.error || 'AlvaOS Hub did not start.');
         filesAppState = data;
-        showNotification('AlvaOS Files is on.', 'success');
+        showNotification('AlvaOS Hub is on.', 'success');
     } catch (e) {
         showNotification(e.message, 'error');
     }

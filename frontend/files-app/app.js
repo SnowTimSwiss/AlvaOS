@@ -1,4 +1,4 @@
-// AlvaOS Files: the shared folders as an app. Sign in with your share
+// AlvaOS Hub, with Files as its first app: the shared folders as an app. Sign in with your share
 // password; everything you do runs as you on the NAS, so you see and change
 // exactly what you may over the network.
 (function () {
@@ -1085,6 +1085,40 @@
         }
     });
 
+    // ── The Hub's app bar ──────────────────────────────────────────────────
+    // Which apps this person sees comes from the server (hub_apps.py); the
+    // admin turns them on and off. With one app the bar stays hidden.
+    let hubApps = [];
+    function renderRail() {
+        hubApps = (me.hub && me.hub.apps) || [];
+        const rail = $('rail');
+        const photos = hubApps.some((a) => a.id === 'photos');
+        $('photos-nav').hidden = !photos;
+        if (hubApps.length < 2) {
+            rail.hidden = true;
+            $('app').classList.remove('with-rail');
+            return;
+        }
+        rail.innerHTML = `<img class="rail-logo" src="icon.svg" alt="" title="${esc((me.hub && me.hub.name) || 'AlvaOS Hub')}">`
+            + hubApps.map((a) => `<button type="button" class="rail-app" data-app="${esc(a.id)}">${icon(a.icon)}<span>${esc(a.name)}</span></button>`).join('');
+        rail.hidden = false;
+        $('app').classList.add('with-rail');
+        rail.querySelectorAll('[data-app]').forEach((b) => b.addEventListener('click', () => {
+            if (b.dataset.app === 'photos') $('photos-nav').click();
+            else go(share, path);
+        }));
+        markRail();
+    }
+    function markRail() {
+        const current = $('photos-nav').classList.contains('active') ? 'photos' : 'files';
+        $('rail').querySelectorAll('[data-app]').forEach((b) => {
+            if (b.dataset.app === current) b.setAttribute('aria-current', 'page');
+            else b.removeAttribute('aria-current');
+        });
+    }
+    // Keep the bar in step with the sidebar (Photos opened or left from anywhere).
+    new MutationObserver(markRail).observe($('photos-nav'), { attributes: true, attributeFilter: ['class'] });
+
     // ── Start ──────────────────────────────────────────────────────────────
     async function start() {
         try {
@@ -1098,7 +1132,15 @@
         $('me-name').textContent = me.user;
         $('me-avatar').textContent = (me.user || '?').slice(0, 1).toUpperCase();
         $('nas-name').textContent = me.nas_name || '';
-        document.title = me.nas_name ? `Files · ${me.nas_name}` : 'Files';
+        document.title = me.nas_name ? `AlvaOS Hub · ${me.nas_name}` : 'AlvaOS Hub';
+        renderRail();
+        if (!hubApps.some((a) => a.id === 'files')) {
+            $('crumbs').innerHTML = '';
+            $('share-list').innerHTML = '';
+            ['photos-nav', 'links-nav', 'trash-nav', 'connect-nav', 'new-btn'].forEach((id) => { $(id).hidden = true; });
+            $('items').innerHTML = `<div class="empty">${icon('grid')}<strong>No apps for you yet</strong>Ask whoever runs this NAS to turn on Files for you in the Hub.</div>`;
+            return;
+        }
         if (!me.shares.length) {
             $('crumbs').innerHTML = '';
             $('items').innerHTML = `<div class="empty">${icon('folder')}<strong>No shared folders for you yet</strong>Ask whoever runs this NAS to give you access to a shared folder.</div>`;
