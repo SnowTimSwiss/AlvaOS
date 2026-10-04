@@ -23,11 +23,14 @@ How to add an entry:
 - `hub_apps.py`: per app `location` (personal folder or a pool with an
   optional limit per person) and `libraries`; `storage.cache_pool`.
   `own_folder()` and `cache_dir()` answer where things are.
-- Admin Hub page, new section "Where things are kept": make the missing
-  personal folders (pool, limit), where Photos keeps everyone's own photos
-  (with a pool: shares `<person>-photos` only for that person, made right
-  away, limit each), which shared folders are photo libraries, and where
-  thumbnails go (warning while on the system disk). API `/api/v1/hub`
+- Admin Hub page, new section "Where things are kept", simple by default:
+  one line per topic saying what it is now, details only when opened.
+  Always shown: personal folders ("Make them" right in the line: first
+  pool, no limit; opened: pool and limit) and shared photo libraries.
+  Under "More options": where each app keeps everyone's own data (with a
+  pool: shares `<person>-photos` only for that person, made right away,
+  limit each) and where thumbnails go (a "1 tip" badge while they are on
+  the system disk). API `/api/v1/hub`
   (`apps.*.location`, `apps.*.libraries`, `storage`, `personal_folders`).
 - Hub: Photos shows the person's own `Photos/` (made on first open) plus
   the libraries they may read, merged newest first (`/api/photos/sources`).

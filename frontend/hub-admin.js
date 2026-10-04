@@ -89,85 +89,130 @@
 
     const poolOptions = (chosen) => (state.pools || []).map((p) =>
         `<option value="${esc(p.id)}"${p.id === chosen ? ' selected' : ''}>${esc(p.name)}</option>`).join('');
+    const poolName = (id) => ((state.pools || []).find((p) => p.id === id) || {}).name || 'a pool';
+    const list = (names) => names.length > 2 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names.join(' and ');
+    // Which rows are open, so they stay open when the page draws itself again.
+    const opened = new Set();
+    let moreOpen = false;
 
-    // People who see an app that keeps their data in the personal folder, but have none.
-    function personalFoldersHtml() {
+    // One line per topic: what it is now, and the details only when opened.
+    function row(key, icon, title, value, body, { tone = '', action = '' } = {}) {
+        const open = opened.has(key);
+        return `
+            <div class="hub-st${open ? ' open' : ''}${tone ? ` is-${tone}` : ''}">
+                <div class="hub-st-head">
+                    <button type="button" class="hub-st-toggle" data-row="${esc(key)}" aria-expanded="${open}">
+                        <span class="hub-st-ic">${svg(icon)}</span>
+                        <span class="hub-st-text"><strong>${esc(title)}</strong><span class="hub-st-value">${value}</span></span>
+                        <span class="hub-st-chev">${svg('chevron-down')}</span>
+                    </button>
+                    ${action}
+                </div>
+                ${open ? `<div class="hub-st-body">${body}</div>` : ''}
+            </div>`;
+    }
+
+    function personalRow() {
         const missing = state.needs_personal_folder || [];
-        if (!missing.length) return '';
         const pools = state.pools || [];
-        return `
-            <div class="hub-place">
-                <strong>Personal folders</strong>
-                <div class="fl-note">${esc(missing.join(', '))} ${missing.length === 1 ? 'has' : 'have'} no personal folder yet, so their own photos have nowhere to go.</div>
-                ${pools.length ? `<div class="hub-row">
-                    <label>Make them on <select id="hub-pf-pool" aria-label="Pool for the personal folders">${poolOptions(pools[0].id)}</select></label>
-                    <label>Limit <input type="number" id="hub-pf-limit" min="1" step="1" placeholder="none" aria-label="Limit per person in GB"> GB each</label>
-                    <button type="button" class="btn-primary" id="hub-pf-make">Make personal folders</button>
-                </div>` : '<div class="hub-desc">Set up storage first: Storage › Pools.</div>'}
-            </div>`;
+        if (!missing.length) {
+            return row('personal', 'users', 'Personal folders', 'Everyone who keeps things in the Hub has one.',
+                '<p class="hub-st-note">New people get one when you add them in Storage › Users.</p>');
+        }
+        const body = pools.length ? `
+            <div class="hub-form">
+                <label>On <select id="hub-pf-pool" aria-label="Pool for the personal folders">${poolOptions(pools[0].id)}</select></label>
+                <label>Limit <input type="number" id="hub-pf-limit" min="1" step="1" placeholder="none" aria-label="Limit per person in GB"> GB each</label>
+            </div>
+            <p class="hub-st-note">Only that person can open their folder, over the network too.</p>`
+            : '<p class="hub-st-note">Set up storage first: Storage › Pools.</p>';
+        return row('personal', 'users', 'Personal folders',
+            `${esc(list(missing))} ${missing.length === 1 ? 'has' : 'have'} none yet, so their own photos have nowhere to go.`, body,
+            { tone: 'warn', action: pools.length ? '<button type="button" class="btn-primary hub-st-act" id="hub-pf-make">Make them</button>' : '' });
     }
 
-    function placeHtml(app) {
-        const loc = app.location || { mode: 'personal' };
-        const onPool = loc.mode === 'pool';
-        return `
-            <div class="hub-place">
-                <strong>${esc(app.name)}: everyone's own ${esc(app.personal.toLowerCase())}</strong>
-                <div class="hub-desc">${onPool
-                    ? `Each person gets a folder of their own on the pool (like “${esc(`${(state.people || [])[0] || 'anna'}-${app.id}`)}”), only for them.`
-                    : `In each person's personal folder, in “${esc(app.personal)}”. It counts against their personal folder's limit.`}</div>
-                <div class="hub-row">
-                    <label>Keep them in
-                        <select data-place="${esc(app.id)}" aria-label="Where ${esc(app.name)} keeps everyone's own data">
-                            <option value=""${onPool ? '' : ' selected'}>Their personal folder</option>
-                            ${(state.pools || []).map((p) => `<option value="${esc(p.id)}"${onPool && loc.pool_id === p.id ? ' selected' : ''}>A folder per person on ${esc(p.name)}</option>`).join('')}
-                        </select>
-                    </label>
-                    ${onPool ? `<label>Limit <input type="number" min="1" step="1" data-limit="${esc(app.id)}" value="${loc.limit_gb ? esc(loc.limit_gb) : ''}" placeholder="none" aria-label="Limit per person in GB"> GB per person</label>
-                    <button type="button" class="btn-secondary" data-limit-save="${esc(app.id)}">Save limit</button>` : ''}
-                </div>
-            </div>`;
-    }
-
-    function librariesHtml(app) {
+    function librariesRow(apps) {
         const all = state.libraries_to_choose || [];
-        const chosen = app.libraries || [];
-        return `
-            <div class="hub-place">
-                <strong>${esc(app.name)}: libraries for the household</strong>
-                <div class="hub-desc">Shared folders whose pictures appear in ${esc(app.name)} for everyone who may open them, next to their own.</div>
-                ${all.length ? `<div class="hub-people hub-row" role="group" aria-label="${esc(app.name)} libraries">${all.map((n) => `
+        return apps.map((app) => {
+            const chosen = app.libraries || [];
+            const body = all.length ? `
+                <p class="hub-st-note">Everyone sees the pictures of these folders in ${esc(app.name)}, if they may open the folder.</p>
+                <div class="hub-people" role="group" aria-label="${esc(app.name)} libraries">${all.map((n) => `
                     <label><input type="checkbox" data-library="${esc(app.id)}" value="${esc(n)}"${chosen.includes(n) ? ' checked' : ''}> ${esc(n)}</label>`).join('')}</div>`
-                    : '<div class="hub-desc">There are no shared folders yet: Storage › Shared folders.</div>'}
-            </div>`;
+                : '<p class="hub-st-note">There are no shared folders yet: Storage › Shared folders.</p>';
+            return row(`lib-${app.id}`, app.icon, `Shared ${app.id === 'photos' ? 'photo libraries' : `folders in ${app.name}`}`,
+                chosen.length ? esc(list(chosen)) : 'None yet. Only everyone\'s own photos are shown.', body);
+        }).join('');
     }
 
-    function cacheHtml() {
+    function placeText(app) {
+        const loc = app.location || { mode: 'personal' };
+        if (loc.mode !== 'pool') return `${esc(app.name)}: in the personal folder`;
+        return `${esc(app.name)}: a folder per person on ${esc(poolName(loc.pool_id))}${loc.limit_gb ? `, ${esc(loc.limit_gb)} GB each` : ''}`;
+    }
+
+    function placesRow(apps) {
+        const body = apps.map((app) => {
+            const loc = app.location || { mode: 'personal' };
+            const onPool = loc.mode === 'pool';
+            return `
+                <div class="hub-st-app">
+                    <div class="hub-form">
+                        <label>${esc(app.name)}
+                            <select data-place="${esc(app.id)}" aria-label="Where ${esc(app.name)} keeps everyone's own data">
+                                <option value=""${onPool ? '' : ' selected'}>In the personal folder (${esc(app.personal)})</option>
+                                ${(state.pools || []).map((p) => `<option value="${esc(p.id)}"${onPool && loc.pool_id === p.id ? ' selected' : ''}>A folder per person on ${esc(p.name)}</option>`).join('')}
+                            </select>
+                        </label>
+                        ${onPool ? `<label>Limit <input type="number" min="1" step="1" data-limit="${esc(app.id)}" value="${loc.limit_gb ? esc(loc.limit_gb) : ''}" placeholder="none" aria-label="Limit per person in GB"> GB each</label>
+                        <button type="button" class="btn-secondary" data-limit-save="${esc(app.id)}">Save</button>` : ''}
+                    </div>
+                    <p class="hub-st-note">${onPool
+                        ? `Each person gets a shared folder of their own, like “${esc(`${(state.people || [])[0] || 'anna'}-${app.id}`)}”, that only they can open.`
+                        : 'Counts against the limit of their personal folder.'}</p>
+                </div>`;
+        }).join('');
+        return row('places', 'hard-drive', 'Everyone\'s own data per app', apps.map(placeText).join(' · '),
+            `<p class="hub-st-note">For example the photos on the large disk and everything else on the fast one.</p>${body}`);
+    }
+
+    function cacheRow() {
         const chosen = (state.storage || {}).cache_pool || '';
-        const pools = state.pools || [];
-        return `
-            <div class="hub-place">
-                <strong>Thumbnails and other caches</strong>
-                <div class="hub-desc">Made again when needed: not backed up and not counted against limits.</div>
-                <div class="hub-row">
-                    <label>Keep them on
-                        <select id="hub-cache" aria-label="Where the Hub keeps caches">
-                            <option value=""${chosen ? '' : ' selected'}>The system disk</option>
-                            ${poolOptions(chosen)}
-                        </select>
-                    </label>
-                </div>
-                ${state.cache_on_system_disk && pools.length ? '<div class="fl-note">The system disk is small. With many photos, choose a pool.</div>' : ''}
-            </div>`;
+        const warn = state.cache_on_system_disk && (state.pools || []).length;
+        return row('cache', 'layers', 'Thumbnails and caches',
+            chosen ? `On ${esc(poolName(chosen))}` : `On the system disk${warn ? '. It is small: choose a pool if there are many photos.' : ''}`, `
+            <div class="hub-form">
+                <label>Keep them on
+                    <select id="hub-cache" aria-label="Where the Hub keeps caches">
+                        <option value=""${chosen ? '' : ' selected'}>The system disk</option>
+                        ${poolOptions(chosen)}
+                    </select>
+                </label>
+            </div>
+            <p class="hub-st-note">Made again when needed: not backed up and not counted against limits.</p>`,
+            { tone: warn ? 'warn' : '' });
     }
 
     function renderStorage() {
         const apps = (state.apps || []).filter((a) => a.enabled);
-        $('hub-storage').hidden = !state.enabled || !apps.some((a) => a.personal || a.libraries);
-        $('hub-storage-list').innerHTML = personalFoldersHtml()
-            + apps.filter((a) => a.personal).map(placeHtml).join('')
-            + apps.filter((a) => a.libraries).map(librariesHtml).join('')
-            + cacheHtml();
+        const personal = apps.filter((a) => a.personal);
+        const withLibraries = apps.filter((a) => a.libraries);
+        $('hub-storage').hidden = !state.enabled || !(personal.length || withLibraries.length);
+        const suggest = state.cache_on_system_disk && (state.pools || []).length;
+        $('hub-storage-list').innerHTML = `
+            ${personal.length ? personalRow() : ''}
+            ${librariesRow(withLibraries)}
+            <details class="hub-more" id="hub-more"${moreOpen ? ' open' : ''}>
+                <summary>More options${suggest ? ' <span class="hub-badge">1 tip</span>' : ''}</summary>
+                ${personal.length ? placesRow(personal) : ''}
+                ${cacheRow()}
+            </details>`;
+        $('hub-more').addEventListener('toggle', () => { moreOpen = $('hub-more').open; });
+        document.querySelectorAll('[data-row]').forEach((btn) => btn.addEventListener('click', () => {
+            const key = btn.dataset.row;
+            if (opened.has(key)) opened.delete(key); else opened.add(key);
+            renderStorage();
+        }));
         const names = Object.fromEntries((state.apps || []).map((a) => [a.id, a.name]));
         const limitOf = (id) => {
             const box = document.querySelector(`[data-limit="${id}"]`);
@@ -190,12 +235,14 @@
         }));
         const cache = $('hub-cache');
         if (cache) cache.addEventListener('change', () => post({ storage: { cache_pool: cache.value } },
-            cache.value ? 'Caches now go to that pool.' : 'Caches now stay on the system disk.'));
+            cache.value ? 'Thumbnails now go to that pool.' : 'Thumbnails now stay on the system disk.'));
         const make = $('hub-pf-make');
         if (make) make.addEventListener('click', () => {
             make.disabled = true;
-            const limit = $('hub-pf-limit').value;
-            post({ personal_folders: { pool_id: $('hub-pf-pool').value, limit_gb: limit ? Number(limit) : null } }, '');
+            // Closed row: the first pool, no limit. Opened: what was chosen there.
+            const pool = $('hub-pf-pool') ? $('hub-pf-pool').value : state.pools[0].id;
+            const limit = $('hub-pf-limit') ? $('hub-pf-limit').value : '';
+            post({ personal_folders: { pool_id: pool, limit_gb: limit ? Number(limit) : null } }, '');
         });
     }
 
