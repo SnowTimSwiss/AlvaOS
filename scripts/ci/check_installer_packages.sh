@@ -7,6 +7,9 @@ cd "$(dirname "$0")/../.."
 packages=$(sed -n '/apt-get install -y \\$/,/>>/p' installer/install-system.sh \
     | tr -d '\\' | tr ' \t' '\n\n' \
     | grep -E '^[a-z0-9][a-z0-9.+-]+$' | grep -v -E '^(apt-get|install|chroot|env)$' | sort -u)
+# And the ones installed later on request (scripts/ci/optional-packages.txt).
+packages="$packages
+$(grep -v -E '^(#|$)' scripts/ci/optional-packages.txt)"
 missing=""
 for p in $packages; do
     apt-cache show "$p" >/dev/null 2>&1 || missing="$missing $p"
