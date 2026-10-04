@@ -36,8 +36,14 @@ How to add an entry:
   say AlvaOS Hub; the assistant reads the Hub (`hub`) and links its page.
 - Tested against the real Hub server with two people: Anna sees Files and
   Photos, Ben only Files, then nothing (with a plain message).
-- **Note for next time:** the Hub still uses the Files icon; a Hub icon of
-  its own would help. Next Hub apps: Calendar and Contacts (Radicale).
+- The Hub has an icon of its own (`files-app/hub.svg`: four tiles, one
+  round) for its sign-in, app bar, tab, installed app and the Hub page;
+  Files keeps the folder icon as a Hub app. No start page: the Hub opens the
+  first app in the bar.
+- The App Store no longer lists AlvaOS Hub/Files as a built-in tile;
+  searching it for files, photos, hub, cloud or drive shows a pointer to the
+  Hub page instead.
+- **Note for next time:** next Hub apps: Calendar and Contacts (Radicale).
 
 ## 2026-10-04 · Roadmap: AlvaOS Hub and the Files plan
 

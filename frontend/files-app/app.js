@@ -1099,7 +1099,7 @@
             $('app').classList.remove('with-rail');
             return;
         }
-        rail.innerHTML = `<img class="rail-logo" src="icon.svg" alt="" title="${esc((me.hub && me.hub.name) || 'AlvaOS Hub')}">`
+        rail.innerHTML = `<img class="rail-logo" src="hub.svg" alt="" title="${esc((me.hub && me.hub.name) || 'AlvaOS Hub')}">`
             + hubApps.map((a) => `<button type="button" class="rail-app" data-app="${esc(a.id)}">${icon(a.icon)}<span>${esc(a.name)}</span></button>`).join('');
         rail.hidden = false;
         $('app').classList.add('with-rail');
