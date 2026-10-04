@@ -328,6 +328,7 @@
                 <button class="tab-btn" data-tab="security"><i data-lucide="shield-check" aria-hidden="true"></i> Security</button>
                 <button class="tab-btn" data-tab="alerts"><i data-lucide="bell" aria-hidden="true"></i> Notifications</button>
                 <button class="tab-btn" data-tab="power"><i data-lucide="power" aria-hidden="true"></i> Power</button>
+                <button class="tab-btn" data-tab="graphics"><i data-lucide="monitor" aria-hidden="true"></i> Graphics</button>
                 <button class="tab-btn" data-tab="remote"><i data-lucide="laptop" aria-hidden="true"></i> Remote access</button>
                 <button class="tab-btn" data-tab="assistant"><i data-lucide="bot" aria-hidden="true"></i> Assistant</button>
                 <button class="tab-btn" data-tab="logs"><i data-lucide="activity" aria-hidden="true"></i> Diagnostics</button>
@@ -514,6 +515,14 @@
             </div>
 
             <!-- ============ ASSISTANT ============ -->
+            <div class="tab-panel" id="tab-graphics">
+                <section class="set-group">
+                    <h2 class="set-group-title">Graphics cards</h2>
+                    <p class="set-group-desc">A graphics card lets apps convert video while it plays (Jellyfin, Immich) and run AI models (Ollama) much faster. A NAS works fine without one.</p>
+                    <div id="gpu-body"><p class="set-desc">Looking for graphics cards...</p></div>
+                </section>
+            </div>
+
             <div class="tab-panel" id="tab-remote">
                 <section class="set-group">
                     <h2 class="set-group-title">Remote access</h2>
@@ -615,6 +624,7 @@
     <script src="settings-ai.js"></script>
     <script src="settings-tls.js"></script>
     <script src="settings-remote.js"></script>
+    <script src="settings-gpu.js"></script>
 </body>
 
 </html>

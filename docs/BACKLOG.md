@@ -15,6 +15,30 @@ How to add an entry:
 
 ---
 
+## 2026-10-04 · Settings › Graphics: graphics cards and their drivers
+
+- Lists every graphics card (PCI class 03xx in /sys, also those without a
+  driver) with maker and model (from pci.ids), the kernel driver, the render
+  node and whether it shows the console. States: Ready, Video drivers
+  missing, Needs a driver, Restart needed.
+- "Install firmware and video drivers" (Intel, AMD) or "Install NVIDIA
+  driver": apt-get through the helper, with fixed package lists per maker
+  (`gpu_manager.PACKAGES`), in the background; the page follows it. NVIDIA
+  sets "restart needed" (cleared after the next start); "Restart now" on the
+  page. With Secure Boot on, the page says the NAS asks once for the MOK key
+  on its screen.
+- Package names checked against Debian trixie in CI: the split firmware
+  packages (`firmware-intel-graphics`, `firmware-nvidia-graphics`) do not
+  exist in trixie, that firmware is in `firmware-misc-nonfree`;
+  `nvidia-container-toolkit` is not in Debian at all. New
+  `scripts/ci/optional-packages.txt`; the CI container now uses the same
+  components as a NAS (main contrib non-free non-free-firmware).
+- `pciutils` installed (model names). The assistant can look at the cards.
+- **Note for next time:** apps do not get the card yet: Jellyfin/Immich need
+  `/dev/dri` passed in (Intel/AMD); NVIDIA in containers needs NVIDIA's
+  container toolkit from NVIDIA's own apt repository. Not tried on real
+  hardware.
+
 ## 2026-10-04 · Backup disk in one step; an unplugged backup disk is no alarm; missing pools say so
 
 - Backup › Backup disk lists empty disks (a USB disk just plugged in):
