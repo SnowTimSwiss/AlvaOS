@@ -285,12 +285,12 @@ async function updateHostname(newHostname, confirmBtn) {
 // --- Time ---
 
 function renderTimeSummary() {
-    if (els.timezoneDisplay) els.timezoneDisplay.textContent = currentTimeSettings.timezone || '-';
+    if (els.timezoneDisplay) els.timezoneDisplay.textContent = String(currentTimeSettings.timezone || '-').replace(/_/g, ' ');
     if (els.ntpDisplay) {
         if (currentTimeSettings.ntp === null) {
             els.ntpDisplay.textContent = '-';
         } else {
-            els.ntpDisplay.textContent = currentTimeSettings.ntp ? 'Enabled' : 'Disabled';
+            els.ntpDisplay.textContent = currentTimeSettings.ntp ? 'On' : 'Off';
         }
     }
 }
@@ -395,10 +395,10 @@ function renderUpsSettings(data) {
 
     if (els.upsSummary) {
         if (settings.enabled) {
-            els.upsSummary.textContent = `Enabled — shutdown at ${Number(settings.shutdown_percent || 20)}%`;
+            els.upsSummary.textContent = `Shuts down at ${Number(settings.shutdown_percent || 20)}%`;
             els.upsSummary.style.color = 'var(--accent-success)';
         } else {
-            els.upsSummary.textContent = 'Disabled';
+            els.upsSummary.textContent = 'Off';
             els.upsSummary.style.color = 'var(--text-secondary)';
         }
     }
@@ -550,16 +550,16 @@ function renderAlertsSummary() {
     const pairing = settings.pairing || {};
 
     if (els.telegramSummaryStatus) {
-        let text = 'Not configured';
+        let text = 'Off';
         let color = 'var(--text-secondary)';
         if (telegram.enabled && telegram.paired) {
-            text = 'Active — alerts will be delivered';
+            text = 'On';
             color = 'var(--accent-success)';
         } else if (telegram.paired) {
-            text = 'Paired, delivery disabled';
+            text = 'Paired, sending is off';
             color = 'var(--accent-warning)';
         } else if (pairing.active) {
-            text = 'Pairing pending';
+            text = 'Waiting for pairing';
             color = 'var(--accent-warning)';
         }
         els.telegramSummaryStatus.textContent = text;
@@ -567,8 +567,12 @@ function renderAlertsSummary() {
     }
 
     if (els.telegramSummaryChat) {
-        els.telegramSummaryChat.textContent = telegram.paired_chat || '-';
+        els.telegramSummaryChat.textContent = telegram.paired_chat
+            ? `Problems that need action are sent to ${telegram.paired_chat}.`
+            : 'Problems that need action are sent to your phone right away.';
     }
+    const telegramBtn = document.getElementById('configure-telegram-btn');
+    if (telegramBtn) telegramBtn.textContent = telegram.paired ? 'Change' : 'Set up';
 }
 
 function renderTelegramModal() {
@@ -833,7 +837,10 @@ async function unpairTelegram() {
 // --- Power actions ---
 
 async function sendPowerAction(action) {
-    if (!await showConfirm(`Are you sure you want to ${action} the system?`)) return;
+    const question = action === 'reboot'
+        ? 'Restart the NAS?\nShares and apps are away for a minute or two. This page reconnects by itself.'
+        : 'Shut down the NAS?\nShares, apps and backups stop until you turn it on again with its power button.';
+    if (!await showConfirm(question, { confirmLabel: action === 'reboot' ? 'Restart' : 'Shut down' })) return;
 
     try {
         const res = await fetch(`${API_BASE}/system/power`, {
@@ -866,10 +873,10 @@ async function fetch2faStatus() {
         const totpAvailable = !!data.totp_available;
 
         if (!totpAvailable) {
-            els.tfaStatusText.textContent = 'Library Not Installed';
+            els.tfaStatusText.textContent = 'Needs a component';
             els.tfaStatusDot.style.background = 'var(--accent-warning)';
         } else {
-            els.tfaStatusText.textContent = enabled ? 'Enabled' : 'Disabled';
+            els.tfaStatusText.textContent = enabled ? 'On' : 'Off';
             els.tfaStatusDot.style.background = enabled ? 'var(--accent-success)' : 'var(--text-secondary)';
         }
 
@@ -900,14 +907,14 @@ async function fetchSshStatus() {
         const available = data.available !== false;
 
         if (!available) {
-            els.sshStatusText.textContent = 'Not available on this system';
+            els.sshStatusText.textContent = 'Not available';
             els.sshStatusDot.style.background = 'var(--text-secondary)';
             if (els.sshEnableBtn) els.sshEnableBtn.style.display = 'none';
             if (els.sshDisableBtn) els.sshDisableBtn.style.display = 'none';
             return;
         }
 
-        els.sshStatusText.textContent = enabled ? 'Enabled' : 'Disabled';
+        els.sshStatusText.textContent = enabled ? 'On' : 'Off';
         // Enabled SSH is a deliberate choice, not a fault: amber, never red.
         els.sshStatusDot.style.background = enabled ? 'var(--accent-warning)' : 'var(--text-secondary)';
         if (els.sshEnableBtn) els.sshEnableBtn.style.display = enabled ? 'none' : 'block';
@@ -1089,10 +1096,10 @@ function renderWatchdog(data) {
         const item = document.createElement('div');
         item.className = 'list-item';
         item.innerHTML = `
-            <span>${svc.label} <small style="color:var(--text-secondary); margin-left:8px;">${svc.name}</small></span>
+            <span>${escapeHtml(svc.label)} <small style="color:var(--text-secondary); margin-left:8px;">${escapeHtml(svc.name)}</small></span>
             <span class="status-badge" style="border:none; background:transparent; padding:0;">
-                <span class="status-dot" style="background:${svc.active ? 'var(--accent-success)' : 'var(--accent-danger)'};"></span>
-                <span>${svc.active ? 'Active' : 'Stopped'}</span>
+                <span class="status-dot" style="background:${svc.active ? 'var(--accent-success)' : (svc.enabled === false ? 'var(--text-tertiary)' : 'var(--accent-danger)')};"></span>
+                <span>${svc.active ? 'Running' : (svc.enabled === false ? 'Off' : 'Stopped')}</span>
             </span>
         `;
         els.watchdogList.appendChild(item);
@@ -1101,7 +1108,7 @@ function renderWatchdog(data) {
     // Last Run
     if (data.last_check) {
         const date = new Date(data.last_check);
-        els.watchdogLastRun.textContent = `Last check: ${date.toLocaleTimeString()}`;
+        els.watchdogLastRun.textContent = `Last checked at ${date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}.`;
     }
 
     // Recoveries
@@ -1115,12 +1122,12 @@ function renderWatchdog(data) {
             item.style.fontSize = '0.8rem';
             item.innerHTML = `
                 <div style="display:flex; flex-direction:column;">
-                    <span style="font-weight:600;">Restarted ${rec.label}</span>
-                    <span style="color:var(--text-secondary);">${date.toLocaleString()}</span>
-                    ${rec.error ? `<span style="color:var(--accent-danger); font-size:0.75rem;">Error: ${rec.error}</span>` : ''}
+                    <span style="font-weight:600;">${escapeHtml(rec.label)}</span>
+                    <span style="color:var(--text-secondary);">${escapeHtml(date.toLocaleString())}</span>
+                    ${rec.error ? `<span style="color:var(--text-secondary); font-size:0.75rem;">${escapeHtml(rec.error)}</span>` : ''}
                 </div>
-                <span style="color:${rec.recovered ? 'var(--accent-success)' : 'var(--accent-danger)'}; font-weight:600;">
-                    ${rec.recovered ? 'FIXED' : 'FAILED'}
+                <span style="color:${rec.recovered ? 'var(--accent-success)' : 'var(--accent-warning)'}; font-weight:600;">
+                    ${rec.recovered ? 'Restarted' : 'Could not restart'}
                 </span>
             `;
             els.watchdogRecoveryItems.appendChild(item);
@@ -1152,7 +1159,7 @@ async function runWatchdogCheck() {
         console.error(e);
     } finally {
         els.watchdogCheckBtn.disabled = false;
-        els.watchdogCheckBtn.textContent = 'Run Check Now';
+        els.watchdogCheckBtn.textContent = 'Check now';
     }
 }
 
@@ -1162,15 +1169,29 @@ function setupTabs() {
     const tabBtns = document.querySelectorAll('.tab-btn');
     const tabPanels = document.querySelectorAll('.tab-panel');
 
+    const show = (btn) => {
+        const tabName = btn.dataset.tab;
+        tabBtns.forEach(b => b.classList.remove('active'));
+        tabPanels.forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(`tab-${tabName}`)?.classList.add('active');
+    };
+
     tabBtns.forEach(btn => {
         btn.addEventListener('click', () => {
-            const tabName = btn.dataset.tab;
-            tabBtns.forEach(b => b.classList.remove('active'));
-            tabPanels.forEach(p => p.classList.remove('active'));
-            btn.classList.add('active');
-            document.getElementById(`tab-${tabName}`)?.classList.add('active');
+            show(btn);
+            // Keep the tab in the URL (system.html#security), like Storage does.
+            history.replaceState(null, '', `#${btn.dataset.tab}`);
         });
     });
+
+    const fromHash = () => {
+        const name = window.location.hash.slice(1);
+        const btn = Array.from(tabBtns).find((b) => b.dataset.tab === name);
+        if (btn) show(btn);
+    };
+    fromHash();
+    window.addEventListener('hashchange', fromHash);
 }
 
 document.addEventListener('DOMContentLoaded', () => {

@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AlvaOS - Dashboard</title>
+    <script src="theme.js"></script>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="notifications.css">
 </head>
@@ -13,204 +14,189 @@
 
     <a class="skip-link" href="#main-content">Skip to main content</a>
 
-    <!-- Sidebar -->
-    <aside class="sidebar">
-        <div class="logo-area">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false">
-                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round"
-                    stroke-linejoin="round" style="color: var(--accent-primary);" />
+    <!-- Sidebar: same on every page (generated, keep in sync) -->
+    <aside class="sidebar" id="sidebar">
+        <a class="brand" href="index.html" aria-label="Go to the dashboard">
+            <svg class="brand-mark" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
-            <div class="logo-text">AlvaOS</div>
-        </div>
+            <span class="brand-text">
+                <span class="brand-name" id="brand-name">AlvaOS</span>
+                <span class="brand-status" id="brand-status"><span class="status-dot online" aria-hidden="true"></span><span id="brand-status-text">Online</span></span>
+            </span>
+        </a>
 
         <nav aria-label="Main">
             <a href="index.html" class="nav-link active" aria-current="page"><i data-lucide="house" aria-hidden="true"></i> Dashboard</a>
             <a href="storage.html" class="nav-link"><i data-lucide="hard-drive" aria-hidden="true"></i> Storage</a>
             <a href="apps.html" class="nav-link"><i data-lucide="blocks" aria-hidden="true"></i> Apps</a>
-            <a href="backup.html" class="nav-link"><i data-lucide="refresh-cw" aria-hidden="true"></i> Backup</a>
-            <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw" aria-hidden="true"></i> Updates <span class="nav-badge"
-                    id="updates-nav-badge" style="display:none;">!</span></a>
-            <div style="flex:1"></div>
-            <a href="system.html" class="nav-link"><i data-lucide="settings" aria-hidden="true"></i> System</a>
-            <button type="button" class="nav-link nav-logout" onclick="alvaosLogout()"><i data-lucide="log-out" aria-hidden="true"></i> Log out</button>
+            <a href="backup.html" class="nav-link"><i data-lucide="shield-check" aria-hidden="true"></i> Backup</a>
+            <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw" aria-hidden="true"></i> Updates <span class="nav-badge" id="updates-nav-badge" style="display:none;">1</span></a>
+            <div class="nav-spacer"></div>
+            <a href="system.html" class="nav-link"><i data-lucide="settings" aria-hidden="true"></i> Settings</a>
         </nav>
     </aside>
+    <div class="nav-scrim" id="nav-scrim" hidden></div>
 
     <!-- Main Content -->
     <div class="main">
         <header class="topbar">
-            <div class="breadcrumbs">
-                System / <span>Overview</span>
-            </div>
-            <div class="status-badge" style="gap:10px;">
-                <div class="status-badge" style="border:none; background:transparent; padding:0;">
-                    <div class="status-dot" aria-hidden="true"></div>
-                    <span>Online</span>
+            <button type="button" class="nav-menu-btn" id="menu-btn" aria-controls="sidebar" aria-expanded="false" aria-label="Open menu">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <div class="page-title">Dashboard</div>
+            <div class="topbar-actions" id="topbar-actions">
+                <div class="account">
+                    <button type="button" class="account-btn" id="account-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" aria-label="Account">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="10" r="3"/><path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662"/></svg>
+                    </button>
+                    <div class="account-menu" id="account-menu" role="menu" hidden>
+                        <div class="account-who">Signed in as <strong>Administrator</strong></div>
+                        <div class="account-theme" role="group" aria-label="Appearance">
+                            <span class="account-theme-label">Appearance</span>
+                            <div class="seg">
+                                <button type="button" role="menuitemradio" aria-checked="true" data-theme-choice="auto">Auto</button>
+                                <button type="button" role="menuitemradio" aria-checked="false" data-theme-choice="light">Light</button>
+                                <button type="button" role="menuitemradio" aria-checked="false" data-theme-choice="dark">Dark</button>
+                            </div>
+                        </div>
+                        <a role="menuitem" href="system.html#security">Password and security</a>
+                        <button type="button" role="menuitem" onclick="alvaosLogout()">Log out</button>
+                    </div>
                 </div>
-                <div class="mono-text" style="font-size:0.85rem; color:var(--text-secondary);" id="clock" aria-label="System time">--:--:--</div>
             </div>
         </header>
 
         <main class="content-scroll" id="main-content" tabindex="-1">
-            <div class="hero" id="dashboard-hero">
-                <div class="hero-icon" id="dashboard-hero-icon">
+            <!-- One status line: "everything is fine", or the one thing to do next. -->
+            <section class="status-line" id="status-line" data-level="loading" aria-live="polite">
+                <div class="status-line-icon" id="status-line-icon">
                     <i data-lucide="loader-circle" aria-hidden="true"></i>
                 </div>
-                <div>
-                    <h1 id="dashboard-hero-title">Checking system status...</h1>
-                    <p id="dashboard-hero-sub">-</p>
+                <div class="status-line-text">
+                    <h1 id="status-line-title">Checking your NAS...</h1>
+                    <p id="status-line-sub">This takes a second.</p>
                 </div>
+                <a class="btn-primary status-line-action" id="status-line-action" href="#" hidden>Open</a>
+            </section>
+            <ul class="status-more" id="status-more" hidden></ul>
+
+            <div class="overview-grid">
+                <a class="overview-card" id="card-storage" href="storage.html" data-state="loading">
+                    <div class="overview-head">
+                        <span class="overview-icon"><i data-lucide="hard-drive" aria-hidden="true"></i></span>
+                        <span class="overview-title">Storage</span>
+                        <span class="overview-state" id="card-storage-state">Loading</span>
+                    </div>
+                    <div class="overview-value" id="card-storage-value">&nbsp;</div>
+                    <div class="overview-list" id="card-storage-list"></div>
+                    <div class="overview-sub" id="card-storage-sub">&nbsp;</div>
+                </a>
+
+                <a class="overview-card" id="card-backup" href="backup.html" data-state="loading">
+                    <div class="overview-head">
+                        <span class="overview-icon"><i data-lucide="shield-check" aria-hidden="true"></i></span>
+                        <span class="overview-title">Backup</span>
+                        <span class="overview-state" id="card-backup-state">Loading</span>
+                    </div>
+                    <div class="overview-value" id="card-backup-value">&nbsp;</div>
+                    <div class="overview-list" id="card-backup-list"></div>
+                    <div class="overview-sub" id="card-backup-sub">&nbsp;</div>
+                </a>
+
+                <a class="overview-card" id="card-apps" href="apps.html" data-state="loading">
+                    <div class="overview-head">
+                        <span class="overview-icon"><i data-lucide="blocks" aria-hidden="true"></i></span>
+                        <span class="overview-title">Apps</span>
+                        <span class="overview-state" id="card-apps-state">Loading</span>
+                    </div>
+                    <div class="overview-value" id="card-apps-value">&nbsp;</div>
+                    <div class="overview-list" id="card-apps-list"></div>
+                    <div class="overview-sub" id="card-apps-sub">&nbsp;</div>
+                </a>
+
+                <a class="overview-card" id="card-updates" href="updates.html" data-state="loading">
+                    <div class="overview-head">
+                        <span class="overview-icon"><i data-lucide="rotate-cw" aria-hidden="true"></i></span>
+                        <span class="overview-title">Updates</span>
+                        <span class="overview-state" id="card-updates-state">Loading</span>
+                    </div>
+                    <div class="overview-value" id="card-updates-value">&nbsp;</div>
+                    <div class="overview-sub" id="card-updates-sub">&nbsp;</div>
+                </a>
             </div>
 
-            <div class="focus-grid">
-
-                <!-- Storage -->
-                <div class="focus-card" id="dashboard-storage-card">
-                    <div class="focus-head">
-                        <div class="ic"><i data-lucide="database" aria-hidden="true"></i></div>
-                        <div class="focus-title">Storage</div>
-                        <span class="pill ok" id="dashboard-storage-pill">Loading</span>
-                    </div>
-                    <div class="focus-body">
-                        <div class="focus-value" id="dashboard-storage-value">-</div>
-                        <div class="pool-list" id="dashboard-storage-pools"></div>
-                        <div class="focus-sub" id="dashboard-storage-sub">-</div>
-                    </div>
-                    <div class="focus-foot">
-                        <a class="btn-link" href="storage.html">Manage storage &rarr;</a>
-                    </div>
-                </div>
-
-                <!-- Backup -->
-                <div class="focus-card" id="dashboard-backup-card">
-                    <div class="focus-head">
-                        <div class="ic"><i data-lucide="refresh-cw" aria-hidden="true"></i></div>
-                        <div class="focus-title">Backup</div>
-                        <span class="pill ok" id="dashboard-backup-pill">Loading</span>
-                    </div>
-                    <div class="focus-body">
-                        <div class="focus-value" id="dashboard-backup-value">-</div>
-                        <div class="focus-sub" id="dashboard-backup-sub">-</div>
-                    </div>
-                    <div class="focus-foot">
-                        <a class="btn-link" href="backup.html">View backups &rarr;</a>
-                    </div>
-                </div>
-
-                <!-- Alerts -->
-                <div class="focus-card" id="dashboard-alerts-card">
-                    <div class="focus-head">
-                        <div class="ic"><i data-lucide="siren" aria-hidden="true"></i></div>
-                        <div class="focus-title">Alerts</div>
-                        <span class="pill ok" id="dashboard-alerts-pill">Loading</span>
-                    </div>
-                    <div class="focus-body">
-                        <div class="focus-value" id="dashboard-alerts-value">-</div>
-                        <div class="focus-sub" id="dashboard-alerts-sub">-</div>
-                    </div>
-                    <div class="focus-foot" id="dashboard-alerts-foot" style="display:none;">
-                        <a class="btn-link" id="dashboard-alerts-link" href="#">View details &rarr;</a>
-                    </div>
-                </div>
-
-                <!-- Updates -->
-                <div class="focus-card" id="dashboard-updates-card">
-                    <div class="focus-head">
-                        <div class="ic"><i data-lucide="rotate-cw" aria-hidden="true"></i></div>
-                        <div class="focus-title">Updates</div>
-                        <span class="pill ok" id="dashboard-updates-pill">Loading</span>
-                    </div>
-                    <div class="focus-body">
-                        <div class="focus-value" id="dashboard-updates-value">-</div>
-                        <div class="focus-sub" id="dashboard-updates-sub">-</div>
-                    </div>
-                    <div class="focus-foot">
-                        <a class="btn-link" href="updates.html">Manage updates &rarr;</a>
-                    </div>
-                </div>
-
-                <!-- Apps (full width: fifth priority) -->
-                <div class="focus-card" id="dashboard-apps-card" style="grid-column: 1 / -1;">
-                    <div class="focus-head">
-                        <div class="ic"><i data-lucide="blocks" aria-hidden="true"></i></div>
-                        <div class="focus-title">Apps</div>
-                        <span class="pill ok" id="dashboard-apps-pill">Loading</span>
-                    </div>
-                    <div class="focus-body">
-                        <div class="focus-value" id="dashboard-apps-value">-</div>
-                        <div class="focus-sub" id="dashboard-apps-sub">-</div>
-                    </div>
-                    <div class="focus-foot">
-                        <a class="btn-link" href="apps.html" id="dashboard-apps-link">Manage apps &rarr;</a>
-                    </div>
-                </div>
-
-            </div>
-
-            <div class="section-label">Live resources</div>
-            <div class="resource-strip">
-                <div class="resource-cell">
-                    <div class="resource-top">
-                        <span class="resource-name"><i data-lucide="cpu" aria-hidden="true"></i> CPU</span>
-                        <span class="resource-value" id="cpu-usage">0%</span>
-                    </div>
-                    <div class="mini-bar"><span id="cpu-progress" style="width: 0%"></span></div>
-                    <div class="resource-meta"><span id="cpu-cores">- / -</span> &bull; <span id="cpu-temp">-°C</span></div>
-                </div>
-                <div class="resource-cell">
-                    <div class="resource-top">
-                        <span class="resource-name"><i data-lucide="memory-stick" aria-hidden="true"></i> Memory</span>
-                        <span class="resource-value" id="mem-usage-percent">0%</span>
-                    </div>
-                    <div class="mini-bar"><span id="mem-progress" style="width: 0%"></span></div>
-                    <div class="resource-meta"><span id="mem-used">-</span> of <span id="mem-total">-</span></div>
-                </div>
-            </div>
-
-            <!-- Hidden fields still used by app.js, not shown in the compact resource strip -->
-            <div style="display:none;">
-                <span id="cpu-model"></span>
-                <span id="cpu-freq"></span>
-                <span id="mem-available"></span>
-            </div>
-
-            <details class="sysinfo">
-                <summary>
-                    <i data-lucide="info" aria-hidden="true"></i>
-                    System information
-                    <i data-lucide="chevron-down" class="chev" aria-hidden="true"></i>
+            <!-- Live resources: small and quiet. Details (history, hardware) on request. -->
+            <details class="live" id="live-resources">
+                <summary class="live-strip">
+                    <span class="live-cell">
+                        <span class="live-name">CPU</span>
+                        <span class="live-value" id="live-cpu">-</span>
+                        <span class="live-bar"><span id="live-cpu-bar"></span></span>
+                    </span>
+                    <span class="live-cell">
+                        <span class="live-name">Memory</span>
+                        <span class="live-value" id="live-mem">-</span>
+                        <span class="live-bar"><span id="live-mem-bar"></span></span>
+                    </span>
+                    <span class="live-cell">
+                        <span class="live-name">Network</span>
+                        <span class="live-value" id="live-net">-</span>
+                        <span class="live-meta" id="live-net-meta">&nbsp;</span>
+                    </span>
+                    <span class="live-cell">
+                        <span class="live-name">Disks</span>
+                        <span class="live-value" id="live-disk">-</span>
+                        <span class="live-meta" id="live-disk-meta">&nbsp;</span>
+                    </span>
+                    <span class="live-toggle" aria-hidden="true"><i data-lucide="chevron-down"></i></span>
+                    <span class="sr-only">Show details</span>
                 </summary>
-                <div class="sysinfo-grid">
-                    <div>
-                        <div class="k">Hostname</div>
-                        <div class="v" id="hostname">-</div>
+                <div class="live-details">
+                    <div class="live-history-head">
+                        <span>History</span>
+                        <span id="history-range-label">Collecting samples...</span>
                     </div>
-                    <div>
-                        <div class="k">IP Address</div>
-                        <div class="v" id="ip-address">-</div>
+                    <div class="live-history">
+                        <div class="spark">
+                            <div class="spark-top"><span>CPU</span><span id="history-cpu-current">-</span></div>
+                            <svg viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><path id="history-cpu-path" d=""/></svg>
+                        </div>
+                        <div class="spark">
+                            <div class="spark-top"><span>Memory</span><span id="history-mem-current">-</span></div>
+                            <svg viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><path id="history-mem-path" d=""/></svg>
+                        </div>
+                        <div class="spark">
+                            <div class="spark-top"><span>Network</span><span id="history-net-current">-</span></div>
+                            <svg viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><path id="history-net-path" d=""/></svg>
+                        </div>
+                        <div class="spark">
+                            <div class="spark-top"><span>CPU temperature</span><span id="history-temp-current">-</span></div>
+                            <svg viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><path id="history-temp-path" d=""/></svg>
+                        </div>
                     </div>
-                    <div>
-                        <div class="k">Uptime</div>
-                        <div class="v" id="uptime">-</div>
-                    </div>
-                    <div>
-                        <div class="k">OS Version</div>
-                        <div class="v" id="os-version">-</div>
-                    </div>
+                    <dl class="sysinfo-grid">
+                        <div><dt class="k">Name</dt><dd class="v" id="hostname">-</dd></div>
+                        <div><dt class="k">Address</dt><dd class="v" id="ip-address">-</dd></div>
+                        <div><dt class="k">Running for</dt><dd class="v" id="uptime">-</dd></div>
+                        <div><dt class="k">Processor</dt><dd class="v" id="cpu-model">-</dd></div>
+                        <div><dt class="k">Cores / threads</dt><dd class="v" id="cpu-cores">-</dd></div>
+                        <div><dt class="k">Memory</dt><dd class="v" id="mem-detail">-</dd></div>
+                        <div><dt class="k">Operating system</dt><dd class="v" id="os-version">-</dd></div>
+                        <div><dt class="k">AlvaOS</dt><dd class="v" id="alvaos-version">-</dd></div>
+                    </dl>
                 </div>
             </details>
 
-            <footer
-                style="margin-top:2rem; padding-top:1rem; border-top:1px solid var(--border-subtle); color:var(--text-secondary); font-size:0.8rem; display:flex; justify-content:space-between;">
-                <div>AlvaOS {{VERSION}} &bull; <a href="https://github.com/SnowTimSwiss/AlvaOS" target="_blank"
-                        style="color:var(--text-secondary)">GitHub</a></div>
-                <div>Last sync: <span id="last-update" class="mono-text">-</span></div>
+            <footer class="dash-footer">
+                <div>AlvaOS {{VERSION}} &bull; <a href="https://github.com/SnowTimSwiss/AlvaOS" target="_blank" rel="noopener">GitHub</a></div>
+                <div>Updated <span id="last-update" class="mono-text">-</span></div>
             </footer>
         </main>
     </div>
 
     <!-- Page Loading Overlay -->
-    <div id="page-loading-overlay" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(13, 17, 23, 0.9); z-index: 99999; align-items: center; justify-content: center; flex-direction: column;">
+    <div id="page-loading-overlay" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--scrim); z-index: 99999; align-items: center; justify-content: center; flex-direction: column;">
         <svg style="width: 48px; height: 48px; animation: spin 1s linear infinite;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 12a9 9 0 1 1-6.219-8.56" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent-primary);"/>
         </svg>
@@ -223,6 +209,8 @@
     <script src="notifications.js"></script>
     <script src="feedback.js"></script>
     <script src="app.js"></script>
+    <script src="nav.js"></script>
+    <script src="dashboard.js"></script>
 </body>
 
 </html>

@@ -971,7 +971,9 @@ FSTAB_EOF
         cp /opt/alvaos/scripts/setup_sudoers.sh /mnt/opt/alvaos/scripts/ 2>/dev/null || true
         cp /opt/alvaos/scripts/sudoers.alvaos /mnt/opt/alvaos/scripts/ 2>/dev/null || true
         chmod +x /mnt/opt/alvaos/scripts/*.sh 2>/dev/null || true
-        [ -f "/opt/alvaos/scripts/alvaos-update-checker.service" ] && cp /opt/alvaos/scripts/alvaos-update-checker.service /mnt/etc/systemd/system/
+        for unit in alvaos-update-checker.service alvaos-update-checker.timer alvaos-watchdog.service alvaos-watchdog.timer; do
+            [ -f "/opt/alvaos/scripts/${unit}" ] && cp "/opt/alvaos/scripts/${unit}" /mnt/etc/systemd/system/
+        done
     fi
 
     # Copy frontend
@@ -1065,7 +1067,8 @@ VERSION_EOF
 
     # Enable services
     chroot /mnt systemctl enable alvaos.service >> "$INSTALL_LOG" 2>&1 || true
-    [ -f "/mnt/etc/systemd/system/alvaos-update-checker.service" ] && chroot /mnt systemctl enable alvaos-update-checker.service >> "$INSTALL_LOG" 2>&1 || true
+    [ -f "/mnt/etc/systemd/system/alvaos-update-checker.timer" ] && chroot /mnt systemctl enable alvaos-update-checker.timer >> "$INSTALL_LOG" 2>&1 || true
+    [ -f "/mnt/etc/systemd/system/alvaos-watchdog.timer" ] && chroot /mnt systemctl enable alvaos-watchdog.timer >> "$INSTALL_LOG" 2>&1 || true
     chroot /mnt systemctl enable NetworkManager >> "$INSTALL_LOG" 2>&1 || true
 
     update_progress "Cleanup..."

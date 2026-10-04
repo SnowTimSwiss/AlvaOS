@@ -4,6 +4,7 @@ AlvaOS Local Backup Manager
 Provides local Btrfs snapshots, restore, and automatic scheduling.
 """
 
+import copy
 import json
 import os
 import platform
@@ -18,7 +19,51 @@ CMD: Dict[str, str] = {
     "BTRFS": "/usr/bin/btrfs",
     "MKDIR": "/usr/bin/mkdir",
     "MV": "/usr/bin/mv",
+    "CP": "/usr/bin/cp",
+    "FIND": "/usr/bin/find",
 }
+
+# Must match priv_policy.FIND_LIST_FORMAT exactly.
+FIND_LIST_FORMAT = "%y\\t%s\\t%T@\\t%f\\0"
+FIND_TYPES = {"d": "folder", "f": "file", "l": "link"}
+
+
+def parse_find_listing(text: str) -> List[Dict[str, Any]]:
+    """Entries from `find DIR -mindepth 1 -maxdepth 1 -printf FIND_LIST_FORMAT`."""
+    entries = []
+    for record in (text or "").split("\0"):
+        parts = record.split("\t", 3)
+        if len(parts) != 4 or not parts[3]:
+            continue
+        kind, size, mtime, name = parts
+        try:
+            size_bytes = int(size)
+            modified = datetime.fromtimestamp(float(mtime), timezone.utc).isoformat()
+        except (ValueError, OverflowError, OSError):
+            continue
+        entries.append({"name": name, "type": FIND_TYPES.get(kind, "other"),
+                        "size_bytes": size_bytes, "modified_at": modified})
+    entries.sort(key=lambda e: (e["type"] != "folder", str(e["name"]).lower()))
+    return entries
+
+
+def clean_relative_path(path: Optional[str]) -> Optional[str]:
+    """A path inside a restore point: relative, no '..'. '' is the top."""
+    text = str(path or "").strip().strip("/")
+    if "\x00" in text or "\n" in text:
+        return None
+    parts = [part for part in text.split("/") if part not in ("", ".")]
+    if any(part == ".." for part in parts):
+        return None
+    return "/".join(parts)
+
+
+def restored_name(name: str, when: datetime, is_folder: bool = False) -> str:
+    """'holiday.jpg' -> 'holiday (restored 2026-10-01 0300).jpg'."""
+    stem, ext = os.path.splitext(name)
+    if not stem or is_folder:
+        stem, ext = name, ""
+    return f"{stem} (restored {when.strftime('%Y-%m-%d %H%M')}){ext}"
 
 DEFAULT_SETTINGS: Dict[str, Dict[str, Any]] = {
     # Pool Backup Settings
@@ -26,6 +71,9 @@ DEFAULT_SETTINGS: Dict[str, Dict[str, Any]] = {
         "enabled": False,
         "interval_minutes": 1440,
         "keep_last": 30,
+        # "smart": everything from the last day, then one per day, week and
+        # month (SMART_RETENTION). "count": the newest keep_last snapshots.
+        "retention": "smart",
         "sources": [],
         "target_path": "",
     },
@@ -54,6 +102,63 @@ DEFAULT_STATUS: Dict[str, Any] = {
     "system_pending_reboot": False,
     "system_pending_snapshot_path": None,
 }
+
+
+RETENTION_MODES = ("smart", "count")
+
+# Smart retention, like Time Machine: every snapshot of the last day, then the
+# newest of each day for a month, of each week for 3 months and of each month
+# for a year.
+SMART_RETENTION = {"all_hours": 24, "daily": 30, "weekly": 12, "monthly": 12}
+
+
+def _parse_created(value: Any) -> Optional[datetime]:
+    try:
+        stamp = datetime.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+    return stamp if stamp.tzinfo else stamp.replace(tzinfo=timezone.utc)
+
+
+def smart_keep(entries: List[Dict], now: datetime) -> List[Dict]:
+    """The snapshots smart retention keeps. Always the newest one; entries
+    without a readable time are kept too, never deleted by guessing."""
+    dated = []
+    keep_ids = set()
+    for entry in entries:
+        stamp = _parse_created(entry.get("created_at"))
+        if stamp is None:
+            keep_ids.add(id(entry))
+        else:
+            dated.append((stamp, entry))
+    dated.sort(key=lambda item: item[0], reverse=True)
+    if dated:
+        keep_ids.add(id(dated[0][1]))
+    recent = now - timedelta(hours=SMART_RETENTION["all_hours"])
+    today = now.date()
+
+    def week_start(day):
+        return day - timedelta(days=day.weekday())
+
+    buckets = [
+        (SMART_RETENTION["daily"], lambda d: d, lambda d: (today - d).days),
+        (SMART_RETENTION["weekly"], week_start, lambda d: (week_start(today) - week_start(d)).days // 7),
+        (SMART_RETENTION["monthly"], lambda d: (d.year, d.month),
+         lambda d: (today.year - d.year) * 12 + today.month - d.month),
+    ]
+    for stamp, entry in dated:
+        if stamp >= recent:
+            keep_ids.add(id(entry))
+    for count, bucket_of, age_of in buckets:
+        seen = set()
+        for stamp, entry in dated:
+            day = stamp.date()
+            bucket = bucket_of(day)
+            if bucket in seen or age_of(day) >= count:
+                continue
+            seen.add(bucket)
+            keep_ids.add(id(entry))
+    return [entry for entry in entries if id(entry) in keep_ids]
 
 
 class BackupManager:
@@ -330,7 +435,7 @@ class BackupManager:
         return self._normalize_settings(settings)
 
     def _normalize_settings(self, payload: Dict) -> Dict:
-        merged = DEFAULT_SETTINGS.copy()
+        merged = copy.deepcopy(DEFAULT_SETTINGS)
         
         # Migration from old flat structure if needed
         # Check if payload has old keys and missing new keys
@@ -340,6 +445,7 @@ class BackupManager:
                 "enabled": bool(payload.get("auto_enabled")),
                 "interval_minutes": int(payload.get("interval_minutes", 1440)),
                 "keep_last": int(payload.get("keep_last", 30)),
+                "retention": "count",
                 "sources": payload.get("sources", []),
                 "target_path": payload.get("snapshot_target_path", "")
             }
@@ -354,7 +460,12 @@ class BackupManager:
         else:
             # Standard merge of nested dicts
             if "pool_backup" in payload:
-                merged["pool_backup"].update(payload["pool_backup"])
+                pool_payload = payload["pool_backup"] if isinstance(payload["pool_backup"], dict) else {}
+                merged["pool_backup"].update(pool_payload)
+                # Saved before smart retention existed: keep counting, so an
+                # update never deletes snapshots someone chose to keep.
+                if "retention" not in pool_payload:
+                    merged["pool_backup"]["retention"] = "count"
             if "system_backup" in payload:
                 merged["system_backup"].update(payload["system_backup"])
 
@@ -370,6 +481,8 @@ class BackupManager:
             pb["keep_last"] = max(1, min(200, int(pb.get("keep_last", 30))))
         except Exception:
             pb["keep_last"] = 30
+        if pb.get("retention") not in RETENTION_MODES:
+            pb["retention"] = "smart"
             
         raw_sources = pb.get("sources", [])
         if not isinstance(raw_sources, list):
@@ -414,7 +527,12 @@ class BackupManager:
     def save_settings(self, payload: Dict) -> Dict:
         payload = payload or {}
         current = self.get_settings()
-        current.update(payload)
+        for key, value in payload.items():
+            # A section that is sent keeps the fields it leaves out.
+            if isinstance(value, dict) and isinstance(current.get(key), dict):
+                current[key] = {**current[key], **value}
+            else:
+                current[key] = value
         normalized = self._normalize_settings(current)
         self._save_json(self.settings_file, normalized)
         self._refresh_next_run(normalized)
@@ -1183,14 +1301,19 @@ class BackupManager:
         res, err = self.run_command([btrfs_cmd, "subvolume", "delete", target], timeout=120)
         return bool(res and res.returncode == 0 and not err)
 
-    def _enforce_retention(self, source_path: str, keep_last: int, snapshot_class: str) -> None:
-        keep = max(1, int(keep_last))
+    def _enforce_retention(self, source_path: str, keep_last: int, snapshot_class: str,
+                           mode: str = "count") -> None:
         source = self._normalize_path(source_path)
         entries = self.list_snapshots(source_path=source, snapshot_class=snapshot_class)
-        if len(entries) <= keep:
+        if mode == "smart":
+            kept = {id(item) for item in smart_keep(entries, datetime.now(timezone.utc))}
+            dropped = [item for item in entries if id(item) not in kept]
+        else:
+            dropped = entries[max(1, int(keep_last)):]
+        if not dropped:
             return
         remove_paths = set()
-        for item in entries[keep:]:
+        for item in dropped:
             remove_paths.add(self._normalize_path(item.get("snapshot_path")))
         all_entries = self._load_json(self.snapshots_file, [])
         if not isinstance(all_entries, list):
@@ -1238,7 +1361,8 @@ class BackupManager:
                      )
                      if ok:
                          created.append(payload)
-                         self._enforce_retention(source, current_settings.get("keep_last", 30), "data")
+                         self._enforce_retention(source, current_settings.get("keep_last", 30), "data",
+                                                current_settings.get("retention", "count"))
                      else:
                          failed.append({"source_path": source, "error": payload.get("error", "unknown error")})
                 
@@ -1340,6 +1464,80 @@ class BackupManager:
                 "failed": failed,
                 "status": "success" if not failed else ("partial" if created else "error"),
             }
+
+    # ── Single files from a restore point ────────────────────────────────
+
+    def _known_data_snapshot(self, snapshot_path: str) -> Optional[Dict]:
+        wanted = self._normalize_path(snapshot_path)
+        for entry in self.list_snapshots():
+            if (entry.get("snapshot_class") or "data") in ("data", "full_data") \
+                    and self._normalize_path(entry.get("snapshot_path")) == wanted:
+                return entry
+        return None
+
+    def _list_dir(self, path: str) -> Tuple[Optional[List[Dict[str, Any]]], str]:
+        res, err = self.run_command(
+            [CMD["FIND"], path, "-mindepth", "1", "-maxdepth", "1", "-printf", FIND_LIST_FORMAT], timeout=30)
+        if err or res is None or res.returncode != 0:
+            return None, err or "The folder could not be read."
+        return parse_find_listing(res.stdout), ""
+
+    def browse_snapshot(self, snapshot_path: str, rel_path: str = "") -> Tuple[bool, Dict]:
+        """What a folder looked like in a restore point, and which of its
+        entries are not in the folder any more."""
+        entry = self._known_data_snapshot(snapshot_path)
+        if not entry:
+            return False, {"error": "This restore point is not known."}
+        rel = clean_relative_path(rel_path)
+        if rel is None:
+            return False, {"error": "Invalid path."}
+        snap_root = self._normalize_path(entry.get("snapshot_path"))
+        then, err = self._list_dir(os.path.join(snap_root, rel) if rel else snap_root)
+        if then is None:
+            return False, {"error": err}
+        source = self._normalize_path(entry.get("source_path"))
+        now, _ = self._list_dir(os.path.join(source, rel) if rel else source)
+        current = {e["name"] for e in (now or [])}
+        for item in then:
+            item["exists_now"] = item["name"] in current if now is not None else None
+        return True, {"path": rel, "entries": then, "snapshot": entry, "folder_exists_now": now is not None}
+
+    def restore_item(self, snapshot_path: str, rel_path: str) -> Tuple[bool, Dict]:
+        """Copy one file or folder from a restore point back to where it was.
+        Nothing is overwritten: if the name is taken, the copy gets
+        '(restored <date>)' in its name."""
+        entry = self._known_data_snapshot(snapshot_path)
+        if not entry:
+            return False, {"error": "This restore point is not known."}
+        rel = clean_relative_path(rel_path)
+        if not rel:
+            return False, {"error": "Choose a file or folder to restore."}
+        parent_rel, name = os.path.split(rel)
+        source = self._normalize_path(entry.get("source_path"))
+        target_dir = os.path.join(source, parent_rel) if parent_rel else source
+        snap_root = self._normalize_path(entry.get("snapshot_path"))
+        then, _ = self._list_dir(os.path.join(snap_root, parent_rel) if parent_rel else snap_root)
+        item = next((e for e in then or [] if e["name"] == name), None)
+        if item is None:
+            return False, {"error": f'"{name}" is not in this restore point.'}
+        current, _ = self._list_dir(target_dir)
+        if current is None:
+            folder = parent_rel or os.path.basename(source)
+            return False, {"error": f'The folder "{folder}" is not there any more. Restore that folder instead.'}
+        taken = {e["name"] for e in current}
+        target_name = name
+        if target_name in taken:
+            when = self._parse_iso(entry.get("created_at")) or datetime.now(timezone.utc)
+            target_name = restored_name(name, when.astimezone(), item["type"] == "folder")
+            if target_name in taken:
+                return False, {"error": f'"{target_name}" is already there.'}
+        res, err = self.run_command(
+            [CMD["CP"], "-a", "--reflink=auto", "--no-clobber", "--",
+             os.path.join(snap_root, rel), os.path.join(target_dir, target_name)], timeout=3600)
+        if err or res is None or res.returncode != 0:
+            return False, {"error": err or "The copy did not work."}
+        return True, {"restored_as": os.path.join(parent_rel, target_name) if parent_rel else target_name,
+                      "renamed": target_name != name}
 
     def restore_snapshot(self, snapshot_path: str, source_path: Optional[str] = None) -> Tuple[bool, Dict]:
         snapshot = self._normalize_path(snapshot_path)

@@ -738,12 +738,27 @@ def _rule_dpkg(sys_: System, args):
 _SMARTCTL_FLAGS = {'-a', '-x', '-H', '-A', '-i', '-j', '-d', 'sat', 'scsi', 'nvme', 'auto'}
 
 
+# Options that take a value: only these exact pairs. A self-test runs inside
+# the disk's firmware and only reads; "-n standby" skips a sleeping disk
+# instead of spinning it up.
+_SMARTCTL_PAIRS = {'-t': {'short', 'long'}, '-l': {'selftest'}, '-n': {'standby'}}
+
+
 def _rule_smartctl(sys_: System, args):
     if not args:
         _fail('smartctl needs a device')
-    for arg in args[:-1]:
+    options = args[:-1]
+    i = 0
+    while i < len(options):
+        arg = options[i]
+        if arg in _SMARTCTL_PAIRS:
+            if i + 1 >= len(options) or options[i + 1] not in _SMARTCTL_PAIRS[arg]:
+                _fail(f'smartctl {arg} value not allowed')
+            i += 2
+            continue
         if arg not in _SMARTCTL_FLAGS:
             _fail(f'smartctl argument not allowed: {arg}')
+        i += 1
     _device(sys_, args[-1], destructive=False)
     return Plan(argv=list(args))
 
@@ -825,6 +840,12 @@ def _rule_mount(sys_: System, args):
         target = _clean_abs_path(args[1])
         _pool_mountpoint(target)
         return Plan(argv=list(args))
+    if len(args) == 5 and args[:3] == ['-o', 'degraded', '-U']:
+        # A redundant pool with a missing disk, at startup (storage_manager decides).
+        if not UUID_RE.match(args[3]):
+            _fail('Invalid filesystem UUID')
+        _pool_mountpoint(_clean_abs_path(args[4]))
+        return Plan(argv=list(args))
     if len(args) == 4 and args[0] == '-o' and args[1] == 'ro':
         # Offline update scan of a USB stick: force it harmless.
         _device(sys_, args[2], destructive=True)
@@ -871,6 +892,18 @@ def _rule_btrfs(sys_: System, args):
         return Plan(argv=list(args))
     if group == 'filesystem' and action == 'usage':
         _expect([a for a in rest if a != '-b'], readable_path)
+        return Plan(argv=list(args))
+    if group == 'filesystem' and action == 'du':
+        # How much space folders use: -s --raw and data directories only.
+        if rest[:2] != ['-s', '--raw'] or not 1 <= len(rest) - 2 <= 64:
+            _fail('btrfs filesystem du: only -s --raw with 1 to 64 paths')
+        return Plan(argv=['filesystem', 'du', '-s', '--raw'] + [writable_path(sys_, a) for a in rest[2:]])
+    if group == 'filesystem' and action == 'resize':
+        # Only growing one member to the full size of its disk: DEVID:max.
+        # Shrinking (or a byte count) could cut off data.
+        if len(rest) != 2 or not re.match(r'^[0-9]{1,4}:max$', rest[0]):
+            _fail('btrfs filesystem resize: only DEVID:max is allowed')
+        _pool_mountpoint(_clean_abs_path(rest[1]))
         return Plan(argv=list(args))
     if group == 'subvolume' and action in ('show', 'get-default', 'sync'):
         # sync only waits until deleted subvolumes are cleaned up.
@@ -958,7 +991,7 @@ def _rule_btrfs(sys_: System, args):
         return Plan(argv=list(args))
     if group == 'balance' and action == 'start':
         for arg in rest[:-1]:
-            if not re.match(r'^-[dm]convert=(single|dup|raid0|raid1|raid1c3|raid1c4|raid5|raid6|raid10)$', arg):
+            if not re.match(r'^-[dm]convert=(single|dup|raid0|raid1|raid1c3|raid1c4|raid5|raid6|raid10)(,soft)?$', arg):
                 _fail(f'btrfs balance option not allowed: {arg}')
         _pool_mountpoint(_clean_abs_path(rest[-1]) if rest else '')
         return Plan(argv=list(args))
@@ -1129,6 +1162,26 @@ def _rule_wg_quick(sys_: System, args):
     return Plan(argv=list(args), stage={1: 'wg'})
 
 
+# One directory level, one entry per NUL-terminated record: type, size,
+# modification time, name. Used to browse restore points.
+FIND_LIST_FORMAT = '%y\\t%s\\t%T@\\t%f\\0'
+
+
+def _rule_find(sys_: System, args):
+    """List one directory inside the data directories. Nothing else: no
+    -exec, -delete or other expressions."""
+    _expect(args, lambda p: None, '-mindepth', '1', '-maxdepth', '1', '-printf', FIND_LIST_FORMAT)
+    return Plan(argv=[writable_path(sys_, args[0])] + list(args[1:]))
+
+
+def _rule_cp(sys_: System, args):
+    """Copy a file or folder out of a restore point, never over an existing one."""
+    _expect(args, '-a', '--reflink=auto', '--no-clobber', '--', lambda p: None, lambda p: None)
+    src = writable_path(sys_, args[4])
+    dst = writable_path(sys_, args[5])
+    return Plan(argv=list(args[:4]) + [src, dst])
+
+
 def _rule_readonly_any(sys_: System, args):
     # id, getent, df, mountpoint, blkid: pure queries.
     for arg in args:
@@ -1154,6 +1207,8 @@ RULES = {
     'mkdir': _rule_mkdir,
     'rmdir': _rule_rmdir,
     'mv': _rule_mv,
+    'cp': _rule_cp,
+    'find': _rule_find,
     'systemctl': _rule_systemctl,
     'apt-get': _rule_apt,
     'apt': _rule_apt,

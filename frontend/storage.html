@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AlvaOS - Storage</title>
+    <script src="theme.js"></script>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="notifications.css">
     <style>
@@ -469,6 +470,64 @@
             margin-left: auto;
             margin-top: 0;
         }
+        .pool-offer {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            align-items: center;
+            gap: 10px;
+            margin-top: 12px;
+            padding: 10px 12px;
+            border-radius: var(--radius-default);
+            background: var(--accent-primary-soft);
+            font-size: 0.86rem;
+        }
+
+        .space-row { padding: 8px 0; }
+        .space-row + .space-row { border-top: 1px solid var(--border-subtle, var(--border-default)); }
+        .space-row-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 0.92rem; }
+        .space-name { display: inline-flex; align-items: center; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
+        .space-name svg { width: 16px; height: 16px; color: var(--text-tertiary); flex-shrink: 0; }
+        .space-size { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+        .space-bar { height: 6px; border-radius: 3px; background: var(--track); margin-top: 6px; overflow: hidden; }
+        .space-bar span { display: block; height: 100%; border-radius: 3px; background: var(--accent-primary); }
+        .space-row.app .space-bar span { background: var(--accent-success); }
+        .space-row.snap .space-bar span { background: var(--text-tertiary); }
+        .space-sub { font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px; line-height: 1.4; }
+        .space-more { margin-top: 8px; }
+        .space-more summary { cursor: pointer; font-size: 0.85rem; color: var(--accent-primary); font-weight: 600; }
+        .space-snap { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 10px; padding: 6px 0; font-size: 0.85rem; }
+        .space-snap .btn-secondary { padding: 0.3rem 0.65rem; font-size: 0.8rem; }
+        .space-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; font-size: 0.8rem; color: var(--text-tertiary); }
+        @media (max-width: 520px) {
+            .space-snap { grid-template-columns: 1fr auto; }
+            .space-snap .btn-secondary { grid-column: 1 / -1; }
+        }
+
+        .pool-offer.warn { background: color-mix(in srgb, var(--accent-warning) 12%, transparent); }
+        .pool-offer svg { width: 16px; height: 16px; }
+
+        @media (max-width: 760px) {
+            .pool-offer { grid-template-columns: auto 1fr; }
+            .pool-offer .btn-secondary { grid-column: 1 / -1; }
+        }
+
+        .health-schedule {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border-subtle);
+            font-size: 0.88rem;
+        }
+
+        .health-schedule .select-input { width: auto; min-width: 200px; }
+
+        @media (max-width: 760px) {
+            .health-schedule { flex-direction: column; align-items: stretch; }
+            .health-schedule .select-input { min-width: 0; }
+        }
+
         .pool-section {
             background: var(--bg-card);
             border: 1px solid var(--border-default);
@@ -724,41 +783,56 @@
 
     <a class="skip-link" href="#main-content">Skip to main content</a>
 
-    <!-- Sidebar -->
-    <aside class="sidebar">
-        <div class="logo-area">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false">
-                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round"
-                    stroke-linejoin="round" style="color: var(--accent-primary);" />
+    <!-- Sidebar: same on every page (generated, keep in sync) -->
+    <aside class="sidebar" id="sidebar">
+        <a class="brand" href="index.html" aria-label="Go to the dashboard">
+            <svg class="brand-mark" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
-            <div class="logo-text">AlvaOS</div>
-        </div>
+            <span class="brand-text">
+                <span class="brand-name" id="brand-name">AlvaOS</span>
+                <span class="brand-status" id="brand-status"><span class="status-dot online" aria-hidden="true"></span><span id="brand-status-text">Online</span></span>
+            </span>
+        </a>
 
         <nav aria-label="Main">
             <a href="index.html" class="nav-link"><i data-lucide="house" aria-hidden="true"></i> Dashboard</a>
             <a href="storage.html" class="nav-link active" aria-current="page"><i data-lucide="hard-drive" aria-hidden="true"></i> Storage</a>
             <a href="apps.html" class="nav-link"><i data-lucide="blocks" aria-hidden="true"></i> Apps</a>
-            <a href="backup.html" class="nav-link"><i data-lucide="refresh-cw" aria-hidden="true"></i> Backup</a>
-            <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw" aria-hidden="true"></i> Updates <span class="nav-badge"
-                    id="updates-nav-badge" style="display:none;">!</span></a>
-            <div style="flex:1"></div>
-            <a href="system.html" class="nav-link"><i data-lucide="settings" aria-hidden="true"></i> System</a>
-            <button type="button" class="nav-link nav-logout" onclick="alvaosLogout()"><i data-lucide="log-out" aria-hidden="true"></i> Log out</button>
+            <a href="backup.html" class="nav-link"><i data-lucide="shield-check" aria-hidden="true"></i> Backup</a>
+            <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw" aria-hidden="true"></i> Updates <span class="nav-badge" id="updates-nav-badge" style="display:none;">1</span></a>
+            <div class="nav-spacer"></div>
+            <a href="system.html" class="nav-link"><i data-lucide="settings" aria-hidden="true"></i> Settings</a>
         </nav>
     </aside>
+    <div class="nav-scrim" id="nav-scrim" hidden></div>
 
     <!-- Main Content -->
     <div class="main">
         <header class="topbar">
-            <div class="breadcrumbs">
-                System / <span>Storage</span>
-            </div>
-            <div class="status-badge" style="gap:10px;">
-                <div class="status-badge" style="border:none; background:transparent; padding:0;">
-                    <div class="status-dot" aria-hidden="true"></div>
-                    <span>Online</span>
+            <button type="button" class="nav-menu-btn" id="menu-btn" aria-controls="sidebar" aria-expanded="false" aria-label="Open menu">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <div class="page-title">Storage</div>
+            <div class="topbar-actions" id="topbar-actions">
+                <div class="account">
+                    <button type="button" class="account-btn" id="account-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" aria-label="Account">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="10" r="3"/><path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662"/></svg>
+                    </button>
+                    <div class="account-menu" id="account-menu" role="menu" hidden>
+                        <div class="account-who">Signed in as <strong>Administrator</strong></div>
+                        <div class="account-theme" role="group" aria-label="Appearance">
+                            <span class="account-theme-label">Appearance</span>
+                            <div class="seg">
+                                <button type="button" role="menuitemradio" aria-checked="true" data-theme-choice="auto">Auto</button>
+                                <button type="button" role="menuitemradio" aria-checked="false" data-theme-choice="light">Light</button>
+                                <button type="button" role="menuitemradio" aria-checked="false" data-theme-choice="dark">Dark</button>
+                            </div>
+                        </div>
+                        <a role="menuitem" href="system.html#security">Password and security</a>
+                        <button type="button" role="menuitem" onclick="alvaosLogout()">Log out</button>
+                    </div>
                 </div>
-                <!-- Optional Clock here if needed -->
             </div>
         </header>
 
@@ -859,9 +933,11 @@
     <script src="notifications.js"></script>
     <script src="feedback.js"></script>
     <script src="app.js"></script>
+    <script src="nav.js"></script>
     <script src="password-toggle.js"></script>
     <script src="storage.js"></script>
     <script src="storage-pools.js"></script>
+    <script src="storage-space.js"></script>
     <script src="storage-shares.js"></script>
     <script src="users.js"></script>
 </body>

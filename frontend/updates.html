@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AlvaOS - Updates</title>
+    <script src="theme.js"></script>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="notifications.css">
 </head>
@@ -13,210 +14,158 @@
 
     <a class="skip-link" href="#main-content">Skip to main content</a>
 
-    <!-- Sidebar -->
-    <aside class="sidebar">
-        <div class="logo-area">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false">
-                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round"
-                    stroke-linejoin="round" style="color: var(--accent-primary);" />
+    <!-- Sidebar: same on every page (generated, keep in sync) -->
+    <aside class="sidebar" id="sidebar">
+        <a class="brand" href="index.html" aria-label="Go to the dashboard">
+            <svg class="brand-mark" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
-            <div class="logo-text">AlvaOS</div>
-        </div>
+            <span class="brand-text">
+                <span class="brand-name" id="brand-name">AlvaOS</span>
+                <span class="brand-status" id="brand-status"><span class="status-dot online" aria-hidden="true"></span><span id="brand-status-text">Online</span></span>
+            </span>
+        </a>
 
         <nav aria-label="Main">
             <a href="index.html" class="nav-link"><i data-lucide="house" aria-hidden="true"></i> Dashboard</a>
             <a href="storage.html" class="nav-link"><i data-lucide="hard-drive" aria-hidden="true"></i> Storage</a>
             <a href="apps.html" class="nav-link"><i data-lucide="blocks" aria-hidden="true"></i> Apps</a>
-            <a href="backup.html" class="nav-link"><i data-lucide="refresh-cw" aria-hidden="true"></i> Backup</a>
-            <a href="updates.html" class="nav-link active" aria-current="page">
-                <i data-lucide="rotate-cw" aria-hidden="true"></i> Updates
-                <span class="nav-badge" id="updates-nav-badge" style="display:none;">!</span>
-            </a>
-            <div style="flex:1"></div>
-            <a href="system.html" class="nav-link"><i data-lucide="settings" aria-hidden="true"></i> System</a>
-            <button type="button" class="nav-link nav-logout" onclick="alvaosLogout()"><i data-lucide="log-out" aria-hidden="true"></i> Log out</button>
+            <a href="backup.html" class="nav-link"><i data-lucide="shield-check" aria-hidden="true"></i> Backup</a>
+            <a href="updates.html" class="nav-link active" aria-current="page"><i data-lucide="rotate-cw" aria-hidden="true"></i> Updates <span class="nav-badge" id="updates-nav-badge" style="display:none;">1</span></a>
+            <div class="nav-spacer"></div>
+            <a href="system.html" class="nav-link"><i data-lucide="settings" aria-hidden="true"></i> Settings</a>
         </nav>
     </aside>
+    <div class="nav-scrim" id="nav-scrim" hidden></div>
 
     <!-- Main Content -->
     <div class="main">
         <header class="topbar">
-            <div class="breadcrumbs">
-                System / <span>Updates</span>
-            </div>
-            <div class="status-badge" style="gap:10px;">
-                <div class="status-badge" style="border:none; background:transparent; padding:0;">
-                    <div class="status-dot" aria-hidden="true"></div>
-                    <span>Online</span>
+            <button type="button" class="nav-menu-btn" id="menu-btn" aria-controls="sidebar" aria-expanded="false" aria-label="Open menu">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <div class="page-title">Updates</div>
+            <div class="topbar-actions" id="topbar-actions">
+                <div class="account">
+                    <button type="button" class="account-btn" id="account-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" aria-label="Account">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="10" r="3"/><path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662"/></svg>
+                    </button>
+                    <div class="account-menu" id="account-menu" role="menu" hidden>
+                        <div class="account-who">Signed in as <strong>Administrator</strong></div>
+                        <div class="account-theme" role="group" aria-label="Appearance">
+                            <span class="account-theme-label">Appearance</span>
+                            <div class="seg">
+                                <button type="button" role="menuitemradio" aria-checked="true" data-theme-choice="auto">Auto</button>
+                                <button type="button" role="menuitemradio" aria-checked="false" data-theme-choice="light">Light</button>
+                                <button type="button" role="menuitemradio" aria-checked="false" data-theme-choice="dark">Dark</button>
+                            </div>
+                        </div>
+                        <a role="menuitem" href="system.html#security">Password and security</a>
+                        <button type="button" role="menuitem" onclick="alvaosLogout()">Log out</button>
+                    </div>
                 </div>
             </div>
         </header>
 
         <main class="content-scroll" id="main-content" tabindex="-1">
-            <div id="update-banner-slot"></div>
-            <div style="margin-bottom: 24px;">
-                <h1 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 4px;">Update Management</h1>
-                <p style="color: var(--text-secondary); font-size: 0.95rem;">Manage AlvaOS, system, and offline updates.
-                </p>
+            <!-- One sentence: up to date, or what is ready. One button. -->
+            <section class="status-line" id="upd-status" data-level="loading" aria-live="polite">
+                <div class="status-line-icon" id="upd-status-icon"><i data-lucide="loader-circle" aria-hidden="true"></i></div>
+                <div class="status-line-text">
+                    <h1 id="upd-title">Looking for updates...</h1>
+                    <p id="upd-sub">This takes a second.</p>
+                </div>
+                <div class="upd-actions">
+                    <button type="button" class="btn-secondary" id="upd-check-btn" hidden>Check now</button>
+                    <button type="button" class="btn-primary" id="upd-install-btn" hidden>Install update</button>
+                </div>
+            </section>
+
+            <div class="upd-progress" id="upd-progress" hidden>
+                <div class="upd-progress-track"><span id="upd-progress-bar"></span></div>
+                <div class="upd-progress-text" id="upd-progress-text">Starting...</div>
             </div>
 
-            <div class="tab-bar">
-                <button class="tab-btn active" data-tab="alvaos">AlvaOS Updates</button>
-                <button class="tab-btn" data-tab="system">System Updates</button>
-                <button class="tab-btn" data-tab="history">Update History</button>
-                <button class="tab-btn" data-tab="settings">Settings</button>
-            </div>
-
-            <div class="tab-panel active" id="tab-alvaos">
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">AlvaOS Updates</div>
-                        <div style="color:var(--text-secondary)"><i data-lucide="rotate-cw" aria-hidden="true"></i></div>
-                    </div>
-                    <div class="setting-group">
-                        <label class="setting-label">Current Version</label>
-                        <div class="mono-text" id="current-version">-</div>
-                    </div>
-                    <div class="setting-group">
-                        <label class="setting-label" for="update-channel-select">Update Channel</label>
-                        <div style="display:flex; gap:8px; align-items:center;">
-                            <select id="update-channel-select" class="select-input">
-                                <option value="stable">Stable (Releases)</option>
-                                <option value="unstable">Unstable (Pre-releases)</option>
-                            </select>
-                            <button id="check-updates-btn" class="btn-primary">Check for Updates</button>
-                        </div>
-                        <div class="metric-sub" style="margin-top:6px;" id="update-status">Idle</div>
-                    </div>
+            <section class="card upd-notes" id="upd-notes" hidden>
+                <div class="upd-notes-head">
+                    <h2 id="upd-notes-title">What's new</h2>
+                    <span class="upd-notes-date" id="upd-notes-date"></span>
                 </div>
+                <div class="upd-notes-body" id="upd-notes-body"></div>
+                <p class="upd-notes-foot">Installing takes a few minutes. Your files, apps and settings stay as they are, and this page reconnects by itself.</p>
+            </section>
 
-                <div class="card" id="update-available-card" style="display:none;">
-                    <div class="card-header">
-                        <div class="card-title">Available Update</div>
-                        <div style="color:var(--text-secondary)"><i data-lucide="upload" aria-hidden="true"></i></div>
+            <section class="card upd-system" id="upd-system">
+                <div class="upd-system-row">
+                    <div>
+                        <h2>System packages</h2>
+                        <p id="upd-system-text">Checking the Debian base system...</p>
                     </div>
-                    <div class="setting-group">
-                        <label class="setting-label">Latest Version</label>
-                        <div class="mono-text" id="latest-version">-</div>
-                    </div>
-                    <div class="setting-group">
-                        <label class="setting-label">Changelog</label>
-                        <div class="changelog-box" id="release-notes">-</div>
-                    </div>
-                    <div class="setting-group">
-                        <div class="progress-track" style="margin-bottom: 8px;">
-                            <div class="progress-bar bar-cpu" id="alvaos-update-progress" style="width: 0%;"></div>
-                        </div>
-                        <button id="download-install-btn" class="btn-primary">Download and Install</button>
-                    </div>
+                    <button type="button" class="btn-secondary" id="upd-system-install" hidden>Install all</button>
                 </div>
-
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">Offline AlvaOS Update</div>
-                        <div style="color:var(--text-secondary)"><i data-lucide="hard-drive-download" aria-hidden="true"></i></div>
-                    </div>
-                    <p class="metric-sub" style="margin-bottom: 12px;">
-                        Install an AlvaOS update from a USB stick instead of downloading it.
-                    </p>
-                    <div style="display:flex; gap:8px; align-items:center; margin-bottom: 12px;">
-                        <button id="offline-alvaos-scan-btn" class="btn-primary">Scan USB Devices</button>
-                    </div>
-                    <div id="offline-alvaos-list" class="list-box">
-                        <div class="metric-sub">No data yet.</div>
-                    </div>
+                <details class="upd-inline" id="upd-system-more" hidden>
+                    <summary>Choose packages</summary>
+                    <div id="upd-system-list" class="upd-pkg-list"></div>
+                    <button type="button" class="btn-secondary" id="upd-system-install-selected">Install selected</button>
+                </details>
+                <div class="upd-os-upgrade" id="upd-os-upgrade" hidden>
+                    <span id="upd-os-upgrade-text"></span>
+                    <button type="button" class="btn-secondary" id="upd-os-upgrade-btn">Upgrade</button>
                 </div>
-            </div>
+            </section>
 
-            <div class="tab-panel" id="tab-system">
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">Debian Package Updates</div>
-                        <div style="color:var(--text-secondary)"><i data-lucide="package" aria-hidden="true"></i></div>
-                    </div>
-                    <div id="debian-os-upgrade-status" class="metric-sub" style="margin-bottom: 12px;">
-                        Debian OS release status unknown.
-                    </div>
-                    <div style="display:flex; flex-wrap: wrap; gap:8px; align-items:center; margin-bottom: 12px;">
-                        <button id="debian-check-btn" class="btn-primary">Check for Updates</button>
-                        <button id="debian-apply-btn" class="btn-secondary">Apply Selected Updates</button>
-                        <button id="debian-apply-all-btn" class="btn-secondary">Apply All Updates</button>
-                        <button id="debian-os-upgrade-btn" class="btn-secondary" disabled>Upgrade OS Release</button>
-                    </div>
-                    <div id="debian-updates-list" class="list-box">
-                        <div class="metric-sub">No data yet.</div>
-                    </div>
+            <details class="sysinfo upd-section" id="upd-rollback" hidden>
+                <summary><i data-lucide="rotate-cw" aria-hidden="true"></i> Go back to an earlier version <i data-lucide="chevron-down" class="chev" aria-hidden="true"></i></summary>
+                <div class="upd-section-body">
+                    <p class="metric-sub">If something stopped working after an update, you can install the version you had before. Settings that the newer version changed may not carry over.</p>
+                    <div id="upd-rollback-list" class="upd-list"></div>
                 </div>
+            </details>
 
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">Offline System Package</div>
-                        <div style="color:var(--text-secondary)"><i data-lucide="hard-drive-download" aria-hidden="true"></i></div>
-                    </div>
-                    <p class="metric-sub" style="margin-bottom: 12px;">
-                        Install a system .deb package from a USB stick, for example when there is no internet access.
-                    </p>
-                    <div style="display:flex; gap:8px; align-items:center; margin-bottom: 12px;">
-                        <button id="offline-system-scan-btn" class="btn-primary">Scan USB Devices</button>
-                    </div>
-                    <div id="offline-system-list" class="list-box">
-                        <div class="metric-sub">No data yet.</div>
-                    </div>
+            <details class="sysinfo upd-section" id="upd-offline">
+                <summary><i data-lucide="hard-drive-download" aria-hidden="true"></i> Install from a USB stick <i data-lucide="chevron-down" class="chev" aria-hidden="true"></i></summary>
+                <div class="upd-section-body">
+                    <p class="metric-sub">For a NAS without internet: put a signed AlvaOS package (or a Debian .deb) in the top folder of a USB stick and plug it in.</p>
+                    <button type="button" class="btn-secondary" id="upd-offline-scan">Look for packages</button>
+                    <div id="upd-offline-list" class="upd-list"></div>
                 </div>
-            </div>
+            </details>
 
-            <div class="tab-panel" id="tab-history">
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">Update History</div>
-                        <div style="color:var(--text-secondary)"><i data-lucide="scroll-text" aria-hidden="true"></i></div>
-                    </div>
-                    <div id="history-list" class="list-box">
-                        <div class="metric-sub">No history yet.</div>
-                    </div>
+            <details class="sysinfo upd-section" id="upd-history">
+                <summary><i data-lucide="scroll-text" aria-hidden="true"></i> History <i data-lucide="chevron-down" class="chev" aria-hidden="true"></i></summary>
+                <div class="upd-section-body">
+                    <div id="upd-history-list" class="upd-list"></div>
                 </div>
-            </div>
+            </details>
 
-            <div class="tab-panel" id="tab-settings">
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">Update Settings</div>
-                        <div style="color:var(--text-secondary)"><i data-lucide="settings" aria-hidden="true"></i></div>
-                    </div>
-                    <div class="setting-group">
-                        <label class="setting-label">Automatic update check on startup</label>
-                        <label class="toggle">
-                            <input type="checkbox" id="settings-auto-check">
-                            <span class="toggle-slider"></span>
-                        </label>
-                    </div>
-                    <div class="setting-group">
-                        <label class="setting-label">Apply AlvaOS updates automatically</label>
-                        <label class="toggle">
-                            <input type="checkbox" id="settings-auto-apply">
-                            <span class="toggle-slider"></span>
-                        </label>
-                    </div>
-                    <div class="setting-group">
-                        <label class="setting-label">Apply Debian (OS) updates automatically</label>
-                        <label class="toggle">
-                            <input type="checkbox" id="settings-auto-apply-debian">
-                            <span class="toggle-slider"></span>
-                        </label>
-                    </div>
-                    <div class="setting-group">
-                        <label class="setting-label" for="settings-channel">Default channel</label>
-                        <select id="settings-channel" class="select-input">
-                            <option value="stable">Stable</option>
-                            <option value="unstable">Unstable</option>
+            <details class="sysinfo upd-section" id="upd-settings">
+                <summary><i data-lucide="settings" aria-hidden="true"></i> Settings <i data-lucide="chevron-down" class="chev" aria-hidden="true"></i></summary>
+                <div class="upd-section-body upd-settings">
+                    <label class="upd-setting">
+                        <span><strong>Look for updates automatically</strong><small>Once a day and after a restart. You get a notification; nothing is installed without you.</small></span>
+                        <span class="toggle"><input type="checkbox" id="set-auto-check"><span class="toggle-slider"></span></span>
+                    </label>
+                    <label class="upd-setting">
+                        <span><strong>Install AlvaOS updates automatically</strong><small>Signed updates are installed in the daily check, usually at night.</small></span>
+                        <span class="toggle"><input type="checkbox" id="set-auto-apply"><span class="toggle-slider"></span></span>
+                    </label>
+                    <label class="upd-setting">
+                        <span><strong>Install system package updates automatically</strong><small>Security fixes for the Debian base system.</small></span>
+                        <span class="toggle"><input type="checkbox" id="set-auto-apply-debian"><span class="toggle-slider"></span></span>
+                    </label>
+                    <label class="upd-setting">
+                        <span><strong>Release channel</strong><small>Testing gets new versions earlier, with more rough edges.</small></span>
+                        <select id="set-channel" class="select-input">
+                            <option value="stable">Stable (recommended)</option>
+                            <option value="unstable">Testing</option>
                         </select>
-                    </div>
-                    <div class="setting-group">
-                        <button id="settings-save-btn" class="btn-primary">Save Settings</button>
-                    </div>
+                    </label>
                 </div>
-            </div>
+            </details>
 
+            <footer class="dash-footer">
+                <div>AlvaOS <span id="upd-current-version">{{VERSION}}</span></div>
+            </footer>
         </main>
     </div>
 
@@ -226,6 +175,7 @@
     <script src="notifications.js"></script>
     <script src="feedback.js"></script>
     <script src="app.js"></script>
+    <script src="nav.js"></script>
     <script src="updates.js"></script>
 </body>
 

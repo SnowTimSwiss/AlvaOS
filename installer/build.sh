@@ -162,6 +162,12 @@ if [ -f "${SCRIPT_DIR}/../scripts/alvaos-update-checker.service" ]; then
   mkdir -p config/includes.chroot/opt/alvaos/scripts
   cp "${SCRIPT_DIR}/../scripts/alvaos-update-checker.service" config/includes.chroot/opt/alvaos/scripts/
 fi
+for unit in scripts/alvaos-update-checker.timer backend/alvaos-watchdog.service backend/alvaos-watchdog.timer; do
+  if [ -f "${SCRIPT_DIR}/../${unit}" ]; then
+    mkdir -p config/includes.chroot/opt/alvaos/scripts
+    cp "${SCRIPT_DIR}/../${unit}" config/includes.chroot/opt/alvaos/scripts/
+  fi
+done
 
 # ------------------------------------------------------------
 # 4. live-config hooks

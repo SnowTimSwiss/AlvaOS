@@ -214,20 +214,27 @@ function renderAvailableApps() {
         return;
     }
 
-    container.innerHTML = filteredApps.map((app) => `
+    const installedIds = new Set(installedAppsCache.map((a) => a.app_id));
+    container.innerHTML = filteredApps.map((app) => {
+        const installed = installedIds.has(app.id);
+        const needs = describeNeeds(app);
+        const version = String(app.version || '');
+        const versionText = version && version !== 'latest' ? `v${escapeHtml(version.replace(/^v/i, ''))}` : '';
+        return `
         <div class="app-card" onclick="showAppDetails('${escapeHtml(app.id)}')">
             <div class="app-icon">${getAppIcon(app)}</div>
             <div class="app-name">${escapeHtml(app.name)}</div>
             <div class="app-description">${escapeHtml(app.description)}</div>
-            <div class="app-category">${escapeHtml(app.category)}</div>
+            ${needs.text ? `<div class="app-needs">${escapeHtml(needs.text)}</div>` : ''}
+            ${needs.conflict && !installed ? `<div class="app-needs warn">${escapeHtml(needs.conflict)}</div>` : ''}
             <div class="app-footer">
-                <span style="font-size: 0.8rem; color: var(--text-secondary);">v${escapeHtml(app.version)}</span>
-                <button class="btn-primary" style="padding: 6px 12px; font-size: 0.85rem;" onclick="event.stopPropagation(); installApp('${escapeHtml(app.id)}')">
-                    Install
-                </button>
+                <span class="app-footer-meta">${escapeHtml(app.category || '')}${versionText ? ` · ${versionText}` : ''}</span>
+                ${installed
+                    ? `<button class="btn-secondary" style="padding: 6px 12px; font-size: 0.85rem;" onclick="event.stopPropagation(); showInstalledApp('${escapeHtml(app.id)}')">Installed</button>`
+                    : `<button class="btn-primary" style="padding: 6px 12px; font-size: 0.85rem;" onclick="event.stopPropagation(); installApp('${escapeHtml(app.id)}')">Install</button>`}
             </div>
-        </div>
-    `).join('');
+        </div>`;
+    }).join('');
 }
 
 function normalizeIconPath(iconPath) {
@@ -257,22 +264,64 @@ function getCategoryIconMarkup(category) {
 
 function getAppIcon(appOrCategory) {
     if (appOrCategory && typeof appOrCategory === 'object') {
+        const fallback = getCategoryIconMarkup(appOrCategory.category);
         const iconUrl = normalizeIconPath(appOrCategory.icon);
-        if (iconUrl) {
-            const appName = String(appOrCategory.name || appOrCategory.id || 'App');
-            return `
-                <img
-                    class="app-icon-image"
-                    src="${escapeHtml(iconUrl)}"
-                    alt="${escapeHtml(appName)} icon"
-                    loading="lazy"
-                    decoding="async">
-            `;
-        }
-        return getCategoryIconMarkup(appOrCategory.category);
+        if (!iconUrl) return fallback;
+        // The category icon stays underneath; the picture covers it only once
+        // it has loaded, so a missing icon never shows a broken image.
+        return `${fallback}<img class="app-icon-image" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" decoding="async"
+            onload="this.classList.add('loaded')" onerror="this.remove()">`;
     }
-
     return getCategoryIconMarkup(appOrCategory);
+}
+
+// Host ports used by installed apps: { 8096: 'Jellyfin' }.
+function portsInUse() {
+    const used = {};
+    installedAppsCache.forEach((app) => {
+        getContainersForApp(app.app_id).forEach((container) => {
+            parseHostPorts(container.Ports).forEach((port) => { used[port] = app.name || app.app_id; });
+        });
+    });
+    return used;
+}
+
+function describeNeeds(app) {
+    const needs = app.needs || {};
+    const ports = Array.isArray(needs.ports) ? needs.ports : [];
+    const folders = Array.isArray(needs.folders) ? needs.folders : [];
+    const used = portsInUse();
+    const conflict = ports.find((p) => used[p.port]);
+    const web = ports.find((p) => /web/i.test(p.description || '')) || ports[0];
+    const bits = [];
+    if (web) bits.push(`Opens on port ${web.port}`);
+    if (ports.length > 1) bits.push(`${ports.length - 1} more port${ports.length > 2 ? 's' : ''}`);
+    if (folders.length) bits.push(`${folders.length} folder${folders.length === 1 ? '' : 's'} on your storage`);
+    return {
+        text: bits.join(' · '),
+        conflict: conflict ? `Port ${conflict.port} is already used by ${used[conflict.port]}` : '',
+    };
+}
+
+function showInstalledApp(appId) {
+    setActiveTab('installed');
+    selectInstalledApp(appId);
+}
+
+// Running / stopped / partly running, in words a person understands.
+function appRunState(appId) {
+    if (!containersLoaded) return { key: 'unknown', label: '' };
+    const own = getContainersForApp(appId);
+    const running = own.filter((c) => c.State === 'running').length;
+    if (own.length === 0) return { key: 'stopped', label: 'Not started' };
+    if (running === own.length) return { key: 'running', label: 'Running' };
+    if (running === 0) return { key: 'stopped', label: 'Stopped' };
+    return { key: 'partial', label: 'Not fully running' };
+}
+
+function appQuickAddress(appId) {
+    const port = getContainersForApp(appId).flatMap((c) => parseHostPorts(c.Ports))[0];
+    return port ? `${window.location.protocol}//${window.location.hostname}:${port}` : '';
 }
 
 function setActiveTab(tabName) {
@@ -443,30 +492,36 @@ function renderInstalledList() {
     if (!list) return;
 
     list.innerHTML = installedAppsCache.map((app) => {
-        const appContainers = getContainersForApp(app.app_id);
-        const running = appContainers.filter((c) => c.State === 'running').length;
-        const total = appContainers.length;
-        const statusText = containersLoaded
-            ? `${running}/${total} containers running`
-            : (containersLoading ? 'Loading containers...' : 'Container status unavailable');
-        const isRunning = running > 0;
-        const canToggle = containersLoaded && total > 0;
+        const state = appRunState(app.app_id);
         const toggling = appTogglePending.has(app.app_id);
-
+        const address = state.key === 'running' ? appQuickAddress(app.app_id) : '';
+        const cachedUpdate = appUpdateStatusCache[app.app_id] || {};
+        const updateReady = (cachedUpdate.update_available ?? app.update_available) === true && app.source !== 'custom_compose';
+        const sub = toggling
+            ? 'Working...'
+            : state.key === 'partial'
+                ? 'Part of it stopped. Restart it in the details.'
+                : address
+                    ? `Open at ${address.replace(/^https?:\/\//, '')}`
+                    : (state.key === 'stopped' ? 'Not running' : (containersLoading ? 'Checking...' : ''));
+        const action = toggling
+            ? ''
+            : address
+                ? `<a class="btn-secondary app-quick" href="${escapeHtml(address)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Open</a>`
+                : (state.key === 'stopped' && getContainersForApp(app.app_id).length
+                    ? `<button class="btn-secondary app-quick" onclick="event.stopPropagation(); toggleAppRunning('${escapeHtml(app.app_id)}')">Start</button>`
+                    : '');
         return `
             <div class="app-list-item ${selectedAppId === app.app_id ? 'active' : ''}" role="button" tabindex="0"
                 onclick="selectInstalledApp('${escapeHtml(app.app_id)}')"
                 onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectInstalledApp('${escapeHtml(app.app_id)}'); }">
-                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-                    <div style="font-weight: 600;">${escapeHtml(app.name || app.app_id)}</div>
-                    ${containersLoaded ? `<span class="container-status ${isRunning ? 'running' : 'stopped'}" style="flex-shrink:0;">${isRunning ? 'Running' : 'Stopped'}</span>` : ''}
+                <div class="app-list-top">
+                    <div class="app-list-name">${escapeHtml(app.name || app.app_id)}</div>
+                    ${state.label ? `<span class="app-state ${state.key}">${escapeHtml(state.label)}</span>` : ''}
                 </div>
-                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:4px;">
-                    <div class="app-count">${statusText}</div>
-                    ${canToggle ? `
-                        <button class="btn-icon" ${toggling ? 'disabled style="opacity:0.6; cursor:not-allowed;"' : ''}
-                            onclick="event.stopPropagation(); toggleAppRunning('${escapeHtml(app.app_id)}')">${toggling ? '...' : (isRunning ? 'Stop' : 'Start')}</button>
-                    ` : ''}
+                <div class="app-list-bottom">
+                    <div class="app-count">${escapeHtml(sub)}${updateReady ? ' <span class="app-update-dot">Update ready</span>' : ''}</div>
+                    ${action}
                 </div>
             </div>
         `;
@@ -534,7 +589,7 @@ async function renderInspector() {
                 <div style="min-width:0;">
                     <div style="font-size:1.2rem; font-weight:600;">${escapeHtml(selected.name || appId)}</div>
                     <div class="inspector-substatus">
-                        <span class="container-status ${runningCount > 0 ? 'running' : 'stopped'}">${runningCount > 0 ? 'Running' : 'Stopped'}</span>
+                        <span class="app-state ${appRunState(appId).key}">${escapeHtml(appRunState(appId).label || (runningCount > 0 ? 'Running' : 'Stopped'))}</span>
                         <span>${statusBits.join(' &middot; ')}</span>
                     </div>
                 </div>
@@ -544,6 +599,10 @@ async function renderInspector() {
                         ${appContainers.length > 0 ? `
                             <button class="menu-item" onclick="toggleInspectorMenu('app-actions-menu', event); restartApp('${escId}')">
                                 ${window.alvaIcon ? window.alvaIcon('rotate-cw') : ''} Restart app
+                            </button>` : ''}
+                        ${!isCustom ? `
+                            <button class="menu-item" onclick="toggleInspectorMenu('app-actions-menu', event); showAppSettingsDialog('${escId}')">
+                                ${window.alvaIcon ? window.alvaIcon('folder-open') : ''} Folders and ports&hellip;
                             </button>` : ''}
                         ${!isCustom ? `
                             <button class="menu-item" onclick="toggleInspectorMenu('app-actions-menu', event); checkAppForUpdates('${escId}')">
@@ -753,6 +812,9 @@ async function loadInstalledWorkspace(preserveSelection = true) {
             containersLoading = false;
             renderInstalledList();
             renderInspector();
+            // The store marks installed apps and port clashes, so it needs
+            // the installed list and the containers too.
+            if (availableAppsCache.length) renderAvailableApps();
         }
     } catch (error) {
         if (requestId !== installedLoadRequestId) return;
@@ -985,6 +1047,121 @@ async function loadContainers() {
 }
 
 // Show installation wizard instead of prompt
+// ── Install: where files go, and ports ──────────────────────────────────────
+
+// Folders with the person's own files (media, photos, downloads) are worth
+// pointing at a shared folder; settings, caches and databases are not.
+function isYourFilesVolume(volume) {
+    const text = `${volume?.description || ''} ${volume?.container_path || ''}`;
+    if (/config|cache|database|\bdb\b|log|cert|model|runtime|tunnel|credential|vault|setting/i.test(text)) return false;
+    return /media|photo|video|music|movie|tv|download|upload|librar|document|files location|pictures/i.test(text);
+}
+
+function suggestShare(volume, shares) {
+    const text = `${volume?.description || ''} ${volume?.container_path || ''}`.toLowerCase();
+    const wanted = [
+        [/photo|picture|upload/, /photo|picture|bilder|fotos/],
+        [/media|video|movie|tv|music/, /media|movie|film|video|music|tv/],
+        [/download/, /download/],
+        [/document/, /document|docs|files/],
+    ];
+    for (const [volumeRe, shareRe] of wanted) {
+        if (volumeRe.test(text)) {
+            const hit = shares.find((sh) => shareRe.test(String(sh.name || '').toLowerCase()));
+            if (hit) return hit.path;
+        }
+    }
+    return '';
+}
+
+function renderInstallFolders(app, pools, shares) {
+    const box = document.getElementById('install-folders');
+    if (!box) return;
+    const volumes = Array.isArray(app?.config_schema?.volumes) ? app.config_schema.volumes : [];
+    const yours = volumes.filter(isYourFilesVolume);
+    const appData = volumes.filter((v) => !isYourFilesVolume(v));
+    const poolSelect = document.getElementById('install-pool-select');
+    const poolName = () => (pools.find((p) => p.mount_point === poolSelect.value) || {}).name || 'the pool';
+    const appId = app.id || '';
+
+    const shareOptions = (selected) => [
+        `<option value="">A new folder for this app</option>`,
+        ...shares.map((sh) => `<option value="${escapeHtml(sh.path)}"${sh.path === selected ? ' selected' : ''}>Shared folder "${escapeHtml(sh.name)}"</option>`),
+    ].join('');
+
+    const render = () => {
+        box.innerHTML = [
+            ...yours.map((v, i) => `
+                <div class="install-folder">
+                    <label for="install-folder-${i}">${escapeHtml(v.description || v.container_path)}</label>
+                    <select id="install-folder-${i}" data-container-path="${escapeHtml(v.container_path)}">${shareOptions(suggestShare(v, shares))}</select>
+                    ${shares.length ? '' : '<p class="install-hint">Tip: share a folder in Storage first, then the app and your computers can use the same files.</p>'}
+                </div>`),
+            appData.length
+                ? `<p class="install-hint">${escapeHtml(appData.map((v) => v.description || v.container_path).join(', '))}: kept by the app in ${escapeHtml(poolName())} › apps › ${escapeHtml(appId)}.</p>`
+                : '',
+        ].join('');
+    };
+    poolSelect.onchange = render;
+    render();
+}
+
+function formatFreeSpace(bytes) {
+    const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+    let v = Number(bytes) || 0;
+    let i = 0;
+    while (v >= 1000 && i < units.length - 1) { v /= 1000; i += 1; }
+    return `${v >= 100 || i === 0 ? v.toFixed(0) : v.toFixed(1)} ${units[i]}`;
+}
+
+function nextFreePort(port, used) {
+    let candidate = port;
+    while (used[candidate] && candidate < 65535) candidate += 1;
+    return candidate;
+}
+
+function renderInstallPorts(app) {
+    const details = document.getElementById('install-ports');
+    const fields = document.getElementById('install-port-fields');
+    if (!details || !fields) return;
+    const ports = Array.isArray(app?.config_schema?.ports) ? app.config_schema.ports : [];
+    if (!ports.length) {
+        details.hidden = true;
+        return;
+    }
+    const used = portsInUse();
+    let clash = false;
+    fields.innerHTML = ports.map((p, i) => {
+        const taken = used[p.external];
+        if (taken) clash = true;
+        const value = taken ? nextFreePort(p.external, used) : p.external;
+        return `
+            <div class="install-port">
+                <span>${escapeHtml(p.description || 'Port')}
+                    <small class="${taken ? 'warn' : ''}">${taken ? `${p.external} is used by ${escapeHtml(taken)}, so ${value} is suggested.` : `Inside the app: ${escapeHtml(p.internal)}/${escapeHtml(p.protocol || 'tcp')}`}</small></span>
+                <input id="install-port-${i}" type="number" min="1" max="65535" value="${value}"
+                    data-internal="${escapeHtml(p.internal)}" data-default="${escapeHtml(p.external)}" aria-label="${escapeHtml(p.description || 'Port')}">
+            </div>`;
+    }).join('');
+    details.hidden = false;
+    details.open = clash;
+}
+
+function collectInstallChoices() {
+    const volumeMappings = {};
+    document.querySelectorAll('#install-folders select[data-container-path]').forEach((select) => {
+        if (select.value) volumeMappings[select.dataset.containerPath] = select.value;
+    });
+    const portMappings = {};
+    let badPort = false;
+    document.querySelectorAll('#install-port-fields input[data-internal]').forEach((input) => {
+        const value = Number(input.value);
+        if (!Number.isInteger(value) || value < 1 || value > 65535) badPort = true;
+        else if (String(value) !== input.dataset.default) portMappings[input.dataset.internal] = value;
+    });
+    return { volumeMappings, portMappings, badPort };
+}
+
 async function showInstallWizard(appId) {
     const modal = document.getElementById('install-modal');
     const poolSelect = document.getElementById('install-pool-select');
@@ -998,6 +1175,16 @@ async function showInstallWizard(appId) {
     poolSelect.innerHTML = '<option value="">Loading pools...</option>';
     if (envFields) envFields.innerHTML = '';
     if (envFieldsGroup) envFieldsGroup.style.display = 'none';
+    const envNote = document.getElementById('install-env-note');
+    if (envNote) envNote.style.display = 'none';
+    // A new dialog starts clean: no progress or log left from an earlier install.
+    installPollGeneration += 1;
+    const progressBox = document.getElementById('install-progress-container');
+    if (progressBox) progressBox.style.display = 'none';
+    const progressStatus = document.getElementById('install-progress-status');
+    if (progressStatus) { progressStatus.textContent = ''; progressStatus.style.color = ''; }
+    const progressBar = document.getElementById('install-progress-bar');
+    if (progressBar) progressBar.style.width = '0%';
     confirmBtn.disabled = true;
     confirmBtn.textContent = 'Install Application';
 
@@ -1039,7 +1226,11 @@ async function showInstallWizard(appId) {
                     || (entry?.secret !== false && /(password|token|secret|key)/i.test(key));
                 // Required fields start empty on purpose: a prefilled placeholder
                 // is exactly how apps used to ship with a known password.
-                const defaultValue = isRequired ? '' : String(entry?.default ?? '');
+                let defaultValue = isRequired ? '' : String(entry?.default ?? '');
+                // The time zone of the person installing beats UTC.
+                if (key === 'TZ' && (!defaultValue || defaultValue === 'UTC')) {
+                    try { defaultValue = Intl.DateTimeFormat().resolvedOptions().timeZone || defaultValue; } catch (_e) { /* keep */ }
+                }
                 const canGenerate = entry?.generate === true;
 
                 return `
@@ -1084,6 +1275,14 @@ async function showInstallWizard(appId) {
                 const target = document.getElementById(btn.getAttribute('data-generate-for'));
                 if (target && !target.value) target.value = generateSecret();
             });
+
+            // Easy by default: if nothing is left for the person to type, the
+            // settings stay folded away behind "Advanced".
+            const stillEmpty = Array.from(envFields.querySelectorAll('[data-env-required="true"]')).filter((el) => !el.value);
+            const generated = envFields.querySelectorAll('[data-generate-for]').length;
+            envFieldsGroup.open = stillEmpty.length > 0;
+            const note = document.getElementById('install-env-note');
+            if (note) note.style.display = generated && !stillEmpty.length ? 'block' : 'none';
         }
 
         // Fetch pools
@@ -1094,14 +1293,25 @@ async function showInstallWizard(appId) {
         const poolsData = await poolsRes.json();
         const pools = poolsData.pools || [];
 
-        if (pools.length === 0) {
-            poolSelect.innerHTML = '<option value="">No pools available - create one first!</option>';
+        const usable = pools.filter((p) => p.mount_point && p.mount_point !== '/' && p.is_managed !== false);
+        if (usable.length === 0) {
+            poolSelect.innerHTML = '<option value="">No storage yet: set up a pool in Storage first</option>';
         } else {
-            poolSelect.innerHTML = pools.map(p => `
-                <option value="${escapeHtml(p.mount_point)}">${escapeHtml(p.name)} (${escapeHtml(p.total_size)} total, ${escapeHtml(p.mount_point)})</option>
+            poolSelect.innerHTML = usable.map(p => `
+                <option value="${escapeHtml(p.mount_point)}">${escapeHtml(p.name)}${p.free_bytes ? ` (${escapeHtml(formatFreeSpace(p.free_bytes))} free)` : ''}</option>
             `).join('');
             confirmBtn.disabled = false;
         }
+
+        let shares = [];
+        try {
+            const sharesRes = await apiFetch(`${API_BASE}/storage/shares`, { headers: { 'Authorization': authToken } });
+            if (sharesRes.ok) shares = ((await sharesRes.json()).shares || []).filter((sh) => sh && sh.path);
+        } catch (_e) {
+            shares = [];
+        }
+        renderInstallFolders({ ...app, id: appId }, usable, shares);
+        renderInstallPorts(app);
 
         // Handle confirm
         confirmBtn.onclick = async () => {
@@ -1123,6 +1333,7 @@ async function showInstallWizard(appId) {
             });
 
             if (missingFields.length > 0) {
+                if (envFieldsGroup) envFieldsGroup.open = true;
                 missingFields.forEach(({ el }) => { el.style.borderColor = 'var(--accent-warning)'; });
                 missingFields[0].el.focus();
                 showNotification(
@@ -1135,6 +1346,12 @@ async function showInstallWizard(appId) {
 
             if (!poolPath) {
                 showNotification('Please select a storage pool', 'error');
+                return;
+            }
+            const choices = collectInstallChoices();
+            if (choices.badPort) {
+                document.getElementById('install-ports').open = true;
+                showNotification('Ports are numbers from 1 to 65535.', 'warning');
                 return;
             }
 
@@ -1151,6 +1368,8 @@ async function showInstallWizard(appId) {
                     body: JSON.stringify({
                         app_id: appId,
                         pool_path: poolPath,
+                        volume_mappings: Object.keys(choices.volumeMappings).length ? choices.volumeMappings : undefined,
+                        port_mappings: Object.keys(choices.portMappings).length ? choices.portMappings : undefined,
                         environment_vars: Object.keys(environmentVars).length ? environmentVars : undefined
                     })
                 });
@@ -1179,6 +1398,124 @@ async function showInstallWizard(appId) {
         showNotification(err.message, 'error');
         modal.style.display = 'none';
     }
+}
+
+// Folders and ports of an installed app, changed later. Same choices as the
+// install dialog; the app is recreated with the same version and keeps its data.
+async function showAppSettingsDialog(appId) {
+    const installed = installedAppsCache.find((a) => a.app_id === appId) || {};
+    const app = await getAppDetails(appId);
+    if (!app) {
+        showNotification('The app details could not be loaded.', 'error');
+        return;
+    }
+    let shares = [];
+    try {
+        const res = await apiFetch(`${API_BASE}/storage/shares`, { headers: { 'Authorization': authToken } });
+        if (res.ok) shares = ((await res.json()).shares || []).filter((sh) => sh && sh.path);
+    } catch (_e) { shares = []; }
+
+    const volumes = Array.isArray(app?.config_schema?.volumes) ? app.config_schema.volumes.filter(isYourFilesVolume) : [];
+    const ports = Array.isArray(app?.config_schema?.ports) ? app.config_schema.ports : [];
+    const currentFolders = installed.volume_mappings || {};
+    const currentPorts = installed.port_mappings || {};
+    const used = portsInUse();
+    Object.keys(used).forEach((port) => { if (used[port] === (installed.name || appId)) delete used[port]; });
+
+    const folderOptions = (current) => {
+        const known = shares.some((sh) => sh.path === current);
+        return [
+            `<option value=""${current ? '' : ' selected'}>A new folder for this app</option>`,
+            ...shares.map((sh) => `<option value="${escapeHtml(sh.path)}"${sh.path === current ? ' selected' : ''}>Shared folder "${escapeHtml(sh.name)}"</option>`),
+            current && !known ? `<option value="${escapeHtml(current)}" selected>${escapeHtml(current)}</option>` : '',
+        ].join('');
+    };
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+        <div class="modal-content app-settings" role="dialog" aria-modal="true" aria-labelledby="app-settings-title">
+            <div class="modal-title"><span id="app-settings-title">Folders and ports</span>
+                <button type="button" class="modal-close-x" aria-label="Close">&times;</button></div>
+            <div class="modal-body">
+                <p class="install-hint" style="margin-top:0;">${escapeHtml(installed.name || app.name || appId)} restarts with the new settings. Its own settings and database stay where they are.</p>
+                ${volumes.length ? `<div class="install-folders">${volumes.map((v, i) => `
+                    <div class="install-folder">
+                        <label for="app-set-folder-${i}">${escapeHtml(v.description || v.container_path)}</label>
+                        <select id="app-set-folder-${i}" data-container-path="${escapeHtml(v.container_path)}">${folderOptions(currentFolders[v.container_path] || '')}</select>
+                    </div>`).join('')}
+                    <p class="install-hint">Files are not moved: what is in the old folder stays there.</p></div>` : ''}
+                ${ports.length ? `<div class="install-port-fields">${ports.map((p, i) => {
+                    const value = Number(currentPorts[p.internal] || currentPorts[String(p.internal)] || p.external);
+                    return `
+                    <div class="install-port">
+                        <span>${escapeHtml(p.description || 'Port')}
+                            <small id="app-set-port-note-${i}">Inside the app: ${escapeHtml(p.internal)}/${escapeHtml(p.protocol || 'tcp')}</small></span>
+                        <input id="app-set-port-${i}" type="number" min="1" max="65535" value="${value}"
+                            data-internal="${escapeHtml(p.internal)}" data-default="${escapeHtml(p.external)}" aria-label="${escapeHtml(p.description || 'Port')}">
+                    </div>`;
+                }).join('')}</div>` : ''}
+                ${!volumes.length && !ports.length ? '<p class="install-hint">This app has no folders or ports to choose.</p>' : ''}
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn-secondary" data-action="cancel">Cancel</button>
+                <button type="button" class="btn-primary" data-action="save"${!volumes.length && !ports.length ? ' disabled' : ''}>Save and restart</button>
+            </div>
+        </div>`;
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.querySelector('.modal-close-x').onclick = close;
+    overlay.querySelector('[data-action="cancel"]').onclick = close;
+    if (window.attachModalDismiss) window.attachModalDismiss(overlay, close);
+
+    const save = overlay.querySelector('[data-action="save"]');
+    const checkPorts = () => {
+        let problem = false;
+        overlay.querySelectorAll('input[data-internal]').forEach((input, i) => {
+            const note = overlay.querySelector(`#app-set-port-note-${i}`);
+            const value = Number(input.value);
+            const port = ports[i] || {};
+            let text = `Inside the app: ${port.internal}/${port.protocol || 'tcp'}`;
+            let warn = false;
+            if (!Number.isInteger(value) || value < 1 || value > 65535) { text = 'A number from 1 to 65535.'; warn = true; }
+            else if (used[value]) { text = `${value} is used by ${used[value]}. ${nextFreePort(value, used)} is free.`; warn = true; }
+            if (note) { note.textContent = text; note.classList.toggle('warn', warn); }
+            problem = problem || warn;
+        });
+        save.disabled = problem;
+    };
+    overlay.querySelectorAll('input[data-internal]').forEach((input) => input.addEventListener('input', checkPorts));
+    checkPorts();
+
+    save.onclick = async () => {
+        const volumeMappings = {};
+        overlay.querySelectorAll('select[data-container-path]').forEach((select) => {
+            if (select.value) volumeMappings[select.dataset.containerPath] = select.value;
+        });
+        const portMappings = {};
+        overlay.querySelectorAll('input[data-internal]').forEach((input) => {
+            if (String(Number(input.value)) !== input.dataset.default) portMappings[input.dataset.internal] = Number(input.value);
+        });
+        save.disabled = true;
+        save.textContent = 'Restarting...';
+        try {
+            const res = await apiFetch(`${API_BASE}/apps/${encodeURIComponent(appId)}/settings`, {
+                method: 'POST',
+                headers: { 'Authorization': authToken, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ volume_mappings: volumeMappings, port_mappings: portMappings }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || 'The settings were not changed.');
+            await waitForAppOperation(appId, 'reconfigure', 900);
+            close();
+            showNotification('New folders and ports are in use.', 'success');
+            await loadInstalledWorkspace(true);
+        } catch (error) {
+            showNotification(error.message, 'error');
+            save.textContent = 'Save and restart';
+            checkPorts();
+        }
+    };
 }
 
 function showAppDetails(appId) {
@@ -1753,7 +2090,11 @@ document.addEventListener('keydown', (event) => {
 // stopPropagation, so in-menu clicks never reach this handler.
 document.addEventListener('click', closeAllInspectorMenus);
 
+let installPollGeneration = 0;
+
 async function pollInstallStatus(appId) {
+    // A newer install (or a reopened dialog) ends this poll loop.
+    const generation = ++installPollGeneration;
     const statusEl = document.getElementById('install-progress-status');
     const percentEl = document.getElementById('install-progress-percent');
     const barEl = document.getElementById('install-progress-bar');
@@ -1762,6 +2103,7 @@ async function pollInstallStatus(appId) {
     const confirmBtn = document.getElementById('confirm-install-btn');
 
     const poll = async () => {
+        if (generation !== installPollGeneration) return;
         try {
             const res = await apiFetch(`${API_BASE}/apps/install/status`, {
                 headers: { 'Authorization': authToken }
@@ -1778,9 +2120,10 @@ async function pollInstallStatus(appId) {
                 return;
             }
 
+            const progress = Number.isFinite(Number(data.progress)) ? Math.max(0, Math.min(100, Number(data.progress))) : null;
             statusEl.textContent = data.message || 'Installing...';
-            percentEl.textContent = `${data.progress}%`;
-            barEl.style.width = `${data.progress}%`;
+            percentEl.textContent = progress === null ? '' : `${Math.round(progress)}%`;
+            barEl.style.width = `${progress ?? 5}%`;
 
             if (data.logs && data.logs.length > 0) {
                 logEl.textContent = data.logs.join('\n');

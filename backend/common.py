@@ -41,6 +41,8 @@ CMD = {
     'BTRFS': '/usr/bin/btrfs',
     'MKFS_BTRFS': '/usr/sbin/mkfs.btrfs',
     'MKDIR': '/usr/bin/mkdir',
+    'CP': '/usr/bin/cp',
+    'FIND': '/usr/bin/find',
     'MOUNT': '/usr/bin/mount',
     'UMOUNT': '/usr/bin/umount',
     'RMDIR': '/usr/bin/rmdir',

@@ -601,3 +601,55 @@ def test_only_known_environment_is_forwarded():
     for bad in ('LD_PRELOAD=/tmp/x.so', 'PATH=/tmp', 'DEBIAN_FRONTEND=readline', 'PYTHONPATH=/tmp'):
         with pytest.raises(p.PolicyError):
             p.validate_env([bad])
+
+
+def test_smart_self_tests_and_logs():
+    allowed('/usr/sbin/smartctl', '-t', 'short', '/dev/sdb')
+    allowed('/usr/sbin/smartctl', '-t', 'long', '-d', 'sat', '/dev/sdb')
+    allowed('/usr/sbin/smartctl', '-n', 'standby', '-H', '-A', '-l', 'selftest', '-j', '/dev/sdb')
+    # Only the read-only test kinds; no aborting, offline or vendor tests.
+    denied('/usr/sbin/smartctl', '-t', 'offline', '/dev/sdb')
+    denied('/usr/sbin/smartctl', '-X', '/dev/sdb')
+    denied('/usr/sbin/smartctl', '-t', '/dev/sdb')
+    denied('/usr/sbin/smartctl', '-l', 'error', '-s', 'off', '/dev/sdb')
+    denied('/usr/sbin/smartctl', '-n', 'never', '-H', '/dev/sdb')
+    denied('/usr/sbin/smartctl', '-t', 'short', '/etc/passwd')
+
+
+def test_a_pool_member_can_only_grow_to_its_disk():
+    allowed('/usr/bin/btrfs', 'filesystem', 'resize', '2:max', '/mnt/alvaos/main')
+    denied('/usr/bin/btrfs', 'filesystem', 'resize', 'max', '/mnt/alvaos/main')
+    denied('/usr/bin/btrfs', 'filesystem', 'resize', '2:-100g', '/mnt/alvaos/main')
+    denied('/usr/bin/btrfs', 'filesystem', 'resize', '2:10g', '/mnt/alvaos/main')
+    denied('/usr/bin/btrfs', 'filesystem', 'resize', '2:max', '/')
+    denied('/usr/bin/btrfs', 'filesystem', 'resize', '2:max', '/etc')
+
+
+def test_restore_points_can_be_listed_and_copied_from():
+    fmt = p.FIND_LIST_FORMAT
+    allowed('/usr/bin/find', '/mnt/alvaos/main/.alvaos-snapshots/media/x', '-mindepth', '1', '-maxdepth', '1',
+            '-printf', fmt)
+    allowed('/usr/bin/cp', '-a', '--reflink=auto', '--no-clobber', '--',
+            '/mnt/alvaos/main/.alvaos-snapshots/media/x/a.jpg', '/mnt/alvaos/main/media/a.jpg')
+
+
+@pytest.mark.parametrize("argv", [
+    ['/usr/bin/find', '/etc', '-mindepth', '1', '-maxdepth', '1', '-printf', p.FIND_LIST_FORMAT],
+    ['/usr/bin/find', '/mnt/alvaos/main', '-delete'],
+    ['/usr/bin/find', '/mnt/alvaos/main', '-exec', 'sh', '{}', ';'],
+    ['/usr/bin/find', '/mnt/alvaos/main', '-mindepth', '1', '-maxdepth', '1', '-printf', '%p'],
+    ['/usr/bin/cp', '-a', '--reflink=auto', '--no-clobber', '--', '/etc/shadow', '/mnt/alvaos/main/x'],
+    ['/usr/bin/cp', '-a', '--reflink=auto', '--no-clobber', '--', '/mnt/alvaos/main/x', '/etc/cron.d/x'],
+    ['/usr/bin/cp', '-a', '--reflink=auto', '--', '/mnt/alvaos/main/x', '/mnt/alvaos/main/y'],
+    ['/usr/bin/cp', '-a', '--reflink=auto', '--no-clobber', '--', '/mnt/alvaos/main/../../etc/x', '/mnt/alvaos/main/y'],
+])
+def test_listing_and_copying_stay_in_the_data_directories(argv):
+    denied(*argv)
+
+
+def test_degraded_mount_and_soft_conversion():
+    allowed('/usr/bin/mount', '-o', 'degraded', '-U', '12345678-1234-1234-1234-123456789abc', '/mnt/alvaos/main')
+    denied('/usr/bin/mount', '-o', 'degraded,rw', '-U', '12345678-1234-1234-1234-123456789abc', '/mnt/alvaos/main')
+    denied('/usr/bin/mount', '-o', 'degraded', '-U', '12345678-1234-1234-1234-123456789abc', '/etc')
+    allowed('/usr/bin/btrfs', 'balance', 'start', '-dconvert=raid1,soft', '-mconvert=raid1,soft', '/mnt/alvaos/main')
+    denied('/usr/bin/btrfs', 'balance', 'start', '-dconvert=raid1,soft,limit=1', '/mnt/alvaos/main')

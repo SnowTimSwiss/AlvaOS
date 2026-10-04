@@ -18,6 +18,78 @@ from common import run_sudo_command
 from docker_manager import DockerManager
 
 
+def summarize_app_needs(app_data: Dict) -> Dict:
+    """What an app needs from the NAS, for the store card before installing:
+    the ports it opens and how many folders it keeps on your storage."""
+    schema = app_data.get('config_schema') if isinstance(app_data, dict) else None
+    schema = schema if isinstance(schema, dict) else {}
+    ports = []
+    for port in schema.get('ports') or []:
+        if not isinstance(port, dict):
+            continue
+        external = port.get('external')
+        if isinstance(external, int) and 0 < external < 65536:
+            ports.append({
+                'port': external,
+                'protocol': str(port.get('protocol') or 'tcp'),
+                'description': str(port.get('description') or ''),
+            })
+    folders = [str(v.get('description') or v.get('container_path') or '')
+               for v in schema.get('volumes') or [] if isinstance(v, dict)]
+    return {'ports': ports, 'folders': folders}
+
+
+def normalize_port_mappings(port_mappings) -> Tuple[Optional[Dict[int, int]], Optional[str]]:
+    """{inside port: port on the NAS} as numbers, or a sentence saying why not."""
+    if not port_mappings:
+        return {}, None
+    if not isinstance(port_mappings, dict):
+        return None, 'port_mappings must be an object of source:target ports'
+    normalized: Dict[int, int] = {}
+    try:
+        for key, value in port_mappings.items():
+            src = int(str(key).strip())
+            dst = int(str(value).strip())
+            if src <= 0 or dst <= 0:
+                raise ValueError("ports must be positive integers")
+            normalized[src] = dst
+    except (TypeError, ValueError):
+        return None, 'Invalid port_mappings format. Use positive integer source/target ports.'
+    return normalized, None
+
+
+def validate_install_paths(pool_path, volume_mappings, port_mappings, pools_state) -> Optional[str]:
+    """Where an app may keep its files: on a managed pool, and any folder of
+    yours it uses must be inside a pool too. Returns a sentence, or None.
+
+    The privilege helper already refuses system paths in compose files; this
+    says no earlier and more clearly, and keeps apps on the pools."""
+    mounts = [os.path.normpath(str(p.get('mount_point')))
+              for p in (pools_state or {}).values()
+              if isinstance(p, dict) and p.get('mount_point') and p.get('mount_point') != '/']
+
+    def inside_a_pool(path: str) -> bool:
+        if not isinstance(path, str) or not path.startswith('/') or '..' in path.split('/'):
+            return False
+        clean = os.path.normpath(path)
+        return any(clean == m or clean.startswith(m.rstrip('/') + '/') for m in mounts)
+
+    if os.path.normpath(str(pool_path or '')) not in mounts:
+        return 'Choose one of your storage pools for this app.'
+    if volume_mappings:
+        if not isinstance(volume_mappings, dict):
+            return 'Folders must be given as container path: folder on the NAS.'
+        for container_path, host_path in volume_mappings.items():
+            if not str(container_path).startswith('/'):
+                return f'"{container_path}" is not a folder inside the app.'
+            if not inside_a_pool(host_path):
+                return f'{host_path} is not a folder on one of your storage pools.'
+    for internal, external in (port_mappings or {}).items():
+        if not (0 < int(internal) < 65536 and 0 < int(external) < 65536):
+            return 'Ports are numbers from 1 to 65535.'
+    return None
+
+
 class AppStore:
     """Manages the AlvaOS app catalog and installation"""
     
@@ -400,7 +472,8 @@ class AppStore:
                 'description': app_data.get('description', ''),
                 'icon': app_data.get('icon', ''),
                 'category': app_data.get('category', 'Other'),
-                'version': app_data.get('version', 'latest')
+                'version': app_data.get('version', 'latest'),
+                'needs': summarize_app_needs(app_data),
             })
         
         return apps, None
@@ -1158,30 +1231,7 @@ class AppStore:
         if not os.path.exists(storage_path):
             return False, f"App storage path not found: {storage_path}"
 
-        stored_port_mappings = app_state.get('port_mappings') if isinstance(app_state.get('port_mappings'), dict) else {}
-        stored_volume_mappings = app_state.get('volume_mappings') if isinstance(app_state.get('volume_mappings'), dict) else {}
-        stored_environment_vars = app_state.get('environment_vars') if isinstance(app_state.get('environment_vars'), dict) else {}
-        inferred_environment_vars = self._infer_environment_vars_from_running_containers(app_id, app_details)
-
-        port_mappings: Dict[int, int] = {}
-        for key, value in (stored_port_mappings or {}).items():
-            try:
-                port_mappings[int(key)] = int(value)
-            except Exception:
-                continue
-
-        volume_mappings: Dict[str, str] = {
-            str(k): str(v) for k, v in (stored_volume_mappings or {}).items()
-            if str(k).strip() and str(v).strip()
-        }
-        environment_vars: Dict[str, str] = {
-            str(k): str(v) for k, v in (inferred_environment_vars or {}).items()
-            if str(k).strip()
-        }
-        environment_vars.update({
-            str(k): str(v) for k, v in (stored_environment_vars or {}).items()
-            if str(k).strip()
-        })
+        port_mappings, volume_mappings, environment_vars = self._stored_settings(app_id, app_state, app_details)
 
         import threading
         thread = threading.Thread(
@@ -1210,6 +1260,89 @@ class AppStore:
             action="update"
         )
 
+        thread.start()
+        return True, None
+
+    def _stored_settings(self, app_id: str, app_state: Dict, app_details: Dict
+                         ) -> Tuple[Dict[int, int], Dict[str, str], Dict[str, str]]:
+        """Ports, folders and environment an installed app runs with."""
+        stored_port_mappings = app_state.get('port_mappings') if isinstance(app_state.get('port_mappings'), dict) else {}
+        stored_volume_mappings = app_state.get('volume_mappings') if isinstance(app_state.get('volume_mappings'), dict) else {}
+        stored_environment_vars = app_state.get('environment_vars') if isinstance(app_state.get('environment_vars'), dict) else {}
+        inferred_environment_vars = self._infer_environment_vars_from_running_containers(app_id, app_details)
+
+        port_mappings: Dict[int, int] = {}
+        for key, value in (stored_port_mappings or {}).items():
+            try:
+                port_mappings[int(key)] = int(value)
+            except Exception:
+                continue
+
+        volume_mappings: Dict[str, str] = {
+            str(k): str(v) for k, v in (stored_volume_mappings or {}).items()
+            if str(k).strip() and str(v).strip()
+        }
+        environment_vars: Dict[str, str] = {
+            str(k): str(v) for k, v in (inferred_environment_vars or {}).items()
+            if str(k).strip()
+        }
+        environment_vars.update({
+            str(k): str(v) for k, v in (stored_environment_vars or {}).items()
+            if str(k).strip()
+        })
+        return port_mappings, volume_mappings, environment_vars
+
+    def reconfigure_app(self, app_id: str, port_mappings: Optional[Dict[int, int]],
+                        volume_mappings: Optional[Dict[str, str]]) -> Tuple[bool, Optional[str]]:
+        """Change the ports and folders of an installed app. The containers are
+        recreated with the same images; the app's own data stays where it is."""
+        apps_state = self._load_apps_state()
+        if app_id not in apps_state:
+            return False, f"App '{app_id}' is not installed"
+        app_state = apps_state.get(app_id) or {}
+        if str(app_state.get('source') or 'catalog') == 'custom_compose':
+            return False, "Custom apps are changed in their compose file"
+        app_details, error = self.get_app_details(app_id)
+        if error or app_details is None:
+            return False, error or f"App '{app_id}' not found in catalog"
+        # The catalog describes its newest version. Recreating with it would be
+        # an update in disguise, so that happens through Update first.
+        installed = str(app_state.get('installed_version') or '').strip()
+        latest = str(app_details.get('version') or '').strip()
+        if installed and latest and installed != latest:
+            return False, "Update the app first, then change its folders and ports."
+        op_active, active_app_id = self._is_operation_in_progress()
+        if op_active:
+            if active_app_id:
+                return False, f"Operation for '{active_app_id}' is already in progress"
+            return False, "Another app operation is already in progress"
+        storage_path = str(app_state.get('storage_path') or '').strip()
+        if not storage_path or not os.path.exists(storage_path):
+            return False, f"App storage path not found: {storage_path or '-'}"
+
+        _ports, _folders, environment_vars = self._stored_settings(app_id, app_state, app_details)
+        new_ports = dict(port_mappings or {})
+        new_folders = {str(k): str(v) for k, v in (volume_mappings or {}).items() if str(k).strip() and str(v).strip()}
+
+        import threading
+        thread = threading.Thread(
+            target=self._update_app_worker,
+            args=(app_id, storage_path, new_ports, new_folders, environment_vars),
+            kwargs={'action': 'reconfigure', 'pull': False},
+        )
+        thread.daemon = True
+        with self._status_lock:
+            self._active_install_status = {
+                "app_id": app_id,
+                "action": "reconfigure",
+                "status": "starting",
+                "progress": 0,
+                "message": "Applying the new settings...",
+                "logs": [],
+                "updated_at": datetime.now().isoformat()
+            }
+        self._update_install_status(app_id, "starting", 0, "Applying the new settings...", [],
+                                    force_write=True, action="reconfigure")
         thread.start()
         return True, None
 
@@ -1267,15 +1400,17 @@ class AppStore:
         storage_path: str,
         port_mappings: Optional[Dict[int, int]],
         volume_mappings: Optional[Dict[str, str]],
-        environment_vars: Optional[Dict[str, str]]
+        environment_vars: Optional[Dict[str, str]],
+        action: str = "update",
+        pull: bool = True
     ) -> None:
-        """Worker thread for app updates."""
+        """Worker thread for app updates and settings changes (no pull)."""
         logs: List[str] = []
         try:
-            self._update_install_status(app_id, "updating", 5, f"Starting update of {app_id}...", logs, action="update")
+            self._update_install_status(app_id, "updating", 5, f"Starting update of {app_id}..." if pull else "Applying the new settings...", logs, action=action)
             app_details, error = self.get_app_details(app_id)
             if error or app_details is None:
-                self._update_install_status(app_id, "error", 0, f"Failed to read catalog entry: {error or 'not found'}", logs, force_write=True, action="update")
+                self._update_install_status(app_id, "error", 0, f"Failed to read catalog entry: {error or 'not found'}", logs, force_write=True, action=action)
                 return
 
             compose_config = self._build_compose_config(
@@ -1303,15 +1438,16 @@ class AppStore:
                     progress = 85
                     message = f"Starting services: {line}"
                 logs.append(line)
-                self._update_install_status(app_id, "updating", progress, message, logs, action="update")
+                self._update_install_status(app_id, "updating", progress, message, logs, action=action)
 
-            self._update_install_status(app_id, "updating", 20, "Invoking Docker Compose update...", logs, action="update")
+            self._update_install_status(app_id, "updating", 20, "Invoking Docker Compose update...", logs, action=action)
             success, update_error = self.docker_manager.update_container_from_compose(
                 compose_dict=compose_config,
                 app_name=app_id,
                 pool_path=storage_path,
                 project_name=f"alvaos-{app_id}",
-                callback=docker_callback
+                callback=docker_callback,
+                pull=pull
             )
             if not success:
                 self._update_install_status(
@@ -1321,7 +1457,7 @@ class AppStore:
                     f"Failed to update containers: {update_error}",
                     logs,
                     force_write=True,
-                    action="update"
+                    action=action
                 )
                 return
 
@@ -1330,7 +1466,8 @@ class AppStore:
             app_state['app_id'] = app_id
             app_state['name'] = app_details.get('name', app_id)
             app_state['source'] = str(app_state.get('source') or 'catalog').strip() or 'catalog'
-            app_state['installed_version'] = str(app_details.get('version') or '').strip()
+            if pull or not app_state.get('installed_version'):
+                app_state['installed_version'] = str(app_details.get('version') or '').strip()
             app_state['storage_path'] = storage_path
             app_state['port_mappings'] = port_mappings or {}
             app_state['volume_mappings'] = volume_mappings or {}
@@ -1341,9 +1478,9 @@ class AppStore:
             apps_state[app_id] = app_state
             self._save_apps_state(apps_state)
 
-            self._update_install_status(app_id, "success", 100, "Update completed successfully", logs, force_write=True, action="update")
+            self._update_install_status(app_id, "success", 100, "Update completed successfully" if pull else "Settings applied", logs, force_write=True, action=action)
         except Exception as e:
-            self._update_install_status(app_id, "error", 0, f"Unexpected error during update: {str(e)}", logs, force_write=True, action="update")
+            self._update_install_status(app_id, "error", 0, f"Unexpected error during update: {str(e)}", logs, force_write=True, action=action)
 
     def uninstall_app(self, app_id: str, keep_data: bool = False) -> Tuple[bool, Optional[str]]:
         """

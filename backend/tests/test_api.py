@@ -233,3 +233,93 @@ def test_a_buddy_only_ever_gets_its_own_vault(paired_buddy, monkeypatch):
 
     deleted = client.delete("/api/v1/backup/buddy/peer/vault", headers=headers, environ_base=as_a)
     assert deleted.get_json()["deleted"] is True
+
+
+# ── First-run setup ──────────────────────────────────────────────────────────
+
+def test_setup_status_suggests_the_hostname_only_before_setup(backend):
+    module, state = backend
+    client = module.app.test_client()
+    (state / "setup_complete.json").unlink(missing_ok=True)
+    before = client.get("/api/v1/setup/status").get_json()
+    assert before["setup_complete"] is False and "hostname" in before
+    set_up(state)
+    after = client.get("/api/v1/setup/status").get_json()
+    assert after["setup_complete"] is True and "hostname" not in after
+
+
+def test_setup_refuses_unknown_time_zones(backend):
+    module, state = backend
+    (state / "setup_complete.json").unlink(missing_ok=True)
+    client = module.app.test_client()
+    for tz in ("../../etc/passwd", "Europe/Zurich; reboot", "", "x" * 80):
+        response = client.post("/api/v1/setup/complete", json={"password": "longenough", "timezone": tz})
+        assert response.status_code == 400, tz
+    set_up(state)
+
+
+def test_time_zone_names():
+    import api_auth
+    for ok in ("UTC", "Europe/Zurich", "America/Argentina/Buenos_Aires", "Etc/GMT+1"):
+        assert api_auth.TIMEZONE_RE.match(ok), ok
+    for bad in ("/etc/passwd", "Europe/../x", "Europe Zurich", "-UTC"):
+        assert not api_auth.TIMEZONE_RE.match(bad), bad
+
+
+def test_signed_in_devices_can_be_listed_and_signed_out(backend):
+    import auth_manager as am
+    module, state = backend
+    set_up(state)
+    client = module.app.test_client()
+    mine = am._create_session("root", role="admin")
+    other = am._create_session("root", role="admin")
+    headers = {"Authorization": mine, "X-CSRF-Token": am.SESSIONS[mine]["csrf_token"]}
+
+    listed = client.get("/api/v1/auth/sessions", headers=headers).get_json()["sessions"]
+    assert listed[0]["current"] and other not in repr(listed)
+
+    # Changing sessions needs the CSRF token like every other change.
+    no_csrf = client.post("/api/v1/auth/sessions/revoke-others", headers={"Authorization": mine})
+    assert no_csrf.status_code == 403
+
+    own = client.delete(f"/api/v1/auth/sessions/{am.session_public_id(mine)}", headers=headers)
+    assert own.status_code == 400
+    response = client.post("/api/v1/auth/sessions/revoke-others", headers=headers)
+    assert response.get_json()["signed_out"] >= 1
+    assert other not in am.SESSIONS and mine in am.SESSIONS
+    am._destroy_session(mine)
+
+
+def test_the_admin_password_can_be_changed(backend, monkeypatch):
+    import api_auth
+    import auth_manager as am
+    from password_utils import hash_password, verify_password
+
+    module, state = backend
+    set_up(state)
+    auth_file = state / "auth.json"
+    auth_file.write_text(__import__("json").dumps({**hash_password("old password"), "totp_secret": "KEEPME"}))
+    monkeypatch.setattr(api_auth, "AUTH_FILE", str(auth_file))
+    monkeypatch.setattr(api_auth.platform, "system", lambda: "Darwin")  # no chpasswd here
+    am._reset_rate_limit("127.0.0.1")
+
+    client = module.app.test_client()
+    mine = am._create_session("root", role="admin")
+    other = am._create_session("root", role="admin")
+    headers = {"Authorization": mine, "X-CSRF-Token": am.SESSIONS[mine]["csrf_token"]}
+
+    wrong = client.post("/api/v1/auth/password", headers=headers,
+                        json={"current_password": "nope", "new_password": "a new password"})
+    assert wrong.status_code == 403
+    short = client.post("/api/v1/auth/password", headers=headers,
+                        json={"current_password": "old password", "new_password": "short"})
+    assert short.status_code == 400
+
+    ok = client.post("/api/v1/auth/password", headers=headers,
+                     json={"current_password": "old password", "new_password": "a new password"})
+    assert ok.status_code == 200, ok.get_json()
+    stored = __import__("json").loads(auth_file.read_text())
+    assert verify_password("a new password", stored)[0] and not verify_password("old password", stored)[0]
+    assert stored["totp_secret"] == "KEEPME"
+    assert mine in am.SESSIONS and other not in am.SESSIONS
+    am._destroy_session(mine)
