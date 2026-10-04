@@ -1,4 +1,4 @@
-// AlvaOS Files: the shared folders as an app. Sign in with your share
+// AlvaOS Hub, with Files as its first app: the shared folders as an app. Sign in with your share
 // password; everything you do runs as you on the NAS, so you see and change
 // exactly what you may over the network.
 (function () {
@@ -167,7 +167,7 @@
         found = null;
         $('search').value = '';
         $('main').querySelector('.bar').classList.remove('find');
-        $('photos-nav').classList.remove('active');
+        leavePhotos();
         selected = new Set();
         anchor = -1;
         if (push && location.hash !== hashFor(share, path)) history.pushState(null, '', hashFor(share, path));
@@ -233,7 +233,10 @@
         $('view-grid').setAttribute('aria-pressed', view === 'grid');
         $('view-list').setAttribute('aria-pressed', view === 'list');
         if (found && !shown.length && foundInfo.photos) {
-            items.innerHTML = `<div class="empty">${icon('image')}<strong>No photos or videos yet</strong>Pictures you put anywhere in "${esc(share)}" show up here, newest first.</div>`;
+            const own = (foundInfo.sources || []).find((src) => src.own);
+            items.innerHTML = `<div class="empty">${icon('image')}<strong>No photos or videos yet</strong>${own
+                ? `Put pictures into "${esc([own.share, own.path].filter(Boolean).join(' › '))}" and they show up here, newest first.`
+                : 'You have no folder for photos yet. Ask whoever runs this NAS for a personal folder or a photo library.'}</div>`;
         } else if (found && !shown.length) {
             items.innerHTML = `<div class="empty">${icon('search')}<strong>Nothing found</strong>No name here or in a folder below contains "${esc(foundInfo.q)}".</div>`;
         } else if (found && foundInfo.photos) {
@@ -295,7 +298,7 @@
             head.className = 'results-head';
             const here = path ? path.split('/').pop() : share;
             head.innerHTML = foundInfo.photos
-                ? `${icon('image').replace('<svg', '<svg width="16" height="16"')}<span>${found.length}${foundInfo.complete ? '' : '+'} photos and videos in ${esc(share)}, newest first</span>
+                ? `${icon('image').replace('<svg', '<svg width="16" height="16"')}<span>${found.length}${foundInfo.complete ? '' : '+'} photos and videos, newest first</span>
                 <button type="button" class="link" id="results-close">Back to the folder</button>`
                 : `${icon('search').replace('<svg', '<svg width="16" height="16"')}<span>${found.length}${foundInfo.complete ? '' : '+'} found for "${esc(foundInfo.q)}"${foundInfo.complete ? '' : ' · type more to narrow it down'}</span>
                 <span class="scope" role="group" aria-label="Where to search"><button type="button" data-scope="here" aria-pressed="${!searchAll}">In ${esc(here)}</button><button type="button" data-scope="all" aria-pressed="${searchAll}">All shared folders</button></span>
@@ -523,7 +526,7 @@
     function clearSearch() {
         $('search').value = '';
         found = null;
-        $('photos-nav').classList.remove('active');
+        leavePhotos();
         searchId++;
         $('main').querySelector('.bar').classList.remove('find');
         selected = new Set();
@@ -543,7 +546,7 @@
         setTimeout(() => clearInterval(wait), 5000);
     }
     $('search').addEventListener('input', () => {
-        if (found) { found = null; selected = new Set(); $('photos-nav').classList.remove('active'); }
+        if (found) { found = null; selected = new Set(); leavePhotos(); }
         searchId++;
         render();
         clearTimeout(searchTimer);
@@ -750,24 +753,36 @@
         wrap.querySelector('[data-close]').onclick = () => { wrap.hidden = true; wrap.innerHTML = ''; };
     });
 
-    // Photos: every picture and video of the open shared folder, newest first.
-    $('photos-nav').addEventListener('click', async () => {
+    // Photos, a Hub app of its own (opened from the app bar): every picture
+    // and video of the open shared folder, newest first.
+    let inPhotos = false;
+    function leavePhotos() {
+        inPhotos = false;
+        markRail();
+    }
+    async function showPhotos() {
         closeSide();
         $('search').value = '';
         const id = ++searchId;
+        inPhotos = true;
+        markRail();
         $('items').innerHTML = '<div class="empty">Looking for photos…</div>';
-        document.querySelectorAll('.side-item').forEach((b) => b.classList.toggle('active', b.id === 'photos-nav'));
+        document.querySelectorAll('.side-item').forEach((b) => b.classList.remove('active'));
         try {
-            const data = await api(`media?${new URLSearchParams({ share })}`);
+            // Own photos and the photo libraries (chosen on the admin's Hub page), together.
+            const { sources } = await api('photos/sources');
+            const parts = await Promise.all(sources.map((src) => api(`media?${new URLSearchParams({ share: src.share, path: src.path })}`)
+                .catch(() => ({ results: [], complete: true }))));   // e.g. a Photos folder not made yet
             if (id !== searchId) return;
-            found = data.results || [];
-            foundInfo = { q: '', complete: !!data.complete, photos: true };
+            found = parts.flatMap((p) => p.results || [])
+                .sort((a, b) => String(b.modified_at || '').localeCompare(String(a.modified_at || '')));
+            foundInfo = { q: '', complete: parts.every((p) => p.complete), photos: true, sources };
             selected = new Set();
             render();
         } catch (err) {
             toast(err.message, 'error');
         }
-    });
+    }
 
     $('links-nav').addEventListener('click', async () => {
         closeSide();
@@ -1085,6 +1100,36 @@
         }
     });
 
+    // ── The Hub's app bar ──────────────────────────────────────────────────
+    // Which apps this person sees comes from the server (hub_apps.py); the
+    // admin turns them on and off. With one app the bar stays hidden.
+    let hubApps = [];
+    function renderRail() {
+        hubApps = (me.hub && me.hub.apps) || [];
+        const rail = $('rail');
+        if (hubApps.length < 2) {
+            rail.hidden = true;
+            $('app').classList.remove('with-rail');
+            return;
+        }
+        rail.innerHTML = `<img class="rail-logo" src="hub.svg" alt="" title="${esc((me.hub && me.hub.name) || 'AlvaOS Hub')}">`
+            + hubApps.map((a) => `<button type="button" class="rail-app" data-app="${esc(a.id)}">${icon(a.icon)}<span>${esc(a.name)}</span></button>`).join('');
+        rail.hidden = false;
+        $('app').classList.add('with-rail');
+        rail.querySelectorAll('[data-app]').forEach((b) => b.addEventListener('click', () => {
+            if (b.dataset.app === 'photos') showPhotos();
+            else go(share, path);
+        }));
+        markRail();
+    }
+    function markRail() {
+        const current = inPhotos ? 'photos' : 'files';
+        $('rail').querySelectorAll('[data-app]').forEach((b) => {
+            if (b.dataset.app === current) b.setAttribute('aria-current', 'page');
+            else b.removeAttribute('aria-current');
+        });
+    }
+
     // ── Start ──────────────────────────────────────────────────────────────
     async function start() {
         try {
@@ -1098,7 +1143,15 @@
         $('me-name').textContent = me.user;
         $('me-avatar').textContent = (me.user || '?').slice(0, 1).toUpperCase();
         $('nas-name').textContent = me.nas_name || '';
-        document.title = me.nas_name ? `Files · ${me.nas_name}` : 'Files';
+        document.title = me.nas_name ? `AlvaOS Hub · ${me.nas_name}` : 'AlvaOS Hub';
+        renderRail();
+        if (!hubApps.some((a) => a.id === 'files')) {
+            $('crumbs').innerHTML = '';
+            $('share-list').innerHTML = '';
+            ['links-nav', 'trash-nav', 'connect-nav', 'new-btn'].forEach((id) => { $(id).hidden = true; });
+            $('items').innerHTML = `<div class="empty">${icon('grid')}<strong>No apps for you yet</strong>Ask whoever runs this NAS to turn on Files for you in the Hub.</div>`;
+            return;
+        }
         if (!me.shares.length) {
             $('crumbs').innerHTML = '';
             $('items').innerHTML = `<div class="empty">${icon('folder')}<strong>No shared folders for you yet</strong>Ask whoever runs this NAS to give you access to a shared folder.</div>`;

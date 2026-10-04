@@ -38,3 +38,5 @@ def _private_sessions_file(tmp_path, monkeypatch):
         return
     monkeypatch.setattr(alerts_manager, "NOTIFICATIONS_STATE_FILE", str(tmp_path / "notifications.json"))
     monkeypatch.setattr(alerts_manager, "ALERTS_STATE_FILE", str(tmp_path / "alerts.json"))
+    import hub_apps
+    monkeypatch.setattr(hub_apps, "SETTINGS_FILE", str(tmp_path / "hub.json"))

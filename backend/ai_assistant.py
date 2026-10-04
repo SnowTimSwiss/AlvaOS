@@ -51,7 +51,7 @@ TOOLS: List[Tuple[str, str, str]] = [
     ('network', '/api/v1/system/network', 'Network addresses and interfaces'),
     ('time', '/api/v1/system/time', 'Date, time and time zone'),
     ('services', '/api/v1/watchdog/status', 'Whether file sharing and apps are running'),
-    ('files_app', '/api/v1/files-app', 'Whether AlvaOS Files is on'),
+    ('hub', '/api/v1/hub', 'AlvaOS Hub: on or off, its apps (Files, Photos) and who sees each'),
     ('backup_disk', '/api/v1/backup/copy', 'The USB backup disk: chosen or not, connected, last copy, problems'),
     ('buddy_backup', '/api/v1/backup/pairing/status', 'Buddy Backup: whether a second NAS is paired and reachable'),
     ('https', '/api/v1/system/tls', 'The HTTPS certificate of this NAS and whether "HTTPS only" is on'),
@@ -145,7 +145,7 @@ ACTION_SPECS: Dict[str, Dict[str, Any]] = {
         },
     },
     'turn_on_files_app': {
-        'description': 'Turn on AlvaOS Files: the people open their folders in the browser and share links.',
+        'description': 'Turn on AlvaOS Hub (with Files): the people open their folders in the browser and share links.',
         'parameters': {},
     },
     'copy_to_backup_disk': {
@@ -300,9 +300,9 @@ def build_action(name: str, args: Dict[str, Any], read: Callable[[str], Tuple[in
                 'method': 'PUT', 'path': '/api/v1/storage/shares/quota',
                 'body': {'share_id': share.get('id'), 'limit_gb': gb}}
     if name == 'turn_on_files_app':
-        return {'title': 'Turn on AlvaOS Files',
-                'detail': 'The people can open their folders in the browser, upload and share links. '
-                          'You can turn it off again in Files.',
+        return {'title': 'Turn on AlvaOS Hub',
+                'detail': 'The people can open their folders and photos in the browser, upload and share links. '
+                          'You can turn it off again on the Hub page.',
                 'method': 'POST', 'path': '/api/v1/files-app', 'body': {'enabled': True}}
     if name == 'copy_to_backup_disk':
         _, data = read('/api/v1/backup/copy')
@@ -363,7 +363,7 @@ SYSTEM_PROMPT = (
     'You are the assistant built into AlvaOS, a home NAS. Answer in the language the person writes in, '
     'short and in plain words, for someone who is not a technician. Use the tools to look at the real state '
     'of this NAS before you answer questions about it; do not guess numbers. When something should be changed '
-    'by hand, say where in AlvaOS to do it (pages: Dashboard, Storage, Files, Apps, Backup, Updates, Settings). '
+    'by hand, say where in AlvaOS to do it (pages: Dashboard, Storage, Hub, Apps, Backup, Updates, Settings). '
     'Never ask for passwords.'
 )
 READ_PROMPT = ' You can only look, not change anything.'
@@ -604,13 +604,13 @@ def calls_in_text(content: Any) -> List[Dict[str, Any]]:
 
 # The pages the assistant can point to; links to anything else are not shown.
 PAGES = {
-    'index.html': 'Dashboard', 'storage.html': 'Storage', 'files.html': 'Files', 'apps.html': 'Apps',
+    'index.html': 'Dashboard', 'storage.html': 'Storage', 'files.html': 'Hub', 'apps.html': 'Apps',
     'backup.html': 'Backup', 'updates.html': 'Updates', 'system.html': 'Settings',
 }
 LINK_PROMPT = (
     ' When the person should do something by hand, link the page like [Backup](backup.html). Pages: '
     'index.html (Dashboard), storage.html#pools, storage.html#disks, storage.html#shares (shared folders), '
-    'storage.html#users (people), files.html, apps.html, backup.html, updates.html, system.html#network, '
+    'storage.html#users (people), files.html (AlvaOS Hub: Files, Photos), apps.html, backup.html, updates.html, system.html#network, '
     'system.html#remote (remote access), system.html#graphics (graphics cards and drivers), '
     'system.html#security, system.html#alerts, system.html#power, system.html#assistant, system.html#logs.'
 )

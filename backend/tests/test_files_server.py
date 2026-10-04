@@ -436,3 +436,55 @@ def test_a_new_password_or_removal_ends_files_sessions(client, tmp_path):
     del users["anna"]
     (tmp_path / "users.json").write_text(json.dumps(users))
     assert client.get("/api/me").status_code == 401
+
+
+def test_the_hub_shows_each_person_their_apps_and_closes_files_when_it_is_off(client):
+    import hub_apps
+    sign_in(client, "ben", "ben-pass")
+    me = client.get("/api/me").get_json()
+    assert me["hub"]["name"] == "AlvaOS Hub" and [a["id"] for a in me["hub"]["apps"]] == ["files", "photos"]
+    hub_apps.save({"apps": {"files": {"people": ["anna"]}}}, ["anna", "ben"])
+    me = client.get("/api/me").get_json()
+    assert me["hub"]["apps"] == [] and me["shares"] == []                 # signed in, but nothing for ben
+    refused = client.get("/api/list?share=Family")
+    assert refused.status_code == 403 and refused.get_json()["app_off"]
+    assert client.post("/api/mkdir", json={"share": "Family", "path": "", "name": "x"}, headers=H).status_code == 403
+    sign_in(client, "anna", "anna-pass")
+    assert client.get("/api/list?share=Family").status_code == 200
+
+
+def test_share_links_stop_while_files_is_off(client):
+    import hub_apps
+    hub_apps.save({"apps": {"files": {"enabled": False}}}, ["anna", "ben"])
+    assert client.get("/api/public/whatever").status_code == 404
+    assert client.get("/s/whatever").status_code == 404
+
+
+def test_photos_shows_own_photos_and_the_libraries_the_person_may_read(client):
+    import hub_apps
+    shares = json.loads(open(fs.SHARES_FILE).read())
+    shares["4"] = {"name": "anna-home", "path": "/mnt/alvaos/main/anna-home", "protocol": "smb",
+                   "smb_permissions": {"anna": "write"}, "personal_for": "anna"}
+    open(fs.SHARES_FILE, "w").write(json.dumps(shares))
+    hub_apps.save({"apps": {"photos": {"libraries": ["Family", "Anna"]}}}, ["anna", "ben"],
+                  shares=["Family", "Anna", "anna-home"])
+    sign_in(client, "anna", "anna-pass")
+    sources = client.get("/api/photos/sources").get_json()["sources"]
+    assert sources == [{"share": "anna-home", "path": "Photos", "own": True},
+                       {"share": "Anna", "path": "", "own": False}, {"share": "Family", "path": "", "own": False}]
+    assert (["files-mkdir", "/mnt/alvaos/main/anna-home", "Photos"], "anna") in client.calls
+    sign_in(client, "ben", "ben-pass")                       # no personal folder; may read only Family
+    assert client.get("/api/photos/sources").get_json()["sources"] == [{"share": "Family", "path": "", "own": False}]
+    hub_apps.save({"apps": {"photos": {"enabled": False}}}, ["anna", "ben"])
+    assert client.get("/api/photos/sources").status_code == 403
+    assert client.get("/api/media?share=Family").status_code == 403
+
+
+def test_thumbnails_go_to_the_hub_cache_pool_when_there_is_one(client, monkeypatch, tmp_path):
+    import hub_apps
+    cache = tmp_path / "pool" / ".alvaos-hub"
+    (cache / "thumbs").mkdir(parents=True)
+    monkeypatch.setattr(hub_apps, "cache_dir", lambda pools, settings=None: str(cache))
+    assert fs._thumb_dir() == str(cache / "thumbs")
+    monkeypatch.setattr(hub_apps, "cache_dir", lambda pools, settings=None: None)
+    assert fs._thumb_dir() == fs.THUMB_DIR

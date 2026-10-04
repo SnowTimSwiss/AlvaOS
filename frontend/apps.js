@@ -205,7 +205,7 @@ function renderAvailableApps() {
     setStoreMeta(`Showing ${filteredApps.length} of ${total} app${total === 1 ? '' : 's'}.`);
 
     if (filteredApps.length === 0) {
-        container.innerHTML = `
+        container.innerHTML = hubHint() + `
             <div class="empty-state" style="grid-column: 1/-1;">
                 <div class="empty-state-icon">${window.alvaIcon ? window.alvaIcon('triangle-alert', '', 'aria-hidden="true"') : '!'}</div>
                 <div>No apps match your current filters</div>
@@ -215,7 +215,7 @@ function renderAvailableApps() {
     }
 
     const installedIds = new Set(installedAppsCache.map((a) => a.app_id));
-    container.innerHTML = builtInFilesCard() + filteredApps.map((app) => {
+    container.innerHTML = hubHint() + filteredApps.map((app) => {
         const installed = installedIds.has(app.id);
         const needs = describeNeeds(app);
         const version = String(app.version || '');
@@ -237,59 +237,16 @@ function renderAvailableApps() {
     }).join('');
 }
 
-// AlvaOS Files is built in: nothing to download, "Turn on" starts its service.
-let filesAppState = null;
-
-function builtInFilesCard() {
+// Files, Photos and the other Hub apps are part of AlvaOS, not store apps.
+// Someone looking for them here gets a pointer to the Hub page.
+function hubHint() {
     const query = normalizeSearchText(availableSearchQuery);
-    if (availableCategoryFilter !== 'all' && availableCategoryFilter !== 'Productivity') return '';
-    if (query && !'alvaos files shared folders photos documents cloud'.includes(query)) return '';
-    const state = filesAppState;
-    const url = state ? `${window.location.protocol}//${window.location.hostname}:${window.location.protocol === 'https:' ? (state.https_port || 9443) : state.port}/` : '';
-    const button = !state
-        ? ''
-        : state.enabled
-            ? `<a class="btn-secondary" style="padding: 6px 12px; font-size: 0.85rem; text-decoration: none;" href="${escapeHtml(url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Open</a>`
-            : `<button class="btn-primary" style="padding: 6px 12px; font-size: 0.85rem;" onclick="event.stopPropagation(); turnOnFilesApp(this)">Turn on</button>`;
+    if (query.length < 3 || !['hub', 'files', 'photos', 'cloud', 'nextcloud', 'drive'].some((w) => w.startsWith(query) || query.includes(w))) return '';
     return `
-        <div class="app-card" onclick="window.location.href='files.html'">
-            <div class="app-icon" style="background: none;"><img src="files-app/icon.svg" alt="" style="width: 100%; height: 100%;"></div>
-            <div class="app-name">AlvaOS Files</div>
-            <div class="app-description">Your shared folders as an app: photos, videos and documents in any browser, for everyone with their own password.</div>
-            <div class="app-needs">Built into AlvaOS · opens port ${escapeHtml(state ? state.port : 8090)}${state && state.enabled ? ' · on' : ''}</div>
-            <div class="app-footer">
-                <span class="app-footer-meta">Built in</span>
-                ${button}
-            </div>
-        </div>`;
-}
-
-async function loadFilesAppState() {
-    try {
-        const res = await apiFetch(`${API_BASE}/files-app`, { headers: { 'Authorization': authToken } });
-        if (res.ok) filesAppState = await res.json();
-    } catch (_e) {
-        filesAppState = null;
-    }
-    renderAvailableApps();
-}
-
-async function turnOnFilesApp(button) {
-    button.disabled = true;
-    try {
-        const res = await apiFetch(`${API_BASE}/files-app`, {
-            method: 'POST',
-            headers: { 'Authorization': authToken, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ enabled: true }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || 'AlvaOS Files did not start.');
-        filesAppState = data;
-        showNotification('AlvaOS Files is on.', 'success');
-    } catch (e) {
-        showNotification(e.message, 'error');
-    }
-    renderAvailableApps();
+        <a class="app-card hub-hint" href="files.html" style="grid-column: 1/-1; text-decoration: none;">
+            <div class="app-name">Files and Photos are in the AlvaOS Hub</div>
+            <div class="app-description">They are built into AlvaOS: turn them on and choose who sees them on the Hub page.</div>
+        </a>`;
 }
 
 function normalizeIconPath(iconPath) {
@@ -930,7 +887,6 @@ async function loadAvailableApps() {
 
     availableAppsLoadPromise = (async () => {
         setLoadingButtonState(refreshBtn, true, 'Refreshing...');
-        void loadFilesAppState();
 
         try {
             const response = await apiFetch(`${API_BASE}/apps/available`, {

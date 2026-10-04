@@ -25,12 +25,14 @@ from urllib.parse import quote
 from flask import Flask, Response, jsonify, request, send_from_directory
 
 import files_manager
+import hub_apps
 from password_utils import verify_password
 
 PORT = 8090
 STATE_DIR = '/var/lib/alvaos'
 USERS_FILE = os.path.join(STATE_DIR, 'users.json')
 SHARES_FILE = os.path.join(STATE_DIR, 'shares.json')
+POOLS_FILE = os.path.join(STATE_DIR, 'pools.json')
 AUTH_FILE = os.path.join(STATE_DIR, 'auth.json')
 SESSIONS_FILE = os.path.join(STATE_DIR, 'files_sessions.json')
 SESSION_DAYS = 14
@@ -162,6 +164,10 @@ def as_user(session: Dict[str, Any]) -> Optional[str]:
     return None if session['role'] == 'admin' else session['user']
 
 
+# Asked without any Hub app: who is signed in, and which apps they see.
+HUB_PATHS = ('/api/me',)
+
+
 def need_session():
     session = current()
     if not session:
@@ -169,6 +175,10 @@ def need_session():
     if request.method != 'GET' and request.headers.get('X-AlvaOS-Files') != '1':
         # Only the Files page sends this header; another website cannot (no CORS).
         return None, (jsonify({'error': 'Request refused.'}), 403)
+    if request.path not in HUB_PATHS and not hub_apps.allowed('files', session['user'], session['role']):
+        # Everything else here is Files: the admin may have turned it off, or not for this person.
+        return None, (jsonify({'error': 'Files is not turned on for you. Ask the person who looks after the NAS.',
+                               'app_off': True}), 403)
     return session, None
 
 
@@ -265,11 +275,14 @@ def me():
     session, refused = need_session()
     if refused:
         return refused
+    settings = hub_apps.load()
+    apps = hub_apps.visible(session['user'], session['role'], settings)
+    files_on = any(a['id'] == 'files' for a in apps)
     shares = sorted(({'name': s['name'], 'access': s['access']} for s in shares_for(session).values()),
-                    key=lambda s: s['name'].lower())
+                    key=lambda s: s['name'].lower()) if files_on else []
     nas = socket.gethostname().split('.')[0]
     return jsonify({'user': session['user'], 'role': session['role'], 'shares': shares,
-                    'nas_name': nas})
+                    'nas_name': nas, 'hub': {'name': hub_apps.NAME, 'apps': apps}})
 
 
 # ── Browsing and files ───────────────────────────────────────────────────────
@@ -332,6 +345,32 @@ def search():
                     'complete': complete})
 
 
+@app.get('/api/photos/sources')
+def photo_sources():
+    """Where Photos looks for this person: their own photos (personal folder
+    or the place the admin chose, see hub_apps.own_folder) and every photo
+    library they may read."""
+    session, refused = need_session()
+    if refused:
+        return refused
+    settings = hub_apps.load()
+    if not hub_apps.allowed('photos', session['user'], session['role'], settings):
+        return jsonify({'error': 'Photos is not turned on for you.', 'app_off': True}), 403
+    mine = shares_for(session)
+    sources = []
+    own = hub_apps.own_folder('photos', session['user'], _read_json(SHARES_FILE), settings)
+    if own and own[0] in mine:
+        if own[1]:
+            # The Photos folder in the personal folder: made the first time, as the person.
+            # "Already there" is the usual answer and fine.
+            files_manager.run_helper(['files-mkdir', mine[own[0]]['path'], own[1]], user=as_user(session))
+        sources.append({'share': own[0], 'path': own[1], 'own': True})
+    for name in settings['apps']['photos'].get('libraries', []):
+        if name in mine and not any(s['share'] == name for s in sources):
+            sources.append({'share': name, 'path': '', 'own': False})
+    return jsonify({'sources': sources})
+
+
 @app.get('/api/media')
 def media():
     """Photos and videos of one share (or a folder of it), newest first, as
@@ -339,6 +378,8 @@ def media():
     session, refused = need_session()
     if refused:
         return refused
+    if not hub_apps.allowed('photos', session['user'], session['role']):
+        return jsonify({'error': 'Photos is not turned on for you.', 'app_off': True}), 403
     share, path, rel, bad = target(session, request.args)
     if bad:
         return bad
@@ -598,9 +639,18 @@ def thumbnail():
     return _thumb_response(path, as_user(session), str(request.args.get('v') or ''))
 
 
+def _thumb_dir() -> str:
+    """Thumbnails go to the Hub cache place the admin chose (a pool), else
+    the system disk as before. A pool that is gone falls back too."""
+    cache = hub_apps.cache_dir(_read_json(POOLS_FILE))
+    if cache and os.access(os.path.join(cache, 'thumbs'), os.W_OK):
+        return os.path.join(cache, 'thumbs')
+    return THUMB_DIR
+
+
 def _thumb_response(path: str, user: Optional[str], stamp: str):
     key = hashlib.sha256(f'{user}|{path}|{stamp}'.encode()).hexdigest()
-    cached = os.path.join(THUMB_DIR, key[:2], key + '.jpg')
+    cached = os.path.join(_thumb_dir(), key[:2], key + '.jpg')
     headers = {'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff'}
     try:
         with open(cached, 'rb') as f:
@@ -1253,6 +1303,14 @@ def asset(name):
     if name.startswith('api/'):
         return jsonify({'error': 'Not found'}), 404
     return send_from_directory(APP_ROOT, name)
+
+
+@app.before_request
+def public_links_need_files():
+    """Share links are part of Files: while Files is off in the Hub, they do not open."""
+    if request.path.startswith(('/api/public/', '/s/')) and not hub_apps.load()['apps']['files']['enabled']:
+        return jsonify({'error': 'This link does not work at the moment.'}), 404
+    return None
 
 
 @app.before_request

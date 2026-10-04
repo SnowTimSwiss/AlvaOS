@@ -23,17 +23,40 @@ Every page follows the same pattern as the reworked Dashboard, Storage and Backu
 
 ## Next
 
-### 2. AlvaOS Files: a native, lightweight file cloud
-Everything people use Nextcloud for at home, built into AlvaOS and working on the same folders as the shares. No separate app, no database server.
-- **AlvaOS Files app** (port 8090, HTTPS 9443, built in, turned on under Apps): done.
-- **Preview** of images, video, audio, PDF and text; **Photos** timeline by month: done. Next: the date from the photo itself (EXIF) instead of the file date, and video thumbnails.
-- **Share links**: done (read-only or upload-only "drop box", password, expiry, one list).
-- **WebDAV** (8091, HTTPS 9444) and **installing Files as an app** (PWA, over HTTPS): done.
-- **Trash** per share (also for files deleted over SMB) and **Previous versions** of a file: done in Files.
-- **Search**: by name done (folder and below, or all shared folders, as the person). Later: by content.
+### 2. AlvaOS Hub: one address for everything people use
+One place for the whole household: one address, one sign-in, and the apps side by side, instead of one port per app. The admin pages (port 8080) stay separate: the Hub is for everyone, the admin pages are for the owner (admins get a "Manage the NAS" link in the Hub).
+- **Part of AlvaOS, not an app.** The Hub ships with AlvaOS, is updated with it (signed, rolls back on its own) and is turned on in the admin pages. Technically it is what the Files server is today (port 8090, HTTPS 9443): the Files server becomes the Hub server, Files its first app.
+- **Two kinds of apps, on purpose:**
+  - *Hub apps* (ours): Files, Photos, Calendar and Contacts, Chat, Notes. Modules inside the Hub process: the NAS sign-in, the AlvaOS look, they act as the signed-in person through the helper (same folders, same permissions as Files), updated with AlvaOS. Not containers: a container per Hub app would cost memory, need its own logins and get in the way of the permissions.
+  - *Store apps* (others): Jellyfin, Immich, OpenWebUI, ... stay Docker containers with their own login and updates, isolated. In the Hub they are tiles that open them; later behind a reverse proxy with names like `jellyfin.alva.home` (certificate from our own authority; name resolution at home is the open part). No iframes and no `/apps/<name>` paths (many apps forbid or break with them).
+- **Everything optional.** Each Hub app is a module with a short manifest (name, icon, what it needs). The admin turns each on or off on the Hub page of the admin pages, and chooses per person who sees it. Off means its pages are not there and nothing of it runs. What it needs beyond AlvaOS is installed when it is turned on and can be removed again (Calendar: the Radicale package, run inside the Hub process; Chat: a cloud model key or the Ollama store app). The Hub page lists our apps with their switches; the Apps page keeps the Docker apps.
+- **No third-party plugins inside the Hub for now:** their code would run with the Hub's rights, i.e. could read everyone's files. Others' apps stay isolated Docker apps; perhaps later a narrow, defined plugin interface.
+- **Where Hub apps keep data** (the reference is `docs/HUB.md`): data stays normal files in shares, so backups and limits just work. Personal data in the person's personal folder (`Photos/`, later `Notes/`); per app the admin can choose a pool instead (one share per person, `<person>-photos`, optional limit each). Shared data in normal shares the admin marks (photo libraries). Caches (thumbnails) in `.alvaos-hub/` on a pool the admin picks, the system disk until then. **Done:** these settings on the Hub page ("Where things are kept", also making the missing personal folders) and Photos showing the own photos plus the libraries. **Next:** "You use 42 of 100 GB" per place in the Hub; uploads from the phone into the own photos (native apps).
+- **Standards first, so phones work without our apps:** Calendar and Contacts over CalDAV/CardDAV (Radicale: small, Python, proven), so iPhone, Android and Outlook sync on their own. Chat: a simple page in front of Ollama or a cloud model, reusing the assistant's connection; OpenWebUI stays a store app for power users.
+- **Order:** (1) the Hub frame: done (app bar, sign-in, a Hub icon, the Hub page in the admin pages with a switch per app and who sees it; Files and Photos as the first apps; no start page: the Hub opens the first app in the bar); (2) Calendar and Contacts; (3) Chat; (4) store apps as tiles, later the reverse proxy; (5) native apps.
+- **Native apps** for phone, PC and Mac talk to the Hub: one address, one sign-in, every Hub app inside, plus the tunnel (remote access) and file sync. A new Hub app shows up in them by itself; nothing is built per platform twice. The Hub opens directly in the app's window, not on another port.
+
+### 2a. AlvaOS Files: a native, lightweight file cloud
+Everything people use Nextcloud for at home, built into AlvaOS and working on the same folders as the shares. No separate app, no database server. Lightweight: a few MB of code, no PHP and no extra database, and it does not run when nobody uses it. Stays in Python + plain JavaScript (same helper, tests and packaging as the rest; the disk and network are the limit, not the language); a part that turns out too slow in real use is replaced on its own.
+- **Done:** the Files app (port 8090, HTTPS 9443, turned on under Apps); grid and list, thumbnails, viewer for images, video, audio, PDF and text; Photos timeline by month; search by name (this folder and below, or all shared folders); copy and move (also by dragging), ZIP download, resumable uploads of any size; trash per share (also for files deleted over SMB) and previous versions of a file; share links (read-only or upload-only drop box, password, expiry, limits); WebDAV (8091, HTTPS 9444); installable as an app (PWA); keyboard shortcuts.
+- **Simple, noticed by everyone (next, in this order):**
+  1. Sort by name, date, size and type (today only by name, folders first).
+  2. A start page with "Recent" and favourites.
+  3. Upload whole folders by drag and drop (check what works today).
+  4. "You use 42 of 100 GB" in Files (the person's own space limit).
+  5. Edit text files (notes, lists, .txt/.md) in the browser.
+  6. A notification when someone uploads into a drop box.
+  7. Photos: upload into the own photos from the Hub; the date from the photo itself (EXIF) instead of the file date; video thumbnails.
+  8. Share a folder with another person on the NAS without a public link.
+- **Powerful when needed:**
+  9. Open and edit Office documents with the EuroOffice app from the catalog (WOPI).
+  10. Search filters (type, date, size); later search by content (text in PDFs and documents).
+  11. Activity: who changed, deleted or shared what, and when.
+  12. More control over links: download limit, how often opened, all my links with "end all".
+  13. Unpack ZIP files, folder sizes, rename many files at once, properties (checksum, exact dates).
+  14. File sync for PC and phone (camera upload, folders kept in sync): with the native apps; WebDAV is the stopgap.
+- **Not in Files on purpose:** faces, maps and albums (Immich does that as an app); chat, calendar and contacts are Hub apps of their own (see 2), not part of Files.
 - **Remote access: first step done.** Settings › Remote access: WireGuard with "add this device", QR code for phones, a file for computers, last connected, remove. Needs one forwarded UDP port. UPnP (the router opens the port by itself), a CGNAT warning and DuckDNS: done. Next: optional "also reach the home network"; without any port only with a relay (Tailscale/Headscale or an own one).
-- **Native apps** for phone, PC and Mac (later): mainly Files and the other built-in apps, the system pages too; they bring the tunnel with them and open the NAS in their own window.
-- Lightweight: a few MB of code, no PHP and no extra database, and it does not run when nobody uses it.
 
 ### 3. Storage follow-ups
 - **Quotas per share and personal folders: done** (Btrfs qgroups, only switched on for a pool once a limit is set there). Warning when a folder is nearly full: done. Next: a check on a real pool with many restore points how much slower qgroups make it.
@@ -60,6 +83,12 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 - Sessions: idle sign-out (8 h) and "last sign-in / wrong passwords since" after signing in: done.
 - HTTPS on the LAN with the NAS's own authority and instructions: done (next to HTTP). "HTTPS only" switch: done.
 - Regular dependency updates and a short security review for every PR that touches `priv_policy.py` or auth.
+
+### Languages
+- Python for everything tied closely to the NAS (privilege helper, storage, shares, sign-in): one base, one set of tests and packages.
+- Go for parts that run on their own, for long, and must be fast, or run on other devices: file sync, the native apps' core, the tunnel. One binary, no dependencies. Phone UIs in Kotlin/Swift or Flutter.
+- Where a proven standard project exists (calendar, contacts, AI models), use it instead of writing our own.
+- Decided per new system, not by rewriting what works.
 
 ### Lightweight
 - Runs well on 2 GB RAM and old CPUs.
