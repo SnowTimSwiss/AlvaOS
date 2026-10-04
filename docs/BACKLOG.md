@@ -15,6 +15,20 @@ How to add an entry:
 
 ---
 
+## 2026-10-04 · Roadmap: AlvaOS Workspace and the Files plan
+
+- Decided: an "AlvaOS Workspace" (name still open): one address and one
+  sign-in for the household with built-in apps (Files, Photos, Calendar and
+  Contacts over CalDAV/CardDAV, Chat, Notes) and app-store apps as tiles.
+  Every app is turned on by the admin; what is off does not run and is not
+  installed. The native apps build on it. Admin pages stay separate.
+- The Files plan written down: what is done, the next simple steps (sort,
+  start page with recent and favourites, folder upload, own space, text
+  editing, drop-box notice, EXIF, sharing inside) and the powerful ones
+  (Office via EuroOffice, search filters, activity, link control, sync).
+- Languages: Python for what is tied to the NAS, Go for sync, native app
+  core and tunnel, standard projects where they exist. Files stays Python.
+
 ## 2026-10-04 · Settings › Graphics: graphics cards and their drivers
 
 - Lists every graphics card (PCI class 03xx in /sys, also those without a
