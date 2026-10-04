@@ -148,6 +148,12 @@
         .pw-error { color: var(--accent-danger); font-size: 0.85rem; }
         .pw-error:empty { display: none; }
         .pw-note { font-size: 0.82rem; color: var(--text-secondary); margin: 0; }
+        .pw-field select { width: 100%; }
+        .mail-adv summary { cursor: pointer; font-size: 0.85rem; color: var(--accent-primary); font-weight: 600; }
+        .mail-adv .pw-form { margin-top: 12px; }
+        .mail-grid { display: grid; grid-template-columns: 1fr 110px; gap: 12px; }
+        .pw-ok { color: var(--accent-success); font-size: 0.85rem; }
+        .pw-ok:empty { display: none; }
 
         @media (max-width: 760px) {
             .set-group { padding: 4px 14px 6px; }
@@ -270,6 +276,7 @@
         <nav aria-label="Main">
             <a href="index.html" class="nav-link"><i data-lucide="house" aria-hidden="true"></i> Dashboard</a>
             <a href="storage.html" class="nav-link"><i data-lucide="hard-drive" aria-hidden="true"></i> Storage</a>
+            <a href="files.html" class="nav-link"><i data-lucide="folder-open" aria-hidden="true"></i> Files</a>
             <a href="apps.html" class="nav-link"><i data-lucide="blocks" aria-hidden="true"></i> Apps</a>
             <a href="backup.html" class="nav-link"><i data-lucide="shield-check" aria-hidden="true"></i> Backup</a>
             <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw" aria-hidden="true"></i> Updates <span class="nav-badge" id="updates-nav-badge" style="display:none;">1</span></a>
@@ -321,6 +328,8 @@
                 <button class="tab-btn" data-tab="security"><i data-lucide="shield-check" aria-hidden="true"></i> Security</button>
                 <button class="tab-btn" data-tab="alerts"><i data-lucide="bell" aria-hidden="true"></i> Notifications</button>
                 <button class="tab-btn" data-tab="power"><i data-lucide="power" aria-hidden="true"></i> Power</button>
+                <button class="tab-btn" data-tab="remote"><i data-lucide="laptop" aria-hidden="true"></i> Remote access</button>
+                <button class="tab-btn" data-tab="assistant"><i data-lucide="bot" aria-hidden="true"></i> Assistant</button>
                 <button class="tab-btn" data-tab="logs"><i data-lucide="activity" aria-hidden="true"></i> Diagnostics</button>
             </div>
 
@@ -396,6 +405,11 @@
                         </div>
                     </div>
                     <div class="set-row">
+                        <div class="set-text"><div class="set-label">Encrypted connection (HTTPS)</div><div class="set-desc" id="tls-desc">Open AlvaOS with https:// so nobody on the network can read along. Each device trusts this NAS once.</div></div>
+                        <div class="set-value"><span class="status-dot" id="tls-dot" style="background:var(--text-secondary);" aria-hidden="true"></span><span id="tls-status" role="status" aria-live="polite">Checking...</span></div>
+                        <div class="set-action"><button id="tls-setup-btn" class="btn-secondary">Set up devices</button></div>
+                    </div>
+                    <div class="set-row">
                         <div class="set-text"><div class="set-label">Command line (SSH)</div><div class="set-desc">Off unless you need a terminal on this machine. Anyone with the admin password can then log in over the network.</div></div>
                         <div class="set-value"><span class="status-dot" id="ssh-status-dot" style="background:var(--text-secondary);" aria-hidden="true"></span><span id="ssh-status-text" role="status" aria-live="polite">Checking...</span></div>
                         <div class="set-action">
@@ -429,6 +443,17 @@
                         <div class="set-value"><span class="status-dot" id="telegram-summary-dot" style="background:var(--text-secondary);" aria-hidden="true"></span><span id="telegram-summary-status" role="status" aria-live="polite">Checking...</span></div>
                         <div class="set-action"><button id="configure-telegram-btn" class="btn-secondary">Set up</button></div>
                     </div>
+                    <div class="set-row">
+                        <div class="set-text"><div class="set-label">Email</div><div class="set-desc" id="email-summary">Problems that need action are emailed to you.</div></div>
+                        <div class="set-value"><span class="status-dot" id="email-summary-dot" style="background:var(--text-secondary);" aria-hidden="true"></span><span id="email-summary-status" role="status" aria-live="polite">Checking...</span></div>
+                        <div class="set-action"><button id="configure-email-btn" class="btn-secondary">Set up</button></div>
+                    </div>
+                    <div class="set-row">
+                        <div class="set-text"><div class="set-label"><label for="weekly-report-toggle">Weekly report</label></div><div class="set-desc">Every Sunday morning: all is well, or what to look at. Sent by email and Telegram.</div></div>
+                        <div class="set-value"><label class="toggle"><input type="checkbox" id="weekly-report-toggle"><span class="toggle-slider"></span></label></div>
+                        <div class="set-action"></div>
+                    </div>
+                    <p class="set-group-desc" style="margin: 10px 0 6px;">AlvaOS checks every five minutes. A problem is sent once, when it is still there at the next check, and again only if it comes back after it was gone.</p>
                 </section>
             </div>
 
@@ -445,6 +470,24 @@
                         <div class="set-text"><div class="set-label">Shut down</div><div class="set-desc">Turn it on again with its power button.</div></div>
                         <div class="set-value"></div>
                         <div class="set-action"><button id="shutdown-btn" class="btn-secondary">Shut down</button></div>
+                    </div>
+                </section>
+
+                <section class="set-group" id="disk-power-group">
+                    <h2 class="set-group-title">Hard disks</h2>
+                    <div class="set-row">
+                        <div class="set-text"><div class="set-label"><label for="disk-sleep-select">Let hard disks sleep</label></div>
+                            <div class="set-desc" id="disk-sleep-desc">Saves power and noise when nobody uses the NAS. The first access after a sleep takes a few seconds.</div></div>
+                        <div class="set-value">
+                            <select id="disk-sleep-select" class="select-input">
+                                <option value="0">Never</option>
+                                <option value="10">After 10 minutes</option>
+                                <option value="20">After 20 minutes</option>
+                                <option value="30">After 30 minutes</option>
+                                <option value="60">After 1 hour</option>
+                            </select>
+                        </div>
+                        <div class="set-action"></div>
                     </div>
                 </section>
 
@@ -467,6 +510,56 @@
                             <div><dt>Last action</dt><dd class="mono-text" id="ups-last-action">-</dd></div>
                         </dl>
                     </details>
+                </section>
+            </div>
+
+            <!-- ============ ASSISTANT ============ -->
+            <div class="tab-panel" id="tab-remote">
+                <section class="set-group">
+                    <h2 class="set-group-title">Remote access</h2>
+                    <p class="set-group-desc">Open this NAS and its files from anywhere, on your phone or laptop, through an encrypted WireGuard tunnel. Only this NAS can be reached through it, not the rest of your home network.</p>
+                    <div class="set-row">
+                        <div class="set-text"><div class="set-label"><label for="remote-enabled">Remote access</label></div><div class="set-desc" id="remote-summary">Checking...</div></div>
+                        <div class="set-value"><label class="toggle"><input type="checkbox" id="remote-enabled"><span class="toggle-slider"></span></label></div>
+                        <div class="set-action"></div>
+                    </div>
+                    <div id="remote-body"></div>
+                </section>
+            </div>
+
+            <div class="tab-panel" id="tab-assistant">
+                <section class="set-group">
+                    <h2 class="set-group-title">Assistant</h2>
+                    <p class="set-group-desc">Ask about this NAS in your own words, from the button at the top of every page. The assistant looks at the real state of disks, backups, apps and updates. It only looks, unless you let it suggest changes that you confirm one by one.</p>
+                    <div class="set-row">
+                        <div class="set-text"><div class="set-label"><label for="ai-enabled">Assistant</label></div><div class="set-desc" id="ai-summary">Off. Needs an AI service, set up below.</div></div>
+                        <div class="set-value"><label class="toggle"><input type="checkbox" id="ai-enabled"><span class="toggle-slider"></span></label></div>
+                        <div class="set-action"></div>
+                    </div>
+                    <form class="pw-form ai-settings" id="ai-form" novalidate>
+                        <label class="pw-field">AI service
+                            <select id="ai-provider"></select>
+                            <small id="ai-provider-hint"></small></label>
+                        <label class="pw-field">Address
+                            <input type="url" id="ai-url" placeholder="http://192.168.1.20:11434/v1" autocomplete="off" spellcheck="false"></label>
+                        <label class="pw-field">Model
+                            <input type="text" id="ai-model" placeholder="llama3.1" autocomplete="off" spellcheck="false"></label>
+                        <label class="pw-field" id="ai-key-field">API key
+                            <input type="password" id="ai-key" autocomplete="new-password" spellcheck="false">
+                            <small>Stored on this NAS only, never shown again.</small></label>
+                        <fieldset class="ai-level">
+                            <legend>What it may do</legend>
+                            <label class="choice"><input type="radio" name="ai-level" value="read" checked><div><strong>Only look</strong><span>It reads how the NAS is doing, also the logs (passwords and keys masked), and explains where to change things.</span></div></label>
+                            <label class="choice"><input type="radio" name="ai-level" value="ask"><div><strong>Suggest changes, I confirm each one</strong><span>For example make a backup now, make a shared folder, give someone access, set a space limit, check a pool, restart or update an app, install an AlvaOS update. Nothing happens until you press "Do it" in the chat.</span></div></label>
+                        </fieldset>
+                        <div class="pw-error" id="ai-error" role="alert"></div>
+                        <div class="pw-ok" id="ai-ok" role="status"></div>
+                        <div class="modal-actions">
+                            <button type="button" class="btn-secondary" id="ai-test">Try it</button>
+                            <button type="submit" class="btn-primary" id="ai-save">Save</button>
+                        </div>
+                    </form>
+                    <p class="set-group-desc" style="margin-top: 12px;" id="ai-privacy">What you ask and what the assistant looks at (disk names, folder names, usage, app names) is sent to the AI service. With Ollama on your own network nothing leaves your home. Passwords, keys and the contents of your files are never sent.</p>
                 </section>
             </div>
 
@@ -512,10 +605,16 @@
     <script src="feedback.js"></script>
     <script src="app.js"></script>
     <script src="nav.js"></script>
+    <script src="assistant.js"></script>
     <script src="password-toggle.js"></script>
     <script src="system.js"></script>
     <script src="sessions.js"></script>
     <script src="settings.js"></script>
+    <script src="settings-email.js"></script>
+    <script src="settings-disks.js"></script>
+    <script src="settings-ai.js"></script>
+    <script src="settings-tls.js"></script>
+    <script src="settings-remote.js"></script>
 </body>
 
 </html>

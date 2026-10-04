@@ -154,7 +154,9 @@
     }
 
     function renderStorage(system, alertsPayload) {
-        const pools = Array.isArray(system?.storage_pools) ? system.storage_pools : [];
+        // The backup disk is a pool too, but it is unplugged most of the time
+        // and holds copies, not the files: it is shown on the Backup page.
+        const pools = (Array.isArray(system?.storage_pools) ? system.storage_pools : []).filter((p) => !p.is_backup_disk);
         if (pools.length === 0) {
             setCard('storage', {
                 state: 'setup',
@@ -480,7 +482,8 @@
         }
 
         const more = $('status-more');
-        const rest = list.slice(1, 5);
+        // One next step is enough: the others are in "Getting started".
+        const rest = list.slice(1).filter((issue) => issue.level !== 'setup').slice(0, 4);
         if (rest.length === 0) {
             more.hidden = true;
             more.innerHTML = '';

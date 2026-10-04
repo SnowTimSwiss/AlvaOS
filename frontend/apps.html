@@ -55,6 +55,32 @@
 
         .app-icon svg { width: 30px; height: 30px; }
 
+        /* AlvaOS's own app icons: white symbol on the app's colour. */
+        .app-mark {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            background: linear-gradient(150deg, color-mix(in srgb, var(--mark) 82%, #fff), var(--mark) 70%);
+            border-radius: inherit;
+        }
+
+        .app-mini {
+            position: relative;
+            display: inline-flex;
+            width: 22px;
+            height: 22px;
+            border-radius: 6px;
+            margin-right: 8px;
+            vertical-align: -5px;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        .app-mini svg { width: 13px; height: 13px; }
+
         /* A real icon covers the category icon only once it has loaded. */
         .app-icon-image {
             position: absolute;
@@ -784,6 +810,7 @@
         <nav aria-label="Main">
             <a href="index.html" class="nav-link"><i data-lucide="house" aria-hidden="true"></i> Dashboard</a>
             <a href="storage.html" class="nav-link"><i data-lucide="hard-drive" aria-hidden="true"></i> Storage</a>
+            <a href="files.html" class="nav-link"><i data-lucide="folder-open" aria-hidden="true"></i> Files</a>
             <a href="apps.html" class="nav-link active" aria-current="page"><i data-lucide="blocks" aria-hidden="true"></i> Apps</a>
             <a href="backup.html" class="nav-link"><i data-lucide="shield-check" aria-hidden="true"></i> Backup</a>
             <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw" aria-hidden="true"></i> Updates <span class="nav-badge" id="updates-nav-badge" style="display:none;">1</span></a>
@@ -946,7 +973,7 @@
             <div id="install-app-info"
                 style="display: flex; gap: 16px; margin-bottom: 24px; padding: 16px; background: var(--bg-body); border-radius: var(--radius-default); border: 1px solid var(--border-subtle);">
                 <div id="install-app-icon"
-                    style="font-size: 2.5rem; width: 64px; height: 64px; display: flex; align-items: center; justify-content: center; background: var(--bg-card); border-radius: var(--radius-default); border: 1px solid var(--border-default);">
+                    style="position: relative; overflow: hidden; flex-shrink: 0; font-size: 2.5rem; width: 64px; height: 64px; display: flex; align-items: center; justify-content: center; background: var(--bg-card); border-radius: var(--radius-default); border: 1px solid var(--border-default);">
                     <i data-lucide="package" aria-hidden="true"></i></div>
                 <div style="flex: 1;">
                     <h3 id="install-app-name" style="margin: 0 0 4px 0; font-size: 1.1rem;">App Name</h3>
@@ -1058,6 +1085,7 @@
     <script src="feedback.js"></script>
     <script src="app.js"></script>
     <script src="nav.js"></script>
+    <script src="assistant.js"></script>
     <script src="password-toggle.js"></script>
     <script src="apps.js"></script>
 </body>

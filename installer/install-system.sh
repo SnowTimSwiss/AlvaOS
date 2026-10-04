@@ -908,8 +908,9 @@ FSTAB_EOF
         -o Acquire::Retries=3 \
         -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" \
         linux-image-amd64 python3 python3-flask python3-waitress python3-psutil python3-requests python3-packaging python3-yaml python3-cryptography \
+        python3-pyotp python3-qrcode python3-pil samba-vfs-modules miniupnpc \
         systemd systemd-timesyncd network-manager openssh-server docker.io docker-compose btrfs-progs wireguard-tools nbd-client cryptsetup \
-        curl wget vim sudo smartmontools nfs-kernel-server samba >> "$INSTALL_LOG" 2>&1
+        curl wget vim sudo smartmontools hdparm nfs-kernel-server samba >> "$INSTALL_LOG" 2>&1
 
     update_progress "Installing bootloader..."
     if [ -d /sys/firmware/efi ]; then
@@ -971,7 +972,7 @@ FSTAB_EOF
         cp /opt/alvaos/scripts/setup_sudoers.sh /mnt/opt/alvaos/scripts/ 2>/dev/null || true
         cp /opt/alvaos/scripts/sudoers.alvaos /mnt/opt/alvaos/scripts/ 2>/dev/null || true
         chmod +x /mnt/opt/alvaos/scripts/*.sh 2>/dev/null || true
-        for unit in alvaos-update-checker.service alvaos-update-checker.timer alvaos-watchdog.service alvaos-watchdog.timer; do
+        for unit in alvaos-update-checker.service alvaos-update-checker.timer alvaos-watchdog.service alvaos-watchdog.timer alvaos-files.service; do
             [ -f "/opt/alvaos/scripts/${unit}" ] && cp "/opt/alvaos/scripts/${unit}" /mnt/etc/systemd/system/
         done
     fi

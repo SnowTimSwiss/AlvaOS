@@ -31,7 +31,7 @@ from storage_manager import (
 from alerts_manager import (
     load_alerts_state,
     save_alerts_state, _collect_system_alerts,
-    _build_alert_summary, _maybe_send_telegram_critical_alerts,
+    _build_alert_summary,
     _is_pairing_active,
     _clear_pairing_state, _clear_telegram_chat_binding, _alert_settings_public_payload,
     _telegram_api_call,
@@ -137,6 +137,8 @@ def get_system_info():
     try:
         pools_state = load_pools_state()
         checks = health_checks.last_results()
+        import backup_copy
+        backup_disk = backup_copy.backup_disk_pool()
         for pool_id, pool_data in pools_state.items():
             mount_point = pool_data.get('mount_point')
             if not mount_point:
@@ -147,6 +149,7 @@ def get_system_info():
                 'name': pool_data.get('name', pool_id),
                 'mount_point': mount_point,
                 'mounted': bool(os.path.ismount(mount_point)),
+                'is_backup_disk': bool(backup_disk) and str(pool_id) == backup_disk,
             }
             check = checks.get(str(pool_id))
             if isinstance(check, dict):
@@ -242,8 +245,8 @@ def get_system_info():
 def get_alerts():
     alerts = _collect_system_alerts()
     summary = _build_alert_summary(alerts)
-    state = load_alerts_state()
-    _maybe_send_telegram_critical_alerts(alerts, state)
+    # Telegram and email are sent by alert_delivery in the background, so they
+    # also arrive when nobody has this page open.
     return jsonify({
         'alerts': alerts,
         'summary': summary,
@@ -326,6 +329,43 @@ def alerts_settings():
         'success': True,
         'settings': _alert_settings_public_payload(saved)
     })
+
+@bp.route('/api/v1/alerts/email', methods=['GET', 'POST'])
+@require_auth(require_admin=True)
+def alerts_email():
+    """Email for problems and the weekly report. The password is never sent back."""
+    import alert_delivery
+    state = alert_delivery.load_state()
+    if request.method == 'POST':
+        payload = request.get_json(silent=True) or {}
+        if isinstance(payload.get('report'), dict) and 'weekly' in payload['report']:
+            state['report']['weekly'] = bool(payload['report']['weekly'])
+        if isinstance(payload.get('email'), dict):
+            email, problem = alert_delivery.apply_email_settings(state, payload['email'])
+            if problem:
+                return jsonify({'error': problem}), 400
+            state['email'] = email
+        state = alert_delivery.save_state(state)
+    return jsonify({'success': True, **alert_delivery.public_settings(state)})
+
+
+@bp.route('/api/v1/alerts/email/test', methods=['POST'])
+@require_auth(require_admin=True)
+def alerts_email_test():
+    """Send a test email with what is typed in the dialog (saved password if none typed)."""
+    import alert_delivery
+    state = alert_delivery.load_state()
+    payload = request.get_json(silent=True) or {}
+    email, problem = alert_delivery.apply_email_settings(state, {**(payload.get('email') or {}), 'test': True})
+    if problem:
+        return jsonify({'error': problem}), 400
+    ok, error = alert_delivery.send_email(
+        email, 'AlvaOS test email',
+        'This is a test from your NAS. If you can read this, AlvaOS can tell you about problems by email.')
+    if not ok:
+        return jsonify({'error': error}), 502
+    return jsonify({'success': True, 'message': f'Sent to {email["recipient"]}. Check your inbox (and the spam folder).'})
+
 
 @bp.route('/api/v1/alerts/telegram/pairing/start', methods=['POST'])
 @require_auth
@@ -497,6 +537,44 @@ def unpair_telegram_alert_delivery():
         'settings': _alert_settings_public_payload(state),
         'message': 'Telegram pairing removed'
     })
+
+@bp.route('/api/v1/system/tls', methods=['GET'])
+@require_auth
+def tls_info():
+    """The NAS's own HTTPS certificate: what it covers and its fingerprint."""
+    import tls_manager
+    return jsonify({'success': True, **tls_manager.info(), 'https_only': tls_manager.https_only()})
+
+
+@bp.route('/api/v1/system/tls', methods=['POST'])
+@require_auth(require_admin=True)
+def tls_settings():
+    """Turn "HTTPS only" on or off. On only from a page opened over HTTPS:
+    then this device already trusts the NAS and nobody locks themselves out."""
+    import tls_manager
+    only = bool((request.get_json(silent=True) or {}).get('https_only'))
+    if only and not request.is_secure:
+        return jsonify({'error': 'Open AlvaOS with https:// first; then this device already trusts the NAS.'}), 409
+    tls_manager.set_https_only(only)
+    return jsonify({'success': True, 'https_only': only})
+
+
+@bp.route('/api/v1/system/tls/ca.crt', methods=['GET'])
+def tls_authority():
+    """The certificate of this NAS's own authority, to trust on a device.
+    Public on purpose: it holds no secret, and a phone that wants to trust
+    the NAS is not signed in yet."""
+    import tls_manager
+    from flask import Response
+    try:
+        with open(tls_manager.paths()['ca.crt'], 'rb') as f:
+            data = f.read()
+    except OSError:
+        return jsonify({'error': 'HTTPS is not set up yet. Restart AlvaOS once.'}), 404
+    host = socket.gethostname().split('.')[0] or 'alvaos'
+    return Response(data, mimetype='application/x-x509-ca-cert',
+                    headers={'Content-Disposition': f'attachment; filename="alvaos-{host}.crt"'})
+
 
 @bp.route('/api/v1/system/time', methods=['GET', 'POST'])
 @require_auth(require_admin=True)
@@ -899,6 +977,20 @@ def system_ssh_access():
     return jsonify({'success': True, **_read_ssh_access_state()})
 
 
+def replace_host_name(line, old, new):
+    """Rename a host in one /etc/hosts line: whole names only, never
+    localhost, and comments stay as they are."""
+    body, hash_, comment = line.partition('#')
+    fields = body.split()
+    if len(fields) < 2 or not old or old == 'localhost':
+        return line
+    renamed = [fields[0]] + [new if name == old else (new + name[len(old):] if name.startswith(old + '.') else name)
+                             for name in fields[1:]]
+    if renamed == fields:
+        return line
+    return '\t'.join(renamed) + (f' {hash_}{comment}' if hash_ else '')
+
+
 @bp.route('/api/v1/system/hostname', methods=['PUT'])
 @require_auth(require_admin=True)
 def set_hostname():
@@ -941,7 +1033,7 @@ def set_hostname():
                         new_lines.append(f'127.0.1.1\t{new_hostname}')
                         found_local_ip = True
                     else:
-                        new_lines.append(line.replace(old_hostname, new_hostname))
+                        new_lines.append(replace_host_name(line, old_hostname, new_hostname))
                 
                 if not found_local_ip:
                     new_lines.append(f'127.0.1.1\t{new_hostname}')

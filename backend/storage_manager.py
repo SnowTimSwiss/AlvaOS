@@ -568,7 +568,7 @@ def parse_device_stats(text: str) -> Dict[str, Dict[str, int]]:
 # may be erased or put into a pool; the privilege helper checks again that the
 # disk is not in use (priv_policy.System.busy_devices).
 
-LSBLK_COLUMNS = 'NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,LABEL,MODEL,SERIAL,TRAN,RM'
+LSBLK_COLUMNS = 'NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,LABEL,MODEL,SERIAL,TRAN,RM,ROTA'
 
 # Kernel devices that look like disks but are not hardware a user can pool:
 # loop images, optical drives, compressed RAM swap, RAM disks, floppies, and the
@@ -690,6 +690,8 @@ def describe_disks(blockdevices: List[Dict[str, Any]], pools: List[Dict[str, Any
             'is_system_disk': usage['role'] == 'system',
             'is_removable': bool(device.get('rm')) or device.get('tran') == 'usb',
             'transport': device.get('tran') or 'unknown',
+            # Spinning disk (lsblk ROTA). Only these can be told to sleep.
+            'rotational': device.get('rota') in (True, 1, '1'),
             'partitions': [
                 {'name': c.get('name'), 'size': human_size(c.get('size')) if c.get('size') is not None else 'Unknown',
                  'fstype': c.get('fstype') or 'none', 'mountpoint': c.get('mountpoint')}

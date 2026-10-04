@@ -317,8 +317,8 @@
         setButtons({ next: picks.length ? 'Erase and set up storage' : 'Continue', nextEnabled: picks.length > 0, skip: true });
     }
 
-    async function submitStorage() {
-        if ($('btn-next').textContent === 'Look again') {
+    async function submitStorage(lookAgain) {
+        if (lookAgain) {
             await enterStorage();
             return false;
         }
@@ -481,8 +481,9 @@
                 return go('storage');
             }
             if (step === 'storage') {
-                const label = button.textContent === 'Look again' ? 'Looking...' : 'Working...';
-                const advance = await withBusy(button, label, submitStorage);
+                // Decided before withBusy, which changes the button's text.
+                const lookAgain = button.textContent === 'Look again';
+                const advance = await withBusy(button, lookAgain ? 'Looking...' : 'Working...', () => submitStorage(lookAgain));
                 if (advance) go('share');
                 return undefined;
             }

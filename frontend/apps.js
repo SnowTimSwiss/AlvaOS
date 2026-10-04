@@ -215,7 +215,7 @@ function renderAvailableApps() {
     }
 
     const installedIds = new Set(installedAppsCache.map((a) => a.app_id));
-    container.innerHTML = filteredApps.map((app) => {
+    container.innerHTML = builtInFilesCard() + filteredApps.map((app) => {
         const installed = installedIds.has(app.id);
         const needs = describeNeeds(app);
         const version = String(app.version || '');
@@ -235,6 +235,61 @@ function renderAvailableApps() {
             </div>
         </div>`;
     }).join('');
+}
+
+// AlvaOS Files is built in: nothing to download, "Turn on" starts its service.
+let filesAppState = null;
+
+function builtInFilesCard() {
+    const query = normalizeSearchText(availableSearchQuery);
+    if (availableCategoryFilter !== 'all' && availableCategoryFilter !== 'Productivity') return '';
+    if (query && !'alvaos files shared folders photos documents cloud'.includes(query)) return '';
+    const state = filesAppState;
+    const url = state ? `${window.location.protocol}//${window.location.hostname}:${window.location.protocol === 'https:' ? (state.https_port || 9443) : state.port}/` : '';
+    const button = !state
+        ? ''
+        : state.enabled
+            ? `<a class="btn-secondary" style="padding: 6px 12px; font-size: 0.85rem; text-decoration: none;" href="${escapeHtml(url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Open</a>`
+            : `<button class="btn-primary" style="padding: 6px 12px; font-size: 0.85rem;" onclick="event.stopPropagation(); turnOnFilesApp(this)">Turn on</button>`;
+    return `
+        <div class="app-card" onclick="window.location.href='files.html'">
+            <div class="app-icon" style="background: none;"><img src="files-app/icon.svg" alt="" style="width: 100%; height: 100%;"></div>
+            <div class="app-name">AlvaOS Files</div>
+            <div class="app-description">Your shared folders as an app: photos, videos and documents in any browser, for everyone with their own password.</div>
+            <div class="app-needs">Built into AlvaOS · opens port ${escapeHtml(state ? state.port : 8090)}${state && state.enabled ? ' · on' : ''}</div>
+            <div class="app-footer">
+                <span class="app-footer-meta">Built in</span>
+                ${button}
+            </div>
+        </div>`;
+}
+
+async function loadFilesAppState() {
+    try {
+        const res = await apiFetch(`${API_BASE}/files-app`, { headers: { 'Authorization': authToken } });
+        if (res.ok) filesAppState = await res.json();
+    } catch (_e) {
+        filesAppState = null;
+    }
+    renderAvailableApps();
+}
+
+async function turnOnFilesApp(button) {
+    button.disabled = true;
+    try {
+        const res = await apiFetch(`${API_BASE}/files-app`, {
+            method: 'POST',
+            headers: { 'Authorization': authToken, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: true }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'AlvaOS Files did not start.');
+        filesAppState = data;
+        showNotification('AlvaOS Files is on.', 'success');
+    } catch (e) {
+        showNotification(e.message, 'error');
+    }
+    renderAvailableApps();
 }
 
 function normalizeIconPath(iconPath) {
@@ -262,8 +317,33 @@ function getCategoryIconMarkup(category) {
     return window.alvaIcon ? window.alvaIcon(iconName, '', 'aria-hidden="true"') : '';
 }
 
+// AlvaOS's own app icons: a colour and a symbol for what the app does. No
+// brand logos (their licences do not allow shipping them with AlvaOS).
+const APP_MARKS = {
+    nextcloud: ['#0b72b9', 'cloud'],
+    jellyfin: ['#6d3bb3', 'play'],
+    pihole: ['#b3312a', 'shield-ban'],
+    vaultwarden: ['#1d4fb8', 'key-round'],
+    immich: ['#c4561a', 'image'],
+    transmission: ['#a3283a', 'download'],
+    cloudflared: ['#c25a0c', 'globe'],
+    uptimekuma: ['#2b7d45', 'activity'],
+    ollama: ['#3b3f46', 'cpu'],
+    eurooffice: ['#22609e', 'file-text'],
+    wireguard: ['#7a1a1d', 'lock'],
+    openwebui: ['#2d3340', 'message-square'],
+};
+
+function appMark(appId) {
+    const mark = APP_MARKS[String(appId || '').toLowerCase()];
+    if (!mark || !window.alvaIcon) return '';
+    return `<span class="app-mark" style="--mark: ${mark[0]}">${window.alvaIcon(mark[1], '', 'aria-hidden="true"')}</span>`;
+}
+
 function getAppIcon(appOrCategory) {
     if (appOrCategory && typeof appOrCategory === 'object') {
+        const mark = appMark(appOrCategory.id || appOrCategory.app_id);
+        if (mark) return mark;
         const fallback = getCategoryIconMarkup(appOrCategory.category);
         const iconUrl = normalizeIconPath(appOrCategory.icon);
         if (!iconUrl) return fallback;
@@ -516,7 +596,7 @@ function renderInstalledList() {
                 onclick="selectInstalledApp('${escapeHtml(app.app_id)}')"
                 onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectInstalledApp('${escapeHtml(app.app_id)}'); }">
                 <div class="app-list-top">
-                    <div class="app-list-name">${escapeHtml(app.name || app.app_id)}</div>
+                    <div class="app-list-name">${appMark(app.app_id) ? `<span class="app-mini">${appMark(app.app_id)}</span>` : ''}${escapeHtml(app.name || app.app_id)}</div>
                     ${state.label ? `<span class="app-state ${state.key}">${escapeHtml(state.label)}</span>` : ''}
                 </div>
                 <div class="app-list-bottom">
@@ -648,7 +728,7 @@ async function renderInspector() {
                             <div class="inspector-value mono-text">${escapeHtml(selected.pool_path || '-')}</div>
                         </div>
                         <div>
-                            <div class="inspector-label">Subvolume</div>
+                            <div class="inspector-label">Folder (Btrfs subvolume)</div>
                             <div class="inspector-value mono-text">${escapeHtml(selected.parent_subvolume || '-')}</div>
                         </div>
                         <div>
@@ -850,6 +930,7 @@ async function loadAvailableApps() {
 
     availableAppsLoadPromise = (async () => {
         setLoadingButtonState(refreshBtn, true, 'Refreshing...');
+        void loadFilesAppState();
 
         try {
             const response = await apiFetch(`${API_BASE}/apps/available`, {

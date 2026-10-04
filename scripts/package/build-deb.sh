@@ -124,6 +124,9 @@ cp "${REPO_ROOT}/scripts/alvaos-update-checker.service" "${PKG_DIR}/etc/systemd/
 cp "${REPO_ROOT}/scripts/alvaos-update-checker.timer" "${PKG_DIR}/etc/systemd/system/"
 cp "${REPO_ROOT}/backend/alvaos-watchdog.service" "${PKG_DIR}/etc/systemd/system/"
 cp "${REPO_ROOT}/backend/alvaos-watchdog.timer" "${PKG_DIR}/etc/systemd/system/"
+# AlvaOS Files: installed, but off until it is turned on under Apps.
+cp "${REPO_ROOT}/scripts/alvaos-files.service" "${PKG_DIR}/etc/systemd/system/"
+cp "${REPO_ROOT}/scripts/alvaos-files.service" "${PKG_DIR}/opt/alvaos/scripts/"
 
 log "Creating configuration files..."
 # Create version file
@@ -166,7 +169,7 @@ Package: alvaos-system
 Version: ${DEB_VERSION}
 Architecture: amd64
 Maintainer: AlvaOS Team <dev@alvaos.org>
-Depends: python3, python3-yaml, python3-cryptography, python3-flask, python3-waitress, python3-psutil, python3-requests, python3-pyotp, python3-qrcode, python3-pil, docker.io, docker-compose, btrfs-progs, wireguard-tools, nbd-client, cryptsetup, systemd, smartmontools, nfs-kernel-server, samba, network-manager
+Depends: python3, python3-yaml, python3-cryptography, python3-flask, python3-waitress, python3-psutil, python3-requests, python3-pyotp, python3-qrcode, python3-pil, docker.io, docker-compose, btrfs-progs, wireguard-tools, nbd-client, cryptsetup, systemd, smartmontools, hdparm, nfs-kernel-server, samba, samba-vfs-modules, miniupnpc, network-manager
 Section: admin
 Priority: optional
 Homepage: https://github.com/SnowTimSwiss/AlvaOS
@@ -241,6 +244,8 @@ systemctl enable alvaos.service
 systemctl disable alvaos-update-checker.service >/dev/null 2>&1 || true
 systemctl enable --now alvaos-update-checker.timer || true
 systemctl enable --now alvaos-watchdog.timer || true
+# AlvaOS Files keeps running after an update when it was on (it stays off otherwise).
+systemctl try-restart alvaos-files.service || true
 
 echo "AlvaOS system package installed successfully!"
 echo "To start services: sudo systemctl start alvaos"
@@ -258,6 +263,7 @@ echo "Stopping AlvaOS services..."
 systemctl stop alvaos.service || true
 systemctl stop alvaos-backend.service || true
 systemctl stop alvaos-ui.service || true
+systemctl stop alvaos-files.service || true
 
 exit 0
 EOF

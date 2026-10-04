@@ -54,8 +54,10 @@ SCAN_MOUNT_BASE = '/run/alvaos-scan'
 # Root-owned staging directory for files that are checked before use.
 STAGING_DIR = '/run/alvaos-priv'
 
-# The only WireGuard config the helper will bring up or down.
+# The only WireGuard configs the helper will bring up or down: the Buddy
+# Backup tunnel and remote access (remote_access.py).
 WG_CONFIG_PATH = '/var/lib/alvaos/wireguard/buddy0.conf'
+WG_REMOTE_CONFIG_PATH = '/var/lib/alvaos/wireguard/remote0.conf'
 
 UPDATE_CACHE_DIR = '/var/lib/alvaos/updates'
 COMPOSE_DIR = '/var/lib/alvaos/compose'
@@ -112,6 +114,9 @@ class Plan:
     stage: Dict[int, str] = field(default_factory=dict)
     # Directories the helper must create (root-owned) before execution.
     make_dirs: List[str] = field(default_factory=list)
+    # Long transfers that should give way to people using the NAS: the helper
+    # runs them with nice 10 and the idle I/O class.
+    background: bool = False
 
 
 # ── System inspection (overridable for tests) ────────────────────────────────
@@ -321,7 +326,7 @@ def _share_group(system: System, group: str, must_exist: bool = True) -> str:
 
 
 def _int_arg(value: str, lo: int = 0, hi: int = 10**9) -> str:
-    if not re.fullmatch(r'\d{1,10}', value or '') or not lo <= int(value) <= hi:
+    if not re.fullmatch(r'\d{1,16}', value or '') or not lo <= int(value) <= hi:
         _fail(f'Invalid number: {value!r}')
     return value
 
@@ -673,6 +678,9 @@ _SYSTEMCTL_ALLOWED = {
     ('restart', 'ssh'), ('restart', 'smbd'),
     ('restart', 'docker'), ('restart', 'docker.service'), ('status', 'docker.service'),
     ('reload', 'nfs-kernel-server'), ('restart', 'nfs-kernel-server'),
+    # AlvaOS Files, turned on and off under Apps.
+    ('enable', '--now', 'alvaos-files.service'), ('disable', '--now', 'alvaos-files.service'),
+    ('restart', 'alvaos-files.service'), ('is-enabled', 'alvaos-files.service'),
 }
 
 
@@ -905,6 +913,11 @@ def _rule_btrfs(sys_: System, args):
             _fail('btrfs filesystem resize: only DEVID:max is allowed')
         _pool_mountpoint(_clean_abs_path(rest[1]))
         return Plan(argv=list(args))
+    if group == 'qgroup' and action == 'show':
+        # Space used by one share and its limit.
+        if rest[:2] != ['-reF', '--raw'] or len(rest) != 3:
+            _fail('btrfs qgroup show: only -reF --raw PATH')
+        return Plan(argv=['qgroup', 'show', '-reF', '--raw', writable_path(sys_, rest[2])])
     if group == 'subvolume' and action in ('show', 'get-default', 'sync'):
         # sync only waits until deleted subvolumes are cleaned up.
         _expect(rest, readable_path)
@@ -915,6 +928,16 @@ def _rule_btrfs(sys_: System, args):
         return Plan(argv=list(args))
 
     # Modifications
+    if group == 'quota' and action == 'enable':
+        if len(rest) != 1:
+            _fail('btrfs quota enable takes the pool mount point')
+        _pool_mountpoint(_clean_abs_path(rest[0]))
+        return Plan(argv=list(args))
+    if group == 'qgroup' and action == 'limit':
+        # A share's space limit: a byte count or "none", on a folder in a pool.
+        if len(rest) != 2 or not (rest[0] == 'none' or re.match(r'^[1-9][0-9]{0,16}$', rest[0])):
+            _fail('btrfs qgroup limit: only BYTES|none PATH')
+        return Plan(argv=['qgroup', 'limit', rest[0], writable_path(sys_, rest[1])])
     if group == 'subvolume' and action == 'create':
         _expect(rest, lambda p: writable_path(sys_, p))
         return Plan(argv=list(args))
@@ -942,14 +965,14 @@ def _rule_btrfs(sys_: System, args):
         if len(args) == 2:
             # Stream to stdout: the backend pipes it straight into the upload.
             readable_path(args[1])
-            return Plan(argv=list(args))
+            return Plan(argv=list(args), background=True)
         if len(args) == 4 and args[1] == '-p':
             # Incremental stream to stdout against a kept base snapshot.
             readable_path(args[2])
             readable_path(args[3])
-            return Plan(argv=list(args))
+            return Plan(argv=list(args), background=True)
         _expect(args[1:], '-f', lambda p: writable_path(sys_, p), readable_path)
-        return Plan(argv=list(args))
+        return Plan(argv=list(args), background=True)
     if group == 'receive':
         if len(args) == 2:
             # Stream from stdin: restores pipe the download straight in.
@@ -959,7 +982,7 @@ def _rule_btrfs(sys_: System, args):
             target = _clean_abs_path(args[3])
         if not (_pool_mountpoint(target, strict=False) or any(_strictly_within(target, r) for r in WRITE_ROOTS)):
             _fail('btrfs receive target not allowed')
-        return Plan(argv=list(args))
+        return Plan(argv=list(args), background=True)
     if group == 'device' and action == 'add':
         if len(rest) < 2:
             _fail('btrfs device add needs devices and a mount point')
@@ -983,7 +1006,11 @@ def _rule_btrfs(sys_: System, args):
         _expect(rest, '-1', lambda p: _pool_mountpoint(_clean_abs_path(p)))
         return Plan(argv=list(args))
     if group == 'scrub' and action == 'start':
-        _expect(rest, '-B', lambda p: _pool_mountpoint(_clean_abs_path(p)))
+        # -c 3: the idle I/O class, so people using the NAS come first.
+        if rest[1:3] == ['-c', '3']:
+            _expect(rest, '-B', '-c', '3', lambda p: _pool_mountpoint(_clean_abs_path(p)))
+        else:
+            _expect(rest, '-B', lambda p: _pool_mountpoint(_clean_abs_path(p)))
         return Plan(argv=list(args))
     if (group == 'scrub' and action in ('status', 'cancel')) or (group, action) in (
             ('balance', 'status'), ('device', 'stats')):
@@ -1153,18 +1180,33 @@ def _rule_ip(sys_: System, args):
 
 
 def _rule_wg(sys_: System, args):
-    _expect(args, 'show', 'buddy0')
+    # Never `show ... dump` or `private-key`: those print the private key.
+    if len(args) == 3:
+        _expect(args, 'show', 'remote0', 'latest-handshakes')
+    else:
+        _expect(args, 'show', 'buddy0')
     return Plan(argv=list(args))
 
 
 def _rule_wg_quick(sys_: System, args):
-    _expect(args, {'up', 'down'}, WG_CONFIG_PATH)
+    _expect(args, {'up', 'down'}, {WG_CONFIG_PATH, WG_REMOTE_CONFIG_PATH})
     return Plan(argv=list(args), stage={1: 'wg'})
 
 
 # One directory level, one entry per NUL-terminated record: type, size,
 # modification time, name. Used to browse restore points.
 FIND_LIST_FORMAT = '%y\\t%s\\t%T@\\t%f\\0'
+
+
+# hdparm only sets the standby (sleep) timeout of a data disk; values as in
+# disk_power.SPINDOWN_VALUES. Nothing else hdparm can do (secure erase,
+# firmware, write cache, ...) is allowed.
+_HDPARM_SPINDOWN = {'0', '120', '240', '241', '242'}
+
+
+def _rule_hdparm(sys_: System, args):
+    _expect(args, '-S', _HDPARM_SPINDOWN, lambda p: None)
+    return Plan(argv=['-S', args[1], _device(sys_, args[2], destructive=True)])
 
 
 def _rule_find(sys_: System, args):
@@ -1214,6 +1256,7 @@ RULES = {
     'apt': _rule_apt,
     'dpkg': _rule_dpkg,
     'smartctl': _rule_smartctl,
+    'hdparm': _rule_hdparm,
     'lsblk': _rule_readonly_flags(r'^(-[a-zA-Z]{1,6}|[A-Z,-]{1,120})$'),
     'blkid': _rule_readonly_flags(r'^(-[so]|UUID|value|TYPE|LABEL)$'),
     'btrfs': _rule_btrfs,

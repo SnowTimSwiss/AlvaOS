@@ -120,18 +120,23 @@ class UpdateManager:
         Path(self.cache_dir).mkdir(parents=True, exist_ok=True)
 
     def cleanup_cache(self, keep=3):
-        """Keep only the N most recent .deb files in the cache."""
+        """Keep only the N most recent .deb files in the cache, and always the
+        package of the version installed now: it is the way back when an
+        update fails (apply_update.sh) or is not liked (rollback)."""
         try:
             if not os.path.exists(self.cache_dir):
                 return
-            files = [os.path.join(self.cache_dir, f) for f in os.listdir(self.cache_dir) 
+            files = [os.path.join(self.cache_dir, f) for f in os.listdir(self.cache_dir)
                      if f.endswith(".deb") and os.path.isfile(os.path.join(self.cache_dir, f))]
             if len(files) <= keep:
                 return
-            
+            installed = self.normalize_version(self.get_current_version())
+
             # Sort by modification time (most recent first)
             files.sort(key=os.path.getmtime, reverse=True)
             for f in files[keep:]:
+                if installed and self.normalize_version(read_deb_version(f) or "") == installed:
+                    continue
                 for path in (f, signature_path_for(f)):
                     try:
                         os.remove(path)
@@ -139,6 +144,79 @@ class UpdateManager:
                         pass
         except Exception:
             pass
+
+    def way_back_ready(self):
+        """Whether the signed package of the installed version is in the cache."""
+        installed = self.normalize_version(self.get_current_version())
+        try:
+            names = os.listdir(self.cache_dir)
+        except OSError:
+            return False
+        for name in names:
+            path = os.path.join(self.cache_dir, name)
+            if name.endswith(".deb") and os.path.isfile(path) and os.path.isfile(signature_path_for(path)) \
+                    and installed and self.normalize_version(read_deb_version(path) or "") == installed:
+                return True
+        return False
+
+    def ensure_way_back(self, get=None):
+        """After an install from the installer or a USB stick the package of
+        the running version is not in the cache, so a failed update could not
+        go back. Fetch it (and its signature) from that version's release.
+        The signature is checked by the helper when it is used, as always.
+        Returns 'ready', 'fetched' or why not."""
+        if self.way_back_ready():
+            return "ready"
+        version = self.normalize_version(self.get_current_version())
+        if not version or version == "unknown":
+            return "unknown version"
+        get = get or requests.get
+        release = None
+        for tag in (f"v{version}", version):
+            try:
+                res = get(f"https://api.github.com/repos/{self.repo}/releases/tags/{tag}",
+                          headers=self.github_headers(), timeout=30)
+            except Exception as e:  # noqa: BLE001 - offline
+                return f"offline: {e}"
+            if getattr(res, "status_code", 0) == 200:
+                release = res.json()
+                break
+        if not release:
+            return "no release for this version"
+        assets = {a.get("name"): a.get("browser_download_url") for a in release.get("assets", [])}
+        deb = next((name for name in assets if name and name.endswith(".deb") and f"{name}.sig" in assets), None)
+        if not deb or not str(assets[deb]).startswith("https://"):
+            return "no signed package in the release"
+        self.ensure_dirs()
+        dest = os.path.join(self.cache_dir, os.path.basename(deb))
+        try:
+            for url, path, limit in ((assets[deb], dest, 512 * 1024 * 1024),
+                                     (assets[f"{deb}.sig"], signature_path_for(dest), 4096)):
+                with get(url, stream=True, timeout=60) as res:
+                    res.raise_for_status()
+                    size = 0
+                    with open(f"{path}.part", "wb") as f:
+                        for chunk in res.iter_content(chunk_size=1024 * 1024):
+                            size += len(chunk)
+                            if size > limit:
+                                raise ValueError("too large")
+                            f.write(chunk)
+                os.replace(f"{path}.part", path)
+        except Exception as e:  # noqa: BLE001 - try again at the next start
+            for path in (dest, signature_path_for(dest), f"{dest}.part", f"{signature_path_for(dest)}.part"):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+            return f"download failed: {e}"
+        if self.normalize_version(read_deb_version(dest) or "") != version:
+            for path in (dest, signature_path_for(dest)):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+            return "the release package has another version"
+        return "fetched"
 
     def load_json(self, path, default):
         try:

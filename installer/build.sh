@@ -141,8 +141,8 @@ fi
 # Frontend (optional)
 if [ -d "${SCRIPT_DIR}/../frontend" ]; then
   mkdir -p config/includes.chroot/opt/alvaos/webui
-  cp "${SCRIPT_DIR}/../frontend"/*.{html,css,js} \
-     config/includes.chroot/opt/alvaos/webui/ 2>/dev/null || true
+  # Everything, also the AlvaOS Files app in frontend/files-app/.
+  cp -r "${SCRIPT_DIR}/../frontend/"* config/includes.chroot/opt/alvaos/webui/
 fi
 
 # Update scripts (optional)
@@ -162,7 +162,7 @@ if [ -f "${SCRIPT_DIR}/../scripts/alvaos-update-checker.service" ]; then
   mkdir -p config/includes.chroot/opt/alvaos/scripts
   cp "${SCRIPT_DIR}/../scripts/alvaos-update-checker.service" config/includes.chroot/opt/alvaos/scripts/
 fi
-for unit in scripts/alvaos-update-checker.timer backend/alvaos-watchdog.service backend/alvaos-watchdog.timer; do
+for unit in scripts/alvaos-update-checker.timer scripts/alvaos-files.service backend/alvaos-watchdog.service backend/alvaos-watchdog.timer; do
   if [ -f "${SCRIPT_DIR}/../${unit}" ]; then
     mkdir -p config/includes.chroot/opt/alvaos/scripts
     cp "${SCRIPT_DIR}/../${unit}" config/includes.chroot/opt/alvaos/scripts/

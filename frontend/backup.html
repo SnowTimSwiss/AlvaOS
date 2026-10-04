@@ -1061,6 +1061,7 @@
         <nav aria-label="Main">
             <a href="index.html" class="nav-link"><i data-lucide="house" aria-hidden="true"></i> Dashboard</a>
             <a href="storage.html" class="nav-link"><i data-lucide="hard-drive" aria-hidden="true"></i> Storage</a>
+            <a href="files.html" class="nav-link"><i data-lucide="folder-open" aria-hidden="true"></i> Files</a>
             <a href="apps.html" class="nav-link"><i data-lucide="blocks" aria-hidden="true"></i> Apps</a>
             <a href="backup.html" class="nav-link active" aria-current="page"><i data-lucide="shield-check" aria-hidden="true"></i> Backup</a>
             <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw" aria-hidden="true"></i> Updates <span class="nav-badge" id="updates-nav-badge" style="display:none;">1</span></a>
@@ -1159,6 +1160,15 @@
                     </div>
                 </div>
 
+                <!-- A second copy on a backup disk (backup-disk.js) -->
+                <div class="card" id="copy-card">
+                    <div class="card-header">
+                        <div class="card-title">Backup disk</div>
+                        <span id="copy-pill"></span>
+                    </div>
+                    <div id="copy-body"><div class="metric-sub">Loading...</div></div>
+                </div>
+
                 <!-- Advanced: schedule, retention, which pools, location -->
                 <details class="advanced">
                     <summary><i data-lucide="settings-2" aria-hidden="true"></i> More options: folders, retention, location <i data-lucide="chevron-down" class="chev" aria-hidden="true"></i></summary>
@@ -1245,7 +1255,7 @@
                         <div class="card-title">Restore points</div>
                         <button id="system-snapshots-refresh-btn" class="btn-secondary">Refresh</button>
                     </div>
-                    <p class="metric-sub card-help">Restoring a full system snapshot prepares a rollback and requires a reboot.</p>
+                    <p class="metric-sub card-help">Going back to a restore point of the whole system is prepared here and happens at the next restart.</p>
                     <div id="system-snapshots-list">
                         <div class="metric-sub">Loading snapshots...</div>
                     </div>
@@ -1398,7 +1408,7 @@
                                 <h3 class="buddy-defaults-heading">Storage defaults</h3>
                                 <p class="buddy-defaults-note">Where incoming buddy data is stored and how much space new peers can use by default. Per-buddy schedule and outgoing sources are set inside each buddy card above.</p>
                                 <div class="setting-group">
-                                    <label class="setting-label" for="buddy-incoming-path">Local incoming data path (subvolume)</label>
+                                    <label class="setting-label" for="buddy-incoming-path">Folder on this NAS for your buddy's backups</label>
                                     <select id="buddy-incoming-path" class="select-input"></select>
                                     <p class="metric-sub">Incoming data from buddy NAS systems will be stored here.</p>
                                 </div>
@@ -1485,8 +1495,10 @@
     <script src="feedback.js"></script>
     <script src="app.js"></script>
     <script src="nav.js"></script>
+    <script src="assistant.js"></script>
     <script src="password-toggle.js"></script>
     <script src="backup.js"></script>
+    <script src="backup-disk.js"></script>
     <script src="snapshot-browser.js"></script>
 </body>
 

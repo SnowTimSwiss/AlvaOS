@@ -5,6 +5,10 @@ alvaos-priv — the only program the AlvaOS backend may run as root.
     sudo -n /opt/alvaos/bin/alvaos-priv [--env KEY=VALUE]... -- /usr/bin/btrfs subvolume create ...
     sudo -n /opt/alvaos/bin/alvaos-priv write-sysfs PATH VALUE
     sudo -n /opt/alvaos/bin/alvaos-priv apply-update PACKAGE
+    sudo -n /opt/alvaos/bin/alvaos-priv read-file PATH      (file on a pool, to stdout)
+    sudo -n /opt/alvaos/bin/alvaos-priv files-* ...         (AlvaOS Files changes, see files_ops.py)
+    sudo -n /opt/alvaos/bin/alvaos-priv --as USER files-*|read-file|file-size ...
+                                                            (the same, as one person: Linux checks their rights)
     sudo -n /opt/alvaos/bin/alvaos-priv vault-open NAME HOST EXPORT MODE   (key on stdin)
     sudo -n /opt/alvaos/bin/alvaos-priv vault-close NAME
 
@@ -16,9 +20,11 @@ This file and everything it imports must be owned by root and not writable by
 the alvaos user; otherwise the backend could rewrite its own policy.
 """
 
+import json
 import os
 import secrets
 import shutil
+import stat
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -28,6 +34,7 @@ sys.path.insert(0, HERE)
 
 import priv_policy as policy  # noqa: E402
 import update_signing  # noqa: E402
+import files_ops  # noqa: E402
 import vault_ops  # noqa: E402
 
 DENIED_EXIT = 126
@@ -144,6 +151,25 @@ def stage_files(plan, cleanup):
             raise policy.PolicyError(f'Unknown staging kind {kind}')
 
 
+IOPRIO_SET = {'x86_64': 251, 'aarch64': 30, 'armv7l': 314, 'i686': 289}
+
+
+def give_way():
+    """Lower this process (and what it becomes) to nice 10 and the idle I/O
+    class, best effort."""
+    try:
+        os.nice(10)
+    except OSError:
+        pass
+    try:
+        import ctypes
+        number = IOPRIO_SET.get(os.uname().machine)
+        if number:
+            ctypes.CDLL(None, use_errno=True).syscall(number, 1, 0, 3 << 13)   # WHO_PROCESS, self, IDLE
+    except (OSError, AttributeError):
+        pass
+
+
 def run_command(argv):
     env_pairs = []
     while argv and argv[0] == '--env':
@@ -186,6 +212,9 @@ def run_command(argv):
         sys.stderr.write(f'alvaos-priv: command not installed: {plan.argv[0]}\n')
         return 127
 
+    if plan.background:
+        give_way()
+
     if not cleanup and stdin_data is None:
         # Nothing to feed or clean up: become the command, so output streams
         # and signals behave exactly as if it had been run directly.
@@ -217,6 +246,36 @@ def write_sysfs(argv):
     return 0
 
 
+def _installed_alvaos_version():
+    try:
+        res = subprocess.run(['/usr/bin/dpkg-query', '-W', '-f=${Version}', ALVAOS_PACKAGE_NAME],
+                             capture_output=True, text=True, timeout=30, env=BASE_ENV)
+    except (OSError, subprocess.SubprocessError):
+        return ''
+    return res.stdout.strip() if res.returncode == 0 else ''
+
+
+def _stage_way_back(stage_dir, new_package):
+    """The signed package of the version installed now, staged and verified
+    like the update itself, so apply_update.sh can go back to it when the
+    update fails. None when it is not in the update cache."""
+    for path in update_signing.packages_of_version(policy.UPDATE_CACHE_DIR, _installed_alvaos_version(),
+                                                   exclude=new_package):
+        try:
+            staged = _stage_copy(path, policy.UPDATE_CACHE_DIR, stage_dir, name='way-back.deb')
+            if update_signing.read_deb_package_name(staged) != ALVAOS_PACKAGE_NAME:
+                raise policy.PolicyError('not an AlvaOS package')
+            _verify_alvaos_package(staged, path)
+            return staged
+        except (policy.PolicyError, OSError):
+            for leftover in ('way-back.deb', 'way-back.deb.sig'):
+                try:
+                    os.unlink(os.path.join(stage_dir, leftover))
+                except OSError:
+                    pass
+    return None
+
+
 def apply_update(argv):
     """Verify a signed AlvaOS package and hand it to apply_update.sh, detached."""
     if len(argv) != 1:
@@ -241,7 +300,145 @@ def apply_update(argv):
         '/usr/bin/systemd-run', f'--unit={unit}', '--description=AlvaOS Updater',
         '--no-block', '/usr/bin/bash', APPLY_UPDATE_SCRIPT, staged,
     ]
+    way_back = _stage_way_back(stage_dir, package)
+    if way_back:
+        cmd.append(way_back)
     return subprocess.run(cmd, env=BASE_ENV, stdin=subprocess.DEVNULL).returncode
+
+
+def open_data_file(path, root=None):
+    """Open a regular file on a pool for reading. The check is made on the
+    open file, not the name, so swapping in a symlink meanwhile does not help."""
+    root = root or policy.POOL_MOUNT_BASE
+    if not isinstance(path, str) or not path.startswith('/') or '\x00' in path:
+        raise policy.PolicyError('Invalid path')
+    f = _open_within(path, root)
+    if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+        f.close()
+        raise policy.PolicyError('Only files can be read')
+    return f
+
+
+def read_file(argv):
+    """AlvaOS Files: stream one file from a pool to stdout, whole or one part
+    (START LENGTH, for seeking in videos and resuming downloads)."""
+    if len(argv) not in (1, 3):
+        deny(argv, 'usage: read-file PATH [START LENGTH]')
+    try:
+        f = open_data_file(argv[0])
+        start = int(policy._int_arg(argv[1], 0, 10**15)) if len(argv) == 3 else 0
+        length = int(policy._int_arg(argv[2], 1, 10**15)) if len(argv) == 3 else None
+    except (policy.PolicyError, OSError) as e:
+        deny(['read-file'] + list(argv), str(e))
+    with f:
+        try:
+            f.seek(start)
+            left = length
+            while left is None or left > 0:
+                chunk = f.read(1024 * 1024 if left is None else min(1024 * 1024, left))
+                if not chunk:
+                    break
+                sys.stdout.buffer.write(chunk)
+                if left is not None:
+                    left -= len(chunk)
+            sys.stdout.buffer.flush()
+        except BrokenPipeError:
+            pass   # the browser stopped the download
+    return 0
+
+
+def file_size(argv):
+    """AlvaOS Files: the size of one file on a pool, as JSON."""
+    if len(argv) != 1:
+        deny(argv, 'usage: file-size PATH')
+    try:
+        with open_data_file(argv[0]) as f:
+            size = os.fstat(f.fileno()).st_size
+    except (policy.PolicyError, OSError) as e:
+        deny(['file-size'] + list(argv), str(e))
+    sys.stdout.write(json.dumps({'size': size}) + '\n')
+    return 0
+
+
+# AlvaOS Files: name -> (number of arguments, function); None means a name
+# and 1 to 101 folders (the current one and up to 100 restore points). files_ops checks
+# every folder on its open descriptor and never overwrites anything.
+FILES_OPS = {
+    'files-list': (1, lambda a: {'entries': files_ops.list_dir(a[0])}),
+    'files-search': (2, lambda a: files_ops.search(a[0], a[1])),
+    'files-media': (1, lambda a: files_ops.media(a[0])),
+    'files-versions': (None, lambda a: {'versions': files_ops.versions(a[0], a[1:])}),
+    'files-restore-version': (4, lambda a: {'name': files_ops.restore_version(a[0], a[1], a[2], a[3])}),
+    'files-write': (2, lambda a: {'written': files_ops.write_file(a[0], a[1], sys.stdin.buffer)}),
+    'files-mkdir': (2, lambda a: files_ops.make_dir(a[0], a[1])),
+    'files-rename': (3, lambda a: files_ops.rename(a[0], a[1], a[2])),
+    'files-move': (3, lambda a: files_ops.move(a[0], a[1], a[2])),
+    'files-copy': (3, lambda a: {'name': files_ops.copy(a[0], a[1], a[2])}),
+    'files-part-size': (2, lambda a: {'size': files_ops.part_size(a[0], a[1])}),
+    'files-part-write': (3, lambda a: {'size': files_ops.part_write(
+        a[0], a[1], int(policy._int_arg(a[2], 0, 10**15)), sys.stdin.buffer)}),
+    'files-part-finish': (3, lambda a: files_ops.part_finish(a[0], a[1], int(policy._int_arg(a[2], 0, 10**15)))),
+    'files-part-abort': (2, lambda a: files_ops.part_abort(a[0], a[1])),
+    'files-part-finish-dated': (4, lambda a: files_ops.part_finish(
+        a[0], a[1], int(policy._int_arg(a[2], 0, 10**15)), mtime=int(policy._int_arg(a[3], 0, 10**11)))),
+    'files-trash': (3, lambda a: {'id': files_ops.trash(a[0], a[1], a[2])}),
+    'files-trash-list': (1, lambda a: {'items': files_ops.list_trash(a[0])}),
+    'files-trash-restore': (2, lambda a: files_ops.restore(a[0], a[1])),
+    'files-trash-purge': (2, lambda a: {'removed': files_ops.purge(a[0], int(policy._int_arg(a[1], 0, 3650)))}),
+}
+
+
+# Operations that may run as one person (`--as USER`), so Linux checks their
+# rights exactly as for their network shares.
+AS_USER_OPS = set(FILES_OPS) - {'files-trash-purge'} | {'read-file', 'file-size', 'files-zip'}
+
+
+def become(user):
+    """Drop root for good and continue as a regular account (uid 1000+, not
+    root, alvaos or nobody), with its groups and a umask that keeps new files
+    usable for the share's group."""
+    import pwd
+    policy._user(policy.System(), user, must_exist=True, deletable=True)
+    pw = pwd.getpwnam(user)
+    os.setgroups(os.getgrouplist(user, pw.pw_gid))
+    os.setgid(pw.pw_gid)
+    os.setuid(pw.pw_uid)
+    if os.getuid() == 0 or os.geteuid() == 0:
+        raise policy.PolicyError('Could not drop root')
+    os.umask(0o007)
+
+
+def files_zip(argv):
+    """AlvaOS Files: a folder as a ZIP stream on stdout."""
+    if len(argv) != 1:
+        deny(['files-zip'] + list(argv), 'usage: files-zip DIR')
+    try:
+        files_ops.zip_folder(argv[0], sys.stdout.buffer)
+        sys.stdout.buffer.flush()
+    except files_ops.FileOpError as e:
+        sys.stderr.write(f'{e}\n')
+        return 1
+    except BrokenPipeError:
+        pass   # the browser stopped the download
+    return 0
+
+
+def files_op(name, argv):
+    count, run = FILES_OPS[name]
+    if (count is None and not 2 <= len(argv) <= 102) or (count is not None and len(argv) != count):
+        deny([name] + list(argv), f'usage: {name} with {count} arguments')
+    try:
+        result = run(argv)
+    except files_ops.FileOpError as e:
+        sys.stderr.write(f'{e}\n')
+        return 1
+    except policy.PolicyError as e:
+        deny([name] + list(argv), str(e))
+    except OSError as e:
+        sys.stderr.write(f'{e.strerror or e}\n')
+        return 1
+    sys.stdout.write(json.dumps(result if isinstance(result, dict) else {}) + '\n')
+    return 0
 
 
 def main():
@@ -250,10 +447,26 @@ def main():
         return 1
     os.umask(0o022)
     args = sys.argv[1:]
+    if args[:1] == ['--as']:
+        if len(args) < 3 or args[2] not in AS_USER_OPS:
+            deny(args, 'usage: --as USER files-...|read-file|file-size ...')
+        try:
+            become(args[1])
+        except (policy.PolicyError, KeyError, OSError) as e:
+            deny(args, f'cannot act as {args[1]}: {e}')
+        args = args[2:]
     if args[:1] == ['write-sysfs']:
         return write_sysfs(args[1:])
     if args[:1] == ['apply-update']:
         return apply_update(args[1:])
+    if args[:1] == ['read-file']:
+        return read_file(args[1:])
+    if args[:1] == ['file-size']:
+        return file_size(args[1:])
+    if args[:1] == ['files-zip']:
+        return files_zip(args[1:])
+    if args and args[0] in FILES_OPS:
+        return files_op(args[0], args[1:])
     if args[:1] in (['vault-open'], ['vault-close']):
         # Buddy Backup vaults: attach, unlock and mount, or the reverse.
         stdin = sys.stdin.buffer.read(1024) if args[0] == 'vault-open' else b''

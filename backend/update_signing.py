@@ -22,6 +22,7 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import os
 from typing import Optional
 
 PUBLIC_KEY_PATH = '/opt/alvaos/keys/update-signing.pub'
@@ -148,3 +149,25 @@ def read_deb_field(package_path: str, field: str) -> Optional[str]:
     if res.returncode != 0:
         return None
     return (res.stdout or '').strip() or None
+
+
+def packages_of_version(cache_dir: str, version: str, exclude: str = '',
+                        read_version=read_deb_version) -> list:
+    """Signed .deb files in the update cache that carry this version, for
+    going back automatically when an update fails. Newest file first."""
+    if not version:
+        return []
+    try:
+        names = os.listdir(cache_dir)
+    except OSError:
+        return []
+    found = []
+    for name in names:
+        path = os.path.join(cache_dir, name)
+        if not name.endswith('.deb') or os.path.realpath(path) == os.path.realpath(exclude or '/nonexistent'):
+            continue
+        if not os.path.isfile(path) or not os.path.isfile(signature_path_for(path)):
+            continue
+        if read_version(path) == version:
+            found.append(path)
+    return sorted(found, key=lambda p: os.path.getmtime(p), reverse=True)

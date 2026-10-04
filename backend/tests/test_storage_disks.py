@@ -410,7 +410,7 @@ def test_scrub_starts_in_the_background(maintenance):
     client, headers, started, _ = maintenance
     response = client.post('/api/v1/storage/pools/u-main/scrub', headers=headers, json={})
     assert response.status_code == 200
-    assert started[-1][1:] == ['scrub', 'start', '-B', '/mnt/alvaos/main']
+    assert started[-1][1:] == ['scrub', 'start', '-B', '-c', '3', '/mnt/alvaos/main']
 
 
 def test_maintenance_needs_a_mounted_pool(maintenance, monkeypatch):

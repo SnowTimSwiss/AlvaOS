@@ -17,8 +17,7 @@ Every page follows the same pattern as the reworked Dashboard, Storage and Backu
 ## Now
 
 ### 1. Remaining pages in the new pattern
-- **Apps:** ship real app icons in `apps/icons/` (SVG, made or licensed for AlvaOS).
-- **Updates follow-up:** roll back automatically when `dpkg -i` fails or no service comes back after an update (`apply_update.sh` only reports the error today), and keep the package of the installed version in the cache even when it came from the installer or a USB stick, so "Go back" is always offered.
+- All pages follow it (Dashboard, Storage, Files, Apps, Backup, Updates, Settings, sign-in, setup). Keeping the update package of the running version for going back: done.
 
 ---
 
@@ -26,24 +25,27 @@ Every page follows the same pattern as the reworked Dashboard, Storage and Backu
 
 ### 2. AlvaOS Files: a native, lightweight file cloud
 Everything people use Nextcloud for at home, built into AlvaOS and working on the same folders as the shares. No separate app, no database server.
-- **Web file browser** on the shared folders: browse, upload (drag and drop, large files resumable), download, rename, move, delete, and folder downloads as zip.
-- Every person from the People tab signs in with the same password and sees exactly the shares they can open, with the same read/edit rights.
-- **Preview** of images, video, audio, PDF and text; photo thumbnails generated in the background.
-- **Share links** for single files or folders: optional password, expiry date, read-only or upload-only ("drop box"). Visible and revocable in one list.
-- **Phone access** through the web UI (installable as a PWA), plus WebDAV so native file apps and desktop clients can connect.
-- **Trash** per share with automatic cleanup, and "Previous versions" of a file in Files (the backend for this exists: `browse_snapshot`/`restore_item`, used by "Get files" on the Backup page).
-- **Search** by name, later by content.
-- **Remote access** without port forwarding, over the existing WireGuard, with a simple "add this device" flow and QR code.
+- **AlvaOS Files app** (port 8090, HTTPS 9443, built in, turned on under Apps): done.
+- **Preview** of images, video, audio, PDF and text; **Photos** timeline by month: done. Next: the date from the photo itself (EXIF) instead of the file date, and video thumbnails.
+- **Share links**: done (read-only or upload-only "drop box", password, expiry, one list).
+- **WebDAV** (8091, HTTPS 9444) and **installing Files as an app** (PWA, over HTTPS): done.
+- **Trash** per share (also for files deleted over SMB) and **Previous versions** of a file: done in Files.
+- **Search**: by name done (folder and below, or all shared folders, as the person). Later: by content.
+- **Remote access: first step done.** Settings › Remote access: WireGuard with "add this device", QR code for phones, a file for computers, last connected, remove. Needs one forwarded UDP port. UPnP (the router opens the port by itself), a CGNAT warning and DuckDNS: done. Next: optional "also reach the home network"; without any port only with a relay (Tailscale/Headscale or an own one).
+- **Native apps** for phone, PC and Mac (later): mainly Files and the other built-in apps, the system pages too; they bring the tunnel with them and open the NAS in their own window.
 - Lightweight: a few MB of code, no PHP and no extra database, and it does not run when nobody uses it.
 
 ### 3. Storage follow-ups
-- Quotas per share. Needs a decision first: Btrfs quotas (qgroups) can slow down big pools noticeably, especially with many snapshots.
+- **Quotas per share and personal folders: done** (Btrfs qgroups, only switched on for a pool once a limit is set there). Warning when a folder is nearly full: done. Next: a check on a real pool with many restore points how much slower qgroups make it.
+
+### 3b. Backup to a USB disk
+- **Done (needs a test on real Btrfs).** Backup › Backup disk: pick a pool on a USB disk, AlvaOS copies the newest restore point of every source there (Btrfs send/receive, incremental) whenever the disk is connected, keeps 30 per source, "Safely remove" unmounts it. Copies show up in the restore points ("On the backup disk") and Files › Previous versions ("Get files"); a warning appears after a week without a copy. A fresh USB disk becomes the backup disk in one step (erase after typing ERASE): done.
 
 ### 4. AI
-- AI chatbot via ollama cloud integration or any other api.
-- you can toggle it completely off or on
-- new page in setup
-- it can do everything that a person can in the ui (permissions can be changed from read only to approve to NOT RECOMMENDED everything)
+- **Read-only assistant: done.** Settings › Assistant (off by default; Ollama at home, Ollama Cloud, OpenAI or any OpenAI-compatible API), chat panel in the top bar of every page, looks at the real state through a fixed list of read-only endpoints, secrets stripped.
+- **"Suggests, I confirm" level: done** (backup now, data check, restart an app, check services, disk sleep, automatic backups, update an app, install an AlvaOS update, make a shared folder, give/take access, space limits, turn on Files, copy to the backup disk). Reads logs (masked) and SMART details; links pages; understands tool calls written as text by small local models. Next: "may do everything" (not recommended, clearly marked); add people (needs a safe way to hand over a first password).
+- Mentioned at the end of first setup, with Files and HTTPS: done (no extra step).
+- Answers that stream word by word instead of arriving at once.
 
 ---
 
@@ -52,21 +54,21 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 ### Security
 - Keep the privilege helper strict: every new privileged command gets a policy rule and tests.
 - Validate everything that ends up in config files (`smb.conf`, `/etc/exports`, WireGuard, compose files).
-- Sessions: sign out sessions that were idle for a long time, and say on the login page when the NAS was last signed in to from somewhere else.
-- HTTPS by default on the LAN, with a local certificate and clear instructions for trusting it.
+- Sessions: idle sign-out (8 h) and "last sign-in / wrong passwords since" after signing in: done.
+- HTTPS on the LAN with the NAS's own authority and instructions: done (next to HTTP). "HTTPS only" switch: done.
 - Regular dependency updates and a short security review for every PR that touches `priv_policy.py` or auth.
 
 ### Lightweight
 - Runs well on 2 GB RAM and old CPUs.
 - No framework, no build step, no external assets.
-- Background work (thumbnails, scrub, backups) runs at low priority.
+- Background work runs at low priority: scrub, thumbnails and Buddy Backup transfers: done.
 - Measure idle CPU, memory and disk wake-ups, and keep them low.
 
 ### UI and UX
 - One visual language across all pages: cards, pills, buttons, dialogs, empty states.
 - Plain words instead of technical terms. The technical term appears in the details.
 - Every warning links to the page where it is fixed.
-- Accessibility: keyboard navigation, focus states, contrast.
+- Accessibility: keyboard navigation, focus states, contrast. axe-core pass over all pages: done, no violations.
 
 ### Quality
 - Tests for every backend change. Browser checks at desktop and phone width for every UI change.

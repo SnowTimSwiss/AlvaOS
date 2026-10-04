@@ -182,7 +182,8 @@ class BackupManager:
         self._worker.start()
 
     def _resolve_state_dir(self) -> str:
-        preferred = Path("/var/lib/alvaos")
+        # ALVAOS_STATE_DIR: the tests keep their state out of /var/lib/alvaos.
+        preferred = Path(os.environ.get("ALVAOS_STATE_DIR") or "/var/lib/alvaos")
         try:
             preferred.mkdir(parents=True, exist_ok=True)
             probe = preferred / ".alvaos_write_test"
@@ -1470,7 +1471,7 @@ class BackupManager:
     def _known_data_snapshot(self, snapshot_path: str) -> Optional[Dict]:
         wanted = self._normalize_path(snapshot_path)
         for entry in self.list_snapshots():
-            if (entry.get("snapshot_class") or "data") in ("data", "full_data") \
+            if (entry.get("snapshot_class") or "data") in ("data", "full_data", "copy") \
                     and self._normalize_path(entry.get("snapshot_path")) == wanted:
                 return entry
         return None
@@ -1563,6 +1564,8 @@ class BackupManager:
 
         if target_source == "/" or (metadata and (metadata.get("snapshot_class") == "system")):
             return False, {"error": "Use system rollback endpoint for full system snapshots"}
+        if metadata and metadata.get("snapshot_class") == "copy":
+            return False, {"error": "This copy is on the backup disk. Use \"Get files\" to bring back what you need."}
 
         if platform.system() != "Linux":
             return False, {"error": "Restores are only possible on the AlvaOS NAS itself (Linux)"}

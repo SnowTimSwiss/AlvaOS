@@ -182,6 +182,14 @@ def wipe_disk(disk_name):
     invalidate_storage_cache('disks', 'pools')
     return jsonify({'success': True, 'message': f'{disk_path} was erased and is ready for a pool.'})
 
+def _mark_backup_disk(pools):
+    """Copies of the pools, the backup disk marked (Backup › Backup disk)."""
+    import backup_copy
+    backup_disk = backup_copy.backup_disk_pool()
+    return [{**p, 'is_backup_disk': bool(backup_disk) and str(p.get('id')) == backup_disk}
+            if isinstance(p, dict) else p for p in pools]
+
+
 @bp.route('/api/v1/storage/pools', methods=['GET', 'POST', 'DELETE'])
 @require_auth(require_admin=True)
 def manage_pools():
@@ -192,7 +200,7 @@ def manage_pools():
         current_time = time.time()
         with _storage_cache_lock:
             if STORAGE_CACHE['pools']['expires'] > current_time:
-                return jsonify({'pools': STORAGE_CACHE['pools']['data']})
+                return jsonify({'pools': _mark_backup_disk(STORAGE_CACHE['pools']['data'])})
 
         pools = []
         
@@ -328,12 +336,15 @@ def manage_pools():
                         'total_size': 'Unknown',
                         'used_size': 'Unknown',
                         'raid_level': 'Single' if raid_level == 'single' else raid_level.upper(),
-                        'status': 'healthy',
+                        # Not found by btrfs and not mounted: its disks are not there.
+                        'status': 'healthy' if mount_point and os.path.ismount(mount_point) else 'missing',
                         'is_system_pool': mount_point == '/',
                         'is_managed': bool(mount_point)
                     }
                     if mount_point:
                         pool_entry['mount_point'] = mount_point
+                    if mount_point and os.path.ismount(mount_point):
+                        # Not mounted, df would report the disk the empty folder is on (the system disk).
                         try:
                             df_res = subprocess.run([CMD['DF'], '-h', mount_point], capture_output=True, text=True, timeout=2)
                             if df_res.returncode == 0:
@@ -356,10 +367,11 @@ def manage_pools():
 
         for pool in pools:
             pool.update(_usage_bytes(pool.get('mount_point')))
+            pool['mounted'] = bool(pool.get('mount_point')) and os.path.ismount(str(pool.get('mount_point')))
 
         with _storage_cache_lock:
             STORAGE_CACHE['pools'] = {'data': pools, 'expires': current_time + CACHE_TTL}
-        return jsonify({'pools': pools})
+        return jsonify({'pools': _mark_backup_disk(pools)})
 
     # CSRF required for state-changing operations
     session = _get_current_session()
@@ -1011,7 +1023,7 @@ def scrub_pool(pool_id):
     busy = _busy_with(_pool_activity(mount_point))
     if busy:
         return jsonify({'error': f'{busy}. Try again when it is done.'}), 409
-    failed = _start_background([CMD['BTRFS'], 'scrub', 'start', '-B', mount_point])
+    failed = _start_background([CMD['BTRFS'], 'scrub', 'start', '-B', '-c', '3', mount_point])
     if failed:
         return jsonify({'error': f'The data check did not start: {failed}'}), 500
     return jsonify({'success': True, 'message': 'Data check started. The pool stays usable meanwhile.'})
@@ -1080,7 +1092,7 @@ def make_health_scheduler():
         pools=_mounted_managed_pools,
         activity=_pool_activity,
         busy=_busy_with,
-        start_scrub=lambda mount_point: _start_background([CMD['BTRFS'], 'scrub', 'start', '-B', mount_point]),
+        start_scrub=lambda mount_point: _start_background([CMD['BTRFS'], 'scrub', 'start', '-B', '-c', '3', mount_point]),
     )
 
 
@@ -1137,6 +1149,25 @@ def grow_pool(pool_id):
     extra = sum(m['extra_bytes'] for m in candidates)
     return jsonify({'success': True, 'extra_bytes': extra,
                     'message': f'The pool now uses the whole disk{"s" if len(candidates) > 1 else ""}.'})
+
+
+@bp.route('/api/v1/storage/disk-power', methods=['GET', 'POST'])
+@require_auth(require_admin=True)
+def disk_power_settings():
+    """Let hard disks sleep after a while without use (one setting for all)."""
+    import disk_power
+    disks = disk_power.sleepable_disks(disk_inventory())
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or {}
+        try:
+            minutes = int(data.get('spindown_minutes', 0))
+            settings = disk_power.save_settings(minutes)
+        except (TypeError, ValueError) as e:
+            return jsonify({'error': str(e) or 'Invalid value'}), 400
+        results = disk_power.apply(minutes, disks, run_sudo_command)
+        failed = [r['path'] for r in results if not r['ok']]
+        return jsonify({'success': True, **settings, 'disks': [d['path'] for d in disks], 'failed': failed})
+    return jsonify({'success': True, **disk_power.load_settings(), 'disks': [d['path'] for d in disks]})
 
 
 _space_scanner = None

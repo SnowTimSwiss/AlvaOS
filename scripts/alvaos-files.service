@@ -1,0 +1,17 @@
+[Unit]
+Description=AlvaOS Files (the shared folders as an app, port 8090)
+After=network.target alvaos.service
+
+[Service]
+Type=simple
+User=alvaos
+Group=alvaos
+WorkingDirectory=/opt/alvaos/bin
+ExecStart=/usr/bin/python3 /opt/alvaos/bin/files_server.py
+Restart=always
+RestartSec=10
+Environment="PYTHONUNBUFFERED=1"
+
+# Off until it is turned on under Apps (systemctl enable --now).
+[Install]
+WantedBy=multi-user.target
