@@ -9,6 +9,8 @@
     <link rel="icon" href="hub.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="hub.svg">
     <link rel="stylesheet" href="app.css">
+    <link rel="stylesheet" href="calendar.css">
+    <link rel="stylesheet" href="chat.css">
 </head>
 <body>
     <!-- Sign in -->
@@ -45,6 +47,9 @@
             </div>
         </aside>
         <div class="scrim" id="scrim" hidden></div>
+        <!-- Calendar and Chat (calendar.js, chat.js) draw themselves here. -->
+        <div class="view cal" id="calendar-view" hidden></div>
+        <div class="view chat" id="chat-view" hidden></div>
 
         <main class="main" id="main">
             <header class="bar">
@@ -107,5 +112,7 @@
     <div class="toasts" id="toasts" aria-live="polite"></div>
 
     <script src="app.js"></script>
+    <script src="calendar.js"></script>
+    <script src="chat.js"></script>
 </body>
 </html>

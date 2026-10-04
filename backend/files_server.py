@@ -26,6 +26,9 @@ from flask import Flask, Response, jsonify, request, send_from_directory
 
 import files_manager
 import hub_apps
+import hub_calendar
+import hub_chat
+import hub_data
 from password_utils import verify_password
 
 PORT = 8090
@@ -168,16 +171,18 @@ def as_user(session: Dict[str, Any]) -> Optional[str]:
 HUB_PATHS = ('/api/me',)
 
 
-def need_session():
+def need_session(app_id: str = 'files'):
+    """The signed-in person, if they may use this Hub app (Files unless said)."""
     session = current()
     if not session:
         return None, (jsonify({'error': 'Please sign in.', 'signed_out': True}), 401)
     if request.method != 'GET' and request.headers.get('X-AlvaOS-Files') != '1':
-        # Only the Files page sends this header; another website cannot (no CORS).
+        # Only the Hub's pages send this header; another website cannot (no CORS).
         return None, (jsonify({'error': 'Request refused.'}), 403)
-    if request.path not in HUB_PATHS and not hub_apps.allowed('files', session['user'], session['role']):
-        # Everything else here is Files: the admin may have turned it off, or not for this person.
-        return None, (jsonify({'error': 'Files is not turned on for you. Ask the person who looks after the NAS.',
+    if request.path not in HUB_PATHS and not hub_apps.allowed(app_id, session['user'], session['role']):
+        # The admin may have turned the app off, or not for this person.
+        name = next((a['name'] for a in hub_apps.APPS if a['id'] == app_id), app_id)
+        return None, (jsonify({'error': f'{name} is not turned on for you. Ask the person who looks after the NAS.',
                                'app_off': True}), 403)
     return session, None
 
@@ -1289,6 +1294,14 @@ def authority_certificate():
 @app.get('/s/<token>')
 def share_page(token):
     return send_from_directory(APP_ROOT, 'share.html')
+
+
+# ── Other Hub apps (their own modules) ───────────────────────────────────────
+
+hub_data.setup(need_session=need_session, shares_for=shares_for, as_user=as_user, read_json=_read_json,
+               shares_file=lambda: SHARES_FILE)
+app.register_blueprint(hub_calendar.bp)
+app.register_blueprint(hub_chat.bp)
 
 
 # ── The app itself ───────────────────────────────────────────────────────────

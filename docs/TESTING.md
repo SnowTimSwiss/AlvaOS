@@ -57,7 +57,7 @@ storage healthy, one shared folder.
 ## 4. AlvaOS Hub and Files (in the browser)
 
 1. Hub page › turn on AlvaOS Hub › open it (port 8090). The app bar shows
-   Files and Photos. On the Hub page set Photos to "Only some people" and
+   Files, Photos and Calendar (Chat after it is turned on). On the Hub page set Photos to "Only some people" and
    untick someone: they no longer see Photos; turn Files off for them: they
    see "No apps for you yet", and WebDAV refuses them.
 2. Sign in as `anna`. Upload photos (also a big file, > 1 GB, and stop
@@ -74,6 +74,19 @@ storage healthy, one shared folder.
    private window and upload into the drop box.
 6. On a phone: open it, "Add to home screen" (needs HTTPS, step 9).
 7. WebDAV: Windows "Map network drive" or Finder › `http://alva-test:8091`.
+8. Calendar (as `anna`, who has a personal folder): drag in the week to
+   make an event, drag it to another day, pull its lower edge; make one
+   that repeats every week; add a calendar "Work" in another colour and
+   hide it; add a task with a day (it shows in the calendar) and tick it in
+   the tasks panel. Hub page › Where things are kept › Shared family
+   calendars: tick "Family": anna changes it, someone with read-only
+   access only looks. Try month, schedule and the 3 days on a phone.
+9. Chat: Settings › Assistant: set up an AI service (Ollama at home is
+   enough). Hub page › Chat: turn it on, Change › tick two models. In the
+   Hub: a new chat, switch the model, "Think" on with "High" (a thinking
+   model like qwen3 shows "Thought for … seconds"), stop an answer, rename
+   and delete a chat. Ask it about the NAS: it does not know and cannot
+   change anything.
 
 ## 5. People and space limits
 

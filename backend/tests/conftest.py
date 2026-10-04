@@ -40,3 +40,5 @@ def _private_sessions_file(tmp_path, monkeypatch):
     monkeypatch.setattr(alerts_manager, "ALERTS_STATE_FILE", str(tmp_path / "alerts.json"))
     import hub_apps
     monkeypatch.setattr(hub_apps, "SETTINGS_FILE", str(tmp_path / "hub.json"))
+    import ai_assistant
+    monkeypatch.setattr(ai_assistant, "SETTINGS_FILE", str(tmp_path / "ai.json"))

@@ -51,7 +51,7 @@ TOOLS: List[Tuple[str, str, str]] = [
     ('network', '/api/v1/system/network', 'Network addresses and interfaces'),
     ('time', '/api/v1/system/time', 'Date, time and time zone'),
     ('services', '/api/v1/watchdog/status', 'Whether file sharing and apps are running'),
-    ('hub', '/api/v1/hub', 'AlvaOS Hub: on or off, its apps (Files, Photos) and who sees each'),
+    ('hub', '/api/v1/hub', 'AlvaOS Hub: on or off, its apps (Files, Photos, Calendar, Chat) and who sees each'),
     ('backup_disk', '/api/v1/backup/copy', 'The USB backup disk: chosen or not, connected, last copy, problems'),
     ('buddy_backup', '/api/v1/backup/pairing/status', 'Buddy Backup: whether a second NAS is paired and reachable'),
     ('https', '/api/v1/system/tls', 'The HTTPS certificate of this NAS and whether "HTTPS only" is on'),

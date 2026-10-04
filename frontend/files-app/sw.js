@@ -1,8 +1,9 @@
 // AlvaOS Hub as an installed app (PWA). Keeps the app itself (not your
 // files) so it opens fast and shows a clear message when the NAS is away.
 // Everything under /api/, /s/ and /dav goes straight to the NAS.
-const SHELL = 'alvaos-hub-v3';
-const FILES = ['/', '/app.js', '/app.css', '/icon.svg', '/hub.svg', '/manifest.webmanifest'];
+const SHELL = 'alvaos-hub-v4';
+const FILES = ['/', '/app.js', '/app.css', '/calendar.js', '/calendar.css', '/chat.js', '/chat.css', '/icon.svg',
+    '/hub.svg', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
     event.waitUntil(caches.open(SHELL).then((cache) => cache.addAll(FILES)).then(() => self.skipWaiting()));

@@ -36,6 +36,8 @@
         copy: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
         clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
         monitor: '<rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/>',
+        calendar: '<path d="M8 2v4M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
+        'message-circle': '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>',
     };
     const icon = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[name] || P.file}</svg>`;
     const paintIcons = (root) => (root || document).querySelectorAll('[data-icon]').forEach((el) => { if (!el.firstChild) el.innerHTML = icon(el.dataset.icon); });
@@ -148,11 +150,14 @@
         }
     });
 
-    $('signout').addEventListener('click', async () => {
+    async function signOut() {
         await api('logout', { method: 'POST' }).catch(() => {});
         me = null;
+        leaveView();
+        window.dispatchEvent(new Event('hub-signout'));   // the other apps forget what they showed
         showSignin();
-    });
+    }
+    $('signout').addEventListener('click', signOut);
 
     // ── Navigation and history ─────────────────────────────────────────────
     function hashFor(s, p) {
@@ -162,6 +167,8 @@
         return `#${q}`;
     }
     function go(s, p, push = true) {
+        leaveView();
+        current = 'files';
         share = s;
         path = p || '';
         found = null;
@@ -178,7 +185,8 @@
     window.addEventListener('popstate', () => {
         const q = new URLSearchParams(location.hash.slice(1));
         const s = q.get('share');
-        if (s && me?.shares.some((x) => x.name === s)) go(s, q.get('path') || '', false);
+        if (VIEWS[q.get('app')] && hubApps.some((a) => a.id === q.get('app'))) openApp(q.get('app'), false);
+        else if (s && me?.shares.some((x) => x.name === s)) go(s, q.get('path') || '', false);
     });
     $('back-btn').addEventListener('click', () => history.back());
     $('fwd-btn').addEventListener('click', () => history.forward());
@@ -755,16 +763,16 @@
 
     // Photos, a Hub app of its own (opened from the app bar): every picture
     // and video of the open shared folder, newest first.
-    let inPhotos = false;
     function leavePhotos() {
-        inPhotos = false;
+        if (current === 'photos') current = 'files';
         markRail();
     }
     async function showPhotos() {
+        leaveView();
+        current = 'photos';
         closeSide();
         $('search').value = '';
         const id = ++searchId;
-        inPhotos = true;
         markRail();
         $('items').innerHTML = '<div class="empty">Looking for photos…</div>';
         document.querySelectorAll('.side-item').forEach((b) => b.classList.remove('active'));
@@ -1079,7 +1087,7 @@
             if (e.key === 'ArrowRight') step(1);
             return;
         }
-        if (!$('dialog').hidden || $('app').hidden) return;
+        if (!$('dialog').hidden || $('app').hidden || VIEWS[current]) return;
         if (e.target.closest('input, textarea')) { if (e.key === 'Escape') e.target.blur(); return; }
         const sel = selectedEntries();
         if (e.key === 'Escape' && found && !selected.size) clearSearch();
@@ -1116,19 +1124,47 @@
             + hubApps.map((a) => `<button type="button" class="rail-app" data-app="${esc(a.id)}">${icon(a.icon)}<span>${esc(a.name)}</span></button>`).join('');
         rail.hidden = false;
         $('app').classList.add('with-rail');
-        rail.querySelectorAll('[data-app]').forEach((b) => b.addEventListener('click', () => {
-            if (b.dataset.app === 'photos') showPhotos();
-            else go(share, path);
-        }));
+        rail.querySelectorAll('[data-app]').forEach((b) => b.addEventListener('click', () => openApp(b.dataset.app)));
         markRail();
     }
     function markRail() {
-        const current = inPhotos ? 'photos' : 'files';
         $('rail').querySelectorAll('[data-app]').forEach((b) => {
             if (b.dataset.app === current) b.setAttribute('aria-current', 'page');
             else b.removeAttribute('aria-current');
         });
     }
+
+    // Calendar and Chat are views of their own (calendar.js, chat.js): they
+    // take the place of the Files sidebar and list and draw themselves.
+    const VIEWS = { calendar: 'calendar-view', chat: 'chat-view' };
+    let current = 'files';
+    function leaveView() {
+        Object.values(VIEWS).forEach((id) => { $(id).hidden = true; });
+        $('app').classList.remove('in-view');
+    }
+    function openApp(id, push = true) {
+        if (id === 'photos') { showPhotos(); return; }
+        if (!VIEWS[id]) { go(share, path, push); return; }
+        closeSide();
+        Object.entries(VIEWS).forEach(([k, el]) => { $(el).hidden = k !== id; });
+        $('app').classList.add('in-view');
+        current = id;
+        markRail();
+        const hash = `#app=${id}`;
+        if (push && location.hash !== hash) history.pushState(null, '', hash);
+        const app = (window.HubApps || {})[id];
+        if (app) app.show($(VIEWS[id]));
+    }
+    // What the other apps use from here.
+    window.Hub = {
+        api, toast, esc, icon,
+        addIcons: (paths) => Object.assign(P, paths),
+        me: () => me,
+        signOut,
+        // The person and "Sign out", at the foot of each app's sidebar.
+        foot: () => `<div class="side-foot"><div class="me"><span class="avatar">${esc((me?.user || '?').slice(0, 1).toUpperCase())}</span><span>${esc(me?.user || '')}</span></div><button type="button" class="link" data-signout>Sign out</button></div>`,
+    };
+    document.addEventListener('click', (e) => { if (e.target.closest('[data-signout]')) signOut(); });
 
     // ── Start ──────────────────────────────────────────────────────────────
     async function start() {
@@ -1145,11 +1181,21 @@
         $('nas-name').textContent = me.nas_name || '';
         document.title = me.nas_name ? `AlvaOS Hub · ${me.nas_name}` : 'AlvaOS Hub';
         renderRail();
-        if (!hubApps.some((a) => a.id === 'files')) {
+        const q = new URLSearchParams(location.hash.slice(1));
+        const has = (id) => hubApps.some((a) => a.id === id);
+        // The app in the address (#app=calendar), else the first in the bar.
+        const wantedApp = VIEWS[q.get('app')] && has(q.get('app')) ? q.get('app')
+            : !q.get('share') && VIEWS[(hubApps[0] || {}).id] ? hubApps[0].id : '';
+        if (wantedApp) {
+            openApp(wantedApp, false);
+            return;
+        }
+        leaveView();
+        if (!has('files')) {
             $('crumbs').innerHTML = '';
             $('share-list').innerHTML = '';
             ['links-nav', 'trash-nav', 'connect-nav', 'new-btn'].forEach((id) => { $(id).hidden = true; });
-            $('items').innerHTML = `<div class="empty">${icon('grid')}<strong>No apps for you yet</strong>Ask whoever runs this NAS to turn on Files for you in the Hub.</div>`;
+            $('items').innerHTML = `<div class="empty">${icon('grid')}<strong>No apps for you yet</strong>Ask whoever runs this NAS to turn on an app for you in the Hub.</div>`;
             return;
         }
         if (!me.shares.length) {
@@ -1158,7 +1204,6 @@
             $('new-btn').hidden = true;
             return;
         }
-        const q = new URLSearchParams(location.hash.slice(1));
         const wanted = me.shares.find((s) => s.name === q.get('share'));
         go(wanted ? wanted.name : me.shares[0].name, wanted ? q.get('path') || '' : '', false);
         history.replaceState(null, '', hashFor(share, path));

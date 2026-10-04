@@ -13,21 +13,22 @@ def test_without_settings_every_app_is_on_for_everyone(tmp_path):
     path = str(tmp_path / "hub.json")
     settings = hub_apps.load(path)
     assert settings["apps"]["files"] == {"enabled": True, "people": None}
-    assert [a["id"] for a in hub_apps.visible("anna", settings=settings)] == ["files", "photos"]
+    assert [a["id"] for a in hub_apps.visible("anna", settings=settings)] == ["files", "photos", "calendar"]
+    assert settings["apps"]["chat"]["enabled"] is False                     # needs an AI service first
 
 
 def test_apps_can_be_turned_off_or_given_to_some_people(tmp_path):
     path = str(tmp_path / "hub.json")
     settings, problem = hub_apps.save({"apps": {"photos": {"people": ["anna"]}}}, PEOPLE, path)
     assert problem == "" and settings["apps"]["photos"]["people"] == ["anna"]
-    assert [a["id"] for a in hub_apps.visible("anna", settings=settings)] == ["files", "photos"]
-    assert [a["id"] for a in hub_apps.visible("ben", settings=settings)] == ["files"]
+    assert [a["id"] for a in hub_apps.visible("anna", settings=settings)] == ["files", "photos", "calendar"]
+    assert [a["id"] for a in hub_apps.visible("ben", settings=settings)] == ["files", "calendar"]
     assert hub_apps.allowed("photos", "admin", "admin", settings)          # the admin account sees every app that is on
     settings, _ = hub_apps.save({"apps": {"files": {"enabled": False}}}, PEOPLE, path)
-    assert hub_apps.visible("anna", settings=settings) == []                # Photos needs Files
+    assert [a["id"] for a in hub_apps.visible("anna", settings=settings)] == ["calendar"]  # Photos needs Files
     assert json.loads(open(path).read())["apps"]["files"]["enabled"] is False
     settings, _ = hub_apps.save({"apps": {"files": {"enabled": True}, "photos": {"people": None}}}, PEOPLE, path)
-    assert len(hub_apps.visible("ben", settings=settings)) == 2
+    assert len(hub_apps.visible("ben", settings=settings)) == 3
 
 
 @pytest.mark.parametrize("change, problem", [

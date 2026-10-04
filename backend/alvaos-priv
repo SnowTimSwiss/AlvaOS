@@ -362,7 +362,7 @@ def file_size(argv):
 
 # AlvaOS Files: name -> (number of arguments, function); None means a name
 # and 1 to 101 folders (the current one and up to 100 restore points). files_ops checks
-# every folder on its open descriptor and never overwrites anything.
+# every folder on its open descriptor and never overwrites anything but Hub app data.
 FILES_OPS = {
     'files-list': (1, lambda a: {'entries': files_ops.list_dir(a[0])}),
     'files-search': (2, lambda a: files_ops.search(a[0], a[1])),
@@ -385,6 +385,10 @@ FILES_OPS = {
     'files-trash-list': (1, lambda a: {'items': files_ops.list_trash(a[0])}),
     'files-trash-restore': (2, lambda a: files_ops.restore(a[0], a[1])),
     'files-trash-purge': (2, lambda a: {'removed': files_ops.purge(a[0], int(policy._int_arg(a[1], 0, 3650)))}),
+    # Hub apps (Calendar, Chat): their JSON files below ".alvaos/" of a share.
+    'files-data-read': (2, lambda a: files_ops.read_app_data(a[0], a[1])),
+    'files-data-write': (2, lambda a: {'written': files_ops.write_app_data(a[0], a[1], sys.stdin.buffer)}),
+    'files-data-delete': (2, lambda a: files_ops.delete_app_data(a[0], a[1])),
 }
 
 

@@ -551,7 +551,8 @@ def test_the_admin_turns_hub_apps_on_and_off_and_chooses_who_sees_them(backend, 
     client = module.app.test_client()
     hub = client.get("/api/v1/hub", headers=headers).get_json()
     assert hub["name"] == "AlvaOS Hub" and hub["people"] == ["anna", "ben"]
-    assert [a["id"] for a in hub["apps"]] == ["files", "photos"] and hub["apps"][0]["enabled"]
+    assert [a["id"] for a in hub["apps"]] == ["files", "photos", "calendar", "chat"] and hub["apps"][0]["enabled"]
+    assert hub["apps"][3]["enabled"] is False and hub["chat_service"]["ready"] is False
     changed = client.post("/api/v1/hub", json={"apps": {"photos": {"enabled": False}, "files": {"people": ["anna"]}}},
                           headers=headers).get_json()
     apps = {a["id"]: a for a in changed["apps"]}

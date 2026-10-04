@@ -5,7 +5,8 @@ Every operation gets a folder and a single name, never a path with "/" in
 the name. The folder is opened without following a symlink and checked on
 the open descriptor to be inside the data root; everything after that is
 done relative to that descriptor (dir_fd), so swapping a folder for a
-symlink meanwhile cannot reach anything else. Nothing is overwritten.
+symlink meanwhile cannot reach anything else. Nothing is overwritten,
+except the data files of Hub apps (see write_app_data).
 
 Deleting moves the item into "<share>/.alvaos-trash/<stamp>/", next to a
 small ".origin" file that says where it came from. Items older than
@@ -258,6 +259,113 @@ def write_file(dir_path: str, name: str, src: BinaryIO, root: str = DATA_ROOT) -
         finally:
             os.close(fd)
         return written
+    finally:
+        os.close(dfd)
+
+
+# Data of Hub apps (Calendar, Chat): small JSON files below a hidden folder
+# of a share, like ".alvaos/calendar/calendar.json". Unlike everything else
+# here they are replaced as a whole (written next to it, then renamed over
+# it), because the app keeps one file per thing and changes it.
+APP_DATA_LIMIT = 16 * 1024 * 1024
+APP_DATA_NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$')
+
+
+def _app_data_parts(rel: str) -> List[str]:
+    parts = rel.split('/') if isinstance(rel, str) else []
+    if not 1 <= len(parts) <= 4 or not all(p == '.alvaos' or APP_DATA_NAME.match(p) for p in parts) \
+            or parts[-1] == '.alvaos':
+        raise FileOpError('That name is not allowed.')
+    return parts
+
+
+def _app_data_dir(dir_path: str, parts: List[str], root: str, create: bool) -> Optional[int]:
+    """The folder of an app data file, made on the way when `create`; None
+    when it is not there and need not be."""
+    fd = open_dir(dir_path, root)
+    for name in parts[:-1]:
+        try:
+            if create and not _exists(name, fd):
+                os.mkdir(name, 0o700, dir_fd=fd)
+                sub = _open_subdir(name, fd)
+                _like_parent(sub, fd, is_dir=True)
+            else:
+                sub = _open_subdir(name, fd)
+        except FileNotFoundError:
+            os.close(fd)
+            return None
+        except OSError:
+            os.close(fd)
+            raise FileOpError('This folder could not be opened.') from None
+        os.close(fd)
+        fd = sub
+    return fd
+
+
+def read_app_data(dir_path: str, rel: str, root: str = DATA_ROOT) -> Dict[str, Any]:
+    """{'found': False} or {'found': True, 'text': ...}."""
+    parts = _app_data_parts(rel)
+    dfd = _app_data_dir(dir_path, parts, root, create=False)
+    if dfd is None:
+        return {'found': False}
+    try:
+        try:
+            fd = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=dfd)
+        except FileNotFoundError:
+            return {'found': False}
+        with os.fdopen(fd, 'rb') as f:
+            if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+                raise FileOpError('That is not a file.')
+            data = f.read(APP_DATA_LIMIT + 1)
+        if len(data) > APP_DATA_LIMIT:
+            raise FileOpError('The file is too large.')
+        return {'found': True, 'text': data.decode('utf-8', 'replace')}
+    finally:
+        os.close(dfd)
+
+
+def write_app_data(dir_path: str, rel: str, src: BinaryIO, root: str = DATA_ROOT) -> int:
+    """Replace (or make) an app data file with what comes on `src`."""
+    parts = _app_data_parts(rel)
+    data = src.read(APP_DATA_LIMIT + 1)
+    if len(data) > APP_DATA_LIMIT:
+        raise FileOpError('That is too large to keep.')
+    dfd = _app_data_dir(dir_path, parts, root, create=True)
+    assert dfd is not None
+    tmp = f'.{parts[-1]}.{secrets.token_hex(4)}.tmp'
+    try:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=dfd)
+        try:
+            with os.fdopen(fd, 'wb', closefd=False) as out:
+                out.write(data)
+                out.flush()
+                os.fsync(fd)
+            _like_parent(fd, dfd, is_dir=False)
+        finally:
+            os.close(fd)
+        os.replace(tmp, parts[-1], src_dir_fd=dfd, dst_dir_fd=dfd)
+        return len(data)
+    except BaseException:
+        try:
+            os.unlink(tmp, dir_fd=dfd)
+        except OSError:
+            pass
+        raise
+    finally:
+        os.close(dfd)
+
+
+def delete_app_data(dir_path: str, rel: str, root: str = DATA_ROOT) -> None:
+    """Remove an app data file for good (a deleted chat); gone already is fine."""
+    parts = _app_data_parts(rel)
+    dfd = _app_data_dir(dir_path, parts, root, create=False)
+    if dfd is None:
+        return
+    try:
+        if stat.S_ISREG(os.lstat(parts[-1], dir_fd=dfd).st_mode):
+            os.unlink(parts[-1], dir_fd=dfd)
+    except FileNotFoundError:
+        pass
     finally:
         os.close(dfd)
 
