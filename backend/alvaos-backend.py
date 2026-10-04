@@ -12,11 +12,11 @@ import secrets
 import atexit
 
 # ── Third-party ───────────────────────────────────────────────────────────────
-from flask import Flask, Response, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, redirect, request, send_from_directory
 
 # ── AlvaOS managers ───────────────────────────────────────────────────────────
 from common import (
-    ensure_directories,
+    ensure_directories, run_sudo_command,
 )
 from auth_manager import (
     is_setup_complete,
@@ -41,12 +41,16 @@ from app_services import VERSION, buddy_backup_manager, power_ups_manager
 import api_apps
 import api_auth
 import api_backup
+import api_ai
+import api_files
+import api_remote
 import api_shares
 import api_storage
 import api_system
 import api_updates
 
-for _module in (api_auth, api_system, api_updates, api_storage, api_shares, api_backup, api_apps):
+for _module in (api_auth, api_system, api_updates, api_storage, api_shares, api_backup, api_apps, api_files, api_ai,
+                api_remote):
     app.register_blueprint(_module.bp)
 
 # ── Frontend serving ──────────────────────────────────────────────────────────
@@ -111,6 +115,25 @@ CSRF_EXEMPT_PATHS = frozenset({
 CSRF_EXEMPT_PREFIXES = ('/api/v1/backup/buddy/peer/',)
 
 SAFE_HTTP_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS'})
+
+
+# Never sent to HTTPS: other NAS (pairing and the Buddy Backup peer API come
+# over the tunnel by HTTP), the certificate a new device still has to trust,
+# and the NAS itself (the assistant and local scripts call the API in-process
+# or on localhost).
+HTTPS_ONLY_EXEMPT_PATHS = ('/api/v1/system/tls/ca.crt', '/api/v1/backup/pairing/accept',
+                           '/api/v1/backup/pairing/remove/accept')
+
+
+@app.before_request
+def send_to_https():
+    """While "HTTPS only" is on, plain HTTP is answered with a redirect."""
+    path = request.path or ''
+    if path.startswith(CSRF_EXEMPT_PREFIXES) or (request.remote_addr or '') in ('127.0.0.1', '::1'):
+        return None
+    import tls_manager
+    target = tls_manager.redirect_to_https(request, tls_manager.PORTS['web'], keep=HTTPS_ONLY_EXEMPT_PATHS)
+    return redirect(target, code=308) if target else None
 
 
 @app.before_request
@@ -213,6 +236,69 @@ if __name__ == '__main__':
                          kwargs={'smart': make_smart_scheduler()}, name='health-checks',
                          daemon=True).start()
 
+    # Hard disks forget their sleep timer when they lose power.
+    if platform.system() == 'Linux':
+        import disk_power
+        from storage_manager import disk_inventory
+        threading.Thread(target=disk_power.apply_saved, args=(disk_inventory, run_sudo_command),
+                         name='disk-power', daemon=True).start()
+
+    # Shares made before network deletes went to the trash get it once.
+    def _add_recycle_bins():
+        from shares_manager import add_recycle_bins, load_shares_state
+        try:
+            added = add_recycle_bins(load_shares_state())
+            if added:
+                print(f"Network deletes now go to the trash for: {', '.join(added)}")
+        except Exception as e:
+            print(f"Could not add the network trash to shares: {e}")
+    threading.Thread(target=_add_recycle_bins, name='smb-recycle', daemon=True).start()
+
+    # AlvaOS Files: what has been in a share's trash for 30 days goes for good.
+    def _purge_trash_daily():
+        import time as _time
+        import files_manager
+        from shares_manager import load_shares_state
+        while True:
+            _time.sleep(3600)
+            try:
+                files_manager.purge_all_trash(load_shares_state())
+            except Exception as e:
+                print(f"Trash cleanup failed: {e}")
+            _time.sleep(23 * 3600)
+    threading.Thread(target=_purge_trash_daily, name='files-trash', daemon=True).start()
+
+    # The signed package of the running version belongs in the update cache:
+    # it is the way back when an update fails. After an install from the
+    # installer or a USB stick it is fetched from that version's release.
+    def _keep_way_back():
+        import platform as _platform
+        import time as _time
+        from app_services import update_manager
+        if _platform.system() != 'Linux':
+            return
+        _time.sleep(120)
+        for _ in range(28):           # a week of tries, then the next start
+            outcome = update_manager.ensure_way_back()
+            if outcome in ('ready', 'fetched', 'unknown version', 'no release for this version',
+                           'no signed package in the release', 'the release package has another version'):
+                print(f"Way back for updates: {outcome}")
+                return
+            _time.sleep(6 * 3600)
+    threading.Thread(target=_keep_way_back, name='update-way-back', daemon=True).start()
+
+    # A second copy of the restore points on the backup disk, when it is there.
+    from app_services import backup_copier
+    threading.Thread(target=backup_copier.serve_forever, name='backup-copy', daemon=True).start()
+
+    # Problems by Telegram and email, also when nobody has the web page open.
+    import alert_delivery
+    threading.Thread(target=alert_delivery.serve_forever, name='alert-delivery', daemon=True).start()
+
+    # Remote access: the tunnel comes back after a reboot when it is on.
+    from app_services import remote
+    threading.Thread(target=remote.start, name='remote-access', daemon=True).start()
+
     # wg-quick state does not survive a reboot; bring the buddy tunnel back up.
     threading.Thread(target=buddy_backup_manager.start_tunnel_if_paired, daemon=True).start()
     # Serves the encrypted vaults buddies keep here, on the tunnel address only.
@@ -228,6 +314,10 @@ if __name__ == '__main__':
         import waitress
     except ImportError:
         waitress = None  # type: ignore[assignment]
+
+    # HTTPS next to HTTP, with this NAS's own certificate (tls_manager.py).
+    import tls_manager
+    tls_manager.serve_in_background(app, tls_manager.PORTS['web'], 'AlvaOS')
 
     if waitress is not None:
         waitress.serve(app, host='0.0.0.0', port=8080, threads=8, ident='AlvaOS')

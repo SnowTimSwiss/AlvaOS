@@ -64,6 +64,40 @@ def get_backup_targets():
         return jsonify({'error': 'Backup manager not initialized'}), 500
     return jsonify({'targets': backup_manager.get_target_locations()})
 
+@bp.route('/api/v1/backup/copy', methods=['GET', 'POST'])
+@require_auth(require_admin=True)
+def backup_copy_settings():
+    """The backup disk: which pool, whether it is on, how the last copy went."""
+    from app_services import backup_copier
+    if request.method == 'POST':
+        _, problem = backup_copier.configure(request.get_json(silent=True) or {})
+        if problem:
+            return jsonify({'error': problem}), 400
+    return jsonify({'success': True, **backup_copier.status()})
+
+
+@bp.route('/api/v1/backup/copy/run', methods=['POST'])
+@require_auth(require_admin=True)
+def backup_copy_run():
+    """Copy now (it runs in the background; the page asks again)."""
+    import threading
+    from app_services import backup_copier
+    if not backup_copier.settings()['enabled']:
+        return jsonify({'error': 'Choose the backup disk first.'}), 409
+    threading.Thread(target=backup_copier.copy_now, name='backup-copy', daemon=True).start()
+    return jsonify({'success': True, 'message': 'Copying to the backup disk.'})
+
+
+@bp.route('/api/v1/backup/copy/eject', methods=['POST'])
+@require_auth(require_admin=True)
+def backup_copy_eject():
+    from app_services import backup_copier
+    ok, message = backup_copier.eject()
+    if not ok:
+        return jsonify({'error': message}), 409
+    return jsonify({'success': True, 'message': message})
+
+
 @bp.route('/api/v1/backup/snapshots', methods=['GET', 'POST', 'DELETE'])
 @require_auth(require_admin=True)
 def backup_snapshots():
@@ -74,9 +108,11 @@ def backup_snapshots():
     if request.method == 'GET':
         source_path = (request.args.get('source_path') or '').strip() or None
         snapshot_class = (request.args.get('snapshot_class') or '').strip().lower() or None
-        if snapshot_class and snapshot_class not in ('data', 'system', 'full_data'):
+        if snapshot_class and snapshot_class not in ('data', 'system', 'full_data', 'copy'):
             return jsonify({'error': 'Invalid snapshot_class'}), 400
         snapshots = backup_manager.list_snapshots(source_path=source_path, snapshot_class=snapshot_class)
+        if snapshot_class == 'copy':   # copies on the backup disk: only there while it is connected
+            snapshots = [{**s, 'available': os.path.isdir(str(s.get('snapshot_path') or ''))} for s in snapshots]
         return jsonify({'snapshots': snapshots})
 
     if request.method == 'DELETE':

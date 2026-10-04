@@ -125,6 +125,26 @@ function displayShares(shares) {
     container.innerHTML = shares.slice().sort((a, b) => String(a.name).localeCompare(String(b.name))).map(renderShareCard).join('');
 }
 
+function shareGb(bytes) {
+    const gb = Number(bytes || 0) / 1024 ** 3;
+    if (gb < 1) return gb === 0 ? '0 GB' : `${Math.max(1, Math.round(gb * 1024))} MB`;
+    return gb >= 1000 ? `${(gb / 1024).toFixed(1)} TB` : `${gb >= 10 ? Math.round(gb) : gb.toFixed(1)} GB`;
+}
+
+// "12 GB of 50 GB" with a bar, for shares with a space limit.
+function shareLimitHtml(share) {
+    if (!share.quota_bytes) return '';
+    const used = share.used_bytes;
+    const pct = used != null ? Math.min(100, Math.round((used / share.quota_bytes) * 100)) : 0;
+    const tone = pct >= 95 ? 'var(--accent-danger)' : pct >= 85 ? 'var(--accent-warning)' : 'var(--accent-primary)';
+    return `<div class="pool-line">${icon('hard-drive')}<span>${used != null ? `${shareGb(used)} of ${shareGb(share.quota_bytes)} used` : `Limit ${shareGb(share.quota_bytes)}`}</span></div>
+        ${used != null ? `<div class="share-limit-bar" role="img" aria-label="${pct}% of the limit used"><span style="width:${pct}%;background:${tone}"></span></div>` : ''}`;
+}
+
+function shareIsWholePool(share) {
+    return storagePoolsCache.some((p) => p.mount_point === share.path);
+}
+
 function renderShareCard(share) {
     const id = jsArg(share.id);
     const access = shareAccessText(share);
@@ -133,14 +153,17 @@ function renderShareCard(share) {
             <div class="pool-head">
                 <span class="disk-row-icon" style="grid-row: auto;">${icon('folder-open')}</span>
                 <span class="pool-name">${escapeHtml(share.name)}</span>
-                <span class="tag" style="margin-left: auto;">${escapeHtml(String(share.protocol || 'smb').toUpperCase())}</span>
+                ${share.personal_for ? '<span class="tag" style="margin-left: auto;">Personal</span>' : ''}
+                <span class="tag" style="${share.personal_for ? '' : 'margin-left: auto;'}">${escapeHtml(String(share.protocol || 'smb').toUpperCase())}</span>
             </div>
             <div class="share-where">${escapeHtml(shareLocation(share))}</div>
             <div class="pool-line ${access.tone}">${icon(access.tone ? 'triangle-alert' : 'users')}<span>${escapeHtml(access.text)}</span></div>
+            ${shareLimitHtml(share)}
             ${addressBox(shareAddress(share))}
             <div class="pool-actions">
                 <button type="button" class="btn-secondary" onclick="showConnectionInfo('${id}')">How to connect</button>
                 ${share.protocol === 'smb' ? `<button type="button" class="${access.tone ? 'btn-primary' : 'btn-secondary'}" onclick="showShareAccessDialog('${id}')">Access</button>` : ''}
+                ${shareIsWholePool(share) ? '' : `<button type="button" class="btn-secondary" onclick="showShareLimitDialog('${id}')">Space limit</button>`}
                 <button type="button" class="btn-secondary btn-quiet" style="margin-left: auto;" onclick="deleteShare('${id}', '${jsArg(share.name)}')">Stop sharing</button>
             </div>
         </div>`;
@@ -446,6 +469,39 @@ async function showShareAccessDialog(shareId) {
         modal.ok.disabled = true;
         try {
             const result = await sendShareJson('PUT', '/storage/shares/permissions', { share_id: shareId, ...access });
+            modal.close();
+            showSuccess(result.message);
+            loadShares();
+        } catch (error) {
+            modal.error.textContent = error.message;
+            modal.ok.disabled = false;
+        }
+    };
+}
+
+function showShareLimitDialog(shareId) {
+    const share = sharesCache.find((s) => s.id === shareId);
+    if (!share) return;
+    const currentGb = share.quota_bytes ? Math.round(share.quota_bytes / 1024 ** 3) : '';
+    const modal = shareModal(`Space limit for “${share.name}”`, `
+        <p style="color: var(--text-secondary); margin-top: 0;">How much this folder may hold. When it is full, saving new files there fails until something is deleted; nothing is lost.</p>
+        <label class="choice"><input type="radio" name="limit-kind" value="none" ${currentGb ? '' : 'checked'}><div><strong>No limit</strong><span>It can use all free space in the pool.</span></div></label>
+        <label class="choice"><input type="radio" name="limit-kind" value="gb" ${currentGb ? 'checked' : ''}><div><strong>Up to</strong>
+            <span><input type="number" id="limit-gb" min="1" step="1" value="${escapeHtml(String(currentGb || 100))}" style="width: 110px;"> GB</span></div></label>
+        <p class="field-hint" style="margin-top: 10px;">Limits use Btrfs quotas. The first limit on a pool turns them on, which can make a pool with many restore points a little slower.</p>`, 'Save');
+    const gbInput = modal.overlay.querySelector('#limit-gb');
+    gbInput.addEventListener('focus', () => { modal.overlay.querySelector('input[value="gb"]').checked = true; });
+    modal.ok.onclick = async () => {
+        modal.error.textContent = '';
+        const none = modal.overlay.querySelector('input[name="limit-kind"]:checked').value === 'none';
+        const gb = Number(gbInput.value);
+        if (!none && !(gb >= 1)) {
+            modal.error.textContent = 'Enter the limit in GB, at least 1.';
+            return;
+        }
+        modal.ok.disabled = true;
+        try {
+            const result = await sendShareJson('PUT', '/storage/shares/quota', { share_id: shareId, limit_gb: none ? null : gb });
             modal.close();
             showSuccess(result.message);
             loadShares();

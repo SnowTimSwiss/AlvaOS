@@ -244,6 +244,7 @@ def test_pool_maintenance_commands():
     allowed('/usr/bin/btrfs', 'replace', 'start', '-B', '/dev/sdb', '/dev/sdd', '/mnt/alvaos/main')
     allowed('/usr/bin/btrfs', 'replace', 'status', '-1', '/mnt/alvaos/main')
     allowed('/usr/bin/btrfs', 'scrub', 'start', '-B', '/mnt/alvaos/main')
+    allowed('/usr/bin/btrfs', 'scrub', 'start', '-B', '-c', '3', '/mnt/alvaos/main')
     allowed('/usr/bin/btrfs', 'scrub', 'status', '/mnt/alvaos/main')
     allowed('/usr/bin/btrfs', 'scrub', 'cancel', '/mnt/alvaos/main')
     allowed('/usr/bin/btrfs', 'balance', 'status', '/mnt/alvaos/main')
@@ -256,6 +257,8 @@ def test_pool_maintenance_commands():
     ['/usr/bin/btrfs', 'replace', 'start', '-B', '-f', '2', '/dev/sdd', '/mnt/alvaos/main'],
     ['/usr/bin/btrfs', 'replace', 'start', '-B', '0; id', '/dev/sdd', '/mnt/alvaos/main'],
     ['/usr/bin/btrfs', 'scrub', 'start', '/etc'],
+    ['/usr/bin/btrfs', 'scrub', 'start', '-B', '-c', '1', '/mnt/alvaos/main'],
+    ['/usr/bin/btrfs', 'scrub', 'start', '-B', '-c', '3', '/etc'],
     ['/usr/bin/btrfs', 'device', 'stats', '-z', '/mnt/alvaos/main'],
 ])
 def test_pool_maintenance_abuse_is_denied(argv):
@@ -387,6 +390,10 @@ def test_btrfs_snapshot_and_backup_commands():
     allowed('/usr/bin/btrfs', 'subvolume', 'show', '/')
     allowed('/usr/bin/btrfs', 'filesystem', 'show')
     allowed('/usr/bin/btrfs', 'filesystem', 'usage', '/mnt/alvaos/main')
+    allowed('/usr/bin/btrfs', 'quota', 'enable', '/mnt/alvaos/main')
+    allowed('/usr/bin/btrfs', 'qgroup', 'limit', '107374182400', '/mnt/alvaos/main/anna')
+    allowed('/usr/bin/btrfs', 'qgroup', 'limit', 'none', '/mnt/alvaos/main/anna')
+    allowed('/usr/bin/btrfs', 'qgroup', 'show', '-reF', '--raw', '/mnt/alvaos/main/anna')
 
 
 @pytest.mark.parametrize('argv', [
@@ -404,6 +411,15 @@ def test_btrfs_snapshot_and_backup_commands():
     ['/usr/bin/btrfs', 'send', '../x'],
     ['/usr/bin/btrfs', 'property', 'set', '/', 'ro', 'true'],
     ['/usr/bin/btrfs', 'rescue', 'zero-log', '/dev/sda1'],
+    ['/usr/bin/btrfs', 'quota', 'disable', '/mnt/alvaos/main'],
+    ['/usr/bin/btrfs', 'quota', 'enable', '/'],
+    ['/usr/bin/btrfs', 'quota', 'enable', '/mnt/alvaos/main/anna'],
+    ['/usr/bin/btrfs', 'qgroup', 'limit', '0', '/mnt/alvaos/main/anna'],
+    ['/usr/bin/btrfs', 'qgroup', 'limit', '10G', '/mnt/alvaos/main/anna'],
+    ['/usr/bin/btrfs', 'qgroup', 'limit', '-e', '10', '/mnt/alvaos/main/anna'],
+    ['/usr/bin/btrfs', 'qgroup', 'limit', 'none', '/'],
+    ['/usr/bin/btrfs', 'qgroup', 'show', '/'],
+    ['/usr/bin/btrfs', 'qgroup', 'destroy', '0/257', '/mnt/alvaos/main'],
 ])
 def test_btrfs_abuse_is_denied(argv):
     denied(*argv)
@@ -568,6 +584,12 @@ def test_wireguard_commands():
     denied('/usr/bin/wg', 'genkey')   # keys are generated in-process now
     denied('/usr/bin/wg-quick', 'up', '/tmp/evil.conf')
     denied('/usr/bin/wg', 'set', 'buddy0', 'private-key', '/etc/shadow')
+    assert allowed('/usr/bin/wg-quick', 'down', '/var/lib/alvaos/wireguard/remote0.conf').stage == {1: 'wg'}
+    allowed('/usr/bin/wg', 'show', 'remote0', 'latest-handshakes')
+    denied('/usr/bin/wg', 'show', 'remote0', 'dump')            # would print the private key
+    denied('/usr/bin/wg', 'show', 'remote0', 'private-key')
+    denied('/usr/bin/wg', 'show', 'buddy0', 'latest-handshakes', 'x')
+    denied('/usr/bin/wg-quick', 'up', '/var/lib/alvaos/wireguard/remote1.conf')
 
 
 def test_wg_config_rejects_hooks():
@@ -653,3 +675,31 @@ def test_degraded_mount_and_soft_conversion():
     denied('/usr/bin/mount', '-o', 'degraded', '-U', '12345678-1234-1234-1234-123456789abc', '/etc')
     allowed('/usr/bin/btrfs', 'balance', 'start', '-dconvert=raid1,soft', '-mconvert=raid1,soft', '/mnt/alvaos/main')
     denied('/usr/bin/btrfs', 'balance', 'start', '-dconvert=raid1,soft,limit=1', '/mnt/alvaos/main')
+
+
+def test_files_app_service_can_be_switched_and_nothing_else():
+    for args in (("enable", "--now"), ("disable", "--now"), ("is-enabled",), ("is-active",)):
+        allowed('/usr/bin/systemctl', *args, 'alvaos-files.service')
+    denied('/usr/bin/systemctl', 'enable', '--now', 'ssh.service')
+    denied('/usr/bin/systemctl', 'disable', '--now', 'alvaos.service')
+
+
+def test_backup_transfers_give_way_to_people():
+    assert allowed('/usr/bin/btrfs', 'send', '/mnt/alvaos/main/.alvaos-buddy-media-1').background
+    assert allowed('/usr/bin/btrfs', 'receive', '/mnt/alvaos/main/restore').background
+    assert not allowed('/usr/bin/btrfs', 'subvolume', 'show', '/').background
+
+
+def test_big_numbers_for_uploads_over_ten_gigabytes():
+    assert p._int_arg("53687091200", 0, 10**15) == "53687091200"     # 50 GB offset
+    with pytest.raises(p.PolicyError):
+        p._int_arg("12345678901234567", 0, 10**17)                    # more than 16 digits
+
+
+def test_backup_disk_copies_are_allowed():
+    allowed('/usr/bin/btrfs', 'send', '-p', '/mnt/alvaos/main/.alvaos-snapshots/x/a', '/mnt/alvaos/main/.alvaos-snapshots/x/b')
+    assert allowed('/usr/bin/btrfs', 'receive', '/mnt/alvaos/usb/.alvaos-copies/main__Family').background
+    allowed('/usr/bin/mount', '-U', '0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0', '/mnt/alvaos/usb')
+    allowed('/usr/bin/umount', '/mnt/alvaos/usb')
+    allowed('/usr/bin/btrfs', 'subvolume', 'delete', '/mnt/alvaos/usb/.alvaos-copies/main__Family/a')
+    denied('/usr/bin/btrfs', 'receive', '/etc')

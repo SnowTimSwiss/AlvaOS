@@ -29,6 +29,7 @@ from auth_manager import (
     _destroy_session, _destroy_all_sessions, require_auth,
     _check_rate_limit, _reset_rate_limit,
     list_sessions, revoke_session_by_id, revoke_other_sessions,
+    record_signin, record_failed_signin,
 )
 from password_utils import hash_password, verify_password
 from shares_manager import (
@@ -252,6 +253,7 @@ def login():
 
         is_valid, needs_rehash = verify_password(password, auth_data)
         if not is_valid:
+            record_failed_signin()
             return jsonify({'error': 'Invalid password'}), 401
 
         # Transparently upgrade legacy/weaker hashes on successful login,
@@ -279,7 +281,8 @@ def login():
         return jsonify({
             'token': token,
             'csrf_token': SESSIONS.get(token, {}).get('csrf_token', ''),
-            'success': True
+            'success': True,
+            'last_signin': record_signin(),
         })
 
     except Exception as e:
@@ -306,6 +309,7 @@ def complete_2fa_login():
         return jsonify({'error': '2FA not configured on server'}), 400
 
     if not _verify_totp(totp_secret, code):
+        record_failed_signin()
         return jsonify({'error': 'Invalid 2FA code'}), 401
 
     del TEMP_2FA_TOKENS[temp_token]
@@ -313,7 +317,8 @@ def complete_2fa_login():
     return jsonify({
         'token': token,
         'csrf_token': SESSIONS.get(token, {}).get('csrf_token', ''),
-        'success': True
+        'success': True,
+        'last_signin': record_signin(),
     })
 
 @bp.route('/api/v1/auth/logout', methods=['POST'])
@@ -539,7 +544,9 @@ def manage_users():
             users.append({
                 'username': username,
                 'created_at': info.get('created_at'),
-                'system_exists': system_user_exists(username)
+                'system_exists': system_user_exists(username),
+                # Users made before AlvaOS Files need their password set once more.
+                'files_ready': bool(info.get('files_auth')),
             })
         users.sort(key=lambda u: u['username'])
         return jsonify({'users': users})
@@ -567,6 +574,12 @@ def manage_users():
             return jsonify({'error': 'Password must be at least 8 characters'}), 400
         if username in users_state or system_user_exists(username):
             return jsonify({'error': 'User already exists'}), 400
+        personal = data.get('personal_folder') if isinstance(data.get('personal_folder'), dict) else None
+        if personal:
+            import api_shares  # avoids an import cycle at module load
+            problem = api_shares.check_personal_folder(username, personal)
+            if problem:
+                return jsonify({'error': problem}), 400
 
         try:
             # Create system user
@@ -597,10 +610,20 @@ def manage_users():
 
             users_state[username] = {
                 'username': username,
-                'created_at': datetime.now().isoformat()
+                'created_at': datetime.now().isoformat(),
+                # AlvaOS Files signs people in with this (Python cannot read
+                # /etc/shadow hashes any more, and should not need root to).
+                'files_auth': hash_password(password),
             }
             save_users_state(users_state)
 
+            if personal:
+                folder, status = api_shares.create_personal_folder(username, personal, set(users_state))
+                if status != 200:
+                    return jsonify({'success': True, 'message': f'User "{username}" created',
+                                    'warning': f'The personal folder could not be made: {folder.get("error")}'})
+                return jsonify({'success': True, 'message': f'"{username}" was created with a personal folder.',
+                                'share_id': folder.get('share_id'), 'warning': folder.get('warning', '')})
             return jsonify({'success': True, 'message': f'User "{username}" created'})
         except Exception as e:
             return jsonify({'error': f'Failed to create user: {str(e)}'}), 500
@@ -659,7 +682,13 @@ def manage_users():
                 del users_state[username]
                 save_users_state(users_state)
 
-            return jsonify({'success': True, 'message': f'User "{username}" deleted'})
+            kept = [s.get('name') for s in shares_state.values()
+                    if isinstance(s, dict) and s.get('personal_for') == username]
+            message = f'User "{username}" deleted'
+            if kept:
+                message += (f'. Their personal folder "{kept[0]}" and its files are kept; '
+                            'delete that share under Storage when nobody needs it any more.')
+            return jsonify({'success': True, 'message': message})
         except Exception as e:
             return jsonify({'error': f'Failed to delete user: {str(e)}'}), 500
 
@@ -697,6 +726,10 @@ def update_user(username):
             ok, smb_err = sync_samba_password(username, password)
             if not ok:
                  return jsonify({'error': f'Failed to update Samba password: {smb_err}'}), 500
+            entry = users_state.get(username) or {'username': username, 'created_at': datetime.now().isoformat()}
+            entry['files_auth'] = hash_password(password)
+            users_state[username] = entry
+            save_users_state(users_state)
         except Exception as e:
             return jsonify({'error': f'Failed to update password: {str(e)}'}), 500
 

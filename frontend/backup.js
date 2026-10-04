@@ -169,7 +169,7 @@ function renderSources() {
     const container = document.getElementById('backup-sources');
     if (!container) return;
     if (!backupSources.length) {
-        container.innerHTML = '<div class="metric-sub">No available backup sources found. Create Btrfs pools/subvolumes first.</div>';
+        container.innerHTML = '<div class="metric-sub">Nothing to back up yet. Create a storage pool and a shared folder first.</div>';
         return;
     }
 
@@ -193,7 +193,7 @@ function renderBuddyPeerSourcePicker(nodeId, configuredSources = []) {
     const buddySources = (Array.isArray(backupSources) ? backupSources : [])
         .filter((source) => String(source?.kind || '').toLowerCase() === 'subvolume');
     if (!buddySources.length) {
-        return '<div class="metric-sub">No eligible subvolume sources found.</div>';
+        return '<div class="metric-sub">No shared folders to choose from yet.</div>';
     }
     return `
         <div class="buddy-peer-sources">
@@ -244,18 +244,18 @@ function renderDataSnapshots(items) {
         <div class="snap-row">
             <div class="snap-info" title="${backupEscapeHtml(entry.source_path)} &bull; ${backupEscapeHtml(entry.snapshot_name)}">
                 <div class="snap-when">${backupEscapeHtml(backupFolderName(entry.source_path))}</div>
-                <div class="snap-meta">${backupEscapeHtml(backupFormatDate(entry.created_at))}</div>
+                <div class="snap-meta">${backupEscapeHtml(backupFormatDate(entry.created_at))}${entry.snapshot_class === 'copy' ? ' · <span class="snap-copy">On the backup disk</span>' : ''}</div>
             </div>
             <div class="snap-actions">
-                <button class="btn-secondary backup-browse-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}" data-source-path="${backupEscapeHtml(entry.source_path || '')}" data-created-at="${backupEscapeHtml(entry.created_at || '')}">
+                <button class="btn-secondary backup-browse-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}" data-source-path="${backupEscapeHtml(entry.source_path || '')}" data-created-at="${backupEscapeHtml(entry.created_at || '')}"${entry.snapshot_class === 'copy' && entry.available === false ? ' disabled title="Connect the backup disk first"' : ''}>
                     Get files
                 </button>
-                <button class="btn-secondary backup-restore-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}" data-source-path="${backupEscapeHtml(entry.source_path || '')}">
+                ${entry.snapshot_class === 'copy' ? '' : `<button class="btn-secondary backup-restore-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}" data-source-path="${backupEscapeHtml(entry.source_path || '')}">
                     Restore all
                 </button>
                 <button class="btn-secondary backup-delete-btn" data-snapshot-path="${backupEscapeHtml(entry.snapshot_path || '')}">
                     Delete
-                </button>
+                </button>`}
             </div>
         </div>
     `));
@@ -1722,7 +1722,12 @@ async function loadDataSnapshots() {
         backupNotify('Failed to load snapshots', 'error');
         return;
     }
-    renderDataSnapshots(data.snapshots || []);
+    // Copies on the backup disk (backup-disk.js) are listed with them.
+    const copiesResponse = await backupApi('/backup/snapshots?snapshot_class=copy');
+    const copies = copiesResponse && copiesResponse.ok ? ((await backupReadJson(copiesResponse)) || {}).snapshots || [] : [];
+    const all = [...(data.snapshots || []), ...copies]
+        .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+    renderDataSnapshots(all);
 }
 
 async function loadSystemSnapshots() {

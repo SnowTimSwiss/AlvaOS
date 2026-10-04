@@ -169,6 +169,39 @@
             gap: 8px;
         }
 
+        .personal-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 0.6rem 0 0.5rem;
+            color: var(--text-primary);
+            cursor: pointer;
+        }
+
+        .personal-opts {
+            padding: 10px 12px 2px;
+            margin-bottom: 1rem;
+            border: 1px solid var(--border-subtle);
+            border-radius: 6px;
+        }
+
+        .personal-opts[hidden], .personal-field[hidden] { display: none; }
+
+        .personal-field {
+            display: block;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+
+        .personal-field .user-modal-input { margin-top: 4px; }
+
+        .user-modal-hint {
+            font-size: 0.78rem;
+            color: var(--text-tertiary);
+            margin: 4px 0 8px;
+        }
+
         .user-modal-actions button {
             flex: 1;
         }
@@ -182,6 +215,20 @@
                 width: 100%;
             }
         }
+        .share-limit-bar {
+            height: 6px;
+            border-radius: 3px;
+            background: var(--track);
+            overflow: hidden;
+            margin: 2px 0 8px;
+        }
+
+        .share-limit-bar span {
+            display: block;
+            height: 100%;
+            border-radius: 3px;
+        }
+
         .share-where {
             font-size: 0.85rem;
             color: var(--text-secondary);
@@ -798,6 +845,7 @@
         <nav aria-label="Main">
             <a href="index.html" class="nav-link"><i data-lucide="house" aria-hidden="true"></i> Dashboard</a>
             <a href="storage.html" class="nav-link active" aria-current="page"><i data-lucide="hard-drive" aria-hidden="true"></i> Storage</a>
+            <a href="files.html" class="nav-link"><i data-lucide="folder-open" aria-hidden="true"></i> Files</a>
             <a href="apps.html" class="nav-link"><i data-lucide="blocks" aria-hidden="true"></i> Apps</a>
             <a href="backup.html" class="nav-link"><i data-lucide="shield-check" aria-hidden="true"></i> Backup</a>
             <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw" aria-hidden="true"></i> Updates <span class="nav-badge" id="updates-nav-badge" style="display:none;">1</span></a>
@@ -934,6 +982,7 @@
     <script src="feedback.js"></script>
     <script src="app.js"></script>
     <script src="nav.js"></script>
+    <script src="assistant.js"></script>
     <script src="password-toggle.js"></script>
     <script src="storage.js"></script>
     <script src="storage-pools.js"></script>

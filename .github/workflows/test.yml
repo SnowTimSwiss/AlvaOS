@@ -22,7 +22,7 @@ jobs:
           python -m pip install --upgrade pip
           # Enough to import the whole backend (API tests load every blueprint);
           # docker, waitress and the 2FA libraries are not needed for the suite.
-          pip install pytest flask pyyaml cryptography psutil requests
+          pip install pytest flask pyyaml cryptography psutil requests pillow qrcode
 
       # The backend keeps its state in /var/lib/alvaos, owned by the service
       # user on a NAS. Give the CI user the same layout.
@@ -36,6 +36,20 @@ jobs:
 
       - name: Run unit tests
         run: pytest
+
+  installer-packages:
+    # Every package the installer asks apt for must exist in the Debian
+    # release it installs; one wrong name and the whole installation stops.
+    runs-on: ubuntu-latest
+    container: debian:trixie
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Check the package names
+        run: |
+          apt-get update -qq
+          sh scripts/ci/check_installer_packages.sh
 
   vault-e2e:
     # Buddy Backup vaults on a real kernel: NBD, LUKS and Btrfs as root.

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlvaOS - Files</title>
+    <script src="theme.js"></script>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="notifications.css">
+    <style>
+        .fl-hero { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 22px; align-items: center; background: var(--bg-card); border: 1px solid var(--border-default); border-radius: var(--radius-lg); padding: 26px; }
+        .fl-hero img { width: 76px; height: 76px; }
+        .fl-hero h1 { margin: 0 0 6px; font-size: 1.45rem; }
+        .fl-hero p { margin: 0; color: var(--text-secondary); line-height: 1.5; }
+        .fl-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; align-items: center; }
+        .fl-actions .btn-primary { text-decoration: none; display: inline-flex; align-items: center; gap: 8px; padding: 0.6rem 1.1rem; }
+        .fl-actions .fl-addr { font-family: var(--font-mono); font-size: 0.85rem; color: var(--text-secondary); }
+        .fl-points { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+        .fl-point { background: var(--bg-card); border: 1px solid var(--border-default); border-radius: var(--radius-lg); padding: 16px; font-size: 0.9rem; color: var(--text-secondary); line-height: 1.45; }
+        .fl-point strong { display: block; color: var(--text-primary); margin-bottom: 4px; }
+        .fl-note { margin-top: 14px; padding: 12px 14px; border-radius: var(--radius-default); background: color-mix(in srgb, var(--accent-warning) 12%, transparent); font-size: 0.88rem; line-height: 1.45; }
+        .fl-off { margin-top: 18px; }
+        @media (max-width: 760px) {
+            .fl-hero { grid-template-columns: 1fr; text-align: left; padding: 20px; }
+            .fl-hero img { width: 56px; height: 56px; }
+            .fl-points { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+
+<body>
+
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
+    <!-- Sidebar: same on every page (generated, keep in sync) -->
+    <aside class="sidebar" id="sidebar">
+        <a class="brand" href="index.html" aria-label="Go to the dashboard">
+            <svg class="brand-mark" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span class="brand-text">
+                <span class="brand-name" id="brand-name">AlvaOS</span>
+                <span class="brand-status" id="brand-status"><span class="status-dot online" aria-hidden="true"></span><span id="brand-status-text">Online</span></span>
+            </span>
+        </a>
+
+        <nav aria-label="Main">
+            <a href="index.html" class="nav-link"><i data-lucide="house" aria-hidden="true"></i> Dashboard</a>
+            <a href="storage.html" class="nav-link"><i data-lucide="hard-drive" aria-hidden="true"></i> Storage</a>
+            <a href="files.html" class="nav-link active" aria-current="page"><i data-lucide="folder-open" aria-hidden="true"></i> Files</a>
+            <a href="apps.html" class="nav-link"><i data-lucide="blocks" aria-hidden="true"></i> Apps</a>
+            <a href="backup.html" class="nav-link"><i data-lucide="shield-check" aria-hidden="true"></i> Backup</a>
+            <a href="updates.html" class="nav-link"><i data-lucide="rotate-cw" aria-hidden="true"></i> Updates <span class="nav-badge" id="updates-nav-badge" style="display:none;">1</span></a>
+            <div class="nav-spacer"></div>
+            <a href="system.html" class="nav-link"><i data-lucide="settings" aria-hidden="true"></i> Settings</a>
+        </nav>
+    </aside>
+    <div class="nav-scrim" id="nav-scrim" hidden></div>
+
+    <!-- Main Content -->
+    <div class="main">
+        <header class="topbar">
+            <button type="button" class="nav-menu-btn" id="menu-btn" aria-controls="sidebar" aria-expanded="false" aria-label="Open menu">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <div class="page-title">Files</div>
+            <div class="topbar-actions" id="topbar-actions">
+                <div class="account">
+                    <button type="button" class="account-btn" id="account-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" aria-label="Account">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="10" r="3"/><path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662"/></svg>
+                    </button>
+                    <div class="account-menu" id="account-menu" role="menu" hidden>
+                        <div class="account-who">Signed in as <strong>Administrator</strong></div>
+                        <div class="account-theme" role="group" aria-label="Appearance">
+                            <span class="account-theme-label">Appearance</span>
+                            <div class="seg">
+                                <button type="button" role="menuitemradio" aria-checked="true" data-theme-choice="auto">Auto</button>
+                                <button type="button" role="menuitemradio" aria-checked="false" data-theme-choice="light">Light</button>
+                                <button type="button" role="menuitemradio" aria-checked="false" data-theme-choice="dark">Dark</button>
+                            </div>
+                        </div>
+                        <a role="menuitem" href="system.html#security">Password and security</a>
+                        <button type="button" role="menuitem" onclick="alvaosLogout()">Log out</button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main class="content-scroll" id="main-content" tabindex="-1">
+            <section class="fl-hero">
+                <img src="files-app/icon.svg" alt="">
+                <div>
+                    <h1>AlvaOS Files</h1>
+                    <p id="fl-text">Your shared folders as an app, in any browser and on the phone. Everyone from Storage › Users signs in with their own password and sees exactly their shared folders.</p>
+                    <div class="fl-actions" id="fl-actions"><span class="fl-addr">Checking…</span></div>
+                    <div class="fl-note" id="fl-note" hidden></div>
+                </div>
+            </section>
+            <div class="fl-points">
+                <div class="fl-point"><strong>The same rights everywhere</strong>What someone may open or change over the network, they may in Files. Linux checks it, not a second list.</div>
+                <div class="fl-point"><strong>Photos, videos, documents</strong>Thumbnails, a viewer, upload by dragging files in, and a trash for 30 days.</div>
+                <div class="fl-point"><strong>Light and built in</strong>No database, no container. It only runs when it is turned on.</div>
+            </div>
+            <footer class="dash-footer">
+                <div>AlvaOS {{VERSION}}</div>
+            </footer>
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script src="lucide-icons.js"></script>
+    <script src="icons.js"></script>
+    <script src="notifications.js"></script>
+    <script src="feedback.js"></script>
+    <script src="app.js"></script>
+    <script src="nav.js"></script>
+    <script src="assistant.js"></script>
+    <script src="files-launcher.js"></script>
+</body>
+
+</html>

@@ -202,10 +202,12 @@
         menu.querySelector('[data-action="session"]')?.addEventListener('click', () => {
             sessionStorage.setItem(DISMISS_SESSION_KEY, 'true');
             wrap.remove();
+            document.body.classList.remove('has-feedback-fab');
         });
         menu.querySelector('[data-action="forever"]')?.addEventListener('click', () => {
             localStorage.setItem(DISMISS_FOREVER_KEY, 'true');
             wrap.remove();
+            document.body.classList.remove('has-feedback-fab');
         });
 
         setTimeout(() => {
@@ -235,6 +237,8 @@
             </button>
         `;
         document.body.appendChild(wrap);
+        // Room at the end of the page so the button never covers the last row.
+        document.body.classList.add('has-feedback-fab');
         if (window.renderAlvaIcons) window.renderAlvaIcons(wrap);
 
         wrap.querySelector('#feedback-fab')?.addEventListener('click', openModal);

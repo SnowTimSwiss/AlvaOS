@@ -2,6 +2,13 @@
 set -euo pipefail
 
 PACKAGE_PATH="${1:-}"
+# The signed package of the version that was installed before, staged and
+# verified by alvaos-priv. Installed again when this update fails.
+WAY_BACK_PATH="${2:-}"
+FAIL_MESSAGE="Update failed"
+ROLLED_BACK=0
+HEALTH_URL="http://127.0.0.1:8080/api/v1/setup/status"
+HEALTH_WAIT_SECONDS="${ALVAOS_HEALTH_WAIT:-120}"
 LOG_FILE="/var/log/alvaos/update-apply.log"
 SERVICES=("alvaos.service" "alvaos-backend.service" "alvaos-ui.service")
 BACKUP_DIR="/var/lib/alvaos.bak"
@@ -74,31 +81,54 @@ PY
   fix_state_permissions
 }
 
+# Appends to the update history the Updates page shows.
+record_history() {
+  python3 - "$1" "$2" "$3" <<'PY'
+import json, sys
+from datetime import datetime, timezone
+
+history_path = "/var/lib/alvaos/update_history.json"
+entry = {"type": sys.argv[1], "package": sys.argv[2], "version": sys.argv[3],
+         "timestamp": datetime.now(timezone.utc).isoformat()}
+try:
+    with open(history_path) as f:
+        data = json.load(f)
+    if not isinstance(data, list):
+        data = []
+except Exception:
+    data = []
+data.append(entry)
+with open(history_path, "w") as f:
+    json.dump(data, f, indent=2)
+PY
+  fix_state_permissions
+}
+
 # Cleanup function for error handling
 cleanup() {
   local exit_code=$?
   if [ $exit_code -ne 0 ]; then
     log "ERROR: Update failed with exit code $exit_code"
-    update_state "error" "Update failed" 0
-    
-    # Try to restore from backup if it was created
+
+    # Put the settings back as they were before the update. The update cache
+    # (updates/) is kept: it holds the packages to go back to.
     if [ "$BACKUP_CREATED" -eq 1 ] && [ -d "$BACKUP_DIR" ]; then
       log "Attempting to restore from backup..."
-      if command -v rsync >/dev/null 2>&1; then
-        rsync -a --delete "$BACKUP_DIR/" /var/lib/alvaos/ 2>/dev/null || log "WARNING: Restore backup failed"
-      else
-        rm -rf /var/lib/alvaos/*
-        cp -r "$BACKUP_DIR"/* /var/lib/alvaos/ 2>/dev/null || log "WARNING: Restore backup failed"
-      fi
+      restore_backup || log "WARNING: Restore backup failed"
       log "Backup restoration attempted"
     fi
-    
+
     # Restart services on failure
     log "Restarting services after failure..."
     repair_core_permissions
     if declare -F start_services >/dev/null 2>&1; then
       start_services
     fi
+    # Last, so the restored backup does not bring back an old "installing" state.
+    if [ "$ROLLED_BACK" -eq 1 ]; then
+      record_history "rollback" "$WAY_BACK_PATH" "$PREVIOUS_VERSION"
+    fi
+    update_state "error" "$FAIL_MESSAGE" 0
   fi
 }
 
@@ -109,11 +139,12 @@ restore_backup() {
   if [ -d "$BACKUP_DIR" ]; then
     log "Restoring from backup..."
     if command -v rsync >/dev/null 2>&1; then
-      rsync -a --delete "$BACKUP_DIR/" /var/lib/alvaos/ || return 1
+      rsync -a --delete --exclude 'updates/' "$BACKUP_DIR/" /var/lib/alvaos/ || return 1
     else
-      rm -rf /var/lib/alvaos/*
-      cp -r "$BACKUP_DIR"/* /var/lib/alvaos/ || return 1
+      find /var/lib/alvaos -mindepth 1 -maxdepth 1 ! -name 'updates' -exec rm -rf {} + || return 1
+      cp -r "$BACKUP_DIR"/. /var/lib/alvaos/ || return 1
     fi
+    fix_alvaos_state_permissions
     return 0
   fi
   return 1
@@ -172,17 +203,46 @@ start_services() {
   done
 }
 
-any_service_active() {
-  if ! command -v systemctl >/dev/null 2>&1; then
-    return 0
-  fi
-  for svc in "${SERVICES[@]}"; do
-    if systemctl is-active --quiet "$svc"; then
-      return 0
-    fi
-  done
-  return 1
+# Waits until the backend answers on its port (two minutes by default).
+backend_answers() {
+  python3 - "$HEALTH_URL" "$HEALTH_WAIT_SECONDS" <<'PY'
+import sys, time, urllib.request
+deadline = time.time() + int(sys.argv[2])
+while time.time() < deadline:
+    try:
+        with urllib.request.urlopen(sys.argv[1], timeout=5) as r:
+            if r.status == 200:
+                sys.exit(0)
+    except Exception:
+        pass
+    time.sleep(3)
+sys.exit(1)
+PY
 }
+
+# Installs the version from before the update again.
+go_back() {
+  if [ -z "$WAY_BACK_PATH" ] || [ ! -f "$WAY_BACK_PATH" ]; then
+    log "No earlier package to go back to"
+    return 1
+  fi
+  update_state "installing" "The update did not work, going back to ${PREVIOUS_VERSION}" 90
+  log "Going back to ${PREVIOUS_VERSION} with ${WAY_BACK_PATH}"
+  stop_services
+  if ! dpkg -i "$WAY_BACK_PATH" >> "$LOG_FILE" 2>&1; then
+    log "ERROR: going back failed too"
+    return 1
+  fi
+  repair_core_permissions
+  ROLLED_BACK=1
+  log "Went back to ${PREVIOUS_VERSION}"
+  return 0
+}
+
+PREVIOUS_VERSION="$(dpkg-query -W -f='${Version}' alvaos-system 2>/dev/null || true)"
+if [ -n "$WAY_BACK_PATH" ]; then
+  log "Way back if this fails: ${PREVIOUS_VERSION} (${WAY_BACK_PATH})"
+fi
 
 update_state "installing" "Stopping services" 60
 stop_services
@@ -217,43 +277,23 @@ fi
 
 update_state "installing" "Starting services" 95
 start_services
-if ! any_service_active; then
+if [ "$install_failed" -eq 0 ] && ! backend_answers; then
   install_failed=1
-  update_state "error" "No AlvaOS service is running after update" 95
-  log "ERROR: No known AlvaOS service is active after update"
+  log "ERROR: AlvaOS does not answer after the update"
 fi
 
 if [ "$install_failed" -ne 0 ]; then
+  if go_back; then
+    FAIL_MESSAGE="The update did not work. AlvaOS went back to version ${PREVIOUS_VERSION}."
+  else
+    FAIL_MESSAGE="The update did not work, and there was no earlier version to go back to. See the update log."
+  fi
   log "Update completed with errors"
   exit 1
 fi
 
 PACKAGE_VERSION="$(dpkg-deb -f "$PACKAGE_PATH" Version 2>/dev/null || true)"
-python3 - <<PY
-import json
-from datetime import datetime, timezone
-
-history_path = "/var/lib/alvaos/update_history.json"
-entry = {
-    "type": "alvaos",
-    "package": "${PACKAGE_PATH}",
-    "version": "${PACKAGE_VERSION}",
-    "timestamp": datetime.now(timezone.utc).isoformat()
-}
-
-try:
-    with open(history_path, "r") as f:
-        data = json.load(f)
-    if not isinstance(data, list):
-        data = []
-except Exception:
-    data = []
-
-data.append(entry)
-
-with open(history_path, "w") as f:
-    json.dump(data, f, indent=2)
-PY
+record_history "alvaos" "$PACKAGE_PATH" "$PACKAGE_VERSION"
 
 update_state "idle" "Install complete" 100
 log "Update completed successfully"

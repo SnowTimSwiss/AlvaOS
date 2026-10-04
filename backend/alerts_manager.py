@@ -356,11 +356,15 @@ def _collect_system_alerts():
 
     try:
         pools_state = load_pools_state()
+        import backup_copy
+        backup_disk = backup_copy.backup_disk_pool()
         if isinstance(pools_state, dict):
             for pool_id, pool_data in pools_state.items():
                 mount_point = str((pool_data or {}).get('mount_point') or '').strip()
                 if not mount_point:
                     continue
+                if backup_disk and str(pool_id) == backup_disk and not os.path.ismount(mount_point):
+                    continue   # the backup disk is unplugged most of the time; it has its own warning
                 pool_name = str((pool_data or {}).get('name') or pool_id)
                 if not os.path.ismount(mount_point):
                     alerts.append(_build_alert_item(
@@ -448,6 +452,43 @@ def _collect_system_alerts():
                 route='storage.html#disks',
                 action_label='Open disks'
             ))
+    except Exception:
+        pass
+
+    # The backup disk has not had a copy for a week (it was not connected).
+    try:
+        from app_services import backup_copier
+        copy = backup_copier.status()
+        if copy.get('enabled') and copy.get('stale'):
+            alerts.append(_build_alert_item(
+                alert_id='backup-disk-stale', severity='warning',
+                title='Connect your backup disk',
+                message=(f'"{copy.get("pool_name")}" has not had a copy of your restore points for a week. '
+                         'Connect it; the copy starts on its own.'),
+                route='backup.html', action_label='Open Backup'))
+    except Exception:
+        pass
+
+    # Remote access is on but would not work from outside.
+    try:
+        from app_services import remote
+        for problem in remote.problems():
+            alerts.append(_build_alert_item(route='system.html#remote', action_label='Open remote access', **problem))
+    except Exception:
+        pass
+
+    # Shares (personal folders) close to their space limit.
+    try:
+        import platform
+        if platform.system() == 'Linux':
+            import share_quota
+            from common import CMD, run_sudo_command
+            from shares_manager import load_shares_state
+            for alert_id, severity, title, message, route in share_quota.limit_alerts(
+                    load_shares_state().values(),
+                    lambda path: share_quota.read_usage(path, run_sudo_command, CMD['BTRFS'])):
+                alerts.append(_build_alert_item(alert_id=alert_id, severity=severity, title=title,
+                                                message=message, route=route, action_label='Open shares'))
     except Exception:
         pass
 

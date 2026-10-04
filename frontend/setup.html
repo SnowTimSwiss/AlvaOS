@@ -269,6 +269,12 @@
 
         .done-list small { display: block; color: var(--text-secondary); font-size: 0.82rem; }
 
+        .done-extras { margin-top: 18px; display: flex; flex-direction: column; gap: 8px; }
+        .done-extras .label { font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
+        .done-extras a { display: block; padding: 10px 12px; border: 1px solid var(--border-default); border-radius: var(--radius-default); text-decoration: none; color: var(--text-primary); }
+        .done-extras a:hover { border-color: var(--accent-primary); }
+        .done-extras small { display: block; color: var(--text-secondary); font-size: 0.82rem; margin-top: 2px; }
+
         .address {
             display: flex;
             align-items: center;
@@ -595,6 +601,12 @@
                 <p class="lead">Here is what was set up.</p>
                 <ul class="done-list" id="done-list"></ul>
                 <div id="done-addresses"></div>
+                <div class="done-extras">
+                    <span class="label">More you can turn on later</span>
+                    <a href="/apps.html"><strong>AlvaOS Files</strong><small>Your shared folders in the browser and on your phone, with share links.</small></a>
+                    <a href="/system.html#assistant"><strong>An assistant</strong><small>Ask about your NAS in your own words. Off until you choose an AI service.</small></a>
+                    <a href="/system.html#security"><strong>Encrypted connection</strong><small>Trust this NAS once on each device and open it with https://.</small></a>
+                </div>
             </section>
 
             <div class="wizard-nav">
