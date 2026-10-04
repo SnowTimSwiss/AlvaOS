@@ -613,3 +613,43 @@ def test_the_admin_chooses_where_hub_apps_keep_data(backend, monkeypatch):
     assert ["/usr/bin/mkdir", "-p", "/mnt/alvaos/big/.alvaos-hub/thumbs"] in ran
     assert ["/usr/bin/chown", "-R", "alvaos:alvaos", "/mnt/alvaos/big/.alvaos-hub"] in ran
     assert client.post("/api/v1/hub", json={"storage": {"cache_pool": "sys"}}, headers=headers).status_code == 400
+
+
+def test_virtual_machines_are_for_the_admin_and_answer_in_sentences(backend, monkeypatch):
+    import api_vms
+    import app_services
+    module, state = backend
+    set_up(state)
+    calls = []
+
+    class Fake:
+        def status(self):
+            return {"ready": True, "vms": [], "store": "/mnt/alvaos/main/VMs"}
+
+        def create(self, data):
+            calls.append(("create", data))
+            return ({"id": "0a1b2c3d", "name": data["name"]}, "") if data.get("name") else (None, "Give it a name.")
+
+        def action(self, vm_id, what):
+            calls.append((what, vm_id))
+            return (True, "Started.") if what == "start" else (False, "It is not running.")
+
+        def console(self, vm_id):
+            return {"ticket": "t", "port": 8085, "tls_port": 9445, "name": "x"}, ""
+
+    monkeypatch.setattr(app_services, "vms", Fake())
+    monkeypatch.setattr(api_vms, "_data_pools", lambda: {"p1": {"name": "Big", "mount_point": "/mnt/alvaos/big"}})
+    client = module.app.test_client()
+    assert client.get("/api/v1/vms").status_code == 401
+    token = auth_manager._create_session("root", role="admin")
+    headers = {"Authorization": token, "X-CSRF-Token": auth_manager.SESSIONS[token]["csrf_token"]}
+    got = client.get("/api/v1/vms", headers=headers).get_json()
+    assert got["ready"] is True and got["pools"] == [{"id": "p1", "name": "Big"}]
+    assert client.post("/api/v1/vms", json={}, headers=headers).get_json()["error"] == "Give it a name."
+    made = client.post("/api/v1/vms", json={"name": "Win"}, headers=headers).get_json()
+    assert made["vm"]["id"] == "0a1b2c3d"
+    assert client.post("/api/v1/vms/0a1b2c3d/action", json={"action": "start"}, headers=headers).get_json()["message"] == "Started."
+    refused = client.post("/api/v1/vms/0a1b2c3d/action", json={"action": "stop"}, headers=headers)
+    assert refused.status_code == 409 and refused.get_json()["error"] == "It is not running."
+    ticket = client.post("/api/v1/vms/0a1b2c3d/console", headers=headers)
+    assert ticket.get_json()["ticket"] == "t" and ticket.headers["Cache-Control"] == "no-store"

@@ -49,3 +49,5 @@ remote = remote_access.RemoteAccess(run_sudo_command)
 
 import gpu_manager  # noqa: E402
 gpu = gpu_manager.GpuManager(run_sudo_command)
+import vm_manager  # noqa: E402
+vms = vm_manager.VmManager(run_sudo_command)

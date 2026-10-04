@@ -15,6 +15,38 @@ How to add an entry:
 
 ---
 
+## 2026-10-04 · Virtual machines (docs/VMS.md)
+
+- New admin page **Virtual machines** (`vms.html`, `vms.js`, in the
+  navigation): set up once (installs QEMU, UEFI firmware and a TPM on request
+  and makes the shared folder `VMs` on a pool), new machine (Windows 11,
+  Windows 10, Linux, other; sensible cores/memory/disk per system, details under
+  "More options"), start, shut down (power button of the guest), restart,
+  switch off, delete, settings (installer, cores, memory, ports, start with
+  the NAS) and **the screen in the browser** (noVNC, vendored under
+  `frontend/vendor/novnc`, bundled as one file).
+- QEMU/KVM without libvirt: `vm_ops.py` builds the command line from a
+  description it checks again (the backend writes, never passes a command);
+  systemd template unit `alvaos-vm@.service` as the account `alvaos-vm`
+  (created by the installer and the package), `ExecStop` presses the
+  power button and waits. `alvaos-priv` got `vm-setup|vm-prepare|vm-delete|
+  vm-isos`; the policy allows `systemctl` only for `alvaos-vm@<8 hex>.service`.
+- `vm_manager.py` (state, setup job, create/update/delete/actions, memory and
+  space checks), `api_vms.py` (`/api/v1/vms*`, admin only), `vm_console.py`
+  (one-time tickets, a door on 8085/9445 that only copies bytes after the
+  check; the web UI's CSP got `connect-src` for those ports).
+- Disks are qcow2 files in `VMs/<id>/` (also UEFI variables, TPM state), so
+  restore points, backups and limits apply. New packages are listed in
+  `scripts/ci/optional-packages.txt`.
+- Checked here only with fakes (no KVM in this environment); the page was
+  driven in a browser against the real door with a fake VNC server. A real
+  run is step 8b of `docs/TESTING.md`.
+- Note for next time: `-sandbox` for QEMU, a bridge network and a virtio
+  driver ISO are left out on purpose until they can be tried on hardware.
+- Roadmap: thought through and written down (not built): UPS (NUT), access
+  without a router setting (Tailscale, Cloudflare Tunnel) and a warm
+  standby NAS instead of automatic failover (`ROADMAP.md` 2c).
+
 ## 2026-10-04 · Hub: Calendar (like Google Calendar) and Chat (like ChatGPT)
 
 - **Calendar** (`hub_calendar.py`, `files-app/calendar.js|css`): day, week

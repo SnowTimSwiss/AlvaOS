@@ -58,6 +58,16 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 - **Not in Files on purpose:** faces, maps and albums (Immich does that as an app); chat, calendar and contacts are Hub apps of their own (see 2), not part of Files.
 - **Remote access: first step done.** Settings › Remote access: WireGuard with "add this device", QR code for phones, a file for computers, last connected, remove. Needs one forwarded UDP port. UPnP (the router opens the port by itself), a CGNAT warning and DuckDNS: done. Next: optional "also reach the home network"; without any port only with a relay (Tailscale/Headscale or an own one).
 
+### 2b. Virtual machines
+- **Done:** the Virtual machines page (set up once, new machine, start, shut down, switch off, delete, settings, the screen in the browser). QEMU/KVM run by systemd as an own account, disks as qcow2 files in the shared folder `VMs` (so restore points, backups and limits cover them), Windows 11 with UEFI and a TPM. Reference: `docs/VMS.md`.
+- **Next:** change the disk size; a second disk; a virtio driver ISO for faster Windows; a bridge network (own address at home) as an option next to NAT; pass a USB device or graphics card through; Home Assistant OS and other ready images as a one-click choice; limits per machine (cgroups).
+
+### 2c. Reaching the NAS, and not being without it
+Thought through, decided, not built yet. In this order:
+1. **A UPS (NUT):** the most common failure at home is a power cut. Shut down cleanly on battery, start again, tell the buddy NAS. Small and valuable.
+2. **Access without a router setting** (next to WireGuard, which stays the default; CGNAT is already detected): **Tailscale** for the own devices (end to end encrypted, one account); **Cloudflare Tunnel** (`cloudflared`, installed only when turned on, with the owner's own Cloudflare account and domain) to make the Hub and share links reachable in a browser. Note: Cloudflare ends TLS, and large video streams are against its terms. An own relay only later, with the native apps.
+3. **High availability the home way: a warm standby**, not automatic failover (two nodes cannot tell a failed neighbour from a broken cable, and then both write: "split brain"). Buddy Backup already keeps a recent copy on a second NAS; add a button *Take over* there that brings up the shares, the Hub and the people from that copy, and a name (`alva.home`) that points to it. Minutes of downtime instead of days, no risk of two writers. Automatic failover only with a third device as referee, as an expert option much later.
+
 ### 3. Storage follow-ups
 - **Quotas per share and personal folders: done** (Btrfs qgroups, only switched on for a pool once a limit is set there). Warning when a folder is nearly full: done. Next: a check on a real pool with many restore points how much slower qgroups make it.
 

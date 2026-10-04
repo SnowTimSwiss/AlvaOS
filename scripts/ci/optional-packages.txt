@@ -8,3 +8,9 @@ mesa-va-drivers
 vainfo
 nvidia-driver
 linux-headers-amd64
+# Virtual machines, installed when they are set up (backend/vm_manager.py PACKAGES).
+qemu-system-x86
+qemu-utils
+ovmf
+swtpm
+swtpm-tools

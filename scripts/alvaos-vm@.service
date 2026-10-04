@@ -1,0 +1,34 @@
+[Unit]
+Description=AlvaOS virtual machine %i
+After=network.target alvaos.service
+RequiresMountsFor=/mnt/alvaos
+
+[Service]
+Type=simple
+# QEMU runs as its own account that can use KVM and open nothing else
+# (backend/vm_ops.py builds the command line from the checked description).
+User=alvaos-vm
+Group=alvaos
+SupplementaryGroups=kvm
+RuntimeDirectory=alvaos-vm
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
+WorkingDirectory=/opt/alvaos/bin
+# "+": as root, to let alvaos-vm reach the folder and the installer image.
+ExecStartPre=+/usr/bin/python3 /opt/alvaos/bin/vm_ops.py ready %i
+ExecStart=/usr/bin/python3 /opt/alvaos/bin/vm_ops.py run %i
+# Shutting down the NAS (or stopping it here) presses the power button of the
+# guest and waits for it to finish before the disk goes away.
+ExecStop=/usr/bin/python3 /opt/alvaos/bin/vm_ops.py stop %i
+TimeoutStopSec=150
+KillMode=mixed
+Restart=no
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=full
+Environment="PYTHONUNBUFFERED=1"
+
+# Started and stopped on the Virtual machines page; "start with the NAS" enables it.
+[Install]
+WantedBy=multi-user.target

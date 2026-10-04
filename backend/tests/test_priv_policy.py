@@ -703,3 +703,20 @@ def test_backup_disk_copies_are_allowed():
     allowed('/usr/bin/umount', '/mnt/alvaos/usb')
     allowed('/usr/bin/btrfs', 'subvolume', 'delete', '/mnt/alvaos/usb/.alvaos-copies/main__Family/a')
     denied('/usr/bin/btrfs', 'receive', '/etc')
+
+
+# ── Virtual machines ─────────────────────────────────────────────────────────
+
+def test_virtual_machine_units_can_be_started_stopped_and_enabled_by_id_only():
+    unit = 'alvaos-vm@0a1b2c3d.service'
+    for action in (('start',), ('stop',), ('restart',), ('enable',), ('disable',), ('is-enabled',),
+                   ('kill', '--signal=SIGKILL')):
+        allowed('/usr/bin/systemctl', *action, unit)
+    allowed('/usr/bin/systemctl', 'is-active', unit)
+    for bad in ('alvaos-vm@../x.service', 'alvaos-vm@0a1b2c3.service', 'alvaos-vm@0A1B2C3D.service',
+                'alvaos-vm@0a1b2c3d.service.evil', 'ssh.service', 'alvaos-vm@.service'):
+        denied('/usr/bin/systemctl', 'start', bad)
+    denied('/usr/bin/systemctl', 'kill', '--signal=SIGKILL', 'ssh.service')
+    denied('/usr/bin/systemctl', 'kill', '--kill-whom=all', unit)
+    denied('/usr/bin/systemctl', 'edit', unit)
+    denied('/usr/bin/systemctl', 'set-property', unit, 'CPUQuota=1%')

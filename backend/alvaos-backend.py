@@ -45,13 +45,14 @@ import api_ai
 import api_files
 import api_remote
 import api_gpu
+import api_vms
 import api_shares
 import api_storage
 import api_system
 import api_updates
 
 for _module in (api_auth, api_system, api_updates, api_storage, api_shares, api_backup, api_apps, api_files, api_ai,
-                api_remote, api_gpu):
+                api_remote, api_gpu, api_vms):
     app.register_blueprint(_module.bp)
 
 # ── Frontend serving ──────────────────────────────────────────────────────────
@@ -197,6 +198,8 @@ def add_security_headers(response):
         'Content-Security-Policy',
         "default-src 'self'; img-src 'self' data:; "
         "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
+        # The screens of virtual machines (vm_console.py) are WebSockets on their own ports.
+        "connect-src 'self' ws://*:8085 wss://*:9445; "
         "frame-ancestors 'self'; base-uri 'self'; form-action 'self'"
     )
     return response
@@ -299,6 +302,10 @@ if __name__ == '__main__':
     # Graphics: a driver installed before this start is running now.
     from app_services import gpu
     gpu.clear_after_boot()
+
+    # The screens of virtual machines in the browser (only with a ticket).
+    import vm_console
+    vm_console.serve_in_background()
 
     # Remote access: the tunnel comes back after a reboot when it is on.
     from app_services import remote

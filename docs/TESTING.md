@@ -133,6 +133,28 @@ storage healthy, one shared folder.
 1. Apps › install one (e.g. Jellyfin), open it, restart it, update it.
 2. Uninstall it; its data folder stays unless you choose otherwise.
 
+## 8b. Virtual machines (a computer with VT-x/AMD-V, on, in the BIOS)
+
+1. Virtual machines › *Set up*, choose a pool: QEMU and the firmware are
+   installed, and Storage › Shared folders lists `VMs`. On a machine without
+   virtualization the page says why and offers nothing else.
+2. Put a Linux installer (.iso) into `VMs/ISOs` (the Hub › Files as
+   administrator uploads it). *New virtual machine* › Linux, the installer,
+   Create › Start › *Open screen*: the installer shows, the keyboard and mouse
+   work. Install, then Settings › Installer: None, start again: it boots from
+   its disk.
+3. *Shut down* asks the guest to power off (it does, within a minute);
+   *Switch off* stops it at once. Restart the NAS with a machine running and
+   "start with the NAS" on: it stops cleanly before the disks go, and
+   starts again afterwards.
+4. A Windows 11 machine (the ISO in `VMs/ISOs`): the installer starts without
+   complaining about the TPM or Secure Boot. Forward a port (3389) and
+   reach it from another computer.
+5. Delete a machine: its folder in `VMs` is gone. Space limits and restore
+   points of `VMs` work like for any shared folder.
+6. HTTPS: open the admin page over `https://` and the screen: it uses port
+   9445 (the NAS's certificate has to be trusted there too).
+
 ## 9. HTTPS
 
 1. Settings › Security › HTTPS › "Set up devices": download the certificate,

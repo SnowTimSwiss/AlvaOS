@@ -684,8 +684,16 @@ _SYSTEMCTL_ALLOWED = {
 }
 
 
+# Virtual machines (backend/vm_ops.py): one template unit, an 8-character id.
+VM_UNIT_RE = re.compile(r'^alvaos-vm@[0-9a-f]{8}\.service$')
+_VM_ACTIONS = {('start',), ('stop',), ('restart',), ('enable',), ('disable',), ('is-enabled',),
+               ('kill', '--signal=SIGKILL')}
+
+
 def _rule_systemctl(sys_: System, args):
     if len(args) == 2 and args[0] == 'is-active' and UNIT_RE.match(args[1]):
+        return Plan(argv=list(args))
+    if len(args) >= 2 and VM_UNIT_RE.match(args[-1]) and tuple(args[:-1]) in _VM_ACTIONS:
         return Plan(argv=list(args))
     if tuple(args) not in _SYSTEMCTL_ALLOWED:
         _fail('systemctl action not allowed: ' + ' '.join(args))

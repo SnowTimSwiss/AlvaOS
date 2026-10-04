@@ -127,6 +127,8 @@ cp "${REPO_ROOT}/backend/alvaos-watchdog.timer" "${PKG_DIR}/etc/systemd/system/"
 # AlvaOS Files: installed, but off until it is turned on under Apps.
 cp "${REPO_ROOT}/scripts/alvaos-files.service" "${PKG_DIR}/etc/systemd/system/"
 cp "${REPO_ROOT}/scripts/alvaos-files.service" "${PKG_DIR}/opt/alvaos/scripts/"
+cp "${REPO_ROOT}/scripts/alvaos-vm@.service" "${PKG_DIR}/etc/systemd/system/"
+cp "${REPO_ROOT}/scripts/alvaos-vm@.service" "${PKG_DIR}/opt/alvaos/scripts/"
 
 log "Creating configuration files..."
 # Create version file
@@ -192,6 +194,10 @@ echo "Configuring AlvaOS..."
 # Create alvaos system user if it doesn't exist
 if ! id alvaos >/dev/null 2>&1; then
     useradd -r -s /usr/sbin/nologin -d /var/lib/alvaos -M alvaos
+fi
+# Virtual machines run as their own account (backend/vm_ops.py)
+if ! id alvaos-vm >/dev/null 2>&1; then
+    useradd -r -g alvaos -s /usr/sbin/nologin -d /nonexistent -M alvaos-vm
 fi
 
 # Create necessary directories
