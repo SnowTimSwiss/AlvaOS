@@ -48,6 +48,8 @@ jobs:
 
       - name: Check the package names
         run: |
+          # The same components as on a NAS (installer/install-system.sh).
+          sed -i 's/^Components: .*/Components: main contrib non-free non-free-firmware/' /etc/apt/sources.list.d/debian.sources
           apt-get update -qq
           sh scripts/ci/check_installer_packages.sh
 

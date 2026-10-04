@@ -1,14 +1,10 @@
-# Packages AlvaOS installs later, on request (Settings › Graphics).
-# Checked in Debian trixie by check_installer_packages.sh like the installer's.
+# Packages AlvaOS installs later, on request (Settings › Graphics,
+# backend/gpu_manager.py PACKAGES). Checked in Debian trixie by
+# check_installer_packages.sh like the installer's own.
 firmware-misc-nonfree
 firmware-amd-graphics
-firmware-intel-graphics
-firmware-nvidia-graphics
-nvidia-driver
-nvidia-kernel-dkms
-linux-headers-amd64
-nvidia-container-toolkit
 intel-media-va-driver-non-free
 mesa-va-drivers
 vainfo
-pciutils
+nvidia-driver
+linux-headers-amd64
