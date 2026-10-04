@@ -138,7 +138,16 @@ storage healthy, one shared folder.
    back / replace it in Storage.
 3. Settings › Power: disk sleep; restart and shut down from the web page.
 
-## 12. Updates
+## 12. Graphics card (only with a real card)
+
+1. Settings › Graphics lists the card with its model and driver.
+2. Intel/AMD: "Install firmware and video drivers"; afterwards the state is
+   "Ready" (after a restart if the card had no driver before).
+3. NVIDIA: "Install NVIDIA driver" (a few minutes), then "Restart now";
+   after the restart the driver reads "nvidia" and the state is "Ready".
+   With Secure Boot on, the NAS asks for the MOK key on its screen once.
+
+## 13. Updates
 
 1. Updates › check. When a newer signed release exists: install it; the
    page is away for a minute and comes back with the new version.
