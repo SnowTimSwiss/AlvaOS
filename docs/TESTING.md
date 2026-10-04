@@ -62,7 +62,13 @@ storage healthy, one shared folder.
    see "No apps for you yet", and WebDAV refuses them.
 2. Sign in as `anna`. Upload photos (also a big file, > 1 GB, and stop
    and resume it), make a folder, move and copy, download a ZIP.
-3. Photos: pictures appear by month, with the date they were taken.
+3. Photos: pictures appear by month, with the date they were taken. On the
+   Hub page › Where things are kept: make personal folders for those
+   missing; mark "Files" as a photo library; Photos shows anna's own
+   `Photos/` folder and the library together. Switch Photos to "A folder
+   per person on" a pool with a limit: Storage › Shared folders lists
+   `anna-photos` with that limit. Choose a pool for thumbnails: they are
+   made in `.alvaos-hub/thumbs` on it.
 4. A file › Previous versions (needs a restore point, see step 6).
 5. Share link: read-only, then a "drop box" with a limit; open it in a
    private window and upload into the drop box.

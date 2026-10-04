@@ -15,6 +15,27 @@ How to add an entry:
 
 ---
 
+## 2026-10-04 · Hub: where apps keep data (docs/HUB.md and the settings)
+
+- `docs/HUB.md`: the reference for the Hub: Hub apps vs store apps, who sees
+  what, and where data lives (normal files in shares; personal folder by
+  default, a pool per app when wanted; shared libraries; one cache place).
+- `hub_apps.py`: per app `location` (personal folder or a pool with an
+  optional limit per person) and `libraries`; `storage.cache_pool`.
+  `own_folder()` and `cache_dir()` answer where things are.
+- Admin Hub page, new section "Where things are kept": make the missing
+  personal folders (pool, limit), where Photos keeps everyone's own photos
+  (with a pool: shares `<person>-photos` only for that person, made right
+  away, limit each), which shared folders are photo libraries, and where
+  thumbnails go (warning while on the system disk). API `/api/v1/hub`
+  (`apps.*.location`, `apps.*.libraries`, `storage`, `personal_folders`).
+- Hub: Photos shows the person's own `Photos/` (made on first open) plus
+  the libraries they may read, merged newest first (`/api/photos/sources`).
+  `/api/media` needs Photos. Thumbnails go to `<pool>/.alvaos-hub/thumbs`
+  when a cache pool is chosen (made by the helper, owned by the service).
+- Note for next time: libraries are stored sorted; uploading into the own
+  photos from the Hub is not there yet (Files can upload into `Photos/`).
+
 ## 2026-10-04 · AlvaOS Hub: the frame, with Files and Photos as its first apps
 
 - The Files app is now **AlvaOS Hub** (same service and ports, 8090/9443):

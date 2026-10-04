@@ -233,7 +233,10 @@
         $('view-grid').setAttribute('aria-pressed', view === 'grid');
         $('view-list').setAttribute('aria-pressed', view === 'list');
         if (found && !shown.length && foundInfo.photos) {
-            items.innerHTML = `<div class="empty">${icon('image')}<strong>No photos or videos yet</strong>Pictures you put anywhere in "${esc(share)}" show up here, newest first.</div>`;
+            const own = (foundInfo.sources || []).find((src) => src.own);
+            items.innerHTML = `<div class="empty">${icon('image')}<strong>No photos or videos yet</strong>${own
+                ? `Put pictures into "${esc([own.share, own.path].filter(Boolean).join(' › '))}" and they show up here, newest first.`
+                : 'You have no folder for photos yet. Ask whoever runs this NAS for a personal folder or a photo library.'}</div>`;
         } else if (found && !shown.length) {
             items.innerHTML = `<div class="empty">${icon('search')}<strong>Nothing found</strong>No name here or in a folder below contains "${esc(foundInfo.q)}".</div>`;
         } else if (found && foundInfo.photos) {
@@ -295,7 +298,7 @@
             head.className = 'results-head';
             const here = path ? path.split('/').pop() : share;
             head.innerHTML = foundInfo.photos
-                ? `${icon('image').replace('<svg', '<svg width="16" height="16"')}<span>${found.length}${foundInfo.complete ? '' : '+'} photos and videos in ${esc(share)}, newest first</span>
+                ? `${icon('image').replace('<svg', '<svg width="16" height="16"')}<span>${found.length}${foundInfo.complete ? '' : '+'} photos and videos, newest first</span>
                 <button type="button" class="link" id="results-close">Back to the folder</button>`
                 : `${icon('search').replace('<svg', '<svg width="16" height="16"')}<span>${found.length}${foundInfo.complete ? '' : '+'} found for "${esc(foundInfo.q)}"${foundInfo.complete ? '' : ' · type more to narrow it down'}</span>
                 <span class="scope" role="group" aria-label="Where to search"><button type="button" data-scope="here" aria-pressed="${!searchAll}">In ${esc(here)}</button><button type="button" data-scope="all" aria-pressed="${searchAll}">All shared folders</button></span>
@@ -766,10 +769,14 @@
         $('items').innerHTML = '<div class="empty">Looking for photos…</div>';
         document.querySelectorAll('.side-item').forEach((b) => b.classList.remove('active'));
         try {
-            const data = await api(`media?${new URLSearchParams({ share })}`);
+            // Own photos and the photo libraries (chosen on the admin's Hub page), together.
+            const { sources } = await api('photos/sources');
+            const parts = await Promise.all(sources.map((src) => api(`media?${new URLSearchParams({ share: src.share, path: src.path })}`)
+                .catch(() => ({ results: [], complete: true }))));   // e.g. a Photos folder not made yet
             if (id !== searchId) return;
-            found = data.results || [];
-            foundInfo = { q: '', complete: !!data.complete, photos: true };
+            found = parts.flatMap((p) => p.results || [])
+                .sort((a, b) => String(b.modified_at || '').localeCompare(String(a.modified_at || '')));
+            foundInfo = { q: '', complete: parts.every((p) => p.complete), photos: true, sources };
             selected = new Set();
             render();
         } catch (err) {

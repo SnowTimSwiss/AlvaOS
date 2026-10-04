@@ -49,3 +49,56 @@ def test_a_broken_settings_file_falls_back_to_everything_on(tmp_path):
     assert settings["apps"]["files"] == {"enabled": False, "people": ["anna"]}
     path.write_text("not json")
     assert hub_apps.load(str(path))["apps"]["files"]["enabled"] is True
+
+
+POOLS = {"ssd-1": {"name": "fast", "mount_point": "/mnt/alvaos/fast"},
+         "hdd-1": {"name": "big", "mount_point": "/mnt/alvaos/big"}}
+SHARES = ["Family", "Media"]
+
+
+def test_where_apps_keep_data_is_chosen_and_checked(tmp_path):
+    path = str(tmp_path / "hub.json")
+    settings, problem = hub_apps.save({"apps": {"photos": {"location": {"mode": "pool", "pool_id": "hdd-1", "limit_gb": 500},
+                                                          "libraries": ["Family"]}},
+                                       "storage": {"cache_pool": "ssd-1"}}, PEOPLE, path, pools=POOLS, shares=SHARES)
+    assert problem == ""
+    assert settings["apps"]["photos"]["location"] == {"mode": "pool", "pool_id": "hdd-1", "limit_gb": 500.0}
+    assert settings["apps"]["photos"]["libraries"] == ["Family"] and settings["storage"]["cache_pool"] == "ssd-1"
+    assert hub_apps.load(path)["apps"]["photos"]["location"]["pool_id"] == "hdd-1"
+    for change, message in (
+            ({"apps": {"photos": {"location": {"mode": "pool", "pool_id": "nope"}}}}, "Choose a storage pool"),
+            ({"apps": {"photos": {"location": {"mode": "pool", "pool_id": "hdd-1", "limit_gb": -3}}}}, "number of GB"),
+            ({"apps": {"photos": {"location": {"mode": "cloud"}}}}, "personal folder or a storage pool"),
+            ({"apps": {"files": {"location": {"mode": "personal"}}}}, "keeps no data"),
+            ({"apps": {"photos": {"libraries": ["Secret"]}}}, "shared folders that exist"),
+            ({"apps": {"files": {"libraries": []}}}, "reads no shared folders"),
+            ({"storage": {"cache_pool": "usb"}}, "pool for the cache")):
+        settings_after, problem = hub_apps.save(change, PEOPLE, path, pools=POOLS, shares=SHARES)
+        assert settings_after is None and message in problem, change
+    settings, _ = hub_apps.save({"apps": {"photos": {"location": {"mode": "personal"}}}, "storage": {"cache_pool": ""}},
+                                PEOPLE, path, pools=POOLS, shares=SHARES)
+    assert settings["apps"]["photos"]["location"] == {"mode": "personal"} and settings["storage"]["cache_pool"] == ""
+
+
+def test_each_persons_own_photos_folder(tmp_path):
+    path = str(tmp_path / "hub.json")
+    shares = {"1": {"name": "anna", "personal_for": "anna"}, "2": {"name": "ben-photos", "hub_for": "ben"},
+              "3": {"name": "Family"}}
+    settings = hub_apps.load(path)
+    assert hub_apps.own_folder("photos", "anna", shares, settings) == ("anna", "Photos")
+    assert hub_apps.own_folder("photos", "ben", shares, settings) is None          # no personal folder yet
+    assert hub_apps.own_folder("files", "anna", shares, settings) is None          # Files keeps nothing
+    settings, _ = hub_apps.save({"apps": {"photos": {"location": {"mode": "pool", "pool_id": "hdd-1"}}}}, PEOPLE, path,
+                                pools=POOLS, shares=SHARES)
+    assert hub_apps.own_folder("photos", "ben", shares, settings) == ("ben-photos", "")
+    assert hub_apps.own_folder("photos", "anna", shares, settings) is None
+
+
+def test_the_cache_goes_to_a_mounted_pool_or_stays_on_the_system_disk(tmp_path, monkeypatch):
+    path = str(tmp_path / "hub.json")
+    settings, _ = hub_apps.save({"storage": {"cache_pool": "ssd-1"}}, PEOPLE, path, pools=POOLS, shares=SHARES)
+    monkeypatch.setattr(hub_apps.os.path, "ismount", lambda p: p == "/mnt/alvaos/fast")
+    assert hub_apps.cache_dir(POOLS, settings) == "/mnt/alvaos/fast/.alvaos-hub"
+    monkeypatch.setattr(hub_apps.os.path, "ismount", lambda p: False)               # pool not there: system disk
+    assert hub_apps.cache_dir(POOLS, settings) is None
+    assert hub_apps.cache_dir(POOLS, hub_apps.load(str(tmp_path / "none.json"))) is None

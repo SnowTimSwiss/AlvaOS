@@ -558,3 +558,57 @@ def test_the_admin_turns_hub_apps_on_and_off_and_chooses_who_sees_them(backend, 
     assert apps["photos"]["enabled"] is False and apps["files"]["people"] == ["anna"]
     bad = client.post("/api/v1/hub", json={"apps": {"files": {"people": ["eve"]}}}, headers=headers)
     assert bad.status_code == 400 and "eve" in bad.get_json()["error"]
+
+
+def test_the_admin_chooses_where_hub_apps_keep_data(backend, monkeypatch):
+    import api_auth
+    import api_files
+    import api_shares
+    import shares_manager
+    import storage_manager
+    module, state = backend
+    set_up(state)
+    ran, made, limited = [], [], []
+    shares = {"1": {"name": "Family", "protocol": "smb"}, "2": {"name": "anna", "personal_for": "anna"}}
+    monkeypatch.setattr(api_files, "run_sudo_command",
+                        lambda cmd, timeout=30: ran.append(cmd) or (subprocess.CompletedProcess(cmd, 0, "enabled\n", ""), None))
+    monkeypatch.setattr(api_auth, "load_users_state", lambda: {"anna": {}, "ben": {}})
+    monkeypatch.setattr(shares_manager, "load_shares_state", lambda: shares)
+    monkeypatch.setattr(storage_manager, "load_pools_state",
+                        lambda: {"hdd-1": {"name": "big", "mount_point": "/mnt/alvaos/big"}, "sys": {"mount_point": "/"}})
+
+    def create_share(data, known, extra=None):
+        made.append((data, extra))
+        shares[str(len(shares) + 1)] = {"name": data["name"], **(extra or {})}
+        return {"success": True, "share_id": f"share-{data['name']}"}, 200
+
+    monkeypatch.setattr(api_shares, "create_share", create_share)
+    monkeypatch.setattr(api_shares, "set_share_limit", lambda sid, gb: limited.append((sid, gb)) or ({}, 200))
+    monkeypatch.setattr(api_shares, "check_personal_folder", lambda person, spec: "")
+    monkeypatch.setattr(api_shares, "create_personal_folder",
+                        lambda person, spec, known: made.append(("personal", person, spec)) or ({}, 200))
+    token = auth_manager._create_session("root", role="admin")
+    headers = {"Authorization": token, "X-CSRF-Token": auth_manager.SESSIONS[token]["csrf_token"]}
+    client = module.app.test_client()
+
+    hub = client.get("/api/v1/hub", headers=headers).get_json()
+    assert hub["needs_personal_folder"] == ["ben"] and hub["libraries_to_choose"] == ["Family"]
+    assert hub["pools"] == [{"id": "hdd-1", "name": "big"}] and hub["cache_on_system_disk"]
+
+    done = client.post("/api/v1/hub", json={"personal_folders": {"pool_id": "hdd-1", "limit_gb": 100}},
+                       headers=headers).get_json()
+    assert ("personal", "ben", {"pool_id": "hdd-1", "limit_gb": 100}) in made and "ben" in done["message"]
+
+    made.clear()
+    client.post("/api/v1/hub", json={"apps": {"photos": {"location": {"mode": "pool", "pool_id": "hdd-1", "limit_gb": 500},
+                                                         "libraries": ["Family"]}}}, headers=headers)
+    assert [(d["name"], d["pool_id"], d["smb_permissions"], e) for d, e in made] == [
+        ("anna-photos", "hdd-1", {"anna": "write"}, {"hub_app": "photos", "hub_for": "anna"}),
+        ("ben-photos", "hdd-1", {"ben": "write"}, {"hub_app": "photos", "hub_for": "ben"})]
+    assert limited == [("share-anna-photos", 500.0), ("share-ben-photos", 500.0)]
+
+    ran.clear()
+    client.post("/api/v1/hub", json={"storage": {"cache_pool": "hdd-1"}}, headers=headers)
+    assert ["/usr/bin/mkdir", "-p", "/mnt/alvaos/big/.alvaos-hub/thumbs"] in ran
+    assert ["/usr/bin/chown", "-R", "alvaos:alvaos", "/mnt/alvaos/big/.alvaos-hub"] in ran
+    assert client.post("/api/v1/hub", json={"storage": {"cache_pool": "sys"}}, headers=headers).status_code == 400
