@@ -23,17 +23,17 @@ Every page follows the same pattern as the reworked Dashboard, Storage and Backu
 
 ## Next
 
-### 2. AlvaOS Workspace (working name): one address for everything people use
-One place for the whole household: one address, one sign-in, and the apps side by side (like Nextcloud or Google Workspace), instead of one port per app. The admin pages (port 8080) stay separate: the workspace is for everyone, the admin pages are for the owner (admins get a "Manage the NAS" link in the workspace).
-- **Name: still to decide.** Ideas: AlvaOS Home, Alva Space, AlvaOS Hub, Alva Desk.
-- **Everything optional.** The admin turns on only the apps the household wants; an app that is off does not run, and anything it needs beyond AlvaOS itself (a package, a container, a model) is only installed when it is turned on and can be removed again. Per person: which apps they see.
-- **Three kinds of apps:**
-  1. *Built-in AlvaOS apps*, on the workspace port with the same sign-in, look and permissions: Files (exists, port 8090 today), Photos, Calendar and Contacts, Chat, Notes.
-  2. *Apps from the app store* (Jellyfin, Immich, OpenWebUI, ...) appear as tiles that open them. Later behind a reverse proxy with names like `jellyfin.alva.home` (certificate from our own authority; name resolution at home is the open part). No iframes (many apps forbid them, sign-in across ports breaks) and no `/apps/<name>` paths (many apps cannot run below a path).
-  3. *The admin pages*, linked for admins.
-- **Standards first, so phones work without our apps:** Calendar and Contacts over CalDAV/CardDAV (Radicale: small, Python, proven), so iPhone, Android and Outlook sync on their own. Chat: a simple page in front of Ollama or a cloud model, reusing the assistant's connection; OpenWebUI stays an app-store option for power users.
-- **Order:** (1) the workspace frame (app bar or grid, start page, sign-in, admin turns apps on/off), Files moved in as the first app; (2) Calendar and Contacts; (3) Chat; (4) app-store apps as tiles, later the reverse proxy; (5) native apps.
-- **Native apps** for phone, PC and Mac build on it: in essence the workspace plus the tunnel (remote access) plus file sync, so every function is built once and not per platform. The workspace opens directly in the app's window, not on another port.
+### 2. AlvaOS Hub: one address for everything people use
+One place for the whole household: one address, one sign-in, and the apps side by side, instead of one port per app. The admin pages (port 8080) stay separate: the Hub is for everyone, the admin pages are for the owner (admins get a "Manage the NAS" link in the Hub).
+- **Part of AlvaOS, not an app.** The Hub ships with AlvaOS, is updated with it (signed, rolls back on its own) and is turned on in the admin pages. Technically it is what the Files server is today (port 8090, HTTPS 9443): the Files server becomes the Hub server, Files its first app.
+- **Two kinds of apps, on purpose:**
+  - *Hub apps* (ours): Files, Photos, Calendar and Contacts, Chat, Notes. Modules inside the Hub process: the NAS sign-in, the AlvaOS look, they act as the signed-in person through the helper (same folders, same permissions as Files), updated with AlvaOS. Not containers: a container per Hub app would cost memory, need its own logins and get in the way of the permissions.
+  - *Store apps* (others): Jellyfin, Immich, OpenWebUI, ... stay Docker containers with their own login and updates, isolated. In the Hub they are tiles that open them; later behind a reverse proxy with names like `jellyfin.alva.home` (certificate from our own authority; name resolution at home is the open part). No iframes and no `/apps/<name>` paths (many apps forbid or break with them).
+- **Everything optional.** Each Hub app is a module with a short manifest (name, icon, what it needs). The admin turns each on or off under Apps › Hub, and chooses per person who sees it. Off means its pages are not there and nothing of it runs. What it needs beyond AlvaOS is installed when it is turned on and can be removed again (Calendar: the Radicale package, run inside the Hub process; Chat: a cloud model key or the Ollama store app). The Apps page gets two parts: "Hub" (switches for our apps) and "App store" (Docker apps).
+- **No third-party plugins inside the Hub for now:** their code would run with the Hub's rights, i.e. could read everyone's files. Others' apps stay isolated Docker apps; perhaps later a narrow, defined plugin interface.
+- **Standards first, so phones work without our apps:** Calendar and Contacts over CalDAV/CardDAV (Radicale: small, Python, proven), so iPhone, Android and Outlook sync on their own. Chat: a simple page in front of Ollama or a cloud model, reusing the assistant's connection; OpenWebUI stays a store app for power users.
+- **Order:** (1) the Hub frame (app bar or grid, start page, sign-in, Apps › Hub with switches and per-person access), Files moved in as the first app; (2) Calendar and Contacts; (3) Chat; (4) store apps as tiles, later the reverse proxy; (5) native apps.
+- **Native apps** for phone, PC and Mac talk to the Hub: one address, one sign-in, every Hub app inside, plus the tunnel (remote access) and file sync. A new Hub app shows up in them by itself; nothing is built per platform twice. The Hub opens directly in the app's window, not on another port.
 
 ### 2a. AlvaOS Files: a native, lightweight file cloud
 Everything people use Nextcloud for at home, built into AlvaOS and working on the same folders as the shares. No separate app, no database server. Lightweight: a few MB of code, no PHP and no extra database, and it does not run when nobody uses it. Stays in Python + plain JavaScript (same helper, tests and packaging as the rest; the disk and network are the limit, not the language); a part that turns out too slow in real use is replaced on its own.
@@ -54,7 +54,7 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
   12. More control over links: download limit, how often opened, all my links with "end all".
   13. Unpack ZIP files, folder sizes, rename many files at once, properties (checksum, exact dates).
   14. File sync for PC and phone (camera upload, folders kept in sync): with the native apps; WebDAV is the stopgap.
-- **Not in Files on purpose:** faces, maps and albums (Immich does that as an app); chat, calendar and contacts belong in the workspace (see 2), not in Files.
+- **Not in Files on purpose:** faces, maps and albums (Immich does that as an app); chat, calendar and contacts are Hub apps of their own (see 2), not part of Files.
 - **Remote access: first step done.** Settings › Remote access: WireGuard with "add this device", QR code for phones, a file for computers, last connected, remove. Needs one forwarded UDP port. UPnP (the router opens the port by itself), a CGNAT warning and DuckDNS: done. Next: optional "also reach the home network"; without any port only with a relay (Tailscale/Headscale or an own one).
 
 ### 3. Storage follow-ups

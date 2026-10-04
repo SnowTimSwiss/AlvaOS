@@ -15,13 +15,16 @@ How to add an entry:
 
 ---
 
-## 2026-10-04 · Roadmap: AlvaOS Workspace and the Files plan
+## 2026-10-04 · Roadmap: AlvaOS Hub and the Files plan
 
-- Decided: an "AlvaOS Workspace" (name still open): one address and one
-  sign-in for the household with built-in apps (Files, Photos, Calendar and
-  Contacts over CalDAV/CardDAV, Chat, Notes) and app-store apps as tiles.
-  Every app is turned on by the admin; what is off does not run and is not
-  installed. The native apps build on it. Admin pages stay separate.
+- Decided: "AlvaOS Hub": one address and one sign-in for the household.
+  Part of AlvaOS (the Files server becomes the Hub server). Hub apps are
+  ours, modules inside it (Files, Photos, Calendar and Contacts over
+  CalDAV/CardDAV, Chat, Notes); store apps stay Docker containers and show
+  up as tiles. The admin turns each Hub app on or off and chooses who sees
+  it; what is off does not run and is not installed. No third-party plugins
+  inside the Hub for now. The native apps build on it. Admin pages stay
+  separate.
 - The Files plan written down: what is done, the next simple steps (sort,
   start page with recent and favourites, folder upload, own space, text
   editing, drop-box notice, EXIF, sharing inside) and the powerful ones
