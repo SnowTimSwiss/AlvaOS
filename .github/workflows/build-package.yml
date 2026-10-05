@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      ALVAOS_UPDATE_SIGNING_KEY: ${{ secrets.ALVAOS_UPDATE_SIGNING_KEY }}
     
     steps:
       - name: Checkout repository
@@ -71,12 +73,21 @@ jobs:
       
       # Installed systems only accept AlvaOS packages with a valid signature.
       - name: Sign package
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || env.ALVAOS_UPDATE_SIGNING_KEY != ''
         run: |
           sudo apt-get install -y python3-cryptography
           python3 scripts/release/sign_update.py sign build/package/alvaos-system_*.deb
-        env:
-          ALVAOS_UPDATE_SIGNING_KEY: ${{ secrets.ALVAOS_UPDATE_SIGNING_KEY }}
+
+      - name: Prepare downloadable package artifact
+        run: |
+          mkdir -p build/package-artifact
+          cp build/package/alvaos-system_*.deb build/package/checksums.txt build/package-artifact/
+          if compgen -G 'build/package/alvaos-system_*.deb.sig' > /dev/null; then
+            cp build/package/alvaos-system_*.deb.sig build/package-artifact/
+            echo "Package signature included."
+          else
+            echo "No signing key configured; uploading an unsigned package artifact."
+          fi
 
       - name: Upload package to release
         if: github.event_name == 'release'
@@ -93,9 +104,7 @@ jobs:
         uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
         with:
           name: alvaos-package-${{ steps.version.outputs.version }}
-          path: |
-            build/package/alvaos-system_*.deb
-            build/package/checksums.txt
+          path: build/package-artifact/
           retention-days: 30
       
       - name: Display build info

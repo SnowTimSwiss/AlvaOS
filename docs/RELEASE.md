@@ -17,6 +17,13 @@ Predictable, well-tested, and easy-to-upgrade releases.
 - **Beta Testing**: Create pre-release → 1-2 week test period → Release Candidate (RC) → Stable.
 - **Rollback**: Pin previous version in README. Users can downgrade via `sudo apt install alvaos-system=PREV_VERSION`.
 
+To build a package without publishing a release, open **Actions → Build and
+Release AlvaOS Package → Run workflow**. Download the `alvaos-package-0.0.0-dev`
+artifact from the completed run. If `ALVAOS_UPDATE_SIGNING_KEY` is configured,
+the workflow includes a `.deb.sig` signature. Without the secret, the manual
+workflow run still uploads the `.deb` and checksum, but the unsigned package
+cannot be installed as an AlvaOS update.
+
 ## Update Signing
 Every `alvaos-system` package is signed with an Ed25519 key. The release
 workflow writes `alvaos-system_{version}_amd64.deb.sig` next to the package, and
