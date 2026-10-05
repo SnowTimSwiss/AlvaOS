@@ -15,6 +15,23 @@ How to add an entry:
 
 ---
 
+## 2026-10-05 · First hardware test follow-ups (1a)
+
+- NVIDIA installs now request headers for the running kernel, retain the apt
+  output for the Graphics page, and offer a policy-limited repair for an
+  interrupted dpkg configuration.
+- Settings › Security now configures SSH port, password sign-in and Ed25519
+  admin keys; the helper validates both the sshd drop-in and key file.
+- The assistant prompt now describes the actual pages and controls and tells
+  it to avoid invented UI. The browser terminal and safe assistant command
+  catalog design is in `docs/ADMIN-TERMINAL.md`.
+- Dialog width, inner scrolling and primary-button styling have a shared base.
+  Migrating all existing hand-built dialogs to one component remains open;
+  see `ROADMAP.md`.
+- Note for next time: test NVIDIA installation and SSH key/password changes on
+  real hardware before relying on these flows. No automated or browser checks
+  were run in this session.
+
 ## 2026-10-05 · Blockers from the first hardware test: people and shared folders
 
 - **Adding people failed** ("Usage: useradd ..."): the privilege policy checked

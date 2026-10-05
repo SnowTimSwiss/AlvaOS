@@ -61,10 +61,19 @@
         body.innerHTML = `
             ${state.restart_needed ? `<div class="gpu-restart" role="status"><span>A new driver is installed. Restart the NAS to start using it.</span>
                 <button type="button" class="btn-primary" id="gpu-restart">Restart now</button></div>` : ''}
-            ${job.error && !job.running ? `<div class="gpu-error" role="alert">${esc(job.error)}</div>` : ''}
+            ${job.error && !job.running ? `<div class="gpu-error" role="alert"><p>${esc(job.error)}</p>${job.error.toLowerCase().includes('previous package') || job.error.toLowerCase().includes('interrupted') ? '<button type="button" class="btn-secondary" id="gpu-repair">Repair package setup</button>' : ''}${job.log ? `<details><summary>Installation details</summary><pre class="gpu-log">${esc(job.log)}</pre></details>` : ''}</div>` : ''}
             ${state.cards.map((c) => cardHtml(c, job)).join('')}`;
         body.querySelectorAll('[data-install]').forEach((b) => b.addEventListener('click', () => install(b.dataset.install)));
         $('gpu-restart')?.addEventListener('click', () => (window.sendPowerAction ? window.sendPowerAction('reboot') : null));
+        $('gpu-repair')?.addEventListener('click', repair);
+    }
+
+    async function repair() {
+        try {
+            const data = await api('/system/gpu/install', { method: 'POST', body: JSON.stringify({ repair: true }) });
+            window.showToast?.(data.message, 'info');
+            load();
+        } catch (e) { window.showToast?.(e.message, 'error'); }
     }
 
     async function install(vendor) {

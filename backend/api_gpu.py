@@ -19,7 +19,11 @@ def gpu_status():
 def gpu_install():
     """Install the driver and firmware for one maker's cards (in the background)."""
     from app_services import gpu
-    ok, message = gpu.install(str((request.get_json(silent=True) or {}).get('vendor') or ''))
+    data = request.get_json(silent=True) or {}
+    if data.get('repair') is True:
+        ok, message = gpu.repair()
+    else:
+        ok, message = gpu.install(str(data.get('vendor') or ''))
     if not ok:
         return jsonify({'error': message}), 409
     return jsonify({'success': True, 'message': message})

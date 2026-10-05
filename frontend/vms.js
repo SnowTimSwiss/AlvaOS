@@ -171,7 +171,7 @@
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
         overlay.innerHTML = `
-            <div class="modal-content vm-dialog" role="dialog" aria-modal="true" aria-labelledby="vm-dialog-title">
+            <div class="modal-content modal-disclosure-frame vm-dialog" role="dialog" aria-modal="true" aria-labelledby="vm-dialog-title">
                 <div class="modal-title" id="vm-dialog-title"><span>${esc(title)}</span><button type="button" class="modal-close-x" data-close aria-label="Close">&times;</button></div>
                 <div class="modal-body">${bodyHtml}</div>
                 <div class="modal-actions">${actionsHtml}</div>
@@ -239,14 +239,16 @@
                     <label><input type="radio" name="vm-os" value="${esc(t.id)}"${t.id === os ? ' checked' : ''}>${svg(OS_ICON[t.id] || 'cpu')}${esc(t.name)}</label>`).join('')}</div></div>
             <label class="vm-field">Installer<select id="vm-iso">${isoOptions('')}</select>${isoHelp}</label>
             <div class="vm-summary"><span id="vm-sum"></span></div>
-            <details class="vm-more"><summary>More options</summary>
-                <div class="vm-grid" style="margin-top:8px">
-                    <label class="vm-field">Processor cores<input type="number" id="vm-cpus" min="1" max="${limits.cpus}"></label>
-                    <label class="vm-field">Memory (GB)<input type="number" id="vm-mem" min="0.5" step="0.5" max="${gb(limits.memory_mb)}"></label>
-                    <label class="vm-field">Disk (GB)<input type="number" id="vm-disk" min="1"></label>
+            <details class="vm-more modal-float-details"><summary>More options</summary>
+                <div class="modal-disclosure-panel">
+                    <div class="vm-grid" style="margin-top:8px">
+                        <label class="vm-field">Processor cores<input type="number" id="vm-cpus" min="1" max="${limits.cpus}"></label>
+                        <label class="vm-field">Memory (GB)<input type="number" id="vm-mem" min="0.5" step="0.5" max="${gb(limits.memory_mb)}"></label>
+                        <label class="vm-field">Disk (GB)<input type="number" id="vm-disk" min="1"></label>
+                    </div>
+                    <label class="vm-check" style="margin:12px 0"><input type="checkbox" id="vm-auto"> Start it together with the NAS</label>
+                    ${portsHtml([])}
                 </div>
-                <label class="vm-check" style="margin:12px 0"><input type="checkbox" id="vm-auto"> Start it together with the NAS</label>
-                ${portsHtml([])}
             </details>
             <div class="vm-error" id="vm-err" role="alert"></div>`;
         d.el.querySelector('.modal-actions').innerHTML = '<button type="button" class="btn-secondary" data-close>Cancel</button><button type="button" class="btn-primary" id="vm-make">Create</button>';

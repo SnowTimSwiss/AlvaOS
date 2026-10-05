@@ -902,7 +902,8 @@ SSH_CONFIG_FILE = '/etc/ssh/sshd_config.d/00-alvaos-security.conf'
 
 def _read_ssh_access_state():
     """Return the currently configured SSH access state."""
-    state = {'enabled': False, 'permit_root_login': False, 'available': True}
+    state = {'enabled': False, 'permit_root_login': False, 'available': True,
+             'port': 22, 'password_login': True, 'keys': []}
     if platform.system() != 'Linux':
         state['available'] = False
         return state
@@ -914,8 +915,16 @@ def _read_ssh_access_state():
             line = raw.strip().lower()
             if line.startswith('permitrootlogin'):
                 state['permit_root_login'] = line.split()[-1] == 'yes'
+            elif line.startswith('port '):
+                try: state['port'] = int(line.split()[-1])
+                except ValueError: pass
+            elif line.startswith('passwordauthentication '):
+                state['password_login'] = line.split()[-1] == 'yes'
         # Root login is the only SSH account AlvaOS manages, so it is the switch.
         state['enabled'] = state['permit_root_login']
+        keys, key_err = run_sudo_command([CMD['CAT'], '/etc/ssh/alvaos-admin-authorized-keys'])
+        if not key_err and keys and keys.returncode == 0:
+            state['keys'] = [line.strip() for line in (keys.stdout or '').splitlines() if line.strip()]
     except Exception as e:
         print(f"Error reading SSH config: {e}")
     return state
@@ -929,9 +938,20 @@ def system_ssh_access():
         return jsonify(_read_ssh_access_state())
 
     data = request.get_json() or {}
-    if 'enabled' not in data:
-        return jsonify({'error': 'Field "enabled" is required'}), 400
-    enabled = bool(data['enabled'])
+    current = _read_ssh_access_state()
+    enabled = bool(data.get('enabled', current['enabled']))
+    port = data.get('port', current['port'])
+    password_login = bool(data.get('password_login', current['password_login']))
+    keys = data.get('keys', current['keys'])
+    if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
+        return jsonify({'error': 'Choose a port between 1 and 65535.'}), 400
+    if not isinstance(keys, list) or len(keys) > 32 or any(
+            not isinstance(k, str) or not re.fullmatch(r'ssh-ed25519 [A-Za-z0-9+/]+={0,2}(?: [A-Za-z0-9_.@+-]{1,64})?', k.strip())
+            for k in keys):
+        return jsonify({'error': 'Add valid Ed25519 public keys, one per line.'}), 400
+    keys = sorted(set(k.strip() for k in keys if k.strip()))
+    if enabled and not password_login and not keys:
+        return jsonify({'error': 'Add an admin public key before turning password sign-in off.'}), 400
 
     if platform.system() != 'Linux':
         return jsonify({'error': 'SSH access can only be changed on the NAS itself'}), 400
@@ -941,7 +961,10 @@ def system_ssh_access():
             '# AlvaOS Security Configuration\n'
             '# Managed by AlvaOS - System > Remote Access\n'
             'PermitRootLogin yes\n'
-            'PasswordAuthentication yes\n'
+            f'Port {port}\n'
+            f'PasswordAuthentication {"yes" if password_login else "no"}\n'
+            'PubkeyAuthentication yes\n'
+            'AuthorizedKeysFile /etc/ssh/alvaos-admin-authorized-keys\n'
             'PermitEmptyPasswords no\n'
         )
     else:
@@ -949,7 +972,10 @@ def system_ssh_access():
             '# AlvaOS Security Configuration\n'
             '# Managed by AlvaOS - System > Remote Access\n'
             'PermitRootLogin no\n'
-            'PasswordAuthentication yes\n'
+            f'Port {port}\n'
+            f'PasswordAuthentication {"yes" if password_login else "no"}\n'
+            'PubkeyAuthentication yes\n'
+            'AuthorizedKeysFile /etc/ssh/alvaos-admin-authorized-keys\n'
             'PermitEmptyPasswords no\n'
         )
 
@@ -966,6 +992,12 @@ def system_ssh_access():
         if process.returncode != 0:
             return jsonify({'error': 'Could not update the SSH configuration.',
                             'detail': (stderr or '').strip()}), 500
+        key_process = subprocess.Popen(
+            build_privileged_cmd([CMD['TEE'], '/etc/ssh/alvaos-admin-authorized-keys']),
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env={'LC_ALL': 'C'})
+        _, key_stderr = key_process.communicate(input=''.join(k + '\n' for k in keys), timeout=10)
+        if key_process.returncode != 0:
+            return jsonify({'error': 'Could not update admin SSH keys.', 'detail': (key_stderr or '').strip()}), 500
     except Exception as e:
         return jsonify({'error': f'Could not update the SSH configuration: {e}'}), 500
 

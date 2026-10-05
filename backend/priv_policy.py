@@ -68,6 +68,7 @@ CONFIG_FILES = {
     '/etc/samba/smb.conf',
     '/etc/hosts',
     '/etc/ssh/sshd_config.d/00-alvaos-security.conf',
+    '/etc/ssh/alvaos-admin-authorized-keys',
     '/etc/apt/sources.list',
 }
 READABLE_FILES = CONFIG_FILES | {'/var/log/syslog'}
@@ -400,7 +401,7 @@ def check_smb_conf(content: bytes, current: bytes = b'') -> None:
 _SSHD_ALLOWED = {
     'permitrootlogin', 'passwordauthentication', 'permitemptypasswords',
     'pubkeyauthentication', 'kbdinteractiveauthentication',
-    'challengeresponseauthentication', 'maxauthtries', 'x11forwarding',
+    'challengeresponseauthentication', 'maxauthtries', 'x11forwarding', 'port', 'authorizedkeysfile',
 }
 
 
@@ -412,6 +413,27 @@ def check_sshd_dropin(content: bytes, current: bytes = b'') -> None:
         key = line.split()[0].lower()
         if key not in _SSHD_ALLOWED:
             _fail(f'sshd option "{key}" is not allowed')
+        parts = line.split(None, 1)
+        if len(parts) != 2:
+            _fail(f'sshd option "{key}" needs a value')
+        value = parts[1].strip()
+        if key in {'permitrootlogin', 'passwordauthentication', 'permitemptypasswords', 'pubkeyauthentication',
+                   'kbdinteractiveauthentication', 'challengeresponseauthentication', 'x11forwarding'} \
+                and value.lower() not in {'yes', 'no', 'prohibit-password'}:
+            _fail(f'sshd value not allowed for {key}')
+        if key == 'port' and (not value.isdigit() or not 1 <= int(value) <= 65535):
+            _fail('SSH port must be between 1 and 65535')
+        if key == 'authorizedkeysfile' and value != '/etc/ssh/alvaos-admin-authorized-keys':
+            _fail('AuthorizedKeysFile path not allowed')
+
+
+def check_admin_ssh_keys(content: bytes, current: bytes = b'') -> None:
+    for raw in content.decode('utf-8', 'strict').splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if not re.fullmatch(r'ssh-ed25519 [A-Za-z0-9+/]+={0,2}(?: [A-Za-z0-9_.@+-]{1,64})?', line):
+            _fail('Only valid ssh-ed25519 public keys are allowed')
 
 
 def check_exports(content: bytes, current: bytes = b'') -> None:
@@ -463,6 +485,7 @@ CONFIG_CHECKS = {
     '/etc/samba/smb.conf': check_smb_conf,
     '/etc/hosts': check_hosts,
     '/etc/ssh/sshd_config.d/00-alvaos-security.conf': check_sshd_dropin,
+    '/etc/ssh/alvaos-admin-authorized-keys': check_admin_ssh_keys,
     '/etc/apt/sources.list': check_apt_sources,
 }
 
@@ -747,6 +770,8 @@ def _rule_apt(sys_: System, args):
 
 
 def _rule_dpkg(sys_: System, args):
+    if args == ['--configure', '-a']:
+        return Plan(argv=['--configure', '-a'])
     _expect(args, '-i', lambda p: None)
     path = _clean_abs_path(args[1])
     resolved = sys_.realpath(path)

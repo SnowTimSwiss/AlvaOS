@@ -60,7 +60,7 @@
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
         overlay.innerHTML = `
-            <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="mail-title">
+            <div class="modal-content modal-disclosure-frame" role="dialog" aria-modal="true" aria-labelledby="mail-title">
                 <div class="modal-title"><span id="mail-title">Email notifications</span>
                     <button type="button" class="modal-close-x" aria-label="Close">&times;</button></div>
                 <form class="modal-body pw-form" novalidate>
@@ -72,9 +72,9 @@
                     <label class="pw-field">Password for sending
                         <input type="password" id="mail-pass" autocomplete="new-password" placeholder="${email.password_set ? 'Saved. Type to replace it.' : ''}">
                         <small>AlvaOS sends from this account to the address above. It is stored on this NAS only.</small></label>
-                    <details class="mail-adv" id="mail-adv">
+                    <details class="mail-adv modal-float-details" id="mail-adv">
                         <summary>Mail server</summary>
-                        <div class="pw-form">
+                        <div class="pw-form modal-disclosure-panel">
                             <div class="mail-grid">
                                 <label class="pw-field">Server<input type="text" id="mail-host" placeholder="smtp.example.com" value="${esc(email.host || '')}"></label>
                                 <label class="pw-field">Port<input type="number" id="mail-port" min="1" max="65535" value="${esc(email.port || 587)}"></label>

@@ -14,22 +14,15 @@ Every page follows the same pattern as the reworked Dashboard, Storage and Backu
 
 ---
 
-## Now
-
-### 1. Remaining pages in the new pattern
-- All pages follow it (Dashboard, Storage, Files, Apps, Backup, Updates, Settings, sign-in, setup). Keeping the update package of the running version for going back: done.
-
-### 1a. From the first test on real hardware (2026-10-05)
-Fixed right away: adding people and making shared folders (both refused by the privilege helper), setup offers to erase disks with old data, memory as an amount on the dashboard, calmer app store cards. Still to do:
-- **Dialogs:** no scrolling inside a dialog where it can be avoided (wider dialogs, fewer fields at once, details behind "More"); a dialog keeps its size when something in it opens; the primary button in dialogs uses the same light blue as elsewhere (the confirm dialog paints its own colour, other dialogs use the darker `--accent-solid`). One shared dialog component instead of the eight hand-made ones.
-- **NVIDIA driver install fails** (`dpkg` error 1): install the headers of the running kernel (`linux-headers-$(uname -r)`) besides `linux-headers-amd64`, show the real reason from the log (DKMS build, Secure Boot), and offer to repair a half-configured install (`dpkg --configure -a`).
-- **Assistant:** it invents buttons and fields ("Click [People] on the dashboard", "optional e-mail"). Give it an exact description of each page and what can be done where; let it make people (and shared folders) as proposals the person confirms; when it is only allowed to look, say so and how to allow more.
-- **SSH in Settings › Remote access:** on/off, port, password login on/off, keys of the admin (the policy already checks the sshd drop-in).
-- **The assistant in a terminal** (wanted): needs a design before code. Proposal: an admin-only terminal page (a real shell as the admin, in the browser) and, separately, the assistant may *propose* commands from a list of read-only diagnostics and a few known fixes, each shown in full and run only after a click; never free commands as root on its own.
+### 1 From the first test on real hardware (2026-10-05)
+Fixed right away: adding people and making shared folders (both refused by the privilege helper), setup offers to erase disks with old data, memory as an amount on the dashboard, calmer app store cards.
+- **NVIDIA driver:** fixed the installation path to include the running kernel's headers, surface the installation log and identify common DKMS, Secure Boot and interrupted-dpkg failures. The page offers the fixed `dpkg --configure -a` repair action when the package setup is interrupted. A hardware run is still needed.
+- **Assistant:** its page guide now lists the real pages and controls, forbids invented buttons and fields, and explains read-only versus confirmed proposal mode. People and shared folders are available as confirmable proposals.
+- **SSH in Settings › Security:** on/off, port, password sign-in, and Ed25519 admin public keys. SSH config and key file contents pass through explicit privilege-policy validation.
+- **The assistant in a terminal:** design written in `docs/ADMIN-TERMINAL.md`. It specifies an admin-only `alvaos` shell, session and output limits, and a separate fixed catalog of commands shown in full and run only after confirmation; no free-form root commands.
+- **Dialogs:** the TLS, email, virtual-machine and shared-folder dialogs keep their frame and controls still when details open; details float inside the dialog, so the dialog itself does not need to scroll for them. Still open: move the hand-built dialogs onto one shared component and reduce scrolling in longer forms.
 
 ---
-
-## Next
 
 ### 2. AlvaOS Hub: one address for everything people use
 One place for the whole household: one address, one sign-in, and the apps side by side, instead of one port per app. The admin pages (port 8080) stay separate: the Hub is for everyone, the admin pages are for the owner (admins get a "Manage the NAS" link in the Hub).

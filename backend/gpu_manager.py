@@ -127,11 +127,15 @@ class GpuManager:
 
     def status(self) -> Dict[str, Any]:
         cards = detect(self.sys_root, self.pci_ids)
-        wanted = sorted({p for c in cards for p in PACKAGES.get(c['vendor'], [])})
+        current_headers = f'linux-headers-{os.uname().release}'
+        wanted = sorted({p for c in cards for p in PACKAGES.get(c['vendor'], [])}
+                        | ({current_headers} if any(c['vendor'] == 'nvidia' for c in cards) else set()))
         have = self.installed(wanted) if wanted else {}
         restart = os.path.exists(self.restart_flag)
         for card in cards:
             needed = PACKAGES.get(card['vendor'], [])
+            if card['vendor'] == 'nvidia':
+                needed = list(needed) + [current_headers]
             card['missing'] = [p for p in needed if not have.get(p)]
             card['ready'] = card['driver'] in GOOD_DRIVERS.get(card['vendor'], set()) and bool(card['render_node']) \
                 if card['vendor'] != 'nvidia' else card['driver'] == 'nvidia'
@@ -165,17 +169,46 @@ class GpuManager:
         threading.Thread(target=self._install, args=(vendor,), name='gpu-install', daemon=True).start()
         return True, f'Installing the {VENDOR_NAMES[vendor]} driver. This takes a few minutes.'
 
+    def repair(self) -> Tuple[bool, str]:
+        """Finish package configuration left incomplete by an earlier install."""
+        with _lock:
+            if _job['running']:
+                return False, 'A package operation is already running.'
+            _job.update({'running': True, 'vendor': 'repair', 'started_at': _now(), 'finished_at': '',
+                         'error': '', 'log': ''})
+        threading.Thread(target=self._repair, name='gpu-package-repair', daemon=True).start()
+        return True, 'Repairing the package setup. This can take a few minutes.'
+
+    def _repair(self) -> None:
+        error, output = '', ''
+        try:
+            res, err = self.run([CMD['DPKG'], '--configure', '-a'], timeout=1800,
+                                extra_env={'DEBIAN_FRONTEND': 'noninteractive'})
+            output = ((res.stdout if res else '') or '') + '\n' + ((res.stderr if res else '') or '')
+            if err or not res or res.returncode != 0:
+                error = _apt_problem(err or output)
+        except Exception as e:  # noqa: BLE001
+            error = f'The repair stopped: {e}'
+        with _lock:
+            _job.update({'running': False, 'finished_at': _now(), 'error': error, 'log': output[-4000:]})
+
     def _install(self, vendor: str) -> None:
         error, log = '', []
         try:
             res, err = self.run([CMD['APT_GET'], 'update'], timeout=600)
             log.append((res.stdout if res else '') or '')
-            packages = PACKAGES[vendor]
+            packages = list(PACKAGES[vendor])
+            if vendor == 'nvidia':
+                # DKMS must build for the kernel that is actually running.
+                release = os.uname().release
+                if not release or not all(c.isalnum() or c in '.+-_' for c in release):
+                    raise ValueError('Could not safely determine the running kernel version.')
+                packages.insert(1, f'linux-headers-{release}')
             res, err = self.run([CMD['APT_GET'], '-y', 'install'] + packages, timeout=3600,
                                 extra_env={'DEBIAN_FRONTEND': 'noninteractive'})
             log.append(((res.stdout if res else '') or '') + ((res.stderr if res else '') or ''))
             if err or not res or res.returncode != 0:
-                error = _apt_problem(err or (res.stderr if res else '') or '')
+                error = _apt_problem((err or '') + '\n' + ((res.stdout or '') + '\n' + (res.stderr or '') if res else ''))
             elif vendor == 'nvidia':
                 _touch(self.restart_flag)   # nouveau stays loaded until the next start
         except Exception as e:  # noqa: BLE001 - report it on the page
@@ -214,6 +247,12 @@ def _apt_problem(text: str) -> str:
                 'sources (Updates page), then try again.')
     if 'Could not get lock' in text or 'Unable to acquire the dpkg frontend lock' in text:
         return 'Another installation is running (an update?). Try again in a few minutes.'
+    if 'dkms' in text.lower() or 'bad return status' in text.lower():
+        return 'The NVIDIA DKMS driver could not build for this kernel. Check the installation log for the compiler or header error.'
+    if 'mok' in text.lower() or 'secure boot' in text.lower() or 'key enrollment' in text.lower():
+        return 'Secure Boot may be blocking the NVIDIA driver. Check the installation log and the MOK confirmation shown during restart.'
+    if 'dpkg was interrupted' in text.lower() or 'configure -a' in text.lower():
+        return 'A previous package installation was interrupted. Repair the package setup, then try again.'
     last = [line for line in text.splitlines() if line.strip()][-1:] or ['']
     return f'The installation failed: {last[0][:300]}'
 

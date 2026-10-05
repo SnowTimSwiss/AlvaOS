@@ -37,7 +37,7 @@
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
         overlay.innerHTML = `
-            <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="tls-title" style="max-width: 600px;">
+            <div class="modal-content modal-disclosure-frame" role="dialog" aria-modal="true" aria-labelledby="tls-title" style="max-width: 600px;">
                 <div class="modal-title"><span id="tls-title">Trust this NAS on your devices</span>
                     <button type="button" class="modal-close-x" aria-label="Close">&times;</button></div>
                 <div class="modal-body" style="text-align: left;">
@@ -45,7 +45,7 @@
                     <ol class="tls-steps">
                         <li><a class="btn-primary" href="${API_BASE}/system/tls/ca.crt" download>Download the certificate</a></li>
                         <li>Install it as trusted:
-                            ${STEPS.map(([who, how]) => `<details class="tls-os"><summary>${esc(who)}</summary><p>${esc(how)}</p></details>`).join('')}</li>
+                            ${STEPS.map(([who, how]) => `<details class="tls-os modal-float-details"><summary>${esc(who)}</summary><p>${esc(how)}</p></details>`).join('')}</li>
                         <li>Open <a href="${esc(httpsUrl())}">${esc(httpsUrl())}</a> and bookmark it.</li>
                     </ol>
                     <label class="tls-only">
@@ -56,15 +56,15 @@
         : 'Open this page with https:// first; then you can turn this on without locking yourself out.'}</small></span>
                     </label>
                     <div class="pw-error" id="tls-error" role="alert"></div>
-                    <details class="set-details" style="margin-top: 10px;">
+                    <details class="set-details modal-float-details" style="margin-top: 10px;">
                         <summary>Certificate details</summary>
-                        <dl class="set-kv">
+                        <div class="modal-disclosure-panel"><dl class="set-kv">
                             <div><dt>Authority</dt><dd class="mono-text">${esc(tls.authority || '')}</dd></div>
                             <div><dt>Fingerprint (SHA-256)</dt><dd class="mono-text" style="word-break: break-all;">${esc(tls.fingerprint || '')}</dd></div>
                             <div><dt>Names</dt><dd class="mono-text">${esc([...(tls.names || []), ...(tls.addresses || [])].join(', '))}</dd></div>
                             <div><dt>HTTPS ports</dt><dd class="mono-text">AlvaOS ${tls.ports.web} · Files ${tls.ports.files} · WebDAV ${tls.ports.dav}</dd></div>
                         </dl>
-                        <p class="field-hint">Compare the fingerprint if a device shows it while installing. The certificate renews itself when the NAS gets a new address; the authority stays the same, so devices keep trusting it.</p>
+                        <p class="field-hint">Compare the fingerprint if a device shows it while installing. The certificate renews itself when the NAS gets a new address; the authority stays the same, so devices keep trusting it.</p></div>
                     </details>
                 </div>
                 <div class="modal-actions"><button type="button" class="btn-primary" data-close>Done</button></div>

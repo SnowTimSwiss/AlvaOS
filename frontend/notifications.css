@@ -116,6 +116,33 @@
     animation: zoomIn 0.2s ease-out forwards;
 }
 
+.modal-content details > summary { cursor: pointer; }
+
+/* Advanced details float over the dialog body. Opening them does not resize the
+   dialog or push the fields and buttons below them out of place. */
+.modal-content.modal-disclosure-frame > .modal-body { overflow: visible; }
+.modal-content details.modal-float-details { position: relative; }
+.modal-content details.modal-float-details > .modal-disclosure-panel,
+.modal-content details.modal-float-details > p {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + 6px);
+    left: 0;
+    width: max-content;
+    min-width: min(100%, 320px);
+    max-width: min(620px, calc(100vw - 32px));
+    margin: 0;
+    padding: 1rem;
+    border: 1px solid var(--bg-border);
+    border-radius: 8px;
+    background: var(--bg-surface);
+    box-shadow: var(--shadow-lg);
+}
+.modal-content details.modal-float-details.above > .modal-disclosure-panel,
+.modal-content details.modal-float-details.above > p { top: auto; bottom: calc(100% + 6px); }
+.modal-content details.modal-float-details > .modal-disclosure-panel { width: min(560px, calc(100vw - 32px)); }
+.modal-content details.modal-float-details > .modal-disclosure-panel .pw-form { margin: 0; }
+
 .modal-danger {
     border-color: color-mix(in srgb, var(--accent-danger) 65%, var(--bg-border));
 }

@@ -905,6 +905,12 @@ async function fetchSshStatus() {
 
         const enabled = !!data.enabled;
         const available = data.available !== false;
+        const sshPort = document.getElementById('ssh-port');
+        const sshPassword = document.getElementById('ssh-password-login');
+        const sshKeys = document.getElementById('ssh-admin-keys');
+        if (sshPort && !sshPort.dataset.loaded) { sshPort.value = data.port || 22; sshPort.dataset.loaded = '1'; }
+        if (sshPassword && !sshPassword.dataset.loaded) { sshPassword.checked = data.password_login !== false; sshPassword.dataset.loaded = '1'; }
+        if (sshKeys && !sshKeys.dataset.loaded) { sshKeys.value = (data.keys || []).join('\n'); sshKeys.dataset.loaded = '1'; }
 
         if (!available) {
             els.sshStatusText.textContent = 'Not available';
@@ -925,12 +931,29 @@ async function fetchSshStatus() {
     }
 }
 
+async function saveSshSettings(enabled) {
+    const button = document.getElementById('ssh-save-settings');
+    if (button) { button.disabled = true; button.textContent = 'Saving...'; }
+    try {
+        const res = await fetch(`${API_BASE}/system/ssh`, {
+            method: 'POST', headers: getHeaders(true),
+            body: JSON.stringify({ enabled, port: Number(document.getElementById('ssh-port')?.value),
+                password_login: !!document.getElementById('ssh-password-login')?.checked,
+                keys: (document.getElementById('ssh-admin-keys')?.value || '').split(/\r?\n/).map(k => k.trim()).filter(Boolean) })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Could not save SSH settings.');
+        showSuccess('SSH settings saved.');
+        await fetchSshStatus();
+    } catch (e) { showError(e.message); }
+    finally { if (button) { button.disabled = false; button.textContent = 'Save SSH settings'; } }
+}
+
 async function setSshAccess(enabled) {
     if (enabled) {
         const confirmed = await showConfirm(
             'Enable SSH access?\n\n' +
-            'Anyone who knows the root password will be able to log in to this ' +
-            'machine over the network. Leave it off unless you need a command line.'
+            'This opens a command line over the network. People with an admin public key, or the admin password while password sign-in is on, can log in. Leave it off unless you need SSH.'
         );
         if (!confirmed) return;
     }
@@ -943,18 +966,7 @@ async function setSshAccess(enabled) {
     }
 
     try {
-        const res = await fetch(`${API_BASE}/system/ssh`, {
-            method: 'POST',
-            headers: getHeaders(true),
-            body: JSON.stringify({ enabled })
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-            showError(data.error || 'Could not change SSH access. Nothing was changed.');
-            return;
-        }
-        showSuccess(enabled ? 'SSH access is now enabled.' : 'SSH access is now disabled.');
-        await fetchSshStatus();
+        await saveSshSettings(enabled);
     } catch (e) {
         showError('Could not reach the NAS to change SSH access. Nothing was changed.');
     } finally {
@@ -1216,6 +1228,7 @@ document.addEventListener('DOMContentLoaded', () => {
     els.tfaDisableBtn?.addEventListener('click', disable2fa);
     els.sshEnableBtn?.addEventListener('click', () => setSshAccess(true));
     els.sshDisableBtn?.addEventListener('click', () => setSshAccess(false));
+    document.getElementById('ssh-save-settings')?.addEventListener('click', () => saveSshSettings(undefined));
     els.watchdogCheckBtn?.addEventListener('click', runWatchdogCheck);
 
     // Poll watchdog and UPS status periodically

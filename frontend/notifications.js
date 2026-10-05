@@ -107,6 +107,27 @@ window.attachModalDismiss = function (overlay, closeFn) {
     });
 };
 
+// Disclosure content in selected dialogs is a floating panel. Keep the dialog
+// itself and its controls in place when the person opens or closes the panel.
+document.addEventListener('toggle', (event) => {
+    const details = event.target;
+    if (!(details instanceof HTMLDetailsElement) || !details.classList.contains('modal-float-details')) return;
+    details.classList.remove('above');
+    if (!details.open) return;
+    details.closest('.modal-content')?.querySelectorAll('details.modal-float-details[open]').forEach((other) => {
+        if (other !== details) other.open = false;
+    });
+    requestAnimationFrame(() => {
+        const panel = details.querySelector(':scope > .modal-disclosure-panel, :scope > p');
+        if (!panel) return;
+        const box = details.getBoundingClientRect();
+        const panelHeight = panel.getBoundingClientRect().height;
+        const below = window.innerHeight - box.bottom;
+        const above = box.top;
+        if (below < panelHeight + 12 && above > below) details.classList.add('above');
+    });
+}, true);
+
 window.confirmModal = function (message, optionsOrOnConfirm, onCancel) {
     const options = (optionsOrOnConfirm && typeof optionsOrOnConfirm === 'object') ? optionsOrOnConfirm : {};
     const onConfirm = (typeof optionsOrOnConfirm === 'function') ? optionsOrOnConfirm : options.onConfirm;
