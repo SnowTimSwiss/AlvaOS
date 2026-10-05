@@ -20,7 +20,8 @@
             background: var(--bg-card);
             border: 1px solid var(--border-default);
             border-radius: var(--radius-default);
-            padding: var(--space-md);
+            padding: 16px;
+            gap: 10px;
             transition: border-color 0.2s, transform 0.2s;
             cursor: pointer;
             display: flex;
@@ -54,6 +55,17 @@
         }
 
         .app-icon svg { width: 30px; height: 30px; }
+
+        /* Store cards: icon, name and category on one line, the text, then what
+           it needs next to the button. No empty space in the middle. */
+        .app-card .app-head { display: flex; align-items: center; gap: 12px; min-width: 0; }
+        .app-card .app-icon { width: 48px; height: 48px; margin: 0; flex-shrink: 0; }
+        .app-card .app-icon svg { width: 24px; height: 24px; }
+        .app-card .app-title { min-width: 0; }
+        .app-card .app-name { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .app-card .app-description { margin: 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+        .app-card .app-footer { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--border-subtle); }
+        .app-card .app-footer .app-needs { margin: 0; font-size: 0.78rem; min-width: 0; }
 
         /* AlvaOS's own app icons: white symbol on the app's colour. */
         .app-mark {

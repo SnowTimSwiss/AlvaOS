@@ -223,6 +223,9 @@
         const old = new Map();
         disks.filter((d) => d.usage?.role === 'other_pool' && d.usage.pool_id).forEach((d) => old.set(d.usage.pool_id, d.usage.pool_name || 'storage'));
         const empty = disks.filter((d) => d.usage?.can_add_to_pool);
+        // Disks with something on them from before (another system, an old pool):
+        // they can be erased here, after a clear second click.
+        const dirty = disks.filter((d) => d.usage?.can_erase);
 
         let html = '';
         if (old.size) {
@@ -247,10 +250,21 @@
                     </label>`).join('')}</div></div>
                 <div class="field" id="protection-field"></div>
                 <div class="note warn" id="erase-note"></div>`;
-        } else if (!old.size) {
-            html += `<div class="note warn">No free disk was found. AlvaOS never uses the system disk or a disk that still has data on it.<br><br>Connect a disk and press <strong>Look again</strong>, or skip and add storage later in Storage.</div>`;
+        } else if (!old.size && !dirty.length) {
+            html += `<div class="note warn">No free disk was found. AlvaOS never uses the system disk.<br><br>Connect a disk and press <strong>Look again</strong>, or skip and add storage later in Storage.</div>`;
+        }
+        if (dirty.length) {
+            html += `<div class="field"><span class="label">${empty.length || old.size ? 'Disks with old data' : 'These disks still have data on them'}</span>
+                <small class="erase-hint">AlvaOS only uses a disk with something on it after you erase it. Everything on it is lost.</small>
+                <div class="choice-list">${dirty.map((d) => `
+                    <div class="choice erase-row" data-disk="${esc(d.name)}">
+                        <span><strong>${esc(d.model && d.model !== 'Unknown' ? d.model : (d.is_removable ? 'USB disk' : 'Disk'))}</strong><small>${esc(d.path)} · ${esc(d.usage.summary || '')}</small></span>
+                        <span class="meta">${esc(d.size || '')}</span>
+                        <button type="button" class="btn-secondary erase-btn">Erase</button>
+                    </div>`).join('')}</div></div>`;
         }
         body.innerHTML = html;
+        body.querySelectorAll('.erase-btn').forEach((btn) => btn.addEventListener('click', () => eraseDisk(btn)));
 
         body.querySelectorAll('input').forEach((input) => input.addEventListener('change', updateStorageChoice));
         if (!empty.length && !old.size) {
@@ -258,6 +272,29 @@
             return;
         }
         updateStorageChoice();
+    }
+
+    async function eraseDisk(btn) {
+        const row = btn.closest('.erase-row');
+        if (!btn.dataset.sure) {
+            // The second click erases: say exactly what goes.
+            btn.dataset.sure = '1';
+            btn.textContent = 'Erase everything on it';
+            btn.classList.add('danger');
+            row.insertAdjacentHTML('beforeend', '<small class="erase-warn">Click again to erase this disk. Its files cannot be brought back.</small>');
+            return;
+        }
+        btn.disabled = true;
+        btn.textContent = 'Erasing…';
+        try {
+            await api(`/storage/disks/${encodeURIComponent(row.dataset.disk)}/wipe`, { method: 'POST', json: {} });
+            enterStorage();
+        } catch (e) {
+            showError(e.message);
+            btn.disabled = false;
+            btn.textContent = 'Erase';
+            delete btn.dataset.sure;
+        }
     }
 
     function storageMode() {

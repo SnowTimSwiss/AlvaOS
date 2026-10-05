@@ -20,7 +20,11 @@ SYS = FakeSystem()
 
 
 def allowed(*argv, system=SYS):
-    return p.validate(list(argv), system)
+    plan = p.validate(list(argv), system)
+    # What was checked is what runs: a rule must never drop or change arguments
+    # (it once dropped all of useradd's, so no one could be added).
+    assert plan.argv == [os.path.normpath(argv[0])] + list(argv[1:]), plan.argv
+    return plan
 
 
 def denied(*argv, system=SYS):
@@ -125,7 +129,7 @@ def test_symlinks_out_of_the_data_dirs_are_followed_and_denied():
 
 def test_resolved_path_is_what_gets_executed():
     system = FakeSystem(links={'/mnt/alvaos/main/link': '/mnt/alvaos/main/real'})
-    plan = allowed('/usr/bin/chmod', '-R', '2770', '/mnt/alvaos/main/link', system=system)
+    plan = p.validate(['/usr/bin/chmod', '-R', '2770', '/mnt/alvaos/main/link'], system)   # rewritten on purpose
     assert plan.argv[-1] == '/mnt/alvaos/main/real'
 
 
@@ -365,7 +369,7 @@ def test_busy_devices_fails_closed_without_a_mount_table(tmp_path):
 
 
 def test_usb_scan_mount_is_forced_harmless():
-    plan = allowed('/usr/bin/mount', '-o', 'ro', '/dev/sdc1', '/run/alvaos-scan/sdc1')
+    plan = p.validate(['/usr/bin/mount', '-o', 'ro', '/dev/sdc1', '/run/alvaos-scan/sdc1'], SYS)   # rewritten on purpose
     assert plan.argv[1:3] == ['-o', 'ro,nosuid,nodev,noexec']
     assert plan.make_dirs == ['/run/alvaos-scan/sdc1']
     denied('/usr/bin/mount', '-o', 'ro', '/dev/sdc1', '/tmp/alvaos_scan_sdc1')
@@ -720,3 +724,16 @@ def test_virtual_machine_units_can_be_started_stopped_and_enabled_by_id_only():
     denied('/usr/bin/systemctl', 'kill', '--kill-whom=all', unit)
     denied('/usr/bin/systemctl', 'edit', unit)
     denied('/usr/bin/systemctl', 'set-property', unit, 'CPUQuota=1%')
+
+
+def test_the_share_sections_alvaos_writes_pass_the_smb_conf_check():
+    # A writable share gets the trash (vfs objects = recycle): creating shares
+    # failed on real machines because the check refused that line.
+    from shares_manager import render_smb_share_config
+    for read_only, guest, perms in ((False, False, {}), (False, False, {'anna': 'write', 'tim': 'read'}),
+                                    (True, True, {'anna': 'read'}), (False, True, {})):
+        section = render_smb_share_config('Family', '/mnt/alvaos/main/Family', read_only, guest, perms).encode()
+        p.check_smb_conf(DEBIAN_SMB_CONF + section, DEBIAN_SMB_CONF)
+    for bad in (b'[x]\n vfs objects = /tmp/evil.so\n', b'[x]\n vfs objects = recycle full_audit\n'):
+        with pytest.raises(p.PolicyError):
+            p.check_smb_conf(DEBIAN_SMB_CONF + bad, DEBIAN_SMB_CONF)
