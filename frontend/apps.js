@@ -222,13 +222,17 @@ function renderAvailableApps() {
         const versionText = version && version !== 'latest' ? `v${escapeHtml(version.replace(/^v/i, ''))}` : '';
         return `
         <div class="app-card" onclick="showAppDetails('${escapeHtml(app.id)}')">
-            <div class="app-icon">${getAppIcon(app)}</div>
-            <div class="app-name">${escapeHtml(app.name)}</div>
+            <div class="app-head">
+                <div class="app-icon">${getAppIcon(app)}</div>
+                <div class="app-title">
+                    <div class="app-name">${escapeHtml(app.name)}</div>
+                    <div class="app-footer-meta">${escapeHtml(app.category || '')}${versionText ? ` · ${versionText}` : ''}</div>
+                </div>
+            </div>
             <div class="app-description">${escapeHtml(app.description)}</div>
-            ${needs.text ? `<div class="app-needs">${escapeHtml(needs.text)}</div>` : ''}
             ${needs.conflict && !installed ? `<div class="app-needs warn">${escapeHtml(needs.conflict)}</div>` : ''}
             <div class="app-footer">
-                <span class="app-footer-meta">${escapeHtml(app.category || '')}${versionText ? ` · ${versionText}` : ''}</span>
+                <span class="app-needs">${escapeHtml(needs.text)}</span>
                 ${installed
                     ? `<button class="btn-secondary" style="padding: 6px 12px; font-size: 0.85rem;" onclick="event.stopPropagation(); showInstalledApp('${escapeHtml(app.id)}')">Installed</button>`
                     : `<button class="btn-primary" style="padding: 6px 12px; font-size: 0.85rem;" onclick="event.stopPropagation(); installApp('${escapeHtml(app.id)}')">Install</button>`}

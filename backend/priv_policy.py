@@ -355,6 +355,7 @@ _SMB_EXEC_KEY = re.compile(
     r'username map|modules|log file|lock directory|state directory|private dir)',
     re.IGNORECASE,
 )
+_SMB_VFS_ALLOWED = {'recycle', 'catia', 'fruit', 'streams_xattr', 'btrfs'}
 _SMB_ROOT_KEYS = {'force user', 'force group', 'admin users', 'valid users', 'write list', 'guest account'}
 
 
@@ -381,6 +382,11 @@ def check_smb_conf(content: bytes, current: bytes = b'') -> None:
             _fail(f'smb.conf line is not a key = value pair: {line!r}')
         key, value = (part.strip() for part in line.split('=', 1))
         key_l = re.sub(r'\s+', ' ', key.lower())
+        if key_l == 'vfs objects':
+            # Modules Samba loads: only the ones AlvaOS uses (the trash), never a path.
+            if not set(value.split()) <= _SMB_VFS_ALLOWED:
+                _fail(f'smb.conf vfs objects not allowed: {value}')
+            continue
         if _SMB_EXEC_KEY.search(key_l):
             _fail(f'smb.conf parameter "{key}" is not allowed')
         if key_l in _SMB_ROOT_KEYS and re.search(r'(^|[\s,@+&])root\b', value.lower()):
@@ -559,7 +565,7 @@ def check_compose(content: bytes) -> None:
 
 def _rule_chpasswd(sys_: System, args):
     _expect(args)
-    return Plan(argv=[], stdin_check=check_chpasswd_input)
+    return Plan(argv=list(args), stdin_check=check_chpasswd_input)
 
 
 def _rule_useradd(sys_: System, args):
@@ -567,18 +573,18 @@ def _rule_useradd(sys_: System, args):
     _expect(args, '-M', '-s', '/usr/sbin/nologin', lambda u: _user(sys_, u))
     if args[3] in PROTECTED_USERS:
         _fail(f'User {args[3]} is protected')
-    return Plan(argv=[])
+    return Plan(argv=list(args))
 
 
 def _rule_userdel(sys_: System, args):
     _expect(args, lambda u: _user(sys_, u, deletable=True))
-    return Plan(argv=[])
+    return Plan(argv=list(args))
 
 
 def _rule_usermod(sys_: System, args):
     # Only ever takes the login shell away from a regular (share) account.
     _expect(args, '-s', '/usr/sbin/nologin', lambda u: _user(sys_, u, deletable=True))
-    return Plan(argv=[])
+    return Plan(argv=list(args))
 
 
 def _rule_smbpasswd(sys_: System, args):
@@ -588,22 +594,22 @@ def _rule_smbpasswd(sys_: System, args):
         _expect(args, '-x', lambda u: _user(sys_, u))
     if args[-1] in {'root', 'alvaos'}:
         _fail('Samba passwords for system accounts are not managed by AlvaOS')
-    return Plan(argv=[])
+    return Plan(argv=list(args))
 
 
 def _rule_groupadd(sys_: System, args):
     _expect(args, '-f', lambda g: _share_group(sys_, g, must_exist=False))
-    return Plan(argv=[])
+    return Plan(argv=list(args))
 
 
 def _rule_groupdel(sys_: System, args):
     _expect(args, lambda g: _share_group(sys_, g))
-    return Plan(argv=[])
+    return Plan(argv=list(args))
 
 
 def _rule_gpasswd(sys_: System, args):
     _expect(args, {'-a', '-d'}, lambda u: _user(sys_, u), lambda g: _share_group(sys_, g))
-    return Plan(argv=[])
+    return Plan(argv=list(args))
 
 
 def _rule_chgrp(sys_: System, args):
@@ -1099,7 +1105,7 @@ def _rule_timedatectl(sys_: System, args):
 
 def _rule_noargs(sys_: System, args):
     _expect(args)
-    return Plan(argv=[])
+    return Plan(argv=list(args))
 
 
 # docker: container lifecycle and inspection only. `docker run`/`create` would

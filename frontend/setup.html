@@ -157,6 +157,10 @@
         .choice strong { display: block; font-size: 0.92rem; }
         .choice small { display: block; color: var(--text-secondary); font-size: 0.8rem; margin-top: 2px; }
         .choice .meta { font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap; }
+        .erase-row { grid-template-columns: 1fr auto auto; cursor: default; }
+        .erase-row .erase-warn { grid-column: 1 / -1; color: var(--accent-danger); }
+        .erase-btn.danger { color: var(--accent-danger); border-color: var(--accent-danger); }
+        .erase-hint { display: block; color: var(--text-secondary); font-size: 0.82rem; margin: -2px 0 8px; }
 
         .note {
             font-size: 0.85rem;

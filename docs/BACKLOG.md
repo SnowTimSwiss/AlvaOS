@@ -15,6 +15,28 @@ How to add an entry:
 
 ---
 
+## 2026-10-05 · Blockers from the first hardware test: people and shared folders
+
+- **Adding people failed** ("Usage: useradd ..."): the privilege policy checked
+  `useradd`, `userdel`, `usermod`, `smbpasswd`, `groupadd`, `groupdel` and
+  `gpasswd` and then ran them *without their arguments* (`Plan(argv=[])`).
+  Since the first helper; tests only checked that a command is allowed.
+- **Making a shared folder failed** (exit 126): the smb.conf check refused
+  `vfs objects`, which AlvaOS writes itself for the network trash. Now only
+  known modules are allowed (`recycle`, `catia`, `fruit`, `streams_xattr`,
+  `btrfs`), never a path.
+- New safety net: every allowed command in the policy tests must run exactly
+  as checked, and `test_priv_flows.py` runs the real admin API (add a person,
+  make a shared folder with rights, remove the person) with the backend as
+  on a NAS: each command goes through the real policy, stdin included.
+- Setup: disks with old data are listed with *Erase* (a second click erases)
+  instead of "no free disk".
+- Dashboard: memory also as an amount ("5.4 of 15.6 GB"). App store cards:
+  icon, name and category in one line, what the app needs next to Install.
+- Tests no longer read the real `/var/lib/alvaos/users.json`.
+- The rest of the test round is on the roadmap (1a): dialogs, NVIDIA install,
+  assistant, SSH settings, a terminal.
+
 ## 2026-10-04 · Virtual machines (docs/VMS.md)
 
 - New admin page **Virtual machines** (`vms.html`, `vms.js`, in the

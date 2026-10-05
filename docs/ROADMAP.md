@@ -19,6 +19,14 @@ Every page follows the same pattern as the reworked Dashboard, Storage and Backu
 ### 1. Remaining pages in the new pattern
 - All pages follow it (Dashboard, Storage, Files, Apps, Backup, Updates, Settings, sign-in, setup). Keeping the update package of the running version for going back: done.
 
+### 1a. From the first test on real hardware (2026-10-05)
+Fixed right away: adding people and making shared folders (both refused by the privilege helper), setup offers to erase disks with old data, memory as an amount on the dashboard, calmer app store cards. Still to do:
+- **Dialogs:** no scrolling inside a dialog where it can be avoided (wider dialogs, fewer fields at once, details behind "More"); a dialog keeps its size when something in it opens; the primary button in dialogs uses the same light blue as elsewhere (the confirm dialog paints its own colour, other dialogs use the darker `--accent-solid`). One shared dialog component instead of the eight hand-made ones.
+- **NVIDIA driver install fails** (`dpkg` error 1): install the headers of the running kernel (`linux-headers-$(uname -r)`) besides `linux-headers-amd64`, show the real reason from the log (DKMS build, Secure Boot), and offer to repair a half-configured install (`dpkg --configure -a`).
+- **Assistant:** it invents buttons and fields ("Click [People] on the dashboard", "optional e-mail"). Give it an exact description of each page and what can be done where; let it make people (and shared folders) as proposals the person confirms; when it is only allowed to look, say so and how to allow more.
+- **SSH in Settings › Remote access:** on/off, port, password login on/off, keys of the admin (the policy already checks the sshd drop-in).
+- **The assistant in a terminal** (wanted): needs a design before code. Proposal: an admin-only terminal page (a real shell as the admin, in the browser) and, separately, the assistant may *propose* commands from a list of read-only diagnostics and a few known fixes, each shown in full and run only after a click; never free commands as root on its own.
+
 ---
 
 ## Next

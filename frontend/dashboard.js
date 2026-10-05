@@ -576,6 +576,8 @@
         setText('live-cpu', `${cpu.toFixed(0)}%`);
         $('live-cpu-bar').style.width = `${Math.min(100, cpu)}%`;
         setText('live-mem', `${mem.toFixed(0)}%`);
+        // The amount too, not only the share: "5.2 of 16 GB".
+        if (data?.memory?.total_gb) setText('live-mem-meta', `${formatGb(data.memory.used_gb)} of ${formatGb(data.memory.total_gb)}`);
         $('live-mem-bar').style.width = `${Math.min(100, mem)}%`;
 
         const io = data?.io || {};

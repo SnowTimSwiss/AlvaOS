@@ -42,3 +42,5 @@ def _private_sessions_file(tmp_path, monkeypatch):
     monkeypatch.setattr(hub_apps, "SETTINGS_FILE", str(tmp_path / "hub.json"))
     import ai_assistant
     monkeypatch.setattr(ai_assistant, "SETTINGS_FILE", str(tmp_path / "ai.json"))
+    import api_auth
+    monkeypatch.setattr(api_auth, "USERS_STATE_FILE", str(tmp_path / "users.json"))
