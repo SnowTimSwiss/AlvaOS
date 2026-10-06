@@ -21,7 +21,7 @@ import os
 import re
 import threading
 from io import BytesIO
-from typing import Callable, Dict, Iterable, List, Optional
+from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 HEAD_BYTES = 128 * 1024
 EXIF_TYPES = ('.jpg', '.jpeg', '.tif', '.tiff', '.webp')
@@ -33,7 +33,7 @@ _lock = threading.Lock()
 _busy: set = set()
 
 
-def key(path: str, size, modified: str) -> str:
+def key(path: str, size, modified) -> str:
     return hashlib.sha256(f'{path}|{size}|{modified}'.encode()).hexdigest()[:32]
 
 
@@ -97,10 +97,10 @@ class DateCache:
                 pass
 
 
-def fill(items: List[Dict], base: str, cache: DateCache) -> List[Dict]:
+def fill(items: List[Dict], base: str, cache: DateCache) -> List[Tuple[str, str]]:
     """Add 'taken_at' to the items whose date is known; return those still to look up.
     `base` is the folder on disk the items' 'folder' is relative to."""
-    todo = []
+    todo: List[Tuple[str, str]] = []
     for item in items:
         if not str(item.get('name', '')).lower().endswith(EXIF_TYPES):
             continue
@@ -114,10 +114,10 @@ def fill(items: List[Dict], base: str, cache: DateCache) -> List[Dict]:
     return todo
 
 
-def look_up(todo: Iterable, read_head: Callable[[str], Optional[bytes]], cache: DateCache,
+def look_up(todo: Iterable[Tuple[str, str]], read_head: Callable[[str], Optional[bytes]], cache: DateCache,
             submit: Callable[[Callable], object]) -> None:
     """Read the dates of up to BATCH photos in the background."""
-    batch = []
+    batch: List[Tuple[str, str]] = []
     with _lock:
         for k, path in todo:
             if k not in _busy and len(batch) < BATCH:
