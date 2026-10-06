@@ -21,6 +21,7 @@
         right: '<path d="m9 18 6-6-6-6"/>',
         search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
         grid: '<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>',
+        check: '<path d="M20 6 9 17l-5-5"/>',
         list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
         plus: '<path d="M5 12h14M12 5v14"/>',
         upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/>',
@@ -1058,13 +1059,24 @@
         $('viewer-prev').hidden = neighbour(-1) < 0;
         $('viewer-next').hidden = neighbour(1) < 0;
         $('viewer-download').onclick = () => download([entry]);
+        $('viewer-edit').hidden = true;
+        $('viewer-save').hidden = true;
+        editing = null;
         try {
             const url = await link(entry, true);
             if (shown[viewing] !== entry) return;
             if (kind === 'image') $('viewer-body').innerHTML = `<img src="${esc(url)}" alt="${esc(entry.name)}">`;
             else if (kind === 'video') $('viewer-body').innerHTML = `<video src="${esc(url)}" controls autoplay playsinline></video>`;
             else if (kind === 'audio') $('viewer-body').innerHTML = `<audio src="${esc(url)}" controls autoplay></audio>`;
-            else { const pre = document.createElement('pre'); pre.textContent = await (await fetch(url)).text(); $('viewer-body').replaceChildren(pre); }
+            else {
+                const text = await (await fetch(url)).text();
+                const pre = document.createElement('pre');
+                pre.textContent = text;
+                $('viewer-body').replaceChildren(pre);
+                // Plain text can be changed here (up to 1 MB); the old one goes to the trash.
+                $('viewer-edit').hidden = !(access() === 'write' && !found && entry.size_bytes <= 1024 * 1024);
+                $('viewer-edit').onclick = () => editText(entry, text);
+            }
         } catch (err) {
             $('viewer-body').textContent = err.message;
         }
@@ -1074,7 +1086,49 @@
         return -1;
     }
     function step(d) { const i = neighbour(d); if (i >= 0) showViewer(shown[i], Object.keys(VIEW).find((k) => VIEW[k].test(shown[i].name))); }
-    function closeViewer() { $('viewer').hidden = true; $('viewer-body').innerHTML = ''; viewing = -1; }
+    let editing = null;   // {entry, text} while a text file is being changed
+    function editText(entry, text) {
+        const area = document.createElement('textarea');
+        area.value = text;
+        area.spellcheck = false;
+        area.setAttribute('aria-label', `Text of ${entry.name}`);
+        $('viewer-body').replaceChildren(area);
+        $('viewer-edit').hidden = true;
+        $('viewer-save').hidden = false;
+        $('viewer-prev').hidden = true;
+        $('viewer-next').hidden = true;
+        editing = { entry, text };
+        area.focus();
+    }
+    async function saveText() {
+        if (!editing) return;
+        const { entry } = editing;
+        const value = $('viewer-body').querySelector('textarea').value;
+        const t = { share, path };
+        const file = new File([value], entry.name, { type: 'text/plain' });
+        $('viewer-save').disabled = true;
+        try {
+            await api('upload/abort', { method: 'POST', json: { share: t.share, path: t.path, name: file.name } });
+            await sendPiece(t, file, 0, () => {});
+            await api('upload/finish', { method: 'POST', json: { share: t.share, path: t.path, name: file.name, size: file.size, replace: true } });
+            editing = null;
+            toast(`Saved "${entry.name}". The old one is in the trash.`);
+            closeViewer();
+            load();
+        } catch (err) {
+            api('upload/abort', { method: 'POST', json: { share: t.share, path: t.path, name: file.name } }).catch(() => {});
+            toast(err.message, 'error');
+        } finally {
+            $('viewer-save').disabled = false;
+        }
+    }
+    $('viewer-save').addEventListener('click', saveText);
+    function closeViewer() {
+        if (editing && $('viewer-body').querySelector('textarea')?.value !== editing.text
+            && !window.confirm('Close without saving your changes?')) return;
+        editing = null;
+        $('viewer').hidden = true; $('viewer-body').innerHTML = ''; viewing = -1;
+    }
     $('viewer-close').addEventListener('click', closeViewer);
     $('viewer-prev').addEventListener('click', () => step(-1));
     $('viewer-next').addEventListener('click', () => step(1));
@@ -1082,7 +1136,9 @@
     // ── Keyboard ───────────────────────────────────────────────────────────
     document.addEventListener('keydown', (e) => {
         if (!$('viewer').hidden) {
+            if (editing && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveText(); return; }
             if (e.key === 'Escape') closeViewer();
+            if (editing) return;   // arrows move the cursor in the text
             if (e.key === 'ArrowLeft') step(-1);
             if (e.key === 'ArrowRight') step(1);
             return;

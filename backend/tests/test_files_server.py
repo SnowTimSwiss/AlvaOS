@@ -488,3 +488,17 @@ def test_thumbnails_go_to_the_hub_cache_pool_when_there_is_one(client, monkeypat
     assert fs._thumb_dir() == str(cache / "thumbs")
     monkeypatch.setattr(hub_apps, "cache_dir", lambda pools, settings=None: None)
     assert fs._thumb_dir() == fs.THUMB_DIR
+
+
+def test_a_changed_text_file_replaces_the_old_one_which_goes_to_the_trash(client):
+    sign_in(client, "anna", "anna-pass")
+    saved = client.post("/api/upload/finish", json={"share": "Anna", "path": "Notes", "name": "list.txt", "size": 12,
+                                                    "replace": True}, headers=H)
+    assert saved.status_code == 201
+    assert client.calls[-2:] == [
+        (["files-trash", "/mnt/alvaos/main/Anna", "/mnt/alvaos/main/Anna/Notes", "list.txt"], "anna"),
+        (["files-part-finish", "/mnt/alvaos/main/Anna/Notes", "list.txt", "12"], "anna")]
+    sign_in(client, "ben", "ben-pass")
+    refused = client.post("/api/upload/finish", json={"share": "Family", "path": "", "name": "a.txt", "size": 1,
+                                                      "replace": True}, headers=H)
+    assert refused.status_code == 403        # ben may only read Family

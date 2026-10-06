@@ -45,7 +45,7 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
   2. A start page with "Recent" and favourites.
   3. Upload whole folders by drag and drop (check what works today).
   4. "You use 42 of 100 GB" in Files (the person's own space limit).
-  5. Edit text files (notes, lists, .txt/.md) in the browser.
+  5. ~~Edit text files~~ done (.txt, .md and other plain text up to 1 MB; the old one goes to the trash).
   6. A notification when someone uploads into a drop box.
   7. Photos: upload into the own photos from the Hub; the date from the photo itself (EXIF) instead of the file date; video thumbnails.
   8. Share a folder with another person on the NAS without a public link.

@@ -749,6 +749,12 @@ def upload_finish():
     size = str(data.get('size') if data.get('size') is not None else '')
     if not size.isdigit():
         return jsonify({'error': 'Invalid size.'}), 400
+    if data.get('replace') is True:
+        # A changed text file: the old one goes to the trash (so it can come
+        # back), then the new one takes its name.
+        share = shares_for(session)[str(data.get('share'))]
+        files_manager.run_helper(['files-trash', share['path'], path, str(data.get('name') or '')],
+                                 user=as_user(session))
     return _helper_answer(*files_manager.run_helper(_finish_args(path, data, size), user=as_user(session)), 201)
 
 
