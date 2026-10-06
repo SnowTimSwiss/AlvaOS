@@ -15,6 +15,16 @@ How to add an entry:
 
 ---
 
+## 2026-10-06 · Files: sort by name, date, size or type
+
+- A sort button next to the view switch in Files (Name A–Z/Z–A, newest or
+  oldest first, largest or smallest first, type). Folders stay on top. In
+  the list the column heads Name, Size and Modified sort too, a second click
+  turns the order round. The choice is kept per browser.
+- Names sort like people count ("song 9" before "song 10"), as before.
+- Checked in Chromium at desktop and phone width against the real Files
+  server with a faked folder.
+
 ## 2026-10-06 · Main green again; SSH keys only for root
 
 - NVIDIA install test fixed for the running kernel's headers. When Debian no
