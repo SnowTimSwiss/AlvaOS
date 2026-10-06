@@ -15,6 +15,37 @@ How to add an entry:
 
 ---
 
+## 2026-10-06 · A UPS on USB (NUT)
+
+- Settings › Power › Battery backup has a **UPS** row next to the laptop
+  battery: it finds a UPS on USB (`/sys/bus/usb`, known makers or a device
+  that calls itself a UPS), "Set up" installs `nut` and writes the four NUT
+  files (standalone: nothing listens on the network), then shows "On mains /
+  On battery · 81% · about 22 min". `backend/ups_nut.py`, `api_ups.py`,
+  `frontend/settings-ups.js`.
+- When to shut down: when the UPS says its battery is low (upsmon does it,
+  the default) or after 2, 5, 10 or 20 minutes on battery (the backend asks
+  `upsmon -c fsd`). Either way upsmon tells the UPS to switch off, so the NAS
+  starts again when the power is back (with the BIOS set to power on).
+- The bell notes the power cut, its end and the shutdown; the alerts (and so
+  email/Telegram) show "Running on the UPS battery", "The UPS does not
+  answer" and "The UPS battery is worn out". The assistant can read
+  `/api/v1/system/ups`.
+- Privilege helper: content checks for `/etc/nut/{nut.conf,ups.conf,
+  upsd.users,upsmon.conf}` that accept only what AlvaOS writes (fixed
+  `SHUTDOWNCMD`, no `NOTIFYCMD`, no UPS commands for the monitor account,
+  only the usbhid-ups/nutdrv_qx/blazer_usb drivers on `port = auto`), fixed
+  `systemctl` lines for the NUT services, and `upsmon -c fsd` only. Tests run
+  every file and command through the real policy.
+- `.choice` and `.choice-list` moved to `styles.css` (they were only on the
+  storage page).
+- Checked in Chromium at desktop and phone width with faked answers (no UPS,
+  found, on mains, on battery, both dialogs). No real UPS here: `TESTING.md`
+  11b.
+- Note for next time: the NUT systemd units are from Debian trixie (nut
+  2.8.1: `nut-driver-enumerator`, `nut-server`, `nut-monitor`); if a real run
+  shows the driver not starting, look there first.
+
 ## 2026-10-06 · One dialog for every admin page
 
 - New `openDialog()` in `notifications.js`: frame, title with close button,

@@ -64,8 +64,8 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 - **Next:** change the disk size; a second disk; a virtio driver ISO for faster Windows; a bridge network (own address at home) as an option next to NAT; pass a USB device or graphics card through; Home Assistant OS and other ready images as a one-click choice; limits per machine (cgroups).
 
 ### 2c. Reaching the NAS, and not being without it
-Thought through, decided, not built yet. In this order:
-1. **A UPS (NUT):** the most common failure at home is a power cut. Shut down cleanly on battery, start again, tell the buddy NAS. Small and valuable.
+Thought through and decided. In this order:
+1. **A UPS (NUT): first step done** (Settings › Power › Battery backup: finds a UPS on USB, installs NUT, shuts down when the battery runs low or after 2–20 minutes on battery, notes the power cut and its end, the UPS turns the NAS on again). Needs a run with a real UPS (`TESTING.md` 11b). Next: tell the buddy NAS (it may hold off a backup to us), a UPS shared over the network with a second machine (NUT netserver), a UPS on a serial cable.
 2. **Access without a router setting** (next to WireGuard, which stays the default; CGNAT is already detected): **Tailscale** for the own devices (end to end encrypted, one account); **Cloudflare Tunnel** (`cloudflared`, installed only when turned on, with the owner's own Cloudflare account and domain) to make the Hub and share links reachable in a browser. Note: Cloudflare ends TLS, and large video streams are against its terms. An own relay only later, with the native apps.
 3. **High availability the home way: a warm standby**, not automatic failover (two nodes cannot tell a failed neighbour from a broken cable, and then both write: "split brain"). Buddy Backup already keeps a recent copy on a second NAS; add a button *Take over* there that brings up the shares, the Hub and the people from that copy, and a name (`alva.home`) that points to it. Minutes of downtime instead of days, no risk of two writers. Automatic failover only with a third device as referee, as an expert option much later.
 

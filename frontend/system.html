@@ -191,6 +191,10 @@
         /* .status-row and .card-actions now live in styles.css so every page
            renders them identically. */
 
+        .nut-field { display: grid; gap: 6px; margin-bottom: 12px; font-weight: 600; color: var(--text-primary); }
+        .nut-field .choice-list { margin-top: 0; font-weight: 400; }
+        .nut-device { margin: 0 0 12px; font-weight: 600; color: var(--text-primary); }
+        .nut-error { color: var(--accent-danger); }
         .sys-modal-text {
             color: var(--text-secondary);
             margin: 0 0 1rem;
@@ -452,13 +456,18 @@
 
                 <section class="set-group">
                     <h2 class="set-group-title">Battery backup</h2>
+                    <div class="set-row" id="nut-row">
+                        <div class="set-text"><div class="set-label">UPS</div><div class="set-desc" id="nut-desc">Looking for a UPS...</div></div>
+                        <div class="set-value" id="nut-summary"></div>
+                        <div class="set-action" id="nut-action"></div>
+                    </div>
                     <div class="set-row">
-                        <div class="set-text"><div class="set-label">When the power fails</div><div class="set-desc">With a UPS or a laptop battery, AlvaOS shuts down cleanly before the battery runs out.</div></div>
+                        <div class="set-text"><div class="set-label">Laptop battery</div><div class="set-desc">A NAS on an old laptop: its own battery bridges a power cut, and AlvaOS shuts down before it is empty.</div></div>
                         <div class="set-value" id="ups-summary">-</div>
                         <div class="set-action"><button id="configure-ups-btn" class="btn-secondary">Set up</button></div>
                     </div>
                     <details class="set-details">
-                        <summary>Battery details</summary>
+                        <summary>Laptop battery details</summary>
                         <dl class="set-kv">
                             <div><dt>Battery</dt><dd class="mono-text" id="ups-device">-</dd></div>
                             <div><dt>Power source</dt><dd class="mono-text" id="ups-ac-state">-</dd></div>
@@ -584,6 +593,7 @@
     <script src="settings-tls.js"></script>
     <script src="settings-remote.js"></script>
     <script src="settings-gpu.js"></script>
+    <script src="settings-ups.js"></script>
 </body>
 
 </html>

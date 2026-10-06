@@ -51,3 +51,6 @@ import gpu_manager  # noqa: E402
 gpu = gpu_manager.GpuManager(run_sudo_command)
 import vm_manager  # noqa: E402
 vms = vm_manager.VmManager(run_sudo_command)
+import ups_nut  # noqa: E402
+ups = ups_nut.NutUps(run_sudo_command)
+power_ups_manager.hooks.append(ups.check)   # watched with the laptop battery
