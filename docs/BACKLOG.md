@@ -36,6 +36,28 @@ How to add an entry:
   VMs, email, pools and disks); axe-core finds nothing in the dialogs.
 - Note for next time: the app install wizard, container logs and terminal in
   `apps.html` are still static modals in the page; the Hub has its own dialogs.
+## 2026-10-06 · Main green again; SSH keys only for root
+
+- NVIDIA install test fixed for the running kernel's headers. When Debian no
+  longer offers headers for the running kernel (after a kernel update), the
+  install stops before apt with "install the updates, restart, try again"
+  instead of failing the same way on every try (`apt-cache policy`, no helper).
+- **SSH security fix:** the drop-in pointed `AuthorizedKeysFile` at one admin
+  key file for every account, so an admin key signed in as any account with a
+  shell, and everyone's own `~/.ssh/authorized_keys` (root's too) stopped
+  working. Now `.ssh/authorized_keys .ssh/authorized_keys2
+  /etc/ssh/alvaos-authorized-keys-%u`, and the helper only writes the `-root`
+  file. Keys in the old file are read once and carried over on the next save.
+  The old setting was never in a release.
+- Saving SSH settings now runs `sshd -t` (new policy rule: only `-t`) before
+  `systemctl reload ssh` and puts the old files back when it fails; turning off
+  password sign-in without a key is still refused.
+- Policy tests for the sshd drop-in, the admin key file, `sshd -t` and
+  `dpkg --configure -a`; `test_priv_flows.py` runs the SSH page's API through
+  the real policy (the fake helper now keeps written config files).
+- Two ruff E701 errors in `api_system.py`.
+- Note for next time: `backend/tests/test_backup_manager.py` needs `btrfs`
+  installed (btrfs-progs), otherwise six tests fail locally; CI has it.
 
 ## 2026-10-05 · First hardware test follow-ups (1a)
 

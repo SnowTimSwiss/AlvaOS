@@ -916,7 +916,7 @@ async function saveSshSettings(enabled) {
                 keys: (document.getElementById('ssh-admin-keys')?.value || '').split(/\r?\n/).map(k => k.trim()).filter(Boolean) })
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || 'Could not save SSH settings.');
+        if (!res.ok) throw new Error([data.error || 'Could not save SSH settings.', data.detail].filter(Boolean).join(' '));
         showSuccess('SSH settings saved.');
         await fetchSshStatus();
     } catch (e) { showError(e.message); }
@@ -927,7 +927,7 @@ async function setSshAccess(enabled) {
     if (enabled) {
         const confirmed = await showConfirm(
             'Enable SSH access?\n\n' +
-            'This opens a command line over the network. People with an admin public key, or the admin password while password sign-in is on, can log in. Leave it off unless you need SSH.'
+            'This opens a command line over the network. You sign in as root with an admin public key, or with the admin password while password sign-in is on. Leave it off unless you need SSH.'
         );
         if (!confirmed) return;
     }

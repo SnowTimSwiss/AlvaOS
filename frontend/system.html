@@ -354,7 +354,7 @@
                         <div class="set-action"><button id="tls-setup-btn" class="btn-secondary">Set up devices</button></div>
                     </div>
                     <div class="set-row">
-                        <div class="set-text"><div class="set-label">Command line (SSH)</div><div class="set-desc">Off unless you need SSH. Admin public keys or the admin password (when enabled below) can log in over the network.</div></div>
+                        <div class="set-text"><div class="set-label">Command line (SSH)</div><div class="set-desc">Off unless you need SSH. Sign in as <code>root</code> with the admin password (if allowed below) or an admin key. Keys in a person's own <code>~/.ssh/authorized_keys</code> keep working.</div></div>
                         <div class="set-value"><span class="status-dot" id="ssh-status-dot" style="background:var(--text-secondary);" aria-hidden="true"></span><span id="ssh-status-text" role="status" aria-live="polite">Checking...</span></div>
                         <div class="set-action">
                             <button id="ssh-enable-btn" class="btn-secondary" style="display:none;">Turn on</button>
@@ -372,7 +372,7 @@
                         <div class="set-action"></div>
                     </div>
                     <div class="set-row">
-                        <div class="set-text"><div class="set-label"><label for="ssh-admin-keys">Admin public keys</label></div><div class="set-desc">Ed25519 public keys, one per line. Never paste a private key.</div></div>
+                        <div class="set-text"><div class="set-label"><label for="ssh-admin-keys">Admin public keys</label></div><div class="set-desc">Ed25519 public keys for <code>root</code>, one per line. Never paste a private key.</div></div>
                         <div class="set-value" style="flex:1"><textarea id="ssh-admin-keys" rows="3" autocomplete="off" spellcheck="false" style="width:100%;max-width:440px"></textarea></div>
                         <div class="set-action"><button id="ssh-save-settings" class="btn-secondary" type="button">Save SSH settings</button></div>
                     </div>
