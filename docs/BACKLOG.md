@@ -15,6 +15,21 @@ How to add an entry:
 
 ---
 
+## 2026-10-06 · Hub: App Store apps as tiles
+
+- Hub page › "Apps from the App Store": every installed app with a page
+  (Jellyfin, Immich, Pi-hole, ...) with a switch and "who sees it", off until
+  shown. In the Hub an "Apps" button in the bar opens a short list; each
+  opens the app on its own port in a new tab, with its own sign-in.
+- `hub_apps.store_apps()` reads `apps_state.json` and the catalog (the port
+  chosen at install wins over the catalog's); `store_tiles()` for `/api/me`;
+  settings under `store` in `hub.json`. Paths are checked before they end up
+  in a link.
+- Checked in Chromium at desktop and phone width (Hub as a person who sees two
+  of three apps, and the Hub page).
+- Note for next time: the tiles link to plain http on the app's port. With
+  the reverse proxy (roadmap 2, step 4) they become `https://<app>.alva.home`.
+
 ## 2026-10-06 · Files: sort by name, date, size or type
 
 - A sort button next to the view switch in Files (Name A–Z/Z–A, newest or

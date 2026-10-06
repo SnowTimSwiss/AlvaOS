@@ -22,6 +22,7 @@
         search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
         grid: '<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>',
         list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+        apps: '<rect width="7" height="7" x="3" y="3" rx="1.5"/><rect width="7" height="7" x="14" y="3" rx="1.5"/><rect width="7" height="7" x="3" y="14" rx="1.5"/><path d="M17.5 14v7M14 17.5h7"/>',
         sort: '<path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/>',
         check: '<path d="M20 6 9 17l-5-5"/>',
         plus: '<path d="M5 12h14M12 5v14"/>',
@@ -509,6 +510,10 @@
         $('new-menu').hidden = true;
         $('sort-menu').hidden = true;
         $('sort-btn').setAttribute('aria-expanded', 'false');
+        if ($('store-menu')) {
+            $('store-menu').hidden = true;
+            $('rail-store').setAttribute('aria-expanded', 'false');
+        }
     };
     document.addEventListener('click', (e) => { if (!e.target.closest('.menu') && !e.target.closest('#new-btn') && !e.target.closest('#sort-btn')) hideMenus(); });
     $('ctx').addEventListener('click', (e) => {
@@ -1178,19 +1183,42 @@
     let hubApps = [];
     function renderRail() {
         hubApps = (me.hub && me.hub.apps) || [];
+        const store = (me.hub && me.hub.store) || [];
         const rail = $('rail');
-        if (hubApps.length < 2) {
+        if (hubApps.length < 2 && !store.length) {
             rail.hidden = true;
             $('app').classList.remove('with-rail');
             return;
         }
         rail.innerHTML = `<img class="rail-logo" src="hub.svg" alt="" title="${esc((me.hub && me.hub.name) || 'AlvaOS Hub')}">`
-            + hubApps.map((a) => `<button type="button" class="rail-app" data-app="${esc(a.id)}">${icon(a.icon)}<span>${esc(a.name)}</span></button>`).join('');
+            + hubApps.map((a) => `<button type="button" class="rail-app" data-app="${esc(a.id)}">${icon(a.icon)}<span>${esc(a.name)}</span></button>`).join('')
+            + (store.length ? `<span class="rail-gap" aria-hidden="true"></span><button type="button" class="rail-app" id="rail-store" aria-haspopup="menu" aria-expanded="false">${icon('apps')}<span>Apps</span></button>
+                <div class="menu store-menu" id="store-menu" hidden role="menu" aria-label="Apps">${store.map((a) => `
+                    <a role="menuitem" href="${esc(storeUrl(a))}" target="_blank" rel="noopener"><span class="store-letter" aria-hidden="true">${esc(a.name.charAt(0).toUpperCase())}</span><span class="store-name">${esc(a.name)}<small>${esc(storeUrl(a).replace(/^https?:\/\//, '').replace(/\/$/, ''))}</small></span>${icon('open')}</a>`).join('')}</div>` : '');
         rail.hidden = false;
         $('app').classList.add('with-rail');
         rail.querySelectorAll('[data-app]').forEach((b) => b.addEventListener('click', () => openApp(b.dataset.app)));
+        const storeBtn = $('rail-store');
+        if (storeBtn) storeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const menu = $('store-menu');
+            const opening = menu.hidden;
+            hideMenus();
+            menu.hidden = !opening;
+            storeBtn.setAttribute('aria-expanded', String(opening));
+            // Beside the button in the rail on the left; above the bar on a phone (CSS).
+            const box = storeBtn.getBoundingClientRect();
+            const side = getComputedStyle(rail).flexDirection === 'column';
+            menu.style.left = side ? `${box.right + 8}px` : '';
+            menu.style.top = side ? `${Math.max(8, Math.min(box.top, innerHeight - menu.offsetHeight - 8))}px` : '';
+            menu.style.bottom = side ? 'auto' : '';
+            if (opening) menu.querySelector('a')?.focus();
+        });
         markRail();
     }
+    // Apps from the App Store live on ports of their own, always plain http
+    // (they bring no certificate of this NAS).
+    const storeUrl = (a) => `http://${location.hostname}:${a.port}${a.path || '/'}`;
     function markRail() {
         $('rail').querySelectorAll('[data-app]').forEach((b) => {
             if (b.dataset.app === current) b.setAttribute('aria-current', 'page');
