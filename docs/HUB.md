@@ -82,6 +82,8 @@ The Hub page says so while the cache is on the system disk.
 
 ### Photos
 
+What it should become (backup from the phone, albums, favourites): `PHOTOS.md`.
+
 - Shows the person's own photos (their `Photos/` folder, wherever the admin
   put it) and every **photo library** they may read, together, newest first.
 - Uploads from the phone (with the native apps) go to their own photos.

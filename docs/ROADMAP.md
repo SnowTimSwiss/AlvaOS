@@ -47,7 +47,7 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
   4. "You use 42 of 100 GB" in Files (the person's own space limit).
   5. Edit text files (notes, lists, .txt/.md) in the browser.
   6. A notification when someone uploads into a drop box.
-  7. Photos: upload into the own photos from the Hub; the date from the photo itself (EXIF) instead of the file date; video thumbnails.
+  7. Photos as a small Immich: backup from the phone, albums, favourites (plan: `docs/PHOTOS.md`). Done: the date from the photo itself (EXIF). Next: video thumbnails, albums and favourites, upload into the own photos from the Hub.
   8. Share a folder with another person on the NAS without a public link.
 - **Powerful when needed:**
   9. Open and edit Office documents with the EuroOffice app from the catalog (WOPI).

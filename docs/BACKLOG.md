@@ -15,6 +15,22 @@ How to add an entry:
 
 ---
 
+## 2026-10-06 · Photos: the date a picture was taken; plan for a small Immich
+
+- Photos sorts and groups by the date in the photo (EXIF DateTimeOriginal)
+  instead of the file date, which changes when a picture is copied.
+  `backend/photo_dates.py`: only the first 128 KB are read, as the person,
+  and parsed in the Hub process (never in the helper); results are kept in
+  `photo-dates.json` in the Hub cache, keyed by path, size and date. Unknown
+  dates are read in the background on the thumbnail workers (low priority),
+  300 per visit; until then the file date is used.
+- `docs/PHOTOS.md`: what Photos should become (Tim: "Immich-lite"): phone
+  backup, albums and favourites as small JSON files next to the pictures, no
+  database, no faces or maps. Steps in order.
+- No browser check needed beyond Photos still loading: the order and month
+  labels change only with real EXIF dates (tested in
+  `tests/test_photo_dates.py` and `test_files_server.py`).
+
 ## 2026-10-06 · Main green again; SSH keys only for root
 
 - NVIDIA install test fixed for the running kernel's headers. When Debian no

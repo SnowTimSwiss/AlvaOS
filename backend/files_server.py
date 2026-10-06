@@ -26,6 +26,7 @@ from flask import Flask, Response, jsonify, request, send_from_directory
 
 import files_manager
 import hub_apps
+import photo_dates
 import hub_calendar
 import hub_chat
 import hub_data
@@ -391,10 +392,34 @@ def media():
     result, error = files_manager.run_helper(['files-media', path], timeout=60, user=as_user(session))
     if result is None:
         return jsonify({'error': error or 'The photos could not be read.'}), 409
+    found = result.get('results') or []
+    # The date the photo was taken, where known; the rest is looked up in the background.
+    user = as_user(session)
+    todo = photo_dates.fill(found, path, _photo_dates)
+    if todo:
+        photo_dates.look_up(todo, lambda p: _read_head(p, user), _photo_dates, _in_background)
     results = [{**item, 'folder': '/'.join(p for p in (rel, str(item.get('folder') or '')) if p),
-                'share': share['name']} for item in result.get('results') or []]
+                'share': share['name']} for item in found]
     return jsonify({'share': share['name'], 'path': rel, 'results': results,
-                    'complete': bool(result.get('complete'))})
+                    'complete': bool(result.get('complete')), 'dates_pending': len(todo)})
+
+
+def _in_background(work) -> None:
+    _thumbnail_pool().submit(work)   # the same low-priority workers as thumbnails
+
+
+def _read_head(path: str, user: Optional[str]) -> Optional[bytes]:
+    stream, _ = files_manager.open_stream(path, part=(0, photo_dates.HEAD_BYTES), user=user)
+    if stream is None:
+        return None
+    data = b''
+    for piece in stream:
+        data += piece
+        if len(data) >= photo_dates.HEAD_BYTES:
+            break
+    if hasattr(stream, 'close'):
+        stream.close()
+    return data[:photo_dates.HEAD_BYTES]
 
 
 @app.post('/api/link')
@@ -651,6 +676,9 @@ def _thumb_dir() -> str:
     if cache and os.access(os.path.join(cache, 'thumbs'), os.W_OK):
         return os.path.join(cache, 'thumbs')
     return THUMB_DIR
+
+
+_photo_dates = photo_dates.DateCache(lambda: os.path.dirname(_thumb_dir()))
 
 
 def _thumb_response(path: str, user: Optional[str], stamp: str):

@@ -252,7 +252,7 @@
             let month = '';
             items.className = 'items grid photos';
             items.innerHTML = shown.map((e, i) => {
-                const d = new Date(e.modified_at);
+                const d = new Date(shotAt(e));
                 const label = Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString([], { month: 'long', year: 'numeric' });
                 const head = label !== month ? `<div class="month">${esc(label)}</div>` : '';
                 month = label;
@@ -321,6 +321,7 @@
         paintSelection();
     }
 
+    const shotAt = (e) => String(e.taken_at || e.modified_at || '').slice(0, 19);
     const rel = (e) => (e.folder !== undefined ? (e.folder ? `${e.folder}/${e.name}` : e.name) : (path ? `${path}/${e.name}` : e.name));
     const sh = (e) => e.share || share;
     const where = (e) => [sh(e), ...(e.folder ? e.folder.split('/') : [])].join(' › ');
@@ -782,8 +783,9 @@
             const parts = await Promise.all(sources.map((src) => api(`media?${new URLSearchParams({ share: src.share, path: src.path })}`)
                 .catch(() => ({ results: [], complete: true }))));   // e.g. a Photos folder not made yet
             if (id !== searchId) return;
+            // The date the photo was taken (from the photo itself) where known, else the file's.
             found = parts.flatMap((p) => p.results || [])
-                .sort((a, b) => String(b.modified_at || '').localeCompare(String(a.modified_at || '')));
+                .sort((a, b) => shotAt(b).localeCompare(shotAt(a)));
             foundInfo = { q: '', complete: parts.every((p) => p.complete), photos: true, sources };
             selected = new Set();
             render();
