@@ -40,35 +40,27 @@
     // ── Security: change the admin password ──────────────────────────────────
 
     function passwordDialog() {
-        const overlay = document.createElement('div');
-        overlay.className = 'modal-overlay';
-        overlay.innerHTML = `
-            <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="pw-title">
-                <div class="modal-title"><span id="pw-title">Change the admin password</span>
-                    <button type="button" class="modal-close-x" aria-label="Close">&times;</button></div>
-                <form class="modal-body pw-form" novalidate>
-                    <label class="pw-field">Current password
-                        <input type="password" id="pw-current" autocomplete="current-password" required></label>
-                    <label class="pw-field">New password
-                        <input type="password" id="pw-new" autocomplete="new-password" required>
-                        <small id="pw-new-hint">At least 8 characters. A short sentence is easy to remember.</small></label>
-                    <label class="pw-field">Type the new one again
-                        <input type="password" id="pw-repeat" autocomplete="new-password" required>
-                        <small id="pw-repeat-hint">&nbsp;</small></label>
-                    <div class="pw-error" id="pw-error" role="alert"></div>
-                    <p class="pw-note">Other browsers and apps are signed out and have to sign in with the new password. This browser stays signed in.</p>
-                    <div class="modal-actions">
-                        <button type="button" class="btn-secondary" id="pw-cancel">Cancel</button>
-                        <button type="submit" class="btn-primary" id="pw-save" disabled>Change password</button>
-                    </div>
-                </form>
-            </div>`;
-        document.body.appendChild(overlay);
-
-        const close = () => overlay.remove();
-        overlay.querySelector('.modal-close-x').addEventListener('click', close);
-        overlay.querySelector('#pw-cancel').addEventListener('click', close);
-        if (window.attachModalDismiss) window.attachModalDismiss(overlay, close);
+        const dlg = openDialog({
+            title: 'Change the admin password',
+            form: true,
+            bodyClass: 'pw-form',
+            body: `
+                <label class="pw-field">Current password
+                    <input type="password" id="pw-current" autocomplete="current-password" required></label>
+                <label class="pw-field">New password
+                    <input type="password" id="pw-new" autocomplete="new-password" required>
+                    <small id="pw-new-hint">At least 8 characters. A short sentence is easy to remember.</small></label>
+                <label class="pw-field">Type the new one again
+                    <input type="password" id="pw-repeat" autocomplete="new-password" required>
+                    <small id="pw-repeat-hint">&nbsp;</small></label>
+                <div class="pw-error" id="pw-error" role="alert"></div>
+                <p class="pw-note">Other browsers and apps are signed out and have to sign in with the new password. This browser stays signed in.</p>`,
+            actions: `
+                <button type="button" class="btn-secondary" data-close>Cancel</button>
+                <button type="submit" class="btn-primary" id="pw-save" disabled>Change password</button>`,
+        });
+        const overlay = dlg.dialog;
+        const close = () => dlg.close();
 
         const current = overlay.querySelector('#pw-current');
         const next = overlay.querySelector('#pw-new');
@@ -116,7 +108,6 @@
                 current.focus();
             }
         });
-        current.focus();
     }
 
     $('change-password-btn')?.addEventListener('click', passwordDialog);

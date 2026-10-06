@@ -38,8 +38,6 @@
         .vm-actions button { white-space: nowrap; }
         .btn-quiet { background: none; border-color: transparent; color: var(--text-secondary); }
         .btn-quiet:hover { background: var(--bg-hover); color: var(--text-primary); }
-        .btn-danger-quiet { background: none; border: 1px solid transparent; color: var(--accent-danger); padding: 0.5rem 0.8rem; border-radius: var(--radius-btn); cursor: pointer; font-size: 0.9rem; }
-        .btn-danger-quiet:hover { background: color-mix(in srgb, var(--accent-danger) 10%, transparent); }
         .vm-link { background: none; border: 0; padding: 0 4px; color: var(--accent-primary); cursor: pointer; text-decoration: underline; font: inherit; }
         .vm-empty { text-align: center; padding: 34px 20px; color: var(--text-secondary); }
         .vm-empty strong { display: block; color: var(--text-primary); font-size: 1.05rem; margin-bottom: 6px; }
@@ -47,10 +45,10 @@
         .vm-spin { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border-default); border-top-color: var(--accent-primary); animation: vm-spin 0.9s linear infinite; }
         @keyframes vm-spin { to { transform: rotate(360deg); } }
         /* Dialogs */
-        .vm-dialog { width: min(560px, calc(100vw - 24px)); max-height: calc(100vh - 32px); overflow: visible; }
+        .vm-dialog { width: min(560px, calc(100vw - 24px)); }
         .vm-dialog .modal-body { display: flex; flex-direction: column; gap: 14px; text-align: left; }
         .vm-field { display: flex; flex-direction: column; gap: 6px; font-size: 0.88rem; font-weight: 600; }
-        .vm-field input, .vm-field select { padding: 8px 10px; font-weight: 400; }
+        .vm-field input, .vm-field select { padding: 8px 10px; font-weight: 400; min-width: 0; width: 100%; }
         .vm-field small { font-weight: 400; color: var(--text-secondary); line-height: 1.4; }
         .vm-os { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
         .vm-os label { position: relative; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border-default); border-radius: var(--radius-default); cursor: pointer; font-weight: 500; }
@@ -67,8 +65,8 @@
         .vm-check input { width: auto; margin: 0; }
         .vm-ports { display: flex; flex-direction: column; gap: 6px; }
         .vm-port { display: flex; gap: 6px; align-items: center; font-weight: 400; }
-        .vm-port input { width: 7.5rem; }
-        .vm-port select { padding: 8px 6px; }
+        .vm-port input { flex: 1 1 6rem; width: auto; min-width: 0; }
+        .vm-port select { padding: 8px 6px; width: auto; flex: none; }
         .vm-error { color: var(--accent-danger); font-size: 0.88rem; min-height: 1.2em; }
         /* The screen */
         .vm-screen { position: fixed; inset: 0; z-index: 200; background: #000; display: flex; flex-direction: column; }
@@ -84,7 +82,7 @@
             .vm-hero-ic { width: 56px; height: 56px; }
             .vm { grid-template-columns: 44px minmax(0, 1fr); }
             .vm-actions { grid-column: 1 / -1; justify-content: flex-start; }
-            .vm-os, .vm-grid { grid-template-columns: 1fr; }
+            .vm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
     </style>
 </head>

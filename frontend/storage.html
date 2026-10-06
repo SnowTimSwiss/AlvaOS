@@ -125,23 +125,7 @@
             color: var(--accent-danger);
         }
 
-        .user-modal-panel {
-            background: var(--bg-card);
-            border: 1px solid var(--border-default);
-            border-radius: 8px;
-            padding: 1.5rem;
-            max-width: 420px;
-            width: 90%;
-        }
 
-        .user-modal-title {
-            margin-bottom: 0.5rem;
-            color: var(--text-primary);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 1rem;
-        }
 
         .user-modal-text {
             color: var(--text-secondary);
@@ -164,10 +148,6 @@
             margin-bottom: 1rem;
         }
 
-        .user-modal-actions {
-            display: flex;
-            gap: 8px;
-        }
 
         .personal-toggle {
             display: flex;
@@ -202,9 +182,6 @@
             margin: 4px 0 8px;
         }
 
-        .user-modal-actions button {
-            flex: 1;
-        }
 
         @media (max-width: 760px) {
             .user-row-actions {
@@ -301,6 +278,7 @@
             flex-shrink: 0;
         }
         .form-field {
+            display: block;
             margin-bottom: 1rem;
             text-align: left;
         }
@@ -823,6 +801,28 @@
                 flex: 1 1 auto;
             }
         }
+        .disk-pick { display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow-y: auto; }
+        .subvol-new { display: flex; gap: 8px; margin-bottom: 14px; }
+        .subvol-new input { flex: 1; min-width: 0; }
+        .subvol-list { display: grid; gap: 8px; }
+        .subvol-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--border-default); border-radius: var(--radius-default); }
+        .subvol-row strong { display: block; color: var(--text-primary); }
+        .subvol-row span { font-size: 0.8rem; color: var(--text-secondary); overflow-wrap: anywhere; }
+        /* Disk health dialog */
+        .smart-loading { margin: 0; }
+        .smart-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
+        .smart-tiles > div { background: var(--bg-primary); padding: 12px; border-radius: 6px; text-align: center; display: grid; gap: 2px; }
+        .smart-tiles span { font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; }
+        .smart-tiles strong { font-size: 1.2rem; color: var(--text-primary); }
+        .smart-note { margin: 0; padding: 14px 16px; background: var(--bg-primary); border-radius: 6px; color: var(--text-secondary); }
+        .smart-note.warn { border-left: 4px solid var(--accent-warning); }
+        .smart-note strong { color: var(--text-primary); }
+        .smart-note p { margin: 6px 0 0; }
+        .smart-attrs summary { font-weight: 600; color: var(--text-primary); padding: 4px 0; }
+        .smart-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 8px; }
+        .smart-table th, .smart-table td { padding: 8px 6px; border-bottom: 1px solid var(--bg-border); text-align: left; }
+        .smart-table th { color: var(--text-secondary); font-weight: 600; }
+        .smart-table .num { text-align: right; }
     </style>
 </head>
 

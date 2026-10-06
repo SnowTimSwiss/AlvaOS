@@ -1472,13 +1472,14 @@ async function showAppSettingsDialog(appId) {
         ].join('');
     };
 
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    overlay.innerHTML = `
-        <div class="modal-content app-settings" role="dialog" aria-modal="true" aria-labelledby="app-settings-title">
-            <div class="modal-title"><span id="app-settings-title">Folders and ports</span>
-                <button type="button" class="modal-close-x" aria-label="Close">&times;</button></div>
-            <div class="modal-body">
+    const dlg = openDialog({
+        title: 'Folders and ports',
+        className: 'app-settings',
+        size: 'wide',
+        actions: `
+            <button type="button" class="btn-secondary" data-action="cancel" data-close>Cancel</button>
+            <button type="button" class="btn-primary" data-action="save"${!volumes.length && !ports.length ? ' disabled' : ''}>Save and restart</button>`,
+        body: `
                 <p class="install-hint" style="margin-top:0;">${escapeHtml(installed.name || app.name || appId)} restarts with the new settings. Its own settings and database stay where they are.</p>
                 ${volumes.length ? `<div class="install-folders">${volumes.map((v, i) => `
                     <div class="install-folder">
@@ -1496,18 +1497,10 @@ async function showAppSettingsDialog(appId) {
                             data-internal="${escapeHtml(p.internal)}" data-default="${escapeHtml(p.external)}" aria-label="${escapeHtml(p.description || 'Port')}">
                     </div>`;
                 }).join('')}</div>` : ''}
-                ${!volumes.length && !ports.length ? '<p class="install-hint">This app has no folders or ports to choose.</p>' : ''}
-            </div>
-            <div class="modal-actions">
-                <button type="button" class="btn-secondary" data-action="cancel">Cancel</button>
-                <button type="button" class="btn-primary" data-action="save"${!volumes.length && !ports.length ? ' disabled' : ''}>Save and restart</button>
-            </div>
-        </div>`;
-    document.body.appendChild(overlay);
-    const close = () => overlay.remove();
-    overlay.querySelector('.modal-close-x').onclick = close;
-    overlay.querySelector('[data-action="cancel"]').onclick = close;
-    if (window.attachModalDismiss) window.attachModalDismiss(overlay, close);
+                ${!volumes.length && !ports.length ? '<p class="install-hint">This app has no folders or ports to choose.</p>' : ''}`,
+    });
+    const overlay = dlg.dialog;
+    const close = () => dlg.close();
 
     const save = overlay.querySelector('[data-action="save"]');
     const checkPorts = () => {
@@ -1569,35 +1562,26 @@ async function installApp(appId) {
 
 async function showUninstallDialog(appId) {
     return new Promise((resolve) => {
-        const overlay = document.createElement('div');
-        overlay.className = 'modal-overlay';
-        overlay.innerHTML = `
-            <div class="modal-content">
-                <div class="modal-title">Uninstall ${escapeHtml(appId)}?</div>
-                <div class="modal-body">This will stop and remove all associated containers.</div>
-                <label style="display:flex; align-items:center; gap:10px; cursor:pointer; margin-bottom: 8px;">
+        let result = null;
+        const dlg = openDialog({
+            title: `Uninstall ${escapeHtml(appId)}?`,
+            danger: true,
+            body: `
+                <p style="margin-top: 0;">This stops the app and removes its containers.</p>
+                <label class="modal-check">
                     <input type="checkbox" class="uninstall-keep-data" checked>
-                    <span>Keep app data (storage subvolumes)</span>
+                    <span>Keep the app's data</span>
                 </label>
-                <div style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 16px;">
-                    Uncheck to permanently delete all app data.
-                </div>
-                <div class="modal-actions">
-                    <button class="btn-secondary" data-action="cancel">Cancel</button>
-                    <button class="btn-primary" data-action="confirm" style="background: var(--accent-danger); border: none; color: white;">Uninstall</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(overlay);
-
-        const keepDataToggle = overlay.querySelector('.uninstall-keep-data');
-        const close = (value) => {
-            overlay.remove();
-            resolve(value);
+                <p class="install-hint">Untick to delete its data for good.</p>`,
+            actions: `
+                <button type="button" class="btn-secondary" data-close>Cancel</button>
+                <button type="button" class="btn-primary btn-danger" data-action="confirm">Uninstall</button>`,
+            onClose: () => resolve(result),
+        });
+        dlg.$('[data-action="confirm"]').onclick = () => {
+            result = !!dlg.$('.uninstall-keep-data')?.checked;
+            dlg.close();
         };
-
-        overlay.querySelector('[data-action="cancel"]').onclick = () => close(null);
-        overlay.querySelector('[data-action="confirm"]').onclick = () => close(!!keepDataToggle?.checked);
     });
 }
 

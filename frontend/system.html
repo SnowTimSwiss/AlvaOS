@@ -191,68 +191,10 @@
         /* .status-row and .card-actions now live in styles.css so every page
            renders them identically. */
 
-        /* Reusable modal panel (matches the user-management modal pattern) */
-        .sys-modal-panel {
-            background: var(--bg-card);
-            border: 1px solid var(--border-default);
-            border-radius: 8px;
-            padding: 1.5rem;
-            max-width: 460px;
-            width: 90%;
-            max-height: min(90vh, 720px);
-            display: flex;
-            flex-direction: column;
-        }
-
-        .sys-modal-head {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 0.5rem;
-            flex-shrink: 0;
-        }
-
-        .sys-modal-title {
-            color: var(--text-primary);
-            margin: 0;
-        }
-
-        .sys-modal-x {
-            background: transparent;
-            border: none;
-            color: var(--text-secondary);
-            font-size: 1.6rem;
-            line-height: 1;
-            cursor: pointer;
-            padding: 0 4px;
-        }
-
-        .sys-modal-x:hover {
-            color: var(--text-primary);
-        }
-
         .sys-modal-text {
             color: var(--text-secondary);
-            margin-bottom: 1rem;
+            margin: 0 0 1rem;
             font-size: 0.9rem;
-            flex-shrink: 0;
-        }
-
-        .sys-modal-body {
-            flex: 1 1 auto;
-            overflow-y: auto;
-            min-height: 0;
-        }
-
-        .sys-modal-actions {
-            display: flex;
-            gap: 8px;
-            margin-top: 1.25rem;
-            flex-shrink: 0;
-        }
-
-        .sys-modal-actions button {
-            flex: 1;
         }
     </style>
 </head>

@@ -107,32 +107,96 @@ window.attachModalDismiss = function (overlay, closeFn) {
     });
 };
 
-// Disclosure content in selected dialogs is a floating panel. Keep the dialog
-// itself and its controls in place when the person opens or closes the panel.
-document.addEventListener('toggle', (event) => {
-    const details = event.target;
-    if (!(details instanceof HTMLDetailsElement) || !details.classList.contains('modal-float-details')) return;
-    details.classList.remove('above');
-    if (!details.open) return;
-    details.closest('.modal-content')?.querySelectorAll('details.modal-float-details[open]').forEach((other) => {
-        if (other !== details) other.open = false;
+// One dialog for every page: the frame, the title with its close button, a body
+// that scrolls on its own while the title and buttons stay in view, focus kept
+// inside, Escape and a click beside it to close, focus back where it was.
+//
+//   const dlg = openDialog({ title: 'Change the password', body: '<label>…', actions: '<button …>' });
+//   dlg.$('#field').focus(); dlg.close();
+//
+// body and actions are HTML: escape what comes from outside. Options:
+//   size: 'wide' | 'narrow'   danger: true   form: true (body and actions in a <form>)
+//   bodyClass, className      dismissable: false (no Escape or click beside it)
+//   onClose(value)            called once, with what close(value) got
+// Buttons with data-close close the dialog.
+let dialogCount = 0;
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
+
+window.openDialog = function (options = {}) {
+    const id = `dlg-${++dialogCount}`;
+    const opener = document.activeElement;
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    const classes = ['modal-content', options.size ? `modal-${options.size}` : '', options.danger ? 'modal-danger' : '',
+        options.className || ''].filter(Boolean).join(' ');
+    const bodyClass = ['modal-body', options.bodyClass || ''].filter(Boolean).join(' ');
+    const actions = options.actions ? `<div class="modal-actions">${options.actions}</div>` : '';
+    const inner = `<div class="${bodyClass}">${options.body || ''}</div>${actions}`;
+    overlay.innerHTML = `
+        <div class="${classes}" role="dialog" aria-modal="true" aria-labelledby="${id}-title">
+            <div class="modal-title"><span id="${id}-title">${options.title || ''}</span>
+                <button type="button" class="modal-close-x" aria-label="Close">&times;</button></div>
+            ${options.form ? `<form class="modal-form" novalidate>${inner}</form>` : inner}
+        </div>`;
+    const dialog = overlay.firstElementChild;
+    document.body.appendChild(overlay);
+    document.documentElement.classList.add('modal-open');
+
+    let closed = false;
+    const dlg = {
+        overlay,
+        dialog,
+        body: dialog.querySelector('.modal-body'),
+        form: dialog.querySelector('form.modal-form'),
+        $: (selector) => dialog.querySelector(selector),
+        $$: (selector) => [...dialog.querySelectorAll(selector)],
+        get closed() { return closed; },
+        close(value) {
+            if (closed) return;
+            closed = true;
+            overlay.remove();
+            if (!document.querySelector('.modal-overlay')) document.documentElement.classList.remove('modal-open');
+            if (opener && typeof opener.focus === 'function' && document.contains(opener)) opener.focus();
+            if (options.onClose) options.onClose(value);
+        },
+    };
+    const dismiss = () => { if (options.dismissable !== false) dlg.close(); };
+    dialog.querySelector('.modal-close-x').addEventListener('click', () => dlg.close());
+    dialog.addEventListener('click', (event) => {
+        if (event.target.closest('[data-close]')) dlg.close();
     });
-    requestAnimationFrame(() => {
-        const panel = details.querySelector(':scope > .modal-disclosure-panel, :scope > p');
-        if (!panel) return;
-        const box = details.getBoundingClientRect();
-        const panelHeight = panel.getBoundingClientRect().height;
-        const below = window.innerHeight - box.bottom;
-        const above = box.top;
-        if (below < panelHeight + 12 && above > below) details.classList.add('above');
+    overlay.addEventListener('mousedown', (event) => { overlay.downOnBackdrop = event.target === overlay; });
+    overlay.addEventListener('click', (event) => {
+        // A drag that starts in a field and ends beside the dialog is not a click beside it.
+        if (event.target === overlay && overlay.downOnBackdrop !== false) dismiss();
     });
-}, true);
+    overlay.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            dismiss();
+        } else if (event.key === 'Tab') {
+            const items = [...dialog.querySelectorAll(FOCUSABLE)].filter((el) => el.offsetParent !== null || el === document.activeElement);
+            if (!items.length) return;
+            const first = items[0], last = items[items.length - 1];
+            if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+            else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+        }
+    });
+    if (window.renderAlvaIcons) window.renderAlvaIcons(dialog);
+    const start = dialog.querySelector('[autofocus]')
+        || dialog.querySelector('.modal-body input:not([type="hidden"]):not([disabled]), .modal-body select, .modal-body textarea')
+        || dialog.querySelector('.modal-actions .btn-primary:not([disabled])')
+        || dialog.querySelector('.modal-actions button:not([disabled])')
+        || dialog.querySelector('.modal-close-x');
+    // After other scripts had their turn: the password eye moves its input once.
+    if (options.focus !== false) setTimeout(() => { if (!dialog.contains(document.activeElement)) start?.focus(); }, 0);
+    return dlg;
+};
 
 window.confirmModal = function (message, optionsOrOnConfirm, onCancel) {
     const options = (optionsOrOnConfirm && typeof optionsOrOnConfirm === 'object') ? optionsOrOnConfirm : {};
     const onConfirm = (typeof optionsOrOnConfirm === 'function') ? optionsOrOnConfirm : options.onConfirm;
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
 
     let title = 'Confirmation';
     let body = escapeHtml(message);
@@ -148,21 +212,19 @@ window.confirmModal = function (message, optionsOrOnConfirm, onCancel) {
         || message.toLowerCase().includes('wipe')
         || message.toLowerCase().includes('rollback')
         || message.toLowerCase().includes('restore');
-    const confirmBtnColor = isDanger ? 'var(--accent-danger)' : 'var(--accent-primary)';
     const requireText = String(options.requireText || '').trim();
     const requireCheckbox = String(options.requireCheckbox || '').trim();
-    const confirmLabel = options.confirmLabel || (isDanger ? 'Confirm' : 'Confirm');
+    const confirmLabel = options.confirmLabel || 'Confirm';
     const cancelLabel = options.cancelLabel || 'Cancel';
     const details = Array.isArray(options.details) ? options.details.filter(Boolean) : [];
     const warning = options.warning || '';
 
-    overlay.innerHTML = `
-        <div class="modal-content${isDanger ? ' modal-danger' : ''}" role="dialog" aria-modal="true" aria-labelledby="modal-confirm-title">
-            <div class="modal-title" id="modal-confirm-title">
-                <span>${escapeHtml(title)}</span>
-                <button type="button" class="modal-close-x" id="modal-confirm-x" aria-label="Close">&times;</button>
-            </div>
-            <div class="modal-body">
+    return new Promise((resolve) => {
+        let confirmed = false;
+        const dlg = openDialog({
+            title: escapeHtml(title),
+            danger: isDanger,
+            body: `
                 <div>${body}</div>
                 ${details.length ? `
                     <dl class="modal-detail-list">
@@ -182,94 +244,51 @@ window.confirmModal = function (message, optionsOrOnConfirm, onCancel) {
                     <input id="modal-confirm-input" class="modal-confirm-input" autocomplete="off" spellcheck="false">
                 ` : ''}
                 ${requireCheckbox ? `
-                    <label class="modal-confirm-label" style="display:flex; align-items:center; gap:10px; cursor:pointer; margin-top: 1rem; text-align: left;">
-                        <input type="checkbox" id="modal-confirm-checkbox" style="width:auto; margin:0; accent-color: var(--accent-primary);">
+                    <label class="modal-confirm-label modal-check">
+                        <input type="checkbox" id="modal-confirm-checkbox">
                         <span>${escapeHtml(requireCheckbox)}</span>
                     </label>
-                ` : ''}
-            </div>
-            <div class="modal-actions">
-                <button id="modal-cancel" class="btn-secondary">${escapeHtml(cancelLabel)}</button>
-                <button id="modal-confirm" class="btn-primary" style="background: ${confirmBtnColor};">${escapeHtml(confirmLabel)}</button>
-            </div>
-        </div>
-    `;
-
-    document.body.appendChild(overlay);
-    const confirmBtn = overlay.querySelector('#modal-confirm');
-    const cancelBtn = overlay.querySelector('#modal-cancel');
-    const closeXBtn = overlay.querySelector('#modal-confirm-x');
-    const input = overlay.querySelector('#modal-confirm-input');
-    const checkboxEl = overlay.querySelector('#modal-confirm-checkbox');
-
-    const close = (value) => {
-        overlay.remove();
-        resolveOnce(value);
-    };
-
-    let resolveOnce = () => {};
-    const syncConfirmState = () => {
-        if (!confirmBtn) return;
-        let isValid = true;
-        if (requireText) {
-            isValid = isValid && String(input?.value || '').trim() === requireText;
-        }
-        if (requireCheckbox) {
-            isValid = isValid && !!checkboxEl?.checked;
-        }
-        confirmBtn.disabled = !isValid;
-    };
-
-    if (input) {
-        input.focus();
-        input.addEventListener('input', syncConfirmState);
-        input.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter' && !confirmBtn.disabled) {
+                ` : ''}`,
+            actions: `
+                <button type="button" id="modal-cancel" class="btn-secondary">${escapeHtml(cancelLabel)}</button>
+                <button type="button" id="modal-confirm" class="btn-primary${isDanger ? ' btn-danger' : ''}">${escapeHtml(confirmLabel)}</button>`,
+            onClose: () => {
+                if (!confirmed && onCancel) onCancel();
+                resolve(confirmed);
+            },
+        });
+        const confirmBtn = dlg.$('#modal-confirm');
+        const input = dlg.$('#modal-confirm-input');
+        const checkboxEl = dlg.$('#modal-confirm-checkbox');
+        const valid = () => (!requireText || String(input?.value || '').trim() === requireText)
+            && (!requireCheckbox || !!checkboxEl?.checked);
+        const sync = () => { confirmBtn.disabled = !valid(); };
+        input?.addEventListener('input', sync);
+        input?.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && valid()) {
                 event.preventDefault();
                 confirmBtn.click();
             }
         });
-    } else if (checkboxEl) {
-        checkboxEl.focus();
-    } else {
-        confirmBtn.focus();
-    }
-    
-    if (checkboxEl) {
-        checkboxEl.addEventListener('change', syncConfirmState);
-    }
-    
-    syncConfirmState();
-
-    return new Promise((resolve) => {
-        resolveOnce = resolve;
-
-        cancelBtn.onclick = () => {
-            if (onCancel) onCancel();
-            close(false);
-        };
-
-        if (closeXBtn) closeXBtn.onclick = () => cancelBtn.click();
-
+        checkboxEl?.addEventListener('change', sync);
+        sync();
+        if (!input && !checkboxEl) confirmBtn.focus();
+        dlg.$('#modal-cancel').onclick = () => dlg.close();
         confirmBtn.onclick = () => {
-            if (requireText && String(input?.value || '').trim() !== requireText) {
+            if (!valid()) {
                 input?.focus();
                 return;
             }
+            confirmed = true;
             if (onConfirm) onConfirm();
-            close(true);
+            dlg.close();
         };
-
-        attachModalDismiss(overlay, () => cancelBtn.click());
     });
 };
 
 window.showConfirm = window.confirmModal;
 
 window.promptModal = function (message, options = {}) {
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-
     let title = options.title || 'Input Required';
     let body = String(message || '');
     if (!options.title && body.includes('\n')) {
@@ -279,88 +298,43 @@ window.promptModal = function (message, options = {}) {
     }
 
     const inputType = options.type || 'text';
-    const placeholder = options.placeholder || '';
     const confirmLabel = options.confirmLabel || 'Continue';
     const cancelLabel = options.cancelLabel || 'Cancel';
-    const initialValue = options.value || '';
     const fieldLabel = options.label || '';
     const required = options.required !== false;
 
-    overlay.innerHTML = `
-        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="modal-prompt-title">
-            <div class="modal-title" id="modal-prompt-title">
-                <span>${escapeHtml(title)}</span>
-                <button type="button" class="modal-close-x" id="modal-prompt-x" aria-label="Close">&times;</button>
-            </div>
-            <div class="modal-body">
-                ${body}
-                ${fieldLabel ? `<div style="margin-top: 1rem; margin-bottom: 0.4rem; font-weight: 600; text-align: left;">${escapeHtml(fieldLabel)}</div>` : ''}
-                <input
-                    id="modal-prompt-input"
-                    type="${inputType}"
-                    value="${String(initialValue)
-                        .replace(/&/g, '&amp;')
-                        .replace(/"/g, '&quot;')
-                        .replace(/</g, '&lt;')
-                        .replace(/>/g, '&gt;')}"
-                    placeholder="${String(placeholder)
-                        .replace(/&/g, '&amp;')
-                        .replace(/"/g, '&quot;')
-                        .replace(/</g, '&lt;')
-                        .replace(/>/g, '&gt;')}"
-                    style="width: 100%; margin-top: 1rem; padding: 0.8rem 0.9rem; border-radius: 6px; border: 1px solid var(--bg-border); background: var(--bg-card); color: var(--text-primary);">
-            </div>
-            <div class="modal-actions">
-                <button id="modal-prompt-cancel" class="btn-secondary">${escapeHtml(cancelLabel)}</button>
-                <button id="modal-prompt-confirm" class="btn-primary">${escapeHtml(confirmLabel)}</button>
-            </div>
-        </div>
-    `;
-
-    document.body.appendChild(overlay);
-    const input = overlay.querySelector('#modal-prompt-input');
-    const confirmBtn = overlay.querySelector('#modal-prompt-confirm');
-    const cancelBtn = overlay.querySelector('#modal-prompt-cancel');
-    const closeXBtn = overlay.querySelector('#modal-prompt-x');
-
-    const syncState = () => {
-        if (!confirmBtn) return;
-        confirmBtn.disabled = required && !String(input?.value || '').trim();
-    };
-
-    if (input) {
-        input.focus();
-        input.select();
-        input.addEventListener('input', syncState);
-        input.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter' && !(required && !String(input.value || '').trim())) {
-                event.preventDefault();
-                confirmBtn?.click();
-            }
-        });
-    }
-    syncState();
-
     return new Promise((resolve) => {
-        const cancel = () => {
-            overlay.remove();
-            resolve(null);
-        };
-
-        cancelBtn.onclick = cancel;
-        if (closeXBtn) closeXBtn.onclick = cancel;
-
-        confirmBtn.onclick = () => {
-            const value = String(input?.value || '');
+        let result = null;
+        const dlg = openDialog({
+            title: escapeHtml(title),
+            form: true,
+            body: `
+                ${body}
+                ${fieldLabel ? `<label class="modal-confirm-label" for="modal-prompt-input">${escapeHtml(fieldLabel)}</label>` : ''}
+                <input id="modal-prompt-input" class="modal-prompt-input" type="${escapeHtml(inputType)}"
+                    value="${escapeHtml(options.value || '')}" placeholder="${escapeHtml(options.placeholder || '')}"
+                    ${fieldLabel ? '' : `aria-label="${escapeHtml(title)}"`}>`,
+            actions: `
+                <button type="button" id="modal-prompt-cancel" class="btn-secondary" data-close>${escapeHtml(cancelLabel)}</button>
+                <button type="submit" id="modal-prompt-confirm" class="btn-primary">${escapeHtml(confirmLabel)}</button>`,
+            onClose: () => resolve(result),
+        });
+        const input = dlg.$('#modal-prompt-input');
+        const confirmBtn = dlg.$('#modal-prompt-confirm');
+        const sync = () => { confirmBtn.disabled = required && !String(input.value || '').trim(); };
+        input.select();
+        input.addEventListener('input', sync);
+        sync();
+        dlg.form.addEventListener('submit', (event) => {
+            event.preventDefault();
+            const value = String(input.value || '');
             if (required && !value.trim()) {
-                input?.focus();
+                input.focus();
                 return;
             }
-            overlay.remove();
-            resolve(value);
-        };
-
-        attachModalDismiss(overlay, cancel);
+            result = value;
+            dlg.close();
+        });
     });
 };
 

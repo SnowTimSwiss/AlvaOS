@@ -101,50 +101,24 @@ function getHeaders() {
     };
 }
 
-// --- Reusable modal helper (matches the user-management modal pattern) ---
-
+// Settings dialogs: the shared dialog (openDialog in notifications.js) with a
+// short text above the fields and an optional confirm button.
 function openSysModal({ title, description = '', bodyHtml = '', confirmLabel = 'Save', cancelLabel = 'Cancel', onConfirm = null, onClose = null }) {
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay';
-
-    const panel = document.createElement('div');
-    panel.className = 'sys-modal-panel';
-    panel.innerHTML = `
-        <div class="sys-modal-head">
-            <h3 class="sys-modal-title">${escapeHtml(title)}</h3>
-            <button class="sys-modal-x" type="button" aria-label="Close">&times;</button>
-        </div>
-        ${description ? `<p class="sys-modal-text">${description}</p>` : ''}
-        <div class="sys-modal-body">${bodyHtml}</div>
-        <div class="sys-modal-actions">
-            <button type="button" class="btn-secondary sys-modal-cancel">${escapeHtml(cancelLabel)}</button>
-            ${onConfirm ? `<button type="button" class="btn-primary sys-modal-confirm">${escapeHtml(confirmLabel)}</button>` : ''}
-        </div>
-    `;
-
-    modal.appendChild(panel);
-    document.body.appendChild(modal);
-    if (window.lucide) window.lucide.createIcons();
-
-    let closed = false;
-    const close = () => {
-        if (closed) return;
-        closed = true;
-        modal.remove();
-        if (onClose) onClose();
-    };
-
-    panel.querySelector('.sys-modal-x').addEventListener('click', close);
-    panel.querySelector('.sys-modal-cancel').addEventListener('click', close);
-    modal.addEventListener('click', (event) => {
-        if (event.target === modal) close();
+    const dlg = openDialog({
+        title: escapeHtml(title),
+        body: `${description ? `<p class="sys-modal-text">${description}</p>` : ''}<div class="sys-modal-body">${bodyHtml}</div>`,
+        actions: `
+            <button type="button" class="btn-secondary sys-modal-cancel" data-close>${escapeHtml(cancelLabel)}</button>
+            ${onConfirm ? `<button type="button" class="btn-primary sys-modal-confirm">${escapeHtml(confirmLabel)}</button>` : ''}`,
+        onClose: () => { if (onClose) onClose(); },
     });
-
+    const panel = dlg.dialog;
+    const modal = dlg.overlay;
+    const close = () => dlg.close();
     const confirmBtn = panel.querySelector('.sys-modal-confirm');
     if (confirmBtn && onConfirm) {
         confirmBtn.addEventListener('click', () => onConfirm({ panel, modal, close, confirmBtn }));
     }
-
     return { panel, modal, close };
 }
 
