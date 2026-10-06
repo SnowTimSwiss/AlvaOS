@@ -306,15 +306,16 @@ def store_apps(apps_state: Optional[Dict[str, Any]] = None, catalog: Optional[Di
         entry = catalog.get(app_id) if isinstance(catalog, dict) else None
         if not STORE_ID_RE.match(str(app_id)) or not isinstance(entry, dict) or not isinstance(state, dict):
             continue
-        schema = entry.get('config_schema') if isinstance(entry.get('config_schema'), dict) else {}
+        raw_schema = entry.get('config_schema')
+        schema: Dict[str, Any] = raw_schema if isinstance(raw_schema, dict) else {}
         web = next((p for p in schema.get('ports') or [] if isinstance(p, dict)
                     and re.search(r'\b(web|ui)\b', str(p.get('description', '')).lower())), None)
         if not web:
             continue
-        chosen = state.get('port_mappings') if isinstance(state.get('port_mappings'), dict) else {}
-        port = chosen.get(str(web.get('internal')), chosen.get(web.get('internal'), web.get('external')))
+        raw_chosen = state.get('port_mappings')
+        chosen: Dict[Any, Any] = raw_chosen if isinstance(raw_chosen, dict) else {}
         try:
-            port = int(port)
+            port = int(str(chosen.get(str(web.get('internal')), chosen.get(web.get('internal'), web.get('external')))))
         except (TypeError, ValueError):
             continue
         path = str(schema.get('webui_path') or entry.get('webui_path') or '/')
