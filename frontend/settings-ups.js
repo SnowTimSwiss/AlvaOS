@@ -44,7 +44,7 @@
         }
         if (settings.enabled) {
             const [tone, text] = liveText(live || {});
-            desc.innerHTML = `${esc(settings.name || 'UPS')}. Shuts down ${esc(whenLabel(settings.shutdown_after_minutes).toLowerCase())}.`
+            desc.innerHTML = `${esc(settings.name || 'UPS')}. Shuts down ${settings.shutdown_after_minutes ? `after ${esc(settings.shutdown_after_minutes)} minutes on battery` : 'when the battery runs low'}.`
                 + (live && live.replace_battery ? ' <strong>The UPS says its battery is worn out.</strong>' : '');
             value.innerHTML = `<span class="pill ${tone}">${esc(text)}</span>`;
             action.innerHTML = '<button type="button" class="btn-secondary" id="nut-change">Change</button>';
