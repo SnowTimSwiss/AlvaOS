@@ -15,6 +15,16 @@ How to add an entry:
 
 ---
 
+## 2026-10-06 · Files: "42 of 100 GB used"
+
+- When the open shared folder has a space limit (personal folders, app
+  folders, shares with a limit), the Files sidebar shows "Family: 42 GB of
+  100 GB used" with a bar, amber from 90 %, red when full.
+- `/api/space?share=`: only for folders the person may open; reads the
+  Btrfs qgroup through the helper (the existing `btrfs qgroup show` rule), at
+  most once a minute per folder. `/api/me` marks folders with a limit.
+- Checked in Chromium at desktop and phone width with a faked 96 % folder.
+
 ## 2026-10-06 · Main green again; SSH keys only for root
 
 - NVIDIA install test fixed for the running kernel's headers. When Debian no

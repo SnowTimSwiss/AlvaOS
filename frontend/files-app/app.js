@@ -204,6 +204,33 @@
         const canWrite = access() === 'write';
         $('new-btn').hidden = !canWrite;
         $('back-btn').disabled = false;
+        showSpace();
+    }
+
+    // "42 of 100 GB": the space limit of the open folder, when it has one.
+    let spaceFor = '';
+    let spaceAt = 0;
+    async function showSpace() {
+        const box = $('space');
+        const info = (me?.shares || []).find((s) => s.name === share);
+        if (!info || !info.limited) { box.hidden = true; spaceFor = ''; return; }
+        if (spaceFor === share && !box.hidden && Date.now() - spaceAt < 60000) return;
+        spaceFor = share;
+        spaceAt = Date.now();
+        try {
+            const data = await api(`space?share=${encodeURIComponent(share)}`);
+            if (spaceFor !== share || !data.limit_bytes || data.used_bytes === null || data.used_bytes === undefined) {
+                box.hidden = true;
+                return;
+            }
+            const part = Math.min(1, data.used_bytes / data.limit_bytes);
+            box.className = `space${part >= 0.99 ? ' full' : part >= 0.9 ? ' warn' : ''}`;
+            box.innerHTML = `<div><strong>${esc(share)}</strong>: ${esc(bytes(data.used_bytes))} of ${esc(bytes(data.limit_bytes))} used</div>
+                <div class="space-bar" role="progressbar" aria-label="Space used in ${esc(share)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(part * 100)}"><span style="width:${(part * 100).toFixed(1)}%"></span></div>`;
+            box.hidden = false;
+        } catch (_e) {
+            box.hidden = true;
+        }
     }
     $('share-list').addEventListener('click', (e) => { const b = e.target.closest('[data-share]'); if (b) go(b.dataset.share, ''); });
     $('crumbs').addEventListener('click', (e) => { const b = e.target.closest('[data-path]'); if (b) go(share, b.dataset.path); });
