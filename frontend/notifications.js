@@ -185,7 +185,8 @@ window.openDialog = function (options = {}) {
     });
     if (window.renderAlvaIcons) window.renderAlvaIcons(dialog);
     const start = dialog.querySelector('[autofocus]')
-        || dialog.querySelector('.modal-body input:not([type="hidden"]):not([disabled]), .modal-body select, .modal-body textarea')
+        || dialog.querySelector('.modal-body input:not([type="hidden"]):not([type="radio"]):not([type="checkbox"]):not([disabled]), .modal-body select, .modal-body textarea')
+        || dialog.querySelector('.modal-body input[type="radio"]:checked, .modal-body input[type="checkbox"]')
         || dialog.querySelector('.modal-actions .btn-primary:not([disabled])')
         || dialog.querySelector('.modal-actions button:not([disabled])')
         || dialog.querySelector('.modal-close-x');
