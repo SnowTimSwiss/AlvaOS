@@ -154,6 +154,9 @@ storage healthy, one shared folder.
    points of `VMs` work like for any shared folder.
 6. HTTPS: open the admin page over `https://` and the screen: it uses port
    9445 (the NAS's certificate has to be trusted there too).
+7. Disk size: shut a machine down › Settings › Disk 80 → 120 › Save. Start
+   it; in Windows, Disk Management shows 40 GB unallocated after C:,
+   "Extend Volume" takes it. A smaller number is refused.
 
 ## 9. HTTPS
 

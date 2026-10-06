@@ -60,8 +60,8 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 - **Remote access: first step done.** Settings › Remote access: WireGuard with "add this device", QR code for phones, a file for computers, last connected, remove. Needs one forwarded UDP port. UPnP (the router opens the port by itself), a CGNAT warning and DuckDNS: done. Next: optional "also reach the home network"; without any port only with a relay (Tailscale/Headscale or an own one).
 
 ### 2b. Virtual machines
-- **Done:** the Virtual machines page (set up once, new machine, start, shut down, switch off, delete, settings, the screen in the browser). QEMU/KVM run by systemd as an own account, disks as qcow2 files in the shared folder `VMs` (so restore points, backups and limits cover them), Windows 11 with UEFI and a TPM. Reference: `docs/VMS.md`.
-- **Next:** change the disk size; a second disk; a virtio driver ISO for faster Windows; a bridge network (own address at home) as an option next to NAT; pass a USB device or graphics card through; Home Assistant OS and other ready images as a one-click choice; limits per machine (cgroups).
+- **Done:** the Virtual machines page (set up once, a larger disk in the settings, new machine, start, shut down, switch off, delete, settings, the screen in the browser). QEMU/KVM run by systemd as an own account, disks as qcow2 files in the shared folder `VMs` (so restore points, backups and limits cover them), Windows 11 with UEFI and a TPM. Reference: `docs/VMS.md`.
+- **Next:** a second disk; a virtio driver ISO for faster Windows; a bridge network (own address at home) as an option next to NAT; pass a USB device or graphics card through; Home Assistant OS and other ready images as a one-click choice; limits per machine (cgroups).
 
 ### 2c. Reaching the NAS, and not being without it
 Thought through, decided, not built yet. In this order:

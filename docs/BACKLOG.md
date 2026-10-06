@@ -15,6 +15,19 @@ How to add an entry:
 
 ---
 
+## 2026-10-06 · Virtual machines: a larger disk
+
+- Settings of a stopped machine take a larger disk size. The backend checks
+  the free space, writes the description, and the helper's new `vm-grow ID`
+  runs `qemu-img resize` to that size (as root, only on the machine's own
+  `disk.qcow2`, never a symlink, never smaller, never while it runs). If it
+  fails the old size is written back. The page says how to let the guest use
+  the space.
+- Tests for growing, refusing to shrink, a running machine, a symlinked disk,
+  too little free space and a failed resize.
+- Checked in Chromium at desktop and phone width with a faked machine. On
+  phone the dialog still overflows on main; the shared dialog (#13) fixes it.
+
 ## 2026-10-06 · Main green again; SSH keys only for root
 
 - NVIDIA install test fixed for the running kernel's headers. When Debian no

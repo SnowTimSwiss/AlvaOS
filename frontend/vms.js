@@ -302,8 +302,9 @@
             <div class="vm-grid">
                 <label class="vm-field">Processor cores<input type="number" id="vm-cpus" min="1" max="${limits.cpus}" value="${vm.cpus}"></label>
                 <label class="vm-field">Memory (GB)<input type="number" id="vm-mem" min="0.5" step="0.5" max="${gb(limits.memory_mb)}" value="${gb(vm.memory_mb)}"></label>
-                <div class="vm-field">Disk<span style="font-weight:400">${vm.disk_gb} GB</span><small>The size is set when it is made.</small></div>
+                <label class="vm-field">Disk (GB)<input type="number" id="vm-disk" min="${vm.disk_gb}" value="${vm.disk_gb}"></label>
             </div>
+            <small class="vm-hint">The disk can only grow. Afterwards, let the system in the machine use the new space (Windows: Disk Management › Extend Volume).</small>
             <label class="vm-check"><input type="checkbox" id="vm-auto"${vm.autostart ? ' checked' : ''}> Start it together with the NAS</label>
             ${portsHtml(vm.ports)}
             <div class="vm-error" id="vm-err" role="alert"></div>`;
@@ -315,7 +316,8 @@
             q('#vm-err').textContent = '';
             try {
                 state = await post(`/${vm.id}`, { name: q('#vm-name').value, iso: q('#vm-iso').value, cpus: Number(q('#vm-cpus').value),
-                    memory_mb: Math.round(Number(q('#vm-mem').value) * 1024), autostart: q('#vm-auto').checked, ports: readPorts(d.el) });
+                    memory_mb: Math.round(Number(q('#vm-mem').value) * 1024), disk_gb: Number(q('#vm-disk').value),
+                    autostart: q('#vm-auto').checked, ports: readPorts(d.el) });
                 d.close();
                 toast('Saved. It applies the next time the machine starts.');
                 render();
