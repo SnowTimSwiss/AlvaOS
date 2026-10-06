@@ -95,6 +95,8 @@ storage healthy, one shared folder.
 2. As `ben`, copy more than 1 GB in: it stops at the limit; the dashboard
    warns at 90 %. **(only on a real machine: needs Btrfs quotas)**
 3. Storage › Shared folders › give "Files" a limit, then remove it again.
+4. In the Hub as `ben`, open the personal folder: the sidebar shows "… of
+   1 GB used", the same as Storage › Shared folders, amber above 90 %.
 
 ## 6. Backup
 
