@@ -186,3 +186,21 @@ def test_contacts_work_for_a_phone_when_the_calendar_is_off(book):
     home = ok(book.open("/dav/anna/", method="PROPFIND", headers={**ANNA, "Depth": "1"}, data=PROPFIND_BOOKS))
     assert "/dav/anna/contacts/" not in home and "own.main" in home
     assert book.open("/dav/anna/contacts/", method="PROPFIND", headers=ANNA).status_code == 403
+
+
+def test_birthdays_of_the_contacts_show_in_the_calendar_read_only(book):
+    sign_in(book, "anna", "anna-pass")
+    assert [p["id"] for p in book.get("/api/calendar").get_json()["places"]] == ["own"]
+    book.post("/api/contacts/item", json={"item": {"first": "Max", "last": "Muster", "birthday": "1985-03-09"}}, headers=H)
+    book.post("/api/contacts/item", json={"item": {"first": "Berta", "birthday": "--06-30"}}, headers=H)
+    book.post("/api/contacts/item", json={"item": {"first": "Nobody"}}, headers=H)
+    places = book.get("/api/calendar").get_json()["places"]
+    day = places[-1]
+    assert day["id"] == "birthdays" and day["writable"] is False and day["calendars"][0]["id"] == "birthdays"
+    assert sorted((e["title"], e["start"], e["repeat"], e["all_day"]) for e in day["events"]) == [
+        ("Berta's birthday", "2000-06-30", "yearly", True), ("Max Muster's birthday", "1985-03-09", "yearly", True)]
+    refused = book.post("/api/calendar/item", json={"place": "birthdays", "kind": "event", "item": day["events"][0]},
+                        headers=H)
+    assert refused.status_code == 404
+    hub_apps.save({"apps": {"contacts": {"enabled": False}}}, ["anna", "ben"])
+    assert [p["id"] for p in book.get("/api/calendar").get_json()["places"]] == ["own"]

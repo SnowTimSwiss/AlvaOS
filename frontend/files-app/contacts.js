@@ -45,9 +45,9 @@
     const label = (kinds, type) => (kinds.find((k) => k[0] === type) || [type, 'Other'])[1];
 
     function birthdayText(b) {
-        const m = /^(\d{4}|--)-(\d{2})-(\d{2})$/.exec(b || '');
+        const m = /^(\d{4}-|--)(\d{2})-(\d{2})$/.exec(b || '');
         if (!m) return '';
-        const d = new Date(m[1] === '--' ? 2000 : +m[1], +m[2] - 1, +m[3]);
+        const d = new Date(m[1] === '--' ? 2000 : +m[1].slice(0, 4), +m[2] - 1, +m[3]);
         return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: m[1] === '--' ? undefined : 'numeric' });
     }
 

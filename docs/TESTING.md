@@ -430,3 +430,5 @@ possible a screenshot. Settings › Diagnostics has the logs.
 3. iPhone: Settings › Contacts › Accounts › Add Account › Other › Add CardDAV Account; server = the Hub address, your AlvaOS name and password. The contacts appear. Change one on the phone, reload the Hub: the change is there. Change one in the Hub, pull to refresh on the phone.
 4. Android: DAVx5, URL `https://<nas>:9443/dav/`; tick Contacts. Same checks.
 5. Hub › Settings (admin) › Hub: turn Contacts off for someone: their phone says it is not turned on for them.
+
+6. Contacts: give a contact a birthday; Calendar then lists "Birthdays" (read only) with a yearly all-day entry.

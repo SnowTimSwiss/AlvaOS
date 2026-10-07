@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Tuple
 PHONE_TYPES = ('mobile', 'home', 'work', 'other')
 EMAIL_TYPES = ('home', 'work', 'other')
 ADDRESS_TYPES = ('home', 'work', 'other')
-BIRTHDAY_RE = re.compile(r'^(\d{4}|--)-\d{2}-\d{2}$')
+BIRTHDAY_RE = re.compile(r'^(\d{4}-\d{2}-\d{2}|--\d{2}-\d{2})$')   # the year may be unknown: --03-09
 
 
 def unfold(text: str) -> List[str]:

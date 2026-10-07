@@ -15,6 +15,12 @@ How to add an entry:
 
 ---
 
+## 2026-10-08 — Birthdays of the contacts in the Calendar
+
+- The Calendar shows a read-only calendar "Birthdays" (yearly, whole day) made from the contacts that have a birthday; nothing is copied or stored. Off with Contacts. Phones show birthdays from their own contacts, so CalDAV does not carry it.
+
+---
+
 ## 2026-10-08 — Contacts: the address book of the Hub, with CardDAV
 
 - New Hub app **Contacts** (`hub_contacts.py`, `contacts.js/css`): list, search, favourites, edit form, vCard import/export, a help dialog for syncing a phone. Data: `contacts.json` in the person's folder, as the person.

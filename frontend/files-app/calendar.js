@@ -342,7 +342,7 @@
                     ${place.writable ? `<button type="button" class="icon-btn" data-add-cal="${esc(place.id)}" title="Add a calendar" aria-label="Add a calendar">${icon('plus')}</button>` : '<span class="cal-ro" title="You can look, not change">read only</span>'}</div>
                 ${place.calendars.map((c) => item(calKey(place, c), c.name, c.color,
                     place.writable ? `<button type="button" class="cal-more" data-edit-cal="${esc(calKey(place, c))}" aria-label="Change ${esc(c.name)}">${icon('more')}</button>` : '')).join('')}
-                ${item(`${place.id}|tasks`, place.own ? 'Tasks' : `Tasks of ${place.name}`, TASK_COLOR)}
+                ${place.writable || place.tasks.length ? item(`${place.id}|tasks`, place.own ? 'Tasks' : `Tasks of ${place.name}`, TASK_COLOR) : ''}
             </section>`;
         $c('#cal-lists').innerHTML = places.map(section).join('')
             || (loaded ? '<p class="cal-empty-side">No calendars yet.</p>' : '');

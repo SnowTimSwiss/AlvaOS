@@ -147,6 +147,34 @@ def _stamp() -> str:
     return datetime.now(timezone.utc).isoformat(timespec='seconds')
 
 
+def birthdays(session: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The birthdays of the person's contacts as a calendar of its own, read only
+    (Contacts, hub_contacts.py). None when there are none or Contacts is not theirs."""
+    import hub_contacts
+    if not hub_apps.allowed('contacts', session['user'], session.get('role', 'user')):
+        return None
+    place = hub_data.own_place('contacts', session, hub_apps.load())
+    data, _ = hub_data.read(place, hub_contacts.FILE) if place else (None, '')
+    events = []
+    for c in hub_contacts.clean(data or {})['contacts']:
+        m = re.fullmatch(r'(\d{4}-|--)(\d{2})-(\d{2})', str(c.get('birthday') or ''))
+        if not m:
+            continue
+        year = '2000' if m.group(1) == '--' else m.group(1)[:4]
+        day = f'{year}-{m.group(2)}-{m.group(3)}'
+        if _day(day) is None:
+            continue
+        name = ' '.join(p for p in (c.get('first'), c.get('last')) if p) or str(c.get('org') or '')
+        events.append({'id': f"birthday-{c['id']}", 'calendar': 'birthdays', 'title': f"{name}'s birthday",
+                       'start': day, 'end': day, 'all_day': True, 'color': '', 'location': '', 'notes': '',
+                       'repeat': 'yearly', 'until': ''})
+    if not events:
+        return None
+    return {'id': 'birthdays', 'name': 'Birthdays', 'own': False, 'writable': False,
+            'calendars': [{'id': 'birthdays', 'name': 'Birthdays', 'color': COLORS[5]}],
+            'events': events, 'tasks': []}
+
+
 @bp.get('/api/calendar')
 def everything():
     """Every place with its calendars, events and tasks."""
@@ -162,6 +190,9 @@ def everything():
             continue
         out.append({'id': place.id, 'name': place.name, 'own': place.own, 'writable': place.writable,
                     **clean(data, place)})
+    out_birthdays = birthdays(session)
+    if out_birthdays:
+        out.append(out_birthdays)
     return jsonify({'places': out, 'has_own': has_own, 'problems': problems, 'colors': COLORS,
                     'today': date.today().isoformat()})
 
