@@ -445,3 +445,5 @@ a.btn { text-decoration: none; color: inherit; }
 .chips.filters { grid-column: 1 / -1; flex-wrap: wrap; overflow: visible; padding: 0 4px 10px; gap: 6px; }
 .chips.filters button { flex-direction: row; padding: 4px 12px; border-radius: 999px; font-weight: 500; font-size: 0.82rem; }
 .chips.filters .chip-gap { width: 10px; }
+
+.side-head2 { font-size: 0.72rem; font-weight: 600; color: var(--faint); padding: 12px 10px 4px; }

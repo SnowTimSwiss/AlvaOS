@@ -55,7 +55,7 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
   5. ~~Edit text files~~ done (.txt, .md and other plain text up to 1 MB; the old one goes to the trash).
   6. ~~A notification when someone uploads into a drop box~~ done (a "3 new" mark at Shared links and on each link until the list is opened).
   7. Photos as a small Immich: backup from the phone, albums, favourites (plan: `docs/PHOTOS.md`). Done: the date from the photo itself (EXIF); the phone backup in the Android app (`android/`: choose the albums, every hour in the background, deleting in sync both ways through the NAS trash, free up space); the phone albums as albums in Photos. Next: own albums and favourites in the browser, video thumbnails, upload into the own photos from the Hub, the iPhone app.
-  8. Share a folder with another person on the NAS without a public link: done (Share with people…; in Files and WebDAV, not over SMB). Next: a "Shared with me" heading and a note to the person.
+  8. Share a folder with another person on the NAS without a public link: done (Share with people…; in Files and WebDAV, not over SMB). "Shared with me" heading in the side bar: done. Next: a note to the person.
 - **Powerful when needed:**
   9. Open and edit Office documents with the EuroOffice app from the catalog (WOPI).
   10. Search filters: done for kind and time (chips above the results); next size; later search by content (text in PDFs and documents).

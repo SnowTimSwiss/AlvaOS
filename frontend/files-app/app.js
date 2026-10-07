@@ -224,11 +224,15 @@
     }
 
     function renderSide() {
-        $('share-list').innerHTML = (me?.shares || []).map((s) => `
-            <button type="button" class="side-item${s.name === share ? ' active' : ''}" data-share="${esc(s.name)}">
+        const shareRow = (s) => `
+            <button type="button" class="side-item${s.name === share && !(found && foundInfo.list) ? ' active' : ''}" data-share="${esc(s.name)}"${s.from ? ` title="Shared with you by ${esc(s.from)}"` : ''}>
                 <span class="ic">${icon(s.from ? 'users' : 'folder-fill')}</span><span>${esc(s.name)}</span>
                 ${s.access === 'read' ? `<span class="ro" title="You can look, not change">${icon('lock').replace('<svg', '<svg width="13" height="13"')}</span>` : ''}
-            </button>`).join('');
+            </button>`;
+        const mine = (me?.shares || []).filter((s) => !s.from);
+        const theirs = (me?.shares || []).filter((s) => s.from);
+        $('share-list').innerHTML = mine.map(shareRow).join('')
+            + (theirs.length ? `<div class="side-head2">Shared with me</div>${theirs.map(shareRow).join('')}` : '');
         const parts = path ? path.split('/') : [];
         $('recent-nav').classList.toggle('active', foundInfo.list === 'recent' && !!found);
         $('starred-nav').classList.toggle('active', foundInfo.list === 'starred' && !!found);
