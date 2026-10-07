@@ -15,6 +15,11 @@ to_debian_version() {
 
     # Remove optional tag prefix.
     raw="${raw#v}"
+    # "beta-v0.1.0": the stage first, then the number. Debian wants the
+    # number first, the stage after "~" (sorts before 0.1.0 itself).
+    if [[ "${raw}" =~ ^([Aa]lpha|[Bb]eta|[Rr][Cc]|[Pp]re)[._-]*v?([0-9][0-9.]*)$ ]]; then
+        raw="${BASH_REMATCH[2]}~${BASH_REMATCH[1],,}"
+    fi
 
     # Convert common prerelease wording to Debian-friendly form.
     deb_version="$(printf '%s' "${raw}" | sed -E \
@@ -25,7 +30,7 @@ to_debian_version() {
 
     # Debian versions do not allow '_' and treat '-' specially.
     deb_version="${deb_version//_/.}"
-    deb_version="${deb_version//-/~}"
+    deb_version="${deb_version//-/\~}"   # quoted: a bare ~ would become $HOME
     deb_version="$(printf '%s' "${deb_version}" | sed -E 's/[^0-9A-Za-z.+:~]/./g')"
     deb_version="$(printf '%s' "${deb_version}" | sed -E 's/\.+/./g; s/~+/~/g; s/^\.//; s/\.$//')"
 
@@ -62,7 +67,7 @@ warn() {
 
 DEB_VERSION="$(to_debian_version "${VERSION}")"
 
-log "Building AlvaOS system package v${VERSION}"
+log "Building AlvaOS system package ${VERSION}"
 if [ "${DEB_VERSION}" != "${VERSION}" ]; then
     warn "Using Debian package version '${DEB_VERSION}' (source version: '${VERSION}')"
 fi
@@ -297,4 +302,4 @@ log "To install locally:"
 log "  sudo apt install ${DEB_FILE}"
 log ""
 log "To upload to GitHub Release:"
-log "  gh release upload v${VERSION} ${DEB_FILE} ${BUILD_DIR}/checksums.txt"
+log "  gh release upload ${VERSION} ${DEB_FILE} ${BUILD_DIR}/checksums.txt"

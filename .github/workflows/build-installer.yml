@@ -24,9 +24,8 @@ jobs:
           if [ "${{ github.event_name }}" == "release" ]; then
             VERSION="${{ github.event.release.tag_name }}"
           else
-            VERSION="0.0.0-dev${{ github.sha }}"
-            # Shorten SHA for cleaner version
-            VERSION="0.0.0-dev$(echo ${{ github.sha }} | cut -c1-7)"
+            # Builds between releases carry the version in the VERSION file.
+            VERSION="$(tr -d '[:space:]' < VERSION)"
           fi
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "Building AlvaOS version: ${VERSION}"

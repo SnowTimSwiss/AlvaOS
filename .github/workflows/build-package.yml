@@ -25,7 +25,8 @@ jobs:
             # Remove 'v' prefix if present
             VERSION="${VERSION#v}"
           else
-            VERSION="0.0.0-dev"
+            # Builds between releases carry the version in the VERSION file.
+            VERSION="$(tr -d '[:space:]' < VERSION)"
           fi
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "Building AlvaOS package version: ${VERSION}"

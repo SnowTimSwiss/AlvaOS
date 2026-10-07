@@ -15,6 +15,17 @@ How to add an entry:
 
 ---
 
+## 2026-10-07 · Every version is beta-v0.1.0
+
+- The `VERSION` file already said `beta-v0.1.0`; builds between releases
+  (installer and package workflows) used `0.0.0-dev` and now read the file.
+- `build-deb.sh` turns `beta-v0.1.0` into the Debian version `0.1.0~beta`.
+  It also had an old bug: `${v//-/~}` turned every `-` into `$HOME`
+  (`1.0.0-beta2` became `1.0.0.root~beta2`); the `~` is quoted now.
+- The update check understands the stage-first form (`beta-v0.1.0` →
+  `0.1.0b`); before, it could not compare it and never offered an update.
+  Tests in `tests/test_update_versions.py`.
+
 ## 2026-10-07 · Remote access: Tailscale and Cloudflare Tunnel instead of WireGuard
 
 - The own WireGuard remote access (remote0, a forwarded router port, UPnP,
