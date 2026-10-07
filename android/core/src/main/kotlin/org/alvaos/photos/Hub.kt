@@ -41,6 +41,39 @@ data class PlanItem(val id: String, val album: String, val name: String, val siz
 @Serializable
 data class DoneItem(val id: String, val path: String, val name: String, val size: Long, val modified: Long)
 
+/** What the app says about the phone; the Hub lists it under Phones and devices. */
+@Serializable
+data class DeviceInfo(val name: String, val model: String = "", val platform: String = "android", val app_version: String = "")
+
+/** A session of the app's own, from a QR code or a password. */
+@Serializable
+data class Paired(val token: String, val user: String = "", val nas_name: String = "", val device: String = "")
+
+/**
+ * What the QR code in the Hub › Phones and devices says:
+ * `alvaos://pair?c=CODE&n=<NAS>&u=<person>&a=<address>&a=<address>`.
+ * The addresses: the one the browser used, then the internet one if there is.
+ */
+data class PairLink(val code: String, val addresses: List<String>, val nas: String, val user: String) {
+    companion object {
+        fun parse(text: String): PairLink? {
+            val t = text.trim()
+            if (!t.startsWith("alvaos://pair?")) return null
+            val params = t.substringAfter('?').split('&').mapNotNull { part ->
+                val key = part.substringBefore('=', "")
+                if (key.isEmpty()) null
+                else key to java.net.URLDecoder.decode(part.substringAfter('='), "UTF-8")
+            }
+            val code = params.firstOrNull { it.first == "c" }?.second.orEmpty()
+            val addresses = params.filter { it.first == "a" }.map { it.second.trimEnd('/') }
+                .filter { it.startsWith("http://") || it.startsWith("https://") }
+            if (code.length < 8 || addresses.isEmpty()) return null
+            return PairLink(code, addresses, params.firstOrNull { it.first == "n" }?.second.orEmpty(),
+                params.firstOrNull { it.first == "u" }?.second.orEmpty())
+        }
+    }
+}
+
 /** The calls of the Hub (backend/hub_photos_sync.py, files_server.py). */
 interface HubApi {
     fun addPhone(name: String): Phone
@@ -96,10 +129,19 @@ class HubClient(
     private inline fun <reified T> post(path: String, body: T): String =
         send(request(path).post(json.encodeToString(body).toRequestBody(JSON_TYPE)))
 
-    /** Signs in with the name and password of the shared folders; keeps and returns the session. */
-    fun signIn(user: String, password: String, code: String = ""): String {
+    @Serializable
+    private data class LoginBody(val username: String, val password: String, val code: String, val device: DeviceInfo?)
+
+    @Serializable
+    private data class LoginAnswer(val token: String = "")
+
+    /**
+     * Signs in with the name and password of the shared folders; keeps and returns
+     * the session. With `device` it is a session of the app's own (listed in the Hub).
+     */
+    fun signIn(user: String, password: String, code: String = "", device: DeviceInfo? = null): String {
         val res: Response = http.newCall(request("/api/login")
-            .post(json.encodeToString(mapOf("username" to user, "password" to password, "code" to code))
+            .post(json.encodeToString(LoginBody(user, password, code, device))
                 .toRequestBody(JSON_TYPE)).build()).execute()
         res.use {
             val body = it.body?.string().orEmpty()
@@ -109,12 +151,41 @@ class HubClient(
                 }
                 throw HubException(errorOf(body) ?: "Signing in did not work (${it.code}).", it.code)
             }
-            val cookie = it.headers("Set-Cookie").firstOrNull { c -> c.startsWith("$COOKIE=") }
-                ?: throw HubException("The NAS did not keep the sign-in.")
-            token = cookie.substringAfter("=").substringBefore(";")
+            val own = try { json.decodeFromString<LoginAnswer>(body).token } catch (e: Exception) { "" }
+            token = own.ifEmpty {
+                it.headers("Set-Cookie").firstOrNull { c -> c.startsWith("$COOKIE=") }
+                    ?.substringAfter("=")?.substringBefore(";")
+                    ?: throw HubException("The NAS did not keep the sign-in.")
+            }
             return token
         }
     }
+
+    @Serializable
+    private data class PairBody(val code: String, val device: DeviceInfo)
+
+    /** Trades the code of a QR code (or typed) for a session of the app's own. */
+    fun pair(code: String, device: DeviceInfo): Paired {
+        val paired = json.decodeFromString<Paired>(post("/api/devices/pair", PairBody(code, device)))
+        token = paired.token
+        return paired
+    }
+
+    /** Ends this phone's session on the NAS (it leaves the Hub's device list). */
+    fun signOut() {
+        try { post("/api/logout", emptyMap<String, String>()) } catch (e: IOException) { /* signed out here anyway */ }
+    }
+
+    /** Whether the Hub answers at this address, quickly (to pick home or away). */
+    fun reachable(): Boolean = try {
+        http.newBuilder().connectTimeout(4, TimeUnit.SECONDS).readTimeout(6, TimeUnit.SECONDS).build()
+            .newCall(Request.Builder().url("$base/api/me").build()).execute().use { it.code == 200 || it.code == 401 }
+    } catch (e: Exception) {
+        false
+    }
+
+    /** Whether this session still works: false only when the NAS says signed out (401). */
+    fun signedIn(): Boolean = http.newCall(request("/api/me").build()).execute().use { it.code != 401 }
 
     @Serializable
     private data class Added(val phone: Phone)

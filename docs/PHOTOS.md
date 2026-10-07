@@ -62,7 +62,7 @@ the JSON files are small and are backed up with the pictures.
 
 - The app: `android/` (see `android/README.md`). `android/core` is the sync,
   plain Kotlin with tests; `android/app` is the Android app around it. CI
-  builds the APK (workflow "Android app"; the newest APK is `alvaos-beta.apk` on the pre-release `android-beta`).
+  builds the APK (workflow "Android app": the APK of each push as the run's artifact; every AlvaOS release has `alvaos-android.apk` next to the ISO).
 - It signs in like the Hub (name, password, a code if two-step is on) and
   keeps only the session, not the password.
 - It uploads with the resumable upload Files already has (`/api/upload/*`,

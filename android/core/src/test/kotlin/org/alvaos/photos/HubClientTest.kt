@@ -72,4 +72,29 @@ class HubClientTest {
         val finish = server.takeRequest().body.readUtf8()
         assertTrue(finish.contains(""""modified":1791380000000""") && finish.contains(""""size":40"""))
     }
+
+    @Test
+    fun aQrCodeIsReadWithAllItsAddresses() {
+        val link = PairLink.parse("alvaos://pair?c=QFR9YKZK&n=cygnus&u=tim&a=http%3A%2F%2F192.168.1.20%3A8090&a=https%3A%2F%2Fnas.example.ch")
+        assertEquals(PairLink("QFR9YKZK", listOf("http://192.168.1.20:8090", "https://nas.example.ch"), "cygnus", "tim"), link)
+        assertEquals(null, PairLink.parse("https://example.com/?c=QFR9YKZK"))
+        assertEquals(null, PairLink.parse("alvaos://pair?c=QFR9YKZK"))          // no address
+    }
+
+    @Test
+    fun pairingKeepsTheSessionOfThePhone() {
+        server.enqueue(json("""{"success": true, "user": "tim", "token": "tok9", "device": "abc", "nas_name": "cygnus"}"""))
+        val paired = client.pair("QFR9-YKZK", DeviceInfo("Pixel 8", "Pixel 8", app_version = "beta-v0.1.0"))
+        assertEquals("tok9", paired.token)
+        assertEquals("tok9", client.token)
+        val sent = server.takeRequest().body.readUtf8()
+        assertTrue(sent.contains(""""code":"QFR9-YKZK"""") && sent.contains(""""name":"Pixel 8""""))
+    }
+
+    @Test
+    fun aPasswordSignInFromTheAppGetsItsOwnSession() {
+        server.enqueue(json("""{"success": true, "user": "tim", "token": "own1"}"""))
+        assertEquals("own1", client.signIn("tim", "pw", device = DeviceInfo("Pixel 8")))
+        assertTrue(server.takeRequest().body.readUtf8().contains(""""device":{"name":"Pixel 8""""))
+    }
 }

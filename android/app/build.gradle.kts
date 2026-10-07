@@ -5,7 +5,8 @@ plugins {
 
 // The version name is the one of AlvaOS (the VERSION file); the version code
 // counts up with every build CI makes (Google Play needs a bigger one each time).
-val alvaosVersion = rootDir.resolve("../VERSION").takeIf { it.exists() }?.readText()?.trim() ?: "dev"
+val alvaosVersion = System.getenv("ALVAOS_VERSION_NAME")
+    ?: rootDir.resolve("../VERSION").takeIf { it.exists() }?.readText()?.trim() ?: "dev"
 val buildNumber = System.getenv("ALVAOS_VERSION_CODE")?.toIntOrNull() ?: 1
 
 // The upload key for Google Play, only from the environment (CI secrets),
@@ -55,4 +56,6 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    // Google's QR scanner screen (Play services): no camera permission for the app.
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
 }

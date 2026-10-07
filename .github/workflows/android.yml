@@ -1,14 +1,18 @@
 name: Android app
 
 # The AlvaOS app for phones (android/, docs/ANDROID.md). Every push: the sync
-# core is tested and the newest app goes to the pre-release "android-beta"
-# (alvaos-beta.apk to install by hand, alvaos.aab for Google Play). Run by
-# hand ("Run workflow") with a track, it also goes to Google Play.
+# core is tested and the app is built (the APK as the run's artifact, to test
+# between releases). An AlvaOS release gets the app as files of its own
+# (alvaos-android.apk, alvaos-android.aab) and, once set up, goes to Google
+# Play's internal testing. Run by hand with a track, it goes to that track.
 on:
   push:
+    branches: ['**']
     paths: ['android/**', 'VERSION', '.github/workflows/android.yml']
   pull_request:
     paths: ['android/**', 'VERSION', '.github/workflows/android.yml']
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       track:
@@ -20,6 +24,10 @@ on:
         description: As a draft (needed while the app was never published on Play)
         type: boolean
         default: false
+      release:
+        description: Add the app to this existing release too (its tag, e.g. beta-v0.2.0), or leave empty
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -32,10 +40,12 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # only for the android-beta pre-release, not on pull requests
+      contents: write   # only to add the app to a release
     defaults:
       run:
         working-directory: android
+    env:
+      PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -59,6 +69,7 @@ jobs:
       - name: Get the upload key
         env:
           KEYSTORE_BASE64: ${{ secrets.ALVAOS_KEYSTORE_BASE64 }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release }}
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
@@ -68,6 +79,10 @@ jobs:
           fi
           # A bigger number for every build (minutes since 2026), as Google Play wants.
           echo "ALVAOS_VERSION_CODE=$(( ($(date +%s) - 1767225600) / 60 ))" >> "$GITHUB_ENV"
+          # A release shows its own name in the app (else the VERSION file).
+          if [ -n "$RELEASE_TAG" ]; then
+            echo "ALVAOS_VERSION_NAME=$RELEASE_TAG" >> "$GITHUB_ENV"
+          fi
 
       - name: Build the app
         env:
@@ -78,46 +93,47 @@ jobs:
           mkdir -p out
           if [ -n "${ALVAOS_KEYSTORE:-}" ]; then
             ./gradlew --no-daemon :app:assembleRelease :app:bundleRelease
-            cp app/build/outputs/apk/release/app-release.apk out/alvaos-beta.apk
-            cp app/build/outputs/bundle/release/app-release.aab out/alvaos.aab
+            cp app/build/outputs/apk/release/app-release.apk out/alvaos-android.apk
+            cp app/build/outputs/bundle/release/app-release.aab out/alvaos-android.aab
           else
             ./gradlew --no-daemon :app:assembleDebug
-            cp app/build/outputs/apk/debug/app-debug.apk out/alvaos-beta.apk
+            cp app/build/outputs/apk/debug/app-debug.apk out/alvaos-android.apk
           fi
 
-      - name: Upload the APK
-        # When the account's artifact storage is full this fails; the release
-        # below does not count toward that limit.
-        if: github.event_name == 'pull_request'
+      - name: Keep the app with the run
+        # To test between releases: Actions › the run › Artifacts. Small
+        # (about 15 MB) and kept a week, so the storage does not fill up.
+        if: github.event_name != 'release'
         continue-on-error: true
         uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
         with:
-          name: alvaos-app
+          name: alvaos-android
           path: android/out/
           retention-days: 7
 
-      # The newest app of a push, always at the same place: the pre-release
-      # "android-beta" (Releases on GitHub).
-      - name: Put it on the android-beta pre-release
+      - name: Add the app to the release
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.release != '')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.release }}
+        run: |
+          gh release upload "$TAG" out/* --clobber
+
+      # The first app builds had a pre-release of their own; not used any more.
+      - name: Remove the old android-beta pre-release
         if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
-          NOTES: "The newest AlvaOS app for Android (${{ env.ALVAOS_KEYSTORE && 'signed with the upload key' || 'debug build' }}), from ${{ github.ref_name }} at ${{ github.sha }}. Install alvaos-beta.apk on the phone (docs/TESTING.md, 12b); alvaos.aab is the same app for Google Play (docs/ANDROID.md)."
-        run: |
-          if ! gh release view android-beta >/dev/null 2>&1; then
-            gh release create android-beta --prerelease --target "$GITHUB_SHA" --title "AlvaOS app for Android (beta)" --notes "$NOTES"
-          fi
-          gh release edit android-beta --notes "$NOTES"
-          gh release upload android-beta out/* --clobber
-          # An old bundle must not stay next to a debug APK of a later build.
-          [ -f out/alvaos.aab ] || gh release delete-asset android-beta alvaos.aab --yes 2>/dev/null || true
+        run: gh release delete android-beta --cleanup-tag --yes 2>/dev/null || true
 
       - name: Upload to Google Play
-        if: github.event_name == 'workflow_dispatch' && inputs.track != 'none'
+        if: >-
+          env.PLAY_SERVICE_ACCOUNT_JSON != '' && env.ALVAOS_KEYSTORE != '' &&
+          (github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.track != 'none'))
         uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: org.alvaos.app
-          releaseFiles: android/out/alvaos.aab
-          track: ${{ inputs.track }}
+          releaseFiles: android/out/alvaos-android.aab
+          track: ${{ github.event_name == 'release' && 'internal' || inputs.track }}
           status: ${{ inputs.draft && 'draft' || 'completed' }}

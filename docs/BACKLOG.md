@@ -15,6 +15,61 @@ How to add an entry:
 
 ---
 
+## 2026-10-07 · Version beta-v0.2.0
+
+- `VERSION` says `beta-v0.2.0`: the next release (NAS, installer and app)
+  is that one, and a NAS on beta-v0.1.0 sees it as an update. The NAS needs
+  it for the app's QR code (Phones and devices).
+
+## 2026-10-07 · Phones: connect with a QR code, the whole Hub in the app, Phones and devices
+
+- Hub (`files_server.py`): sessions of the app's own ("devices": name,
+  model, app version, last used; 120 days, renewed while used). Files ›
+  Phones and devices shows a QR code and a code (8 letters, ten minutes,
+  used once, a new one makes the last useless) and lists the phones with
+  their photo backup; rename and sign out. Signing in with a password from
+  the app makes a device too. A new password signs the phones out as well.
+  Tests in `backend/tests/test_hub_devices.py`.
+- QR code: `alvaos://pair?c=…&n=<NAS>&u=<person>&a=<address>…`, made as SVG
+  by python3-qrcode on the NAS. The addresses: the one the browser uses,
+  then the Cloudflare one.
+- App: connect by scanning (Google's code scanner, no camera permission;
+  the phone's camera opens the app through the `alvaos://` link), by code
+  or by password. Three tabs: the Hub in a web view with the app's session
+  (all apps; downloads, uploads; the Hub hides its Sign out in the app),
+  the photo backup (optional now; live progress), settings. Material 3 with
+  the phone's colours, an adaptive icon. It picks the address that answers.
+- **Note for next time:** the app is built in code (no XML layouts) from
+  `Ui.kt`; a Hub over HTTPS with the NAS's own certificate does not open in
+  the web view yet (only trusted certificates); at home it uses HTTP 8090,
+  away the Cloudflare address.
+
+## 2026-10-07 · Files: select with a rectangle; the name at the bottom
+
+- Drawing a rectangle with the mouse from empty space selects what it
+  touches, as in Windows Explorer or Finder (Ctrl/Shift add to the
+  selection; the folder scrolls on at the top and bottom edge). A click
+  beside the files, also below them, selects nothing.
+- The name and "Sign out" sit at the bottom of the side bar again: a CSS
+  rule meant for the space bar also applied while it was hidden.
+- The Android workflow can add the app to an existing release ("Run
+  workflow" › the release's tag); beta-v0.1.0 got its APK this way.
+
+## 2026-10-07 · One release for the OS and the app
+
+- The app no longer has a pre-release of its own (`android-beta` showed up
+  as a second release next to the OS one and is removed by the next run).
+  An AlvaOS release gets `alvaos-android.apk` (and `.aab` once the upload
+  key exists) next to the ISO and the .deb, and goes to Play's internal
+  testing when Play is set up. Between releases the APK is the run's
+  artifact (7 days, about 15 MB).
+- The app shows the release's name as its version (`ALVAOS_VERSION_NAME`),
+  between releases the `VERSION` file.
+- Installer builds between releases are an artifact again, kept two days
+  (no `installer-dev` release either).
+- Push builds of the app run only for branches, not for tags (the tag of a
+  release started one before, "from beta-v0.1.0").
+
 ## 2026-10-07 · App: deleting without asking, ready for Google Play; CI storage
 
 - Deleting what was deleted on the NAS needs no question any more once the

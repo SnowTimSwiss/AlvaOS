@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The app's logo on its screens: the launcher icon as a rounded square. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><shape android:shape="rectangle"><corners android:radius="22dp" />
+        <gradient android:angle="315" android:startColor="#3B82F6" android:endColor="#6D28D9" /></shape></item>
+    <item android:drawable="@drawable/ic_launcher_fg" />
+</layer-list>

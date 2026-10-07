@@ -1,14 +1,19 @@
 # AlvaOS app: privacy
 
-The AlvaOS app backs up the photos and videos of your phone to **your own
-AlvaOS NAS**. It talks to nobody else.
+The AlvaOS app opens the Hub of **your own AlvaOS NAS** and backs up the
+photos and videos of your phone to it. It talks to nobody else.
 
 **What the app sends, and where**
 
 - To the NAS whose address you enter, and only there: the photos and videos
   of the albums you choose (with the date they were taken and, if you allow
-  it, where), their names and sizes, the name of your phone, and your name and
-  password to sign in.
+  it, where), their names and sizes, the name and model of your phone and the
+  app's version (so you see it under Phones and devices), and your name and
+  password, or the code of the QR code, to sign in.
+- The Hub of your NAS opens inside the app, like a web page, from your NAS
+  only; links to other places open in your browser.
+- Scanning the QR code uses the scanner of Google Play services on the
+  phone; the camera picture stays on the phone.
 - Nothing is sent to the makers of AlvaOS or to any other company. The app
   has no advertising, no analytics and no crash reporting service.
 

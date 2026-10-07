@@ -1,17 +1,26 @@
 # The Android app: building, signing, Google Play
 
-The app lives in `android/` (see `android/README.md`; what it does:
-`docs/PHOTOS.md`). GitHub builds it; nothing needs Android Studio.
+The app lives in `android/` (see `android/README.md`). It connects with
+the QR code of the Hub (Phones and devices), shows the whole Hub with every
+app the person has, and backs up photos (`docs/PHOTOS.md`). GitHub builds
+it; nothing needs Android Studio.
 
-- **Every push** to `android/`: tests, build, and the newest app on the
-  pre-release **android-beta** (Releases on GitHub): `alvaos-beta.apk` to
-  install by hand, and, once the upload key is set up, `alvaos.aab` for
-  Google Play.
+- **An AlvaOS release** (the one you make for the NAS, e.g. `beta-v0.2.0`):
+  the app is added to it, next to the ISO and the .deb: `alvaos-android.apk`
+  to install by hand and, once the upload key is set up,
+  `alvaos-android.aab` for Google Play. With Play set up (below) it also
+  goes to Play's internal testing by itself. One release, OS and app.
+- **Every push** to `android/`: tests and build; the APK is kept with the
+  run for a week (Actions › Android app › the run › Artifacts), for testing
+  between releases. No release entry.
 - **Actions › Android app › Run workflow**, with a track (internal, alpha,
-  beta, production): the same, and it goes to Google Play.
+  beta, production): builds and uploads to that track on Google Play.
+  With a release tag in "Add the app to this existing release", the app is
+  added to that release afterwards (for a release made before the app).
 
-The version name is the `VERSION` file (`beta-v0.1.0`); the version code is
-counted up by CI on its own (minutes since 2026), so every build is newer.
+The app has the version of AlvaOS: the release's name, between releases the
+`VERSION` file (`beta-v0.2.0`). The version code Google Play needs is
+counted up by CI on its own (minutes since 2026); nobody needs to see it.
 
 ## Once: the upload key (5 minutes)
 
@@ -48,8 +57,8 @@ can replace it (Play Console › Setup › App signing), so it is not the end.
    | `ALVAOS_KEY_ALIAS` | `upload` |
    | `ALVAOS_KEY_PASSWORD` | the password (the same) |
 
-From the next push on, `alvaos-beta.apk` is signed with this key and
-`alvaos.aab` is there too. A phone with the old debug APK must uninstall it
+From then on every build is signed with this key and the `.aab` is made
+too. A phone with the old debug APK must uninstall it
 once (a different signature); after that every new APK installs over the
 last one and keeps the sign-in.
 
@@ -59,8 +68,8 @@ last one and keeps the sign-in.
 2. **Package name** is `org.alvaos.app` (in `android/app/build.gradle.kts`).
    It can never change after the first upload; change it before that if you
    want another one (e.g. `ch.<yourname>.alvaos`).
-3. Testing › Internal testing › Create new release: upload `alvaos.aab` from
-   the android-beta pre-release **by hand**. Google only accepts uploads
+3. Testing › Internal testing › Create new release: upload `alvaos-android.aab` from
+   the newest AlvaOS release **by hand**. Google only accepts uploads
    through the API after the first one was made in the browser. Accept Play
    App Signing when asked. Add yourself as tester (a list of e-mails) and
    open the link it gives on the phone.
@@ -90,13 +99,15 @@ last one and keeps the sign-in.
    with "Release to testing tracks" (and "Release to production" if wanted)
    for this app.
 3. GitHub secret `PLAY_SERVICE_ACCOUNT_JSON`: the whole JSON file.
-4. Actions › Android app › Run workflow › track `internal` (or another).
-   While the app was never published on Play, tick "As a draft" and press
-   "Roll out" in the Play Console yourself.
+4. From then on every AlvaOS release goes to internal testing by itself;
+   Actions › Android app › Run workflow uploads to any track in between.
+   While the app was never published on Play, use Run workflow with "As a
+   draft" and press "Roll out" in the Play Console yourself.
 
 ## Release checklist
 
 - `VERSION` says the version you want to show.
-- TESTING.md 12b passes with the APK from android-beta.
-- Run workflow › internal; check it on a phone from Play; then promote it in
-  the Play Console (internal › closed › production) or run with that track.
+- TESTING.md 12b passes with the APK of the newest run.
+- Make the AlvaOS release as always: the app is added to it and goes to
+  Play's internal testing. Check it on a phone from Play, then promote it
+  in the Play Console (internal › closed › production).

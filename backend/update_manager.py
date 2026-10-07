@@ -586,8 +586,8 @@ class UpdateManager:
                     error = "GitHub Rate Limit Exceeded"
                 else:
                     resp.raise_for_status()
-                    # Only AlvaOS versions: other pre-releases of the repo (the
-                    # phone app's "android-beta") are not an update for the NAS.
+                    # Only AlvaOS versions: a pre-release with another kind of tag
+                    # (once the phone app's "android-beta") is not an update for the NAS.
                     releases = [r for r in resp.json() if r.get("prerelease") and self.is_system_release(r)]
                     releases.sort(key=lambda r: r.get("published_at") or "", reverse=True)
                     release = releases[0] if releases else {}

@@ -17,8 +17,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <application
+        android:name=".AlvaApp"
         android:label="AlvaOS"
-        android:icon="@drawable/ic_alvaos"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:theme="@style/Theme.AlvaOS"
         android:networkSecurityConfig="@xml/network_security_config"
         android:allowBackup="false">
@@ -31,7 +33,17 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- The QR code of the Hub › Phones and devices, also from the phone's own camera. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="alvaos" android:host="pair" />
+            </intent-filter>
         </activity>
+
+        <!-- Google's QR scanner (Play services): no camera permission for the app itself. -->
+        <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="barcode_ui" />
 
         <!-- WorkManager shows the upload as a notification while it runs. -->
         <service
