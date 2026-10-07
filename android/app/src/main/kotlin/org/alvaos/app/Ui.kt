@@ -68,7 +68,33 @@ class Ui(private val ctx: Context) {
     fun section(parent: LinearLayout, value: String) =
         text(parent, value, M.style.TextAppearance_Material3_LabelLarge, 24, M.attr.colorPrimary)
 
-    fun space(parent: LinearLayout, height: Int) = parent.add(View(ctx).apply { minimumHeight = dp(height) })
+    /** Empty room of a fixed height (a plain View with wrap_content would take all there is). */
+    fun space(parent: LinearLayout, size: Int) =
+        parent.addView(View(ctx), LinearLayout.LayoutParams(match, dp(size)))
+
+    /** A line with an icon: what something does, for the first screen. */
+    fun feature(parent: LinearLayout, icon: Int, head: String, text: String) {
+        val line = row(parent, 18)
+        line.gravity = Gravity.TOP
+        badge(line, icon, 40)
+        val texts = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        line.addView(texts, LinearLayout.LayoutParams(0, wrap, 1f).apply { marginStart = dp(14) })
+        title(texts, head)
+        caption(texts, text, 2)
+    }
+
+    /** A tile of a grid: an icon and a name, tapping it does something. */
+    fun tile(parent: LinearLayout, icon: Int, name: String, sub: String, onClick: () -> Unit): View {
+        val column = card(parent, 0)
+        column.gravity = Gravity.CENTER_HORIZONTAL
+        badge(column, icon, 52)
+        title(column, name, 10).gravity = Gravity.CENTER
+        if (sub.isNotEmpty()) caption(column, sub, 0).gravity = Gravity.CENTER
+        val card = column.parent as View
+        card.isClickable = true
+        card.setOnClickListener { onClick() }
+        return card
+    }
 
     /** A rounded card in the surface colour; returns its column. */
     fun card(parent: LinearLayout, top: Int = 12, tint: Int = M.attr.colorSurfaceContainerHigh): LinearLayout {

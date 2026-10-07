@@ -2,7 +2,10 @@ package org.alvaos.app
 
 import android.content.Context
 import android.content.SharedPreferences
+import org.alvaos.photos.HubApp
 import org.alvaos.photos.HubClient
+import org.alvaos.photos.Me
+import org.alvaos.photos.StoreTile
 import org.alvaos.photos.SyncState
 import org.json.JSONArray
 import org.json.JSONObject
@@ -23,6 +26,33 @@ class Store(context: Context) : SyncState {
     var nasName: String
         get() = prefs.getString("nas_name", "").orEmpty()
         set(v) = prefs.edit().putString("nas_name", v).apply()
+    /** The Hub apps of the person (the app's tabs), as the NAS said last. */
+    var hubApps: List<HubApp>
+        get() = JSONArray(prefs.getString("hub_apps", "[]")).let { a ->
+            List(a.length()) { a.getJSONObject(it) }.map { HubApp(it.optString("id"), it.optString("name"), it.optString("icon")) }
+        }
+        set(v) = prefs.edit().putString("hub_apps", JSONArray(v.map {
+            JSONObject().put("id", it.id).put("name", it.name).put("icon", it.icon)
+        }).toString()).apply()
+    /** The App Store apps with a tile in the Hub (they open in the browser). */
+    var storeApps: List<StoreTile>
+        get() = JSONArray(prefs.getString("store_apps", "[]")).let { a ->
+            List(a.length()) { a.getJSONObject(it) }.map { StoreTile(it.optString("id"), it.optString("name"), it.optInt("port"), it.optString("path", "/")) }
+        }
+        set(v) = prefs.edit().putString("store_apps", JSONArray(v.map {
+            JSONObject().put("id", it.id).put("name", it.name).put("port", it.port).put("path", it.path)
+        }).toString()).apply()
+
+    /** What /api/me said: the apps, the NAS's name, and its internet address for away. */
+    fun remember(me: Me) {
+        hubApps = me.hub.apps
+        storeApps = me.hub.store
+        if (me.nas_name.isNotEmpty()) nasName = me.nas_name
+        if (me.user.isNotEmpty()) user = me.user
+        val away = me.public_url.trimEnd('/')
+        if (away.startsWith("https://") && away !in addresses) addresses = addresses + away
+    }
+
     /** Whether the person set up the photo backup (it is optional). */
     var backupOn: Boolean
         get() = prefs.getBoolean("backup_on", albums.isNotEmpty())

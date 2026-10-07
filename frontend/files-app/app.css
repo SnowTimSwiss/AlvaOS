@@ -373,4 +373,8 @@ body.public { display: flex; flex-direction: column; min-height: 100%; }
 }
 a.btn { text-decoration: none; color: inherit; }
 .devices .pair-steps a { color: var(--accent); }
-.in-app #signout { display: none; }
+.in-app #signout, .in-app [data-signout] { display: none; }
+/* In the AlvaOS app its own tab bar switches the Hub apps: no second bar. */
+.in-app #rail { display: none !important; }
+.in-app .app.with-rail { grid-template-columns: 1fr; padding-bottom: 0; }
+.in-app .app.with-rail ~ .uploads, .in-app .app.with-rail ~ .toasts { bottom: 16px; }

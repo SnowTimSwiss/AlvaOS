@@ -1683,12 +1683,16 @@
         addIcons: (paths) => Object.assign(P, paths),
         me: () => me,
         signOut,
+        // The AlvaOS app has the app bar itself (its tabs) and switches with this.
+        open: (id) => { if (started) openApp(id); else wanted = id; },
         // The person and "Sign out", at the foot of each app's sidebar.
         foot: () => `<div class="side-foot"><div class="me"><span class="avatar">${esc((me?.user || '?').slice(0, 1).toUpperCase())}</span><span>${esc(me?.user || '')}</span></div><button type="button" class="link" data-signout>Sign out</button></div>`,
     };
     document.addEventListener('click', (e) => { if (e.target.closest('[data-signout]')) signOut(); });
 
     // ── Start ──────────────────────────────────────────────────────────────
+    let started = false;
+    let wanted = '';
     async function start() {
         try {
             me = await api('me');
@@ -1706,8 +1710,11 @@
         const q = new URLSearchParams(location.hash.slice(1));
         const has = (id) => hubApps.some((a) => a.id === id);
         // The app in the address (#app=calendar), else the first in the bar.
-        const wantedApp = VIEWS[q.get('app')] && has(q.get('app')) ? q.get('app')
-            : !q.get('share') && VIEWS[(hubApps[0] || {}).id] ? hubApps[0].id : '';
+        started = true;
+        const asked = wanted || q.get('app');
+        if (asked === 'photos' && has('photos')) { showPhotos(); return; }
+        const wantedApp = VIEWS[asked] && has(asked) ? asked
+            : !q.get('share') && asked !== 'files' && VIEWS[(hubApps[0] || {}).id] ? hubApps[0].id : '';
         if (wantedApp) {
             openApp(wantedApp, false);
             return;

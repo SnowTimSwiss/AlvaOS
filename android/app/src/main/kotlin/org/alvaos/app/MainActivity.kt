@@ -40,6 +40,7 @@ import kotlinx.coroutines.withContext
 import org.alvaos.photos.DeviceInfo
 import org.alvaos.photos.HubClient
 import org.alvaos.photos.HubException
+import org.alvaos.photos.Me
 import org.alvaos.photos.PairLink
 import org.alvaos.photos.SyncEngine
 import com.google.android.material.R as M
@@ -57,6 +58,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var nav: BottomNavigationView
     private var hub: HubPage? = null
     private var tab = TAB_HUB
+    private val tabApps = mutableMapOf<Int, String>()   // tab → the Hub app it shows
+    private var appsOpen: String? = null               // a Hub app opened from the Apps tab
+    private var navKey = ""
     private var choosing = false               // the album list is open in the Backup tab
     private var bars = WindowInsetsCompat.CONSUMED
     private var afterDelete: ((List<String>) -> Unit)? = null
@@ -69,6 +73,8 @@ class MainActivity : AppCompatActivity() {
         const val TAB_HUB = 1
         const val TAB_BACKUP = 2
         const val TAB_SETTINGS = 3
+        const val TAB_APPS = 4
+        const val TAB_FIRST_APP = 100
     }
 
     private val askPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
@@ -94,11 +100,11 @@ class MainActivity : AppCompatActivity() {
 
         frame = FrameLayout(this)
         nav = BottomNavigationView(this).apply {
-            menu.add(0, TAB_HUB, 0, "Hub").setIcon(R.drawable.ic_tab_hub)
-            menu.add(0, TAB_BACKUP, 1, "Backup").setIcon(R.drawable.ic_tab_backup)
-            menu.add(0, TAB_SETTINGS, 2, "Settings").setIcon(R.drawable.ic_tab_settings)
-            setOnItemSelectedListener { item -> tab = item.itemId; choosing = false; show(); true }
+            labelVisibilityMode = BottomNavigationView.LABEL_VISIBILITY_LABELED
+            setOnItemSelectedListener { item -> tab = item.itemId; choosing = false; appsOpen = null; show(); true }
+            setOnItemReselectedListener { if (appsOpen != null || choosing) { appsOpen = null; choosing = false; show() } }
         }
+        buildNav()
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(ui.color(M.attr.colorSurface))
@@ -116,10 +122,12 @@ class MainActivity : AppCompatActivity() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 val page = hub
+                val first = nav.menu.getItem(0).itemId
                 when {
                     choosing -> { choosing = false; show() }
-                    tab == TAB_HUB && page != null && page.canGoBack() -> page.goBack()
-                    tab != TAB_HUB && store.signedIn -> nav.selectedItemId = TAB_HUB
+                    showsHub() && page != null && page.canGoBack() -> page.goBack()
+                    appsOpen != null -> { appsOpen = null; show() }
+                    tab != first && store.signedIn -> { tab = first; show() }
                     else -> finish()
                 }
             }
@@ -149,17 +157,22 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         if (!store.signedIn) return
-        if (tab != TAB_HUB) show()
+        if (!showsHub()) show()
         deleteWhatTheNasDeleted()
-        // Signed out on the NAS (Phones and devices › Sign out, or a new password)?
+        // Which apps the person has now, or signed out on the NAS (Phones and devices › Sign out, a new password)?
         lifecycleScope.launch {
-            val out = withContext(Dispatchers.IO) {
-                try { store.pickServer(); !store.hub().signedIn() } catch (e: Exception) { false }
+            val answer: Any? = withContext(Dispatchers.IO) {
+                try { store.pickServer(); store.hub().me() }
+                catch (e: HubException) { if (e.signedOut) "out" else null }
+                catch (e: Exception) { null }
             }
-            if (out) {
-                signedOut("This phone was signed out on the NAS. Connect it again.")
-            } else if (tab == TAB_HUB) {
-                hub?.load()
+            when {
+                answer == "out" -> signedOut("This phone was signed out on the NAS. Connect it again.")
+                answer is Me -> {
+                    store.remember(answer)
+                    if (buildNav()) show() else if (showsHub()) hub?.load()
+                }
+                showsHub() -> hub?.load()
             }
         }
     }
@@ -187,12 +200,50 @@ class MainActivity : AppCompatActivity() {
         }
         nav.visibility = View.VISIBLE
         pad()
-        if (nav.selectedItemId != tab) nav.selectedItemId = tab
+        // Only marks the tab: setting selectedItemId here would call this again and again.
+        nav.menu.findItem(tab)?.isChecked = true
         when (tab) {
-            TAB_HUB -> hubTab()
             TAB_BACKUP -> if (choosing) chooseAlbums() else backupTab()
-            else -> settingsTab()
+            TAB_SETTINGS -> settingsTab()
+            TAB_APPS -> appsOpen?.let { hubTab(it) } ?: appsTab()
+            else -> hubTab(tabApps[tab])
         }
+    }
+
+    private fun showsHub() = tab == TAB_HUB || tab in tabApps || (tab == TAB_APPS && appsOpen != null)
+
+    private fun iconFor(name: String) = when (name) {
+        "folder" -> R.drawable.ic_folder
+        "image" -> R.drawable.ic_photos
+        "calendar" -> R.drawable.ic_calendar
+        "message-circle" -> R.drawable.ic_chat
+        else -> R.drawable.ic_tab_hub
+    }
+
+    /**
+     * One bar at the bottom: the person's Hub apps (Files, Photos, …), Backup and
+     * Settings. With more than three Hub apps, or App Store apps, the rest are
+     * under Apps. Returns whether the bar changed.
+     */
+    private fun buildNav(): Boolean {
+        val apps = store.hubApps
+        val more = apps.size > 3 || store.storeApps.isNotEmpty()
+        val direct = if (more) apps.take(2) else apps
+        val key = direct.joinToString { it.id } + "|" + more
+        if (key == navKey && nav.menu.size() > 0) return false
+        navKey = key
+        tabApps.clear()
+        nav.menu.clear()
+        if (direct.isEmpty()) nav.menu.add(0, TAB_HUB, 0, "Hub").setIcon(R.drawable.ic_tab_hub)
+        direct.forEachIndexed { i, a ->
+            nav.menu.add(0, TAB_FIRST_APP + i, i, a.name).setIcon(iconFor(a.icon))
+            tabApps[TAB_FIRST_APP + i] = a.id
+        }
+        if (more) nav.menu.add(0, TAB_APPS, 10, "Apps").setIcon(R.drawable.ic_tab_hub)
+        nav.menu.add(0, TAB_BACKUP, 11, "Backup").setIcon(R.drawable.ic_tab_backup)
+        nav.menu.add(0, TAB_SETTINGS, 12, "Settings").setIcon(R.drawable.ic_tab_settings)
+        if (nav.menu.findItem(tab) == null) tab = nav.menu.getItem(0).itemId
+        return true
     }
 
     private fun signedOut(message: String) {
@@ -201,6 +252,7 @@ class MainActivity : AppCompatActivity() {
         hub?.destroy()
         hub = null
         tab = TAB_HUB
+        appsOpen = null
         show(message)
     }
 
@@ -227,6 +279,10 @@ class MainActivity : AppCompatActivity() {
         ui.space(page, 12)
         when (mode) {
             Mode.Start -> {
+                ui.feature(page, R.drawable.ic_folder, "Files and photos", "Everything on your NAS, at home and away.")
+                ui.feature(page, R.drawable.ic_tab_backup, "Backup of this phone", "Your pictures go to the NAS by themselves.")
+                ui.feature(page, R.drawable.ic_calendar, "Calendar and chat", "Every app of your Hub, in one place.")
+                ui.space(page, 12)
                 ui.button(page, "Scan the QR code", icon = R.drawable.ic_qr, top = 16) { scan() }
                 ui.caption(page, "On a computer, open the Hub of your NAS and choose Phones and devices › Connect a phone.", 10)
                     .gravity = Gravity.CENTER
@@ -256,6 +312,7 @@ class MainActivity : AppCompatActivity() {
                         val token = HubClient(server).signIn(user, password.text.toString(), code.text.toString().trim(), device())
                         store.server = server; store.addresses = listOf(server); store.user = user; store.token = token
                         store.nasName = Uri.parse(server).host.orEmpty()
+                        try { store.remember(store.hub().me()) } catch (e: Exception) { /* later */ }
                     }
                 }
                 ui.button(page, "Back", Ui.Kind.Text, top = 4) { signIn() }
@@ -288,6 +345,7 @@ class MainActivity : AppCompatActivity() {
             store.token = paired.token
             store.user = paired.user.ifEmpty { link.user }
             store.nasName = paired.nas_name.ifEmpty { link.nas }
+            try { store.remember(store.hub().me()) } catch (e: Exception) { /* the tabs come on the next start */ }
         }
     }
 
@@ -309,6 +367,9 @@ class MainActivity : AppCompatActivity() {
             if (problem.isNotEmpty()) { signIn(problem); return@launch }
             autoDeleted = false
             tab = TAB_HUB
+            appsOpen = null
+            navKey = ""
+            buildNav()
             hub?.destroy(); hub = null
             if (store.backupOn) SyncWorker.schedule(this@MainActivity)
             show()
@@ -326,7 +387,7 @@ class MainActivity : AppCompatActivity() {
 
     // ── The Hub tab ──────────────────────────────────────────────────────
 
-    private fun hubTab() {
+    private fun hubTab(appId: String?) {
         val page = hub ?: HubPage(this, store, ui,
             pickFiles = { intent, callback ->
                 fileCallback?.onReceiveValue(null)
@@ -341,7 +402,37 @@ class MainActivity : AppCompatActivity() {
             }).also { hub = it }
         (page.view.parent as? ViewGroup)?.removeView(page.view)
         frame.addView(page.view)
-        page.load()
+        if (appId != null) page.open(appId) else page.load()
+    }
+
+    // ── The Apps tab (more Hub apps, and the App Store apps) ─────────────
+
+    private fun appsTab() {
+        val page = ui.page(frame)
+        ui.headline(page, "Apps")
+        ui.caption(page, "Everything on ${store.nasName.ifEmpty { "your NAS" }} for you.")
+        val tiles = mutableListOf<Triple<Int, String, () -> Unit>>()
+        val subs = mutableListOf<String>()
+        for (a in store.hubApps.filter { it.id !in tabApps.values }) {
+            tiles += Triple(iconFor(a.icon), a.name) { appsOpen = a.id; show() }
+            subs += "In the Hub"
+        }
+        val host = Uri.parse(store.server).host.orEmpty()
+        for (t in store.storeApps) {
+            tiles += Triple(R.drawable.ic_tab_hub, t.name) {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("http://$host:${t.port}${t.path.ifEmpty { "/" }}")))
+            }
+            subs += "Opens in the browser"
+        }
+        if (tiles.isEmpty()) ui.body(page, "No more apps.", 16)
+        tiles.zip(subs).chunked(2).forEach { pair ->
+            val line = ui.row(page, 12)
+            line.gravity = android.view.Gravity.FILL_VERTICAL
+            pair.forEachIndexed { i, (tile, sub) ->
+                ui.weighted(ui.tile(line, tile.first, tile.second, sub, tile.third), if (i == 0) 0 else 12)
+            }
+            if (pair.size == 1) line.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply { marginStart = ui.dp(12) })
+        }
     }
 
     // ── The Backup tab ───────────────────────────────────────────────────
@@ -543,7 +634,8 @@ class MainActivity : AppCompatActivity() {
         val others = store.addresses.filter { it != store.server }
         if (others.isNotEmpty()) ui.caption(account, "Also tries ${others.joinToString(", ")}", 2)
         ui.button(account, "Phones and devices", Ui.Kind.Text, top = 6) {
-            tab = TAB_HUB
+            tab = tabApps.entries.firstOrNull { it.value == "files" }?.key ?: nav.menu.getItem(0).itemId
+            appsOpen = null
             show()
             frame.postDelayed({ hub?.openDevices() }, 600)
         }

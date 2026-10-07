@@ -51,7 +51,11 @@ class Gallery(private val context: Context) : Library {
     }.toSet()
 
     /** Android 12+: the person allowed this app to delete pictures without asking each time. */
-    fun maySilentlyDelete(): Boolean = android.os.Build.VERSION.SDK_INT >= 31 && MediaStore.canManageMedia(context)
+    fun maySilentlyDelete(): Boolean = try {
+        android.os.Build.VERSION.SDK_INT >= 31 && MediaStore.canManageMedia(context)
+    } catch (e: Exception) {
+        false
+    }
 
     override fun albums(): List<String> =
         (query('i', null) + query('v', null)).groupingBy { it.album }.eachCount()

@@ -45,6 +45,21 @@ data class DoneItem(val id: String, val path: String, val name: String, val size
 @Serializable
 data class DeviceInfo(val name: String, val model: String = "", val platform: String = "android", val app_version: String = "")
 
+/** An app of the Hub (Files, Photos, Calendar, Chat), as /api/me lists it. */
+@Serializable
+data class HubApp(val id: String, val name: String = "", val icon: String = "")
+
+/** An app from the App Store with a tile in the Hub (Jellyfin, Immich, …): its own port. */
+@Serializable
+data class StoreTile(val id: String = "", val name: String = "", val port: Int = 0, val path: String = "/")
+
+@Serializable
+data class HubInfo(val apps: List<HubApp> = emptyList(), val store: List<StoreTile> = emptyList())
+
+/** Who is signed in, on which NAS, with which apps. */
+@Serializable
+data class Me(val user: String = "", val nas_name: String = "", val hub: HubInfo = HubInfo(), val public_url: String = "")
+
 /** A session of the app's own, from a QR code or a password. */
 @Serializable
 data class Paired(val token: String, val user: String = "", val nas_name: String = "", val device: String = "")
@@ -183,6 +198,9 @@ class HubClient(
     } catch (e: Exception) {
         false
     }
+
+    /** Who is signed in and which Hub apps they have; HubException(401) when signed out. */
+    fun me(): Me = json.decodeFromString(send(request("/api/me")))
 
     /** Whether this session still works: false only when the NAS says signed out (401). */
     fun signedIn(): Boolean = http.newCall(request("/api/me").build()).execute().use { it.code != 401 }
