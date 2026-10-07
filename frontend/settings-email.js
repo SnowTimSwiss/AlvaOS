@@ -57,13 +57,15 @@
 
     function dialog() {
         const email = settings?.email || {};
-        const overlay = document.createElement('div');
-        overlay.className = 'modal-overlay';
-        overlay.innerHTML = `
-            <div class="modal-content modal-disclosure-frame" role="dialog" aria-modal="true" aria-labelledby="mail-title">
-                <div class="modal-title"><span id="mail-title">Email notifications</span>
-                    <button type="button" class="modal-close-x" aria-label="Close">&times;</button></div>
-                <form class="modal-body pw-form" novalidate>
+        const dlg = openDialog({
+            title: 'Email notifications',
+            form: true,
+            bodyClass: 'pw-form',
+            actions: `
+                ${email.enabled ? '<button type="button" class="btn-secondary" id="mail-off">Turn off</button>' : ''}
+                <button type="button" class="btn-secondary" id="mail-test">Send test email</button>
+                <button type="submit" class="btn-primary" id="mail-save">Save</button>`,
+            body: `
                     <label class="pw-field">Send messages to
                         <input type="email" id="mail-to" autocomplete="email" placeholder="you@example.com" value="${esc(email.recipient || '')}"></label>
                     <label class="pw-field">Your email provider
@@ -72,7 +74,7 @@
                     <label class="pw-field">Password for sending
                         <input type="password" id="mail-pass" autocomplete="new-password" placeholder="${email.password_set ? 'Saved. Type to replace it.' : ''}">
                         <small>AlvaOS sends from this account to the address above. It is stored on this NAS only.</small></label>
-                    <details class="mail-adv modal-float-details" id="mail-adv">
+                    <details class="mail-adv modal-details" id="mail-adv">
                         <summary>Mail server</summary>
                         <div class="pw-form modal-disclosure-panel">
                             <div class="mail-grid">
@@ -90,18 +92,10 @@
                         </div>
                     </details>
                     <div class="pw-error" id="mail-error" role="alert"></div>
-                    <div class="pw-ok" id="mail-ok" role="status"></div>
-                    <div class="modal-actions">
-                        ${email.enabled ? '<button type="button" class="btn-secondary" id="mail-off">Turn off</button>' : ''}
-                        <button type="button" class="btn-secondary" id="mail-test">Send test email</button>
-                        <button type="submit" class="btn-primary" id="mail-save">Save</button>
-                    </div>
-                </form>
-            </div>`;
-        document.body.appendChild(overlay);
-        const close = () => overlay.remove();
-        overlay.querySelector('.modal-close-x').onclick = close;
-        if (window.attachModalDismiss) window.attachModalDismiss(overlay, close);
+                    <div class="pw-ok" id="mail-ok" role="status"></div>`,
+        });
+        const overlay = dlg.dialog;
+        const close = () => dlg.close();
 
         const provider = overlay.querySelector('#mail-provider');
         const adv = overlay.querySelector('#mail-adv');

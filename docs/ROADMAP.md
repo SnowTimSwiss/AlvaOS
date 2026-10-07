@@ -20,7 +20,7 @@ Fixed right away: adding people and making shared folders (both refused by the p
 - **Assistant:** its page guide now lists the real pages and controls, forbids invented buttons and fields, and explains read-only versus confirmed proposal mode. People and shared folders are available as confirmable proposals.
 - **SSH in Settings › Security:** on/off, port, password sign-in, and Ed25519 admin public keys for root only; the config is checked with `sshd -t` before it is used. A hardware run is still needed (`TESTING.md` 9b).
 - **The assistant in a terminal:** design written in `docs/ADMIN-TERMINAL.md`. It specifies an admin-only `alvaos` shell, session and output limits, and a separate fixed catalog of commands shown in full and run only after confirmation; no free-form root commands.
-- **Dialogs:** the TLS, email, virtual-machine and shared-folder dialogs keep their frame and controls still when details open; details float inside the dialog, so the dialog itself does not need to scroll for them. Still open: move the hand-built dialogs onto one shared component and reduce scrolling in longer forms.
+- **Dialogs:** done: one shared dialog (`openDialog`, see `DESIGN.md`) for the admin pages; title and buttons stay in view, details open in place. Still open: the app install wizard, container logs and terminal in `apps.html` are static modals in the page.
 
 ---
 

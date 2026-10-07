@@ -193,39 +193,36 @@ async function showCreateUserModal() {
     } catch (_e) {
         pools = [];
     }
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay';
-
-    const panel = document.createElement('div');
-    panel.className = 'user-modal-panel';
-
-    panel.innerHTML = `
-        <h3 class="user-modal-title">
-            <span>Add a person</span>
-            <button type="button" class="modal-close-x" id="close-create-user-x" aria-label="Close">&times;</button>
-        </h3>
-        <p class="user-modal-text">They sign in with this name and password when they open a shared folder.</p>
-        <input type="text" id="create-user-name-input" class="user-modal-input" placeholder="Name, e.g. alex" autocomplete="off" />
-        <div id="create-user-name-error" class="user-modal-error" style="display:none;"></div>
-        <input type="password" id="create-user-pass-input" class="user-modal-input" placeholder="Password, at least 8 characters" autocomplete="new-password" />
-        <div id="create-user-pass-error" class="user-modal-error" style="display:none;"></div>
-        ${pools.length ? `
-        <label class="personal-toggle"><input type="checkbox" id="personal-on" checked> A personal folder only they can open</label>
-        <div class="personal-opts" id="personal-opts">
-            <label class="personal-field">On pool<select id="personal-pool" class="user-modal-input"><option value="">Choose a pool...</option>${pools.map((p) => `<option value="${usersEscapeHtml(p.id)}">${usersEscapeHtml(p.name || p.id)}${p.free_bytes ? ` (${usersGb(p.free_bytes)} free)` : ''}</option>`).join('')}</select></label>
-            <label class="personal-field">Space limit<select id="personal-limit" class="user-modal-input">${PERSONAL_LIMITS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
-            <label class="personal-field" id="personal-other-field" hidden>Limit in GB<input type="number" id="personal-other" class="user-modal-input" min="1" step="1" placeholder="e.g. 200"></label>
-            <div id="personal-error" class="user-modal-error" style="display:none;"></div>
-            <p class="user-modal-hint">The folder is called like the person. You can change the limit later under Storage › Shares.</p>
-        </div>` : ''}
-        <div class="user-modal-actions">
-            <button id="cancel-create-btn" class="btn-secondary">Cancel</button>
-            <button id="confirm-create-btn" class="btn-primary">Add</button>
-        </div>
-    `;
-
-    modal.appendChild(panel);
-    document.body.appendChild(modal);
+    const dlg = openDialog({
+        title: 'Add a person',
+        form: true,
+        body: `
+            <p class="user-modal-text">They sign in with this name and password when they open a shared folder.</p>
+            <div class="modal-row">
+                <label class="personal-field">Name
+                    <input type="text" id="create-user-name-input" class="user-modal-input" placeholder="e.g. alex" autocomplete="off" />
+                    <span id="create-user-name-error" class="user-modal-error" style="display:none;"></span></label>
+                <label class="personal-field">Password
+                    <input type="password" id="create-user-pass-input" class="user-modal-input" placeholder="At least 8 characters" autocomplete="new-password" />
+                    <span id="create-user-pass-error" class="user-modal-error" style="display:none;"></span></label>
+            </div>
+            ${pools.length ? `
+            <label class="personal-toggle"><input type="checkbox" id="personal-on" checked> A personal folder only they can open</label>
+            <div class="personal-opts" id="personal-opts">
+                <div class="modal-row">
+                    <label class="personal-field">On pool<select id="personal-pool" class="user-modal-input"><option value="">Choose a pool...</option>${pools.map((p) => `<option value="${usersEscapeHtml(p.id)}">${usersEscapeHtml(p.name || p.id)}${p.free_bytes ? ` (${usersGb(p.free_bytes)} free)` : ''}</option>`).join('')}</select></label>
+                    <label class="personal-field">Space limit<select id="personal-limit" class="user-modal-input">${PERSONAL_LIMITS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
+                </div>
+                <label class="personal-field" id="personal-other-field" hidden>Limit in GB<input type="number" id="personal-other" class="user-modal-input" min="1" step="1" placeholder="e.g. 200"></label>
+                <div id="personal-error" class="user-modal-error" style="display:none;"></div>
+                <p class="user-modal-hint">The folder is called like the person. You can change the limit later under Storage › Shares.</p>
+            </div>` : ''}`,
+        actions: `
+            <button type="button" id="cancel-create-btn" class="btn-secondary" data-close>Cancel</button>
+            <button type="submit" id="confirm-create-btn" class="btn-primary">Add</button>`,
+    });
+    const panel = dlg.dialog;
+    dlg.form.addEventListener('submit', (event) => event.preventDefault());
 
     const cancelBtn = panel.querySelector('#cancel-create-btn');
     const confirmBtn = panel.querySelector('#confirm-create-btn');
@@ -252,11 +249,6 @@ async function showCreateUserModal() {
         const limit = limitSelect.value === 'other' ? panel.querySelector('#personal-other').value : limitSelect.value;
         return { pool_id: pool, limit_gb: limit ? Number(limit) : null };
     };
-
-    const close = () => modal.remove();
-    if (cancelBtn) cancelBtn.addEventListener('click', close);
-    if (closeXBtn) closeXBtn.addEventListener('click', close);
-    attachModalDismiss(modal, close);
 
     if (confirmBtn) {
         confirmBtn.addEventListener('click', async () => {
@@ -296,9 +288,7 @@ async function showCreateUserModal() {
             confirmBtn.disabled = false;
             confirmBtn.textContent = confirmBtn.dataset.defaultLabel;
 
-            if (created) {
-                modal.remove();
-            }
+            if (created) dlg.close();
         });
     }
 }
@@ -346,28 +336,21 @@ async function deleteUser(username, row, access = []) {
 }
 
 function showPasswordResetModal(username, row) {
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay';
-
-    const panel = document.createElement('div');
-    panel.className = 'user-modal-panel';
-
-    panel.innerHTML = `
-        <h3 class="user-modal-title">
-            <span>Change password</span>
-            <button type="button" class="modal-close-x" id="close-reset-pass-x" aria-label="Close">&times;</button>
-        </h3>
-        <p class="user-modal-text">New password for <strong>${usersEscapeHtml(username)}</strong>. Their devices ask for it the next time they open a shared folder.</p>
-        <input type="password" id="reset-pass-input" class="user-modal-input" placeholder="Minimum 8 characters" />
-        <div id="reset-pass-error" class="user-modal-error" style="display:none;"></div>
-        <div class="user-modal-actions">
-            <button id="cancel-reset-btn" class="btn-secondary">Cancel</button>
-            <button id="confirm-reset-btn" class="btn-primary">Update</button>
-        </div>
-    `;
-
-    modal.appendChild(panel);
-    document.body.appendChild(modal);
+    const dlg = openDialog({
+        title: 'Change password',
+        size: 'narrow',
+        form: true,
+        body: `
+            <p class="user-modal-text">New password for <strong>${usersEscapeHtml(username)}</strong>. Their devices ask for it the next time they open a shared folder.</p>
+            <label class="personal-field">New password
+                <input type="password" id="reset-pass-input" class="user-modal-input" placeholder="At least 8 characters" autocomplete="new-password" /></label>
+            <div id="reset-pass-error" class="user-modal-error" style="display:none;"></div>`,
+        actions: `
+            <button type="button" id="cancel-reset-btn" class="btn-secondary" data-close>Cancel</button>
+            <button type="submit" id="confirm-reset-btn" class="btn-primary">Change password</button>`,
+    });
+    const panel = dlg.dialog;
+    dlg.form.addEventListener('submit', (event) => event.preventDefault());
 
     const cancelBtn = panel.querySelector('#cancel-reset-btn');
     const confirmBtn = panel.querySelector('#confirm-reset-btn');
@@ -375,12 +358,6 @@ function showPasswordResetModal(username, row) {
     const passwordInput = panel.querySelector('#reset-pass-input');
     const passError = panel.querySelector('#reset-pass-error');
 
-    if (passwordInput) passwordInput.focus();
-
-    const close = () => modal.remove();
-    if (cancelBtn) cancelBtn.addEventListener('click', close);
-    if (closeXBtn) closeXBtn.addEventListener('click', close);
-    attachModalDismiss(modal, close);
 
     if (confirmBtn) {
         confirmBtn.addEventListener('click', async () => {
@@ -400,9 +377,7 @@ function showPasswordResetModal(username, row) {
             confirmBtn.disabled = false;
             confirmBtn.textContent = confirmBtn.dataset.defaultLabel;
 
-            if (updated) {
-                modal.remove();
-            }
+            if (updated) dlg.close();
         });
     }
 }
