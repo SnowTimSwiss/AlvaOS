@@ -73,6 +73,8 @@ storage healthy, one shared folder.
    `anna-photos` with that limit. Choose a pool for thumbnails: they are
    made in `.alvaos-hub/thumbs` on it.
 4. A file › Previous versions (needs a restore point, see step 6).
+   Open a .txt file › Edit, change it, Save (or Ctrl+S): it is changed over
+   SMB too, and the old one is in the trash.
 5. Share link: read-only, then a "drop box" with a limit; open it in a
    private window and upload into the drop box.
 6. On a phone: open it, "Add to home screen" (needs HTTPS, step 9).

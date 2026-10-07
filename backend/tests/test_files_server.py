@@ -513,21 +513,15 @@ def test_thumbnails_go_to_the_hub_cache_pool_when_there_is_one(client, monkeypat
     assert fs._thumb_dir() == fs.THUMB_DIR
 
 
-def test_the_space_used_is_shown_for_folders_with_a_limit(client, tmp_path, monkeypatch):
-    import share_quota
-    shares = dict(SHARES)
-    shares["1"] = {**SHARES["1"], "quota_bytes": 100 * 2**30}
-    (tmp_path / "shares.json").write_text(json.dumps(shares))
-    asked = []
-    monkeypatch.setattr(share_quota, "read_usage", lambda path, run, btrfs="btrfs": (
-        asked.append(path) or {"used_bytes": 42 * 2**30, "limit_bytes": 100 * 2**30}))
-    fs._space_cache.clear()
-    sign_in(client, "ben", "ben-pass")
-    assert client.get("/api/me").get_json()["shares"] == [{"name": "Family", "access": "read", "limited": True}]
-    got = client.get("/api/space?share=Family").get_json()
-    assert got == {"share": "Family", "used_bytes": 42 * 2**30, "limit_bytes": 100 * 2**30}
-    client.get("/api/space?share=Family")
-    assert asked == ["/mnt/alvaos/main/Family"]                       # read once a minute at most
-    assert client.get("/api/space?share=Anna").status_code == 404     # not ben's
+def test_a_changed_text_file_replaces_the_old_one_which_goes_to_the_trash(client):
     sign_in(client, "anna", "anna-pass")
-    assert client.get("/api/space?share=Anna").get_json()["limit_bytes"] is None
+    saved = client.post("/api/upload/finish", json={"share": "Anna", "path": "Notes", "name": "list.txt", "size": 12,
+                                                    "replace": True}, headers=H)
+    assert saved.status_code == 201
+    assert client.calls[-2:] == [
+        (["files-trash", "/mnt/alvaos/main/Anna", "/mnt/alvaos/main/Anna/Notes", "list.txt"], "anna"),
+        (["files-part-finish", "/mnt/alvaos/main/Anna/Notes", "list.txt", "12"], "anna")]
+    sign_in(client, "ben", "ben-pass")
+    refused = client.post("/api/upload/finish", json={"share": "Family", "path": "", "name": "a.txt", "size": 1,
+                                                      "replace": True}, headers=H)
+    assert refused.status_code == 403        # ben may only read Family

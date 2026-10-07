@@ -15,6 +15,16 @@ How to add an entry:
 
 ---
 
+## 2026-10-06 · Files: edit text files in the browser
+
+- A text file opened in Files (.txt, .md, .csv, .json, .log, ... up to 1 MB)
+  has "Edit" for people who may change the folder: the text becomes an
+  editor, "Save" or Ctrl+S writes it. Closing with changes asks first.
+- Saving uses the resumable upload; `upload/finish` with `replace: true`
+  first moves the old file to the share's trash (as the person), so an
+  earlier text can always come back. No new privileged operation.
+- Checked in Chromium at desktop and phone width with faked answers.
+
 ## 2026-10-06 · Files: "42 of 100 GB used"
 
 - When the open shared folder has a space limit (personal folders, app

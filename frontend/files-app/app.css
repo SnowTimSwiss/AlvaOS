@@ -172,6 +172,8 @@ svg { display: block; }
 .viewer-body img, .viewer-body video { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; }
 .viewer-body audio { width: min(560px, 100%); }
 .viewer-body pre { width: min(920px, 100%); max-height: 100%; overflow: auto; margin: 0; padding: 18px; background: var(--panel); color: var(--text); border-radius: 10px; white-space: pre-wrap; word-break: break-word; font-size: 0.86rem; }
+.viewer-body textarea { width: min(920px, 100%); height: 100%; resize: none; margin: 0; padding: 18px; background: var(--panel); color: var(--text); border: 2px solid var(--accent); border-radius: 10px; font: 0.9rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; outline: none; }
+#viewer-save { background: var(--accent); color: var(--accent-text); }
 .viewer-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 46px; height: 46px; border-radius: 50%; border: none; background: rgba(255,255,255,.12); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 .viewer-nav:hover { background: rgba(255,255,255,.22); }
 .viewer-nav.prev { left: 14px; } .viewer-nav.next { right: 14px; }
