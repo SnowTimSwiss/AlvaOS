@@ -32,6 +32,11 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(fs, "LINKS_FILE", str(tmp_path / "links.json"))
     monkeypatch.setattr(fs, "SECRET_FILE", str(tmp_path / "secret"))
     fs._attempts.clear()
+    # Photo dates: kept in the test's folder, looked up at once, nothing read unless a test says so.
+    import photo_dates
+    monkeypatch.setattr(fs, "_photo_dates", photo_dates.DateCache(lambda: str(tmp_path)))
+    monkeypatch.setattr(fs, "_in_background", lambda work: work())
+    monkeypatch.setattr(files_manager, "open_stream", lambda path, part=None, user=None: (None, "not in tests"))
     calls = []
     monkeypatch.setattr(files_manager, "run_helper",
                         lambda args, timeout=600, user=None: (calls.append((args, user)) or {}, ""))
@@ -388,6 +393,24 @@ def test_photos_view_reads_one_share_as_the_person(client, monkeypatch):
     assert seen == [(["files-media", "/mnt/alvaos/main/Family"], "ben")]
     assert data["results"][0]["folder"] == "2024" and data["results"][0]["share"] == "Family"
     assert client.get("/api/media?share=Anna").status_code == 404
+
+
+def test_photos_learn_the_date_a_photo_was_taken(client, monkeypatch, tmp_path):
+    import photo_dates
+    from test_photo_dates import jpeg
+    monkeypatch.setattr(files_manager, "run_helper", lambda args, timeout=600, user=None: (
+        {"results": [{"name": "a.jpg", "folder": "2024", "type": "file", "size_bytes": 9,
+                      "modified_at": "2026-10-01T10:00:00+02:00"}], "complete": True}, ""))
+    reads = []
+    monkeypatch.setattr(files_manager, "open_stream", lambda path, part=None, user=None: (
+        reads.append((path, part, user)) or iter([jpeg("2018:05:01 09:30:00")]), ""))
+    sign_in(client, "ben", "ben-pass")
+    first = client.get("/api/media?share=Family").get_json()
+    assert "taken_at" not in first["results"][0] and first["dates_pending"] == 1
+    assert reads == [("/mnt/alvaos/main/Family/2024/a.jpg", (0, photo_dates.HEAD_BYTES), "ben")]
+    second = client.get("/api/media?share=Family").get_json()
+    assert second["results"][0]["taken_at"] == "2018-05-01T09:30:00" and second["dates_pending"] == 0
+    assert len(reads) == 1
 
 
 def test_upload_finish_passes_the_files_own_date(client):

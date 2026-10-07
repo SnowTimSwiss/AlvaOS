@@ -156,7 +156,10 @@ def test_changing_needs_a_stopped_machine_and_deleting_removes_everything(box):
     changed, error = box.manager.update(vm["id"], {"cpus": 2, "autostart": True, "iso": str(box.store / "ISOs" / "a.iso")})
     assert error == "" and changed["cpus"] == 2 and changed["iso_name"] == "a.iso"
     assert any(c[1:2] == ["enable"] for c in box.ran)
-    assert box.manager.update(vm["id"], {"disk_gb": 5})[0]["disk_gb"] == 80      # the disk is not changed here
+    assert box.manager.update(vm["id"], {"disk_gb": 5}) == (None, "A disk can only grow. It has 80 GB.")
+    assert "grow it by less" in box.manager.update(vm["id"], {"disk_gb": 2000})[1]     # 500 GB free
+    grown, error = box.manager.update(vm["id"], {"disk_gb": 120})
+    assert error == "" and grown["disk_gb"] == 120 and box.helped[-1] == ["vm-grow", vm["id"]]
     box.units[vm["id"]] = "active"
     assert "Shut it down" in box.manager.update(vm["id"], {"cpus": 1})[1]
     assert box.manager.delete(vm["id"]) == (False, "Shut it down first.")
@@ -164,6 +167,15 @@ def test_changing_needs_a_stopped_machine_and_deleting_removes_everything(box):
     ok, message = box.manager.delete(vm["id"])
     assert ok and "deleted" in message and ["vm-delete", vm["id"]] in box.helped
     assert list(box.configs.glob("*.json")) == [] and box.manager.status()["vms"] == []
+
+
+def test_a_disk_that_could_not_grow_keeps_its_old_size(box):
+    box.set_up()
+    vm, _ = box.manager.create(NEW)
+    box.help = lambda args, timeout=300: (None, "The disk could not grow: no space") if args[0] == "vm-grow" else ({}, "")
+    box.manager.helper = box.help
+    assert box.manager.update(vm["id"], {"disk_gb": 100}) == (None, "The disk could not grow: no space")
+    assert box.manager.status()["vms"][0]["disk_gb"] == 80
 
 
 def test_setup_makes_the_folder_then_installs_in_the_background(box, monkeypatch):

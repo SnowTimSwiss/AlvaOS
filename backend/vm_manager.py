@@ -305,14 +305,16 @@ class VmManager:
         return self._describe(cfg), ''
 
     def update(self, vm_id: str, data: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], str]:
-        """Change a stopped machine: name, cores, memory, installer image, ports, start with the NAS."""
+        """Change a stopped machine: name, cores, memory, disk size (only larger),
+        installer image, ports, start with the NAS."""
         cfg = self._find(vm_id)
         if not cfg:
             return None, 'That virtual machine is not there.'
         if STATES.get(self.unit_state(vm_id), 'stopped') in ('running', 'starting', 'stopping'):
             return None, 'Shut it down first, then change it.'
         merged: Dict[str, Any] = dict(cfg)
-        merged.update({k: data[k] for k in ('name', 'cpus', 'memory_mb', 'iso', 'ports', 'autostart') if k in data})
+        merged.update({k: data[k] for k in ('name', 'cpus', 'memory_mb', 'disk_gb', 'iso', 'ports', 'autostart')
+                       if k in data})
         try:
             new = vm_ops.check_config(merged, self.root, self.store())
         except vm_ops.VmError as e:
@@ -324,7 +326,21 @@ class VmManager:
             return None, 'That is more memory than this NAS can give: it needs some for itself.'
         if any(c['id'] != vm_id and c['name'].lower() == new['name'].lower() for c in self._read_configs()):
             return None, f'There is a virtual machine called "{new["name"]}" already.'
+        if new['disk_gb'] < cfg['disk_gb']:
+            return None, f'A disk can only grow. It has {cfg["disk_gb"]} GB.'
+        if new['disk_gb'] > cfg['disk_gb']:
+            try:
+                free_gb = self.free_bytes(self.store()) / 2**30
+                if new['disk_gb'] - cfg['disk_gb'] > free_gb:
+                    return None, f'The pool has {free_gb:.0f} GB free: grow it by less, or free some space.'
+            except OSError:
+                pass
         self._write_config(new)
+        if new['disk_gb'] > cfg['disk_gb']:
+            _result, error = self.helper(['vm-grow', vm_id], 300)
+            if error:
+                self._write_config(cfg)
+                return None, error
         if new['autostart'] != cfg['autostart']:
             self.run([CMD['SYSTEMCTL'], 'enable' if new['autostart'] else 'disable', _unit(vm_id)], timeout=30)
         return self._describe(new), ''

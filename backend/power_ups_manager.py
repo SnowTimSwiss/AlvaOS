@@ -37,6 +37,8 @@ class PowerUpsManager:
             "timestamp": "",
         }
         self._last_shutdown_ts = 0.0
+        # Other checks that run with this one (a UPS on USB: ups_nut.py).
+        self.hooks = []
 
     def _utc_now_iso(self):
         return datetime.now(timezone.utc).isoformat()
@@ -312,6 +314,11 @@ class PowerUpsManager:
                 self.run_monitor_check()
             except Exception:
                 pass
+            for hook in list(self.hooks):
+                try:
+                    hook()
+                except Exception:
+                    pass
 
             interval = self.get_settings().get("monitor_interval_seconds", 30)
             try:

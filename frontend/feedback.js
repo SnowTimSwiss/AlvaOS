@@ -88,26 +88,16 @@
         window.location.href = url;
     }
 
-    function closeModal() {
-        document.getElementById('feedback-overlay')?.remove();
-    }
+    let feedbackDialog = null;
 
     function openModal() {
-        if (document.getElementById('feedback-overlay')) return;
-
-        const overlay = document.createElement('div');
-        overlay.id = 'feedback-overlay';
-        overlay.className = 'modal-overlay feedback-overlay';
-        overlay.innerHTML = `
-            <div class="feedback-modal" role="dialog" aria-modal="true" aria-labelledby="feedback-title">
-                <div class="feedback-header">
-                    <h2 id="feedback-title">Send Feedback</h2>
-                    <button id="feedback-close-btn" class="btn-secondary feedback-close-btn" aria-label="Close">
-                        ${window.alvaIcon ? window.alvaIcon('x', '', 'aria-hidden="true"') : 'x'}
-                    </button>
-                </div>
+        if (feedbackDialog) return;
+        feedbackDialog = openDialog({
+            title: 'Send feedback',
+            className: 'feedback-modal',
+            onClose: () => { feedbackDialog = null; },
+            body: `
                 <p class="feedback-sub">Share bugs, ideas, or UX pain points for AlvaOS.</p>
-
                 <div class="setting-group">
                     <label class="setting-label" for="feedback-category">Category</label>
                     <select id="feedback-category">
@@ -118,31 +108,20 @@
                         <option value="feature">Feature Request</option>
                     </select>
                 </div>
-
                 <div class="setting-group">
                     <label class="setting-label" for="feedback-message">Message</label>
                     <textarea id="feedback-message" rows="6" placeholder="What happened, what you expected, and steps to reproduce (if bug)."></textarea>
                 </div>
-
                 <div class="setting-group">
                     <label class="setting-label" for="feedback-contact">Contact (optional)</label>
                     <input id="feedback-contact" type="text" placeholder="Email or handle">
                 </div>
-
-                <div class="feedback-actions">
-                    <button id="feedback-copy-btn" class="btn-secondary">Copy Feedback</button>
-                    <button id="feedback-email-btn" class="btn-primary">Send via Email</button>
-                </div>
-                <button id="feedback-github-link" class="feedback-github-link" type="button">Prefer GitHub? Open an issue instead</button>
-            </div>
-        `;
-        document.body.appendChild(overlay);
-        if (window.renderAlvaIcons) window.renderAlvaIcons(overlay);
-
-        overlay.querySelector('#feedback-close-btn')?.addEventListener('click', closeModal);
-        overlay.addEventListener('click', (event) => {
-            if (event.target?.id === 'feedback-overlay') closeModal();
+                <button id="feedback-github-link" class="feedback-github-link" type="button">Prefer GitHub? Open an issue instead</button>`,
+            actions: `
+                <button type="button" id="feedback-copy-btn" class="btn-secondary">Copy feedback</button>
+                <button type="button" id="feedback-email-btn" class="btn-primary">Send by email</button>`,
         });
+        const overlay = feedbackDialog.dialog;
 
         overlay.querySelector('#feedback-copy-btn')?.addEventListener('click', async () => {
             const payload = buildPayload();

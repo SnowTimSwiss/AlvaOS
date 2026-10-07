@@ -41,6 +41,7 @@
             <button type="button" class="side-item" id="links-nav"><span class="ic" data-icon="link"></span><span>Shared links</span></button>
             <button type="button" class="side-item" id="trash-nav"><span class="ic" data-icon="trash"></span><span>Trash</span></button>
             <button type="button" class="side-item" id="connect-nav"><span class="ic" data-icon="monitor"></span><span>Connect a computer</span></button>
+            <div class="space" id="space" hidden></div>
             <div class="side-foot">
                 <div class="me"><span class="avatar" id="me-avatar"></span><span id="me-name"></span></div>
                 <button type="button" class="link" id="signout">Sign out</button>
@@ -60,6 +61,18 @@
                 <div class="bar-right">
                     <button type="button" class="icon-btn only-phone" id="search-btn" aria-label="Search" title="Search"><span data-icon="search"></span></button>
                     <label class="search" id="search-box"><span data-icon="search"></span><input type="search" id="search" placeholder="Search" aria-label="Search in this folder and its subfolders" enterkeyhint="search"></label>
+                    <div class="new-wrap">
+                        <button type="button" class="icon-btn" id="sort-btn" aria-label="Sort" title="Sort" aria-haspopup="menu" aria-expanded="false"><span data-icon="sort"></span></button>
+                        <div class="menu" id="sort-menu" hidden role="menu" aria-label="Sort">
+                            <button type="button" role="menuitemradio" data-sort="name:asc">Name A–Z</button>
+                            <button type="button" role="menuitemradio" data-sort="name:desc">Name Z–A</button>
+                            <button type="button" role="menuitemradio" data-sort="modified:desc">Newest first</button>
+                            <button type="button" role="menuitemradio" data-sort="modified:asc">Oldest first</button>
+                            <button type="button" role="menuitemradio" data-sort="size:desc">Largest first</button>
+                            <button type="button" role="menuitemradio" data-sort="size:asc">Smallest first</button>
+                            <button type="button" role="menuitemradio" data-sort="type:asc">Type</button>
+                        </div>
+                    </div>
                     <div class="seg" role="group" aria-label="View">
                         <button type="button" class="icon-btn" id="view-grid" aria-label="Grid" title="Grid"><span data-icon="grid"></span></button>
                         <button type="button" class="icon-btn" id="view-list" aria-label="List" title="List"><span data-icon="list"></span></button>

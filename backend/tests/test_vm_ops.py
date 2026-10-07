@@ -187,6 +187,29 @@ def test_deleting_removes_the_folder_but_not_while_it_runs(pool):
         vm.delete("../x", state, str(root))
 
 
+def test_a_disk_grows_to_its_description_but_never_shrinks(pool, monkeypatch):
+    root, store, state, configs, _ = pool
+    (store / "0a1b2c3d").mkdir()
+    (store / "0a1b2c3d" / "disk.qcow2").write_text("x")
+    ran = []
+    import subprocess
+    monkeypatch.setattr(vm.subprocess, "run", lambda cmd, **kw: ran.append(cmd) or subprocess.CompletedProcess(cmd, 0, "", ""))
+    with pytest.raises(vm.VmError, match="Shut"):
+        vm.grow("0a1b2c3d", state, configs, str(root), is_active=lambda i: True, size_of=lambda p: 40 * 2**30)
+    assert vm.grow("0a1b2c3d", state, configs, str(root), is_active=lambda i: False, size_of=lambda p: 40 * 2**30) \
+        == {"disk_gb": 80}
+    disk = str(store / "0a1b2c3d" / "disk.qcow2")
+    assert ran == [[vm.QEMU_IMG, "resize", "-f", "qcow2", disk, str(80 * 2**30)]]
+    vm.grow("0a1b2c3d", state, configs, str(root), is_active=lambda i: False, size_of=lambda p: 80 * 2**30)
+    assert len(ran) == 1                                               # already that size
+    with pytest.raises(vm.VmError, match="only grow"):
+        vm.grow("0a1b2c3d", state, configs, str(root), is_active=lambda i: False, size_of=lambda p: 90 * 2**30)
+    (store / "0a1b2c3d" / "disk.qcow2").unlink()
+    (store / "0a1b2c3d" / "disk.qcow2").symlink_to("/etc/passwd")
+    with pytest.raises(vm.VmError, match="not there"):
+        vm.grow("0a1b2c3d", state, configs, str(root), is_active=lambda i: False, size_of=lambda p: 1)
+
+
 def test_installer_images_are_found_in_the_isos_folder_only(pool):
     root, store, state, _, _ = pool
     (store / "ISOs" / "linux").mkdir(parents=True)

@@ -70,6 +70,11 @@ CONFIG_FILES = {
     '/etc/ssh/sshd_config.d/00-alvaos-security.conf',
     '/etc/ssh/alvaos-authorized-keys-root',
     '/etc/apt/sources.list',
+    # A UPS on USB (backend/ups_nut.py)
+    '/etc/nut/nut.conf',
+    '/etc/nut/ups.conf',
+    '/etc/nut/upsd.users',
+    '/etc/nut/upsmon.conf',
 }
 # The admin key file of the first SSH settings (2026-10-05) applied to every
 # account; it is only read now, to carry its keys over.
@@ -487,6 +492,63 @@ def check_apt_sources(content: bytes, current: bytes = b'') -> None:
             _fail(f'Only official Debian apt sources are allowed: {line!r}')
 
 
+# NUT (backend/ups_nut.py). upsmon runs SHUTDOWNCMD and NOTIFYCMD as root and
+# upsd.users can grant commands on the UPS, so every line must be one AlvaOS
+# writes itself: the shutdown command is fixed, there is no NOTIFYCMD.
+_NUT_NAME = r'[a-z0-9][a-z0-9_-]{0,30}'
+_NUT_PASSWORD = r'[A-Za-z0-9]{16,64}'
+
+
+def _nut_lines(content: bytes):
+    for raw in content.decode('utf-8', 'strict').splitlines():
+        line = raw.strip()
+        if line and not line.startswith('#'):
+            yield line
+
+
+def check_nut_conf(content: bytes, current: bytes = b'') -> None:
+    for line in _nut_lines(content):
+        if line not in ('MODE=standalone', 'MODE=none'):
+            _fail(f'nut.conf line not allowed: {line!r}')
+
+
+def check_nut_ups_conf(content: bytes, current: bytes = b'') -> None:
+    sections = 0
+    for line in _nut_lines(content):
+        if re.fullmatch(r'\[' + _NUT_NAME + r'\]', line):
+            sections += 1
+            continue
+        key, sep, value = (part.strip() for part in line.partition('='))
+        ok = sep and (
+            (key == 'maxretry' and re.fullmatch(r'\d{1,2}', value))
+            or (sections and key == 'driver' and value in ('usbhid-ups', 'nutdrv_qx', 'blazer_usb'))
+            or (sections and key == 'port' and value == 'auto')
+            or (sections and key in ('vendorid', 'productid') and re.fullmatch(r'[0-9a-f]{4}', value))
+            or (sections and key == 'desc' and re.fullmatch(r'"[A-Za-z0-9 ._()-]{0,60}"', value))
+            or (sections and key == 'pollinterval' and re.fullmatch(r'\d{1,3}', value)))
+        if not ok:
+            _fail(f'ups.conf line not allowed: {line!r}')
+    if sections > 1:
+        _fail('ups.conf: only one UPS')
+
+
+def check_nut_users(content: bytes, current: bytes = b'') -> None:
+    for line in _nut_lines(content):
+        if not (re.fullmatch(r'\[' + _NUT_NAME + r'\]', line)
+                or re.fullmatch(r'password\s*=\s*' + _NUT_PASSWORD, line)
+                or line == 'upsmon primary'):
+            _fail(f'upsd.users line not allowed: {line!r}')
+
+
+def check_nut_upsmon(content: bytes, current: bytes = b'') -> None:
+    for line in _nut_lines(content):
+        if not (re.fullmatch(r'MONITOR ' + _NUT_NAME + r'@localhost 1 ' + _NUT_NAME + ' ' + _NUT_PASSWORD
+                             + ' primary', line)
+                or re.fullmatch(r'(MINSUPPLIES 1|FINALDELAY \d{1,2}|POWERDOWNFLAG /etc/killpower)', line)
+                or line == 'SHUTDOWNCMD "/sbin/shutdown -h +0"'):
+            _fail(f'upsmon.conf line not allowed: {line!r}')
+
+
 CONFIG_CHECKS = {
     '/etc/exports': check_exports,
     '/etc/samba/smb.conf': check_smb_conf,
@@ -494,6 +556,10 @@ CONFIG_CHECKS = {
     '/etc/ssh/sshd_config.d/00-alvaos-security.conf': check_sshd_dropin,
     '/etc/ssh/alvaos-authorized-keys-root': check_admin_ssh_keys,
     '/etc/apt/sources.list': check_apt_sources,
+    '/etc/nut/nut.conf': check_nut_conf,
+    '/etc/nut/ups.conf': check_nut_ups_conf,
+    '/etc/nut/upsd.users': check_nut_users,
+    '/etc/nut/upsmon.conf': check_nut_upsmon,
 }
 
 
@@ -717,6 +783,11 @@ _SYSTEMCTL_ALLOWED = {
     # AlvaOS Files, turned on and off under Apps.
     ('enable', '--now', 'alvaos-files.service'), ('disable', '--now', 'alvaos-files.service'),
     ('restart', 'alvaos-files.service'), ('is-enabled', 'alvaos-files.service'),
+    # A UPS on USB (ups_nut.py)
+    ('restart', 'nut-driver-enumerator.service'),
+    ('enable', '--now', 'nut-server.service'), ('enable', '--now', 'nut-monitor.service'),
+    ('restart', 'nut-server.service'), ('restart', 'nut-monitor.service'),
+    ('disable', '--now', 'nut-server.service'), ('disable', '--now', 'nut-monitor.service'),
 }
 
 
@@ -787,6 +858,13 @@ def _rule_dpkg(sys_: System, args):
     # The package is copied to the staging dir and, if it is an AlvaOS package,
     # its signature is verified there (see alvaos-priv).
     return Plan(argv=['-i', resolved], stage={1: 'deb'})
+
+
+def _rule_upsmon(sys_: System, args):
+    # Only "forced shutdown": upsmon shuts the NAS down with its fixed
+    # SHUTDOWNCMD and tells the UPS to switch off and on again.
+    _expect(args, '-c', 'fsd')
+    return Plan(argv=['-c', 'fsd'])
 
 
 def _rule_sshd(sys_: System, args):
@@ -1309,6 +1387,7 @@ RULES = {
     'apt': _rule_apt,
     'dpkg': _rule_dpkg,
     'sshd': _rule_sshd,
+    'upsmon': _rule_upsmon,
     'smartctl': _rule_smartctl,
     'hdparm': _rule_hdparm,
     'lsblk': _rule_readonly_flags(r'^(-[a-zA-Z]{1,6}|[A-Z,-]{1,120})$'),

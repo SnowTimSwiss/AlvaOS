@@ -1,4 +1,4 @@
-# Work log
+Der NVIDIA-Test läuft wieder. Fehlen die Kernel-Header für den laufenden Kernel, erscheint eine klare Meldung statt endloser Fehlschläge.# Work log
 
 What has been done to AlvaOS, newest first. One short entry per work session
 or pull request: what changed, why, and anything the next person should know.
@@ -25,6 +25,120 @@ How to add an entry:
   earlier text can always come back. No new privileged operation.
 - Checked in Chromium at desktop and phone width with faked answers.
 
+## 2026-10-06 · Files: "42 of 100 GB used"
+
+- When the open shared folder has a space limit (personal folders, app
+  folders, shares with a limit), the Files sidebar shows "Family: 42 GB of
+  100 GB used" with a bar, amber from 90 %, red when full.
+- `/api/space?share=`: only for folders the person may open; reads the
+  Btrfs qgroup through the helper (the existing `btrfs qgroup show` rule), at
+  most once a minute per folder. `/api/me` marks folders with a limit.
+- Checked in Chromium at desktop and phone width with a faked 96 % folder.
+
+## 2026-10-06 · Virtual machines: a larger disk
+
+- Settings of a stopped machine take a larger disk size. The backend checks
+  the free space, writes the description, and the helper's new `vm-grow ID`
+  runs `qemu-img resize` to that size (as root, only on the machine's own
+  `disk.qcow2`, never a symlink, never smaller, never while it runs). If it
+  fails the old size is written back. The page says how to let the guest use
+  the space.
+- Tests for growing, refusing to shrink, a running machine, a symlinked disk,
+  too little free space and a failed resize.
+- Checked in Chromium at desktop and phone width with a faked machine.
+## 2026-10-06 · Photos: the date a picture was taken; plan for a small Immich
+
+- Photos sorts and groups by the date in the photo (EXIF DateTimeOriginal)
+  instead of the file date, which changes when a picture is copied.
+  `backend/photo_dates.py`: only the first 128 KB are read, as the person,
+  and parsed in the Hub process (never in the helper); results are kept in
+  `photo-dates.json` in the Hub cache, keyed by path, size and date. Unknown
+  dates are read in the background on the thumbnail workers (low priority),
+  300 per visit; until then the file date is used.
+- `docs/PHOTOS.md`: what Photos should become (Tim: "Immich-lite"): phone
+  backup, albums and favourites as small JSON files next to the pictures, no
+  database, no faces or maps. Steps in order.
+- No browser check needed beyond Photos still loading: the order and month
+  labels change only with real EXIF dates (tested in
+  `tests/test_photo_dates.py` and `test_files_server.py`).
+
+## 2026-10-06 · Hub: App Store apps as tiles
+
+- Hub page › "Apps from the App Store": every installed app with a page
+  (Jellyfin, Immich, Pi-hole, ...) with a switch and "who sees it", off until
+  shown. In the Hub an "Apps" button in the bar opens a short list; each
+  opens the app on its own port in a new tab, with its own sign-in.
+- `hub_apps.store_apps()` reads `apps_state.json` and the catalog (the port
+  chosen at install wins over the catalog's); `store_tiles()` for `/api/me`;
+  settings under `store` in `hub.json`. Paths are checked before they end up
+  in a link.
+- Checked in Chromium at desktop and phone width (Hub as a person who sees two
+  of three apps, and the Hub page).
+- Note for next time: the tiles link to plain http on the app's port. With
+  the reverse proxy (roadmap 2, step 4) they become `https://<app>.alva.home`.
+
+## 2026-10-06 · Files: sort by name, date, size or type
+
+- A sort button next to the view switch in Files (Name A–Z/Z–A, newest or
+  oldest first, largest or smallest first, type). Folders stay on top. In
+  the list the column heads Name, Size and Modified sort too, a second click
+  turns the order round. The choice is kept per browser.
+- Names sort like people count ("song 9" before "song 10"), as before.
+- Checked in Chromium at desktop and phone width against the real Files
+  server with a faked folder.
+
+## 2026-10-06 · A UPS on USB (NUT)
+
+- Settings › Power › Battery backup has a **UPS** row next to the laptop
+  battery: it finds a UPS on USB (`/sys/bus/usb`, known makers or a device
+  that calls itself a UPS), "Set up" installs `nut` and writes the four NUT
+  files (standalone: nothing listens on the network), then shows "On mains /
+  On battery · 81% · about 22 min". `backend/ups_nut.py`, `api_ups.py`,
+  `frontend/settings-ups.js`.
+- When to shut down: when the UPS says its battery is low (upsmon does it,
+  the default) or after 2, 5, 10 or 20 minutes on battery (the backend asks
+  `upsmon -c fsd`). Either way upsmon tells the UPS to switch off, so the NAS
+  starts again when the power is back (with the BIOS set to power on).
+- The bell notes the power cut, its end and the shutdown; the alerts (and so
+  email/Telegram) show "Running on the UPS battery", "The UPS does not
+  answer" and "The UPS battery is worn out". The assistant can read
+  `/api/v1/system/ups`.
+- Privilege helper: content checks for `/etc/nut/{nut.conf,ups.conf,
+  upsd.users,upsmon.conf}` that accept only what AlvaOS writes (fixed
+  `SHUTDOWNCMD`, no `NOTIFYCMD`, no UPS commands for the monitor account,
+  only the usbhid-ups/nutdrv_qx/blazer_usb drivers on `port = auto`), fixed
+  `systemctl` lines for the NUT services, and `upsmon -c fsd` only. Tests run
+  every file and command through the real policy.
+- `.choice` and `.choice-list` moved to `styles.css` (they were only on the
+  storage page).
+- Checked in Chromium at desktop and phone width with faked answers (no UPS,
+  found, on mains, on battery, both dialogs). No real UPS here: `TESTING.md`
+  11b.
+- Note for next time: the NUT systemd units are from Debian trixie (nut
+  2.8.1: `nut-driver-enumerator`, `nut-server`, `nut-monitor`); if a real run
+  shows the driver not starting, look there first.
+
+## 2026-10-06 · One dialog for every admin page
+
+- New `openDialog()` in `notifications.js`: frame, title with close button,
+  focus moves in and is kept inside, Escape and a click beside it close, focus
+  goes back to the button that opened it, the page behind does not scroll.
+  `showConfirm`, `showPrompt` and `openSysModal` (Settings) are built on it.
+- Moved onto it: password, email, HTTPS, remote-access device, virtual
+  machine (new, settings), get files back, replace a disk, share a folder (and
+  access, limit, connect), add to which pool, disk health, create pool, add
+  disks, remove pool, manage folders, add a person, change a person's
+  password, app folders and ports, uninstall an app, restart after a restore,
+  feedback. About 460 lines less; most inline styles in the storage dialogs gone.
+- Less scrolling: the title and buttons always stay in view, only the fields
+  scroll. "More options" and "Mail server" now open in place instead of
+  floating: the floating panels covered the Create/Save buttons and ran off a
+  phone screen. Short fields side by side (`.modal-row`), buttons in one row
+  on a phone.
+- Checked in Chromium at desktop and phone width (with faked API answers for
+  VMs, email, pools and disks); axe-core finds nothing in the dialogs.
+- Note for next time: the app install wizard, container logs and terminal in
+  `apps.html` are still static modals in the page; the Hub has its own dialogs.
 ## 2026-10-06 · Main green again; SSH keys only for root
 
 - NVIDIA install test fixed for the running kernel's headers. When Debian no

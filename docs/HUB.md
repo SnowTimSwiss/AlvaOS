@@ -36,6 +36,12 @@ next is tracked in `ROADMAP.md` (section 2) and `BACKLOG.md`.
   Docker apps.
 - No iframes for store apps and no `/apps/<name>` paths: many apps forbid the
   one and break with the other.
+- **Store apps as tiles (done):** the Hub page lists every installed store app
+  that has a page (a catalog port described as "Web UI", on the port chosen at
+  install). Each is off until the admin shows it, then for everyone or only
+  some people (`store` in `hub.json`). In the Hub they sit behind "Apps" in
+  the bar and open `http://<the NAS>:<port><path>` in a new tab. Apps added as
+  a compose file have no known page and are not listed.
 
 ## Who sees what
 
@@ -81,6 +87,8 @@ The system disk is small: with many photos the thumbnails belong on a pool.
 The Hub page says so while the cache is on the system disk.
 
 ### Photos
+
+What it should become (backup from the phone, albums, favourites): `PHOTOS.md`.
 
 - Shows the person's own photos (their `Photos/` folder, wherever the admin
   put it) and every **photo library** they may read, together, newest first.

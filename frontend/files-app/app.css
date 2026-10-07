@@ -62,6 +62,14 @@ svg { display: block; }
 .rail-app { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 60px; padding: 8px 2px; border: none; border-radius: 10px; background: none; color: var(--muted); font: inherit; font-size: 0.72rem; cursor: pointer; }
 .rail-app svg { width: 22px; height: 22px; }
 .rail-app:hover { background: var(--hover); color: var(--text); }
+.rail-gap { flex: 0 0 8px; }
+.menu.store-menu { position: fixed; left: 76px; bottom: 16px; min-width: 240px; }
+.store-menu a { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 7px; color: var(--text); text-decoration: none; font-size: 0.9rem; }
+.store-menu a:hover, .store-menu a:focus-visible { background: var(--hover); outline: none; }
+.store-menu a > svg { width: 16px; height: 16px; color: var(--muted); }
+.store-letter { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; background: var(--sel); font-weight: 700; flex-shrink: 0; }
+.store-name { flex: 1; display: grid; }
+.store-name small { color: var(--muted); font-size: 0.75rem; }
 .rail-app[aria-current="page"] { background: var(--sel); color: var(--text); font-weight: 600; }
 .side { background: var(--side); border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 14px 10px; min-height: 0; }
 .side-head { display: flex; align-items: center; gap: 10px; padding: 4px 8px 16px; }
@@ -75,6 +83,13 @@ svg { display: block; }
 .side-item .ro { margin-left: auto; color: var(--faint); font-size: 0.72rem; }
 .side-sep { height: 1px; background: var(--line); margin: 10px 8px; }
 #trash-nav .ic { color: var(--muted); }
+.space { margin: auto 8px 10px; font-size: 0.8rem; color: var(--muted); }
+.space + .side-foot { margin-top: 0; }
+.space-bar { height: 6px; border-radius: 3px; background: var(--line); margin-top: 5px; overflow: hidden; }
+.space-bar span { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.space.warn .space-bar span { background: var(--warn); }
+.space.full .space-bar span { background: var(--danger); }
+.space strong { color: var(--text); font-weight: 600; }
 .side-foot { margin-top: auto; padding: 12px 8px 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid var(--line); }
 .me { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 0.9rem; }
 .me span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -141,6 +156,10 @@ svg { display: block; }
 .menu.ctx { position: fixed; }
 .menu button { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: none; padding: 8px 10px; border-radius: 7px; cursor: pointer; text-align: left; font-size: 0.9rem; }
 .menu button:hover, .menu button:focus-visible { background: var(--hover); outline: none; }
+.menu .mark { display: inline-flex; width: 18px; }
+.hsort { all: unset; cursor: pointer; display: inline-flex; align-items: center; font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit; border-radius: 4px; }
+.hsort:hover, .hsort.on { color: var(--text); }
+.hsort:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .menu hr { border: none; height: 1px; background: var(--line); margin: 4px 2px; }
 
 /* Viewer */
@@ -197,6 +216,8 @@ svg { display: block; }
     .rail { position: fixed; inset: auto 0 0 0; z-index: 60; flex-direction: row; justify-content: center; gap: 4px; padding: 4px 8px calc(4px + env(safe-area-inset-bottom)); border-right: none; border-top: 1px solid var(--line); }
     .rail-logo { display: none; }
     .rail-app { width: 76px; }
+    .rail-gap { display: none; }
+    .menu.store-menu { left: 8px; right: 8px; bottom: calc(68px + env(safe-area-inset-bottom)); min-width: 0; }
     .app.with-rail ~ .uploads, .app.with-rail ~ .toasts { bottom: 74px; }
     .side { position: fixed; inset: 0 auto 0 0; width: 270px; z-index: 70; transform: translateX(-102%); transition: transform .2s ease; box-shadow: var(--shadow); }
     .side.open { transform: none; }

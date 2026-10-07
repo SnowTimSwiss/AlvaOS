@@ -72,6 +72,7 @@ def _hub_state(people):
                                       if not s.get('personal_for') and not s.get('hub_for') and s.get('protocol', 'smb') == 'smb'),
         'personal_folders': personal, 'needs_personal_folder': needs_personal,
         'chat_service': _chat_service(),
+        'store_apps': hub_apps.store_overview(settings),
     }
 
 
@@ -156,6 +157,7 @@ def hub():
     POST {'enabled': bool}: the Hub (its service) on or off.
     POST {'apps': {id: {'enabled', 'people', 'location', 'libraries', 'models'}}}: change apps.
     POST {'storage': {'cache_pool': id or ''}}: where caches go.
+    POST {'store': {app id: {'shown', 'people'}}}: App Store apps as tiles in the Hub.
     POST {'personal_folders': {'pool_id', 'limit_gb'}}: make the missing personal folders."""
     import api_shares
     import hub_apps
@@ -170,10 +172,11 @@ def hub():
             _, err = _systemctl('enable' if on else 'disable', '--now')
             if err:
                 return jsonify({'error': f'AlvaOS Hub could not be turned {"on" if on else "off"}: {err}'}), 500
-        if 'apps' in data or 'storage' in data:
+        if 'apps' in data or 'storage' in data or 'store' in data:
             shares = [str(s.get('name')) for s in load_shares_state().values() if isinstance(s, dict)]
-            settings, problem = hub_apps.save({k: data[k] for k in ('apps', 'storage') if k in data}, people,
-                                              pools=_data_pools(), shares=shares)
+            settings, problem = hub_apps.save({k: data[k] for k in ('apps', 'storage', 'store') if k in data}, people,
+                                              pools=_data_pools(), shares=shares,
+                                              store_ids=[a['id'] for a in hub_apps.store_apps()])
             if problem or settings is None:
                 return jsonify({'error': problem}), 400
             for app_id, change in (data.get('apps') or {}).items():
