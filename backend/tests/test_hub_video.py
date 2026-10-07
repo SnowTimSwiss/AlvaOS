@@ -147,14 +147,14 @@ def test_mov_and_mkv_are_shown_inline():
     assert files_manager.content_type("clip.avi", True)[1] is False          # a browser cannot play it
 
 
-def test_the_hub_says_what_this_nas_can_do(client):
+def test_the_hub_says_what_this_nas_can_do(client):  # noqa: F811
     sign_in(client, "anna", "anna-pass")
     features = client.get("/api/me").get_json()["features"]
     assert set(features) == {"ffmpeg", "heif"}
 
 
 @needs_ffmpeg
-def test_a_video_still_through_the_thumbnail_address(client, clip, monkeypatch, tmp_path):
+def test_a_video_still_through_the_thumbnail_address(client, clip, monkeypatch, tmp_path):  # noqa: F811
     monkeypatch.setattr(fs, "THUMB_DIR", str(tmp_path / "thumbs"))
     monkeypatch.setattr(files_manager, "file_size", lambda path, user=None: len(clip))
     monkeypatch.setattr(files_manager, "open_stream",
@@ -165,7 +165,7 @@ def test_a_video_still_through_the_thumbnail_address(client, clip, monkeypatch, 
     assert client.get("/api/thumb?share=Anna&path=holiday.mp4&v=1").data == r.data      # from the cache
 
 
-def test_converting_through_the_server(client, monkeypatch, tmp_path):
+def test_converting_through_the_server(client, monkeypatch, tmp_path):  # noqa: F811
     monkeypatch.setattr(fs, "THUMB_DIR", str(tmp_path / "thumbs"))
     monkeypatch.setattr(files_manager, "file_size", lambda path, user=None: 1234)
     sign_in(client, "anna", "anna-pass")
@@ -182,7 +182,7 @@ def test_converting_through_the_server(client, monkeypatch, tmp_path):
     assert client.get("/api/video?share=Anna&path=clip.mp4&v=1").status_code == 404
 
 
-def test_a_converted_copy_is_played_with_ranges(client, monkeypatch, tmp_path):
+def test_a_converted_copy_is_played_with_ranges(client, monkeypatch, tmp_path):  # noqa: F811
     monkeypatch.setattr(fs, "THUMB_DIR", str(tmp_path / "thumbs"))
     monkeypatch.setattr(files_manager, "file_size", lambda path, user=None: 50)
     sign_in(client, "anna", "anna-pass")

@@ -19,7 +19,7 @@ def phone(c=None):
     return fs.app.test_client()
 
 
-def test_a_qr_code_signs_a_phone_in_once(client):
+def test_a_qr_code_signs_a_phone_in_once(client):  # noqa: F811
     sign_in(client, "anna", "anna-pass")
     data = pair_link(client)
     q = parse_qs(urlparse(data["link"]).query)
@@ -39,14 +39,14 @@ def test_a_qr_code_signs_a_phone_in_once(client):
     assert again.status_code == 401
 
 
-def test_a_new_qr_code_makes_the_last_one_useless(client):
+def test_a_new_qr_code_makes_the_last_one_useless(client):  # noqa: F811
     sign_in(client, "anna", "anna-pass")
     first = pair_link(client)["code"]
     pair_link(client)
     assert phone().post("/api/devices/pair", json={"code": first}).status_code == 401
 
 
-def test_an_old_code_does_not_work(client, monkeypatch):
+def test_an_old_code_does_not_work(client, monkeypatch):  # noqa: F811
     sign_in(client, "anna", "anna-pass")
     code = pair_link(client)["code"]
     later = fs.time.time() + fs.PAIR_CODE_SECONDS + 5
@@ -54,7 +54,7 @@ def test_an_old_code_does_not_work(client, monkeypatch):
     assert phone().post("/api/devices/pair", json={"code": code}).status_code == 401
 
 
-def test_devices_are_listed_renamed_and_signed_out(client, monkeypatch):
+def test_devices_are_listed_renamed_and_signed_out(client, monkeypatch):  # noqa: F811
     sign_in(client, "anna", "anna-pass")
     p = phone()
     token = p.post("/api/devices/pair", json={"code": pair_link(client)["code"],
@@ -79,7 +79,7 @@ def test_devices_are_listed_renamed_and_signed_out(client, monkeypatch):
     assert devices(client) == []
 
 
-def test_signing_in_with_a_password_from_the_app_makes_a_device(client):
+def test_signing_in_with_a_password_from_the_app_makes_a_device(client):  # noqa: F811
     p = phone()
     r = p.post("/api/login", json={"username": "anna", "password": "anna-pass", "device": {"name": "Galaxy"}})
     assert r.status_code == 200 and r.get_json()["token"]
@@ -89,7 +89,7 @@ def test_signing_in_with_a_password_from_the_app_makes_a_device(client):
     assert "token" not in sign_in(phone(), "anna", "anna-pass").get_json()
 
 
-def test_a_new_password_signs_the_phones_out(client, tmp_path):
+def test_a_new_password_signs_the_phones_out(client, tmp_path):  # noqa: F811
     sign_in(client, "anna", "anna-pass")
     p = phone()
     p.set_cookie(fs.COOKIE, p.post("/api/devices/pair", json={"code": pair_link(client)["code"]}).get_json()["token"])
