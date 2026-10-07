@@ -97,4 +97,17 @@ class HubClientTest {
         assertEquals("own1", client.signIn("tim", "pw", device = DeviceInfo("Pixel 8")))
         assertTrue(server.takeRequest().body.readUtf8().contains(""""device":{"name":"Pixel 8""""))
     }
+
+    @Test
+    fun theHubAppsOfThePersonAreRead() {
+        server.enqueue(json("""{"user": "tim", "role": "user", "shares": [], "nas_name": "cygnus",
+            "hub": {"name": "AlvaOS Hub", "apps": [{"id": "files", "name": "Files", "icon": "folder"},
+            {"id": "photos", "name": "Photos", "icon": "image"}], "store": [{"id": "jellyfin", "name": "Jellyfin",
+            "port": 8096, "path": "/"}]}, "public_url": "https://nas.example.ch"}"""))
+        val me = client.me()
+        assertEquals(listOf("files", "photos"), me.hub.apps.map { it.id })
+        assertEquals(8096, me.hub.store.single().port)
+        assertEquals("cygnus", me.nas_name)
+        assertEquals("https://nas.example.ch", me.public_url)
+    }
 }

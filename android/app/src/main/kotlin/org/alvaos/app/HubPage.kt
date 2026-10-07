@@ -94,6 +94,21 @@ class HubPage(
         }
     }
 
+    private var app = ""
+
+    /**
+     * Shows one Hub app (files, photos, calendar, chat): switched inside the page when
+     * it is loaded, else the page opens with it (#app=…).
+     */
+    fun open(appId: String) {
+        app = appId
+        if (loadedFor == store.server + store.token) {
+            web.evaluateJavascript("window.Hub && window.Hub.open(${org.json.JSONObject.quote(appId)})", null)
+        } else {
+            load()
+        }
+    }
+
     /** Opens the Hub, signed in with the app's session (again only if the address or session changed). */
     fun load(force: Boolean = false) {
         val key = store.server + store.token
@@ -105,7 +120,7 @@ class HubPage(
             cookies.setCookie(address, "${org.alvaos.photos.HubClient.COOKIE}=${store.token}; Path=/")
         }
         cookies.flush()
-        web.loadUrl(store.server.trimEnd('/') + "/")
+        web.loadUrl(store.server.trimEnd('/') + "/" + if (app.isNotEmpty()) "#app=$app" else "")
     }
 
     private fun showOffline() {

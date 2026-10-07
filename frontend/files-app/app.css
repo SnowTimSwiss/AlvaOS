@@ -83,8 +83,11 @@ svg { display: block; }
 .side-item .ro { margin-left: auto; color: var(--faint); font-size: 0.72rem; }
 .side-sep { height: 1px; background: var(--line); margin: 10px 8px; }
 #trash-nav .ic { color: var(--muted); }
-.space { margin: auto 8px 10px; font-size: 0.8rem; color: var(--muted); }
-.space:not([hidden]) + .side-foot { margin-top: 0; }
+.space { margin: 4px 8px 10px; font-size: 0.8rem; color: var(--muted); }
+/* Shared links, Trash, … at the bottom of the side bar, above the person. */
+.side-tools { margin-top: auto; padding-top: 8px; display: flex; flex-direction: column; gap: 2px; }
+.side-tools + .space:not([hidden]), .side-tools + .space + .side-foot { margin-top: 0; }
+.side-tools + .space[hidden] + .side-foot { margin-top: 8px; }
 .space-bar { height: 6px; border-radius: 3px; background: var(--line); margin-top: 5px; overflow: hidden; }
 .space-bar span { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
 .space.warn .space-bar span { background: var(--warn); }
@@ -373,4 +376,19 @@ body.public { display: flex; flex-direction: column; min-height: 100%; }
 }
 a.btn { text-decoration: none; color: inherit; }
 .devices .pair-steps a { color: var(--accent); }
-.in-app #signout { display: none; }
+.in-app #signout, .in-app [data-signout] { display: none; }
+/* In the AlvaOS app its own tab bar switches the Hub apps: no second bar. */
+.in-app #rail { display: none !important; }
+.in-app .app.with-rail { grid-template-columns: 1fr; padding-bottom: 0; }
+.in-app .app.with-rail ~ .uploads, .in-app .app.with-rail ~ .toasts { bottom: 16px; }
+
+/* Trash: a view of its own, like a folder */
+.items.trash .row { grid-template-columns: 34px minmax(0, 1fr) 110px 170px auto; }
+.items.trash .rsub { display: block; }
+.items.trash .row .btn { white-space: nowrap; }
+.trash-head .scope { margin-left: 4px; }
+.trash-head .btn { margin-left: auto; }
+@media (max-width: 760px) {
+    .items.trash .row { grid-template-columns: 34px minmax(0, 1fr) auto; }
+    .items.trash .rsize, .items.trash .rdate { display: none; }
+}

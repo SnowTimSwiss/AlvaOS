@@ -15,6 +15,25 @@ How to add an entry:
 
 ---
 
+## 2026-10-07 · App fixes from the first test; Files: Trash as a view
+
+- App: choosing Backup or Settings crashed (marking the tab selected it
+  again, over and over); the first screen hid its buttons below a spacer
+  that took all the room. One bar at the bottom now: the Hub's own app bar
+  is hidden in the app, the app's bar has the person's Hub apps (from
+  /api/me; more than three, or App Store apps, under Apps), Backup and
+  Settings. The first screen says what the app does.
+- CI opens every screen of the app on the JVM (Robolectric) and keeps
+  pictures of them (Roborazzi; also small copies in the log while the
+  artifact storage is full).
+- Files: Shared links, Trash, Connect a computer and Phones and devices sit
+  at the bottom of the side bar. Trash is a view like a folder instead of a
+  window: per shared folder (switch at the top), search, Put back, Empty
+  trash for the admin.
+- **Note for next time:** `window.Hub.open(id)` switches the Hub app (the
+  AlvaOS app uses it); a name in `start()` shadowed it for a moment and the
+  Hub showed nothing. `inTrash` makes `render()` draw the trash.
+
 ## 2026-10-07 · Version beta-v0.2.0
 
 - `VERSION` says `beta-v0.2.0`: the next release (NAS, installer and app)

@@ -297,6 +297,7 @@
     }
 
     function render() {
+        if (inTrash) { paintTrash(); return; }
         const q = found ? '' : $('search').value.trim().toLowerCase();
         shown = found ? found.slice() : entries.filter((e) => !q || e.name.toLowerCase().includes(q));
         if (!found) shown.sort(compare);
@@ -748,6 +749,7 @@
         setTimeout(() => clearInterval(wait), 5000);
     }
     $('search').addEventListener('input', () => {
+        if (inTrash) { paintTrash(); return; }
         if (found) { found = null; selected = new Set(); leavePhotos(); }
         searchId++;
         render();
@@ -1268,36 +1270,68 @@
     });
 
     // ── Trash ──────────────────────────────────────────────────────────────
-    $('trash-nav').addEventListener('click', async () => {
+    // The trash of a shared folder, shown like a folder (in the main area):
+    // what was deleted, where from and when, and "Put back".
+    let inTrash = null;          // the shared folder whose trash is shown
+    let trashItems = [];
+    $('trash-nav').addEventListener('click', () => showTrash(share));
+    async function showTrash(forShare) {
+        leaveView();
+        leavePhotos();
         closeSide();
-        const forShare = share;
-        const wrap = $('dialog');
-        wrap.hidden = false;
-        const paint = async () => {
-            let items = [];
-            let error = '';
-            try { items = (await api(`trash?share=${encodeURIComponent(forShare)}`)).items || []; } catch (err) { error = err.message; }
-            wrap.innerHTML = `<div class="dialog wide"><h2>Trash of ${esc(forShare)}</h2><p>Deleted items stay here for 30 days, also what was deleted from a computer over the network.</p>
-                <div class="trash-list">${error ? esc(error) : items.length ? items.map((it) => `<div class="trash-row"><div><strong>${esc(it.name)}</strong>
-                <small>From ${esc([forShare, ...(it.folder ? it.folder.split('/') : [])].join(' › '))} · ${esc(when(it.deleted_at))}${it.type === 'file' ? ` · ${bytes(it.size_bytes)}` : ''}${it.from_network ? ' · deleted from a computer' : ''}</small></div>
-                ${access() === 'write' ? `<button type="button" class="btn" data-restore="${esc(it.id)}">${icon('undo')}Put back</button>` : ''}</div>`).join('') : '<div class="empty" style="padding:30px 0">The trash is empty.</div>'}</div>
-                <div class="actions">${me?.role === 'admin' && items.length ? '<button type="button" class="btn danger" data-empty>Empty trash</button>' : ''}<button type="button" class="btn primary" data-close>Done</button></div></div>`;
-            wrap.querySelector('[data-close]').onclick = () => { wrap.hidden = true; wrap.innerHTML = ''; if (share === forShare) load(); };
-            wrap.querySelectorAll('[data-restore]').forEach((b) => { b.onclick = async () => {
-                b.disabled = true;
-                try { const r = await api('trash/restore', { method: 'POST', json: { share: forShare, id: b.dataset.restore } }); toast(`"${r.name}" is back.`); } catch (err) { toast(err.message, 'error'); }
-                paint();
-            }; });
-            const empty = wrap.querySelector('[data-empty]');
-            if (empty) empty.onclick = async () => {
-                if (!window.confirm(`Empty the trash of ${forShare}? This cannot be undone.`)) return;
-                try { await api('trash/empty', { method: 'POST', json: { share: forShare } }); } catch (err) { toast(err.message, 'error'); }
-                paint();
-            };
+        found = null;
+        selected = new Set();
+        inTrash = forShare;
+        $('search').value = '';
+        document.querySelectorAll('.side-item').forEach((b) => b.classList.toggle('active', b.id === 'trash-nav'));
+        $('new-btn').hidden = true;
+        $('crumbs').innerHTML = `<span class="crumb current">Trash</span>`;
+        $('items').className = 'items list trash';
+        $('items').innerHTML = '<div class="empty">Looking in the trash…</div>';
+        paintSelection();
+        let items = [];
+        try { items = (await api(`trash?share=${encodeURIComponent(forShare)}`)).items || []; } catch (err) { toast(err.message, 'error'); }
+        if (inTrash !== forShare) return;
+        trashItems = items;
+        paintTrash();
+    }
+    function paintTrash() {
+        const forShare = inTrash;
+        const q = $('search').value.trim().toLowerCase();
+        const list = trashItems.filter((it) => !q || String(it.name).toLowerCase().includes(q));
+        const own = (me?.shares || []).filter((s) => !s.from);
+        const canWrite = (me?.shares || []).find((s) => s.name === forShare)?.access === 'write';
+        const items = $('items');
+        items.className = 'items list trash';
+        items.innerHTML = `<div class="results-head trash-head">${icon('trash').replace('<svg', '<svg width="16" height="16"')}<span>Trash of</span>
+            ${own.length > 1 ? `<span class="scope" role="group" aria-label="Which shared folder">${own.map((s) => `<button type="button" data-trash-share="${esc(s.name)}" aria-pressed="${s.name === forShare}">${esc(s.name)}</button>`).join('')}</span>` : `<strong>${esc(forShare)}</strong>`}
+            ${me?.role === 'admin' && trashItems.length ? '<button type="button" class="btn danger" data-empty>Empty trash</button>' : ''}</div>`
+            + (list.length ? list.map((it) => {
+                const k = kindOf(it);
+                const size = it.type === 'file' ? bytes(it.size_bytes) : '';
+                const from = [forShare, ...(it.folder ? it.folder.split('/') : [])].join(' › ');
+                return `<div class="row"><span class="ricon kind-${k}">${icon(k === 'folder' ? 'folder-fill' : k)}</span>
+                    <div class="rtext"><div class="rname">${esc(it.name)}</div><div class="rsub">From ${esc(from)}${it.from_network ? ' · deleted from a computer' : ''}<span class="only-phone">&nbsp;·&nbsp;${esc(when(it.deleted_at))}</span></div></div>
+                    <span class="rsize">${esc(size)}</span><span class="rdate">${esc(when(it.deleted_at))}</span>
+                    ${canWrite ? `<button type="button" class="btn" data-restore="${esc(it.id)}">${icon('undo')}<span class="hide-phone">Put back</span></button>` : '<span></span>'}</div>`;
+            }).join('')
+            : `<div class="empty">${icon('trash')}<strong>${q ? 'Nothing found' : 'The trash is empty'}</strong>${q ? `Nothing in the trash is called "${esc(q)}".` : 'Deleted files and folders stay here for 30 days, also what was deleted from a computer over the network.'}</div>`);
+        paintIcons(items);
+        items.querySelectorAll('[data-trash-share]').forEach((b) => { b.onclick = () => showTrash(b.dataset.trashShare); });
+        items.querySelectorAll('[data-restore]').forEach((b) => { b.onclick = async () => {
+            b.disabled = true;
+            try { const r = await api('trash/restore', { method: 'POST', json: { share: forShare, id: b.dataset.restore } }); toast(`"${r.name}" is back where it was.`); } catch (err) { toast(err.message, 'error'); }
+            showTrash(forShare);
+        }; });
+        const empty = items.querySelector('[data-empty]');
+        if (empty) empty.onclick = async () => {
+            const yes = await ask({ title: `Empty the trash of ${forShare}?`, text: 'Everything in it is gone for good. This cannot be undone.', okLabel: 'Empty trash', danger: true });
+            if (!yes) return;
+            try { await api('trash/empty', { method: 'POST', json: { share: forShare } }); } catch (err) { toast(err.message, 'error'); }
+            showTrash(forShare);
         };
-        wrap.innerHTML = '<div class="dialog"><p>Loading…</p></div>';
-        paint();
-    });
+        $('status').textContent = trashItems.length ? `${trashItems.length} item${trashItems.length === 1 ? '' : 's'} in the trash · kept for 30 days` : '';
+    }
 
     // ── Upload ─────────────────────────────────────────────────────────────
     const uploads = [];
@@ -1661,10 +1695,13 @@
     const VIEWS = { calendar: 'calendar-view', chat: 'chat-view' };
     let current = 'files';
     function leaveView() {
+        inTrash = null;
+        $('trash-nav').classList.remove('active');
         Object.values(VIEWS).forEach((id) => { $(id).hidden = true; });
         $('app').classList.remove('in-view');
     }
     function openApp(id, push = true) {
+        inTrash = null;
         if (id === 'photos') { showPhotos(); return; }
         if (!VIEWS[id]) { go(share, path, push); return; }
         closeSide();
@@ -1683,12 +1720,16 @@
         addIcons: (paths) => Object.assign(P, paths),
         me: () => me,
         signOut,
+        // The AlvaOS app has the app bar itself (its tabs) and switches with this.
+        open: (id) => { if (started) openApp(id); else pendingApp = id; },
         // The person and "Sign out", at the foot of each app's sidebar.
         foot: () => `<div class="side-foot"><div class="me"><span class="avatar">${esc((me?.user || '?').slice(0, 1).toUpperCase())}</span><span>${esc(me?.user || '')}</span></div><button type="button" class="link" data-signout>Sign out</button></div>`,
     };
     document.addEventListener('click', (e) => { if (e.target.closest('[data-signout]')) signOut(); });
 
     // ── Start ──────────────────────────────────────────────────────────────
+    let started = false;
+    let pendingApp = '';      // asked by the AlvaOS app before the Hub had started
     async function start() {
         try {
             me = await api('me');
@@ -1706,8 +1747,11 @@
         const q = new URLSearchParams(location.hash.slice(1));
         const has = (id) => hubApps.some((a) => a.id === id);
         // The app in the address (#app=calendar), else the first in the bar.
-        const wantedApp = VIEWS[q.get('app')] && has(q.get('app')) ? q.get('app')
-            : !q.get('share') && VIEWS[(hubApps[0] || {}).id] ? hubApps[0].id : '';
+        started = true;
+        const asked = pendingApp || q.get('app');
+        if (asked === 'photos' && has('photos')) { showPhotos(); return; }
+        const wantedApp = VIEWS[asked] && has(asked) ? asked
+            : !q.get('share') && asked !== 'files' && VIEWS[(hubApps[0] || {}).id] ? hubApps[0].id : '';
         if (wantedApp) {
             openApp(wantedApp, false);
             return;
