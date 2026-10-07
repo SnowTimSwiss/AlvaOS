@@ -65,9 +65,10 @@ last one and keeps the sign-in.
 ## Once: the app in the Play Console
 
 1. Play Console › Create app: name "AlvaOS", app, free.
-2. **Package name** is `org.alvaos.app` (in `android/app/build.gradle.kts`).
-   It can never change after the first upload; change it before that if you
-   want another one (e.g. `ch.<yourname>.alvaos`).
+2. **Package name** is `uk.timserver.alvaos` (the domain timserver.uk
+   backwards; `applicationId` in `android/app/build.gradle.kts`, the code
+   itself stays in `org.alvaos.app`). It can never change after the first
+   upload.
 3. Testing › Internal testing › Create new release: upload `alvaos-android.aab` from
    the newest AlvaOS release **by hand**. Google only accepts uploads
    through the API after the first one was made in the browser. Accept Play
