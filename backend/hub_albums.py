@@ -130,7 +130,7 @@ def create_album():
     if len(names) >= MAX_ALBUMS:
         return jsonify({'error': 'That is a lot of albums. Delete one you no longer use.'}), 409
     album = {'id': secrets.token_hex(6), 'name': name, 'created_at': _now(), 'items': items}
-    error = hub_data.write(place, _album_file(album['id']), album)
+    error = hub_data.write(place, _album_file(str(album['id'])), album)
     if error:
         return jsonify({'error': error}), 409
     return jsonify({'success': True, 'album': album}), 201
