@@ -133,14 +133,8 @@ def _free_name(name: str, taken: Dict[str, Any], local_id: str) -> str:
 
 # ── The API for the app ─────────────────────────────────────────────────────
 
-@bp.get('/api/photos/phones')
-def phones():
-    session, refused = hub_data.need_session('photos')
-    if refused:
-        return refused
-    place, bad = _place(session)
-    if bad or place is None:
-        return bad
+def phone_list(place: hub_data.Place) -> List[Dict[str, Any]]:
+    """The phones backing up into this place, with what they backed up."""
     folder = _list(place, _rel(place, PHONES_DIR)) or {}
     out = []
     for name in sorted(folder):
@@ -149,8 +143,28 @@ def phones():
             if data:
                 out.append({'id': data['id'], 'name': data.get('name'), 'folder': data.get('folder'),
                             'albums': sorted({str(v[0]).split('/')[0] for v in data['items'].values()}),
-                            'count': len(data['items']), 'last_sync': data.get('last_sync', '')})
-    return jsonify({'phones': out, 'share': place.share, 'folder': place.folder})
+                            'count': len(data['items']), 'last_sync': data.get('last_sync', ''),
+                            'device': data.get('device', '')})
+    return out
+
+
+def phones_of(session: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """The same for the Devices list in the Hub; empty without Photos."""
+    if not hub_apps.allowed('photos', session['user'], session['role']):
+        return []
+    place = hub_data.own_place('photos', session)
+    return phone_list(place) if place else []
+
+
+@bp.get('/api/photos/phones')
+def phones():
+    session, refused = hub_data.need_session('photos')
+    if refused:
+        return refused
+    place, bad = _place(session)
+    if bad or place is None:
+        return bad
+    return jsonify({'phones': phone_list(place), 'share': place.share, 'folder': place.folder})
 
 
 @bp.post('/api/photos/phones')
@@ -173,6 +187,8 @@ def add_phone():
         unique, n = f'{name} {n}', n + 1
     phone: Dict[str, Any] = {'id': secrets.token_hex(6), 'name': name, 'folder': unique, 'created_at': _now(), 'last_sync': '',
              'items': {}}
+    if isinstance(session.get('device'), dict):
+        phone['device'] = session['device'].get('id', '')      # the app that added it (Hub › Devices)
     error = hub_data.write(place, _manifest_name(phone['id']), phone)
     if error:
         return jsonify({'error': error}), 409

@@ -14,6 +14,7 @@ uses (users.json, shares.json). Sessions live in files_sessions.json.
 import hashlib
 import json
 import os
+import re
 import secrets
 import socket
 import threading
@@ -42,6 +43,8 @@ POOLS_FILE = os.path.join(STATE_DIR, 'pools.json')
 AUTH_FILE = os.path.join(STATE_DIR, 'auth.json')
 SESSIONS_FILE = os.path.join(STATE_DIR, 'files_sessions.json')
 SESSION_DAYS = 14
+DEVICE_DAYS = 120            # a phone with the app stays signed in while it is used
+PAIR_CODE_SECONDS = 10 * 60
 COOKIE = 'alvaos_files'
 LINK_TTL_SECONDS = 600
 LOGIN_MAX_ATTEMPTS = 10
@@ -103,12 +106,18 @@ def _password_tag(user: str, role: str) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()[:24]
 
 
-def _new_session(user: str, role: str) -> str:
+def _new_session(user: str, role: str, device: Optional[Dict[str, Any]] = None) -> str:
+    """A browser session, or with `device` the session of a phone with the
+    AlvaOS app (listed under Devices in the Hub, and removable there)."""
     token = secrets.token_urlsafe(32)
+    days = DEVICE_DAYS if device else SESSION_DAYS
     with _lock:
         sessions = _load_sessions()
-        sessions[_key(token)] = {'user': user, 'role': role, 'tag': _password_tag(user, role),
-                                 'expires_at': (_now() + timedelta(days=SESSION_DAYS)).isoformat()}
+        session: Dict[str, Any] = {'user': user, 'role': role, 'tag': _password_tag(user, role),
+                                   'expires_at': (_now() + timedelta(days=days)).isoformat()}
+        if device:
+            session['device'] = device
+        sessions[_key(token)] = session
         _save_sessions(sessions)
     return token
 
@@ -128,11 +137,15 @@ def current() -> Optional[Dict[str, Any]]:
             _save_sessions(sessions)
             return None
         # People keep using Files: renew at most once an hour.
-        renewed = (_now() + timedelta(days=SESSION_DAYS)).isoformat()
+        device = session.get('device') if isinstance(session.get('device'), dict) else None
+        renewed = (_now() + timedelta(days=DEVICE_DAYS if device else SESSION_DAYS)).isoformat()
         if renewed[:13] != str(session.get('expires_at'))[:13]:
             session['expires_at'] = renewed
+            if device:
+                device['last_seen'] = _now().isoformat()
+                device['address'] = request.remote_addr or ''
             _save_sessions(sessions)
-        return dict(session)
+        return {**session, 'token_key': _key(token)}
 
 
 def end_sessions_for(user: str) -> None:
@@ -233,8 +246,9 @@ def as_user(session: Dict[str, Any], share: Optional[Dict[str, Any]] = None) -> 
     return None if session['role'] == 'admin' else session['user']
 
 
-# Asked without any Hub app: who is signed in, and which apps they see.
+# Asked without any Hub app: who is signed in, which apps they see, their devices.
 HUB_PATHS = ('/api/me',)
+HUB_PREFIXES = ('/api/devices',)
 
 
 def need_session(app_id: str = 'files'):
@@ -245,7 +259,8 @@ def need_session(app_id: str = 'files'):
     if request.method != 'GET' and request.headers.get('X-AlvaOS-Files') != '1':
         # Only the Hub's pages send this header; another website cannot (no CORS).
         return None, (jsonify({'error': 'Request refused.'}), 403)
-    if request.path not in HUB_PATHS and not hub_apps.allowed(app_id, session['user'], session['role']):
+    if request.path not in HUB_PATHS and not request.path.startswith(HUB_PREFIXES) \
+            and not hub_apps.allowed(app_id, session['user'], session['role']):
         # The admin may have turned the app off, or not for this person.
         name = next((a['name'] for a in hub_apps.APPS if a['id'] == app_id), app_id)
         return None, (jsonify({'error': f'{name} is not turned on for you. Ask the person who looks after the NAS.',
@@ -322,8 +337,10 @@ def login():
     if not who:
         return jsonify({'error': error, 'needs_code': needs_code}), 401
     _attempts.pop(request.remote_addr or '', None)
-    token = _new_session(*who)
-    response = jsonify({'success': True, 'user': who[0]})
+    device = _device_from(data.get('device'))
+    token = _new_session(*who, device=device)
+    # The app keeps the session itself; a browser only gets the cookie.
+    response = jsonify({'success': True, 'user': who[0], **({'token': token} if device else {})})
     response.set_cookie(COOKIE, token, max_age=SESSION_DAYS * 86400, httponly=True, samesite='Strict',
                         secure=request.is_secure, path='/')
     return response
@@ -360,6 +377,143 @@ def me():
     return jsonify({'user': session['user'], 'role': session['role'], 'shares': shares,
                     'nas_name': nas, 'hub': {'name': hub_apps.NAME, 'apps': apps, 'store': store},
                     'public_url': remote_access.public_url(os.path.join(STATE_DIR, 'remote_access.json'))})
+
+
+# ── Devices: phones with the AlvaOS app ─────────────────────────────────────
+#
+# The app signs in once, with a QR code shown in the Hub (Devices › Connect a
+# phone) or with name and password, and then has a session of its own. The
+# Hub lists these sessions as the person's devices; removing one signs that
+# phone out. A pairing code is short, used once, and only valid for minutes.
+
+_pair_codes: Dict[str, Dict[str, Any]] = {}
+PAIR_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'      # nothing to mix up (no 0/O, 1/I/L)
+ADDRESS_RE = re.compile(r'^https?://[A-Za-z0-9.\-\[\]:]+$')
+
+
+def _device_from(raw: Any) -> Optional[Dict[str, Any]]:
+    """What the app says about itself; None for a browser."""
+    if not isinstance(raw, dict):
+        return None
+    def text(key: str, limit: int) -> str:
+        return re.sub(r'[\x00-\x1f\x7f]', '', str(raw.get(key) or ''))[:limit].strip()
+    now = _now().isoformat()
+    return {'id': secrets.token_hex(6), 'name': text('name', 60) or 'Phone', 'model': text('model', 60),
+            'platform': text('platform', 20) or 'android', 'app_version': text('app_version', 30),
+            'created_at': now, 'last_seen': now, 'address': request.remote_addr or ''}
+
+
+def _addresses(origin: str) -> List[str]:
+    """Where the app can reach the Hub: the address this browser uses, then
+    the internet address (Cloudflare Tunnel) if there is one."""
+    import remote_access
+    out = []
+    for url in (origin.rstrip('/'), remote_access.public_url(os.path.join(STATE_DIR, 'remote_access.json'))):
+        if url and ADDRESS_RE.match(url) and url not in out:
+            out.append(url)
+    return out
+
+
+@app.post('/api/devices/pair-code')
+def pair_code():
+    session, refused = need_session()
+    if refused:
+        return refused
+    data = request.get_json(silent=True) or {}
+    code = ''.join(secrets.choice(PAIR_ALPHABET) for _ in range(8))
+    expires = time.time() + PAIR_CODE_SECONDS
+    with _lock:
+        for key in [k for k, v in _pair_codes.items() if v['expires'] < time.time()]:
+            del _pair_codes[key]
+        # One open code per person: a new QR code makes the last one useless.
+        for key in [k for k, v in _pair_codes.items() if v['user'] == session['user']]:
+            del _pair_codes[key]
+        _pair_codes[_key(code)] = {'user': session['user'], 'role': session['role'],
+                                   'tag': session.get('tag'), 'expires': expires}
+    nas = socket.gethostname().split('.')[0]
+    addresses = _addresses(str(data.get('origin') or request.host_url))
+    link = 'alvaos://pair?' + '&'.join([f'c={code}', f'n={quote(nas)}', f'u={quote(session["user"])}']
+                                         + [f'a={quote(a, safe="")}' for a in addresses])
+    return jsonify({'code': f'{code[:4]}-{code[4:]}', 'link': link, 'addresses': addresses, 'nas_name': nas,
+                    'expires_in': PAIR_CODE_SECONDS})
+
+
+@app.post('/api/devices/pair')
+def pair():
+    """The app trades a pairing code for a session of its own."""
+    if _limited(request.remote_addr or ''):
+        return jsonify({'error': 'Too many attempts. Wait a few minutes.'}), 429
+    data = request.get_json(silent=True) or {}
+    code = re.sub(r'[^A-Z0-9]', '', str(data.get('code') or '').upper())
+    with _lock:
+        entry = _pair_codes.pop(_key(code), None) if len(code) == 8 else None
+    if not entry or entry['expires'] < time.time():
+        return jsonify({'error': 'This code is not valid (any more). Show a new QR code in the Hub › Devices.'}), 401
+    if _password_tag(entry['user'], entry['role']) != entry['tag']:
+        return jsonify({'error': 'This code is not valid any more. Show a new QR code in the Hub › Devices.'}), 401
+    _attempts.pop(request.remote_addr or '', None)
+    device = _device_from(data.get('device') or {}) or {}
+    token = _new_session(entry['user'], entry['role'], device=device)
+    return jsonify({'success': True, 'user': entry['user'], 'token': token, 'device': device['id'],
+                    'nas_name': socket.gethostname().split('.')[0]})
+
+
+def _device_sessions(session: Dict[str, Any]) -> List[Tuple[str, Dict[str, Any]]]:
+    """(key, session) of the devices this person may see: their own; the admin all."""
+    return [(k, v) for k, v in _load_sessions().items() if isinstance(v.get('device'), dict)
+            and (v.get('user') == session['user'] or session['role'] == 'admin')]
+
+
+@app.get('/api/devices')
+def devices():
+    session, refused = need_session()
+    if refused:
+        return refused
+    with _lock:
+        found = _device_sessions(session)
+    phones = {p['device']: p for p in hub_photos_sync.phones_of(session) if p.get('device')}
+    out = []
+    for key, v in sorted(found, key=lambda kv: str(kv[1]['device'].get('last_seen')), reverse=True):
+        d = v['device']
+        backup = phones.get(d.get('id')) if v.get('user') == session['user'] else None
+        out.append({'id': d.get('id'), 'name': d.get('name'), 'model': d.get('model'), 'platform': d.get('platform'),
+                    'app_version': d.get('app_version'), 'created_at': d.get('created_at'),
+                    'last_seen': d.get('last_seen'), 'address': d.get('address'), 'user': v.get('user'),
+                    'this': key == session.get('token_key'),
+                    'backup': {k: backup[k] for k in ('albums', 'count', 'last_sync')} if backup else None})
+    return jsonify({'devices': out})
+
+
+@app.patch('/api/devices/<device_id>')
+def rename_device(device_id):
+    session, refused = need_session()
+    if refused:
+        return refused
+    name = re.sub(r'[\x00-\x1f\x7f]', '', str((request.get_json(silent=True) or {}).get('name') or ''))[:60].strip()
+    if not name:
+        return jsonify({'error': 'Give it a name.'}), 400
+    with _lock:
+        sessions = _load_sessions()
+        hits = [k for k, _ in _device_sessions(session) if sessions[k]['device'].get('id') == device_id]
+        for k in hits:
+            sessions[k]['device']['name'] = name
+        _save_sessions(sessions)
+    return jsonify({'success': True}) if hits else (jsonify({'error': 'That device is not known here.'}), 404)
+
+
+@app.delete('/api/devices/<device_id>')
+def remove_device(device_id):
+    """Signs that phone out. Its backed-up pictures stay where they are."""
+    session, refused = need_session()
+    if refused:
+        return refused
+    with _lock:
+        sessions = _load_sessions()
+        hits = [k for k, _ in _device_sessions(session) if sessions[k]['device'].get('id') == device_id]
+        for k in hits:
+            del sessions[k]
+        _save_sessions(sessions)
+    return jsonify({'success': True}) if hits else (jsonify({'error': 'That device is not known here.'}), 404)
 
 
 # ── Browsing and files ───────────────────────────────────────────────────────
