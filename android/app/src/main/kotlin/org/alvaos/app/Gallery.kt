@@ -44,6 +44,15 @@ class Gallery(private val context: Context) : Library {
         return out
     }
 
+    /** Which of these are still on the phone. */
+    fun existing(ids: Collection<String>): Set<String> = ids.filter { id ->
+        context.contentResolver.query(uri(id), arrayOf(MediaStore.MediaColumns._ID), null, null, null)
+            ?.use { it.moveToFirst() } ?: false
+    }.toSet()
+
+    /** Android 12+: the person allowed this app to delete pictures without asking each time. */
+    fun maySilentlyDelete(): Boolean = android.os.Build.VERSION.SDK_INT >= 31 && MediaStore.canManageMedia(context)
+
     override fun albums(): List<String> =
         (query('i', null) + query('v', null)).groupingBy { it.album }.eachCount()
             .entries.sortedByDescending { it.value }.map { it.key }

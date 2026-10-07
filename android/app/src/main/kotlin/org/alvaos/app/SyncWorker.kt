@@ -2,10 +2,13 @@ package org.alvaos.app
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.ActivityOptions
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.os.Build
+import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -19,6 +22,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.alvaos.photos.HubException
 import org.alvaos.photos.SyncEngine
@@ -84,7 +88,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         channels(applicationContext)
         val engine = SyncEngine(store.hub(), Gallery(applicationContext), store)
         try {
-            val result = engine.run(phoneName = { android.os.Build.MODEL }) { done, total ->
+            val result = engine.run(phoneName = { Build.MODEL }) { done, total ->
                 if (total > 0) setForegroundAsync(ForegroundInfo(PROGRESS_ID, progress(done, total),
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC))
             }
@@ -94,7 +98,14 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 result.uploaded > 0 -> "${result.uploaded} backed up."
                 else -> "Everything is backed up."
             }
-            if (result.toDeleteHere.isNotEmpty()) askToDelete(result.toDeleteHere.size)
+            if (result.toDeleteHere.isNotEmpty()) {
+                val gallery = Gallery(applicationContext)
+                if (gallery.maySilentlyDelete()) {
+                    // Allowed to delete without asking: try it now; what Android does not let a
+                    // background job do goes, again without asking, the next time the app opens.
+                    silentlyDelete(gallery, engine, result.toDeleteHere)
+                } else askToDelete(result.toDeleteHere.size)
+            }
             if (result.failed.isNotEmpty()) Result.retry() else Result.success()
         } catch (e: HubException) {
             store.lastMessage = e.message ?: "The NAS said no."
@@ -107,6 +118,21 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             store.lastMessage = "The NAS cannot be reached: ${e.message}"
             Result.retry()
         }
+    }
+
+    private suspend fun silentlyDelete(gallery: Gallery, engine: SyncEngine, ids: Set<String>) {
+        try {
+            val request = MediaStore.createDeleteRequest(applicationContext.contentResolver, ids.map { gallery.uri(it) })
+            val options = if (Build.VERSION.SDK_INT >= 34) ActivityOptions.makeBasic()
+                .setPendingIntentBackgroundActivityStartMode(ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED)
+                .toBundle() else null
+            request.send(applicationContext, 0, null, null, null, null, options)
+            delay(5000)
+        } catch (e: Exception) {
+            return
+        }
+        val gone = ids - gallery.existing(ids)
+        if (gone.isNotEmpty()) engine.deletedHere(gone)
     }
 
     private fun askToDelete(count: Int) =

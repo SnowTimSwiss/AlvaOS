@@ -30,6 +30,11 @@ class Store(context: Context) : SyncState {
         get() = prefs.getString("last_message", "").orEmpty()
         set(v) = prefs.edit().putString("last_message", v).apply()
 
+    /** The "delete without asking" step was shown once (the person may have said not now). */
+    var askedManageMedia: Boolean
+        get() = prefs.getBoolean("asked_manage_media", false)
+        set(v) = prefs.edit().putBoolean("asked_manage_media", v).apply()
+
     val signedIn: Boolean get() = server.isNotEmpty() && token.isNotEmpty()
 
     fun hub() = HubClient(server, token)

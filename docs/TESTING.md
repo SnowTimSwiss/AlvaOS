@@ -297,7 +297,8 @@ storage healthy, one shared folder.
 1. On the phone open GitHub › Releases › "AlvaOS app for Android (beta)"
    (tag `android-beta`) and download `alvaos-beta.apk`; install it (allow
    "install unknown apps" for the browser once). Each push to `android/`
-   puts the newest build there.
+   puts the newest build there. Once the upload key is set up
+   (`docs/ANDROID.md`), uninstall the old debug build once.
 2. Open "AlvaOS", enter the NAS address (`192.168.x.y:8090` at home, the
    Tailscale address away), name and password of a person with a personal
    folder and Photos turned on. Allow pictures and notifications.
@@ -311,10 +312,12 @@ storage healthy, one shared folder.
 5. Delete a backed-up photo **on the phone** (Gallery, and empty the
    phone's own trash if it has one), "Back up now": on the NAS it is in
    the trash of the personal folder, not gone.
-6. Delete a backed-up photo **in the Hub** (Files › Delete), "Back up now"
-   on the phone: the app says "1 was deleted on your NAS"; "Delete it here
-   too" asks Android once, then it is gone on the phone. With "Allow this
-   without asking each time" turned on it goes without asking next time.
+6. After choosing the albums the app offers "Keep deleting in sync":
+   Allow, turn on AlvaOS, come back. Delete a backed-up photo **in the
+   Hub** (Files › Delete), "Back up now" on the phone: it is gone on the
+   phone without a question (at the latest when the app is opened next).
+   With "Not now" instead, the app says "1 was deleted on your NAS" and
+   Android asks once for each batch.
 7. **Move** a backed-up photo into another folder in the Hub, "Back up
    now": nothing is deleted on the phone, nothing uploaded again.
 8. "Change albums", untick one: its pictures stay on the NAS.

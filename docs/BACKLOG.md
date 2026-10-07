@@ -15,6 +15,26 @@ How to add an entry:
 
 ---
 
+## 2026-10-07 · App: deleting without asking, ready for Google Play; CI storage
+
+- Deleting what was deleted on the NAS needs no question any more once the
+  person allows "manage media" (offered once after choosing the albums):
+  the background backup tries it, the rest goes when the app opens.
+- `android.yml`: with the upload key in the secrets every build is signed
+  the same (an APK installs over the last one) and an `.aab` is made; "Run
+  workflow" with a track uploads to Google Play. Steps: `docs/ANDROID.md`;
+  privacy policy for the listing: `docs/PRIVACY.md`. Target SDK 36 (what
+  Play asks since August 2026), AGP 8.11.1; the app keeps clear of the
+  status and navigation bars (edge to edge).
+- CI storage: installer builds between releases go to the pre-release
+  `installer-dev` instead of an artifact (an ISO nearly filled the quota);
+  a release no longer uploads its package as an artifact as well (that
+  made the beta-v0.1.0 package run red although the release was complete).
+- **Note for next time:** Android may block the background delete (starting
+  MediaStore's request from the background); then it happens on the next
+  app start. All-files access would avoid that but is hard to get past
+  Google Play's review, so it is not used.
+
 ## 2026-10-07 · Photos from the phone: the Android app, albums and deleting in sync
 
 - Files: the bar that shows what is selected lies over the top bar now

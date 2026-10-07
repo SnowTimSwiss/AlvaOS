@@ -79,8 +79,10 @@ the JSON files are small and are backed up with the pictures.
     back). Can be turned off in the app ("Deleting a picture here deletes it
     on the NAS too").
   - Deleted on the NAS (it is in the trash) → the app deletes it on the phone
-    too. Android asks once per batch, or not at all when the person allows
-    "manage media" for the app.
+    too. Without a question when the person allowed "manage media" once
+    (the app offers it after choosing the albums, Android 12+): in the
+    background where Android lets it, else when the app is opened next.
+    Without that permission Android asks once per batch.
   - Moved or renamed on the NAS → nothing is deleted on the phone and it is
     not uploaded again.
   - An album no longer chosen is not a deletion: its pictures stay on the NAS.

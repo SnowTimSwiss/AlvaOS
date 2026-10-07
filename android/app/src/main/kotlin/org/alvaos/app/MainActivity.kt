@@ -23,6 +23,8 @@ import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.Dispatchers
@@ -42,6 +44,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var root: LinearLayout
     private var afterDelete: ((List<String>) -> Unit)? = null
     private var deleting: List<String> = emptyList()
+    /** Deleting without asking was tried since the app opened (once, so a refusal cannot loop). */
+    private var autoDeleted = false
 
     private val askPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { show() }
     private val deleteRequest = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
@@ -56,13 +60,29 @@ class MainActivity : AppCompatActivity() {
         gallery = Gallery(this)
         SyncWorker.channels(this)
         root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(28), dp(20), dp(28)) }
-        setContentView(ScrollView(this).apply { addView(root) })
+        val scroll = ScrollView(this).apply { addView(root) }
+        // Android draws the app under the status and navigation bars; keep the content clear of them.
+        ViewCompat.setOnApplyWindowInsetsListener(scroll) { v, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            insets
+        }
+        setContentView(scroll)
         show()
     }
 
     override fun onResume() {
         super.onResume()
         show()
+        // What was deleted on the NAS goes here too, without a question when the person allowed that.
+        val pending = store.pendingDeletes
+        if (!autoDeleted && store.signedIn && pending.isNotEmpty() && gallery.maySilentlyDelete()) {
+            autoDeleted = true
+            val ids = gallery.existing(pending).toList()
+            val gone = pending - ids.toSet()
+            if (gone.isNotEmpty()) sync { SyncEngine(store.hub(), gallery, store).deletedHere(gone) }
+            if (ids.isNotEmpty()) delete(ids) { done -> sync { SyncEngine(store.hub(), gallery, store).deletedHere(done) } }
+        }
     }
 
     // ── Building blocks ──────────────────────────────────────────────────
@@ -113,6 +133,7 @@ class MainActivity : AppCompatActivity() {
             !store.signedIn -> signIn()
             !hasGalleryAccess() -> permissions()
             store.albums.isEmpty() -> chooseAlbums()
+            Build.VERSION.SDK_INT >= 31 && !gallery.maySilentlyDelete() && !store.askedManageMedia -> deleteWithoutAsking()
             else -> status()
         }
     }
@@ -196,6 +217,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Once, after choosing the albums: so that deleting stays in sync without a question each time. */
+    private fun deleteWithoutAsking() {
+        title("Keep deleting in sync")
+        text("When you delete a picture on your NAS, the app deletes it on this phone too. Android asks you each " +
+            "time, unless you allow the app to manage your pictures once: then it just happens.")
+        text("On the next screen turn on \"Allow\" for AlvaOS, then come back.", 14f)
+        button("Allow") {
+            store.askedManageMedia = true
+            startActivity(Intent(Settings.ACTION_REQUEST_MANAGE_MEDIA, Uri.parse("package:$packageName")))
+        }
+        button("Not now", quiet = true) { store.askedManageMedia = true; show() }
+    }
+
     private fun status() {
         title("Backup")
         text("${store.user} on ${Uri.parse(store.server).host ?: store.server}", 13f)
@@ -209,10 +243,11 @@ class MainActivity : AppCompatActivity() {
         if (pending.isNotEmpty()) {
             space()
             text("${pending.size} ${if (pending.size == 1) "was" else "were"} deleted on your NAS.").setTypeface(null, Typeface.BOLD)
+            if (gallery.maySilentlyDelete()) text("${if (pending.size == 1) "It goes" else "They go"} from this phone on its own.", 14f)
             button("Delete ${if (pending.size == 1) "it" else "them"} here too") {
                 delete(pending.toList()) { ids -> sync { SyncEngine(store.hub(), gallery, store).deletedHere(ids) } }
             }
-            if (Build.VERSION.SDK_INT >= 31 && !MediaStore.canManageMedia(this)) {
+            if (Build.VERSION.SDK_INT >= 31 && !gallery.maySilentlyDelete()) {
                 button("Allow this without asking each time", quiet = true) {
                     startActivity(Intent(Settings.ACTION_REQUEST_MANAGE_MEDIA, Uri.parse("package:$packageName")))
                 }
@@ -222,6 +257,11 @@ class MainActivity : AppCompatActivity() {
         button("Back up now") { SyncWorker.now(this); store.lastMessage = "Backing up…"; show() }
         button("Free up space", quiet = true) { freeUp() }
         button("Change albums", quiet = true) { root.removeAllViews(); chooseAlbums() }
+        if (pending.isEmpty() && Build.VERSION.SDK_INT >= 31 && !gallery.maySilentlyDelete()) {
+            button("Delete in sync without asking", quiet = true) {
+                startActivity(Intent(Settings.ACTION_REQUEST_MANAGE_MEDIA, Uri.parse("package:$packageName")))
+            }
+        }
         button("Sign out", quiet = true) { store.signOut(); SyncWorker.stop(this); show() }
     }
 
