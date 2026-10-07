@@ -436,3 +436,10 @@ possible a screenshot. Settings › Diagnostics has the logs.
 ## 12i Search filters
 
 Search for a word that matches different kinds of files. The chips above the results narrow them by kind and by when they changed; a kind that was not found has no chip.
+
+## 12j Share to AlvaOS (Android)
+
+1. In the phone's gallery or a file manager: select a picture and a PDF › Share › Save to AlvaOS.
+2. Choose a shared folder: "Saving 1 of 2", then "2 files saved". In the Hub, Files › that folder › From phone has both.
+3. Share the same files again: they arrive as "name (2).jpg" (nothing is overwritten).
+4. Switch the phone to flight mode half-way through a large file: it should say "That did not work" and offer to try again.

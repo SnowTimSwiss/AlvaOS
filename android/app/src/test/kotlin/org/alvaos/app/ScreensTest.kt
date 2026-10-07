@@ -1,6 +1,8 @@
 package org.alvaos.app
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
@@ -216,6 +218,31 @@ class ScreensTest {
             picture(scenario, "5-dark-settings")
             openTab(scenario, MainActivity.TAB_APPS)
             picture(scenario, "5-dark-apps")
+        }
+    }
+
+    private fun share(): Intent = Intent(ctx, ShareActivity::class.java).setAction(Intent.ACTION_SEND)
+        .putExtra(Intent.EXTRA_STREAM, Uri.parse("content://media/external/images/media/1"))
+
+    @Test
+    fun sharingToAlvaOSBeforeSigningInSaysWhatToDo() {
+        ActivityScenario.launch<ShareActivity>(share()).use { scenario ->
+            idle()
+            scenario.onActivity { a ->
+                assertTrue(texts(a.window.decorView).toString(), "Sign in first" in texts(a.window.decorView))
+                a.window.decorView.captureRoboImage("build/outputs/roborazzi/6-share-signed-out.png")
+            }
+        }
+    }
+
+    @Test
+    fun sharingNothingSaysSo() {
+        signedIn()
+        ActivityScenario.launch<ShareActivity>(Intent(ctx, ShareActivity::class.java).setAction(Intent.ACTION_SEND)).use { scenario ->
+            idle()
+            scenario.onActivity { a ->
+                assertTrue(texts(a.window.decorView).toString(), "Nothing to save" in texts(a.window.decorView))
+            }
         }
     }
 }

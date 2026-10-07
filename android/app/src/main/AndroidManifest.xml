@@ -41,6 +41,25 @@
             </intent-filter>
         </activity>
 
+        <!-- "Share" from other apps: pictures and files go to a shared folder on the NAS. -->
+        <activity
+            android:name=".ShareActivity"
+            android:exported="true"
+            android:label="Save to AlvaOS"
+            android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity>
+
         <!-- Google's QR scanner (Play services): no camera permission for the app itself. -->
         <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="barcode_ui" />
 

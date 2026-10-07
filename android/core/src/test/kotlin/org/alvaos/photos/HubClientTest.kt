@@ -110,4 +110,25 @@ class HubClientTest {
         assertEquals("cygnus", me.nas_name)
         assertEquals("https://nas.example.ch", me.public_url)
     }
+
+    @Test
+    fun theFoldersOfTheNasCanBeListedAndMade() {
+        server.enqueue(json("""{"entries": [{"name": "a.jpg", "type": "file"}, {"name": "From phone", "type": "folder"}]}"""))
+        assertEquals(setOf("a.jpg", "From phone"), client.names("Family", "Trips"))
+        assertTrue(server.takeRequest().path!!.contains("share=Family&path=Trips"))
+        server.enqueue(json("""{"entries": []}"""))
+        server.enqueue(json("""{"success": true}"""))
+        client.makeFolder("Family", "", "From phone")
+        server.takeRequest()
+        assertTrue(server.takeRequest().body.readUtf8().contains(""""name":"From phone""""))
+        server.enqueue(json("""{"entries": [{"name": "From phone"}]}"""))
+        client.makeFolder("Family", "", "From phone")                      // there already: nothing is sent
+        assertEquals(4, server.requestCount)
+    }
+
+    @Test
+    fun theSharedFoldersOfThePersonAreRead() {
+        server.enqueue(json("""{"user": "tim", "shares": [{"name": "Family", "access": "write"}, {"name": "Work", "access": "read", "limited": true}]}"""))
+        assertEquals(listOf("Family" to "write", "Work" to "read"), client.me().shares.map { it.name to it.access })
+    }
 }

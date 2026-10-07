@@ -56,9 +56,16 @@ data class StoreTile(val id: String = "", val name: String = "", val port: Int =
 @Serializable
 data class HubInfo(val apps: List<HubApp> = emptyList(), val store: List<StoreTile> = emptyList())
 
+/** A shared folder the person may open: `access` is "write" or "read". */
+@Serializable
+data class ShareInfo(val name: String, val access: String = "read")
+
 /** Who is signed in, on which NAS, with which apps. */
 @Serializable
-data class Me(val user: String = "", val nas_name: String = "", val hub: HubInfo = HubInfo(), val public_url: String = "")
+data class Me(
+    val user: String = "", val nas_name: String = "", val hub: HubInfo = HubInfo(), val public_url: String = "",
+    val shares: List<ShareInfo> = emptyList(),
+)
 
 /** A session of the app's own, from a QR code or a password. */
 @Serializable
@@ -204,6 +211,26 @@ class HubClient(
 
     /** Whether this session still works: false only when the NAS says signed out (401). */
     fun signedIn(): Boolean = http.newCall(request("/api/me").build()).execute().use { it.code != 401 }
+
+    @Serializable
+    private data class Entry(val name: String = "")
+
+    @Serializable
+    private data class Listing(val entries: List<Entry> = emptyList())
+
+    /** The names in a folder of a shared folder ("" is its top). */
+    fun names(share: String, path: String): Set<String> =
+        json.decodeFromString<Listing>(send(request("/api/list?share=${enc(share)}&path=${enc(path)}")))
+            .entries.map { it.name }.toSet()
+
+    @Serializable
+    private data class Mkdir(val share: String, val path: String, val name: String)
+
+    /** Makes a folder in a folder, unless it is there already. */
+    fun makeFolder(share: String, path: String, name: String) {
+        if (name in names(share, path)) return
+        post("/api/mkdir", Mkdir(share, path, name))
+    }
 
     @Serializable
     private data class Added(val phone: Phone)
