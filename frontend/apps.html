@@ -753,6 +753,14 @@
         }
 
         /* --- Progressive disclosure --- */
+        /* Graphics card for an app: one line with a switch */
+        .app-gpu { display: flex; align-items: center; justify-content: space-between; gap: 14px;
+            margin: 16px 0 0; padding: 12px 14px; border: 1px solid var(--border-default); border-radius: var(--radius-default); }
+        .app-gpu-title { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+        .app-gpu-title svg { width: 16px; height: 16px; color: var(--text-secondary); }
+        .app-gpu-sub { color: var(--text-secondary); font-size: 0.86rem; margin-top: 3px; }
+        .app-gpu .toggle { flex: none; }
+
         details.disc {
             border: 1px solid var(--border-default);
             border-radius: var(--radius-default);

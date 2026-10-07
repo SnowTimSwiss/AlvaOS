@@ -598,7 +598,8 @@ _DANGEROUS_HOST_PATHS = (
 )
 _ALLOWED_CAPS = {'NET_ADMIN', 'NET_RAW', 'NET_BIND_SERVICE', 'CHOWN', 'SETUID', 'SETGID',
                  'DAC_OVERRIDE', 'FOWNER', 'SYS_NICE', 'SYS_TIME', 'KILL', 'MKNOD', 'AUDIT_WRITE'}
-_ALLOWED_DEVICE_PREFIXES = ('/dev/dri', '/dev/net/tun', '/dev/nvidia', '/dev/video', '/dev/snd')
+# /dev/kfd: AMD's compute interface, for AI models on AMD cards (Ollama).
+_ALLOWED_DEVICE_PREFIXES = ('/dev/dri', '/dev/kfd', '/dev/net/tun', '/dev/nvidia', '/dev/video', '/dev/snd')
 
 
 def _check_host_path(src: str) -> None:

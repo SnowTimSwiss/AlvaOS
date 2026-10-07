@@ -245,6 +245,15 @@ storage healthy, one shared folder.
    skip updates): the install stops right away with "Install the system
    updates ... restart the NAS"; after doing that it works. An interrupted
    install (switch off during it) offers "Repair package setup".
+5. Apps: install Jellyfin, open it in Apps › Installed › "Graphics card",
+   turn it on (the app restarts). In Jellyfin turn on hardware
+   acceleration as the line under the switch says and play a video that
+   needs converting: the dashboard shows the transcode using the card
+   (`intel_gpu_top` / `radeontop` / `nvidia-smi` on the NAS show load).
+   Turn it off again: Jellyfin still starts. Ollama with an NVIDIA or AMD
+   card: `ollama ps` in the app's terminal shows "GPU". NVIDIA: if
+   NVIDIA's driver was installed before this version, Settings › Graphics
+   offers "Install what apps need" (the container toolkit) first.
 
 ## 13. Updates
 

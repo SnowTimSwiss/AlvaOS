@@ -181,6 +181,18 @@ def reconfigure_app(app_id):
         return jsonify({'error': error}), 409
     return jsonify({'success': True, 'message': f'New settings for "{app_id}" are being applied'})
 
+@bp.route('/api/v1/apps/<app_id>/gpu', methods=['POST'])
+@require_auth(require_admin=True)
+def app_gpu(app_id):
+    """Give an installed app the graphics card ({"on": true}) or take it away."""
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data.get('on'), bool):
+        return jsonify({'error': 'Say whether the app should use the graphics card.'}), 400
+    success, error = app_store.set_gpu(app_id, data['on'])
+    if not success:
+        return jsonify({'error': error}), 409
+    return jsonify({'success': True})
+
 @bp.route('/api/v1/apps/<app_id>', methods=['DELETE'])
 @require_auth(require_admin=True)
 def uninstall_app(app_id):

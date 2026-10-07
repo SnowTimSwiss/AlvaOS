@@ -111,6 +111,15 @@
         }
       }
     },
+    "gpu": {
+      "service": "jellyfin",
+      "vendors": [
+        "intel",
+        "amd",
+        "nvidia"
+      ],
+      "after": "Then in Jellyfin: Dashboard › Playback › Transcoding, choose the hardware acceleration (Intel: Intel QuickSync, AMD: VA-API, NVIDIA: NVENC)."
+    },
     "config_schema": {
       "ports": [
         {
@@ -321,6 +330,15 @@
           }
         }
       }
+    },
+    "gpu": {
+      "service": "immich-server",
+      "vendors": [
+        "intel",
+        "amd",
+        "nvidia"
+      ],
+      "after": "Then in Immich: Administration › Settings › Video Transcoding › Hardware Acceleration."
     },
     "config_schema": {
       "ports": [
@@ -543,6 +561,18 @@
           ]
         }
       }
+    },
+    "gpu": {
+      "service": "ollama",
+      "vendors": [
+        "nvidia",
+        "amd"
+      ],
+      "images": {
+        "amd": "ollama/ollama:rocm"
+      },
+      "kfd": true,
+      "after": "Ollama uses the card by itself; models that fit in the card's memory run much faster."
     },
     "config_schema": {
       "ports": [

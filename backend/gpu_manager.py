@@ -31,8 +31,10 @@ PACKAGES: Dict[str, List[str]] = {
     # In trixie the Intel and NVIDIA firmware is still in firmware-misc-nonfree.
     'intel': ['firmware-misc-nonfree', 'intel-media-va-driver-non-free', 'vainfo'],
     'amd': ['firmware-amd-graphics', 'mesa-va-drivers', 'vainfo'],
-    'nvidia': ['linux-headers-amd64', 'nvidia-driver', 'firmware-misc-nonfree'],
+    # The container toolkit lets apps (Docker) use the card (docker --gpus).
+    'nvidia': ['linux-headers-amd64', 'nvidia-driver', 'firmware-misc-nonfree', 'nvidia-container-toolkit'],
 }
+TOOLKIT = 'nvidia-container-toolkit'
 # Kernel drivers that make a card usable, per vendor. nouveau runs NVIDIA
 # cards for a screen, but apps cannot use it to convert video or run models.
 GOOD_DRIVERS = {'intel': {'i915', 'xe'}, 'amd': {'amdgpu'}, 'nvidia': {'nvidia'}}
@@ -217,7 +219,8 @@ class GpuManager:
             log.append(((res.stdout if res else '') or '') + ((res.stderr if res else '') or ''))
             if err or not res or res.returncode != 0:
                 error = _apt_problem((err or '') + '\n' + ((res.stdout or '') + '\n' + (res.stderr or '') if res else ''))
-            elif vendor == 'nvidia':
+            elif vendor == 'nvidia' and any(c['vendor'] == 'nvidia' and c['driver'] != 'nvidia'
+                                            for c in detect(self.sys_root, self.pci_ids)):
                 _touch(self.restart_flag)   # nouveau stays loaded until the next start
         except _NoHeaders as e:
             error = (f'The NVIDIA driver must be built for the running system (Linux {e}), but its build files '
@@ -228,6 +231,94 @@ class GpuManager:
         with _lock:
             _job.update({'running': False, 'finished_at': _now(), 'error': error,
                          'log': '\n'.join(log)[-4000:]})
+
+
+# ── A graphics card for an app (Apps › an app › Graphics card) ─────────────
+#
+# The catalog says which service of an app can use a card and which makers'
+# cards it can use ("gpu": {"service", "vendors", "images", "kfd"}). Intel
+# and AMD cards are handed in as /dev/dri with the groups that may open it;
+# NVIDIA cards through Docker's GPU request (needs the container toolkit).
+
+def _group_ids(path: str = '/etc/group') -> Dict[str, int]:
+    out = {}
+    try:
+        with open(path) as f:
+            for line in f:
+                parts = line.split(':')
+                if len(parts) >= 3 and parts[2].isdigit():
+                    out[parts[0]] = int(parts[2])
+    except OSError:
+        pass
+    return out
+
+
+def _usable(card: Dict[str, Any], have: Dict[str, bool]) -> bool:
+    if card['vendor'] == 'nvidia':
+        return card['driver'] == 'nvidia' and have.get(TOOLKIT, False)
+    return card['driver'] in GOOD_DRIVERS.get(card['vendor'], set()) and bool(card['render_node'])
+
+
+def app_plan(spec: Any, cards: Optional[List[Dict[str, Any]]] = None, groups: Optional[Dict[str, int]] = None,
+             installed: Optional[Callable[[List[str]], Dict[str, bool]]] = None
+             ) -> Tuple[Optional[Dict[str, Any]], str]:
+    """(how the app gets a card, or None and why not)."""
+    if not isinstance(spec, dict) or not isinstance(spec.get('service'), str):
+        return None, 'This app cannot use a graphics card.'
+    vendors = [v for v in spec.get('vendors') or [] if v in GOOD_DRIVERS]
+    cards = detect() if cards is None else cards
+    have = (installed or _installed)([TOOLKIT]) if any(c['vendor'] == 'nvidia' for c in cards) else {}
+    fitting = [c for c in cards if c['vendor'] in vendors]
+    usable = sorted((c for c in fitting if _usable(c, have)), key=lambda c: vendors.index(c['vendor']))
+    if not usable:
+        names = ', '.join(VENDOR_NAMES[v] for v in vendors)
+        if fitting:
+            return None, (f'The {VENDOR_NAMES[fitting[0]["vendor"]]} card is not ready for apps yet. '
+                          'Settings › Graphics shows what is missing.')
+        return None, f'This NAS has no graphics card this app can use ({names}).'
+    card = usable[0]
+    plan: Dict[str, Any] = {'service': spec['service'], 'vendor': card['vendor'],
+                            'card': f"{card['vendor_name']} {card['model']}".strip()}
+    image = (spec.get('images') or {}).get(card['vendor'])
+    if isinstance(image, str) and image:
+        plan['image'] = image
+    if card['vendor'] == 'nvidia':
+        plan['deploy'] = {'resources': {'reservations': {'devices': [
+            {'driver': 'nvidia', 'count': 'all', 'capabilities': ['gpu']}]}}}
+        plan['environment'] = {'NVIDIA_VISIBLE_DEVICES': 'all',
+                               'NVIDIA_DRIVER_CAPABILITIES': 'compute,video,utility'}
+        return plan, ''
+    groups = _group_ids() if groups is None else groups
+    plan['devices'] = ['/dev/dri:/dev/dri'] + (['/dev/kfd:/dev/kfd'] if card['vendor'] == 'amd' and spec.get('kfd')
+                                               else [])
+    # Numbers, not names: the group names inside the container differ.
+    plan['group_add'] = [str(groups[g]) for g in ('render', 'video') if g in groups]
+    return plan, ''
+
+
+def apply_plan(compose: Dict[str, Any], plan: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """The compose config with the card handed to the plan's service."""
+    if not plan:
+        return compose
+    service = (compose.get('services') or {}).get(plan['service'])
+    if not isinstance(service, dict):
+        return compose
+    if plan.get('image'):
+        service['image'] = plan['image']
+    for key in ('devices', 'group_add'):
+        if plan.get(key):
+            service[key] = list(service.get(key) or []) + [v for v in plan[key] if v not in (service.get(key) or [])]
+    if plan.get('deploy'):
+        reservations = service.setdefault('deploy', {}).setdefault('resources', {}).setdefault('reservations', {})
+        reservations['devices'] = list(reservations.get('devices') or []) + \
+            plan['deploy']['resources']['reservations']['devices']
+    if plan.get('environment'):
+        env = service.get('environment') or {}
+        if isinstance(env, list):
+            env = dict(str(e).split('=', 1) for e in env if '=' in str(e))
+        env.update(plan['environment'])
+        service['environment'] = env
+    return compose
 
 
 class _NoHeaders(Exception):
@@ -241,6 +332,9 @@ def _advice(card: Dict[str, Any], restart: bool) -> Tuple[str, str]:
         return 'unknown', 'AlvaOS does not know what this card can do for apps.'
     if vendor == 'nvidia':
         if card['driver'] == 'nvidia':
+            if TOOLKIT in missing:
+                return 'partial', ('NVIDIA\'s driver is running, but apps cannot use the card until NVIDIA\'s '
+                                   'container toolkit is installed.')
             return 'ready', 'NVIDIA\'s driver is running. Apps can use this card.'
         if not missing and restart:
             return 'restart', 'The driver is installed. Restart the NAS to start using it.'

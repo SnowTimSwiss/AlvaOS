@@ -15,6 +15,27 @@ How to add an entry:
 
 ---
 
+## 2026-10-07 · A graphics card for apps, with one switch
+
+- Apps › Installed › an app › "Graphics card": a switch for apps whose
+  catalog entry says they can use one (Jellyfin, Immich, Ollama; new `gpu`
+  key: which service, which makers, an image per maker). The app is
+  recreated with the same images and settings; folders, ports and updates
+  keep the card.
+- `gpu_manager.app_plan` picks the first ready card the app can use:
+  Intel/AMD come in as `/dev/dri` with the render and video groups (by
+  number), AMD for Ollama also `/dev/kfd` and the `ollama/ollama:rocm`
+  image, NVIDIA through Docker's GPU request (`deploy.resources...devices`).
+  The compose check now allows `/dev/kfd`; nothing else changed in the
+  helper.
+- NVIDIA's container toolkit (`nvidia-container-toolkit`) is installed with
+  the driver; a card whose driver already runs shows "Install what apps
+  need" on Settings › Graphics. No restart for that.
+- If the card is gone later, the app starts without it and says why.
+- Note for next time: CI checks that `nvidia-container-toolkit` is in
+  Debian trixie (`optional-packages.txt`); if it is not, it needs NVIDIA's
+  own apt source, which the helper does not allow today.
+
 ## 2026-10-07 · Calendar on phones and computers (CalDAV)
 
 - The Hub calendar now syncs with the calendar apps people already use:

@@ -672,6 +672,8 @@ async function renderInspector() {
                 ` : ''}
             </div>
 
+            ${gpuBlock(selected, escId)}
+
             <details class="disc">
                 <summary>${window.alvaIcon ? window.alvaIcon('info') : ''} Details &amp; storage <span class="chev">${window.alvaIcon ? window.alvaIcon('chevron-right') : '&rsaquo;'}</span></summary>
                 <div class="disc-body">
@@ -1550,6 +1552,48 @@ async function showAppSettingsDialog(appId) {
             checkPorts();
         }
     };
+}
+
+// The graphics card for apps that can use one (Jellyfin, Immich, Ollama):
+// one switch; the catalog says which service gets it (backend gpu_manager.app_plan).
+function gpuBlock(app, escId) {
+    const g = app.gpu || {};
+    if (!g.possible) return '';
+    const can = g.on || Boolean(g.card);
+    let sub;
+    if (g.on && g.card) sub = `Uses the ${escapeHtml(g.card)}.`;
+    else if (g.card) sub = `Can use the ${escapeHtml(g.card)}: video converts faster, AI models run faster.`;
+    else sub = `${escapeHtml(g.why_not || 'No graphics card is ready.')} <a href="/system.html#graphics">Settings › Graphics</a>`;
+    return `
+        <div class="app-gpu">
+            <div class="app-gpu-text">
+                <div class="app-gpu-title">${window.alvaIcon ? window.alvaIcon('cpu') : ''} Graphics card</div>
+                <div class="app-gpu-sub">${sub}</div>
+                ${g.on && g.after ? `<div class="app-gpu-sub">${escapeHtml(g.after)}</div>` : ''}
+            </div>
+            <label class="toggle" title="${g.on ? 'On' : 'Off'}"><input type="checkbox"${g.on ? ' checked' : ''}${can ? '' : ' disabled'}
+                aria-label="Use the graphics card" onchange="setAppGpu('${escId}', this)"><span class="toggle-slider"></span></label>
+        </div>`;
+}
+
+async function setAppGpu(appId, box) {
+    const on = box.checked;
+    box.disabled = true;
+    try {
+        const res = await apiFetch(`${API_BASE}/apps/${encodeURIComponent(appId)}/gpu`, {
+            method: 'POST',
+            headers: { 'Authorization': authToken, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ on }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'The graphics card was not changed.');
+        showNotification(on ? 'Giving the app the graphics card. It restarts.' : 'Taking the graphics card away. The app restarts.', 'info');
+        await waitForAppOperation(appId, 'gpu', 1800);
+        showNotification(on ? 'The app uses the graphics card now.' : 'The app runs without the graphics card now.', 'success');
+    } catch (error) {
+        showNotification(error.message, 'error');
+    }
+    await loadInstalledWorkspace(true);
 }
 
 function showAppDetails(appId) {

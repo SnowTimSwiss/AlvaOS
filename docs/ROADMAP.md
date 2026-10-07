@@ -73,7 +73,7 @@ Thought through and decided. In this order:
 - **Quotas per share and personal folders: done** (Btrfs qgroups, only switched on for a pool once a limit is set there). Warning when a folder is nearly full: done. Next: a check on a real pool with many restore points how much slower qgroups make it.
 
 ### 3a. Graphics cards
-- **Settings › Graphics: done** (detection, driver and firmware install, restart, Secure Boot note). Next: give apps the card with one switch (Jellyfin, Immich: `/dev/dri`; Ollama), and NVIDIA's container toolkit for NVIDIA cards in apps.
+- **Settings › Graphics: done** (detection, driver and firmware install, restart, Secure Boot note). **The card for apps with one switch: done** (Apps › an app › Graphics card, for Jellyfin, Immich and Ollama: Intel/AMD as `/dev/dri`, AMD for Ollama with its ROCm image, NVIDIA through Docker's GPU request with the container toolkit). Next: the card for a virtual machine (see 2b); more catalog apps that can use a card (Plex, Frigate, Stable Diffusion).
 
 ### 3b. Backup to a USB disk
 - **Done (needs a test on real Btrfs).** Backup › Backup disk: pick a pool on a USB disk, AlvaOS copies the newest restore point of every source there (Btrfs send/receive, incremental) whenever the disk is connected, keeps 30 per source, "Safely remove" unmounts it. Copies show up in the restore points ("On the backup disk") and Files › Previous versions ("Get files"); a warning appears after a week without a copy. A fresh USB disk becomes the backup disk in one step (erase after typing ERASE): done.

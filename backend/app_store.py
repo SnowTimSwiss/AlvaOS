@@ -189,10 +189,14 @@ class AppStore:
         app_details: Dict,
         port_mappings: Optional[Dict[int, int]] = None,
         volume_mappings: Optional[Dict[str, str]] = None,
-        environment_vars: Optional[Dict[str, str]] = None
+        environment_vars: Optional[Dict[str, str]] = None,
+        gpu_plan: Optional[Dict] = None
     ) -> Dict:
         """Build a mutable compose config with user mappings applied."""
         compose_config = copy.deepcopy(app_details.get('docker_compose', {}) or {})
+        if gpu_plan:
+            import gpu_manager
+            gpu_manager.apply_plan(compose_config, gpu_plan)
 
         if port_mappings:
             for service_config in compose_config.get('services', {}).values():
@@ -1346,6 +1350,68 @@ class AppStore:
         thread.start()
         return True, None
 
+    def set_gpu(self, app_id: str, on: bool) -> Tuple[bool, Optional[str]]:
+        """Give an installed app the graphics card, or take it away. The
+        containers are recreated with the same images and settings."""
+        apps_state = self._load_apps_state()
+        if app_id not in apps_state:
+            return False, f"App '{app_id}' is not installed"
+        app_state = apps_state.get(app_id) or {}
+        if str(app_state.get('source') or 'catalog') == 'custom_compose':
+            return False, "Custom apps get a graphics card in their compose file"
+        app_details, error = self.get_app_details(app_id)
+        if error or app_details is None:
+            return False, error or f"App '{app_id}' not found in catalog"
+        if not isinstance(app_details.get('gpu'), dict):
+            return False, "This app cannot use a graphics card."
+        if on:
+            import gpu_manager
+            plan, why_not = gpu_manager.app_plan(app_details['gpu'])
+            if plan is None:
+                return False, why_not
+        installed = str(app_state.get('installed_version') or '').strip()
+        latest = str(app_details.get('version') or '').strip()
+        if installed and latest and installed != latest:
+            return False, "Update the app first, then give it the graphics card."
+        op_active, active_app_id = self._is_operation_in_progress()
+        if op_active:
+            return False, (f"Operation for '{active_app_id}' is already in progress" if active_app_id
+                           else "Another app operation is already in progress")
+        storage_path = str(app_state.get('storage_path') or '').strip()
+        if not storage_path or not os.path.exists(storage_path):
+            return False, f"App storage path not found: {storage_path or '-'}"
+        ports, folders, environment_vars = self._stored_settings(app_id, app_state, app_details)
+
+        import threading
+        thread = threading.Thread(
+            target=self._update_app_worker,
+            args=(app_id, storage_path, ports, folders, environment_vars),
+            kwargs={'action': 'gpu', 'pull': False, 'gpu': bool(on)},   # compose fetches a missing image itself
+        )
+        thread.daemon = True
+        message = 'Giving the app the graphics card...' if on else 'Taking the graphics card away...'
+        with self._status_lock:
+            self._active_install_status = {
+                "app_id": app_id, "action": "gpu", "status": "starting", "progress": 0,
+                "message": message, "logs": [], "updated_at": datetime.now().isoformat()
+            }
+        self._update_install_status(app_id, "starting", 0, message, [], force_write=True, action="gpu")
+        thread.start()
+        return True, None
+
+    def gpu_overview(self, app_id: str, app_state: Dict) -> Dict:
+        """For the app page: can this app use a card, does it, and if not why."""
+        if str(app_state.get('source') or 'catalog') == 'custom_compose':
+            return {'possible': False}
+        app_details, _ = self.get_app_details(app_id)
+        spec = (app_details or {}).get('gpu')
+        if not isinstance(spec, dict):
+            return {'possible': False}
+        import gpu_manager
+        plan, why_not = gpu_manager.app_plan(spec)
+        return {'possible': True, 'on': bool(app_state.get('gpu')), 'card': (plan or {}).get('card', ''),
+                'why_not': why_not, 'after': str(spec.get('after') or '')}
+
     def get_app_update_status(self, app_id: str, force_refresh: bool = False) -> Tuple[Optional[Dict], Optional[str]]:
         """Return update availability for an installed app, using cached registry probes when possible."""
         apps_state = self._load_apps_state()
@@ -1402,9 +1468,11 @@ class AppStore:
         volume_mappings: Optional[Dict[str, str]],
         environment_vars: Optional[Dict[str, str]],
         action: str = "update",
-        pull: bool = True
+        pull: bool = True,
+        gpu: Optional[bool] = None
     ) -> None:
-        """Worker thread for app updates and settings changes (no pull)."""
+        """Worker thread for app updates and settings changes (no pull).
+        `gpu` turns the graphics card on or off; None keeps how it was."""
         logs: List[str] = []
         try:
             self._update_install_status(app_id, "updating", 5, f"Starting update of {app_id}..." if pull else "Applying the new settings...", logs, action=action)
@@ -1413,11 +1481,25 @@ class AppStore:
                 self._update_install_status(app_id, "error", 0, f"Failed to read catalog entry: {error or 'not found'}", logs, force_write=True, action=action)
                 return
 
+            if gpu is None:
+                gpu = bool((self._load_apps_state().get(app_id) or {}).get('gpu'))
+            plan = None
+            if gpu:
+                import gpu_manager
+                plan, why_not = gpu_manager.app_plan(app_details.get('gpu'))
+                if plan is None:
+                    if action == 'gpu':
+                        self._update_install_status(app_id, "error", 0, why_not, logs, force_write=True, action=action)
+                        return
+                    # The card is gone or not ready: the app still runs, without it.
+                    logs.append(f'Without the graphics card: {why_not}')
+
             compose_config = self._build_compose_config(
                 app_details=app_details,
                 port_mappings=port_mappings,
                 volume_mappings=volume_mappings,
-                environment_vars=environment_vars
+                environment_vars=environment_vars,
+                gpu_plan=plan
             )
 
             def docker_callback(line: str):
@@ -1472,6 +1554,7 @@ class AppStore:
             app_state['port_mappings'] = port_mappings or {}
             app_state['volume_mappings'] = volume_mappings or {}
             app_state['environment_vars'] = environment_vars or {}
+            app_state['gpu'] = bool(gpu)
             app_state['updated_at'] = datetime.now().isoformat()
             if 'installed_at' not in app_state:
                 app_state['installed_at'] = datetime.now().isoformat()
@@ -1535,5 +1618,9 @@ class AppStore:
             enriched_state = dict(app_state or {})
             enriched_state['app_id'] = app_id
             enriched_state.update(self._build_update_metadata(app_id, enriched_state))
+            try:
+                enriched_state['gpu'] = self.gpu_overview(app_id, enriched_state)
+            except Exception:  # noqa: BLE001 - the list must not fail over a card
+                enriched_state['gpu'] = {'possible': False}
             installed_apps.append(enriched_state)
         return installed_apps

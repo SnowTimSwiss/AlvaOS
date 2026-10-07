@@ -88,7 +88,8 @@ def test_installing_runs_apt_with_the_fixed_list_and_asks_for_a_restart(tmp_path
         time.sleep(0.02)
     assert ran[0][0][1:] == ["update"]
     headers = f"linux-headers-{os.uname().release}"
-    assert ran[1][0][1:] == ["-y", "install", "linux-headers-amd64", headers, "nvidia-driver", "firmware-misc-nonfree"]
+    assert ran[1][0][1:] == ["-y", "install", "linux-headers-amd64", headers, "nvidia-driver", "firmware-misc-nonfree",
+                              "nvidia-container-toolkit"]
     assert priv_policy.validate(ran[1][0], FakeSystem()).argv == ran[1][0]   # the helper runs it as is
     assert ran[1][1] == {"DEBIAN_FRONTEND": "noninteractive"}
     assert flag.exists() and gpu.status()["restart_needed"]
