@@ -15,12 +15,15 @@ How to add an entry:
 
 ---
 
-## 2026-10-07 · Roadmap: the app and the Hub as one
+## 2026-10-07 · Roadmap: the app and the Hub as one; the app's Play name
 
 - From the first test of the app on a phone (beta-v0.2.0): native screens and
   the Hub inside look like two apps (colours, the Hub's own frame, Photos
   chips, the backup's numbers). What to change is in `ROADMAP.md` under
   Native apps, "Next (tonight)".
+- The app's package name (Google Play) is `uk.timserver.alvaos`, the
+  domain timserver.uk backwards. A phone with the app from before installs
+  it as a new app (uninstall the old one, connect again with the QR code).
 
 ## 2026-10-07 · App fixes from the first test; Files: Trash as a view
 

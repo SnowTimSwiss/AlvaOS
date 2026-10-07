@@ -18,7 +18,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "org.alvaos.app"
+        applicationId = "uk.timserver.alvaos"     // on Google Play; never changes after the first upload
         minSdk = 30            // Android 11: deleting pictures through MediaStore's own request
         targetSdk = 36         // what Google Play asks of new apps and updates
         versionCode = buildNumber
