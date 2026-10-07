@@ -15,6 +15,17 @@ How to add an entry:
 
 ---
 
+## 2026-10-06 · Virtual machines: a larger disk
+
+- Settings of a stopped machine take a larger disk size. The backend checks
+  the free space, writes the description, and the helper's new `vm-grow ID`
+  runs `qemu-img resize` to that size (as root, only on the machine's own
+  `disk.qcow2`, never a symlink, never smaller, never while it runs). If it
+  fails the old size is written back. The page says how to let the guest use
+  the space.
+- Tests for growing, refusing to shrink, a running machine, a symlinked disk,
+  too little free space and a failed resize.
+- Checked in Chromium at desktop and phone width with a faked machine.
 ## 2026-10-06 · Photos: the date a picture was taken; plan for a small Immich
 
 - Photos sorts and groups by the date in the photo (EXIF DateTimeOriginal)

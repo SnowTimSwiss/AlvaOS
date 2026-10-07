@@ -15,6 +15,7 @@ Three kinds of callers:
 * the same unit, as root (`ExecStartPre=+`): `vm_ops.py ready ID` makes sure
   `alvaos-vm` can reach the folder and the installer image;
 * `alvaos-priv` as root: `vm-prepare ID` (folder, disk, UEFI variables),
+  `vm-grow ID` (the disk to the size in the description, never smaller),
   `vm-delete ID`, `vm-isos` (installer images to choose from), `vm-setup`;
 * the backend, only through the two above (it uses systemctl for the rest).
 
@@ -364,6 +365,39 @@ def prepare(vm_id: str, state_file: str = STATE_FILE, config_dir: str = CONFIG_D
     return {'folder': base}
 
 
+def disk_size(path: str) -> int:
+    """The size a disk file has for the guest, in bytes."""
+    res = subprocess.run([QEMU_IMG, 'info', '--output=json', '-f', 'qcow2', path], capture_output=True, text=True,
+                         timeout=60, env={'LC_ALL': 'C'})
+    try:
+        return int(json.loads(res.stdout)['virtual-size'])
+    except (ValueError, KeyError, TypeError):
+        raise VmError('The disk could not be read.') from None
+
+
+def grow(vm_id: str, state_file: str = STATE_FILE, config_dir: str = CONFIG_DIR, root: str = DATA_ROOT,
+         is_active: Optional[Callable[[str], bool]] = None, size_of: Callable[[str], int] = disk_size
+         ) -> Dict[str, Any]:
+    """Make a stopped machine's disk as large as its description says. Only
+    larger: shrinking would cut off what the guest keeps at the end."""
+    cfg = load_config(vm_id, config_dir, root, state_file)
+    if (is_active or _unit_active)(vm_id):
+        raise VmError('Shut the virtual machine down first.')
+    disk = os.path.join(vm_dir(read_store(state_file, root), vm_id), 'disk.qcow2')
+    if os.path.islink(disk) or not os.path.isfile(disk):
+        raise VmError('The disk of this virtual machine is not there.')
+    want = cfg['disk_gb'] * 2**30
+    have = size_of(disk)
+    if want < have:
+        raise VmError('A disk can only grow, not shrink.')
+    if want > have:
+        res = subprocess.run([QEMU_IMG, 'resize', '-f', 'qcow2', disk, str(want)], capture_output=True, text=True,
+                             timeout=300, env={'LC_ALL': 'C'})
+        if res.returncode != 0:
+            raise VmError(f'The disk could not grow: {(res.stderr or res.stdout).strip()[:200]}')
+    return {'disk_gb': cfg['disk_gb']}
+
+
 def _let_in(path: str) -> None:
     """`alvaos-vm` has to pass through the VMs folder to reach a machine's own."""
     mode = os.stat(path).st_mode
@@ -449,7 +483,7 @@ def list_isos(state_file: str = STATE_FILE, root: str = DATA_ROOT, limit: int = 
     return {'isos': found}
 
 
-HELPER_OPS = {'vm-prepare', 'vm-delete', 'vm-isos', 'vm-setup'}
+HELPER_OPS = {'vm-prepare', 'vm-grow', 'vm-delete', 'vm-isos', 'vm-setup'}
 
 
 def helper_main(argv: List[str]) -> int:
@@ -461,10 +495,12 @@ def helper_main(argv: List[str]) -> int:
             result = setup_store()
         elif argv[:1] == ['vm-prepare'] and len(argv) == 2:
             result = prepare(argv[1])
+        elif argv[:1] == ['vm-grow'] and len(argv) == 2:
+            result = grow(argv[1])
         elif argv[:1] == ['vm-delete'] and len(argv) == 2:
             result = delete(argv[1])
         else:
-            raise VmError('usage: vm-setup | vm-prepare ID | vm-delete ID | vm-isos')
+            raise VmError('usage: vm-setup | vm-prepare ID | vm-grow ID | vm-delete ID | vm-isos')
     except (VmError, OSError) as exc:
         print(f'alvaos-priv: {exc}', file=sys.stderr)
         return 1
