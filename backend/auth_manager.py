@@ -305,6 +305,17 @@ def _get_session(token):
     return session
 
 
+def admin_signed_in(token):
+    """Whether this sign-in is an admin's and still valid, without changing
+    anything (asked from another thread by admin_terminal.py)."""
+    session = SESSIONS.get(token) if token else None
+    if not session or session.get('role') != 'admin':
+        return False
+    now = _utc_now()
+    expires = _parse_iso(session.get('expires_at'))
+    return not ((expires and expires < now) or _idle(session, now))
+
+
 def _get_current_session():
     """Get the session for the current request."""
     token = request.headers.get('Authorization', '').strip()

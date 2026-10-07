@@ -96,7 +96,7 @@ def test_chat_looks_then_answers():
     reads = []
     answer = ai.chat(settings(), [{"role": "user", "content": "How full is my NAS?"}],
                      lambda p: reads.append(p) or (200, {"pools": [{"used_percent": 41}]}), post=post)
-    assert answer == {"reply": "Your pool is 41% full.", "looked_at": ["storage_pools"], "proposals": []}
+    assert answer == {"reply": "Your pool is 41% full.", "looked_at": ["storage_pools"], "ran": [], "proposals": []}
     assert reads == ["/api/v1/storage/pools"]
     assert asked[0]["messages"][0]["role"] == "system" and asked[0]["tools"]
     tool_message = asked[1]["messages"][-1]
@@ -336,3 +336,54 @@ def test_folders_people_and_limits_can_be_proposed():
                         lambda p: (200, {"enabled": True, "connected": False}))
     spec = next(t for t in ai.tool_specs("ask") if t["function"]["name"] == "create_shared_folder")
     assert spec["function"]["parameters"]["required"] == ["name", "pool_id"]
+
+
+def test_the_assistant_runs_only_catalog_commands_without_a_shell():
+    asked, ran = [], []
+
+    def post(url, headers, json, timeout):
+        asked.append(json)
+        if len(asked) == 1:
+            calls = [{"id": f"c{i}", "type": "function", "function": {"name": "run_command", "arguments": a}}
+                     for i, a in enumerate([
+                         '{"name": "disk_space"}',
+                         '{"name": "service_status", "value": "smbd"}',
+                         '{"name": "service_status", "value": "smbd; rm -rf /"}',
+                         '{"name": "ping", "value": "-f nas"}',
+                         '{"name": "rm", "value": "/"}'])]
+            return Answer({"content": "", "tool_calls": calls})
+        return Answer({"content": "Disks are fine."})
+
+    def run(argv):
+        ran.append(argv)
+        return 0, "Filesystem Size Used\n/dev/sda1 1T 10G\npassword=hunter2\n"
+
+    answer = ai.chat(settings(), [{"role": "user", "content": "Why is it slow?"}], lambda p: (200, {}),
+                     post=post, run=run)
+    assert answer["ran"] == ["df -h -x tmpfs -x devtmpfs -x overlay -x squashfs",
+                             "systemctl status --no-pager -n 25 smbd"]
+    assert ran == [ai.COMMANDS["disk_space"][1], ["/usr/bin/systemctl", "status", "--no-pager", "-n", "25", "smbd"]]
+    results = [m["content"] for m in asked[1]["messages"] if m["role"] == "tool"]
+    assert "hunter2" not in results[0] and "/dev/sda1" in results[0]
+    assert "error" in results[2] and "error" in results[3] and "no command" in results[4]
+    assert any(t["function"]["name"] == "run_command" for t in asked[0]["tools"])
+
+
+def test_long_command_output_is_cut_to_lines():
+    shown, text = ai.run_command_tool({"name": "busiest_processes"}, lambda argv: (0, "\n".join(map(str, range(500)))))
+    out = json.loads(text)["output"].splitlines()
+    assert shown.startswith("ps -eo") and len(out) == ai.COMMAND_LINES + 1 and "440 more lines" in out[-1]
+
+
+def test_every_catalog_command_is_read_only_and_absolute():
+    for name, (_, argv, param) in ai.COMMANDS.items():
+        assert argv[0].startswith("/usr/"), name
+        assert ("{}" in argv) == bool(param), name
+        assert not {"restart", "stop", "start", "kill", "-delete", "rm"} & set(argv), name
+
+
+def test_a_service_restart_is_only_proposed():
+    action = ai.build_action("restart_service", {"service": "smbd"}, lambda p: (200, {}))
+    assert action["path"] == "/api/v1/system/services/restart" and action["body"] == {"service": "smbd"}
+    with pytest.raises(ValueError):
+        ai.build_action("restart_service", {"service": "ssh"}, lambda p: (200, {}))

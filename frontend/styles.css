@@ -2681,3 +2681,4 @@ body.has-feedback-fab .content-scroll { padding-bottom: 72px; }
     padding: 10px 12px; border-radius: 8px; margin-top: 10px; font-size: 0.9rem; }
 .gpu-restart { border: 1px solid var(--accent-warning); }
 .gpu-error { border: 1px solid var(--accent-danger); }
+.ai-ran code { font-size: 0.72rem; padding: 1px 5px; border-radius: 4px; background: var(--bg-hover, rgba(127, 127, 127, 0.12)); }

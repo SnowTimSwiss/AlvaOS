@@ -80,6 +80,100 @@ PARAM_TOOLS: Dict[str, Tuple[str, str, str, 're.Pattern[str]', str]] = {
 }
 LOG_TOOLS = {'system_log', 'app_log'}
 
+# Commands the assistant may run by itself, like an admin in a terminal would
+# to find out what is wrong (docs/ADMIN-TERMINAL.md): only these, each a fixed
+# program with fixed arguments, without a shell, as the AlvaOS service account
+# (never root), read-only, with a time limit; the output is masked like logs.
+# The chat shows exactly what ran. A few take one value, checked first.
+# name -> (what it shows, argv, (value name, what it is, allowed) or None)
+SERVICE_RE = re.compile(r'^(smbd|nmbd|nfs-kernel-server|docker|ssh|alvaos|alvaos-files|alvaos-watchdog|nut-server|'
+                        r'nut-monitor|NetworkManager|systemd-timesyncd|systemd-resolved|alvaos-vm@[0-9a-f]{8})'
+                        r'(\.service)?$')
+HOST_RE = re.compile(r'^(?!-)[A-Za-z0-9.-]{1,253}$')
+COMMANDS: Dict[str, Tuple[str, List[str], Optional[Tuple[str, str, 're.Pattern[str]']]]] = {
+    'disk_space': ('Free space of every mounted file system (df -h)',
+                   ['/usr/bin/df', '-h', '-x', 'tmpfs', '-x', 'devtmpfs', '-x', 'overlay', '-x', 'squashfs'], None),
+    'memory': ('Memory and swap in use (free -h)', ['/usr/bin/free', '-h'], None),
+    'load': ('How long the NAS runs and how busy it is (uptime)', ['/usr/bin/uptime'], None),
+    'busiest_processes': ('The processes using the most CPU (ps)',
+                          ['/usr/bin/ps', '-eo', 'pid,user,pcpu,pmem,etime,comm', '--sort=-pcpu'], None),
+    'biggest_processes': ('The processes using the most memory (ps)',
+                          ['/usr/bin/ps', '-eo', 'pid,user,pcpu,pmem,rss,comm', '--sort=-rss'], None),
+    'block_devices': ('Disks, partitions and where they are mounted (lsblk)',
+                      ['/usr/bin/lsblk', '-o', 'NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS,MODEL'], None),
+    'mounts': ('Mounted storage with its options (findmnt)',
+               ['/usr/bin/findmnt', '-rn', '-o', 'TARGET,SOURCE,FSTYPE,OPTIONS', '-t',
+                'btrfs,ext4,xfs,vfat,exfat,ntfs3,nfs,nfs4,cifs'], None),
+    'addresses': ('Network interfaces and their addresses (ip address)', ['/usr/bin/ip', '-brief', 'address'], None),
+    'routes': ('The routes, with the router (ip route)', ['/usr/bin/ip', 'route'], None),
+    'listening_ports': ('Which ports the NAS listens on (ss)', ['/usr/bin/ss', '-tulnH'], None),
+    'failed_services': ('Services that failed (systemctl --failed)',
+                        ['/usr/bin/systemctl', '--failed', '--no-pager', '--plain'], None),
+    'service_status': ('The state and last lines of one service (systemctl status)',
+                       ['/usr/bin/systemctl', 'status', '--no-pager', '-n', '25', '{}'],
+                       ('service', 'One of smbd, nmbd, nfs-kernel-server, docker, ssh, alvaos, alvaos-files, '
+                        'nut-server, nut-monitor, NetworkManager, systemd-timesyncd', SERVICE_RE)),
+    'time_sync': ('Whether the clock is synchronised (timedatectl)', ['/usr/bin/timedatectl'], None),
+    'name_lookup': ('What address a name resolves to (getent ahosts)', ['/usr/bin/getent', 'ahosts', '{}'],
+                    ('host', 'A host name like example.com or nas.local', HOST_RE)),
+    'ping': ('Whether another device or the internet answers (ping, 4 times)',
+             ['/usr/bin/ping', '-c', '4', '-W', '2', '{}'], ('host', 'A host name or IP address', HOST_RE)),
+}
+# Services the assistant may propose to restart (api_system.py runs it through
+# the helper, whose policy allows exactly these): name -> (what, what happens).
+RESTARTABLE = {
+    'smbd': ('file sharing for Windows and Mac (SMB)',
+             'Open files over the network are closed for a moment; computers reconnect by themselves.'),
+    'nfs-kernel-server': ('file sharing over NFS', 'NFS clients pause for a moment and continue.'),
+    'docker': ('Docker, which runs the apps', 'Every app stops and starts again; they are away for a minute.'),
+    'alvaos-files': ('AlvaOS Hub (Files, Photos, Calendar)', 'People in the Hub sign in again; uploads continue.'),
+}
+COMMAND_LINES = 60
+COMMAND_SECONDS = 20
+
+
+def command_line(name: str, value: str = '') -> Optional[List[str]]:
+    """The argv for a catalog command, or None when it or its value is not allowed."""
+    entry = COMMANDS.get(name)
+    if not entry:
+        return None
+    _, argv, param = entry
+    if param:
+        if not param[2].match(value or ''):
+            return None
+        return [value if a == '{}' else a for a in argv]
+    return list(argv)
+
+
+def _run_command(argv: List[str]) -> Tuple[int, str]:
+    import subprocess
+    try:
+        res = subprocess.run(argv, capture_output=True, text=True, timeout=COMMAND_SECONDS, stdin=subprocess.DEVNULL,
+                             env={'LC_ALL': 'C', 'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'SYSTEMD_COLORS': '0'})
+    except FileNotFoundError:
+        return 127, f'{argv[0]} is not installed.'
+    except subprocess.TimeoutExpired:
+        return 124, f'It did not finish within {COMMAND_SECONDS} seconds.'
+    return res.returncode, (res.stdout or '') + (res.stderr or '')
+
+
+def run_command_tool(args: Dict[str, Any], run: Callable[[List[str]], Tuple[int, str]]) -> Tuple[str, str]:
+    """(what ran, the answer for the model)."""
+    name = str(args.get('name') or '')
+    value = str(args.get('value') or '').strip()
+    argv = command_line(name, value)
+    if argv is None:
+        param = (COMMANDS.get(name) or ('', [], None))[2]
+        return '', json.dumps({'error': f'Give {param[0]}: {param[1]}.' if param else
+                               f'There is no command called {name}. Use one of: {", ".join(COMMANDS)}.'})
+    code, output = run(argv)
+    lines = str(mask_text(output)).splitlines()
+    if len(lines) > COMMAND_LINES:
+        lines = lines[:COMMAND_LINES] + [f'…({len(lines) - COMMAND_LINES} more lines)']
+    shown = ' '.join([os.path.basename(argv[0])] + argv[1:])
+    return shown, json.dumps({'command': shown, 'exit_code': code, 'output': '\n'.join(lines)[:MAX_TOOL_CHARS]})
+
+
 LEVELS = ('read', 'ask')   # only look / propose changes the person confirms
 
 # What the assistant may propose at the "ask" level. It never runs one
@@ -104,6 +198,11 @@ ACTION_SPECS: Dict[str, Dict[str, Any]] = {
     'check_services': {
         'description': 'Check file sharing and apps now and restart what has stopped.',
         'parameters': {},
+    },
+    'restart_service': {
+        'description': 'Restart one system service that hangs: file sharing for Windows and Mac (smbd), NFS, '
+                       'Docker (all apps restart), or AlvaOS Hub.',
+        'parameters': {'service': {'type': 'string', 'enum': ['smbd', 'nfs-kernel-server', 'docker', 'alvaos-files']}},
     },
     'turn_on_automatic_backups': {
         'description': 'Turn on automatic restore points of the shared folders.',
@@ -200,6 +299,13 @@ def build_action(name: str, args: Dict[str, Any], read: Callable[[str], Tuple[in
         return {'title': 'Check file sharing and apps now',
                 'detail': 'AlvaOS checks its services and restarts what has stopped.',
                 'method': 'POST', 'path': '/api/v1/watchdog/check', 'body': {}}
+    if name == 'restart_service':
+        service = str(args.get('service') or '')
+        known = RESTARTABLE.get(service)
+        if not known:
+            raise ValueError(f'"{service}" cannot be restarted from here. Choose one of: {", ".join(RESTARTABLE)}.')
+        return {'title': f'Restart {known[0]}', 'detail': known[1], 'method': 'POST',
+                'path': '/api/v1/system/services/restart', 'body': {'service': service}}
     if name == 'turn_on_automatic_backups':
         minutes = {'hour': 60, 'day': 1440, 'week': 10080}.get(str(args.get('every') or 'day'))
         if not minutes:
@@ -367,7 +473,9 @@ SYSTEM_PROMPT = (
     'You are the assistant built into AlvaOS, a home NAS. Answer in the language the person writes in, '
     'short and in plain words, for someone who is not a technician. Use the tools to look at the real state '
     'of this NAS before you answer questions about it; do not guess numbers. When something should be changed '
-    'by hand, link only to a real page listed below. Describe only controls that exist on that page; never invent '
+    'by hand, link only to a real page listed below. To find out what is wrong you may run the read-only '
+    'diagnostic commands of the run_command tool (disk space, memory, processes, network, service status, ping); '
+    'say what you found, not the raw output.  Describe only controls that exist on that page; never invent '
     'buttons, fields, tabs, menu items, or steps. If you do not know the control, say what you know and ask the '
     'person to describe what is on their screen. The actual pages and their controls are: Dashboard: system health, '
     'memory, storage summary, alerts and shortcuts. Storage: Pools (create/import/check/expand/remove pools), Disks '
@@ -375,7 +483,7 @@ SYSTEM_PROMPT = (
     'Installed, App Store, app settings/logs and container terminal. Backup: Data (restore points, schedules, USB '
     'copy), System (system restore points), Buddy (second NAS). Updates: AlvaOS and package updates. Settings: '
     'Network, Time, Security (password, two-step sign-in, HTTPS, SSH, sessions), Notifications, Power, Graphics, '
-    'Remote access, Assistant, Diagnostics. Virtual machines: machine setup, create, settings, start/stop and console. '
+    'Remote access, Assistant, Diagnostics, Terminal (a shell for the admin). Virtual machines: machine setup, create, settings, start/stop and console. '
     'Hub: Files, Photos, Calendar and Chat as enabled by the owner. If the current assistant mode is read-only, '
     'state that changes are disabled and point to Settings > Assistant to enable confirmed proposals. In confirmed '
     'proposal mode, people and shared folders can be proposed with the available actions; present them as proposals '
@@ -468,6 +576,15 @@ def tool_specs(level: str = 'read') -> List[Dict[str, Any]]:
         'parameters': {'type': 'object', 'properties': {arg: {'type': 'string', 'description': arg_desc}},
                        'required': [arg]}}}
         for name, (description, arg, arg_desc, _, _) in PARAM_TOOLS.items()]
+    specs.append({'type': 'function', 'function': {
+        'name': 'run_command',
+        'description': 'Run one read-only diagnostic command on the NAS, like an admin in a terminal, and get its '
+                       'output. The person sees which command ran. Commands: ' + '; '.join(
+                           f'{n}: {d}' + (f' (value: {p[0]})' if p else '') for n, (d, _, p) in COMMANDS.items()),
+        'parameters': {'type': 'object', 'properties': {
+            'name': {'type': 'string', 'enum': list(COMMANDS)},
+            'value': {'type': 'string', 'description': 'Only for commands that need a value (service or host).'}},
+            'required': ['name']}}})
     if level == 'ask':
         specs += [{'type': 'function', 'function': {
             'name': name, 'description': 'PROPOSE (the person confirms): ' + spec['description'],
@@ -602,7 +719,7 @@ def calls_in_text(content: Any) -> List[Dict[str, Any]]:
         data = json.loads(text)
     except ValueError:
         return []
-    known = set(TOOL_PATHS) | set(PARAM_TOOLS) | set(ACTION_SPECS)
+    known = set(TOOL_PATHS) | set(PARAM_TOOLS) | set(ACTION_SPECS) | {'run_command'}
     calls = []
     for i, item in enumerate(data if isinstance(data, list) else [data]):
         if not isinstance(item, dict):
@@ -627,12 +744,14 @@ LINK_PROMPT = (
     'index.html (Dashboard), storage.html#pools, storage.html#disks, storage.html#shares (shared folders), '
     'storage.html#users (people), files.html (AlvaOS Hub: Files, Photos, Calendar, Chat), apps.html, vms.html (virtual machines), backup.html, updates.html, system.html#network, '
     'system.html#remote (remote access), system.html#graphics (graphics cards and drivers), '
-    'system.html#security, system.html#alerts, system.html#power, system.html#assistant, system.html#logs.'
+    'system.html#security, system.html#alerts, system.html#power, system.html#assistant, system.html#logs, '
+    'system.html#terminal (a command line on the NAS).'
 )
 
 
 def chat(settings: Dict[str, Any], history: Any, read: Callable[[str], Tuple[int, Any]],
-         post: Optional[Callable] = None, page: str = '') -> Dict[str, Any]:
+         post: Optional[Callable] = None, page: str = '',
+         run: Optional[Callable[[List[str]], Tuple[int, str]]] = None) -> Dict[str, Any]:
     """Answer the last question. Returns {'reply', 'looked_at', 'proposals'};
     proposals (at the "ask" level) are changes the person still has to confirm."""
     level = settings.get('level', 'read')
@@ -643,11 +762,12 @@ def chat(settings: Dict[str, Any], history: Any, read: Callable[[str], Tuple[int
     if len(messages) < 2 or messages[-1]['role'] != 'user':
         raise ValueError('Ask something first.')
     looked_at: List[str] = []
+    ran: List[str] = []
     proposals: List[Dict[str, Any]] = []
 
     def answer(message: Dict[str, Any]) -> Dict[str, Any]:
         return {'reply': str(message.get('content') or '').strip() or '(No answer.)', 'looked_at': looked_at,
-                'proposals': proposals}
+                'ran': ran, 'proposals': proposals}
 
     for _ in range(MAX_ROUNDS):
         message = call_model(settings, messages, post)
@@ -672,6 +792,12 @@ def chat(settings: Dict[str, Any], history: Any, read: Callable[[str], Tuple[int
                     except (ValueError, TypeError) as e:
                         result = {'error': str(e)}
                 messages.append({'role': 'tool', 'tool_call_id': call_id, 'content': json.dumps(result)})
+                continue
+            if name == 'run_command':
+                shown, result_text = run_command_tool(_args(function), run or _run_command)
+                if shown:
+                    ran.append(shown)
+                messages.append({'role': 'tool', 'tool_call_id': call_id, 'content': result_text})
                 continue
             looked_at.append(name)
             messages.append({'role': 'tool', 'tool_call_id': call_id,

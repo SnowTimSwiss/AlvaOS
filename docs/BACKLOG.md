@@ -15,6 +15,25 @@ How to add an entry:
 
 ---
 
+## 2026-10-07 · The admin terminal, and the assistant runs diagnostic commands
+
+- Settings › Terminal: a real shell in the browser as the AlvaOS service
+  account (never root), xterm.js vendored. `admin_terminal.py` is its own
+  small WebSocket door on 8086/9446 (like the VM screens): a one-time
+  ticket tied to the admin's sign-in, the page's origin checked, one PTY
+  per connection, at most 3, closed after 30 idle minutes, when the
+  browser goes and when the sign-in ends; the process group is killed;
+  nothing is logged.
+- The assistant's `run_command` tool: a fixed catalog of read-only commands
+  (df, free, ps, lsblk, ip, ss, systemctl status of listed services,
+  ping, …), no shell, a time limit, output masked and cut to 60 lines; the
+  chat shows which ran. New proposal `restart_service` (smbd, NFS, Docker,
+  AlvaOS Hub), confirmed by a click, through the helper.
+- The installer now installs `iproute2` and `iputils-ping` explicitly.
+- Tests: `test_admin_terminal.py` (a real shell over a real WebSocket),
+  the catalog in `test_ai_assistant.py`, endpoints in `test_api.py`; the
+  terminal was tried in Chromium.
+
 ## 2026-10-07 · Files: whole folders, and sharing a folder with people
 
 - Upload whole folders: drop them into Files (the browser reads the tree,

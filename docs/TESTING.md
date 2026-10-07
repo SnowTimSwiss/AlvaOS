@@ -212,6 +212,19 @@ storage healthy, one shared folder.
    anna" › a card with "Do it" appears; nothing happens before "Do it".
 4. Links in answers (like "Storage › Shared folders") open the right page.
 
+## 10b. Terminal (Settings › Terminal)
+
+1. Open terminal: a prompt as `alvaos`. `ls /mnt/alvaos`, `df -h`, a long
+   `top` (q to quit), resize the window: the terminal follows.
+   `sudo -i` is refused (no root shell).
+2. Over HTTPS (9443 for the page): the terminal opens on 9446 once the
+   certificate is trusted.
+3. Sign out in another tab: the terminal closes within half a minute.
+   Leave it 30 minutes without typing: it closes and says why.
+4. Assistant: ask "why is my NAS slow?" and "is Samba running?": the answer
+   shows "Ran: `ps …`" / "Ran: `systemctl status … smbd`". At the "ask"
+   level, ask it to restart Samba: it proposes, and runs only after the click.
+
 ## 11. Notifications, disks, power
 
 1. Settings › Notifications: email or Telegram › "Send a test".

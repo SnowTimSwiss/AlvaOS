@@ -1,7 +1,26 @@
 # Admin terminal and assistant command proposals
 
-This is the design for the terminal work in `ROADMAP.md` 1. It deliberately
-does not add an endpoint or execute commands.
+This was the design for the terminal work in `ROADMAP.md` 1; both parts are
+built now (2026-10-07). Where the build differs, it says so below.
+
+**Built:** Settings › Terminal (`backend/admin_terminal.py`,
+`frontend/settings-terminal.js`, xterm.js vendored in `frontend/vendor/xterm`):
+a one-time ticket from `POST /api/v1/system/terminal` (admins), a WebSocket
+door on 8086 (HTTPS 9446) that checks the page's origin and the ticket, then
+one `bash --login` as `alvaos` in a PTY with a plain environment. At most 3
+at once; it ends after 30 minutes without typing, when the browser goes
+away, and within 20 seconds of the admin's sign-in ending
+(`auth_manager.admin_signed_in`); the whole process group is ended. Frames
+from the browser are at most 64 KB; nothing is logged.
+
+The assistant's catalog is `ai_assistant.COMMANDS` (the `run_command` tool):
+df, free, uptime, ps, lsblk, findmnt, ip, ss, systemctl --failed / status of
+a listed service, timedatectl, getent, ping. **Difference from the design:**
+these read-only diagnostics run without a click, like the read-only
+endpoints the assistant already reads; the chat shows exactly which
+commands ran ("Ran: `df -h`"). Changes stay proposals the person confirms:
+`restart_service` (smbd, NFS, Docker, AlvaOS Hub) through
+`POST /api/v1/system/services/restart` and the helper.
 
 ## Admin terminal
 

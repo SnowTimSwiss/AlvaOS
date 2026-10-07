@@ -19,7 +19,7 @@ Fixed right away: adding people and making shared folders (both refused by the p
 - **NVIDIA driver:** installs the running kernel's headers (and says clearly when they are no longer offered), shows the installation log, explains DKMS, Secure Boot and interrupted-dpkg failures and offers the `dpkg --configure -a` repair. A hardware run is still needed (`TESTING.md` 12).
 - **Assistant:** its page guide now lists the real pages and controls, forbids invented buttons and fields, and explains read-only versus confirmed proposal mode. People and shared folders are available as confirmable proposals.
 - **SSH in Settings › Security:** on/off, port, password sign-in, and Ed25519 admin public keys for root only; the config is checked with `sshd -t` before it is used. A hardware run is still needed (`TESTING.md` 9b).
-- **The assistant in a terminal:** design written in `docs/ADMIN-TERMINAL.md`. It specifies an admin-only `alvaos` shell, session and output limits, and a separate fixed catalog of commands shown in full and run only after confirmation; no free-form root commands.
+- **The admin terminal and the assistant's commands: done** (Settings › Terminal: a shell as the AlvaOS service account in the browser; the assistant runs a fixed catalog of read-only diagnostic commands and proposes service restarts; see `docs/ADMIN-TERMINAL.md`). Next: an audit line in the notifications for confirmed actions; more catalog commands as real problems show which are missing.
 - **Dialogs:** done: one shared dialog (`openDialog`, see `DESIGN.md`) for the admin pages; title and buttons stay in view, details open in place. Still open: the app install wizard, container logs and terminal in `apps.html` are static modals in the page.
 
 ---

@@ -66,8 +66,8 @@ OS_TYPES: Dict[str, Dict[str, Any]] = {
                   'nic': 'e1000e', 'localtime': False},
 }
 # Ports the NAS itself uses: a virtual machine cannot take them over.
-RESERVED_PORTS = {22, 25, 80, 111, 139, 443, 445, 2049, 5353, 8080, 8085, 8090, 8091, 8443, 9443, 9444, 9445,
-                  51820}
+RESERVED_PORTS = {22, 25, 80, 111, 139, 443, 445, 2049, 5353, 8080, 8085, 8086, 8090, 8091, 8443, 9443, 9444, 9445,
+                  9446, 51820}
 
 
 class VmError(Exception):

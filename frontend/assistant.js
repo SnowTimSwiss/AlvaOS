@@ -52,9 +52,11 @@
         return out.map((part) => (Array.isArray(part) ? `<ul>${part.join('')}</ul>` : part)).join('');
     }
 
-    function looked(names) {
+    function looked(names, ran) {
         const unique = [...new Set(names || [])].map((n) => n.replace(/_/g, ' '));
-        return unique.length ? `<div class="ai-looked">Looked at: ${esc(unique.join(', '))}</div>` : '';
+        const commands = [...new Set(ran || [])];
+        return (unique.length ? `<div class="ai-looked">Looked at: ${esc(unique.join(', '))}</div>` : '')
+            + (commands.length ? `<div class="ai-looked ai-ran">Ran: ${commands.map((c) => `<code>${esc(c)}</code>`).join(' ')}</div>` : '');
     }
 
     function render() {
@@ -71,7 +73,7 @@
         }
         list.innerHTML = history.filter((m) => !m.note).map((m) => (m.role === 'user'
             ? `<div class="ai-msg ai-user">${esc(m.content)}</div>`
-            : `<div class="ai-msg ai-bot${m.error ? ' ai-error' : ''}">${format(m.content)}${looked(m.looked_at)}${proposalsHtml(m)}</div>`)).join('')
+            : `<div class="ai-msg ai-bot${m.error ? ' ai-error' : ''}">${format(m.content)}${looked(m.looked_at, m.ran)}${proposalsHtml(m)}</div>`)).join('')
             + (busy ? '<div class="ai-msg ai-bot ai-thinking" role="status">Looking<span>.</span><span>.</span><span>.</span></div>' : '');
         list.querySelectorAll('[data-decide]').forEach((b) => b.addEventListener('click', () => decide(b.dataset.id, b.dataset.decide)));
         list.scrollTop = list.scrollHeight;
@@ -135,7 +137,7 @@
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.error || 'The assistant could not answer.');
-            history.push({ role: 'assistant', content: data.reply, looked_at: data.looked_at, proposals: data.proposals || [] });
+            history.push({ role: 'assistant', content: data.reply, looked_at: data.looked_at, ran: data.ran || [], proposals: data.proposals || [] });
         } catch (e) {
             history.push({ role: 'assistant', content: e.message, error: true });
         } finally {
