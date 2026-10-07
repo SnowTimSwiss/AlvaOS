@@ -129,7 +129,12 @@ What it should become (backup from the phone, albums, favourites): `PHOTOS.md`.
   weeks becomes weekly, "5 times" becomes "until" the fifth day), no
   exceptions to a repeat, no reminders. "Calendar › On your phone and
   computer" shows the address and the steps.
-- Next: Contacts over CardDAV next to it.
+
+### Contacts
+
+- A person's address book: a list with a search and letters on the left, the open contact on the right (a page of its own on a phone). Name, company, job title, nickname, several phone numbers, email addresses and addresses (each with a kind), birthday, website, notes; a heart for favourites. Menu: import a `.vcf` file (cards already there are skipped), export all as vCard, "Sync with your phone".
+- **Where it is kept:** one `contacts.json` in `.alvaos/contacts/` of the person's personal folder (or their own pool), written as the person through the helper, like Calendar. Personal only (no shared address books yet).
+- **CardDAV** (`hub_carddav.py`, vCards in `hub_vcard.py`) beside CalDAV on the same address (`/.well-known/carddav`, `/dav/<person>/contacts/`), same sign-in. iPhone and Mac (Contacts › Accounts › CardDAV), Android with DAVx5, Thunderbird. Calendar and Contacts are separate switches: a phone can sync one without the other. vCard 3.0 is written; 2.1 and 4.0 are read. A phone's extras (photos, groups, social profiles) are not kept; the contact itself is.
 
 ### Chat
 

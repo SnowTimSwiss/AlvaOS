@@ -15,6 +15,15 @@ How to add an entry:
 
 ---
 
+## 2026-10-08 — Contacts: the address book of the Hub, with CardDAV
+
+- New Hub app **Contacts** (`hub_contacts.py`, `contacts.js/css`): list, search, favourites, edit form, vCard import/export, a help dialog for syncing a phone. Data: `contacts.json` in the person's folder, as the person.
+- **CardDAV** (`hub_carddav.py`) beside CalDAV; vCards read/written in `hub_vcard.py` (2.1/3.0/4.0 in, 3.0 out, Apple groups and labels, quoted-printable). Discovery: `/.well-known/carddav`, `addressbook-home-set`. Calendar and Contacts can each be off for a person.
+- The app bar, the admin Hub page and the Android app (new tab icon) pick the app up by themselves. Tests: `test_hub_contacts.py`.
+- Not kept from a phone's card: photo, groups, social profiles.
+
+---
+
 ## 2026-10-08 — Files: Recent and Starred
 
 - Side bar: **Recent** (the last 40 files opened) and **Starred** (right-click › Star, files and folders). Shown like search results, so open, reveal, share and download work as always. Kept in the browser per person (`localStorage`); not synced between devices yet.

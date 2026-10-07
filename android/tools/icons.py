@@ -31,7 +31,7 @@ EXTRA = {
 
 # name in the app -> name in the table
 ICONS = {
-    'ic_tab_hub': 'grid', 'ic_tab_files': 'folder', 'ic_tab_photos': 'image', 'ic_tab_calendar': 'calendar',
+    'ic_tab_hub': 'grid', 'ic_tab_files': 'folder', 'ic_tab_photos': 'image', 'ic_tab_calendar': 'calendar', 'ic_tab_contacts': 'contact',
     'ic_tab_chat': 'message-circle', 'ic_tab_backup': 'cloud-upload', 'ic_tab_settings': 'settings',
     'ic_qr': 'qr-code', 'ic_check': 'check', 'ic_wifi_off': 'wifi-off', 'ic_phone': 'phone', 'ic_trash': 'trash',
     'ic_back': 'arrow-left', 'ic_more': 'more-vertical', 'ic_link': 'link', 'ic_monitor': 'monitor',

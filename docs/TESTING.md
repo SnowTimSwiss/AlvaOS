@@ -422,3 +422,11 @@ possible a screenshot. Settings › Diagnostics has the logs.
 1. Open two files in Files. Side bar › Recent lists them, the newest first.
 2. Right-click a folder › Star. Side bar › Starred shows it; open it from there. Right-click again › Remove from Starred.
 3. Sign in as another person in the same browser: the lists are different.
+
+## 12h Contacts
+
+1. Hub › Contacts: New contact (name, a phone number, an email, a birthday), Save; Edit, heart, Delete (asks twice).
+2. Menu › Import a vCard file: export your contacts from your phone or Google as .vcf and import them. Import it again: "0 added".
+3. iPhone: Settings › Contacts › Accounts › Add Account › Other › Add CardDAV Account; server = the Hub address, your AlvaOS name and password. The contacts appear. Change one on the phone, reload the Hub: the change is there. Change one in the Hub, pull to refresh on the phone.
+4. Android: DAVx5, URL `https://<nas>:9443/dav/`; tick Contacts. Same checks.
+5. Hub › Settings (admin) › Hub: turn Contacts off for someone: their phone says it is not turned on for them.

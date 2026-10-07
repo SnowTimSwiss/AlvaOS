@@ -250,6 +250,7 @@ class MainActivity : AppCompatActivity() {
         "folder" -> R.drawable.ic_tab_files
         "image" -> R.drawable.ic_tab_photos
         "calendar" -> R.drawable.ic_tab_calendar
+        "contact" -> R.drawable.ic_tab_contacts
         "message-circle" -> R.drawable.ic_tab_chat
         else -> R.drawable.ic_tab_hub
     }
