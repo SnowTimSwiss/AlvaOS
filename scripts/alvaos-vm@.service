@@ -20,7 +20,12 @@ ExecStart=/usr/bin/python3 /opt/alvaos/bin/vm_ops.py run %i
 # Shutting down the NAS (or stopping it here) presses the power button of the
 # guest and waits for it to finish before the disk goes away.
 ExecStop=/usr/bin/python3 /opt/alvaos/bin/vm_ops.py stop %i
+# "+": as root, to give back what `ready` handed over (its own network port,
+# a graphics card goes back to its driver).
+ExecStopPost=+/usr/bin/python3 /opt/alvaos/bin/vm_ops.py cleanup %i
 TimeoutStopSec=150
+# A graphics card in a machine (VFIO) needs the guest's memory locked.
+LimitMEMLOCK=infinity
 KillMode=mixed
 Restart=no
 NoNewPrivileges=yes

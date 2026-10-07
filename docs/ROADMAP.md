@@ -61,7 +61,7 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 
 ### 2b. Virtual machines
 - **Done:** the Virtual machines page (set up once, a larger disk in the settings, new machine, start, shut down, switch off, delete, settings, the screen in the browser). QEMU/KVM run by systemd as an own account, disks as qcow2 files in the shared folder `VMs` (so restore points, backups and limits cover them), Windows 11 with UEFI and a TPM. Reference: `docs/VMS.md`.
-- **Next:** a second disk; a virtio driver ISO for faster Windows; a bridge network (own address at home) as an option next to NAT; pass a USB device or graphics card through; Home Assistant OS and other ready images as a one-click choice; limits per machine (cgroups).
+- **Disks, network and devices: done** (a second disk, a second CD for drivers, virtio for Windows, its own address at home (macvtap), USB devices, a graphics card through VFIO, low priority; see `docs/VMS.md`). **Next:** Home Assistant OS and other ready images as a one-click choice; snapshots in the page.
 
 ### 2c. Reaching the NAS, and not being without it
 Thought through and decided. In this order:
@@ -73,7 +73,7 @@ Thought through and decided. In this order:
 - **Quotas per share and personal folders: done** (Btrfs qgroups, only switched on for a pool once a limit is set there). Warning when a folder is nearly full: done. Next: a check on a real pool with many restore points how much slower qgroups make it.
 
 ### 3a. Graphics cards
-- **Settings › Graphics: done** (detection, driver and firmware install, restart, Secure Boot note). **The card for apps with one switch: done** (Apps › an app › Graphics card, for Jellyfin, Immich and Ollama: Intel/AMD as `/dev/dri`, AMD for Ollama with its ROCm image, NVIDIA through Docker's GPU request with the container toolkit). Next: the card for a virtual machine (see 2b); more catalog apps that can use a card (Plex, Frigate, Stable Diffusion).
+- **Settings › Graphics: done** (detection, driver and firmware install, restart, Secure Boot note). **The card for apps with one switch: done** (Apps › an app › Graphics card, for Jellyfin, Immich and Ollama: Intel/AMD as `/dev/dri`, AMD for Ollama with its ROCm image, NVIDIA through Docker's GPU request with the container toolkit). A whole card for a virtual machine: done (see 2b). Next: more catalog apps that can use a card (Plex, Frigate, Stable Diffusion).
 
 ### 3b. Backup to a USB disk
 - **Done (needs a test on real Btrfs).** Backup › Backup disk: pick a pool on a USB disk, AlvaOS copies the newest restore point of every source there (Btrfs send/receive, incremental) whenever the disk is connected, keeps 30 per source, "Safely remove" unmounts it. Copies show up in the restore points ("On the backup disk") and Files › Previous versions ("Get files"); a warning appears after a week without a copy. A fresh USB disk becomes the backup disk in one step (erase after typing ERASE): done.

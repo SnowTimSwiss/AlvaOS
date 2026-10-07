@@ -78,6 +78,14 @@ def vms_isos():
     return jsonify({'success': True, 'isos': isos})
 
 
+@bp.route('/api/v1/vms/devices', methods=['GET'])
+@require_auth(require_admin=True)
+def vms_devices():
+    """USB devices and graphics cards that can be handed to a machine."""
+    from app_services import vms
+    return jsonify({'success': True, **vms.devices()})
+
+
 @bp.route('/api/v1/vms/<vm_id>', methods=['POST'])
 @require_auth(require_admin=True)
 def vms_update(vm_id):

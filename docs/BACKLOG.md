@@ -15,6 +15,26 @@ How to add an entry:
 
 ---
 
+## 2026-10-07 · Virtual machines: disks, network and devices
+
+- A second disk (only grows), a second CD (the virtio drivers for Windows),
+  "fast disks and network" (virtio) for Windows once its drivers are in,
+  its own address at home (macvtap), USB devices, a whole graphics card
+  through VFIO, and a low priority. All in Settings › Disks, network and
+  devices; old descriptions get the defaults.
+- What needs root happens in the unit, not in the backend:
+  `vm_ops.py ready` (ExecStartPre=+) hands the devices over (USB node and
+  `/dev/vfio/<group>` to `alvaos-vm`, the card's IOMMU group to vfio-pci,
+  the macvtap port), `vm_ops.py cleanup` (new ExecStopPost=+) gives them
+  back. QEMU gets the tap as an open file. No new helper command.
+- Not the NAS's own screen card; one running machine per card; the
+  unit locks memory for VFIO. `GET /api/v1/vms/devices` lists USB devices
+  and cards with why one cannot be used (IOMMU off, the screen card).
+- Tests: `tests/test_vm_devices.py` against a fake /sys and /dev, and
+  `test_vm_manager.py`; tried in Chromium.
+- Note for next time: none of this ran on real hardware yet
+  (`TESTING.md` 8b.8). macvtap guests cannot talk to the NAS itself.
+
 ## 2026-10-07 · The admin terminal, and the assistant runs diagnostic commands
 
 - Settings › Terminal: a real shell in the browser as the AlvaOS service

@@ -69,16 +69,38 @@ how it is built and what comes next; done and open items are also in
 A disk grows in the settings of a stopped machine (`vm-grow ID`: `qemu-img
 resize`, only larger); the person then extends the partition in the guest.
 
+## Disks, network and devices (Settings › "Disks, network and devices")
+
+- **Second disk:** `data.qcow2` next to `disk.qcow2`, made by `vm-grow`
+  when the size goes above 0, only grows, is not removed here.
+- **Second CD:** any `.iso` from `VMs/ISOs`, for example the virtio drivers
+  for Windows (`virtio-win.iso` from fedorapeople.org; Debian does not ship
+  it). **Fast disks and network** then switches a Windows machine to
+  virtio; only after the drivers are in, or Windows does not boot.
+- **Its own address at home:** a macvtap port on the NAS's network port to
+  the router (`mvt<ID>`, a fixed MAC 52:54:00:… per machine), made by
+  `vm_ops.py ready` as root before the start and removed by `cleanup`
+  (`ExecStopPost=+`). QEMU gets its tap device as an open file. The NAS
+  itself cannot reach a macvtap guest (devices at home can); port
+  forwarding is for the NAT mode only.
+- **USB devices:** chosen by vendor and product id; before the start the
+  device node goes to `alvaos-vm`; QEMU's `usb-host`.
+- **A graphics card (VFIO):** needs IOMMU (VT-d/AMD-Vi in the BIOS); not
+  the card the NAS shows its screen on. Before the start the card and
+  everything in its IOMMU group is bound to `vfio-pci` (driver_override)
+  and `/dev/vfio/<group>` goes to `alvaos-vm`; after the stop it goes back
+  to its own driver. One running machine at a time per card; the unit
+  locks memory (`LimitMEMLOCK=infinity`). The browser screen stays as a
+  second display.
+- **Priority low:** QEMU runs with `nice 10` and `ionice -c2 -n7`, so the
+  NAS's own work (shares, backups) comes first. Cores and memory stay the
+  hard limits.
+
 ## Not yet / next
 
-- Snapshots in the page, a second disk, a USB device or graphics card passed through
-  (needs IOMMU; fits the Graphics page).
-- A bridge network, so a machine gets its own address in the home network.
-  It needs a bridge on the NAS's network card; NAT stays the default.
-- Faster Windows: a ready virtio driver ISO to choose, then virtio disk and
-  network.
-- QEMU's own sandbox (`-sandbox`) once tested on real machines; limits per
-  machine with cgroups (CPU share, memory).
+- Snapshots in the page.
+- QEMU's own sandbox (`-sandbox`) once tested on real machines; CPU and IO
+  limits with cgroups beyond the priority.
 - Home Assistant OS and other ready-made images as a one-click choice.
 - Warm standby (a second NAS that can take over): see the plan for
   high availability in `ROADMAP.md`.

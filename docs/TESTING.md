@@ -178,6 +178,19 @@ storage healthy, one shared folder.
 7. Disk size: shut a machine down › Settings › Disk 80 → 120 › Save. Start
    it; in Windows, Disk Management shows 40 GB unallocated after C:,
    "Extend Volume" takes it. A smaller number is refused.
+8. Settings › Disks, network and devices:
+   - Second disk 50 GB: Windows shows a new disk to initialise.
+   - Second CD `virtio-win.iso`: install the drivers in Windows, then tick
+     "Fast disks and network": it still starts, Device Manager shows
+     VirtIO devices.
+   - "Its own address at home": the router lists the machine with its own
+     address; a laptop at home reaches it (RDP) without a forwarded port.
+     After stopping it, `ip link` on the NAS shows no `mvt…` left.
+   - A USB stick ticked: it shows up in the machine, not on the NAS.
+   - A second graphics card (not the one with the NAS's screen, IOMMU on in
+     the BIOS): the machine shows it in Device Manager; after stopping,
+     Settings › Graphics shows it back on its own driver.
+   - Priority low: a big copy to the NAS stays fast while the machine works.
 
 ## 9. HTTPS
 
