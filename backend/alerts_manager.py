@@ -258,6 +258,16 @@ def _collect_system_alerts():
     except Exception:
         pass
 
+    try:
+        from app_services import ups
+        item = ups.alert()
+        if item:
+            alerts.append(_build_alert_item(alert_id=item['id'], severity=item['severity'], title=item['title'],
+                                            message=item['message'], route='system.html#power',
+                                            action_label='Open Power'))
+    except Exception:
+        pass
+
     cpu_temp_c = _read_cpu_temperature_c()
     if isinstance(cpu_temp_c, (int, float)):
         if cpu_temp_c >= ALERT_THRESHOLDS['cpu_temp_critical']:

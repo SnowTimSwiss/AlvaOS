@@ -1188,6 +1188,14 @@ option {
     -webkit-overflow-scrolling: touch;
 }
 
+/* A list of choices to pick one (or some) from, in dialogs and forms. */
+.choice-list { display: flex; flex-direction: column; gap: 8px; margin-top: 1rem; text-align: left; }
+.choice { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--border-default); border-radius: var(--radius-default); padding: 10px 12px; cursor: pointer; }
+.choice:has(input:checked) { border-color: var(--accent-primary); }
+.choice input { width: auto; margin-top: 3px; accent-color: var(--accent-primary); }
+.choice strong { display: block; color: var(--text-primary); }
+.choice span { color: var(--text-secondary); font-size: 0.85rem; }
+
 /* ── Shared card components ───────────────────────────────────────────────────
    These used to be redefined inside individual pages, which is how .status-row
    ended up meaning two different things depending on which file you opened.

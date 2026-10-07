@@ -50,9 +50,10 @@ import api_shares
 import api_storage
 import api_system
 import api_updates
+import api_ups
 
 for _module in (api_auth, api_system, api_updates, api_storage, api_shares, api_backup, api_apps, api_files, api_ai,
-                api_remote, api_gpu, api_vms):
+                api_remote, api_gpu, api_vms, api_ups):
     app.register_blueprint(_module.bp)
 
 # ── Frontend serving ──────────────────────────────────────────────────────────

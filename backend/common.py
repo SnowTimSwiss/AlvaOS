@@ -33,6 +33,7 @@ CMD = {
     'APT': '/usr/bin/apt',
     'DPKG': '/usr/bin/dpkg',
     'SSHD': '/usr/sbin/sshd',
+    'UPSMON': '/usr/sbin/upsmon',
     'TAIL': '/usr/bin/tail',
     'JOURNALCTL': '/usr/bin/journalctl',
     'SMARTCTL': '/usr/sbin/smartctl',
