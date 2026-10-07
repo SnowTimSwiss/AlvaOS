@@ -96,8 +96,11 @@ the JSON files are small and are backed up with the pictures.
    only when ffmpeg is installed): **done**. Videos play in the viewer; what the
    browser cannot play (AVI, HEVC from an iPhone) gets a copy made on request
    (H.264, 720 p, kept in the Hub cache); HEIC and TIFF open through a JPEG.
-3. Favourites and albums in the browser (`Photos/.albums/`), sharing an album
-   with people in the household.
+3. Favourites and albums in the browser: **done** for the person's own
+   (`Photos/.alvaos/albums/<id>.json`, `Photos/.alvaos/favourites.json`: lists of
+   pictures, no copies; `backend/hub_albums.py`). Select pictures › Add to album or
+   Favourite; the heart in the viewer; New album, rename, delete; Remove from
+   album. Next: sharing an album with people in the household.
 4. Upload into the own photos from the Hub (button and drag and drop), into
    `Photos/<year>/<month>/` by the date in the photo.
 5. The phone backup in the Android app, with albums and deleting in sync:

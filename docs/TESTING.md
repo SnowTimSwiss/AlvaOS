@@ -371,6 +371,18 @@ storage healthy, one shared folder.
 4. Settings › Trash opens Files with the trash; Phones and devices opens
    the list.
 
+## 12e. Photos: favourites and albums
+
+1. Photos › Select › tap a few pictures › Add to album › New album "Summer":
+   the album opens with them; its chip is in the row; Photos in the app too.
+2. Open a picture: the heart in the bar makes it a favourite (a small heart
+   on its tile); the Favourites chip lists them; Select › "Remove heart".
+3. In an album: Rename, Delete album (the pictures stay), Select › Remove
+   from album. Add the same picture twice: it is there once.
+4. A picture moved or deleted in Files drops out of its albums by itself.
+5. Another person does not see these albums (they are in your own Photos
+   folder, hidden); in Files they are `.alvaos` under Photos.
+
 ## 12d. Videos and more picture formats (browser and app)
 
 1. Put an MP4 from a phone, a MOV, an MKV, an old AVI and a HEIC or TIFF

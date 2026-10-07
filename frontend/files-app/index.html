@@ -102,6 +102,9 @@
                 <button type="button" class="icon-btn" id="sel-clear" aria-label="Clear selection"><span data-icon="x"></span></button>
                 <span id="sel-count"></span>
                 <div class="selbar-actions">
+                    <button type="button" class="btn ghost" id="sel-fav" hidden><span data-icon="heart"></span><span class="hide-phone">Favourite</span></button>
+                    <button type="button" class="btn ghost" id="sel-album" hidden><span data-icon="folder-plus"></span><span class="hide-phone">Add to album</span></button>
+                    <button type="button" class="btn ghost" id="sel-unalbum" hidden><span data-icon="x"></span><span class="hide-phone">Remove from album</span></button>
                     <button type="button" class="btn ghost" id="sel-download"><span data-icon="download"></span><span class="hide-phone">Download</span></button>
                     <button type="button" class="btn ghost" id="sel-rename"><span data-icon="pen"></span><span class="hide-phone">Rename</span></button>
                     <button type="button" class="btn ghost danger" id="sel-delete"><span data-icon="trash"></span><span class="hide-phone">Delete</span></button>
@@ -125,6 +128,7 @@
             <span class="viewer-title" id="viewer-title"></span>
             <button type="button" class="vbtn" id="viewer-edit" hidden><span data-icon="pen"></span><span class="hide-phone">Edit</span></button>
             <button type="button" class="vbtn" id="viewer-save" hidden><span data-icon="check"></span><span>Save</span></button>
+            <button type="button" class="vbtn" id="viewer-fav" hidden aria-label="Favourite"><span data-icon="heart"></span></button>
             <button type="button" class="vbtn" id="viewer-download"><span data-icon="download"></span><span class="hide-phone">Download</span></button>
         </div>
         <div class="viewer-body" id="viewer-body"></div>

@@ -41,6 +41,8 @@
         link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
         copy: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
         clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+        heart: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
+        'heart-fill': '<path fill="currentColor" d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
         phone: '<rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/>',
         'cloud-upload': '<path d="M12 13v8"/><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="m8 17 4-4 4 4"/>',
         refresh: '<path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/>',
@@ -323,7 +325,11 @@
         $('new-btn').hidden = access() !== 'write';
         $('view-grid').setAttribute('aria-pressed', view === 'grid');
         $('view-list').setAttribute('aria-pressed', view === 'list');
-        if (found && !shown.length && foundInfo.photos) {
+        if (found && !shown.length && foundInfo.photos && foundInfo.view.type === 'fav') {
+            items.innerHTML = `<div class="empty">${icon('heart')}<strong>No favourites yet</strong>Tap the heart when you look at a picture, or select pictures and choose Favourite.</div>`;
+        } else if (found && !shown.length && foundInfo.photos && foundInfo.view.type === 'album') {
+            items.innerHTML = `<div class="empty">${icon('image')}<strong>This album is empty</strong>Select pictures in All and choose Add to album.</div>`;
+        } else if (found && !shown.length && foundInfo.photos) {
             const own = (foundInfo.sources || []).find((src) => src.own);
             items.innerHTML = `<div class="empty">${icon('image')}<strong>No photos or videos yet</strong>${own
                 ? `Put pictures into "${esc([own.share, own.path].filter(Boolean).join(' › '))}" and they show up here, newest first.`
@@ -343,7 +349,8 @@
                 const thumb = THUMB.test(e.name)
                     ? `<img loading="lazy" decoding="async" alt="${esc(e.name)}" src="/api/thumb?share=${encodeURIComponent(sh(e))}&path=${encodeURIComponent(rel(e))}&v=${encodeURIComponent(e.modified_at || '')}" data-fallback="${k}">`
                     : `<span class="pvideo">${icon(k)}</span>`;
-                return `${head}<div class="ptile${k === 'video' ? ' vid' : ''}" data-i="${i}" title="${esc(rel(e))}">${thumb}</div>`;
+                const heart = favs.has(refOf(e)) ? `<span class="heart">${icon('heart-fill')}</span>` : '';
+                return `${head}<div class="ptile${k === 'video' ? ' vid' : ''}" data-i="${i}" title="${esc(rel(e))}">${thumb}${heart}</div>`;
             }).join('');
         } else if (!shown.length) {
             items.innerHTML = q
@@ -390,25 +397,49 @@
             const head = document.createElement('div');
             head.className = 'results-head';
             const here = path ? path.split('/').pop() : share;
+            const v = foundInfo.photos ? foundInfo.view : null;
+            const albumNow = currentAlbum();
+            const phoneNow = v?.type === 'phone' ? foundInfo.albums[v.i] : null;
+            const what = !v ? '' : v.type === 'fav' ? `${found.length} favourite${found.length === 1 ? '' : 's'}`
+                : albumNow ? `${found.length} picture${found.length === 1 ? '' : 's'} in "${esc(albumNow.name)}"`
+                    : phoneNow ? `${found.length} from ${esc(phoneNow.phone)} · ${esc(phoneNow.name)}`
+                        : `${found.length}${foundInfo.complete ? '' : '+'} photos and videos, newest first`;
             head.innerHTML = foundInfo.photos
-                ? `${icon('image').replace('<svg', '<svg width="16" height="16"')}<span>${found.length}${foundInfo.complete ? '' : '+'} photos and videos${foundInfo.albums?.[foundInfo.album] ? ` in ${esc(foundInfo.albums[foundInfo.album].name)}` : ''}, newest first</span>
+                ? `${icon(v.type === 'fav' ? 'heart' : 'image').replace('<svg', '<svg width="16" height="16"')}<span>${what}</span>
+                <span class="head-actions">${albumNow && foundInfo.lib.writable ? `<button type="button" class="link" id="album-rename">Rename</button><button type="button" class="link" id="album-delete">Delete album</button>` : ''}
+                <button type="button" class="btn${foundInfo.selecting ? ' primary' : ''}" id="photos-select" aria-pressed="${!!foundInfo.selecting}">${foundInfo.selecting ? 'Done' : 'Select'}</button></span>
                 <button type="button" class="link" id="results-close">Back to the folder</button>`
                 : `${icon('search').replace('<svg', '<svg width="16" height="16"')}<span>${found.length}${foundInfo.complete ? '' : '+'} found for "${esc(foundInfo.q)}"${foundInfo.complete ? '' : ' · type more to narrow it down'}</span>
                 <span class="scope" role="group" aria-label="Where to search"><button type="button" data-scope="here" aria-pressed="${!searchAll}">In ${esc(here)}</button><button type="button" data-scope="all" aria-pressed="${searchAll}">All shared folders</button></span>
                 <button type="button" class="link" id="results-close">Back to the folder</button>`;
             items.prepend(head);
-            if (foundInfo.photos && foundInfo.albums?.length) {
+            if (foundInfo.photos) {
                 const strip = document.createElement('div');
                 strip.className = 'chips albums';
                 strip.setAttribute('role', 'group');
                 strip.setAttribute('aria-label', 'Albums');
-                strip.innerHTML = `<button type="button" data-album="-1" aria-pressed="${foundInfo.album === -1}">All<small>${foundInfo.all.length}${foundInfo.complete ? '' : '+'} items</small></button>`
-                    + foundInfo.albums.map((a, i) => `<button type="button" data-album="${i}" aria-pressed="${foundInfo.album === i}" title="${esc(`${a.phone} › ${a.name}`)}">${esc(a.name)}<small>${esc(a.phone)}</small></button>`).join('');
+                const here = new Set(foundInfo.all.map(refOf));
+                const on = (type, id) => foundInfo.view.type === type && (id === undefined || foundInfo.view[id[0]] === id[1]);
+                const chip = (key, pressed, label, small, extra = '') => `<button type="button" data-v="${esc(key)}" aria-pressed="${pressed}"${extra}>${label}<small>${esc(small)}</small></button>`;
+                strip.innerHTML = chip('all', on('all'), 'All', `${foundInfo.all.length}${foundInfo.complete ? '' : '+'} items`)
+                    + chip('fav', on('fav'), `${icon('heart').replace('<svg', '<svg width="13" height="13"')} Favourites`, `${[...favs].filter((r) => here.has(r)).length} pictures`)
+                    + foundInfo.lib.albums.map((a) => chip(`album:${a.id}`, on('album', ['id', a.id]), esc(a.name), `${a.items.filter((r) => here.has(r)).length} pictures`)).join('')
+                    + foundInfo.albums.map((a, i) => chip(`phone:${i}`, on('phone', ['i', i]), esc(a.name), a.phone, ` title="${esc(`${a.phone} › ${a.name}`)}"`)).join('')
+                    + (foundInfo.lib.writable ? `<button type="button" class="chip-new" data-v="new">${icon('plus').replace('<svg', '<svg width="14" height="14"')}New album</button>` : '');
                 head.after(strip);
-                strip.querySelectorAll('[data-album]').forEach((b) => b.addEventListener('click', () => showAlbum(Number(b.dataset.album))));
+                strip.querySelectorAll('[data-v]').forEach((b) => b.addEventListener('click', () => {
+                    const [type, arg] = b.dataset.v.split(':');
+                    if (type === 'new') newAlbum([]);
+                    else if (type === 'album') setPhotoView({ type, id: arg });
+                    else if (type === 'phone') setPhotoView({ type, i: Number(arg) });
+                    else setPhotoView({ type });
+                }));
             }
             if (foundInfo.photos && window.AlvaApp) head.after(appBackupBanner());
             head.querySelector('#results-close').addEventListener('click', clearSearch);
+            head.querySelector('#photos-select')?.addEventListener('click', () => { foundInfo.selecting = !foundInfo.selecting; if (!foundInfo.selecting) selected = new Set(); render(); });
+            head.querySelector('#album-rename')?.addEventListener('click', renameAlbum);
+            head.querySelector('#album-delete')?.addEventListener('click', deleteAlbum);
             head.querySelectorAll('[data-scope]').forEach((b) => b.addEventListener('click', () => {
                 searchAll = b.dataset.scope === 'all';
                 deepSearch();
@@ -435,8 +466,14 @@
             const size = sel.filter((e) => e.type === 'file').reduce((s, e) => s + (e.size_bytes || 0), 0);
             $('sel-count').textContent = `${n} selected${size ? ` · ${bytes(size)}` : ''}`;
             const canWrite = access() === 'write';
-            $('sel-rename').hidden = !canWrite || n !== 1;
+            const photos = !!(found && foundInfo.photos);
+            const mine = photos && foundInfo.lib?.writable;
+            $('sel-rename').hidden = photos || !canWrite || n !== 1;
             $('sel-delete').hidden = !canWrite;
+            $('sel-fav').hidden = !mine;
+            $('sel-album').hidden = !mine;
+            $('sel-unalbum').hidden = !(mine && foundInfo.view.type === 'album');
+            if (mine) $('sel-fav').lastElementChild.textContent = sel.every((x) => favs.has(refOf(x))) ? 'Remove heart' : 'Favourite';
             $('sel-download').hidden = false;
         }
         if (found) { $('status').textContent = foundInfo.photos ? 'Photos · click one to look through them' : 'Search results · open one, or "Show in folder" to change it'; return; }
@@ -477,7 +514,9 @@
         const i = Number(item.dataset.i);
         // Touch: a tap opens, like on a phone. Mouse: click selects, double-click opens.
         // In Photos a click opens the picture, like in any photo app.
-        if ((found && foundInfo.photos && !(e.ctrlKey || e.metaKey || e.shiftKey)) || (coarse.matches && !selected.size)) open(shown[i]);
+        const photos = !!(found && foundInfo.photos);
+        if (photos && (foundInfo.selecting || selected.size)) select(i, { ctrlKey: true });          // choosing pictures: a tap toggles
+        else if ((photos && !(e.ctrlKey || e.metaKey || e.shiftKey)) || (coarse.matches && !selected.size)) open(shown[i]);
         else select(i, e);
     });
     $('items').addEventListener('dblclick', (e) => {
@@ -1167,6 +1206,7 @@
         try {
             // Own photos and the photo libraries (chosen on the admin's Hub page), together.
             const { sources } = await api('photos/sources');
+            const library = api('photos/library').catch(() => null);        // albums and hearts (not for a read-only place)
             const [parts, phones] = await Promise.all([
                 Promise.all(sources.map((src) => api(`media?${new URLSearchParams({ share: src.share, path: src.path })}`)
                     .catch(() => ({ results: [], complete: true })))),   // e.g. a Photos folder not made yet
@@ -1182,7 +1222,9 @@
                 folder: [phones.folder, ph.folder, name].filter(Boolean).join('/'),
             })));
             found = all;
-            foundInfo = { q: '', complete: parts.every((p) => p.complete), photos: true, sources, all, albums, album: -1 };
+            const lib = libraryOf(await library);
+            foundInfo = { q: '', complete: parts.every((p) => p.complete), photos: true, sources, all, albums, lib, view: { type: 'all' }, selecting: false };
+            favs = new Set(lib.favourites);
             selected = new Set();
             render();
         } catch (err) {
@@ -1218,14 +1260,135 @@
         if (old && window.AlvaApp && !document.hidden) old.replaceWith(appBackupBanner());
     }, 4000);
 
-    function showAlbum(i) {
-        const a = foundInfo.albums[i];
-        foundInfo.album = a ? i : -1;
-        found = a ? foundInfo.all.filter((e) => sh(e) === a.share && (e.folder === a.folder || (e.folder || '').startsWith(`${a.folder}/`)))
-            : foundInfo.all;
+    // ── Photos: favourites and albums of the person (docs/PHOTOS.md) ──────
+    // A picture is named "<shared folder>/<path>"; an album is a list of those, no copies.
+    let favs = new Set();
+    const refOf = (e) => `${sh(e)}/${rel(e)}`;
+    const libraryOf = (answer) => ({ albums: answer?.albums || [], favourites: answer?.favourites || [], writable: !!answer?.writable });
+
+    // The pictures of the chosen view: all, hearts, an album of the person, or a folder of a phone.
+    function photoList() {
+        const v = foundInfo.view;
+        const all = foundInfo.all;
+        if (v.type === 'fav') return all.filter((e) => favs.has(refOf(e)));
+        if (v.type === 'album') {
+            const album = foundInfo.lib.albums.find((a) => a.id === v.id);
+            const set = new Set(album?.items || []);
+            return all.filter((e) => set.has(refOf(e)));
+        }
+        if (v.type === 'phone') {
+            const a = foundInfo.albums[v.i];
+            return a ? all.filter((e) => sh(e) === a.share && (e.folder === a.folder || (e.folder || '').startsWith(`${a.folder}/`))) : all;
+        }
+        return all;
+    }
+    function setPhotoView(v) {
+        foundInfo.view = v;
+        found = photoList();
         selected = new Set();
         render();
     }
+    function currentAlbum() {
+        const v = foundInfo?.view;
+        return v?.type === 'album' ? foundInfo.lib.albums.find((a) => a.id === v.id) : null;
+    }
+    async function reloadLibrary() {
+        const answer = await api('photos/library').catch(() => null);
+        foundInfo.lib = libraryOf(answer);
+        favs = new Set(foundInfo.lib.favourites);
+        found = photoList();
+    }
+    // Hearts: on for the pictures, or off if they all have one already.
+    async function toggleFav(entries) {
+        const refs = entries.map(refOf);
+        const off = refs.every((r) => favs.has(r));
+        try {
+            await api('photos/favourites', { method: 'PATCH', json: off ? { remove: refs } : { add: refs } });
+            await reloadLibrary();
+            toast(off ? `${refs.length === 1 ? 'The picture is' : `${refs.length} pictures are`} no longer a favourite.` : `Added to your favourites.`);
+        } catch (err) { toast(err.message, 'error'); }
+        selected = new Set();
+        render();
+        if (!$('viewer').hidden) paintViewerFav();
+    }
+    function paintViewerFav() {
+        const b = $('viewer-fav');
+        const entry = shown[viewing];
+        b.hidden = !(found && foundInfo.photos && foundInfo.lib?.writable && entry);
+        if (b.hidden) return;
+        const on = favs.has(refOf(entry));
+        b.innerHTML = icon(on ? 'heart-fill' : 'heart');
+        b.setAttribute('aria-pressed', on);
+        b.title = on ? 'Remove from favourites' : 'Add to favourites';
+    }
+    $('viewer-fav').addEventListener('click', () => { const e = shown[viewing]; if (e) toggleFav([e]); });
+
+    async function newAlbum(entries) {
+        const name = await ask({ title: 'New album', text: entries.length ? `With ${entries.length} picture${entries.length === 1 ? '' : 's'}.` : '', value: '', okLabel: 'Create' });
+        if (!name) return;
+        try {
+            const r = await api('photos/albums', { method: 'POST', json: { name, items: entries.map(refOf) } });
+            await reloadLibrary();
+            toast(`Album "${r.album.name}" made.`);
+            foundInfo.selecting = false;
+            setPhotoView({ type: 'album', id: r.album.id });
+        } catch (err) { toast(err.message, 'error'); }
+    }
+    function addToAlbum(entries) {
+        const refs = entries.map(refOf);
+        const wrap = $('dialog');
+        const close = () => { wrap.hidden = true; wrap.innerHTML = ''; };
+        wrap.innerHTML = `<div class="dialog"><h2>Add to album</h2>
+            <div class="trash-list">${foundInfo.lib.albums.length ? foundInfo.lib.albums.map((a) => `<button type="button" class="pick-row" data-album="${esc(a.id)}"><span class="pick-ic">${icon('image')}</span><span><strong>${esc(a.name)}</strong><small>${a.items.length} picture${a.items.length === 1 ? '' : 's'}</small></span></button>`).join('')
+                : '<div class="empty" style="padding:18px 0">No albums yet.</div>'}</div>
+            <div class="actions"><button type="button" class="btn" data-cancel>Cancel</button><button type="button" class="btn primary" data-newalbum>${icon('plus')}New album</button></div></div>`;
+        wrap.hidden = false;
+        wrap.onclick = (e) => { if (e.target === wrap) close(); };
+        wrap.querySelector('[data-cancel]').onclick = close;
+        wrap.querySelector('[data-newalbum]').onclick = () => { close(); newAlbum(entries); };
+        wrap.querySelectorAll('[data-album]').forEach((b) => { b.onclick = async () => {
+            const album = foundInfo.lib.albums.find((a) => a.id === b.dataset.album);
+            close();
+            try {
+                await api(`photos/albums/${encodeURIComponent(album.id)}`, { method: 'PATCH', json: { add: refs } });
+                await reloadLibrary();
+                toast(`Added to "${album.name}".`);
+            } catch (err) { toast(err.message, 'error'); }
+            selected = new Set();
+            foundInfo.selecting = false;
+            render();
+        }; });
+    }
+    async function removeFromAlbum(entries) {
+        const album = currentAlbum();
+        if (!album) return;
+        try {
+            await api(`photos/albums/${encodeURIComponent(album.id)}`, { method: 'PATCH', json: { remove: entries.map(refOf) } });
+            await reloadLibrary();
+            toast(`Removed from "${album.name}". The pictures stay where they are.`);
+        } catch (err) { toast(err.message, 'error'); }
+        selected = new Set();
+        render();
+    }
+    async function renameAlbum() {
+        const album = currentAlbum();
+        if (!album) return;
+        const name = await ask({ title: 'Rename the album', value: album.name, okLabel: 'Rename' });
+        if (!name) return;
+        try { await api(`photos/albums/${encodeURIComponent(album.id)}`, { method: 'PATCH', json: { name } }); await reloadLibrary(); } catch (err) { toast(err.message, 'error'); }
+        render();
+    }
+    async function deleteAlbum() {
+        const album = currentAlbum();
+        if (!album) return;
+        const yes = await ask({ title: `Delete the album "${album.name}"?`, text: 'Only the album goes. The pictures stay where they are.', okLabel: 'Delete album', danger: true });
+        if (!yes) return;
+        try { await api(`photos/albums/${encodeURIComponent(album.id)}`, { method: 'DELETE' }); await reloadLibrary(); } catch (err) { toast(err.message, 'error'); }
+        setPhotoView({ type: 'all' });
+    }
+    $('sel-fav').addEventListener('click', () => toggleFav(selectedEntries()));
+    $('sel-album').addEventListener('click', () => addToAlbum(selectedEntries()));
+    $('sel-unalbum').addEventListener('click', () => removeFromAlbum(selectedEntries()));
 
     $('links-nav').addEventListener('click', async () => {
         closeSide();
@@ -1616,6 +1779,7 @@
         $('viewer-download').onclick = () => download([entry]);
         $('viewer-edit').hidden = true;
         $('viewer-save').hidden = true;
+        paintViewerFav();
         editing = null;
         try {
             const url = await link(entry, true);

@@ -30,6 +30,7 @@ import hub_apps
 import photo_dates
 import hub_calendar
 import hub_caldav
+import hub_albums
 import hub_photos_sync
 import hub_video
 import hub_chat
@@ -1807,6 +1808,7 @@ app.register_blueprint(hub_calendar.bp)
 app.register_blueprint(hub_chat.bp)
 app.register_blueprint(hub_caldav.bp)
 app.register_blueprint(hub_photos_sync.bp)
+app.register_blueprint(hub_albums.bp)
 
 
 # ── The app itself ───────────────────────────────────────────────────────────

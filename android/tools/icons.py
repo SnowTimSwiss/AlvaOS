@@ -25,6 +25,7 @@ EXTRA = {
     'arrow-left': '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
     'hard-drive': '<path d="M22 12H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><path d="M6 16h.01"/><path d="M10 16h.01"/>',
     'shield-check': '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
+    'zap': '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
     'sparkles': '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>',
 }
 
@@ -35,7 +36,7 @@ ICONS = {
     'ic_qr': 'qr-code', 'ic_check': 'check', 'ic_wifi_off': 'wifi-off', 'ic_phone': 'phone', 'ic_trash': 'trash',
     'ic_back': 'arrow-left', 'ic_more': 'more-vertical', 'ic_link': 'link', 'ic_monitor': 'monitor',
     'ic_chevron': 'right', 'ic_download': 'download', 'ic_refresh': 'refresh', 'ic_nas': 'hard-drive',
-    'ic_lock': 'shield-check', 'ic_logout': 'lock', 'ic_x': 'x', 'ic_plus': 'plus', 'ic_new': 'sparkles',
+    'ic_lock': 'shield-check', 'ic_logout': 'lock', 'ic_x': 'x', 'ic_plus': 'plus', 'ic_new': 'sparkles', 'ic_charge': 'zap',
 }
 
 

@@ -44,6 +44,10 @@ How to add an entry:
   and libheif-examples; a NAS installed before: `apt install ffmpeg
   libheif-examples` (Settings › Terminal). Tests: `test_hub_video.py` (with
   real ffmpeg where it is installed).
+- Photos: favourites (hearts) and albums of one's own (select, add to
+  album, New album, rename, delete, remove from album; the heart in the
+  viewer): lists of pictures in the hidden `Photos/.alvaos/` folder, no
+  copies (`hub_albums.py`, tests in `test_hub_albums.py`).
 - **Note for next time:** the converted copy is made from a full temporary
   copy of the video (ffmpeg needs to seek), so a conversion needs the free
   space of the video once; below that it says so. The app screens could not

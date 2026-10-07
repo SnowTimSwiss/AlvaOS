@@ -658,7 +658,7 @@ class MainActivity : AppCompatActivity() {
         ui.section(page, "How")
         val how = ui.group(page)
         ui.switchItem(how, R.drawable.ic_tab_backup, "Only on Wi-Fi", "Not on mobile data", store.wifiOnly) { store.wifiOnly = it }
-        ui.switchItem(how, R.drawable.ic_lock, "Only while charging", "Easier on the battery", store.chargingOnly) { store.chargingOnly = it }
+        ui.switchItem(how, R.drawable.ic_charge, "Only while charging", "Easier on the battery", store.chargingOnly) { store.chargingOnly = it }
         ui.switchItem(how, R.drawable.ic_trash, "Deleting here deletes on the NAS too",
             "Into the NAS's trash, for 30 days", store.deleteOnNas) { store.deleteOnNas = it }
         ui.button(page, "Back up these albums", top = 22) {
@@ -764,7 +764,7 @@ class MainActivity : AppCompatActivity() {
             store.wifiOnly = it
             if (store.backupOn) SyncWorker.schedule(this)
         }
-        ui.switchItem(backup, R.drawable.ic_lock, "Only while charging", "Easier on the battery", store.chargingOnly) {
+        ui.switchItem(backup, R.drawable.ic_charge, "Only while charging", "Easier on the battery", store.chargingOnly) {
             store.chargingOnly = it
             if (store.backupOn) SyncWorker.schedule(this)
         }
