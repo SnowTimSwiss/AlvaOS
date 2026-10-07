@@ -15,6 +15,30 @@ How to add an entry:
 
 ---
 
+## 2026-10-07 · Photos from the phone: the Android app, albums and deleting in sync
+
+- Files: the bar that shows what is selected lies over the top bar now
+  instead of pushing the folder down (everything jumped on each click).
+- `backend/hub_photos_sync.py`: phones on the Hub. Each phone has a folder
+  `Photos/<phone>/` and a list `Photos/.alvaos/phones/<id>.json` of what it
+  backed up. `plan` answers what to upload and what was deleted on the NAS;
+  deleted on the phone goes to the NAS trash; moved on the NAS deletes
+  nothing; same name and size is taken as already there. Tests in
+  `backend/tests/test_photos_sync.py`.
+- `android/`: `core` is the sync in plain Kotlin (Hub client with resumable
+  16 MB pieces, the engine), tested with `./gradlew :core:test` without an
+  Android SDK. `app` is the Android app (Android 11+): sign in, choose the
+  albums, WorkManager every hour, a yes before deleting on the phone (or
+  "manage media"), free up space. Workflow "Android app" tests the core and
+  builds `alvaos-app-debug`.
+- Photos in the Hub shows the phone albums above the timeline; one tap shows
+  only that album.
+- **Note for next time:** the app is not on a real phone yet (TESTING.md
+  12b). `settings.gradle.kts` only includes `:app` when an Android SDK is
+  there, so the core builds in any container; dl.google.com is blocked in the
+  Claude containers, CI builds the APK. The APK is a debug build (no signing
+  key yet); a release key belongs in the repository secrets, not the repo.
+
 ## 2026-10-07 · Every version is beta-v0.1.0
 
 - The `VERSION` file already said `beta-v0.1.0`; builds between releases
