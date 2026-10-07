@@ -13,24 +13,20 @@
         let onlyGone = false;
         let lastEntries = [];
 
-        const overlay = document.createElement('div');
-        overlay.className = 'modal-overlay';
-        overlay.innerHTML = `
-            <div class="modal-content snap-browser" role="dialog" aria-modal="true" aria-labelledby="snap-browser-title">
-                <div class="modal-title"><span id="snap-browser-title">Get files back</span>
-                    <button type="button" class="modal-close-x" aria-label="Close">&times;</button></div>
+        const dlg = openDialog({
+            title: 'Get files back',
+            className: 'snap-browser',
+            bodyClass: 'snap-browser-body',
+            body: `
                 <p class="snap-browser-sub">${backupEscapeHtml(folderName(sourcePath))} as it was on ${backupEscapeHtml(backupFormatDate(createdAt))}</p>
                 <div class="snap-browser-bar">
                     <nav class="snap-crumbs" aria-label="Folder"></nav>
                     <label class="snap-gone-toggle"><input type="checkbox" id="snap-only-gone"> Only what is gone</label>
                 </div>
                 <div class="snap-browser-list" aria-live="polite"></div>
-                <p class="snap-browser-note">Restored files go back to where they were. If a file with the same name is there now, the old one is added beside it with "(restored ...)" in its name.</p>
-            </div>`;
-        document.body.appendChild(overlay);
-        const close = () => overlay.remove();
-        overlay.querySelector('.modal-close-x').onclick = close;
-        if (window.attachModalDismiss) window.attachModalDismiss(overlay, close);
+                <p class="snap-browser-note">Restored files go back to where they were. If a file with the same name is there now, the old one is added beside it with "(restored ...)" in its name.</p>`,
+        });
+        const overlay = dlg.dialog;
 
         const list = overlay.querySelector('.snap-browser-list');
         const crumbs = overlay.querySelector('.snap-crumbs');

@@ -155,13 +155,14 @@
     // The configuration of a new device: once, then it is gone from the NAS.
     function showDevice(device) {
         const blob = URL.createObjectURL(new Blob([device.config], { type: 'text/plain' }));
-        const overlay = document.createElement('div');
-        overlay.className = 'modal-overlay';
-        overlay.innerHTML = `
-            <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="remote-title" style="max-width: 560px;">
-                <div class="modal-title"><span id="remote-title">Connect "${esc(device.name)}"</span>
-                    <button type="button" class="modal-close-x" aria-label="Close">&times;</button></div>
-                <div class="modal-body remote-connect" style="text-align: left;">
+        const dlg = openDialog({
+            title: `Connect "${esc(device.name)}"`,
+            size: 'wide',
+            bodyClass: 'remote-connect',
+            focus: false,
+            actions: '<button type="button" class="btn-primary" data-close>Done</button>',
+            onClose: () => URL.revokeObjectURL(blob),
+            body: `
                     <ol>
                         <li>Install the free <strong>WireGuard</strong> app (App Store, Google Play, wireguard.com for Windows, Mac and Linux).</li>
                         <li><strong>Phone:</strong> in the app, add a tunnel › scan from QR code.
@@ -169,16 +170,9 @@
                         <li><strong>Computer:</strong> <a href="${blob}" download="${esc(device.file_name)}">download the file</a> and import it in the app.</li>
                         <li>Switch the tunnel on, then open <span class="mono-text">${esc(device.open_url)}</span>.</li>
                     </ol>
-                    <p class="remote-once"><strong>Shown only now.</strong> The NAS does not keep this key. If you need it again, remove the device and add it anew.</p>
-                </div>
-                <div class="modal-actions"><button type="button" class="btn-primary" data-close>Done</button></div>
-            </div>`;
-        document.body.appendChild(overlay);
-        const close = () => { URL.revokeObjectURL(blob); overlay.remove(); };
-        overlay.querySelector('.modal-close-x').onclick = close;
-        overlay.querySelector('[data-close]').onclick = close;
-        if (window.attachModalDismiss) window.attachModalDismiss(overlay, close);
-        overlay.querySelector('[data-close]').focus();
+                    <p class="remote-once"><strong>Shown only now.</strong> The NAS does not keep this key. If you need it again, remove the device and add it anew.</p>`,
+        });
+        dlg.$('[data-close]').focus();
     }
 
     async function save(payload, message) {

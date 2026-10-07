@@ -25,9 +25,29 @@ How to add an entry:
   the space.
 - Tests for growing, refusing to shrink, a running machine, a symlinked disk,
   too little free space and a failed resize.
-- Checked in Chromium at desktop and phone width with a faked machine. On
-  phone the dialog still overflows on main; the shared dialog (#13) fixes it.
+- Checked in Chromium at desktop and phone width with a faked machine.
 
+## 2026-10-06 · One dialog for every admin page
+
+- New `openDialog()` in `notifications.js`: frame, title with close button,
+  focus moves in and is kept inside, Escape and a click beside it close, focus
+  goes back to the button that opened it, the page behind does not scroll.
+  `showConfirm`, `showPrompt` and `openSysModal` (Settings) are built on it.
+- Moved onto it: password, email, HTTPS, remote-access device, virtual
+  machine (new, settings), get files back, replace a disk, share a folder (and
+  access, limit, connect), add to which pool, disk health, create pool, add
+  disks, remove pool, manage folders, add a person, change a person's
+  password, app folders and ports, uninstall an app, restart after a restore,
+  feedback. About 460 lines less; most inline styles in the storage dialogs gone.
+- Less scrolling: the title and buttons always stay in view, only the fields
+  scroll. "More options" and "Mail server" now open in place instead of
+  floating: the floating panels covered the Create/Save buttons and ran off a
+  phone screen. Short fields side by side (`.modal-row`), buttons in one row
+  on a phone.
+- Checked in Chromium at desktop and phone width (with faked API answers for
+  VMs, email, pools and disks); axe-core finds nothing in the dialogs.
+- Note for next time: the app install wizard, container logs and terminal in
+  `apps.html` are still static modals in the page; the Hub has its own dialogs.
 ## 2026-10-06 · Main green again; SSH keys only for root
 
 - NVIDIA install test fixed for the running kernel's headers. When Debian no

@@ -625,15 +625,12 @@ async function showReplaceDiskDialog(poolId, devid) {
 
     const failingFirst = members.slice().sort((a, b) => Number(b.missing) - Number(a.missing));
     const initial = devid !== undefined ? devid : (failingFirst[0] || {}).devid;
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    overlay.innerHTML = `
-        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="replace-title" style="max-width: 520px;">
-            <div class="modal-title" id="replace-title">
-                <span>Replace a disk in “${escapeHtml(pool.name)}”</span>
-                <button type="button" class="modal-close-x" aria-label="Close">&times;</button>
-            </div>
-            <div class="modal-body" style="text-align: left;">
+    const dlg = openDialog({
+        title: `Replace a disk in “${escapeHtml(pool.name)}”`,
+        actions: `
+            <button type="button" class="btn-secondary" data-act="cancel" data-close>Cancel</button>
+            <button type="button" class="btn-primary" data-act="ok">Replace</button>`,
+        body: `
                 The data is copied onto the new disk while the pool keeps running. A missing disk is rebuilt from its mirror. Afterwards the old disk can be removed.
                 <div style="margin-top: 1rem; font-weight: 600;">Disk to replace</div>
                 <select id="replace-source" style="width: 100%; margin-top: 6px;">
@@ -645,14 +642,9 @@ async function showReplaceDiskDialog(poolId, devid) {
                 </select>
                 <div style="margin-top: 1rem; font-weight: 600;">New disk</div>
                 <div id="replace-targets" class="choice-list" style="margin-top: 6px;"></div>
-                <div id="replace-hint" style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 8px;"></div>
-            </div>
-            <div class="modal-actions">
-                <button type="button" class="btn-secondary" data-act="cancel">Cancel</button>
-                <button type="button" class="btn-primary" data-act="ok">Replace</button>
-            </div>
-        </div>`;
-    document.body.appendChild(overlay);
+                <div id="replace-hint" style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 8px;"></div>`,
+    });
+    const overlay = dlg.dialog;
 
     const source = overlay.querySelector('#replace-source');
     const targets = overlay.querySelector('#replace-targets');
@@ -673,10 +665,7 @@ async function showReplaceDiskDialog(poolId, devid) {
     source.addEventListener('change', renderTargets);
     renderTargets();
 
-    const close = () => overlay.remove();
-    overlay.querySelector('.modal-close-x').onclick = close;
-    overlay.querySelector('[data-act="cancel"]').onclick = close;
-    attachModalDismiss(overlay, close);
+    const close = () => dlg.close();
     okBtn.onclick = async () => {
         const target = overlay.querySelector('input[name="replace-target"]:checked');
         if (!target) return;
