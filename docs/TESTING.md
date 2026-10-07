@@ -294,9 +294,10 @@ storage healthy, one shared folder.
 
 ## 12b. Photo backup from an Android phone (Android 11 or newer)
 
-1. On GitHub: Actions › "Android app" › the newest run › artifact
-   `alvaos-app-debug`; unzip, copy `app-debug.apk` to the phone and install
-   it (allow "install unknown apps" for the browser or Files app once).
+1. On the phone open GitHub › Releases › "AlvaOS app for Android (beta)"
+   (tag `android-beta`) and download `alvaos-beta.apk`; install it (allow
+   "install unknown apps" for the browser once). Each push to `android/`
+   puts the newest build there.
 2. Open "AlvaOS", enter the NAS address (`192.168.x.y:8090` at home, the
    Tailscale address away), name and password of a person with a personal
    folder and Photos turned on. Allow pictures and notifications.

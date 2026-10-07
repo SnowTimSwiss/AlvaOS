@@ -15,4 +15,4 @@ newer.
 
 Building the APK needs the Android SDK (`ANDROID_HOME` or `local.properties`);
 without it Gradle builds only `core`. GitHub builds it on every change to
-`android/` (workflow "Android app", artifact `alvaos-app-debug`).
+`android/` (workflow "Android app"; the newest APK is `alvaos-beta.apk` on the pre-release `android-beta`).

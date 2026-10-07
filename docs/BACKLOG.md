@@ -29,8 +29,11 @@ How to add an entry:
   16 MB pieces, the engine), tested with `./gradlew :core:test` without an
   Android SDK. `app` is the Android app (Android 11+): sign in, choose the
   albums, WorkManager every hour, a yes before deleting on the phone (or
-  "manage media"), free up space. Workflow "Android app" tests the core and
-  builds `alvaos-app-debug`.
+  "manage media"), free up space. Workflow "Android app" tests the core,
+  builds the APK and puts it on the pre-release `android-beta`
+  (`alvaos-beta.apk`); the artifact is only a bonus, the account's artifact
+  storage was full. The NAS update check skips releases whose tag is no
+  AlvaOS version, so `android-beta` is never offered as a NAS update.
 - Photos in the Hub shows the phone albums above the timeline; one tap shows
   only that album.
 - **Note for next time:** the app is not on a real phone yet (TESTING.md

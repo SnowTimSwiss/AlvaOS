@@ -12,9 +12,15 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # only for the android-beta pre-release, not on pull requests
     defaults:
       run:
         working-directory: android
@@ -38,8 +44,26 @@ jobs:
         run: ./gradlew --no-daemon :app:assembleDebug
 
       - name: Upload the APK
+        # When the account's artifact storage is full this fails; the release
+        # below does not count toward that limit.
+        continue-on-error: true
         uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
         with:
           name: alvaos-app-debug
           path: android/app/build/outputs/apk/debug/*.apk
-          retention-days: 30
+          retention-days: 14
+
+      # The newest APK of a push, always at the same place: the pre-release
+      # "android-beta" (Releases on GitHub), file alvaos-beta.apk.
+      - name: Put it on the android-beta pre-release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES: "The newest AlvaOS app for Android (beta, debug build), from ${{ github.ref_name }} at ${{ github.sha }}. Install alvaos-beta.apk on the phone; how to test it: docs/TESTING.md, 12b."
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk alvaos-beta.apk
+          if ! gh release view android-beta >/dev/null 2>&1; then
+            gh release create android-beta --prerelease --target "$GITHUB_SHA" --title "AlvaOS app for Android (beta)" --notes "$NOTES"
+          fi
+          gh release edit android-beta --notes "$NOTES"
+          gh release upload android-beta alvaos-beta.apk --clobber
