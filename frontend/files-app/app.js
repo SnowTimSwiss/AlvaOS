@@ -444,6 +444,7 @@
                 : foundInfo.photos
                 ? `${icon(v.type === 'fav' ? 'heart' : 'image').replace('<svg', '<svg width="16" height="16"')}<span>${what}</span>
                 <span class="head-actions">${albumNow && foundInfo.lib.writable ? `<button type="button" class="link" id="album-rename">Rename</button><button type="button" class="link" id="album-delete">Delete album</button>` : ''}
+                ${(foundInfo.sources || []).some((src) => src.own && src.writable !== false) ? `<button type="button" class="btn" id="photos-upload" title="Add pictures and videos from this device">${icon('upload')}<span class="hide-phone">Upload</span></button>` : ''}
                 <button type="button" class="btn${foundInfo.selecting ? ' primary' : ''}" id="photos-select" aria-pressed="${!!foundInfo.selecting}">${foundInfo.selecting ? 'Done' : 'Select'}</button></span>
                 <button type="button" class="link" id="results-close">Back to the folder</button>`
                 : `${icon('search').replace('<svg', '<svg width="16" height="16"')}<span>${found.length}${foundInfo.complete ? '' : '+'} found for "${esc(foundInfo.q)}"${foundInfo.complete ? '' : ' · type more to narrow it down'}</span>
@@ -494,6 +495,7 @@
                 });
             }
             head.querySelector('#results-close')?.addEventListener('click', clearSearch);
+            head.querySelector('#photos-upload')?.addEventListener('click', () => $('photo-input').click());
             head.querySelector('#photos-select')?.addEventListener('click', () => { foundInfo.selecting = !foundInfo.selecting; if (!foundInfo.selecting) selected = new Set(); render(); });
             head.querySelector('#album-rename')?.addEventListener('click', renameAlbum);
             head.querySelector('#album-delete')?.addEventListener('click', deleteAlbum);
@@ -1771,6 +1773,23 @@
             return finish('failed', err.message || 'Did not upload');
         }
     }
+
+    // Photos: pictures and videos from this device into the own photos folder "Uploads".
+    $('photo-input').addEventListener('change', async (e) => {
+        const files = [...e.target.files];
+        e.target.value = '';
+        const own = (foundInfo.sources || []).find((src) => src.own);
+        if (!files.length || !own) return;
+        const t = { share: own.share, path: join(own.path, 'Uploads') };
+        try {
+            await api('mkdir', { method: 'POST', json: { share: t.share, path: own.path, name: 'Uploads' } });
+        } catch (err) {
+            if (!/already there/.test(err.message)) { toast(err.message, 'error'); return; }
+        }
+        let ok = 0;
+        for (const f of files) if (await uploadOne(f, t)) ok += 1;
+        if (ok) { toast(`${ok} ${ok === 1 ? 'file' : 'files'} added to your photos.`); if (current === 'photos') showPhotos(); }
+    });
 
     async function uploadFiles(files) {
         if (!files.length) return;

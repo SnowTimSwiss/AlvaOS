@@ -626,7 +626,7 @@ def photo_sources():
             # The Photos folder in the personal folder: made the first time, as the person.
             # "Already there" is the usual answer and fine.
             files_manager.run_helper(['files-mkdir', mine[own[0]]['path'], own[1]], user=as_user(session))
-        sources.append({'share': own[0], 'path': own[1], 'own': True})
+        sources.append({'share': own[0], 'path': own[1], 'own': True, 'writable': mine[own[0]]['access'] == 'write'})
     for name in settings['apps']['photos'].get('libraries', []):
         if name in mine and not any(s['share'] == name for s in sources):
             sources.append({'share': name, 'path': '', 'own': False})

@@ -443,3 +443,7 @@ Search for a word that matches different kinds of files. The chips above the res
 2. Choose a shared folder: "Saving 1 of 2", then "2 files saved". In the Hub, Files › that folder › From phone has both.
 3. Share the same files again: they arrive as "name (2).jpg" (nothing is overwritten).
 4. Switch the phone to flight mode half-way through a large file: it should say "That did not work" and offer to try again.
+
+## 12k Photos upload
+
+Photos › Upload: choose a few pictures from the computer or phone. They appear in the timeline (newest by their own date) and are in Files › your photos › Uploads.

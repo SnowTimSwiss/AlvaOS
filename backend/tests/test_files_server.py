@@ -501,7 +501,7 @@ def test_photos_shows_own_photos_and_the_libraries_the_person_may_read(client):
                   shares=["Family", "Anna", "anna-home"])
     sign_in(client, "anna", "anna-pass")
     sources = client.get("/api/photos/sources").get_json()["sources"]
-    assert sources == [{"share": "anna-home", "path": "Photos", "own": True},
+    assert sources == [{"share": "anna-home", "path": "Photos", "own": True, "writable": True},
                        {"share": "Anna", "path": "", "own": False}, {"share": "Family", "path": "", "own": False}]
     assert (["files-mkdir", "/mnt/alvaos/main/anna-home", "Photos"], "anna") in client.calls
     sign_in(client, "ben", "ben-pass")                       # no personal folder; may read only Family

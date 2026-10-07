@@ -15,6 +15,13 @@ How to add an entry:
 
 ---
 
+## 2026-10-08 — Photos: upload from the Hub
+
+- Photos header › **Upload** adds pictures and videos from this device into the own photos folder `Photos/Uploads` (the folder is made on the first upload; resumable like Files; the grid refreshes). Only shown when the own photos folder is writable (`writable` in `/api/photos/sources`).
+- Files side bar: "Shared with me" heading above the folders others shared.
+
+---
+
 ## 2026-10-08 — Android: "Share" to AlvaOS
 
 - Any app's Share sheet now lists **Save to AlvaOS** (`ShareActivity`): choose a shared folder you may write to, the files go into its folder "From phone" (made if needed; a taken name gets "(2)"), with progress, resumable uploads like Files. Core: `HubClient.names/makeFolder`, `Me.shares`, `freeName` (tests in `HubClientTest`, `NamesTest`); screens in `ScreensTest`.
