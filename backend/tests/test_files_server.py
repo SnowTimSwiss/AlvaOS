@@ -472,8 +472,9 @@ def test_the_hub_shows_each_person_their_apps_and_closes_files_when_it_is_off(cl
     import hub_apps
     sign_in(client, "ben", "ben-pass")
     me = client.get("/api/me").get_json()
-    assert me["hub"]["name"] == "AlvaOS Hub" and [a["id"] for a in me["hub"]["apps"]] == ["files", "photos", "calendar"]
-    hub_apps.save({"apps": {"files": {"people": ["anna"]}, "calendar": {"enabled": False}}}, ["anna", "ben"])
+    assert me["hub"]["name"] == "AlvaOS Hub" and [a["id"] for a in me["hub"]["apps"]] == ["files", "photos", "calendar", "contacts"]
+    hub_apps.save({"apps": {"files": {"people": ["anna"]}, "calendar": {"enabled": False},
+                           "contacts": {"enabled": False}}}, ["anna", "ben"])
     me = client.get("/api/me").get_json()
     assert me["hub"]["apps"] == [] and me["shares"] == []                 # signed in, but nothing for ben
     refused = client.get("/api/list?share=Family")

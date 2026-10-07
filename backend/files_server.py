@@ -34,6 +34,7 @@ import hub_albums
 import hub_photos_sync
 import hub_video
 import hub_chat
+import hub_contacts
 import hub_data
 from password_utils import verify_password
 
@@ -1848,6 +1849,7 @@ hub_data.setup(need_session=need_session, shares_for=shares_for, as_user=as_user
                shares_file=lambda: SHARES_FILE)
 app.register_blueprint(hub_calendar.bp)
 app.register_blueprint(hub_chat.bp)
+app.register_blueprint(hub_contacts.bp)
 app.register_blueprint(hub_caldav.bp)
 app.register_blueprint(hub_photos_sync.bp)
 app.register_blueprint(hub_albums.bp)
