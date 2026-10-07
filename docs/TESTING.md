@@ -65,7 +65,11 @@ storage healthy, one shared folder.
    Select: draw a rectangle with the mouse from an empty spot over a few
    files (Ctrl or Shift adds to the selection); the bar on top shows them
    and nothing below it moves. Click beside the files: nothing is selected.
-   Your name and "Sign out" are at the bottom of the side bar.
+   Shared links, Trash, Connect a computer and Phones and devices sit at
+   the bottom of the side bar, above your name and "Sign out".
+   Delete a file, then Trash: it opens like a folder (not a window), with
+   where it was and when; switch between your shared folders at the top,
+   search in it, "Put back" brings it back to its folder.
 3. Photos: pictures appear by month, with the date they were taken. Copy
    old phone pictures in over the network (the copies get today's file
    date), open Photos, wait a minute and open it again: they move to the
