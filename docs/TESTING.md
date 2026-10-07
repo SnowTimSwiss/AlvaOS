@@ -410,3 +410,9 @@ storage healthy, one shared folder.
 
 For each problem: the step number, what you expected, what happened, and if
 possible a screenshot. Settings › Diagnostics has the logs.
+
+## 12f Drop box notice
+
+1. Make an upload link for a folder (Share link › Upload only) and open it in a private window.
+2. Upload two files. In the Hub, Shared links shows "2 new" (reload once).
+3. Open Shared links: the link says "2 new files"; close and reopen: the mark is gone.

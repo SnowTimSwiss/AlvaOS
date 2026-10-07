@@ -80,6 +80,7 @@ svg { display: block; }
 .side-item:hover { background: var(--hover); }
 .side-item.active { background: var(--sel); font-weight: 600; }
 .side-item .ic { color: var(--folder); display: inline-flex; }
+.side-item .new-badge { background: var(--accent); color: var(--accent-text); border-radius: 999px; padding: 1px 7px; font-weight: 600; }
 .side-item .ro { margin-left: auto; color: var(--faint); font-size: 0.72rem; }
 .side-sep { height: 1px; background: var(--line); margin: 10px 8px; }
 #trash-nav .ic { color: var(--muted); }

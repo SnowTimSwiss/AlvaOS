@@ -355,6 +355,13 @@ def test_upload_links_take_files_and_show_nothing(client, monkeypatch):
     assert (["files-part-write", inbox, "photo (3).jpg", "0"], "anna") in calls
     assert calls[-1] == (["files-part-finish", inbox, "photo (3).jpg", "3"], "anna")
 
+    # The owner is told about it, once, until she looks at the list.
+    assert client.get("/api/me").get_json()["new_uploads"] == 1
+    listed = client.get("/api/links").get_json()["links"]
+    assert [l["new_files"] for l in listed if l["mode"] == "upload"] == [1] and listed[0]["last_upload"]
+    assert client.post("/api/links/seen", headers=H).get_json()["success"]
+    assert client.get("/api/me").get_json()["new_uploads"] == 0
+
     view = client.post("/api/links", json={"share": "Family", "path": "Inbox", "kind": "folder"}, headers=H).get_json()
     vtoken = view["url"].split("/")[-1]
     assert visitor.post(f"/api/public/{vtoken}/upload/start", json={"name": "x.jpg"}, headers=H).status_code == 403

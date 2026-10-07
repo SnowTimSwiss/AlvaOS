@@ -377,9 +377,20 @@ def me():
     store = hub_apps.store_tiles(session['user'], session['role'], settings)
     import remote_access
     return jsonify({'user': session['user'], 'role': session['role'], 'shares': shares,
+                    'new_uploads': _new_uploads(session['user']),
                     'nas_name': nas, 'hub': {'name': hub_apps.NAME, 'apps': apps, 'store': store},
                     'features': hub_video.features(),
                     'public_url': remote_access.public_url(os.path.join(STATE_DIR, 'remote_access.json'))})
+
+
+def _new_uploads(user: str) -> int:
+    """Files that came into the person's drop boxes since they last looked at the list."""
+    try:
+        with _lock:
+            links = _load_links()
+    except Exception:  # noqa: BLE001 - a broken links file must not break /api/me
+        return 0
+    return sum(int(v.get('new_files') or 0) for v in links.values() if v.get('owner') == user)
 
 
 # ── Devices: phones with the AlvaOS app ─────────────────────────────────────
@@ -1455,6 +1466,7 @@ def _public_link(link: Dict[str, Any], token: str) -> Dict[str, Any]:
     return {'id': link['id'], 'url': f'/s/{token}', 'share': link['share'], 'path': link['path'],
             'name': link['name'], 'kind': link['kind'], 'mode': link.get('mode', 'view'),
             'max_bytes': link.get('max_bytes'), 'received': link.get('received', 0), 'owner': link['owner'],
+            'new_files': int(link.get('new_files') or 0), 'last_upload': link.get('last_upload'),
             'created_at': link['created_at'], 'expires_at': link.get('expires_at'),
             'has_password': bool(link.get('password'))}
 
@@ -1517,6 +1529,24 @@ def list_links():
     mine = [_public_link(v, k) for k, v in links.items()
             if session['role'] == 'admin' or v.get('owner') == session['user']]
     return jsonify({'links': sorted(mine, key=lambda x: x['created_at'], reverse=True)})
+
+
+@app.post('/api/links/seen')
+def links_seen():
+    """The person has looked at the list: the "new" counts start again."""
+    session, refused = need_session()
+    if refused:
+        return refused
+    with _lock:
+        links = _load_links()
+        changed = False
+        for v in links.values():
+            if v.get('owner') == session['user'] and v.get('new_files'):
+                v['new_files'] = 0
+                changed = True
+        if changed:
+            _save_links(links)
+    return jsonify({'success': True})
 
 
 @app.post('/api/links/<link_id>/delete')
@@ -1750,6 +1780,15 @@ def _count_received(token: str, added: int) -> None:
             _save_links(links)
 
 
+def _count_file(token: str) -> None:
+    with _lock:
+        links = _load_links()
+        if token in links:
+            links[token]['new_files'] = int(links[token].get('new_files') or 0) + 1
+            links[token]['last_upload'] = datetime.now(timezone.utc).isoformat(timespec='seconds')
+            _save_links(links)
+
+
 @app.post('/api/public/<token>/upload/piece')
 def public_upload_piece(token):
     base, owner, bad = _drop_target(token)
@@ -1779,7 +1818,10 @@ def public_upload_finish(token):
     size = str(data.get('size') if data.get('size') is not None else '')
     if not size.isdigit():
         return jsonify({'error': 'Invalid size.'}), 400
-    return _helper_answer(*files_manager.run_helper(_finish_args(base, data, size), user=owner), 201)
+    result, error = files_manager.run_helper(_finish_args(base, data, size), user=owner)
+    if result is not None:
+        _count_file(token)
+    return _helper_answer(result, error, 201)
 
 
 @app.get('/alvaos-ca.crt')

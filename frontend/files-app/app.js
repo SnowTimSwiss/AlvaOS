@@ -1390,6 +1390,13 @@
     $('sel-album').addEventListener('click', () => addToAlbum(selectedEntries()));
     $('sel-unalbum').addEventListener('click', () => removeFromAlbum(selectedEntries()));
 
+    function showNewUploads(n) {
+        const badge = $('links-badge');
+        badge.hidden = !n;
+        badge.textContent = n ? `${n} new` : '';
+        badge.title = n ? 'Files that people put into your upload links' : '';
+    }
+
     $('links-nav').addEventListener('click', async () => {
         closeSide();
         const wrap = $('dialog');
@@ -1400,10 +1407,11 @@
             try { links = (await api('links')).links || []; } catch (err) { error = err.message; }
             wrap.innerHTML = `<div class="dialog wide"><h2>Shared links</h2><p>Links you made. Anyone with a link can open what it points to until it expires or you remove it.</p>
                 <div class="trash-list">${error ? esc(error) : links.length ? links.map((l) => `<div class="trash-row"><div><strong>${icon(l.kind === 'folder' ? 'folder' : 'file')} ${esc(l.name)}</strong>
-                <small>${l.mode === 'upload' ? `Upload only${l.max_bytes ? ` (${bytes(l.received || 0)} of ${bytes(l.max_bytes)})` : l.received ? ` (${bytes(l.received)} received)` : ''} · ` : ''}${esc([l.share, ...l.path.split('/').slice(0, -1)].join(' › '))} · ${l.expires_at ? `until ${esc(when(l.expires_at))}` : 'no end date'}${l.has_password ? ' · password' : ''}${me?.role === 'admin' && l.owner !== me.user ? ` · by ${esc(l.owner)}` : ''}</small></div>
+                <small>${l.new_files ? `<strong>${l.new_files} new ${l.new_files === 1 ? 'file' : 'files'}</strong> · ` : ''}${l.mode === 'upload' ? `Upload only${l.max_bytes ? ` (${bytes(l.received || 0)} of ${bytes(l.max_bytes)})` : l.received ? ` (${bytes(l.received)} received)` : ''} · ` : ''}${esc([l.share, ...l.path.split('/').slice(0, -1)].join(' › '))} · ${l.expires_at ? `until ${esc(when(l.expires_at))}` : 'no end date'}${l.has_password ? ' · password' : ''}${me?.role === 'admin' && l.owner !== me.user ? ` · by ${esc(l.owner)}` : ''}</small></div>
                 <div style="display:flex;gap:6px"><button type="button" class="btn" data-copy="${esc(l.url)}">${icon('copy')}<span class="hide-phone">Copy</span></button><button type="button" class="btn danger" data-del="${esc(l.id)}">Remove</button></div></div>`).join('') : '<div class="empty" style="padding:30px 0">No shared links yet. Right-click a file or folder and choose "Share link".</div>'}</div>
                 <div class="actions"><button type="button" class="btn primary" data-close>Done</button></div></div>`;
             wrap.querySelector('[data-close]').onclick = () => { wrap.hidden = true; wrap.innerHTML = ''; };
+            if (links.some((l) => l.new_files)) { api('links/seen', { method: 'POST' }).then(() => showNewUploads(0), () => {}); }
             wrap.querySelectorAll('[data-copy]').forEach((b) => { b.onclick = () => copy(fullUrl(b.dataset.copy)); });
             wrap.querySelectorAll('[data-del]').forEach((b) => { b.onclick = async () => {
                 b.disabled = true;
@@ -2045,6 +2053,7 @@
         $('signin').hidden = true;
         $('app').hidden = false;
         $('me-name').textContent = me.user;
+        showNewUploads(me.new_uploads || 0);
         $('me-avatar').textContent = (me.user || '?').slice(0, 1).toUpperCase();
         $('nas-name').textContent = me.nas_name || '';
         document.title = me.nas_name ? `AlvaOS Hub · ${me.nas_name}` : 'AlvaOS Hub';

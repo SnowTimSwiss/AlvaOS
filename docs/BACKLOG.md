@@ -15,6 +15,12 @@ How to add an entry:
 
 ---
 
+## 2026-10-08 — Drop box: the owner sees what came in
+
+- Each upload link counts finished uploads (`new_files`, `last_upload`); `/api/me` returns `new_uploads`; opening Shared links shows "N new files" per link and clears the marks (`POST /api/links/seen`). The sidebar item shows "N new". Test in `test_files_server.py`.
+
+---
+
 ## 2026-10-08 · The app and the Hub as one, a backup that keeps up, videos
 
 - Android: the app has the Hub's colours (no wallpaper colours), its line
