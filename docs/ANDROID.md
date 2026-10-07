@@ -65,7 +65,7 @@ last one and keeps the sign-in.
    It can never change after the first upload; change it before that if you
    want another one (e.g. `ch.<yourname>.alvaos`).
 3. Testing › Internal testing › Create new release: upload `alvaos-android.aab` from
-   the newest AlvaOS release (`alvaos-android.aab`) **by hand**. Google only accepts uploads
+   the newest AlvaOS release **by hand**. Google only accepts uploads
    through the API after the first one was made in the browser. Accept Play
    App Signing when asked. Add yourself as tester (a list of e-mails) and
    open the link it gives on the phone.
