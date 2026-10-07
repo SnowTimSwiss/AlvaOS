@@ -14,3 +14,5 @@ qemu-utils
 ovmf
 swtpm
 swtpm-tools
+# A UPS on USB, installed when it is set up (backend/ups_nut.py PACKAGES).
+nut

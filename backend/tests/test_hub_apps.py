@@ -103,3 +103,37 @@ def test_the_cache_goes_to_a_mounted_pool_or_stays_on_the_system_disk(tmp_path, 
     monkeypatch.setattr(hub_apps.os.path, "ismount", lambda p: False)               # pool not there: system disk
     assert hub_apps.cache_dir(POOLS, settings) is None
     assert hub_apps.cache_dir(POOLS, hub_apps.load(str(tmp_path / "none.json"))) is None
+
+
+CATALOG = {
+    "jellyfin": {"name": "Jellyfin", "config_schema": {"ports": [{"internal": 8096, "external": 8096, "description": "Web UI"}]}},
+    "pihole": {"name": "Pi-hole", "config_schema": {"webui_path": "/admin/", "ports": [
+        {"internal": 53, "external": 53, "description": "DNS"}, {"internal": 80, "external": 8053, "description": "Web UI"}]}},
+    "dnsonly": {"name": "DNS only", "config_schema": {"ports": [{"internal": 53, "external": 5353, "description": "DNS"}]}},
+    "evil": {"name": "Evil", "config_schema": {"webui_path": "/x\"><script>", "ports": [{"internal": 1, "external": 9, "description": "Web UI"}]}},
+}
+INSTALLED = {"jellyfin": {"port_mappings": {"8096": 18096}}, "pihole": {}, "dnsonly": {}, "evil": {},
+             "mine": {"source": "custom_compose"}}
+
+
+def test_store_apps_with_a_page_and_the_port_chosen_at_install():
+    apps = hub_apps.store_apps(INSTALLED, CATALOG)
+    assert apps == [{"id": "jellyfin", "name": "Jellyfin", "port": 18096, "path": "/"},
+                    {"id": "pihole", "name": "Pi-hole", "port": 8053, "path": "/admin/"}]
+
+
+def test_store_tiles_are_off_until_shown_and_follow_who_sees_them(tmp_path):
+    path = str(tmp_path / "hub.json")
+    apps = hub_apps.store_apps(INSTALLED, CATALOG)
+    ids = [a["id"] for a in apps]
+    settings = hub_apps.load(path)
+    assert hub_apps.store_tiles("anna", settings=settings, apps=apps) == []
+    settings, problem = hub_apps.save({"store": {"jellyfin": {"shown": True}, "pihole": {"shown": True, "people": ["tim"]}}},
+                                      ["anna", "tim"], path=path, store_ids=ids)
+    assert not problem
+    assert [t["id"] for t in hub_apps.store_tiles("anna", settings=settings, apps=apps)] == ["jellyfin"]
+    assert [t["id"] for t in hub_apps.store_tiles("tim", settings=settings, apps=apps)] == ["jellyfin", "pihole"]
+    assert [t["id"] for t in hub_apps.store_tiles("root", "admin", settings=settings, apps=apps)] == ["jellyfin", "pihole"]
+    assert hub_apps.load(path)["store"]["pihole"] == {"shown": True, "people": ["tim"]}
+    for bad in ({"dnsonly": {"shown": True}}, {"jellyfin": {"people": ["nobody"]}}, {"jellyfin": {"people": []}}):
+        assert hub_apps.save({"store": bad}, ["anna", "tim"], path=path, store_ids=ids)[0] is None

@@ -62,7 +62,10 @@ storage healthy, one shared folder.
    see "No apps for you yet", and WebDAV refuses them.
 2. Sign in as `anna`. Upload photos (also a big file, > 1 GB, and stop
    and resume it), make a folder, move and copy, download a ZIP.
-3. Photos: pictures appear by month, with the date they were taken. On the
+3. Photos: pictures appear by month, with the date they were taken. Copy
+   old phone pictures in over the network (the copies get today's file
+   date), open Photos, wait a minute and open it again: they move to the
+   month they were taken in. On the
    Hub page › Where things are kept: make personal folders for those
    missing; mark "Files" as a photo library; Photos shows anna's own
    `Photos/` folder and the library together. Switch Photos to "A folder
@@ -156,6 +159,9 @@ storage healthy, one shared folder.
    points of `VMs` work like for any shared folder.
 6. HTTPS: open the admin page over `https://` and the screen: it uses port
    9445 (the NAS's certificate has to be trusted there too).
+7. Disk size: shut a machine down › Settings › Disk 80 → 120 › Save. Start
+   it; in Windows, Disk Management shows 40 GB unallocated after C:,
+   "Extend Volume" takes it. A smaller number is refused.
 
 ## 9. HTTPS
 
@@ -197,6 +203,27 @@ storage healthy, one shared folder.
    the notification say a disk is missing; files are still there. Put it
    back / replace it in Storage.
 3. Settings › Power: disk sleep; restart and shut down from the web page.
+
+## 11b. UPS (only with a real UPS on USB)
+
+1. Connect the UPS by USB. Settings › Power › Battery backup › UPS names it
+   (for example "American Power Conversion Back-UPS ..."). "Set up", keep
+   "When the battery runs low": after a minute or two the row reads
+   "On mains · 100% · about N min".
+2. Pull the UPS's plug from the wall: within 30 seconds the bell says "The
+   power failed" and the row turns red "On battery". Plug it back in: "The
+   power is back".
+3. Change to "After 2 minutes on battery", pull the plug and wait: the bell
+   says "Shutting down", the NAS shuts down cleanly, the UPS switches its
+   outlets off a little later. Plug it back in: with "Restore on AC power
+   loss: Power on" in the BIOS the NAS starts by itself, and the pools,
+   shares and apps come back.
+4. Unplug the USB cable: after a minute the alerts say "The UPS does not
+   answer". Plug it back.
+5. "Change" › "Turn off": the row offers "Set up" again and nothing shuts
+   down in a power cut.
+6. Note the UPS model and whether it worked; models that need another
+   driver than usbhid-ups or nutdrv_qx are worth an issue.
 
 ## 12. Graphics card (only with a real card)
 

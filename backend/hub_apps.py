@@ -52,6 +52,13 @@ MODEL_RE = re.compile(r'^[A-Za-z0-9._:/@+-]{1,120}$')
 MAX_MODELS = 20
 APP_IDS = [a['id'] for a in APPS]
 USER_RE = re.compile(r'^[a-z_][a-z0-9_-]{0,31}$')
+STORE_ID_RE = re.compile(r'^[a-z0-9][a-z0-9_-]{0,63}$')
+
+# Apps from the App Store (Docker, port of their own, their own sign-in) can
+# be tiles in the Hub that open them. Off until the admin shows one.
+STORE_STATE_FILE = '/var/lib/alvaos/apps_state.json'
+CATALOG_FILES = ('/opt/alvaos/apps/catalog.json',
+                 os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'apps', 'catalog.json'))
 
 
 def load(path: Optional[str] = None) -> Dict[str, Any]:
@@ -85,7 +92,16 @@ def load(path: Optional[str] = None) -> Dict[str, Any]:
                 if isinstance(models, list) else []
     raw_storage = raw.get('storage') if isinstance(raw, dict) else None
     storage: Dict[str, Any] = raw_storage if isinstance(raw_storage, dict) else {}
-    return {'apps': apps, 'storage': {'cache_pool': str(storage.get('cache_pool') or '')}}
+    raw_store = raw.get('store') if isinstance(raw, dict) else None
+    store: Dict[str, Dict[str, Any]] = {}
+    for app_id, entry in (raw_store.items() if isinstance(raw_store, dict) else []):
+        if STORE_ID_RE.match(str(app_id)) and isinstance(entry, dict):
+            people = entry.get('people')
+            store[str(app_id)] = {
+                'shown': bool(entry.get('shown')),
+                'people': sorted({str(p) for p in people if USER_RE.match(str(p))}) if isinstance(people, list) else None,
+            }
+    return {'apps': apps, 'storage': {'cache_pool': str(storage.get('cache_pool') or '')}, 'store': store}
 
 
 def _clean_location(raw: Any) -> Dict[str, Any]:
@@ -97,17 +113,19 @@ def _clean_location(raw: Any) -> Dict[str, Any]:
 
 
 def save(payload: Dict[str, Any], known_people: Iterable[str], path: Optional[str] = None,
-         pools: Optional[Dict[str, Any]] = None, shares: Optional[Iterable[str]] = None
-         ) -> Tuple[Optional[Dict[str, Any]], str]:
+         pools: Optional[Dict[str, Any]] = None, shares: Optional[Iterable[str]] = None,
+         store_ids: Optional[Iterable[str]] = None) -> Tuple[Optional[Dict[str, Any]], str]:
     """Change apps and where they keep things:
-    {'apps': {id: {'enabled', 'people', 'location', 'libraries', 'models'}}, 'storage': {'cache_pool'}}.
-    `pools` (id -> pool) and `shares` (names) are what may be chosen."""
+    {'apps': {id: {'enabled', 'people', 'location', 'libraries', 'models'}}, 'storage': {'cache_pool'},
+     'store': {app id: {'shown', 'people'}}}.
+    `pools` (id -> pool), `shares` (names) and `store_ids` (installed apps with
+    a page) are what may be chosen."""
     path = path or SETTINGS_FILE
     settings = load(path)
     known = set(known_people)
     pools = pools or {}
     share_names = set(shares or [])
-    if not isinstance(payload, dict) or not (payload.get('apps') or payload.get('storage')):
+    if not isinstance(payload, dict) or not (payload.get('apps') or payload.get('storage') or payload.get('store')):
         return None, 'Nothing to change.'
     changes = payload.get('apps') or {}
     if not isinstance(changes, dict):
@@ -169,6 +187,26 @@ def save(payload: Dict[str, Any], known_people: Iterable[str], path: Optional[st
             if len(models) > MAX_MODELS:
                 return None, f'Choose at most {MAX_MODELS} models.'
             entry['models'] = list(dict.fromkeys(str(m) for m in models))
+    store_changes = payload.get('store') or {}
+    if not isinstance(store_changes, dict):
+        return None, 'Nothing to change.'
+    for app_id, change in store_changes.items():
+        if app_id not in set(store_ids or []) or not isinstance(change, dict):
+            return None, f'There is no installed app "{app_id}" with a page to open.'
+        entry = settings['store'].setdefault(app_id, {'shown': False, 'people': None})
+        if 'shown' in change:
+            entry['shown'] = bool(change['shown'])
+        if 'people' in change:
+            people = change['people']
+            if people is None:
+                entry['people'] = None
+            elif isinstance(people, list) and people:
+                unknown = sorted({str(p) for p in people} - known)
+                if unknown:
+                    return None, f'There is no person called {", ".join(unknown)}.'
+                entry['people'] = sorted({str(p) for p in people})
+            else:
+                return None, 'Choose everyone or at least one person.'
     storage = payload.get('storage')
     if isinstance(storage, dict) and 'cache_pool' in storage:
         pool_id = str(storage.get('cache_pool') or '')
@@ -242,3 +280,65 @@ def cache_dir(pools_state: Dict[str, Any], settings: Optional[Dict[str, Any]] = 
     if not mount or mount == '/' or not os.path.ismount(mount):
         return None
     return os.path.join(mount, CACHE_FOLDER)
+
+
+# ── Apps from the App Store ──────────────────────────────────────────────────
+
+def _read_json(path: str) -> Any:
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def store_apps(apps_state: Optional[Dict[str, Any]] = None, catalog: Optional[Dict[str, Any]] = None
+               ) -> List[Dict[str, Any]]:
+    """Installed App Store apps that have a page in the browser: id, name,
+    the port it is on (the one chosen at install, else the catalog's) and
+    the path to open. Apps added as a compose file have no known page."""
+    if apps_state is None:
+        apps_state = _read_json(STORE_STATE_FILE)
+    if catalog is None:
+        catalog = next((c for c in (_read_json(p) for p in CATALOG_FILES) if isinstance(c, dict)), {})
+    found = []
+    for app_id, state in sorted((apps_state or {}).items()):
+        entry = catalog.get(app_id) if isinstance(catalog, dict) else None
+        if not STORE_ID_RE.match(str(app_id)) or not isinstance(entry, dict) or not isinstance(state, dict):
+            continue
+        raw_schema = entry.get('config_schema')
+        schema: Dict[str, Any] = raw_schema if isinstance(raw_schema, dict) else {}
+        web = next((p for p in schema.get('ports') or [] if isinstance(p, dict)
+                    and re.search(r'\b(web|ui)\b', str(p.get('description', '')).lower())), None)
+        if not web:
+            continue
+        raw_chosen = state.get('port_mappings')
+        chosen: Dict[Any, Any] = raw_chosen if isinstance(raw_chosen, dict) else {}
+        try:
+            port = int(str(chosen.get(str(web.get('internal')), chosen.get(web.get('internal'), web.get('external')))))
+        except (TypeError, ValueError):
+            continue
+        path = str(schema.get('webui_path') or entry.get('webui_path') or '/')
+        if not 1 <= port <= 65535 or not re.match(r'^/[A-Za-z0-9._~/-]*$', path):
+            continue
+        found.append({'id': app_id, 'name': str(entry.get('name') or state.get('name') or app_id)[:40],
+                      'port': port, 'path': path})
+    return found
+
+
+def store_overview(settings: Optional[Dict[str, Any]] = None, apps: Optional[List[Dict[str, Any]]] = None
+                   ) -> List[Dict[str, Any]]:
+    """Every installed app with a page, and whether the Hub shows it to whom."""
+    settings = settings or load()
+    apps = store_apps() if apps is None else apps
+    return [{**a, **settings['store'].get(a['id'], {'shown': False, 'people': None})} for a in apps]
+
+
+def store_tiles(user: str, role: str = 'user', settings: Optional[Dict[str, Any]] = None,
+                apps: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+    """The App Store apps this person sees as tiles in the Hub."""
+    out = []
+    for app in store_overview(settings, apps):
+        if app['shown'] and (role == 'admin' or app['people'] is None or user in app['people']):
+            out.append({k: app[k] for k in ('id', 'name', 'port', 'path')})
+    return out

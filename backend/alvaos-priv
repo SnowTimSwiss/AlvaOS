@@ -11,7 +11,7 @@ alvaos-priv — the only program the AlvaOS backend may run as root.
                                                             (the same, as one person: Linux checks their rights)
     sudo -n /opt/alvaos/bin/alvaos-priv vault-open NAME HOST EXPORT MODE   (key on stdin)
     sudo -n /opt/alvaos/bin/alvaos-priv vault-close NAME
-    sudo -n /opt/alvaos/bin/alvaos-priv vm-setup | vm-prepare ID | vm-delete ID | vm-isos   (virtual machines, see vm_ops.py)
+    sudo -n /opt/alvaos/bin/alvaos-priv vm-setup | vm-prepare ID | vm-grow ID | vm-delete ID | vm-isos   (virtual machines, see vm_ops.py)
 
 Every command line is checked by priv_policy before it runs. Nothing is ever
 passed to a shell. Denials exit with status 126 and are logged to

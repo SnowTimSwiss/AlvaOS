@@ -201,7 +201,7 @@ function accessEditorHtml(share) {
                     </div>`;
                 }).join('') || '<div class="field-hint">Nobody has an account yet. Add the first person here.</div>'}
             </div>
-            <details class="modal-float-details" style="margin-top: 8px;" ${shareUsersCache.length ? '' : 'open'}>
+            <details class="modal-details" style="margin-top: 8px;" ${shareUsersCache.length ? '' : 'open'}>
                 <summary style="cursor: pointer; color: var(--accent-primary); font-size: 0.85rem;">Add a person</summary>
                 <div class="modal-disclosure-panel" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 8px;">
                     <input type="text" data-new-user placeholder="Name, e.g. anna" autocomplete="off">
@@ -282,26 +282,15 @@ function bindAccessEditor(root) {
 }
 
 function shareModal(title, bodyHtml, confirmLabel) {
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    overlay.innerHTML = `
-        <div class="modal-content modal-disclosure-frame" role="dialog" aria-modal="true" aria-labelledby="share-modal-title" style="max-width: 560px;">
-            <div class="modal-title" id="share-modal-title">
-                <span>${escapeHtml(title)}</span>
-                <button type="button" class="modal-close-x" aria-label="Close">&times;</button>
-            </div>
-            <div class="modal-body" style="text-align: left;">${bodyHtml}<div class="field-error" data-form-error></div></div>
-            <div class="modal-actions">
-                <button type="button" class="btn-secondary" data-act="cancel">Cancel</button>
-                <button type="button" class="btn-primary" data-act="ok">${escapeHtml(confirmLabel)}</button>
-            </div>
-        </div>`;
-    document.body.appendChild(overlay);
-    const close = () => overlay.remove();
-    overlay.querySelector('.modal-close-x').onclick = close;
-    overlay.querySelector('[data-act="cancel"]').onclick = close;
-    attachModalDismiss(overlay, close);
-    return { overlay, close, ok: overlay.querySelector('[data-act="ok"]'), error: overlay.querySelector('[data-form-error]') };
+    const dlg = openDialog({
+        title: escapeHtml(title),
+        size: 'wide',
+        body: `${bodyHtml}<div class="field-error" data-form-error></div>`,
+        actions: `
+            <button type="button" class="btn-secondary" data-act="cancel" data-close>Cancel</button>
+            <button type="button" class="btn-primary" data-act="ok">${escapeHtml(confirmLabel)}</button>`,
+    });
+    return { overlay: dlg.dialog, close: () => dlg.close(), ok: dlg.$('[data-act="ok"]'), error: dlg.$('[data-form-error]') };
 }
 
 async function sendShareJson(method, path, body) {
@@ -357,7 +346,7 @@ async function showCreateShareDialog() {
             <span class="field-label">Who can open it</span>
             <div id="share-access">${accessEditorHtml(null)}</div>
         </div>
-        <details class="form-field modal-float-details">
+        <details class="form-field modal-details">
             <summary style="cursor: pointer; color: var(--text-secondary); font-size: 0.85rem;">More options</summary>
             <div class="modal-disclosure-panel" style="margin-top: 10px;">
                 <label class="field-label" for="share-protocol">Protocol</label>

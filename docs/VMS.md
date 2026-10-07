@@ -37,7 +37,7 @@ how it is built and what comes next; done and open items are also in
 - **Privileges:** the backend starts, stops and enables a machine's unit
   through the privilege helper (`systemctl` rules for exactly
   `alvaos-vm@<8 hex>.service`). Files go through `alvaos-priv vm-setup |
-  vm-prepare ID | vm-delete ID | vm-isos`. Before a start, `ExecStartPre=+`
+  vm-prepare ID | vm-grow ID | vm-delete ID | vm-isos`. Before a start, `ExecStartPre=+`
   runs `vm_ops.py ready ID` as root so `alvaos-vm` can reach the folder and
   read the installer.
 - **Disks are normal files:** `<pool>/VMs/<id>/disk.qcow2`, next to the UEFI
@@ -66,10 +66,12 @@ how it is built and what comes next; done and open items are also in
   what the NAS can spare; it does not start when there is not enough free
   memory; the disk cannot be bigger than the pool's free space.
 
+A disk grows in the settings of a stopped machine (`vm-grow ID`: `qemu-img
+resize`, only larger); the person then extends the partition in the guest.
+
 ## Not yet / next
 
-- Disk size change (`qemu-img resize` plus telling the guest), snapshots in
-  the page, a second disk, a USB device or graphics card passed through
+- Snapshots in the page, a second disk, a USB device or graphics card passed through
   (needs IOMMU; fits the Graphics page).
 - A bridge network, so a machine gets its own address in the home network.
   It needs a bridge on the NAS's network card; NAT stays the default.

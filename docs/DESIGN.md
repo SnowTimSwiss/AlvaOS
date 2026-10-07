@@ -177,6 +177,21 @@ No animated or flashy buttons.
 
 ---
 
+### Dialogs
+
+Every dialog of the admin pages is made with `openDialog()` (in
+`frontend/notifications.js`); `showConfirm()` and `showPrompt()` are built on it.
+It gives each one the same frame, a title with a close button, focus kept inside,
+Escape and a click beside it to close, and focus back where it was.
+
+- The title and the buttons stay in view; only the fields in between scroll.
+- Details ("More options") open in place, inside the part that scrolls.
+- Short fields go side by side with `.modal-row` (one column on a phone).
+- On a phone the buttons share one row instead of stacking.
+- Dangerous actions: `danger: true` for a red frame and `btn-primary btn-danger`.
+
+---
+
 ### Status Indicators
 
 Status must be visible but never stressful.
