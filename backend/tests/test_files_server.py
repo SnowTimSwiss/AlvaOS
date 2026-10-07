@@ -358,7 +358,7 @@ def test_upload_links_take_files_and_show_nothing(client, monkeypatch):
     # The owner is told about it, once, until she looks at the list.
     assert client.get("/api/me").get_json()["new_uploads"] == 1
     listed = client.get("/api/links").get_json()["links"]
-    assert [l["new_files"] for l in listed if l["mode"] == "upload"] == [1] and listed[0]["last_upload"]
+    assert [x["new_files"] for x in listed if x["mode"] == "upload"] == [1] and listed[0]["last_upload"]
     assert client.post("/api/links/seen", headers=H).get_json()["success"]
     assert client.get("/api/me").get_json()["new_uploads"] == 0
 
