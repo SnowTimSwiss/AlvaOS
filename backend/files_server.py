@@ -31,6 +31,7 @@ import photo_dates
 import hub_calendar
 import hub_caldav
 import hub_photos_sync
+import hub_video
 import hub_chat
 import hub_data
 from password_utils import verify_password
@@ -376,6 +377,7 @@ def me():
     import remote_access
     return jsonify({'user': session['user'], 'role': session['role'], 'shares': shares,
                     'nas_name': nas, 'hub': {'name': hub_apps.NAME, 'apps': apps, 'store': store},
+                    'features': hub_video.features(),
                     'public_url': remote_access.public_url(os.path.join(STATE_DIR, 'remote_access.json'))})
 
 
@@ -884,7 +886,10 @@ SEARCH_LIMIT = 200
 THUMB_DIR = os.path.join(STATE_DIR, 'thumbs')
 THUMB_SIZE = 320
 THUMB_MAX_SOURCE_BYTES = 60 * 1024 ** 2
-THUMB_TYPES = ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp')
+PREVIEW_MAX_SOURCE_BYTES = 120 * 1024 ** 2
+# Pictures the browser shows itself, and what the Hub makes a still or a JPEG of.
+THUMB_TYPES = ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.avif') \
+    + hub_video.PREVIEW_TYPES + hub_video.VIDEO_TYPES
 
 
 def _low_priority() -> None:
@@ -905,24 +910,6 @@ def _thumbnail_pool():
         from concurrent.futures import ThreadPoolExecutor
         _thumb_workers = ThreadPoolExecutor(max_workers=2, thread_name_prefix='thumbs', initializer=_low_priority)
     return _thumb_workers
-
-
-def make_thumbnail(data: bytes) -> Optional[bytes]:
-    """A small JPEG. Decoded here, in this unprivileged process, never in the
-    helper; Pillow's pixel limit stops decompression bombs."""
-    try:
-        from io import BytesIO
-        from PIL import Image, ImageOps
-        with Image.open(BytesIO(data)) as source:
-            img: Image.Image = ImageOps.exif_transpose(source)
-            img.thumbnail((THUMB_SIZE, THUMB_SIZE))
-            if img.mode not in ('RGB', 'L'):
-                img = img.convert('RGB')
-            out = BytesIO()
-            img.save(out, 'JPEG', quality=80)
-            return out.getvalue()
-    except Exception:  # noqa: BLE001 - any broken image just has no thumbnail
-        return None
 
 
 @app.get('/api/thumb')
@@ -950,8 +937,30 @@ def _thumb_dir() -> str:
 _photo_dates = photo_dates.DateCache(lambda: os.path.dirname(_thumb_dir()))
 
 
-def _thumb_response(path: str, user: Optional[str], stamp: str):
-    key = hashlib.sha256(f'{user}|{path}|{stamp}'.encode()).hexdigest()
+def _read_part(path: str, user: Optional[str]):
+    """read(start, length) -> bytes of the file, as the person, for hub_video."""
+    def read(start: int, length: int) -> Optional[bytes]:
+        stream, _ = files_manager.open_stream(path, part=(start, length), user=user)
+        if stream is None:
+            return None
+        return b''.join(stream)
+    return read
+
+
+def _make_preview(path: str, user: Optional[str], size: int, side: int) -> Optional[bytes]:
+    """A JPEG of a picture (at most `side` pixels), or a still of a video."""
+    name = os.path.basename(path)
+    if hub_video.is_video(name):
+        return hub_video.video_still(name, size, _read_part(path, user), workdir=_thumb_dir())
+    stream, _ = files_manager.open_stream(path, user=user)
+    if stream is None:
+        return None
+    return hub_video.jpeg(b''.join(stream), name, side, 80 if side <= THUMB_SIZE else 86)
+
+
+def _thumb_response(path: str, user: Optional[str], stamp: str, large: bool = False):
+    side = hub_video.MAX_PREVIEW_SIDE if large else THUMB_SIZE
+    key = hashlib.sha256(f'{user}|{path}|{stamp}{"|large" if large else ""}'.encode()).hexdigest()
     cached = os.path.join(_thumb_dir(), key[:2], key + '.jpg')
     headers = {'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff'}
     try:
@@ -960,12 +969,12 @@ def _thumb_response(path: str, user: Optional[str], stamp: str):
     except OSError:
         pass
     size = files_manager.file_size(path, user=user)
-    if size is None or size > THUMB_MAX_SOURCE_BYTES:
+    video = hub_video.is_video(os.path.basename(path))
+    limit = PREVIEW_MAX_SOURCE_BYTES if large else THUMB_MAX_SOURCE_BYTES
+    if size is None or (size > limit and not video):
         return jsonify({'error': 'No preview for this file.'}), 404
-    stream, _ = files_manager.open_stream(path, user=user)
-    if stream is None:
-        return jsonify({'error': 'No preview for this file.'}), 404
-    thumb = _thumbnail_pool().submit(make_thumbnail, b''.join(stream)).result(timeout=60)
+    os.makedirs(_thumb_dir(), exist_ok=True)
+    thumb = _thumbnail_pool().submit(_make_preview, path, user, size, side).result(timeout=90)
     if thumb is None:
         return jsonify({'error': 'No preview for this file.'}), 404
     try:
@@ -976,6 +985,97 @@ def _thumb_response(path: str, user: Optional[str], stamp: str):
     except OSError:
         pass
     return Response(thumb, mimetype='image/jpeg', headers=headers)
+
+
+@app.get('/api/preview')
+def preview():
+    """A JPEG of a picture a browser cannot show (HEIC from phones, TIFF), for the viewer."""
+    session, refused = need_session()
+    if refused:
+        return refused
+    _, path, rel, bad = target(session, request.args)
+    if bad:
+        return bad
+    if not rel or not rel.lower().endswith(hub_video.PREVIEW_TYPES):
+        return jsonify({'error': 'No preview for this file.'}), 404
+    return _thumb_response(path, as_user(session), str(request.args.get('v') or ''), large=True)
+
+
+# ── Videos a browser cannot play: a converted copy, made when asked ─────────
+
+_converter = hub_video.Converter(lambda: os.path.dirname(_thumb_dir()))
+
+
+def _video_target(session: Dict[str, Any], args: Any):
+    """(path, name, size, key, error response) for a video the person may open."""
+    share, path, rel, bad = target(session, args)
+    if bad:
+        return None, '', 0, '', bad
+    name = os.path.basename(rel)
+    if not rel or not hub_video.is_video(name):
+        return None, '', 0, '', (jsonify({'error': 'This is not a video.'}), 404)
+    user = as_user(session)
+    size = files_manager.file_size(path, user=user)
+    if size is None:
+        return None, '', 0, '', (jsonify({'error': 'The video could not be read.'}), 404)
+    key = hub_video.Converter.key(user, path, size, str(args.get('v') or ''))
+    return path, name, size, key, None
+
+
+def _video_status(key: str, args: Any) -> Dict[str, Any]:
+    status = _converter.status(key)
+    status['ffmpeg'] = hub_video.ffmpeg() is not None
+    if status['state'] == 'ready':
+        status['url'] = '/api/video/stream?' + '&'.join(f'{k}={quote(str(args.get(k) or ""), safe="")}' for k in ('share', 'path', 'v'))
+    return status
+
+
+@app.get('/api/video')
+def video_info():
+    """Whether a converted copy of a video exists or is being made."""
+    session, refused = need_session()
+    if refused:
+        return refused
+    path, _, _, key, bad = _video_target(session, request.args)
+    if bad or path is None:
+        return bad
+    return jsonify(_video_status(key, request.args))
+
+
+@app.post('/api/video/convert')
+def video_convert():
+    """Starts making a copy that every browser plays (H.264 + AAC, at most 720 pixels high)."""
+    session, refused = need_session()
+    if refused:
+        return refused
+    data = request.get_json(silent=True) or {}
+    path, name, size, key, bad = _video_target(session, data)
+    if bad or path is None:
+        return bad
+    user = as_user(session)
+    status = _converter.start(key, name, size, lambda: files_manager.open_stream(path, user=user)[0] or [])
+    status['ffmpeg'] = hub_video.ffmpeg() is not None
+    return jsonify(status)
+
+
+@app.get('/api/video/stream')
+def video_stream():
+    """The converted copy, with Range requests so the player can jump around."""
+    session, refused = need_session()
+    if refused:
+        return refused
+    path, _, _, key, bad = _video_target(session, request.args)
+    if bad or path is None:
+        return bad
+    out = _converter.output(key)
+    if not os.path.isfile(out):
+        return jsonify({'error': 'There is no converted copy of this video yet.'}), 404
+    os.utime(out, None)
+    from flask import send_file
+    response = send_file(out, mimetype='video/mp4', conditional=True, max_age=0)
+    response.headers['Cache-Control'] = 'private, max-age=600'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    return response
 
 
 def _zip_response(stream, name: str):

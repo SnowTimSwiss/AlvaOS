@@ -54,15 +54,19 @@
     const $ = (id) => document.getElementById(id);
     const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+    // Videos: what the browser plays itself, and the rest (the Hub can make a copy that plays, see showVideo).
+    const VIDEO = /\.(mp4|m4v|mov|mkv|webm|3gp|3g2|avi|wmv|mpe?g|ogv|flv|ts|mts|m2ts)$/i;
+    const NATIVE_VIDEO = /\.(mp4|m4v|mov|webm|mkv|ogv|3gp)$/i;
+    const PREVIEW_IMAGE = /\.(heic|heif|tiff?)$/i;       // shown through /api/preview (a JPEG made by the NAS)
     const KINDS = [
-        ['image', /\.(jpe?g|png|gif|webp|avif|bmp|heic)$/i], ['video', /\.(mp4|webm|m4v|mov|mkv|avi)$/i],
-        ['audio', /\.(mp3|ogg|wav|flac|m4a|aac)$/i], ['pdf', /\.pdf$/i],
+        ['image', /\.(jpe?g|png|gif|webp|avif|bmp|heic|heif|tiff?)$/i], ['video', VIDEO],
+        ['audio', /\.(mp3|ogg|wav|flac|m4a|aac|opus)$/i], ['pdf', /\.pdf$/i],
         ['doc', /\.(txt|md|log|csv|json|xml|ya?ml|ini|conf|cfg|docx?|odt|xlsx?|ods|pptx?|odp|rtf)$/i],
         ['archive', /\.(zip|tar|gz|tgz|7z|rar|bz2|xz)$/i],
     ];
     const kindOf = (e) => (e.type === 'folder' ? 'folder' : (KINDS.find(([, re]) => re.test(e.name)) || ['file'])[0]);
-    const THUMB = /\.(jpe?g|png|gif|webp|bmp)$/i;
-    const VIEW = { image: /\.(jpe?g|png|gif|webp|avif|bmp)$/i, video: /\.(mp4|webm|m4v)$/i, audio: /\.(mp3|ogg|wav|flac|m4a)$/i, text: /\.(txt|md|log|csv|json|xml|ya?ml|ini|conf|cfg)$/i };
+    const THUMB = /\.(jpe?g|png|gif|webp|bmp|avif|heic|heif|tiff?|mp4|m4v|mov|mkv|webm|3gp|3g2|avi|wmv|mpe?g|ogv|flv|ts|mts|m2ts)$/i;
+    const VIEW = { image: /\.(jpe?g|png|gif|webp|avif|bmp|heic|heif|tiff?)$/i, video: VIDEO, audio: /\.(mp3|ogg|wav|flac|m4a|opus)$/i, text: /\.(txt|md|log|csv|json|xml|ya?ml|ini|conf|cfg)$/i };
 
     function bytes(n) {
         n = Number(n) || 0;
@@ -339,7 +343,7 @@
                 const thumb = THUMB.test(e.name)
                     ? `<img loading="lazy" decoding="async" alt="${esc(e.name)}" src="/api/thumb?share=${encodeURIComponent(sh(e))}&path=${encodeURIComponent(rel(e))}&v=${encodeURIComponent(e.modified_at || '')}" data-fallback="${k}">`
                     : `<span class="pvideo">${icon(k)}</span>`;
-                return `${head}<div class="ptile" data-i="${i}" title="${esc(rel(e))}">${thumb}</div>`;
+                return `${head}<div class="ptile${k === 'video' ? ' vid' : ''}" data-i="${i}" title="${esc(rel(e))}">${thumb}</div>`;
             }).join('');
         } else if (!shown.length) {
             items.innerHTML = q
@@ -349,7 +353,7 @@
             items.innerHTML = shown.map((e, i) => {
                 const k = kindOf(e);
                 const thumb = THUMB.test(e.name)
-                    ? `<div class="thumb"><img loading="lazy" decoding="async" alt="" src="/api/thumb?share=${encodeURIComponent(sh(e))}&path=${encodeURIComponent(rel(e))}&v=${encodeURIComponent(e.modified_at || '')}" data-fallback="${k}"></div>`
+                    ? `<div class="thumb${k === 'video' ? ' vid' : ''}"><img loading="lazy" decoding="async" alt="" src="/api/thumb?share=${encodeURIComponent(sh(e))}&path=${encodeURIComponent(rel(e))}&v=${encodeURIComponent(e.modified_at || '')}" data-fallback="${k}"></div>`
                     : `<div class="thumb icon kind-${k}">${icon(k === 'folder' ? 'folder-fill' : k)}</div>`;
                 return `<div class="tile" data-i="${i}" title="${esc(found ? rel(e) : e.name)}" draggable="${access() === 'write'}">${thumb}<div class="name">${esc(e.name)}</div>${found ? `<div class="where">${esc(searchAll ? where(e) : where(e).split(' › ').pop())}</div>` : ''}
                     <button type="button" class="more" data-more="${i}" aria-label="More for ${esc(e.name)}">${icon('more')}</button></div>`;
@@ -1616,8 +1620,16 @@
         try {
             const url = await link(entry, true);
             if (shown[viewing] !== entry) return;
-            if (kind === 'image') $('viewer-body').innerHTML = `<img src="${esc(url)}" alt="${esc(entry.name)}">`;
-            else if (kind === 'video') $('viewer-body').innerHTML = `<video src="${esc(url)}" controls autoplay playsinline></video>`;
+            if (kind === 'image' && PREVIEW_IMAGE.test(entry.name)) {
+                // HEIC from a phone, TIFF: the NAS makes a JPEG of it.
+                $('viewer-body').innerHTML = `<img src="/api/preview?${new URLSearchParams({ share: sh(entry), path: rel(entry), v: entry.modified_at || '' })}" alt="${esc(entry.name)}">`;
+                $('viewer-body').querySelector('img').addEventListener('error', () => {
+                    $('viewer-body').innerHTML = `<div class="viewer-note"><strong>This picture cannot be shown here</strong><span>${me?.features?.heif === false ? 'This NAS cannot open HEIC pictures yet. ' : ''}Download it to open it on your device.</span><button type="button" class="btn primary" id="viewer-note-dl">${icon('download')}Download</button></div>`;
+                    $('viewer-note-dl').onclick = () => download([entry]);
+                }, { once: true });
+            }
+            else if (kind === 'image') $('viewer-body').innerHTML = `<img src="${esc(url)}" alt="${esc(entry.name)}">`;
+            else if (kind === 'video') showVideo(entry, url);
             else if (kind === 'audio') $('viewer-body').innerHTML = `<audio src="${esc(url)}" controls autoplay></audio>`;
             else {
                 const text = await (await fetch(url)).text();
@@ -1632,6 +1644,59 @@
             $('viewer-body').textContent = err.message;
         }
     }
+    // A video: played from the NAS as it is when the browser knows the format; if not (an AVI,
+    // HEVC from an iPhone, …) the NAS makes a copy that plays everywhere, once, when asked.
+    async function showVideo(entry, url) {
+        const body = $('viewer-body');
+        const stale = () => shown[viewing] !== entry || $('viewer').hidden;
+        const q = new URLSearchParams({ share: sh(entry), path: rel(entry), v: entry.modified_at || '' });
+        const play = (src, onError) => {
+            body.innerHTML = `<video src="${esc(src)}" controls autoplay playsinline preload="metadata"></video>`;
+            if (onError) body.querySelector('video').addEventListener('error', onError, { once: true });
+        };
+        const note = (head, text, buttons = '') => {
+            body.innerHTML = `<div class="viewer-note"><strong>${esc(head)}</strong><span>${esc(text)}</span><div class="viewer-note-actions">${buttons}</div></div>`;
+            paintIcons(body);
+        };
+        const downloadBtn = `<button type="button" class="btn" data-note="download">${icon('download')}Download</button>`;
+        const wire = (convert) => {
+            body.querySelector('[data-note=download]')?.addEventListener('click', () => download([entry]));
+            body.querySelector('[data-note=convert]')?.addEventListener('click', convert);
+        };
+        const watch = async () => {
+            for (;;) {
+                if (stale()) return;
+                let st;
+                try { st = await api(`video?${q}`); } catch (err) { note('The video could not be converted', err.message, downloadBtn); wire(); return; }
+                if (st.state === 'ready') { play(st.url); return; }
+                if (st.state === 'failed') { note('The video could not be converted', st.error || 'Something went wrong.', downloadBtn); wire(); return; }
+                note(st.state === 'queued' ? 'Waiting to convert this video…' : `Converting this video… ${st.percent}%`,
+                    'It plays here as soon as it is ready. You can close this and come back: the NAS keeps going.');
+                await new Promise((r) => setTimeout(r, 1500));
+            }
+        };
+        const needConvert = async () => {
+            if (stale()) return;
+            let st;
+            try { st = await api(`video?${q}`); } catch (err) { note('This video cannot be played here', err.message, downloadBtn); wire(); return; }
+            if (st.state === 'ready') { play(st.url); return; }
+            if (st.state === 'queued' || st.state === 'working') { watch(); return; }
+            if (!st.ffmpeg) {
+                note('This video cannot be played in the browser', 'Its format needs a converter that is not installed on this NAS (ffmpeg). Download it to play it on your device.', downloadBtn);
+                wire();
+                return;
+            }
+            note('This video cannot be played in the browser as it is', 'The NAS can make a copy that plays here. It takes a while, once; the original stays as it is.',
+                `<button type="button" class="btn primary" data-note="convert">${icon('refresh')}Make a copy that plays here</button>${downloadBtn}`);
+            wire(async () => {
+                try { await api('video/convert', { method: 'POST', json: { share: sh(entry), path: rel(entry), v: entry.modified_at || '' } }); } catch (err) { toast(err.message, 'error'); return; }
+                watch();
+            });
+        };
+        if (NATIVE_VIDEO.test(entry.name)) play(url, needConvert);
+        else needConvert();
+    }
+
     function neighbour(step) {
         for (let i = viewing + step; i >= 0 && i < shown.length; i += step) if (viewable(shown[i])) return i;
         return -1;

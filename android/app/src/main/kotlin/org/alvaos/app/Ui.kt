@@ -178,8 +178,8 @@ class Ui(private val ctx: Context) {
     }
 
     /** One row of a group: a badge, a title and a line below it, and an arrow if it opens something. */
-    fun item(group: LinearLayout, icon: Int, title: String, sub: String = "", onClick: (() -> Unit)? = null,
-             danger: Boolean = false): LinearLayout {
+    fun item(group: LinearLayout, icon: Int, title: String, sub: String = "", danger: Boolean = false,
+             onClick: (() -> Unit)? = null): LinearLayout {
         if (group.childCount > 0) divider(group)
         val row = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL

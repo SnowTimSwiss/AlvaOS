@@ -181,6 +181,7 @@ Version: ${DEB_VERSION}
 Architecture: amd64
 Maintainer: AlvaOS Team <dev@alvaos.org>
 Depends: python3, python3-yaml, python3-cryptography, python3-flask, python3-waitress, python3-psutil, python3-requests, python3-pyotp, python3-qrcode, python3-pil, docker.io, docker-compose, btrfs-progs, wireguard-tools, nbd-client, cryptsetup, systemd, smartmontools, hdparm, nfs-kernel-server, samba, samba-vfs-modules, miniupnpc, pciutils, network-manager
+Recommends: ffmpeg, libheif-examples
 Section: admin
 Priority: optional
 Homepage: https://github.com/SnowTimSwiss/AlvaOS
