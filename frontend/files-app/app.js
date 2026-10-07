@@ -28,6 +28,8 @@
         check: '<path d="M20 6 9 17l-5-5"/>',
         plus: '<path d="M5 12h14M12 5v14"/>',
         upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/>',
+        'user-plus': '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/>',
+        'folder-up': '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M12 10v6M9 13l3-3 3 3"/>',
         'folder-plus': '<path d="M12 10v6M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
         x: '<path d="M18 6 6 18M6 6l12 12"/>',
         download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
@@ -202,7 +204,7 @@
     function renderSide() {
         $('share-list').innerHTML = (me?.shares || []).map((s) => `
             <button type="button" class="side-item${s.name === share ? ' active' : ''}" data-share="${esc(s.name)}">
-                <span class="ic">${icon('folder-fill')}</span><span>${esc(s.name)}</span>
+                <span class="ic">${icon(s.from ? 'users' : 'folder-fill')}</span><span>${esc(s.name)}</span>
                 ${s.access === 'read' ? `<span class="ro" title="You can look, not change">${icon('lock').replace('<svg', '<svg width="13" height="13"')}</span>` : ''}
             </button>`).join('');
         const parts = path ? path.split('/') : [];
@@ -326,7 +328,7 @@
         } else if (!shown.length) {
             items.innerHTML = q
                 ? `<div class="empty">${icon('search')}<strong>Nothing found</strong>No name in this folder contains "${esc(q)}".</div>`
-                : `<div class="empty">${icon('folder')}<strong>This folder is empty</strong>${access() === 'write' ? 'Drop files here, or use New › Upload files.' : ''}</div>`;
+                : `<div class="empty">${icon('folder')}<strong>This folder is empty</strong>${access() === 'write' ? 'Drop files or folders here, or use New.' : ''}</div>`;
         } else if (view === 'grid') {
             items.innerHTML = shown.map((e, i) => {
                 const k = kindOf(e);
@@ -520,11 +522,12 @@
         if (one && one.type === 'folder') rows.push(`<button type="button" data-ctx="zip">${icon('archive')}Download as ZIP</button>`);
         if (!sel.length && !found) rows.push(`<button type="button" data-ctx="zip-here">${icon('archive')}Download this folder as ZIP</button>`);
         if (canWrite && one) rows.push(`<button type="button" data-ctx="rename">${icon('pen')}Rename</button>`);
-        if (one) rows.push(`<button type="button" data-ctx="share">${icon('link')}Share link…</button>`);
+        if (one && one.type === 'folder' && !shareOf(sh(one))?.from) rows.push(`<button type="button" data-ctx="people">${icon('user-plus')}Share with people…</button>`);
+        if (one && !shareOf(sh(one))?.from) rows.push(`<button type="button" data-ctx="share">${icon('link')}Share link…</button>`);
         if (one && one.type === 'file') rows.push(`<button type="button" data-ctx="versions">${icon('clock')}Previous versions…</button>`);
         if (canWrite && sel.length) rows.push(`<button type="button" data-ctx="move">${icon('folder')}Move to…</button>`, `<button type="button" data-ctx="copy">${icon('copy')}Copy to…</button>`);
         if (canWrite && sel.length) rows.push('<hr>', `<button type="button" class="danger" data-ctx="delete">${icon('trash')}Delete</button>`);
-        if (!sel.length && canWrite) rows.push(`<button type="button" data-ctx="upload">${icon('upload')}Upload files</button>`, `<button type="button" data-ctx="folder">${icon('folder-plus')}New folder</button>`);
+        if (!sel.length && canWrite) rows.push(`<button type="button" data-ctx="upload">${icon('upload')}Upload files</button>`, `<button type="button" data-ctx="upload-folder">${icon('folder-up')}Upload a folder</button>`, `<button type="button" data-ctx="folder">${icon('folder-plus')}New folder</button>`);
         if (!rows.length) return;
         menu.innerHTML = rows.join('');
         menu.hidden = false;
@@ -566,6 +569,8 @@
         if (name === 'share' && sel.length === 1) shareDialog(sel[0]);
         if (name === 'versions' && sel.length === 1) versionsDialog(sel[0]);
         if (name === 'upload') $('file-input').click();
+        if (name === 'upload-folder') $('folder-input').click();
+        if (name === 'people' && sel.length === 1) peopleDialog(sel[0]);
         if (name === 'folder') newFolder();
     }
 
@@ -574,7 +579,7 @@
         const b = e.target.closest('[data-new]');
         if (!b) return;
         hideMenus();
-        action(b.dataset.new === 'upload' ? 'upload' : 'folder');
+        action(b.dataset.new);
     });
     $('sel-clear').addEventListener('click', () => { selected = new Set(); paintSelection(); });
     $('sel-download').addEventListener('click', () => action('download'));
@@ -789,6 +794,48 @@
             }
         };
         $('ln-days').focus();
+    }
+
+    const shareOf = (name) => (me?.shares || []).find((x) => x.name === name);
+
+    // Share a folder with people on this NAS (backend files_server._granted):
+    // they see it in Files as "<folder> (from <me>)", to look at or to change too.
+    async function peopleDialog(entry) {
+        const wrap = $('dialog');
+        const close = () => { wrap.hidden = true; wrap.innerHTML = ''; };
+        let people = [];
+        let grant = null;
+        try {
+            people = (await api('people')).people || [];
+            grant = ((await api(`grants?${new URLSearchParams({ share: sh(entry), path: rel(entry) })}`)).grants || [])[0] || null;
+        } catch (err) { toast(err.message, 'error'); return; }
+        const canWrite = shareOf(sh(entry))?.access === 'write';
+        const chosen = new Set(grant ? grant.to : []);
+        wrap.innerHTML = `<form class="dialog" novalidate><h2>Share "${esc(entry.name)}" with people</h2>
+            <p>They find it in Files as “${esc(entry.name)} (from ${esc(me?.user || '')})”. Only here and in WebDAV, not on their network drives.</p>
+            ${people.length ? `<div class="people-list">${people.map((p) => `<label class="person"><input type="checkbox" value="${esc(p)}"${chosen.has(p) ? ' checked' : ''}><span class="avatar">${esc(p.slice(0, 1).toUpperCase())}</span><span>${esc(p)}</span></label>`).join('')}</div>`
+                : '<p class="muted">There is nobody else on this NAS yet.</p>'}
+            <label class="field">They may<select id="pp-access" class="sel">
+                <option value="read">Look at and download</option>
+                ${canWrite ? `<option value="write"${grant?.access === 'write' ? ' selected' : ''}>Also add, change and delete</option>` : ''}</select></label>
+            <div class="notice" id="pp-error"></div>
+            <div class="actions">${grant ? '<button type="button" class="btn ghost danger" data-stop>Stop sharing</button><span class="grow"></span>' : ''}<button type="button" class="btn" data-cancel>Cancel</button><button type="submit" class="btn primary"${people.length ? '' : ' disabled'}>Save</button></div></form>`;
+        wrap.hidden = false;
+        wrap.querySelector('[data-cancel]').onclick = close;
+        const save = async (to) => {
+            try {
+                await api('grants', { method: 'POST', json: { share: sh(entry), path: rel(entry), to, access: $('pp-access').value } });
+                close();
+                toast(to.length ? `"${entry.name}" is shared with ${to.join(', ')}.` : `"${entry.name}" is not shared any more.`);
+            } catch (err) { $('pp-error').textContent = err.message; }
+        };
+        const stop = wrap.querySelector('[data-stop]');
+        if (stop) stop.onclick = () => save([]);
+        wrap.querySelector('form').onsubmit = (e) => {
+            e.preventDefault();
+            save(Array.from(wrap.querySelectorAll('.person input:checked')).map((b) => b.value));
+        };
+        wrap.querySelector('.person input, select')?.focus();
     }
 
     // Older states of one file, from the restore points (Backup page).
@@ -1073,19 +1120,32 @@
         });
     }
 
-    async function uploadOne(file, t) {
-        const u = { name: file.name, pct: 0, state: '', label: 'Waiting…' };
-        uploads.push(u);
+    // One upload. With `group` (a whole folder) it updates the folder's one
+    // row instead of adding its own.
+    async function uploadOne(file, t, group) {
+        const u = group || { name: file.name, pct: 0, state: '', label: 'Waiting…' };
+        if (!group) uploads.push(u);
         paintUploads();
         const finish = (state, label) => {
+            if (group) {
+                group.done += 1;
+                if (state !== 'done') group.failed += 1;
+                return state === 'done';
+            }
             Object.assign(u, { state, label, pct: 100, hideAt: Date.now() + (state === 'done' ? 4000 : 15000) });
             paintUploads();
             setTimeout(paintUploads, state === 'done' ? 4100 : 15100);
             return state === 'done';
         };
         const progress = (sent) => {
-            u.pct = file.size ? Math.min(100, Math.round((sent / file.size) * 100)) : 100;
-            u.label = `${u.pct}%`;
+            const pct = file.size ? Math.min(100, Math.round((sent / file.size) * 100)) : 100;
+            if (group) {
+                group.pct = Math.round(((group.done + pct / 100) / group.total) * 100);
+                group.label = `${group.done + 1} of ${group.total} · ${pct}%`;
+            } else {
+                u.pct = pct;
+                u.label = `${pct}%`;
+            }
             paintUploads();
         };
         try {
@@ -1125,7 +1185,75 @@
         for (const f of files) if (await uploadOne(f, t)) ok += 1;
         if (ok && t.share === share && t.path === path) load();
     }
+
+    // Whole folders: dropped (the browser reads their tree) or chosen with
+    // "Upload a folder". The folders are made first, then the files go one
+    // after the other like any upload, with one row per folder.
+    const JUNK = new Set(['.DS_Store', 'Thumbs.db', 'desktop.ini']);
+    const join = (...parts) => parts.filter(Boolean).join('/');
+
+    async function readTree(entry, prefix, out) {
+        if (entry.isFile) {
+            if (!JUNK.has(entry.name)) out.files.push({ file: await new Promise((res, rej) => entry.file(res, rej)), dir: prefix });
+            return;
+        }
+        if (!entry.isDirectory) return;
+        const dir = join(prefix, entry.name);
+        out.dirs.add(dir);
+        const reader = entry.createReader();
+        for (;;) {   // readEntries answers in batches until it is empty
+            const batch = await new Promise((res, rej) => reader.readEntries(res, rej));
+            if (!batch.length) break;
+            for (const child of batch) await readTree(child, dir, out);
+        }
+    }
+
+    async function makeDirs(t, dirs) {
+        for (const dir of [...dirs].sort((a, b) => a.split('/').length - b.split('/').length)) {
+            const parts = dir.split('/');
+            try {
+                await api('mkdir', { method: 'POST', json: { share: t.share, path: join(t.path, ...parts.slice(0, -1)), name: parts[parts.length - 1] } });
+            } catch (err) {
+                if (!/already there/.test(err.message)) throw new Error(`${dir}: ${err.message}`);
+            }
+        }
+    }
+
+    async function uploadTree(tree) {
+        if (access() !== 'write') { toast(`You can only look at "${share}".`, 'error'); return; }
+        const t = { share, path };
+        const tops = new Set([...tree.dirs].map((d) => d.split('/')[0]));
+        const group = { name: tops.size === 1 ? [...tops][0] : `${tops.size} folders`, pct: 0, state: '',
+            label: 'Making the folders…', done: 0, failed: 0, total: tree.files.length };
+        uploads.push(group);
+        paintUploads();
+        try {
+            await makeDirs(t, tree.dirs);
+            for (const { file, dir } of tree.files) await uploadOne(file, { share: t.share, path: join(t.path, dir) }, group);
+            Object.assign(group, group.failed
+                ? { state: 'failed', label: `${group.failed} of ${group.total} files did not upload` }
+                : { state: 'done', label: `${group.total} file${group.total === 1 ? '' : 's'} · Done` });
+        } catch (err) {
+            Object.assign(group, { state: 'failed', label: err.message });
+        }
+        Object.assign(group, { pct: 100, hideAt: Date.now() + (group.state === 'done' ? 5000 : 20000) });
+        paintUploads();
+        setTimeout(paintUploads, group.state === 'done' ? 5100 : 20100);
+        if (t.share === share && t.path === path) load();
+    }
+
     $('file-input').addEventListener('change', (e) => { uploadFiles(Array.from(e.target.files || [])); e.target.value = ''; });
+    $('folder-input').addEventListener('change', (e) => {
+        const tree = { files: [], dirs: new Set() };
+        for (const file of Array.from(e.target.files || [])) {
+            const parts = (file.webkitRelativePath || file.name).split('/');
+            const dir = parts.slice(0, -1).join('/');
+            for (let i = 1; i < parts.length; i += 1) tree.dirs.add(parts.slice(0, i).join('/'));
+            if (!JUNK.has(file.name)) tree.files.push({ file, dir });
+        }
+        e.target.value = '';
+        if (tree.files.length || tree.dirs.size) uploadTree(tree);
+    });
     let depth = 0;
     const content = $('content');
     const hasFiles = (e) => Array.from(e.dataTransfer?.types || []).includes('Files');
@@ -1138,12 +1266,19 @@
     });
     content.addEventListener('dragover', (e) => { if (hasFiles(e)) e.preventDefault(); });
     content.addEventListener('dragleave', () => { depth = Math.max(0, depth - 1); if (!depth) $('drop').hidden = true; });
-    content.addEventListener('drop', (e) => {
+    content.addEventListener('drop', async (e) => {
         if (!hasFiles(e)) return;
         e.preventDefault();
         depth = 0;
         $('drop').hidden = true;
-        uploadFiles(Array.from(e.dataTransfer.files || []));
+        // Folders only show up as entries; read them before the drop is gone.
+        const entries = Array.from(e.dataTransfer.items || []).map((i) => (i.webkitGetAsEntry ? i.webkitGetAsEntry() : null));
+        if (!entries.some((x) => x && x.isDirectory)) { uploadFiles(Array.from(e.dataTransfer.files || [])); return; }
+        const tree = { files: [], dirs: new Set() };
+        try {
+            for (const entry of entries) if (entry) await readTree(entry, '', tree);
+        } catch (err) { toast(`The folder could not be read: ${err.message}`, 'error'); return; }
+        uploadTree(tree);
     });
 
     // ── Viewer ─────────────────────────────────────────────────────────────

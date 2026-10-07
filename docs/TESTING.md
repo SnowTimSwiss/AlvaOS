@@ -77,6 +77,14 @@ storage healthy, one shared folder.
    SMB too, and the old one is in the trash.
 5. Share link: read-only, then a "drop box" with a limit; open it in a
    private window and upload into the drop box.
+   Drag a folder with subfolders (and an empty one) from the computer into
+   Files: the same tree appears, with one row while it uploads; New ›
+   Upload a folder does the same. As `anna`, right-click a folder of her
+   own › Share with people… › tick `ben`, "Look at and download": ben
+   sees "<folder> (from anna)" in Files and over WebDAV, can open and
+   download but not change; switch to "Also add, change and delete": ben
+   adds a file, anna sees it (also over SMB, owned by anna). Stop sharing:
+   it is gone for ben.
 6. On a phone: open it, "Add to home screen" (needs HTTPS, step 9).
 7. WebDAV: Windows "Map network drive" or Finder › `http://alva-test:8091`.
 8. Calendar (as `anna`, who has a personal folder): drag in the week to

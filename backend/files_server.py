@@ -22,7 +22,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote
 
-from flask import Flask, Response, jsonify, request, send_from_directory
+from flask import Flask, Response, g, has_request_context, jsonify, request, send_from_directory
 
 import files_manager
 import hub_apps
@@ -142,8 +142,9 @@ def end_sessions_for(user: str) -> None:
 
 # ── Who may do what ──────────────────────────────────────────────────────────
 
-def shares_for(session: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-    """The shares this person can open, with 'read' or 'write', as over SMB."""
+def shares_for(session: Dict[str, Any], grants: bool = True) -> Dict[str, Dict[str, Any]]:
+    """The shares this person can open, with 'read' or 'write', as over SMB,
+    and the folders other people shared with them in the Hub (see _granted)."""
     result = {}
     for share in _read_json(SHARES_FILE).values():
         if not isinstance(share, dict) or not share.get('name') or not str(share.get('path', '')).startswith('/'):
@@ -162,11 +163,72 @@ def shares_for(session: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
                 access = 'read'
         result[share['name']] = {'name': share['name'], 'path': share['path'], 'access': access,
                                  'limit_bytes': share.get('quota_bytes') if isinstance(share.get('quota_bytes'), int) else None}
+    if grants and session['role'] != 'admin':
+        result.update(_granted(session, result))
     return result
 
 
-def as_user(session: Dict[str, Any]) -> Optional[str]:
-    """The account the helper acts as: the person, or root for the admin."""
+# ── Folders shared with a person (Files › Share with people) ────────────────
+#
+# A person may give others on the NAS a folder they can open: to look at, or
+# to change too. The others see it in Files (and WebDAV) as a folder of
+# their own, "Holiday (from anna)". Nothing changes on disk: their file
+# operations run as the person who shared it, below that folder only, and
+# never with more rights than that person has. Over SMB it is not there.
+
+def _grants_file() -> str:
+    return os.path.join(STATE_DIR, 'files_grants.json')
+
+
+def _load_grants() -> List[Dict[str, Any]]:
+    grants = _read_json(_grants_file()).get('grants')
+    return [x for x in grants or [] if isinstance(x, dict) and isinstance(x.get('to'), list)]
+
+
+def _save_grants(grants: List[Dict[str, Any]]) -> None:
+    os.makedirs(STATE_DIR, exist_ok=True)
+    tmp = _grants_file() + '.tmp'
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w') as f:
+        json.dump({'grants': grants}, f, indent=1)
+    os.replace(tmp, _grants_file())
+
+
+def _granted(session: Dict[str, Any], own: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    out: Dict[str, Dict[str, Any]] = {}
+    for grant in _load_grants():
+        if session['user'] not in grant['to'] or grant.get('owner') == session['user']:
+            continue
+        owner = {'user': str(grant.get('owner')), 'role': 'admin' if grant.get('owner') == 'admin' else 'user'}
+        source = shares_for(owner, grants=False).get(str(grant.get('share')))
+        if not source:
+            continue            # the person who shared it cannot open it any more
+        access = 'write' if grant.get('access') == 'write' and source['access'] == 'write' else 'read'
+        rel = str(grant.get('path') or '')
+        base = rel.rsplit('/', 1)[-1] or source['name']
+        name, n = f"{base} (from {owner['user']})", 2
+        while name in own or name in out:
+            name, n = f"{base} (from {owner['user']}) {n}", n + 1
+        out[name] = {'name': name, 'path': os.path.join(source['path'], rel) if rel else source['path'],
+                     'root': source['path'],      # its trash is the owner's share's
+                     'access': access, 'limit_bytes': None, 'granted_by': owner['user'],
+                     'act_as': as_user(owner, {}), 'grant': grant.get('id')}
+    return out
+
+
+_OWN = object()   # "not a shared-with-me folder": act as the person
+
+
+def as_user(session: Dict[str, Any], share: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    """The account the helper acts as: the person, or root for the admin; in
+    a folder someone shared with them, the one who shared it (_granted).
+    Without `share`, the folder this request opened with target()."""
+    if share is not None:
+        acting = share.get('act_as', _OWN)
+    else:
+        acting = g.get('files_act_as', _OWN) if has_request_context() else _OWN
+    if acting is not _OWN:
+        return acting
     return None if session['role'] == 'admin' else session['user']
 
 
@@ -199,6 +261,7 @@ def target(session: Dict[str, Any], data: Dict[str, Any], write: bool = False):
         return None, None, '', (jsonify({'error': 'This shared folder is not yours to open.'}), 404)
     if write and share['access'] != 'write':
         return None, None, '', (jsonify({'error': f'You can only look at "{name}", not change it.'}), 403)
+    g.files_act_as = share.get('act_as', _OWN)
     path, rel, error = files_manager.resolve({'s': share}, name, str(data.get('path') or ''))
     if error or path is None:
         return None, None, '', (jsonify({'error': error or 'Invalid path.'}), 404)
@@ -286,7 +349,8 @@ def me():
     settings = hub_apps.load()
     apps = hub_apps.visible(session['user'], session['role'], settings)
     files_on = any(a['id'] == 'files' for a in apps)
-    shares = sorted(({'name': s['name'], 'access': s['access'], **({'limited': True} if s['limit_bytes'] else {})}
+    shares = sorted(({'name': s['name'], 'access': s['access'], **({'limited': True} if s['limit_bytes'] else {}),
+                      **({'from': s['granted_by']} if s.get('granted_by') else {})}
                      for s in shares_for(session).values()),
                     key=lambda s: s['name'].lower()) if files_on else []
     nas = socket.gethostname().split('.')[0]
@@ -340,7 +404,8 @@ def search():
         if len(results) >= SEARCH_LIMIT:
             complete = False
             break
-        result, error = files_manager.run_helper(['files-search', path, query], timeout=30, user=as_user(session))
+        result, error = files_manager.run_helper(['files-search', path, query], timeout=30,
+                                                 user=as_user(session, share))
         if result is None:
             if len(places) == 1:
                 return jsonify({'error': error or 'The search did not work.'}), 409
@@ -813,7 +878,7 @@ def upload_finish():
         # A changed text file: the old one goes to the trash (so it can come
         # back), then the new one takes its name.
         share = shares_for(session)[str(data.get('share'))]
-        files_manager.run_helper(['files-trash', share['path'], path, str(data.get('name') or '')],
+        files_manager.run_helper(['files-trash', share.get('root', share['path']), path, str(data.get('name') or '')],
                                  user=as_user(session))
     return _helper_answer(*files_manager.run_helper(_finish_args(path, data, size), user=as_user(session)), 201)
 
@@ -924,7 +989,7 @@ def delete():
     moved: List[str] = []
     failed: List[str] = []
     for name in names:
-        result, problem = files_manager.run_helper(['files-trash', share['path'], path, str(name)],
+        result, problem = files_manager.run_helper(['files-trash', share.get('root', share['path']), path, str(name)],
                                                    user=as_user(session))
         if result is not None:
             moved.append(str(name))
@@ -935,6 +1000,98 @@ def delete():
     return jsonify({'success': True, 'moved': moved, 'failed': failed})
 
 
+# ── Sharing a folder with people on the NAS (see _granted) ──────────────────
+
+GRANT_ACCESS = ('read', 'write')
+MAX_GRANT_PEOPLE = 50
+
+
+def _people() -> List[str]:
+    return sorted(n for n, v in _read_json(USERS_FILE).items() if isinstance(v, dict) and v.get('files_auth'))
+
+
+def _grant_view(grant: Dict[str, Any]) -> Dict[str, Any]:
+    return {k: grant.get(k) for k in ('id', 'share', 'path', 'to', 'access', 'created_at')}
+
+
+@app.get('/api/people')
+def people():
+    """The others who may sign in here, to share a folder with."""
+    session, refused = need_session()
+    if refused:
+        return refused
+    return jsonify({'people': [p for p in _people() if p != session['user']]})
+
+
+@app.get('/api/grants')
+def grants_list():
+    """The folders this person shared ("mine"), optionally for one folder."""
+    session, refused = need_session()
+    if refused:
+        return refused
+    share, rel = request.args.get('share'), request.args.get('path')
+    mine = [x for x in _load_grants() if x.get('owner') == session['user']
+            and (share is None or (x.get('share') == share and x.get('path') == (rel or '')))]
+    return jsonify({'grants': [_grant_view(x) for x in mine]})
+
+
+@app.post('/api/grants')
+def grants_save():
+    """Share a folder with people: {share, path, to: [names], access: read|write}.
+    An empty `to` stops sharing it."""
+    session, refused = need_session()
+    if refused:
+        return refused
+    data = request.get_json(silent=True) or {}
+    share, path, rel, bad = target(session, data)
+    if bad:
+        return bad
+    if share.get('granted_by'):
+        return jsonify({'error': f'Only {share["granted_by"]} can share this folder further.'}), 403
+    access = data.get('access')
+    if access not in GRANT_ACCESS:
+        return jsonify({'error': 'Choose whether they may only look or also change.'}), 400
+    if access == 'write' and share['access'] != 'write':
+        return jsonify({'error': f'You can only look at "{share["name"]}", so you can only let others look.'}), 403
+    to = data.get('to')
+    known = set(_people())
+    if not isinstance(to, list) or len(to) > MAX_GRANT_PEOPLE or any(
+            not isinstance(p, str) or p not in known or p == session['user'] for p in to):
+        return jsonify({'error': 'Choose people who can sign in here.'}), 400
+    entries, error = files_manager.list_entries(path, user=as_user(session))
+    if entries is None:
+        return jsonify({'error': error or 'That is not a folder you can open.'}), 404
+    with _lock:
+        grants = _load_grants()
+        old = next((x for x in grants if x.get('owner') == session['user'] and x.get('share') == share['name']
+                    and x.get('path') == rel), None)
+        if old:
+            grants.remove(old)
+        grant = None
+        if to:
+            grant = {'id': old['id'] if old else secrets.token_hex(6), 'owner': session['user'],
+                     'share': share['name'], 'path': rel, 'to': sorted(set(to)), 'access': access,
+                     'created_at': old['created_at'] if old else _now().isoformat()}
+            grants.append(grant)
+        _save_grants(grants)
+    return jsonify({'success': True, 'grant': _grant_view(grant) if grant else None})
+
+
+@app.post('/api/grants/<grant_id>/delete')
+def grants_delete(grant_id):
+    session, refused = need_session()
+    if refused:
+        return refused
+    with _lock:
+        grants = _load_grants()
+        keep = [x for x in grants if not (x.get('id') == grant_id
+                                         and (x.get('owner') == session['user'] or session['role'] == 'admin'))]
+        if len(keep) == len(grants):
+            return jsonify({'error': 'This is not shared by you.'}), 404
+        _save_grants(keep)
+    return jsonify({'success': True})
+
+
 @app.get('/api/trash')
 def trash():
     session, refused = need_session()
@@ -943,6 +1100,10 @@ def trash():
     share, _, _, bad = target(session, {'share': request.args.get('share'), 'path': ''})
     if bad:
         return bad
+    if share.get('granted_by'):
+        # The trash belongs to the whole share of the person who shared it.
+        return jsonify({'success': True, 'items': [], 'keep_days': 30,
+                        'note': f'What you delete here goes to the trash of {share["granted_by"]}.'})
     return _helper_answer(*files_manager.run_helper(['files-trash-list', share['path']], user=as_user(session)),
                           keep_days=30)
 
@@ -956,6 +1117,8 @@ def trash_restore():
     share, _, _, bad = target(session, {'share': data.get('share'), 'path': ''}, write=True)
     if bad:
         return bad
+    if share.get('granted_by'):
+        return jsonify({'error': f'Ask {share["granted_by"]} to get it back from their trash.'}), 403
     return _helper_answer(*files_manager.run_helper(['files-trash-restore', share['path'], str(data.get('id') or '')],
                                                     user=as_user(session)))
 
@@ -1034,6 +1197,8 @@ def create_link():
         return bad
     if not rel:
         return jsonify({'error': 'Share a folder or file inside the shared folder, not all of it.'}), 400
+    if share.get('granted_by'):
+        return jsonify({'error': f'Only {share["granted_by"]} can make links for this folder.'}), 403
     try:
         days = int(data.get('days', 7))
     except (TypeError, ValueError):

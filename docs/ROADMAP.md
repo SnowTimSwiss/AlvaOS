@@ -43,12 +43,12 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 - **Simple, noticed by everyone (next, in this order):**
   1. ~~Sort~~ done (name, date, size, type; folders first).
   2. A start page with "Recent" and favourites.
-  3. Upload whole folders by drag and drop (check what works today).
+  3. Upload whole folders by drag and drop: done (also New › Upload a folder).
   4. "You use 42 of 100 GB" in Files (the person's own space limit).
   5. ~~Edit text files~~ done (.txt, .md and other plain text up to 1 MB; the old one goes to the trash).
   6. A notification when someone uploads into a drop box.
   7. Photos as a small Immich: backup from the phone, albums, favourites (plan: `docs/PHOTOS.md`). Done: the date from the photo itself (EXIF). Next: video thumbnails, albums and favourites, upload into the own photos from the Hub.
-  8. Share a folder with another person on the NAS without a public link.
+  8. Share a folder with another person on the NAS without a public link: done (Share with people…; in Files and WebDAV, not over SMB). Next: a "Shared with me" heading and a note to the person.
 - **Powerful when needed:**
   9. Open and edit Office documents with the EuroOffice app from the catalog (WOPI).
   10. Search filters (type, date, size); later search by content (text in PDFs and documents).

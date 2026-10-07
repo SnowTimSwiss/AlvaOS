@@ -15,6 +15,23 @@ How to add an entry:
 
 ---
 
+## 2026-10-07 · Files: whole folders, and sharing a folder with people
+
+- Upload whole folders: drop them into Files (the browser reads the tree,
+  also empty folders) or New › Upload a folder. Folders are made first,
+  then the files go like any upload; one row per folder shows "12 of 340".
+- Share with people…: a person gives others on the NAS a folder they can
+  open, to look at or to change too. The others see it as
+  "<folder> (from anna)" in Files and WebDAV. Nothing changes on disk and
+  no new privileged operation: their file operations run as the person
+  who shared it (`files_server._granted`, `as_user`), below that folder
+  only, never with more than that person's own access, and the grant ends
+  when she loses the folder. Deleting goes to her share's trash; they
+  cannot look through her trash, make public links or share it further.
+  Not over SMB (that would need ACLs on disk).
+- Kept in `/var/lib/alvaos/files_grants.json`. Tests in
+  `tests/test_files_grants.py`; the folder upload was tried in Chromium.
+
 ## 2026-10-07 · A graphics card for apps, with one switch
 
 - Apps › Installed › an app › "Graphics card": a switch for apps whose

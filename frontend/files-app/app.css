@@ -333,3 +333,11 @@ body.public { display: flex; flex-direction: column; min-height: 100%; }
     .app.in-view, .app.in-view.with-rail { grid-template-columns: 1fr; }
     .app.in-view.with-rail .view { height: calc(100% - 0px); }
 }
+
+/* Share with people */
+.people-list { display: flex; flex-direction: column; gap: 2px; max-height: 240px; overflow-y: auto; margin: 4px 0 14px; text-align: left; }
+.person { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 8px; cursor: pointer; }
+.person:hover { background: var(--hover); }
+.person input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.dialog .muted { color: var(--muted); }
+.actions .grow { flex: 1; }

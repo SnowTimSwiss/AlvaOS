@@ -128,6 +128,8 @@ def _resolve(session, raw: str):
     share = fs.shares_for(session).get(share_name)
     if not share:
         return None, None, '', Response('Not found\n', 404)
+    from flask import g
+    g.files_act_as = share.get('act_as', fs._OWN)   # a folder shared with them: as its owner
     path, rel, error = files_manager.resolve({'s': share}, share['name'], rel)
     if error or path is None:
         return None, None, '', Response('Not found\n', 404)
@@ -274,7 +276,7 @@ def _helper(args: List[str], session, timeout: int = 600) -> Optional[str]:
 
 
 def _to_trash(share, folder: str, name: str, session) -> Optional[str]:
-    return _helper(['files-trash', share['path'], folder, name], session)
+    return _helper(['files-trash', share.get('root', share['path']), folder, name], session)
 
 
 def put(session, raw: str) -> Response:
