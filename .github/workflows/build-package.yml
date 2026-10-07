@@ -109,7 +109,7 @@ jobs:
         with:
           name: alvaos-package-${{ steps.version.outputs.version }}
           path: build/package-artifact/
-          retention-days: 7
+          retention-days: 1
       
       - name: Display build info
         run: |

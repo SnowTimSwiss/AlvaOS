@@ -82,7 +82,7 @@ jobs:
           path: |
             installer/build/[Aa][Ll][Vv][Aa][Oo][Ss]-installer-*.iso
             installer/build/checksums.txt
-          retention-days: 2
+          retention-days: 1
 
       - name: Upload installer to release
         if: github.event_name == 'release'

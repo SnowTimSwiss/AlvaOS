@@ -76,13 +76,13 @@ jobs:
           done
 
       - name: Keep the pictures of the screens
-        if: always()
+        if: failure()
         continue-on-error: true
         uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
         with:
           name: app-screens
           path: android/app/build/outputs/roborazzi/
-          retention-days: 7
+          retention-days: 1
 
       # The upload key (docs/ANDROID.md) comes from the repository secrets. With
       # it every build is signed the same way, so a new APK installs over the
@@ -123,15 +123,16 @@ jobs:
           fi
 
       - name: Keep the app with the run
-        # To test between releases: Actions › the run › Artifacts. Small
-        # (about 15 MB) and kept a week, so the storage does not fill up.
-        if: github.event_name != 'release'
+        # To test between releases: start the workflow by hand (Run workflow),
+        # then Actions › the run › Artifacts. Not on every push, so the
+        # account's artifact storage does not fill up.
+        if: github.event_name == 'workflow_dispatch'
         continue-on-error: true
         uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
         with:
           name: alvaos-android
           path: android/out/
-          retention-days: 7
+          retention-days: 1
 
       - name: Add the app to the release
         if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.release != '')
