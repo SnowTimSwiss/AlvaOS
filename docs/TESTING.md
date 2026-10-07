@@ -132,22 +132,25 @@ storage healthy, one shared folder.
    "Backup disk · Not connected" and no alarm goes off.
 4. Buddy Backup with a second AlvaOS (a second VM) if you have one.
 
-## 7. Remote access (only on a real machine with a router)
+## 7. Remote access (Tailscale, Cloudflare Tunnel)
 
-1. Settings › Remote access › turn on. "Find it" fills in the public address.
-   Better: make a free name at duckdns.org and enter it with its token under
-   "Your address changes?"; "Last updated" appears within a few seconds.
-   If the page warns about CGNAT, remote access cannot work with this
-   internet connection until the provider gives a public IPv4 address.
-2. "Open it automatically" (UPnP; on a FRITZ!Box allow it first for the NAS
-   under Internet › Permit Access). Otherwise forward the UDP port shown
-   (51821) to the NAS address shown by hand.
-3. "Add a device" › name it › on the phone install WireGuard › scan the QR
-   code. Turn off Wi-Fi on the phone (use mobile data), switch the tunnel
-   on, open `http://100.96.96.1:8080`. AlvaOS opens; Files is at
-   `http://100.96.96.1:8090`.
-4. The device list says "Connected now". Remove the device: the phone can
-   no longer connect.
+1. Settings › Remote access › Tailscale on. After a minute "Sign in to
+   Tailscale" appears; sign in (or make a free account). The page then
+   shows the NAS's Tailscale address. Install the Tailscale app on a phone,
+   sign in with the same account, turn off Wi-Fi (mobile data) and open
+   `http://<Tailscale address>:8080` (AlvaOS) and `:8090` (the Hub). The
+   phone shows up under "Devices in your Tailscale network".
+2. Restart the NAS: Tailscale comes back by itself, still signed in.
+   Tailscale off: the phone can no longer reach the NAS from outside.
+3. Cloudflare (needs a domain in a Cloudflare account): make an API token
+   with "Cloudflare Tunnel: Edit" and "DNS: Edit", paste it, "Find my
+   domains", name `cloud`, "Put the Hub there". Within two minutes
+   `https://cloud.<domain>` shows the Hub sign-in from a phone on mobile
+   data; a share link copied in the Hub starts with that address. The
+   admin pages are not reachable there. Remove: the DNS name and the tunnel
+   are gone in the Cloudflare dashboard.
+4. A NAS that had the old WireGuard remote access on: after the update the
+   bell says it works differently now, `ip link` shows no `remote0`.
 
 ## 8. Apps
 

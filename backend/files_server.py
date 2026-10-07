@@ -355,8 +355,10 @@ def me():
                     key=lambda s: s['name'].lower()) if files_on else []
     nas = socket.gethostname().split('.')[0]
     store = hub_apps.store_tiles(session['user'], session['role'], settings)
+    import remote_access
     return jsonify({'user': session['user'], 'role': session['role'], 'shares': shares,
-                    'nas_name': nas, 'hub': {'name': hub_apps.NAME, 'apps': apps, 'store': store}})
+                    'nas_name': nas, 'hub': {'name': hub_apps.NAME, 'apps': apps, 'store': store},
+                    'public_url': remote_access.public_url(os.path.join(STATE_DIR, 'remote_access.json'))})
 
 
 # ── Browsing and files ───────────────────────────────────────────────────────

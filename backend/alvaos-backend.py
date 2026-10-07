@@ -315,9 +315,18 @@ if __name__ == '__main__':
     admin_terminal.setup(auth_manager.admin_signed_in)
     admin_terminal.serve_in_background()
 
-    # Remote access: the tunnel comes back after a reboot when it is on.
-    from app_services import remote
-    threading.Thread(target=remote.start, name='remote-access', daemon=True).start()
+    # Remote access is Tailscale and Cloudflare Tunnel now (containers that
+    # restart by themselves); the old WireGuard remote access goes, once.
+    def _retire_old_remote_access():
+        from app_services import remote
+        if remote.retire_wireguard():
+            import alerts_manager
+            alerts_manager.push_notification(
+                'warning', 'Remote access works differently now',
+                'The old remote access (WireGuard with a router port) is off. Turn on Tailscale in Settings › '
+                'Remote access and install the Tailscale app on your devices; you can close the router port.',
+                source='remote', link='system.html#remote', fingerprint='remote-access-wireguard-retired')
+    threading.Thread(target=_retire_old_remote_access, name='remote-access', daemon=True).start()
 
     # wg-quick state does not survive a reboot; bring the buddy tunnel back up.
     threading.Thread(target=buddy_backup_manager.start_tunnel_if_paired, daemon=True).start()

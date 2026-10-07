@@ -1331,15 +1331,16 @@ def _rule_ip(sys_: System, args):
 
 def _rule_wg(sys_: System, args):
     # Never `show ... dump` or `private-key`: those print the private key.
-    if len(args) == 3:
-        _expect(args, 'show', 'remote0', 'latest-handshakes')
-    else:
-        _expect(args, 'show', 'buddy0')
+    _expect(args, 'show', 'buddy0')
     return Plan(argv=list(args))
 
 
 def _rule_wg_quick(sys_: System, args):
+    # The old remote access tunnel (remote0) can only be taken down: remote
+    # access is Tailscale and Cloudflare Tunnel since 2026-10 (remote_access.py).
     _expect(args, {'up', 'down'}, {WG_CONFIG_PATH, WG_REMOTE_CONFIG_PATH})
+    if args[1] == WG_REMOTE_CONFIG_PATH and args[0] != 'down':
+        _fail('The old remote access tunnel can only be taken down')
     return Plan(argv=list(args), stage={1: 'wg'})
 
 

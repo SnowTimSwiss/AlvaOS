@@ -731,7 +731,8 @@
     }
 
     // ── Share links ────────────────────────────────────────────────────────
-    const fullUrl = (u) => `${location.origin}${u}`;
+    // Share links use the Hub's internet address when it has one (Cloudflare Tunnel).
+    const fullUrl = (u) => `${me?.public_url || location.origin}${u}`;
     async function copy(text) {
         try {
             await navigator.clipboard.writeText(text);   // only on https or localhost

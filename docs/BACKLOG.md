@@ -15,6 +15,33 @@ How to add an entry:
 
 ---
 
+## 2026-10-07 · Remote access: Tailscale and Cloudflare Tunnel instead of WireGuard
+
+- The own WireGuard remote access (remote0, a forwarded router port, UPnP,
+  DuckDNS, device QR codes) is gone. Settings › Remote access has two
+  parts now, each on its own:
+  - **Tailscale** for the own devices: on → "Sign in to Tailscale" (the link
+    from `tailscale status --json`, only login.tailscale.com) → the NAS's
+    address and name, and the devices in the network. No router setting,
+    works behind CGNAT.
+  - **Cloudflare Tunnel** for the Hub at an own domain: paste an API token,
+    pick the domain, type a name; AlvaOS makes the tunnel, its route (only
+    `http://localhost:8090`, never the admin pages) and the DNS name, and
+    removes them again. Or paste a tunnel token made in the dashboard.
+    Share links in the Hub then use that address.
+- Both run as the official containers (`tailscale/tailscale:stable` on the
+  host network with /dev/net/tun, `cloudflare/cloudflared`) through the
+  helper's checked docker-compose: no foreign apt sources (their package
+  servers and keys could not be checked from here; Docker Hub images are
+  what Tailscale and Cloudflare publish).
+- A NAS with the old remote access on: at the first start it is taken down
+  once (wg-quick down, the router port closed) and the bell explains. The
+  helper now only allows taking `remote0` down. Buddy Backup keeps its own
+  WireGuard tunnel.
+- Tests in `tests/test_remote_access.py` (Cloudflare's API faked); tried in
+  Chromium. Note for next time: neither ran against the real services yet
+  (`TESTING.md` 7).
+
 ## 2026-10-07 · Virtual machines: disks, network and devices
 
 - A second disk (only grows), a second CD (the virtio drivers for Windows),

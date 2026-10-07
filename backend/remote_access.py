@@ -1,53 +1,55 @@
 #!/usr/bin/env python3
-"""Remote access: reach this NAS from anywhere over WireGuard.
+"""Remote access: reach this NAS from anywhere, without a router setting.
 
-Settings › Remote access turns it on. Each phone or computer is added by
-name; it gets a WireGuard configuration as a QR code (phones) or a file
-(computers), shown once. The device's private key is made here and never
-stored; the NAS keeps only its public key and a pre-shared key.
+Two ways, each on its own (Settings › Remote access):
 
-The tunnel reaches the NAS itself (100.96.96.1), nothing else on the home
-network. The router has to forward one UDP port (51821 by default) to the
-NAS; without that, nothing from outside can knock.
+* **Tailscale** – your own phones and computers and the NAS join one private
+  network, end to end encrypted, also behind CGNAT. The NAS shows a link once,
+  you sign in with your Tailscale account (free for home use), then install
+  the Tailscale app on each device with the same account. Everything of the
+  NAS is reachable there: the admin pages, the Hub, the shared folders.
+* **Cloudflare Tunnel** – the Hub (Files, Photos, Calendar, share links) at an
+  address of your own domain, like https://cloud.example.com, in any browser.
+  You need a Cloudflare account with your domain and an API token; AlvaOS
+  makes the tunnel and the DNS record itself. Only the Hub (port 8090) goes
+  through it, never the admin pages. Cloudflare ends the encryption in its
+  network, and its terms do not allow large video streams.
 
-Buddy Backup has its own tunnel (buddy0, 100.95.95.x, port 51820); this one
-is remote0. The privilege helper runs wg-quick only for these two files and
-refuses PostUp and other shell hooks in them.
+Both run as the official containers (`tailscale/tailscale`,
+`cloudflare/cloudflared`) on the host network, started through the privilege
+helper's checked docker-compose like the apps, so nothing is added to the
+system's package sources. Turning one off stops its container; Tailscale
+keeps its sign-in for next time.
+
+Until 2026-10 remote access was an own WireGuard tunnel with a forwarded
+router port (remote0). `retire_wireguard()` takes it down once on update.
+Buddy Backup keeps its own tunnel (buddy0).
 """
 
 import base64
-import ipaddress
 import json
 import os
 import re
 import secrets
-import shutil
-import subprocess
+import socket
 import threading
-import time
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-WG_DIR = '/var/lib/alvaos/wireguard'
-CONFIG_PATH = os.path.join(WG_DIR, 'remote0.conf')
 SETTINGS_FILE = '/var/lib/alvaos/remote_access.json'
-INTERFACE = 'remote0'
-NET_PREFIX = '100.96.96'
-NAS_ADDRESS = f'{NET_PREFIX}.1'
-DEFAULT_PORT = 51821
-MAX_DEVICES = 50
-NAME_RE = re.compile(r'^[\w .\'()-]{1,40}$', re.UNICODE)
-HOST_RE = re.compile(r'^(?=.{1,253}$)([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$')
-KEY_RE = re.compile(r'^[A-Za-z0-9+/]{43}=$')
-WEB_PORT = 8080
-UPNP_NAME = 'AlvaOS remote access'
-UPNP_LEASE_FALLBACK = 7 * 24 * 3600   # for routers that refuse permanent mappings
-CGNAT = ipaddress.ip_network('100.64.0.0/10')
-DUCKDNS_URL = 'https://www.duckdns.org/update'
-DUCKDNS_DOMAIN_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,62}$')
-DUCKDNS_TOKEN_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
-CHECK_SECONDS = 600            # how often the dynamic address is updated
-UPNP_EVERY = 24 * 3600         # and the router asked again
+OLD_WG_CONFIG = '/var/lib/alvaos/wireguard/remote0.conf'
+DOCKER = '/usr/bin/docker'
+COMPOSE = '/usr/bin/docker-compose'
+TAILSCALE = {'project': 'alvaos-tailscale', 'container': 'alvaos-tailscale', 'image': 'tailscale/tailscale:stable'}
+CLOUDFLARED = {'project': 'alvaos-cloudflared', 'container': 'alvaos-cloudflared',
+               'image': 'cloudflare/cloudflared:latest'}
+HUB_SERVICE = 'http://localhost:8090'    # the only thing a Cloudflare tunnel reaches
+CF_API = 'https://api.cloudflare.com/client/v4'
+LABEL_RE = re.compile(r'^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$')
+ZONE_ID_RE = re.compile(r'^[0-9a-f]{32}$')
+API_TOKEN_RE = re.compile(r'^[A-Za-z0-9_-]{30,100}$')
+TUNNEL_TOKEN_RE = re.compile(r'^[A-Za-z0-9+/=_-]{60,600}$')
+HOST_RE = re.compile(r'^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$')
 
 _lock = threading.Lock()
 
@@ -56,58 +58,121 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def new_keypair() -> Tuple[str, str]:
-    """(private, public) as WireGuard writes them: 32 bytes, base64."""
-    from cryptography.hazmat.primitives import serialization
-    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-    key = X25519PrivateKey.generate()
-    private = key.private_bytes(serialization.Encoding.Raw, serialization.PrivateFormat.Raw,
-                                serialization.NoEncryption())
-    public = key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
-    return base64.b64encode(private).decode(), base64.b64encode(public).decode()
-
-
-def public_key_of(private_b64: str) -> str:
-    from cryptography.hazmat.primitives import serialization
-    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-    key = X25519PrivateKey.from_private_bytes(base64.b64decode(private_b64))
-    return base64.b64encode(key.public_key().public_bytes(serialization.Encoding.Raw,
-                                                          serialization.PublicFormat.Raw)).decode()
-
-
-def check_endpoint(host: str) -> bool:
-    """A public name (like home.example.net) or an address, nothing else."""
+def check_tunnel_token(token: str) -> Optional[Dict[str, str]]:
+    """A Cloudflare tunnel token is base64 JSON {"a": account, "t": tunnel, "s": secret}."""
+    if not TUNNEL_TOKEN_RE.match(token or ''):
+        return None
     try:
-        ipaddress.ip_address(host)
-        return True
-    except ValueError:
-        return bool(HOST_RE.match(host or '')) and '.' in host
+        data = json.loads(base64.b64decode(token + '=' * (-len(token) % 4)))
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(data, dict) or not all(isinstance(data.get(k), str) and data.get(k) for k in ('a', 't', 's')):
+        return None
+    return {'account': data['a'], 'tunnel': data['t']}
 
 
-def qr_svg(text: str) -> str:
-    """The configuration as a QR code (SVG, as a data: URL), or '' without the library."""
-    try:
-        import qrcode
-        import qrcode.image.svg
-    except ImportError:
-        return ''
-    image = qrcode.make(text, image_factory=qrcode.image.svg.SvgPathImage, border=2)
-    return 'data:image/svg+xml;base64,' + base64.b64encode(image.to_string()).decode()
+def tailscale_compose(hostname: str) -> Dict[str, Any]:
+    name = re.sub(r'[^a-z0-9-]', '-', hostname.lower())[:63].strip('-') or 'alvaos'
+    return {'services': {'tailscale': {
+        'image': TAILSCALE['image'], 'container_name': TAILSCALE['container'], 'network_mode': 'host',
+        'restart': 'unless-stopped',
+        'environment': {'TS_STATE_DIR': '/var/lib/tailscale', 'TS_USERSPACE': 'false', 'TS_HOSTNAME': name,
+                        'TS_AUTH_ONCE': 'true', 'TS_EXTRA_ARGS': '--accept-dns=false'},
+        'volumes': ['alvaos-tailscale:/var/lib/tailscale'],
+        'devices': ['/dev/net/tun:/dev/net/tun'], 'cap_add': ['NET_ADMIN', 'NET_RAW']}},
+        'volumes': {'alvaos-tailscale': {}}}
+
+
+def cloudflared_compose(token: str) -> Dict[str, Any]:
+    return {'services': {'cloudflared': {
+        'image': CLOUDFLARED['image'], 'container_name': CLOUDFLARED['container'], 'network_mode': 'host',
+        'restart': 'unless-stopped', 'command': ['tunnel', '--no-autoupdate', 'run'],
+        'environment': {'TUNNEL_TOKEN': token}}}}
+
+
+class CloudflareError(Exception):
+    """A sentence for the person."""
+
+
+class Cloudflare:
+    """The few calls of Cloudflare's API that make a tunnel for the Hub."""
+
+    def __init__(self, token: str, request: Optional[Callable[..., Any]] = None):
+        self.token = token
+        if request is None:
+            import requests
+            request = requests.request
+        self.request = request
+
+    def call(self, method: str, path: str, **kw: Any) -> Any:
+        try:
+            res = self.request(method, CF_API + path, headers={'Authorization': f'Bearer {self.token}'},
+                               timeout=20, **kw)
+            data = res.json()
+        except Exception as e:  # noqa: BLE001 - offline, DNS, TLS, not JSON
+            raise CloudflareError(f'Cloudflare could not be reached ({type(e).__name__}).') from e
+        if not data.get('success'):
+            errors = data.get('errors') or [{}]
+            code, message = errors[0].get('code'), str(errors[0].get('message') or 'unknown')
+            if res.status_code in (401, 403) or code in (9109, 10000):
+                raise CloudflareError('Cloudflare does not accept the API token for this. It needs the '
+                                      'permissions "Cloudflare Tunnel: Edit" and "DNS: Edit".')
+            raise CloudflareError(f'Cloudflare said: {message[:200]}')
+        return data.get('result')
+
+    def zones(self) -> List[Dict[str, str]]:
+        found = self.call('GET', '/zones', params={'per_page': 50, 'status': 'active'}) or []
+        return [{'id': z['id'], 'name': z['name'], 'account': (z.get('account') or {}).get('id', '')}
+                for z in found if isinstance(z, dict) and ZONE_ID_RE.match(str(z.get('id', '')))]
+
+    def make(self, zone: Dict[str, str], hostname: str, label: str) -> Dict[str, str]:
+        """Tunnel, its route to the Hub and the DNS name. Returns the ids and the tunnel token."""
+        account = zone['account']
+        existing = self.call('GET', f'/zones/{zone["id"]}/dns_records', params={'name': hostname}) or []
+        if existing:
+            raise CloudflareError(f'{hostname} is used already in your Cloudflare DNS. Choose another name.')
+        tunnel = self.call('POST', f'/accounts/{account}/cfd_tunnel',
+                           json={'name': f'alvaos-{label}-{secrets.token_hex(3)}', 'config_src': 'cloudflare'})
+        tunnel_id = str(tunnel['id'])
+        try:
+            self.call('PUT', f'/accounts/{account}/cfd_tunnel/{tunnel_id}/configurations',
+                      json={'config': {'ingress': [{'hostname': hostname, 'service': HUB_SERVICE},
+                                                   {'service': 'http_status:404'}]}})
+            record = self.call('POST', f'/zones/{zone["id"]}/dns_records',
+                               json={'type': 'CNAME', 'name': hostname, 'content': f'{tunnel_id}.cfargotunnel.com',
+                                     'proxied': True, 'comment': 'AlvaOS Hub (Cloudflare Tunnel)'})
+            token = self.call('GET', f'/accounts/{account}/cfd_tunnel/{tunnel_id}/token')
+        except CloudflareError:
+            self.remove(account, tunnel_id, zone['id'], '')
+            raise
+        return {'tunnel_id': tunnel_id, 'dns_record_id': str(record['id']), 'tunnel_token': str(token)}
+
+    def remove(self, account: str, tunnel_id: str, zone_id: str, record_id: str) -> None:
+        """Best effort: what is gone already does not matter."""
+        for method, path in (('DELETE', f'/zones/{zone_id}/dns_records/{record_id}') if record_id else ('', ''),
+                             ('DELETE', f'/accounts/{account}/cfd_tunnel/{tunnel_id}/connections'),
+                             ('DELETE', f'/accounts/{account}/cfd_tunnel/{tunnel_id}')):
+            if method:
+                try:
+                    self.call(method, path)
+                except CloudflareError:
+                    pass
 
 
 class RemoteAccess:
     def __init__(self, run_command: Callable, settings_path: Optional[str] = None,
-                 config_path: Optional[str] = None, interface_up: Optional[Callable[[], bool]] = None,
-                 lan_addresses: Optional[Callable[[], List[str]]] = None,
-                 run_local: Optional[Callable[[List[str]], str]] = None,
-                 http_get: Optional[Callable[..., Any]] = None):
+                 compose_up: Optional[Callable[[Dict[str, Any], str], Tuple[bool, Optional[str]]]] = None,
+                 compose_down: Optional[Callable[[Dict[str, Any], str], Tuple[bool, Optional[str]]]] = None,
+                 cloudflare: Optional[Callable[[str], Cloudflare]] = None,
+                 hostname: Optional[Callable[[], str]] = None,
+                 exec_in: Optional[Callable[..., Tuple[Optional[Dict[str, Any]], Optional[str]]]] = None):
         self.run = run_command
-        self.run_local = run_local or _run_local   # upnpc needs no privileges
-        self.http_get = http_get
         self.settings_path = settings_path or SETTINGS_FILE
-        self.config_path = config_path or CONFIG_PATH
-        self.interface_up = interface_up or (lambda: os.path.exists(f'/sys/class/net/{INTERFACE}'))
-        self.lan_addresses = lan_addresses or _lan_addresses
+        self.compose_up = compose_up or _compose_up
+        self.compose_down = compose_down or _compose_down
+        self.cloudflare = cloudflare or Cloudflare
+        self.hostname = hostname or (lambda: socket.gethostname().split('.')[0])
+        self.exec_in = exec_in or _exec_in
 
     # ── State ────────────────────────────────────────────────────────────
 
@@ -118,387 +183,275 @@ class RemoteAccess:
         except (OSError, ValueError):
             data = {}
         data = data if isinstance(data, dict) else {}
-        devices = [d for d in data.get('devices') or [] if isinstance(d, dict) and KEY_RE.match(str(d.get('public_key')))]
-        try:
-            port = int(data.get('port') or DEFAULT_PORT)
-        except (TypeError, ValueError):
-            port = DEFAULT_PORT
-        raw_duck = data.get('duckdns')
-        duck: Dict[str, Any] = raw_duck if isinstance(raw_duck, dict) else {}
-        return {'enabled': bool(data.get('enabled')), 'endpoint': str(data.get('endpoint') or ''),
-                'upnp': bool(data.get('upnp')),
-                'duckdns': {k: str(duck.get(k) or '') for k in ('domain', 'token', 'last_update', 'last_error')},
-                'port': port if 1024 <= port <= 65535 else DEFAULT_PORT,
-                'private_key': str(data.get('private_key') or ''), 'devices': devices}
+        ts: Dict[str, Any] = data['tailscale'] if isinstance(data.get('tailscale'), dict) else {}
+        cf: Dict[str, Any] = data['cloudflare'] if isinstance(data.get('cloudflare'), dict) else {}
+        return {
+            'tailscale': {'enabled': bool(ts.get('enabled'))},
+            'cloudflare': {k: str(cf.get(k) or '') for k in ('hostname', 'zone_id', 'zone_name', 'account_id',
+                                                               'tunnel_id', 'dns_record_id', 'api_token',
+                                                               'tunnel_token', 'connected_at', 'mode')}
+            | {'enabled': bool(cf.get('enabled'))},
+            'wireguard_retired': bool(data.get('wireguard_retired')),
+            # Kept only to take the old tunnel down once (retire_wireguard).
+            'old': {k: data.get(k) for k in ('enabled', 'upnp', 'port') if k in data},
+        }
 
     def _save(self, state: Dict[str, Any]) -> None:
         os.makedirs(os.path.dirname(self.settings_path), exist_ok=True)
         tmp = f'{self.settings_path}.tmp'
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)   # holds the NAS's private key
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)   # holds the Cloudflare tokens
+        out = {'tailscale': state['tailscale'], 'cloudflare': state['cloudflare'],
+               'wireguard_retired': state['wireguard_retired']}
         with os.fdopen(fd, 'w') as f:
-            json.dump(state, f, indent=1)
+            json.dump(out, f, indent=1)
         os.replace(tmp, self.settings_path)
 
-    def _server_key(self, state: Dict[str, Any]) -> str:
-        if not KEY_RE.match(state.get('private_key') or ''):
-            state['private_key'], _ = new_keypair()
-        return state['private_key']
+    def _exec(self, container: str, command: str, timeout: int = 20) -> Tuple[int, str]:
+        """A command inside the container (docker_manager's checked exec)."""
+        result, err = self.exec_in(container, command, timeout=timeout)
+        if err or result is None:
+            return 1, err or ''
+        return int(result.get('exit_code', 1)), str(result.get('output') or '')
+
+    def _running(self, container: str) -> bool:
+        res, err = self.run([DOCKER, 'inspect', '--format', '{{.State.Running}}', container], timeout=15)
+        return not err and res is not None and res.returncode == 0 and (res.stdout or '').strip() == 'true'
+
+    # ── What the page shows ───────────────────────────────────────────────
+
+    def tailscale_status(self) -> Dict[str, Any]:
+        state = self.load()['tailscale']
+        out: Dict[str, Any] = {'enabled': state['enabled'], 'running': False, 'state': 'off', 'login_url': '',
+                               'name': '', 'addresses': [], 'tailnet': '', 'devices': []}
+        if not state['enabled']:
+            return out
+        out['running'] = self._running(TAILSCALE['container'])
+        if not out['running']:
+            out['state'] = 'starting'
+            return out
+        code, text = self._exec(TAILSCALE['container'], 'tailscale status --json')
+        try:
+            data = json.loads(text[text.index('{'):]) if code == 0 or '{' in text else {}
+        except ValueError:
+            data = {}
+        backend = str(data.get('BackendState') or '')
+        out['state'] = {'Running': 'on', 'NeedsLogin': 'login', 'NeedsMachineAuth': 'approve',
+                        'Starting': 'starting', 'Stopped': 'stopped'}.get(backend, 'starting')
+        url = str(data.get('AuthURL') or '')
+        out['login_url'] = url if url.startswith('https://login.tailscale.com/') else ''
+        me: Dict[str, Any] = data['Self'] if isinstance(data.get('Self'), dict) else {}
+        out['name'] = str(me.get('DNSName') or '').rstrip('.')
+        out['addresses'] = [a for a in me.get('TailscaleIPs') or [] if isinstance(a, str)][:2]
+        tailnet: Dict[str, Any] = data['CurrentTailnet'] if isinstance(data.get('CurrentTailnet'), dict) else {}
+        out['tailnet'] = str(tailnet.get('Name') or '')
+        peers: Dict[str, Any] = data['Peer'] if isinstance(data.get('Peer'), dict) else {}
+        out['devices'] = sorted(({'name': str(p.get('HostName') or ''), 'os': str(p.get('OS') or ''),
+                                  'online': bool(p.get('Online')), 'last_seen': str(p.get('LastSeen') or '')}
+                                 for p in peers.values() if isinstance(p, dict)), key=lambda p: p['name'].lower())
+        return out
+
+    def cloudflare_status(self) -> Dict[str, Any]:
+        cf = self.load()['cloudflare']
+        return {'enabled': cf['enabled'], 'hostname': cf['hostname'], 'mode': cf['mode'],
+                'url': f'https://{cf["hostname"]}' if cf['hostname'] else '', 'connected_at': cf['connected_at'],
+                'running': cf['enabled'] and self._running(CLOUDFLARED['container']),
+                'has_api_token': bool(cf['api_token'])}
 
     def status(self) -> Dict[str, Any]:
-        state = self.load()
-        seen = self._handshakes() if state['enabled'] else {}
-        devices = [{'id': d.get('id'), 'name': d.get('name'), 'address': d.get('address'),
-                    'created_at': d.get('created_at'), 'last_seen': seen.get(d['public_key'])}
-                   for d in state['devices']]
-        return {'enabled': state['enabled'], 'running': state['enabled'] and self.interface_up(),
-                'endpoint': state['endpoint'], 'port': state['port'], 'nas_address': NAS_ADDRESS,
-                'open_url': f'http://{NAS_ADDRESS}:{WEB_PORT}', 'lan_addresses': self.lan_addresses(),
-                'duckdns': {'domain': state['duckdns']['domain'], 'last_update': state['duckdns']['last_update'],
-                            'last_error': state['duckdns']['last_error']},   # never the token
-                'devices': devices, 'wireguard_installed': bool(_wg_quick()), 'upnp': state['upnp'],
-                'upnp_installed': bool(_upnpc())}
+        return {'tailscale': self.tailscale_status(), 'cloudflare': self.cloudflare_status()}
+
+    def public_url(self) -> str:
+        """The Hub's address on the internet, for share links (Cloudflare)."""
+        cf = self.load()['cloudflare']
+        return f'https://{cf["hostname"]}' if cf['enabled'] and cf['hostname'] else ''
 
     def problems(self) -> List[Dict[str, str]]:
         """What keeps remote access from working, for the alerts."""
         state = self.load()
-        if not state['enabled']:
-            return []
         out = []
-        if not self.interface_up():
-            out.append({'alert_id': 'remote-access-down', 'severity': 'warning',
-                        'title': 'Remote access is not running',
-                        'message': 'Your devices cannot reach this NAS from outside. Turn remote access off and on '
-                                   'again in Settings; if that does not help, restart the NAS.'})
-        duck = state['duckdns']
-        if duck['domain'] and duck['last_error']:
-            try:
-                since = datetime.fromisoformat(duck['last_update']) if duck['last_update'] else None
-            except ValueError:
-                since = None
-            if since is None or (datetime.now(timezone.utc) - since).total_seconds() > 24 * 3600:
-                out.append({'alert_id': 'remote-access-duckdns', 'severity': 'warning',
-                            'title': 'Your home\'s name is not updated',
-                            'message': f'{duck["domain"]}.duckdns.org could not be updated for a day: '
-                                       f'{duck["last_error"]} When your internet address changes, your devices '
-                                       'no longer find home.'})
+        if state['tailscale']['enabled'] and not self._running(TAILSCALE['container']):
+            out.append({'alert_id': 'remote-access-tailscale', 'severity': 'warning',
+                        'title': 'Tailscale is not running',
+                        'message': 'Your devices cannot reach this NAS from outside. Turn Tailscale off and on '
+                                   'again in Settings › Remote access; Docker has to be running.'})
+        if state['cloudflare']['enabled'] and not self._running(CLOUDFLARED['container']):
+            out.append({'alert_id': 'remote-access-cloudflare', 'severity': 'warning',
+                        'title': 'The Cloudflare Tunnel is not running',
+                        'message': f'{state["cloudflare"]["hostname"]} does not reach the Hub. Turn it off and '
+                                   'on again in Settings › Remote access.'})
         return out
 
-    # ── Settings ─────────────────────────────────────────────────────────
+    # ── Tailscale ─────────────────────────────────────────────────────────
 
-    def configure(self, payload: Dict[str, Any]) -> Tuple[bool, str]:
+    def set_tailscale(self, on: bool) -> Tuple[bool, str]:
         with _lock:
             state = self.load()
-            if 'endpoint' in payload:
-                endpoint = str(payload.get('endpoint') or '').strip().lower()
-                if endpoint and not check_endpoint(endpoint):
-                    return False, 'Enter the public address of your home: a name like home.example.net or an address.'
-                state['endpoint'] = endpoint
-            if 'port' in payload:
-                try:
-                    port = int(str(payload.get('port')))
-                except (TypeError, ValueError):
-                    port = 0
-                if not 1024 <= port <= 65535 or port == 51820:
-                    return False, 'Choose a port between 1024 and 65535 (51820 is used by Buddy Backup).'
-                state['port'] = port
-            duck_changed = False
-            if 'duckdns' in payload:
-                duck = payload.get('duckdns') or {}
-                if not duck or not str(duck.get('domain') or '').strip():
-                    state['duckdns'] = {'domain': '', 'token': '', 'last_update': '', 'last_error': ''}
-                else:
-                    domain = str(duck.get('domain') or '').strip().lower().removesuffix('.duckdns.org')
-                    token = str(duck.get('token') or '').strip().lower() or state['duckdns']['token']
-                    if not DUCKDNS_DOMAIN_RE.match(domain):
-                        return False, 'Enter the DuckDNS name, like "myhome" for myhome.duckdns.org.'
-                    if not DUCKDNS_TOKEN_RE.match(token):
-                        return False, 'Enter the token from duckdns.org (it looks like a1b2c3d4-…).'
-                    state['duckdns'] = {'domain': domain, 'token': token, 'last_update': '', 'last_error': ''}
-                    state['endpoint'] = f'{domain}.duckdns.org'
-                    duck_changed = True
-            if 'enabled' in payload:
-                state['enabled'] = bool(payload.get('enabled'))
-            if state['enabled'] and not _wg_quick():
-                return False, 'WireGuard is not installed on this NAS (package wireguard-tools).'
-            before = self.load()
-            old_port = before['port']
-            port_changed = state['port'] != old_port
-            switched = state['enabled'] != before['enabled']
-            self._server_key(state)
-            self._save(state)
-            ok, message = self._apply(state)
-        if duck_changed:
-            self.update_duckdns()
-        if state['upnp'] and _upnpc() and (port_changed or (switched and not state['enabled'])):
-            # No forgotten open port in the router: off closes it, a new port replaces it.
-            self.run_local([_upnpc() or 'upnpc', '-d', str(old_port), 'UDP'])
-        if ok and state['upnp'] and state['enabled'] and (port_changed or switched):
-            self.open_router_port()
-        return ok, message
-
-    def _apply(self, state: Dict[str, Any]) -> Tuple[bool, str]:
-        """Write the config and bring the tunnel up (or down when off)."""
-        wg_quick = _wg_quick()
-        if not wg_quick:
-            return (not state['enabled']), 'WireGuard is not installed on this NAS.'
-        if self.interface_up():
-            self.run([wg_quick, 'down', self.config_path], timeout=30)
-        if not state['enabled']:
-            return True, 'Remote access is off.'
-        self._write_config(state)
-        res, err = self.run([wg_quick, 'up', self.config_path], timeout=60)
-        if err or not res or res.returncode != 0:
-            detail = (err or (res.stderr if res else '') or '').strip().splitlines()[-1:] or ['']
-            return False, f'The tunnel could not start: {detail[0]}'
-        return True, 'Remote access is on.'
-
-    def render_config(self, state: Dict[str, Any]) -> str:
-        lines = ['# AlvaOS remote access. Written by AlvaOS; changes here are replaced.',
-                 '[Interface]', f'PrivateKey = {self._server_key(state)}', f'Address = {NAS_ADDRESS}/24',
-                 f'ListenPort = {state["port"]}']
-        for device in state['devices']:
-            lines += ['', '[Peer]', f'PublicKey = {device["public_key"]}']
-            if KEY_RE.match(str(device.get('preshared_key') or '')):
-                lines.append(f'PresharedKey = {device["preshared_key"]}')
-            lines.append(f'AllowedIPs = {device["address"]}/32')
-        return '\n'.join(lines) + '\n'
-
-    def _write_config(self, state: Dict[str, Any]) -> None:
-        os.makedirs(os.path.dirname(self.config_path), mode=0o700, exist_ok=True)
-        tmp = f'{self.config_path}.tmp'
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, 'w') as f:
-            f.write(self.render_config(state))
-        os.replace(tmp, self.config_path)
-
-    def start(self, stop: Optional[threading.Event] = None) -> None:
-        """At startup: wg-quick state does not survive a reboot. Runs on in
-        its own thread to keep the router's port mapping (UPnP) alive."""
-        state = self.load()
-        if state['enabled'] and not self.interface_up():
-            ok, message = self._apply(state)
-            if not ok:
-                print(f'Remote access: {message}')
-        # The dynamic address is kept up to date every few minutes; a router
-        # forgets port mappings when it restarts, so it is asked every day.
-        stop = stop or threading.Event()
-        last_upnp = 0.0
-        while True:
-            state = self.load()
-            if state['duckdns']['domain']:
-                self.update_duckdns()
-            now = time.monotonic()
-            if state['enabled'] and state['upnp'] and (not last_upnp or now - last_upnp >= UPNP_EVERY):
-                last_upnp = now
-                ok, message, _ = self.open_router_port()
+            if on:
+                ok, error = self.compose_up(tailscale_compose(self.hostname()), TAILSCALE['project'])
                 if not ok:
-                    print(f'Remote access, router: {message}')
-            if stop.wait(CHECK_SECONDS):
-                return
+                    return False, _docker_problem(error, 'Tailscale')
+            else:
+                self.compose_down(tailscale_compose(self.hostname()), TAILSCALE['project'])
+            state['tailscale']['enabled'] = on
+            self._save(state)
+        return True, ('Tailscale is starting. Sign in with the link that appears.' if on else 'Tailscale is off.')
 
-    def update_duckdns(self) -> Tuple[bool, str]:
-        """Tell DuckDNS the home's current address (it sees it from the request)."""
-        with _lock:
-            state = self.load()
-            duck = state['duckdns']
-            if not duck['domain'] or not duck['token']:
-                return False, 'DuckDNS is not set up.'
-        get = self.http_get
-        if get is None:
-            import requests
-            get = requests.get
+    def tailscale_logout(self) -> Tuple[bool, str]:
+        """Sign the NAS out of the Tailscale account (to use another one)."""
+        if not self.load()['tailscale']['enabled']:
+            return False, 'Tailscale is off.'
+        code, text = self._exec(TAILSCALE['container'], 'tailscale logout', timeout=30)
+        if code != 0:
+            return False, f'Tailscale did not sign out: {text.strip()[-200:]}'
+        return True, 'Signed out. A new sign-in link appears in a moment.'
+
+    # ── Cloudflare Tunnel ─────────────────────────────────────────────────
+
+    def cloudflare_zones(self, api_token: str) -> Tuple[List[Dict[str, str]], str]:
+        token = api_token.strip() or self.load()['cloudflare']['api_token']
+        if not API_TOKEN_RE.match(token):
+            return [], 'Paste the API token from Cloudflare (My Profile › API Tokens).'
         try:
-            res = get(DUCKDNS_URL, params={'domains': duck['domain'], 'token': duck['token'], 'ip': ''}, timeout=15)
-            answer = str(getattr(res, 'text', '')).strip()
-        except Exception as e:  # noqa: BLE001 - offline, DNS, TLS
-            answer, error = '', f'DuckDNS could not be reached ({type(e).__name__}).'
-        else:
-            error = '' if answer.startswith('OK') else \
-                'DuckDNS refused the update: check the name and the token.'
+            return [{'id': z['id'], 'name': z['name']} for z in self.cloudflare(token).zones()], ''
+        except CloudflareError as e:
+            return [], str(e)
+
+    def cloudflare_connect(self, payload: Dict[str, Any]) -> Tuple[bool, str]:
+        """Two ways: an API token, a domain and a name (AlvaOS makes the tunnel
+        and the DNS name), or a tunnel token made by hand in Cloudflare."""
         with _lock:
             state = self.load()
-            if state['duckdns']['domain'] != duck['domain']:
-                return False, 'Changed meanwhile.'
-            state['duckdns']['last_error'] = error
-            if not error:
-                state['duckdns']['last_update'] = _now()
-            self._save(state)
-        return not error, error or f'{duck["domain"]}.duckdns.org points to your home.'
-
-    # ── Devices ──────────────────────────────────────────────────────────
-
-    def add_device(self, name: str) -> Tuple[Optional[Dict[str, Any]], str]:
-        """A new phone or computer. Returns its configuration, shown once."""
-        name = str(name or '').strip()
-        if not NAME_RE.match(name):
-            return None, 'Give the device a name, like "Anna\'s phone" (up to 40 letters).'
-        with _lock:
-            state = self.load()
-            if not state['enabled']:
-                return None, 'Turn on remote access first.'
-            if not state['endpoint']:
-                return None, 'Enter the public address of your home first.'
-            if len(state['devices']) >= MAX_DEVICES:
-                return None, f'Remote access is for up to {MAX_DEVICES} devices.'
-            if any(str(d.get('name')).lower() == name.lower() for d in state['devices']):
-                return None, f'There is already a device called "{name}".'
-            used = {str(d.get('address')) for d in state['devices']}
-            address = next((f'{NET_PREFIX}.{n}' for n in range(2, 255) if f'{NET_PREFIX}.{n}' not in used), '')
-            if not address:
-                return None, 'No address left for another device.'
-            private, public = new_keypair()
-            preshared = base64.b64encode(secrets.token_bytes(32)).decode()
-            device = {'id': secrets.token_hex(6), 'name': name, 'public_key': public, 'preshared_key': preshared,
-                      'address': address, 'created_at': _now()}
-            state['devices'].append(device)
-            server_public = public_key_of(self._server_key(state))
-            self._save(state)
-            ok, message = self._apply(state)
+            cf = state['cloudflare']
+            if cf['enabled']:
+                return False, 'A tunnel is set up already. Remove it first.'
+            tunnel_token = str(payload.get('tunnel_token') or '').strip()
+            if tunnel_token:
+                parsed = check_tunnel_token(tunnel_token)
+                if not parsed:
+                    return False, 'That is not a tunnel token. Copy the token from the Docker command of the tunnel.'
+                hostname = str(payload.get('hostname') or '').strip().lower()
+                if hostname and not HOST_RE.match(hostname):
+                    return False, 'Enter the public hostname you set for the tunnel, like cloud.example.com.'
+                cf.update(mode='token', tunnel_token=tunnel_token, hostname=hostname, api_token='', zone_id='',
+                          zone_name='', account_id='', tunnel_id=parsed['tunnel'],
+                          dns_record_id='')
+            else:
+                api_token = str(payload.get('api_token') or '').strip() or cf['api_token']
+                label = str(payload.get('name') or '').strip().lower()
+                if not API_TOKEN_RE.match(api_token):
+                    return False, 'Paste the API token from Cloudflare (My Profile › API Tokens).'
+                if not LABEL_RE.match(label):
+                    return False, 'Choose a name of letters, numbers and dashes, like "cloud".'
+                api = self.cloudflare(api_token)
+                try:
+                    zone = next((z for z in api.zones() if z['id'] == str(payload.get('zone_id') or '')), None)
+                    if not zone or not zone['account']:
+                        return False, 'Choose one of your domains.'
+                    hostname = f'{label}.{zone["name"]}'
+                    made = api.make(zone, hostname, label)
+                except CloudflareError as e:
+                    return False, str(e)
+                cf.update(mode='api', api_token=api_token, zone_id=zone['id'], zone_name=zone['name'],
+                          account_id=zone['account'], hostname=hostname, **made)
+            ok, error = self.compose_up(cloudflared_compose(cf['tunnel_token']), CLOUDFLARED['project'])
             if not ok:
-                state['devices'].remove(device)
-                self._save(state)
-                self._apply(state)
-                return None, message
-        host = f'[{state["endpoint"]}]' if ':' in state['endpoint'] else state['endpoint']
-        config = '\n'.join([
-            '[Interface]', f'PrivateKey = {private}', f'Address = {address}/32', '',
-            '[Peer]', f'PublicKey = {server_public}', f'PresharedKey = {preshared}',
-            f'Endpoint = {host}:{state["port"]}', f'AllowedIPs = {NAS_ADDRESS}/32', 'PersistentKeepalive = 25', ''])
-        return {'id': device['id'], 'name': name, 'address': address, 'config': config,
-                'file_name': _file_name(name), 'qr': qr_svg(config),
-                'open_url': f'http://{NAS_ADDRESS}:{WEB_PORT}'}, ''
-
-    def remove_device(self, device_id: str) -> Tuple[bool, str]:
-        with _lock:
-            state = self.load()
-            kept = [d for d in state['devices'] if d.get('id') != device_id]
-            if len(kept) == len(state['devices']):
-                return False, 'This device is not on the list any more.'
-            state['devices'] = kept
+                if cf['mode'] == 'api':
+                    self.cloudflare(cf['api_token']).remove(cf['account_id'], cf['tunnel_id'], cf['zone_id'],
+                                                            cf['dns_record_id'])
+                return False, _docker_problem(error, 'The Cloudflare Tunnel')
+            cf.update(enabled=True, connected_at=_now())
             self._save(state)
-            ok, message = self._apply(state)
-            return ok, ('The device can no longer connect.' if ok else message)
+        where = f'https://{cf["hostname"]}' if cf['hostname'] else 'the hostname you set in Cloudflare'
+        return True, f'The Hub is at {where} in a minute or two.'
 
-    # ── The router ───────────────────────────────────────────────────────
-
-    def router(self) -> Dict[str, Any]:
-        """What the router says over UPnP: is it there, the NAS's address on
-        the home network and the router's own internet address."""
-        upnpc = _upnpc()
-        if not upnpc:
-            return {'found': False}
-        out = self.run_local([upnpc, '-s'])
-        lan = re.search(r'Local LAN ip address\s*:\s*([0-9.]+)', out)
-        wan = re.search(r'ExternalIPAddress\s*=\s*([0-9a-fA-F.:]+)', out)
-        return {'found': 'Found valid IGD' in out or bool(wan), 'lan_ip': lan.group(1) if lan else '',
-                'wan_ip': wan.group(1) if wan else ''}
-
-    def open_router_port(self) -> Tuple[bool, str, Dict[str, Any]]:
-        """Ask the router to forward the port (UPnP). Returns (ok, message, router)."""
-        if not _upnpc():
-            return False, 'This NAS cannot talk to routers (package miniupnpc). Forward the port by hand.', {}
+    def cloudflare_disconnect(self) -> Tuple[bool, str]:
         with _lock:
             state = self.load()
-            info = self.router()
-            if not info.get('found'):
-                return False, ('Your router did not answer. Automatic port opening (UPnP) is off or not '
-                               'supported there; forward the port by hand, or turn on UPnP in the router.'), info
-            lan = info.get('lan_ip') or (self.lan_addresses() or [''])[0]
-            port = str(state['port'])
-            problem = ''
-            for lease in ('0', str(UPNP_LEASE_FALLBACK)):
-                out = self.run_local([_upnpc() or 'upnpc', '-e', UPNP_NAME, '-a', lan, port, port, 'UDP', lease])
-                if 'is redirected to internal' in out:
-                    state['upnp'] = True
-                    self._save(state)
-                    return True, f'Your router now forwards UDP port {port} to this NAS.', info
-                failed = re.search(r'failed with code (\d+) \(([^)]*)\)', out)
-                problem = f'{failed.group(2)} ({failed.group(1)})' if failed else (out.strip().splitlines() or [''])[-1]
-                if failed and failed.group(1) == '718':
-                    break   # the port is taken by another device: a lease does not help
-            return False, f'The router refused: {problem}. Forward the port by hand.', info
+            cf = state['cloudflare']
+            if not cf['enabled'] and not cf['tunnel_token']:
+                return False, 'There is no tunnel.'
+            self.compose_down(cloudflared_compose(cf['tunnel_token'] or 'x'), CLOUDFLARED['project'])
+            if cf['mode'] == 'api' and cf['api_token']:
+                self.cloudflare(cf['api_token']).remove(cf['account_id'], cf['tunnel_id'], cf['zone_id'],
+                                                        cf['dns_record_id'])
+            state['cloudflare'] = {k: '' for k in cf} | {'enabled': False}
+            self._save(state)
+        return True, ('The tunnel and its DNS name are removed.' if cf['mode'] == 'api'
+                      else 'The tunnel is stopped. Delete it in Cloudflare too if you no longer need it.')
 
-    # ── Seen ─────────────────────────────────────────────────────────────
+    # ── At startup ────────────────────────────────────────────────────────
 
-    def _handshakes(self) -> Dict[str, str]:
-        """public key -> when it last connected (ISO), from `wg show remote0 latest-handshakes`."""
-        wg = _wg()
-        if not wg or not self.interface_up():
-            return {}
-        res, err = self.run([wg, 'show', INTERFACE, 'latest-handshakes'], timeout=10)
-        if err or not res or res.returncode != 0:
-            return {}
-        seen = {}
-        for line in (res.stdout or '').splitlines():
-            parts = line.split()
-            if len(parts) == 2 and KEY_RE.match(parts[0]) and parts[1].isdigit() and int(parts[1]) > 0:
-                seen[parts[0]] = datetime.fromtimestamp(int(parts[1]), timezone.utc).isoformat()
-        return seen
+    def retire_wireguard(self, run_local: Optional[Callable[[List[str]], str]] = None) -> bool:
+        """Once, after the update: the old WireGuard remote access goes away
+        (the tunnel down, the router port closed). True when it was on."""
+        state = self.load()
+        if state['wireguard_retired']:
+            return False
+        was_on = bool(state['old'].get('enabled'))
+        if os.path.exists('/sys/class/net/remote0'):
+            wg_quick = '/usr/bin/wg-quick'
+            self.run([wg_quick, 'down', OLD_WG_CONFIG], timeout=30)
+        if state['old'].get('upnp') and state['old'].get('port'):
+            import shutil
+            upnpc = shutil.which('upnpc')
+            if upnpc:
+                (run_local or _run_local)([upnpc, '-d', str(state['old']['port']), 'UDP'])
+        state['wireguard_retired'] = True
+        self._save(state)
+        return was_on
 
 
-def _file_name(name: str) -> str:
-    slug = re.sub(r'[^A-Za-z0-9]+', '-', name).strip('-').lower()[:24] or 'device'
-    return f'alvaos-{slug}.conf'
+def public_url(settings_path: str = SETTINGS_FILE) -> str:
+    """The Hub's internet address (Cloudflare Tunnel), for the Hub's share links."""
+    try:
+        with open(settings_path) as f:
+            cf = json.load(f).get('cloudflare') or {}
+    except (OSError, ValueError, AttributeError):
+        return ''
+    host = str(cf.get('hostname') or '') if isinstance(cf, dict) and cf.get('enabled') else ''
+    return f'https://{host}' if HOST_RE.match(host) else ''
 
 
-def _detect(names: List[str]) -> Optional[str]:
-    for path in names:
-        if os.path.exists(path):
-            return path
-    return None
+def _docker_problem(error: Optional[str], what: str) -> str:
+    text = (error or '').strip()
+    if 'Cannot connect to the Docker daemon' in text or 'docker.sock' in text:
+        return f'{what} runs as a container, and Docker is not running. Check Apps.'
+    if 'pull' in text.lower() or 'manifest' in text.lower() or 'dial tcp' in text.lower():
+        return f'{what} could not be downloaded. Is the NAS online?'
+    last = [ln for ln in text.splitlines() if ln.strip()][-1:] or ['']
+    return f'{what} did not start: {last[0][:200]}'
 
 
-def _wg_quick() -> Optional[str]:
-    return _detect(['/usr/bin/wg-quick', '/usr/sbin/wg-quick']) or shutil.which('wg-quick')
+def _exec_in(container: str, command: str, timeout: int = 20) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    import docker_manager
+    return docker_manager.DockerManager().exec_in_container(container, command, timeout=timeout)
 
 
-def _upnpc() -> Optional[str]:
-    return _detect(['/usr/bin/upnpc']) or shutil.which('upnpc')
+def _compose_up(compose: Dict[str, Any], project: str) -> Tuple[bool, Optional[str]]:
+    import docker_manager
+    return docker_manager.DockerManager().create_container_from_compose(compose, project, '', project_name=project)
+
+
+def _compose_down(compose: Dict[str, Any], project: str) -> Tuple[bool, Optional[str]]:
+    import subprocess
+
+    import yaml
+
+    import docker_manager
+    from common import build_privileged_cmd
+    path = docker_manager.write_compose_file(yaml.dump(compose), project)
+    try:
+        cmd = build_privileged_cmd([COMPOSE, '-f', path, '-p', project, 'down'], env=docker_manager.COMPOSE_ENV)
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=120, env=docker_manager.COMPOSE_ENV)
+        return res.returncode == 0, res.stderr
+    finally:
+        os.unlink(path)
 
 
 def _run_local(argv: List[str]) -> str:
+    import subprocess
     try:
-        res = subprocess.run(argv, capture_output=True, text=True, timeout=20, env={'LC_ALL': 'C'})
+        res = subprocess.run(argv, capture_output=True, text=True, timeout=30, env={'LC_ALL': 'C'})
+        return (res.stdout or '') + (res.stderr or '')
     except (OSError, subprocess.TimeoutExpired):
         return ''
-    return (res.stdout or '') + (res.stderr or '')
-
-
-def address_warning(address: str) -> str:
-    """Why this internet address cannot be reached from outside, or ''."""
-    try:
-        ip = ipaddress.ip_address(address)
-    except ValueError:
-        return ''
-    if ip.version == 4 and ip in CGNAT:
-        return ('Your internet provider shares one internet address among many customers (CGNAT). Then a '
-                'forwarded port cannot be reached from outside. Ask your provider for a public IPv4 address '
-                '(often free, sometimes called "dual stack" or "public IP").')
-    if ip.is_private:
-        return ('Your router is behind another router (for example a provider box in front of your own). '
-                'Forward the port on both, or put the first one into bridge mode.')
-    return ''
-
-
-def _wg() -> Optional[str]:
-    return _detect(['/usr/bin/wg', '/usr/sbin/wg']) or shutil.which('wg')
-
-
-def _lan_addresses() -> List[str]:
-    """IPv4 addresses of this NAS on the home network (for the router step)."""
-    try:
-        import psutil
-    except ImportError:
-        return []
-    out = []
-    for name, addrs in psutil.net_if_addrs().items():
-        if name in ('lo', INTERFACE, 'buddy0') or name.startswith(('docker', 'br-', 'veth')):
-            continue
-        for addr in addrs:
-            try:
-                ip = ipaddress.ip_address(addr.address)
-            except ValueError:
-                continue
-            if ip.version == 4 and ip.is_private and not ip.is_loopback:
-                out.append(str(ip))
-    return sorted(set(out))

@@ -59,8 +59,8 @@ TOOLS: List[Tuple[str, str, str]] = [
     ('ups', '/api/v1/system/ups', 'The UPS on USB: set up or not, on mains or on battery, charge, minutes left, '
                                   'when the NAS shuts down'),
     ('https', '/api/v1/system/tls', 'The HTTPS certificate of this NAS and whether "HTTPS only" is on'),
-    ('remote_access', '/api/v1/remote-access', 'Remote access over WireGuard: on or off, the router port, the '
-                                               'devices and when they last connected'),
+    ('remote_access', '/api/v1/remote-access', 'Remote access: Tailscale (on or off, signed in, the devices in it) '
+                                               'and the Cloudflare Tunnel (the Hub at an own domain)'),
     ('graphics_cards', '/api/v1/system/gpu', 'Graphics cards, their driver and what is missing for apps to use them'),
     ('signed_in_devices', '/api/v1/auth/sessions', 'Where AlvaOS is signed in: device, address, last use'),
     ('system_log', '/api/v1/system/logs', 'The last lines of the system log (secrets masked), to find out why '
