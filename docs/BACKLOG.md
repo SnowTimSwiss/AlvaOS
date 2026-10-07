@@ -15,6 +15,53 @@ How to add an entry:
 
 ---
 
+## 2026-10-07 · App: deleting without asking, ready for Google Play; CI storage
+
+- Deleting what was deleted on the NAS needs no question any more once the
+  person allows "manage media" (offered once after choosing the albums):
+  the background backup tries it, the rest goes when the app opens.
+- `android.yml`: with the upload key in the secrets every build is signed
+  the same (an APK installs over the last one) and an `.aab` is made; "Run
+  workflow" with a track uploads to Google Play. Steps: `docs/ANDROID.md`;
+  privacy policy for the listing: `docs/PRIVACY.md`. Target SDK 36 (what
+  Play asks since August 2026), AGP 8.11.1; the app keeps clear of the
+  status and navigation bars (edge to edge).
+- CI storage: installer builds between releases go to the pre-release
+  `installer-dev` instead of an artifact (an ISO nearly filled the quota);
+  a release no longer uploads its package as an artifact as well (that
+  made the beta-v0.1.0 package run red although the release was complete).
+- **Note for next time:** Android may block the background delete (starting
+  MediaStore's request from the background); then it happens on the next
+  app start. All-files access would avoid that but is hard to get past
+  Google Play's review, so it is not used.
+
+## 2026-10-07 · Photos from the phone: the Android app, albums and deleting in sync
+
+- Files: the bar that shows what is selected lies over the top bar now
+  instead of pushing the folder down (everything jumped on each click).
+- `backend/hub_photos_sync.py`: phones on the Hub. Each phone has a folder
+  `Photos/<phone>/` and a list `Photos/.alvaos/phones/<id>.json` of what it
+  backed up. `plan` answers what to upload and what was deleted on the NAS;
+  deleted on the phone goes to the NAS trash; moved on the NAS deletes
+  nothing; same name and size is taken as already there. Tests in
+  `backend/tests/test_photos_sync.py`.
+- `android/`: `core` is the sync in plain Kotlin (Hub client with resumable
+  16 MB pieces, the engine), tested with `./gradlew :core:test` without an
+  Android SDK. `app` is the Android app (Android 11+): sign in, choose the
+  albums, WorkManager every hour, a yes before deleting on the phone (or
+  "manage media"), free up space. Workflow "Android app" tests the core,
+  builds the APK and puts it on the pre-release `android-beta`
+  (`alvaos-beta.apk`); the artifact is only a bonus, the account's artifact
+  storage was full. The NAS update check skips releases whose tag is no
+  AlvaOS version, so `android-beta` is never offered as a NAS update.
+- Photos in the Hub shows the phone albums above the timeline; one tap shows
+  only that album.
+- **Note for next time:** the app is not on a real phone yet (TESTING.md
+  12b). `settings.gradle.kts` only includes `:app` when an Android SDK is
+  there, so the core builds in any container; dl.google.com is blocked in the
+  Claude containers, CI builds the APK. The APK is a debug build (no signing
+  key yet); a release key belongs in the repository secrets, not the repo.
+
 ## 2026-10-07 · Every version is beta-v0.1.0
 
 - The `VERSION` file already said `beta-v0.1.0`; builds between releases

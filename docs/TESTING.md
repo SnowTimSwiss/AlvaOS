@@ -292,6 +292,40 @@ storage healthy, one shared folder.
    NVIDIA's driver was installed before this version, Settings › Graphics
    offers "Install what apps need" (the container toolkit) first.
 
+## 12b. Photo backup from an Android phone (Android 11 or newer)
+
+1. On the phone open GitHub › Releases › "AlvaOS app for Android (beta)"
+   (tag `android-beta`) and download `alvaos-beta.apk`; install it (allow
+   "install unknown apps" for the browser once). Each push to `android/`
+   puts the newest build there. Once the upload key is set up
+   (`docs/ANDROID.md`), uninstall the old debug build once.
+2. Open "AlvaOS", enter the NAS address (`192.168.x.y:8090` at home, the
+   Tailscale address away), name and password of a person with a personal
+   folder and Photos turned on. Allow pictures and notifications.
+3. Choose two albums (Camera and one more), keep "Only on Wi-Fi", tap
+   "Back up these albums". A notification shows the progress. In the Hub ›
+   Photos the albums appear above the timeline (Camera · <phone>); the files
+   are in Files › own folder › Photos › <phone> › <album>, with the date
+   they were taken.
+4. Take a new photo, tap "Back up now": it is on the NAS a minute later.
+   Tap it again: nothing is uploaded twice.
+5. Delete a backed-up photo **on the phone** (Gallery, and empty the
+   phone's own trash if it has one), "Back up now": on the NAS it is in
+   the trash of the personal folder, not gone.
+6. After choosing the albums the app offers "Keep deleting in sync":
+   Allow, turn on AlvaOS, come back. Delete a backed-up photo **in the
+   Hub** (Files › Delete), "Back up now" on the phone: it is gone on the
+   phone without a question (at the latest when the app is opened next).
+   With "Not now" instead, the app says "1 was deleted on your NAS" and
+   Android asks once for each batch.
+7. **Move** a backed-up photo into another folder in the Hub, "Back up
+   now": nothing is deleted on the phone, nothing uploaded again.
+8. "Change albums", untick one: its pictures stay on the NAS.
+9. "Free up space": photos backed up and older than a month go from the
+   phone (Android asks), they stay in Photos on the NAS.
+10. Turn the phone's Wi-Fi off with "Only on Wi-Fi" on: no backup on mobile
+    data until Wi-Fi is back.
+
 ## 13. Updates
 
 1. Updates › check. When a newer signed release exists: install it; the

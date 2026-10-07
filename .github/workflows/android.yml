@@ -1,0 +1,123 @@
+name: Android app
+
+# The AlvaOS app for phones (android/, docs/ANDROID.md). Every push: the sync
+# core is tested and the newest app goes to the pre-release "android-beta"
+# (alvaos-beta.apk to install by hand, alvaos.aab for Google Play). Run by
+# hand ("Run workflow") with a track, it also goes to Google Play.
+on:
+  push:
+    paths: ['android/**', 'VERSION', '.github/workflows/android.yml']
+  pull_request:
+    paths: ['android/**', 'VERSION', '.github/workflows/android.yml']
+  workflow_dispatch:
+    inputs:
+      track:
+        description: Google Play track to upload to
+        type: choice
+        options: [none, internal, alpha, beta, production]
+        default: internal
+      draft:
+        description: As a draft (needed while the app was never published on Play)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # only for the android-beta pre-release, not on pull requests
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Set up Java
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up the Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+
+      - name: Test the sync core
+        run: ./gradlew --no-daemon :core:test
+
+      # The upload key (docs/ANDROID.md) comes from the repository secrets. With
+      # it every build is signed the same way, so a new APK installs over the
+      # last one and the same build can go to Google Play. Without it (a fork,
+      # or before the key exists) the APK is a debug build.
+      - name: Get the upload key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ALVAOS_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+            echo "ALVAOS_KEYSTORE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+          else
+            echo "No upload key in the secrets: building a debug APK."
+          fi
+          # A bigger number for every build (minutes since 2026), as Google Play wants.
+          echo "ALVAOS_VERSION_CODE=$(( ($(date +%s) - 1767225600) / 60 ))" >> "$GITHUB_ENV"
+
+      - name: Build the app
+        env:
+          ALVAOS_KEYSTORE_PASSWORD: ${{ secrets.ALVAOS_KEYSTORE_PASSWORD }}
+          ALVAOS_KEY_ALIAS: ${{ secrets.ALVAOS_KEY_ALIAS }}
+          ALVAOS_KEY_PASSWORD: ${{ secrets.ALVAOS_KEY_PASSWORD }}
+        run: |
+          mkdir -p out
+          if [ -n "${ALVAOS_KEYSTORE:-}" ]; then
+            ./gradlew --no-daemon :app:assembleRelease :app:bundleRelease
+            cp app/build/outputs/apk/release/app-release.apk out/alvaos-beta.apk
+            cp app/build/outputs/bundle/release/app-release.aab out/alvaos.aab
+          else
+            ./gradlew --no-daemon :app:assembleDebug
+            cp app/build/outputs/apk/debug/app-debug.apk out/alvaos-beta.apk
+          fi
+
+      - name: Upload the APK
+        # When the account's artifact storage is full this fails; the release
+        # below does not count toward that limit.
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
+        with:
+          name: alvaos-app
+          path: android/out/
+          retention-days: 7
+
+      # The newest app of a push, always at the same place: the pre-release
+      # "android-beta" (Releases on GitHub).
+      - name: Put it on the android-beta pre-release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES: "The newest AlvaOS app for Android (${{ env.ALVAOS_KEYSTORE && 'signed with the upload key' || 'debug build' }}), from ${{ github.ref_name }} at ${{ github.sha }}. Install alvaos-beta.apk on the phone (docs/TESTING.md, 12b); alvaos.aab is the same app for Google Play (docs/ANDROID.md)."
+        run: |
+          if ! gh release view android-beta >/dev/null 2>&1; then
+            gh release create android-beta --prerelease --target "$GITHUB_SHA" --title "AlvaOS app for Android (beta)" --notes "$NOTES"
+          fi
+          gh release edit android-beta --notes "$NOTES"
+          gh release upload android-beta out/* --clobber
+          # An old bundle must not stay next to a debug APK of a later build.
+          [ -f out/alvaos.aab ] || gh release delete-asset android-beta alvaos.aab --yes 2>/dev/null || true
+
+      - name: Upload to Google Play
+        if: github.event_name == 'workflow_dispatch' && inputs.track != 'none'
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: org.alvaos.app
+          releaseFiles: android/out/alvaos.aab
+          track: ${{ inputs.track }}
+          status: ${{ inputs.draft && 'draft' || 'completed' }}

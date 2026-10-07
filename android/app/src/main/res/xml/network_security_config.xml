@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A NAS at home: plain http on the home network or over Tailscale is allowed,
+     and its own certificate authority counts once the person installed it
+     (AlvaOS shows how: the NAS's certificate). -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

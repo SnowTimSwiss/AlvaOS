@@ -491,6 +491,13 @@ class UpdateManager:
         v = re.sub(r"\.+", ".", v).strip(".")
         return v
 
+    def is_system_release(self, release):
+        try:
+            Version(self.normalize_version(release.get("tag_name") or ""))
+            return True
+        except InvalidVersion:
+            return False
+
     def is_newer(self, current, latest):
         if not current or not latest:
             return False
@@ -579,7 +586,9 @@ class UpdateManager:
                     error = "GitHub Rate Limit Exceeded"
                 else:
                     resp.raise_for_status()
-                    releases = [r for r in resp.json() if r.get("prerelease")]
+                    # Only AlvaOS versions: other pre-releases of the repo (the
+                    # phone app's "android-beta") are not an update for the NAS.
+                    releases = [r for r in resp.json() if r.get("prerelease") and self.is_system_release(r)]
                     releases.sort(key=lambda r: r.get("published_at") or "", reverse=True)
                     release = releases[0] if releases else {}
         except Exception as e:

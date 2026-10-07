@@ -101,12 +101,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
+      # Only for builds between releases (a release has the files already).
       - name: Upload package artifact
+        if: github.event_name != 'release'
+        continue-on-error: true
         uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
         with:
           name: alvaos-package-${{ steps.version.outputs.version }}
           path: build/package-artifact/
-          retention-days: 30
+          retention-days: 7
       
       - name: Display build info
         run: |

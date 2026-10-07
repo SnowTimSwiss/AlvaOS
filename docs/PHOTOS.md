@@ -11,9 +11,12 @@ This page is the plan. What is built is marked **done**.
 
 ## What people do with it
 
-1. **Back up the phone.** Open the AlvaOS app once, sign in, say yes to
-   "Back up photos". New pictures and videos go to the NAS on their own, on
-   Wi-Fi, also when the app is closed. Nothing is deleted on the phone.
+1. **Back up the phone** (**done** for Android). Open the AlvaOS app once,
+   sign in, choose the albums of the phone to back up (Camera, Screenshots,
+   WhatsApp Images, …). New pictures and videos go to the NAS on their own,
+   every hour (only on Wi-Fi if chosen), also when the app is closed. The
+   albums stay albums on the NAS, and deleting stays in sync both ways (see
+   below).
 2. **Look at them.** Newest first, by month, with the date the picture was
    taken (**done**: from the photo itself, EXIF). A picture opens big; swipe
    to the next one. Videos play.
@@ -35,9 +38,14 @@ Photos is turned off or AlvaOS is gone.
 
 - **The pictures** stay where they are: the person's own `Photos/` folder (or
   the share the admin chose for Photos) and the photo libraries.
-- **Phone backups** go to `Photos/<phone name>/<year>/<month>/`, with the
-  file's own name and date. A file that is already there with the same size
-  and date is skipped, so a reinstalled app does not upload everything again.
+- **Phone backups** go to `Photos/<phone name>/<album>/`, with the file's
+  own name and date (the date it was taken). A file that is already there
+  with the same name and size is taken as backed up, so a reinstalled app
+  does not upload everything again. Each phone album shows as an album in
+  Photos (**done**).
+- **What each phone backed up** is a small list per phone in
+  `Photos/.alvaos/phones/<id>.json` (which picture of the phone is which file
+  on the NAS), so deleting can be kept in sync.
 - **Albums** are small JSON files, one per album, in a hidden folder next to
   the pictures (`Photos/.albums/<id>.json`): a name, the owner, who it is
   shared with, and the list of pictures as paths. Paths, not copies: an album
@@ -50,16 +58,36 @@ Photos is turned off or AlvaOS is gone.
 No database server, no index that must stay in sync: the folders are the truth,
 the JSON files are small and are backed up with the pictures.
 
-## The phone backup, technically
+## The phone backup, technically (done)
 
-- The native apps (see `ROADMAP.md`, Hub step 5) do the uploading; the browser
-  cannot run in the background. Until then: "Upload" in Photos and WebDAV.
-- They use the resumable upload Files already has (`/api/upload/*`, pieces of
-  64 MB, continue after a dropped connection) and the file's own date
-  (`files-part-finish-dated`, **done**).
-- One new call: "which of these do you have already?" (name, size, date →
-  yes/no), so the app does not have to list the whole folder.
-- The app remembers what it uploaded; the NAS needs no list of devices.
+- The app: `android/` (see `android/README.md`). `android/core` is the sync,
+  plain Kotlin with tests; `android/app` is the Android app around it. CI
+  builds the APK (workflow "Android app"; the newest APK is `alvaos-beta.apk` on the pre-release `android-beta`).
+- It signs in like the Hub (name, password, a code if two-step is on) and
+  keeps only the session, not the password.
+- It uploads with the resumable upload Files already has (`/api/upload/*`,
+  pieces of 16 MB, continues after a dropped connection) and the file's own
+  date (`files-part-finish-dated`).
+- The Hub side is `backend/hub_photos_sync.py`:
+  - `POST /api/photos/phones` adds a phone (its folder in `Photos/`).
+  - `POST /api/photos/phones/<id>/plan`: the phone says what it has in the
+    chosen albums and what was deleted on it; the NAS answers what to upload
+    and what was deleted on the NAS.
+  - `POST …/done` after uploads, `POST …/deleted` after deleting on the phone.
+- **Deleting, both ways, and never by surprise:**
+  - Deleted on the phone → the NAS moves it to its trash (30 days to get it
+    back). Can be turned off in the app ("Deleting a picture here deletes it
+    on the NAS too").
+  - Deleted on the NAS (it is in the trash) → the app deletes it on the phone
+    too. Without a question when the person allowed "manage media" once
+    (the app offers it after choosing the albums, Android 12+): in the
+    background where Android lets it, else when the app is opened next.
+    Without that permission Android asks once per batch.
+  - Moved or renamed on the NAS → nothing is deleted on the phone and it is
+    not uploaded again.
+  - An album no longer chosen is not a deletion: its pictures stay on the NAS.
+  - "Free up space" removes from the phone what is backed up and older than a
+    month; it stays on the NAS.
 
 ## Built in small steps
 
@@ -70,8 +98,8 @@ the JSON files are small and are backed up with the pictures.
    with people in the household.
 4. Upload into the own photos from the Hub (button and drag and drop), into
    `Photos/<year>/<month>/` by the date in the photo.
-5. "Which do you have already?" for the apps; the phone backup in the native
-   apps.
+5. The phone backup in the Android app, with albums and deleting in sync:
+   **done**. iPhone later.
 6. Search by date and album name; select many and download as ZIP.
 
 What stays out on purpose: faces, places on a map, "things in the picture",
