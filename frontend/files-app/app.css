@@ -440,3 +440,8 @@ a.btn { text-decoration: none; color: inherit; }
 .items.photos .ptile.selected img { transform: scale(.86); border-radius: 8px; }
 .in-app .results-head .head-actions { margin-left: auto; }
 .side-tools.top { margin-top: 0; padding: 0 0 6px; }
+
+/* Search results: narrow by kind and by time */
+.chips.filters { grid-column: 1 / -1; flex-wrap: wrap; overflow: visible; padding: 0 4px 10px; gap: 6px; }
+.chips.filters button { flex-direction: row; padding: 4px 12px; border-radius: 999px; font-weight: 500; font-size: 0.82rem; }
+.chips.filters .chip-gap { width: 10px; }

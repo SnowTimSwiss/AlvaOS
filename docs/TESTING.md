@@ -432,3 +432,7 @@ possible a screenshot. Settings › Diagnostics has the logs.
 5. Hub › Settings (admin) › Hub: turn Contacts off for someone: their phone says it is not turned on for them.
 
 6. Contacts: give a contact a birthday; Calendar then lists "Birthdays" (read only) with a yearly all-day entry.
+
+## 12i Search filters
+
+Search for a word that matches different kinds of files. The chips above the results narrow them by kind and by when they changed; a kind that was not found has no chip.

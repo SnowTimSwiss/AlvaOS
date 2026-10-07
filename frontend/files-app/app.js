@@ -325,11 +325,27 @@
         return `<button type="button" class="hsort${on ? ' on' : ''}" data-sort="${next}"${extra} aria-label="Sort by ${label.toLowerCase()}">${label}${on ? `<span aria-hidden="true">${dir === 'desc' ? ' ↓' : ' ↑'}</span>` : ''}</button>`;
     }
 
+    // Search results can be narrowed by kind and by when they changed (in the browser, on what was found).
+    const KIND_FILTERS = [['', 'Everything'], ['folder', 'Folders'], ['image', 'Pictures'], ['video', 'Videos'], ['audio', 'Audio'], ['pdf', 'PDF'], ['doc', 'Documents'], ['archive', 'Archives']];
+    const AGE_FILTERS = [['', 'Any time'], ['1', 'Today'], ['7', 'Past week'], ['30', 'Past month'], ['365', 'Past year']];
+    let searchFilter = { kind: '', age: '' };
+    const isSearch = () => !!found && !foundInfo.photos && !foundInfo.list;
+    function passesFilter(e) {
+        if (searchFilter.kind && kindOf(e) !== searchFilter.kind) return false;
+        if (searchFilter.age) {
+            const t = new Date(e.modified_at).getTime();
+            const start = new Date(); start.setHours(0, 0, 0, 0);
+            if (!(t >= start.getTime() - (Number(searchFilter.age) - 1) * 86400000)) return false;
+        }
+        return true;
+    }
+
     function render() {
         renderChips();
         if (inTrash) { paintTrash(); return; }
         const q = found ? '' : $('search').value.trim().toLowerCase();
         shown = found ? found.slice() : entries.filter((e) => !q || e.name.toLowerCase().includes(q));
+        if (found && isSearch()) shown = shown.filter(passesFilter);
         if (!found) shown.sort(compare);
         const items = $('items');
         items.className = `items ${view}`;
@@ -350,7 +366,7 @@
                 ? `Put pictures into "${esc([own.share, own.path].filter(Boolean).join(' › '))}" and they show up here, newest first.`
                 : 'You have no folder for photos yet. Ask whoever runs this NAS for a personal folder or a photo library.'}</div>`;
         } else if (found && !shown.length) {
-            items.innerHTML = `<div class="empty">${icon('search')}<strong>Nothing found</strong>No name here or in a folder below contains "${esc(foundInfo.q)}".</div>`;
+            items.innerHTML = `<div class="empty">${icon('search')}<strong>Nothing found</strong>${found.length ? 'Nothing found matches these filters. Try another kind or time.' : `No name here or in a folder below contains "${esc(foundInfo.q)}".`}</div>`;
         } else if (found && foundInfo.photos) {
             // The Photos view: a timeline by month, only pictures, no names.
             let month = '';
@@ -453,6 +469,26 @@
                 }));
             }
             if (foundInfo.photos && window.AlvaApp) head.after(appBackupBanner());
+            if (isSearch()) {
+                const present = new Set(found.map(kindOf));
+                const strip = document.createElement('div');
+                strip.className = 'chips filters';
+                strip.setAttribute('role', 'group');
+                strip.setAttribute('aria-label', 'Narrow the results');
+                strip.innerHTML = KIND_FILTERS.filter(([k]) => !k || present.has(k) || searchFilter.kind === k)
+                    .map(([k, l]) => `<button type="button" data-fk="${k}" aria-pressed="${searchFilter.kind === k}">${l}</button>`).join('')
+                    + '<span class="chip-gap"></span>'
+                    + AGE_FILTERS.map(([k, l]) => `<button type="button" data-fa="${k}" aria-pressed="${searchFilter.age === k}">${l}</button>`).join('');
+                head.after(strip);
+                strip.addEventListener('click', (ev) => {
+                    const b = ev.target.closest('button');
+                    if (!b) return;
+                    if (b.dataset.fk !== undefined) searchFilter.kind = b.dataset.fk;
+                    if (b.dataset.fa !== undefined) searchFilter.age = b.dataset.fa;
+                    selected = new Set();
+                    render();
+                });
+            }
             head.querySelector('#results-close')?.addEventListener('click', clearSearch);
             head.querySelector('#photos-select')?.addEventListener('click', () => { foundInfo.selecting = !foundInfo.selecting; if (!foundInfo.selecting) selected = new Set(); render(); });
             head.querySelector('#album-rename')?.addEventListener('click', renameAlbum);
@@ -859,6 +895,7 @@
             if (id !== searchId || $('search').value.trim() !== q) return;
             found = (data.results || []).filter((e) => !e.name.startsWith('.'));
             foundInfo = { q, complete: !!data.complete };
+            searchFilter = { kind: '', age: '' };
             selected = new Set();
             anchor = -1;
             render();

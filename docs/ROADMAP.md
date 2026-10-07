@@ -58,7 +58,7 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
   8. Share a folder with another person on the NAS without a public link: done (Share with people…; in Files and WebDAV, not over SMB). Next: a "Shared with me" heading and a note to the person.
 - **Powerful when needed:**
   9. Open and edit Office documents with the EuroOffice app from the catalog (WOPI).
-  10. Search filters (type, date, size); later search by content (text in PDFs and documents).
+  10. Search filters: done for kind and time (chips above the results); next size; later search by content (text in PDFs and documents).
   11. Activity: who changed, deleted or shared what, and when.
   12. More control over links: download limit, how often opened, all my links with "end all".
   13. Unpack ZIP files, folder sizes, rename many files at once, properties (checksum, exact dates).

@@ -15,6 +15,12 @@ How to add an entry:
 
 ---
 
+## 2026-10-08 — Files: narrow a search by kind and time
+
+- Above search results: Everything / Folders / Pictures / Videos / ... (only kinds that were found) and Any time / Today / Past week / month / year. Done in the browser on what was found.
+
+---
+
 ## 2026-10-08 — Birthdays of the contacts in the Calendar
 
 - The Calendar shows a read-only calendar "Birthdays" (yearly, whole day) made from the contacts that have a birthday; nothing is copied or stored. Off with Contacts. Phones show birthdays from their own contacts, so CalDAV does not carry it.
