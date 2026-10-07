@@ -168,20 +168,10 @@
 
     // ── Dialogs ────────────────────────────────────────────────────────────
     function dialog(title, bodyHtml, actionsHtml) {
-        const overlay = document.createElement('div');
-        overlay.className = 'modal-overlay';
-        overlay.innerHTML = `
-            <div class="modal-content modal-disclosure-frame vm-dialog" role="dialog" aria-modal="true" aria-labelledby="vm-dialog-title">
-                <div class="modal-title" id="vm-dialog-title"><span>${esc(title)}</span><button type="button" class="modal-close-x" data-close aria-label="Close">&times;</button></div>
-                <div class="modal-body">${bodyHtml}</div>
-                <div class="modal-actions">${actionsHtml}</div>
-            </div>`;
-        document.body.appendChild(overlay);
         dialogs += 1;
-        const close = () => { overlay.remove(); dialogs -= 1; };
-        overlay.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', close));
-        if (window.attachModalDismiss) window.attachModalDismiss(overlay, close);
-        return { el: overlay, close };
+        const d = openDialog({ title: esc(title), body: bodyHtml, actions: actionsHtml || ' ',
+            className: 'vm-dialog', onClose: () => { dialogs -= 1; } });
+        return { el: d.dialog, close: () => d.close() };
     }
 
     async function loadIsos() {
@@ -199,8 +189,8 @@
 
     function portRow(p = { proto: 'tcp', host: '', guest: '' }) {
         return `<div class="vm-port"><select aria-label="Protocol"><option value="tcp"${p.proto === 'tcp' ? ' selected' : ''}>TCP</option><option value="udp"${p.proto === 'udp' ? ' selected' : ''}>UDP</option></select>
-            <input type="number" min="1024" max="65535" placeholder="on the NAS" value="${esc(p.host)}" aria-label="Port on the NAS"><span>→</span>
-            <input type="number" min="1" max="65535" placeholder="in the machine" value="${esc(p.guest)}" aria-label="Port in the machine">
+            <input type="number" min="1024" max="65535" placeholder="NAS" value="${esc(p.host)}" aria-label="Port on the NAS"><span>→</span>
+            <input type="number" min="1" max="65535" placeholder="Machine" value="${esc(p.guest)}" aria-label="Port in the machine">
             <button type="button" class="btn-secondary btn-quiet" data-del-port aria-label="Remove">&times;</button></div>`;
     }
     function portsHtml(ports) {
@@ -239,7 +229,7 @@
                     <label><input type="radio" name="vm-os" value="${esc(t.id)}"${t.id === os ? ' checked' : ''}>${svg(OS_ICON[t.id] || 'cpu')}${esc(t.name)}</label>`).join('')}</div></div>
             <label class="vm-field">Installer<select id="vm-iso">${isoOptions('')}</select>${isoHelp}</label>
             <div class="vm-summary"><span id="vm-sum"></span></div>
-            <details class="vm-more modal-float-details"><summary>More options</summary>
+            <details class="vm-more modal-details"><summary>More options</summary>
                 <div class="modal-disclosure-panel">
                     <div class="vm-grid" style="margin-top:8px">
                         <label class="vm-field">Processor cores<input type="number" id="vm-cpus" min="1" max="${limits.cpus}"></label>
@@ -252,7 +242,6 @@
             </details>
             <div class="vm-error" id="vm-err" role="alert"></div>`;
         d.el.querySelector('.modal-actions').innerHTML = '<button type="button" class="btn-secondary" data-close>Cancel</button><button type="button" class="btn-primary" id="vm-make">Create</button>';
-        d.el.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', d.close));
         const q = (s) => d.el.querySelector(s);
         const paint = () => {
             q('#vm-cpus').value = cpus;
@@ -308,7 +297,6 @@
             ${portsHtml(vm.ports)}
             <div class="vm-error" id="vm-err" role="alert"></div>`;
         d.el.querySelector('.modal-actions').innerHTML = '<button type="button" class="btn-secondary" data-close>Cancel</button><button type="button" class="btn-primary" id="vm-save">Save</button>';
-        d.el.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', d.close));
         bindPorts(d.el);
         const q = (s) => d.el.querySelector(s);
         q('#vm-save').onclick = async () => {

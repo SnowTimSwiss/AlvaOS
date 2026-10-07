@@ -482,34 +482,17 @@ async function requestBackupPassphrase(message, confirmLabel = 'Continue') {
 }
 
 function showRebootRequiredDialog() {
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    overlay.innerHTML = `
-        <div class="modal-content">
-            <div class="modal-title">Reboot Required</div>
-            <div class="modal-body">
-                The restore was prepared successfully.<br>
-                A reboot is required to activate the restored snapshot.
-            </div>
-            <div class="modal-actions">
-                <button id="backup-reboot-later" class="btn-secondary">Later</button>
-                <button id="backup-reboot-now" class="btn-primary">Reboot now</button>
-            </div>
-        </div>
-    `;
-
-    document.body.appendChild(overlay);
-    const rebootBtn = overlay.querySelector('#backup-reboot-now');
-    const laterBtn = overlay.querySelector('#backup-reboot-later');
-    if (rebootBtn) rebootBtn.focus();
-
     return new Promise((resolve) => {
-        const finish = (value) => {
-            overlay.remove();
-            resolve(value);
-        };
-        if (laterBtn) laterBtn.onclick = () => finish(false);
-        if (rebootBtn) rebootBtn.onclick = () => finish(true);
+        let now = false;
+        const dlg = openDialog({
+            title: 'Restart to finish',
+            body: 'The system is set back to the restore point. It is used from the next restart on.',
+            actions: `
+                <button type="button" id="backup-reboot-later" class="btn-secondary" data-close>Later</button>
+                <button type="button" id="backup-reboot-now" class="btn-primary">Restart now</button>`,
+            onClose: () => resolve(now),
+        });
+        dlg.$('#backup-reboot-now').onclick = () => { now = true; dlg.close(); };
     });
 }
 

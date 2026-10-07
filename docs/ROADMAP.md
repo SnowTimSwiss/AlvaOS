@@ -20,7 +20,7 @@ Fixed right away: adding people and making shared folders (both refused by the p
 - **Assistant:** its page guide now lists the real pages and controls, forbids invented buttons and fields, and explains read-only versus confirmed proposal mode. People and shared folders are available as confirmable proposals.
 - **SSH in Settings › Security:** on/off, port, password sign-in, and Ed25519 admin public keys for root only; the config is checked with `sshd -t` before it is used. A hardware run is still needed (`TESTING.md` 9b).
 - **The assistant in a terminal:** design written in `docs/ADMIN-TERMINAL.md`. It specifies an admin-only `alvaos` shell, session and output limits, and a separate fixed catalog of commands shown in full and run only after confirmation; no free-form root commands.
-- **Dialogs:** the TLS, email, virtual-machine and shared-folder dialogs keep their frame and controls still when details open; details float inside the dialog, so the dialog itself does not need to scroll for them. Still open: move the hand-built dialogs onto one shared component and reduce scrolling in longer forms.
+- **Dialogs:** done: one shared dialog (`openDialog`, see `DESIGN.md`) for the admin pages; title and buttons stay in view, details open in place. Still open: the app install wizard, container logs and terminal in `apps.html` are static modals in the page.
 
 ---
 
@@ -64,8 +64,8 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 - **Next:** change the disk size; a second disk; a virtio driver ISO for faster Windows; a bridge network (own address at home) as an option next to NAT; pass a USB device or graphics card through; Home Assistant OS and other ready images as a one-click choice; limits per machine (cgroups).
 
 ### 2c. Reaching the NAS, and not being without it
-Thought through, decided, not built yet. In this order:
-1. **A UPS (NUT):** the most common failure at home is a power cut. Shut down cleanly on battery, start again, tell the buddy NAS. Small and valuable.
+Thought through and decided. In this order:
+1. **A UPS (NUT): first step done** (Settings › Power › Battery backup: finds a UPS on USB, installs NUT, shuts down when the battery runs low or after 2–20 minutes on battery, notes the power cut and its end, the UPS turns the NAS on again). Needs a run with a real UPS (`TESTING.md` 11b). Next: tell the buddy NAS (it may hold off a backup to us), a UPS shared over the network with a second machine (NUT netserver), a UPS on a serial cable.
 2. **Access without a router setting** (next to WireGuard, which stays the default; CGNAT is already detected): **Tailscale** for the own devices (end to end encrypted, one account); **Cloudflare Tunnel** (`cloudflared`, installed only when turned on, with the owner's own Cloudflare account and domain) to make the Hub and share links reachable in a browser. Note: Cloudflare ends TLS, and large video streams are against its terms. An own relay only later, with the native apps.
 3. **High availability the home way: a warm standby**, not automatic failover (two nodes cannot tell a failed neighbour from a broken cable, and then both write: "split brain"). Buddy Backup already keeps a recent copy on a second NAS; add a button *Take over* there that brings up the shares, the Hub and the people from that copy, and a name (`alva.home`) that points to it. Minutes of downtime instead of days, no risk of two writers. Automatic failover only with a third device as referee, as an expert option much later.
 

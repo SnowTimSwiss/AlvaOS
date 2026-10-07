@@ -191,68 +191,14 @@
         /* .status-row and .card-actions now live in styles.css so every page
            renders them identically. */
 
-        /* Reusable modal panel (matches the user-management modal pattern) */
-        .sys-modal-panel {
-            background: var(--bg-card);
-            border: 1px solid var(--border-default);
-            border-radius: 8px;
-            padding: 1.5rem;
-            max-width: 460px;
-            width: 90%;
-            max-height: min(90vh, 720px);
-            display: flex;
-            flex-direction: column;
-        }
-
-        .sys-modal-head {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 0.5rem;
-            flex-shrink: 0;
-        }
-
-        .sys-modal-title {
-            color: var(--text-primary);
-            margin: 0;
-        }
-
-        .sys-modal-x {
-            background: transparent;
-            border: none;
-            color: var(--text-secondary);
-            font-size: 1.6rem;
-            line-height: 1;
-            cursor: pointer;
-            padding: 0 4px;
-        }
-
-        .sys-modal-x:hover {
-            color: var(--text-primary);
-        }
-
+        .nut-field { display: grid; gap: 6px; margin-bottom: 12px; font-weight: 600; color: var(--text-primary); }
+        .nut-field .choice-list { margin-top: 0; font-weight: 400; }
+        .nut-device { margin: 0 0 12px; font-weight: 600; color: var(--text-primary); }
+        .nut-error { color: var(--accent-danger); }
         .sys-modal-text {
             color: var(--text-secondary);
-            margin-bottom: 1rem;
+            margin: 0 0 1rem;
             font-size: 0.9rem;
-            flex-shrink: 0;
-        }
-
-        .sys-modal-body {
-            flex: 1 1 auto;
-            overflow-y: auto;
-            min-height: 0;
-        }
-
-        .sys-modal-actions {
-            display: flex;
-            gap: 8px;
-            margin-top: 1.25rem;
-            flex-shrink: 0;
-        }
-
-        .sys-modal-actions button {
-            flex: 1;
         }
     </style>
 </head>
@@ -510,13 +456,18 @@
 
                 <section class="set-group">
                     <h2 class="set-group-title">Battery backup</h2>
+                    <div class="set-row" id="nut-row">
+                        <div class="set-text"><div class="set-label">UPS</div><div class="set-desc" id="nut-desc">Looking for a UPS...</div></div>
+                        <div class="set-value" id="nut-summary"></div>
+                        <div class="set-action" id="nut-action"></div>
+                    </div>
                     <div class="set-row">
-                        <div class="set-text"><div class="set-label">When the power fails</div><div class="set-desc">With a UPS or a laptop battery, AlvaOS shuts down cleanly before the battery runs out.</div></div>
+                        <div class="set-text"><div class="set-label">Laptop battery</div><div class="set-desc">A NAS on an old laptop: its own battery bridges a power cut, and AlvaOS shuts down before it is empty.</div></div>
                         <div class="set-value" id="ups-summary">-</div>
                         <div class="set-action"><button id="configure-ups-btn" class="btn-secondary">Set up</button></div>
                     </div>
                     <details class="set-details">
-                        <summary>Battery details</summary>
+                        <summary>Laptop battery details</summary>
                         <dl class="set-kv">
                             <div><dt>Battery</dt><dd class="mono-text" id="ups-device">-</dd></div>
                             <div><dt>Power source</dt><dd class="mono-text" id="ups-ac-state">-</dd></div>
@@ -642,6 +593,7 @@
     <script src="settings-tls.js"></script>
     <script src="settings-remote.js"></script>
     <script src="settings-gpu.js"></script>
+    <script src="settings-ups.js"></script>
 </body>
 
 </html>
