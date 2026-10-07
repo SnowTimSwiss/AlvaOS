@@ -414,6 +414,21 @@ def _addresses(origin: str) -> List[str]:
     return out
 
 
+def _qr_data_url(text: str) -> str:
+    """The QR code as an image for the page (python3-qrcode, as for two-step sign-in)."""
+    try:
+        import base64
+        import io
+        import qrcode
+        import qrcode.image.svg
+        image = qrcode.make(text, image_factory=qrcode.image.svg.SvgPathImage, border=2)
+        buf = io.BytesIO()
+        image.save(buf)
+        return 'data:image/svg+xml;base64,' + base64.b64encode(buf.getvalue()).decode()
+    except Exception:
+        return ''
+
+
 @app.post('/api/devices/pair-code')
 def pair_code():
     session, refused = need_session()
@@ -434,8 +449,8 @@ def pair_code():
     addresses = _addresses(str(data.get('origin') or request.host_url))
     link = 'alvaos://pair?' + '&'.join([f'c={code}', f'n={quote(nas)}', f'u={quote(session["user"])}']
                                          + [f'a={quote(a, safe="")}' for a in addresses])
-    return jsonify({'code': f'{code[:4]}-{code[4:]}', 'link': link, 'addresses': addresses, 'nas_name': nas,
-                    'expires_in': PAIR_CODE_SECONDS})
+    return jsonify({'code': f'{code[:4]}-{code[4:]}', 'link': link, 'qr': _qr_data_url(link),
+                    'addresses': addresses, 'nas_name': nas, 'expires_in': PAIR_CODE_SECONDS})
 
 
 @app.post('/api/devices/pair')

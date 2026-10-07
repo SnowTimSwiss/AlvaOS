@@ -41,6 +41,8 @@
         link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
         copy: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
         clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+        phone: '<rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/>',
+        refresh: '<path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/>',
         monitor: '<rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/>',
         calendar: '<path d="M8 2v4M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
         'message-circle': '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>',
@@ -996,6 +998,102 @@
         wrap.querySelector('[data-close]').onclick = () => { wrap.hidden = true; wrap.innerHTML = ''; };
     });
 
+    // Phones and devices: connect the AlvaOS app with a QR code (or a code to
+    // type), and see, rename and sign out the phones that are connected.
+    const APP_DOWNLOAD = 'https://github.com/SnowTimSwiss/AlvaOS/releases/latest/download/alvaos-android.apk';
+    function ago(iso) {
+        const t = new Date(iso).getTime();
+        if (Number.isNaN(t)) return '';
+        const m = Math.round((Date.now() - t) / 60000);
+        if (m < 2) return 'just now';
+        if (m < 60) return `${m} minutes ago`;
+        if (m < 48 * 60) return `${Math.round(m / 60)} hours ago`;
+        return `${Math.round(m / 1440)} days ago`;
+    }
+    $('devices-nav').addEventListener('click', () => { closeSide(); showDevices(); });
+    async function showDevices(withCode) {
+        const wrap = $('dialog');
+        let pairing = withCode || null;
+        let timer = 0;
+        let known = null;
+        const close = () => { clearInterval(timer); wrap.hidden = true; wrap.innerHTML = ''; wrap.onclick = null; };
+        const paint = async () => {
+            let list = [];
+            let error = '';
+            try { list = (await api('devices')).devices || []; } catch (err) { error = err.message; }
+            if (!wrap.querySelector('.devices') && !wrap.hidden && wrap.innerHTML) return;   // another dialog opened
+            // A phone that just connected with the QR code: say so, and put the code away.
+            if (pairing && known && list.some((d) => !known.has(d.id))) {
+                const fresh = list.find((d) => !known.has(d.id));
+                toast(`${fresh.name} is connected.`);
+                pairing = null;
+            }
+            known = new Set(list.map((d) => d.id));
+            const left = pairing ? Math.max(0, Math.round((pairing.until - Date.now()) / 1000)) : 0;
+            if (pairing && !left) pairing = null;
+            wrap.innerHTML = `<div class="dialog wide devices"><h2>Phones and devices</h2>
+                ${pairing ? `<div class="pair">
+                    <div class="qr">${pairing.qr ? `<img alt="QR code to connect a phone" src="${pairing.qr}">` : ''}</div>
+                    <div class="pair-steps">
+                        <p><strong>1.</strong> Install the AlvaOS app on the phone (<a href="${APP_DOWNLOAD}" target="_blank" rel="noopener">Android</a>).</p>
+                        <p><strong>2.</strong> Open it and tap <strong>Scan QR code</strong>.</p>
+                        <p><strong>3.</strong> Point the phone at this code. That's it: no password needed.</p>
+                        <p class="pair-code">Or type the code <strong>${esc(pairing.code)}</strong> in the app${pairing.addresses.length ? `, with the address <code>${esc(pairing.addresses[0])}</code>` : ''}.</p>
+                        <p class="muted">Works once, for ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} more minutes.${pairing.addresses.length > 1 ? ` Away from home the app uses ${esc(pairing.addresses.slice(1).join(', '))}.` : ''}</p>
+                    </div></div>`
+                : `<p>Phones with the AlvaOS app use every Hub app you have, back up their photos, and stay signed in. Connect one with a QR code: no password to type.</p>
+                    <div class="actions" style="justify-content:flex-start;margin:0 0 14px"><button type="button" class="btn primary" id="pair-btn">${icon('plus')}Connect a phone</button>
+                    <a class="btn" href="${APP_DOWNLOAD}" target="_blank" rel="noopener">${icon('download')}Get the Android app</a></div>`}
+                <div class="trash-list">${error ? esc(error) : list.length ? list.map((d) => `<div class="trash-row device">
+                    <div class="dev-ic">${icon('phone')}</div>
+                    <div><strong>${esc(d.name)}${d.this ? ' <span class="badge">This device</span>' : ''}${me?.role === 'admin' && d.user !== me.user ? ` <span class="badge">${esc(d.user)}</span>` : ''}</strong>
+                    <small>${esc([d.model && d.model !== d.name ? d.model : '', d.platform === 'android' ? 'Android' : d.platform, d.app_version ? `app ${d.app_version}` : ''].filter(Boolean).join(' · '))}</small>
+                    <small>Last used ${esc(ago(d.last_seen))} · connected ${esc(when(d.created_at))}</small>
+                    ${d.backup ? `<small>${icon('image')} Backs up ${esc(d.backup.albums.join(', ') || 'nothing yet')} · ${d.backup.count} pictures${d.backup.last_sync ? ` · ${esc(ago(d.backup.last_sync))}` : ''}</small>` : ''}</div>
+                    <div class="dev-actions"><button type="button" class="btn" data-rename="${esc(d.id)}" title="Rename">${icon('pen')}</button>
+                    <button type="button" class="btn danger" data-remove="${esc(d.id)}">Sign out</button></div></div>`).join('')
+                : '<div class="empty" style="padding:24px 0">No phone is connected yet.</div>'}</div>
+                <div class="actions">${pairing ? '<button type="button" class="btn" id="pair-new">New code</button>' : ''}<button type="button" class="btn primary" data-close>Done</button></div></div>`;
+            wrap.hidden = false;
+            paintIcons(wrap);
+            wrap.querySelector('[data-close]').onclick = close;
+            wrap.onclick = (e) => { if (e.target === wrap) close(); };
+            const start = async () => {
+                try {
+                    const r = await api('devices/pair-code', { method: 'POST', json: { origin: location.origin } });
+                    pairing = { ...r, until: Date.now() + r.expires_in * 1000 };
+                } catch (err) { toast(err.message, 'error'); }
+                paint();
+            };
+            const pairBtn = wrap.querySelector('#pair-btn');
+            if (pairBtn) pairBtn.onclick = start;
+            const again = wrap.querySelector('#pair-new');
+            if (again) again.onclick = start;
+            wrap.querySelectorAll('[data-rename]').forEach((b) => { b.onclick = async () => {
+                const d = list.find((x) => x.id === b.dataset.rename);
+                clearInterval(timer);
+                const name = await ask({ title: 'Rename the device', value: d.name, okLabel: 'Rename' });
+                if (name) {
+                    try { await api(`devices/${encodeURIComponent(d.id)}`, { method: 'PATCH', json: { name } }); } catch (err) { toast(err.message, 'error'); }
+                }
+                showDevices(pairing);
+            }; });
+            wrap.querySelectorAll('[data-remove]').forEach((b) => { b.onclick = async () => {
+                const d = list.find((x) => x.id === b.dataset.remove);
+                clearInterval(timer);
+                const yes = await ask({ title: `Sign out ${d.name}?`, text: d.this ? 'This is the device you are using: it is signed out at once.'
+                    : 'The app on it stops backing up and must be connected again to be used. Pictures it backed up stay on the NAS.', okLabel: 'Sign out', danger: true });
+                if (yes) {
+                    try { await api(`devices/${encodeURIComponent(d.id)}`, { method: 'DELETE' }); toast(`${d.name} is signed out.`); } catch (err) { toast(err.message, 'error'); }
+                }
+                showDevices(pairing);
+            }; });
+        };
+        await paint();
+        // While a code is shown: the countdown, and a phone that connects shows up by itself.
+        timer = setInterval(() => { if (wrap.querySelector('.devices')) { if (pairing) paint(); } else clearInterval(timer); }, 3000);
+    }
+
     // Photos, a Hub app of its own (opened from the app bar): every picture
     // and video of the open shared folder, newest first.
     function leavePhotos() {
@@ -1614,7 +1712,7 @@
         if (!has('files')) {
             $('crumbs').innerHTML = '';
             $('share-list').innerHTML = '';
-            ['links-nav', 'trash-nav', 'connect-nav', 'new-btn'].forEach((id) => { $(id).hidden = true; });
+            ['links-nav', 'trash-nav', 'connect-nav', 'new-btn'].forEach((id) => { $(id).hidden = true; });   // Devices stays
             $('items').innerHTML = `<div class="empty">${icon('grid')}<strong>No apps for you yet</strong>Ask whoever runs this NAS to turn on an app for you in the Hub.</div>`;
             return;
         }
