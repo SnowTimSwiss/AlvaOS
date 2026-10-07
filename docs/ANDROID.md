@@ -1,7 +1,9 @@
 # The Android app: building, signing, Google Play
 
-The app lives in `android/` (see `android/README.md`; what it does:
-`docs/PHOTOS.md`). GitHub builds it; nothing needs Android Studio.
+The app lives in `android/` (see `android/README.md`). It connects with
+the QR code of the Hub (Phones and devices), shows the whole Hub with every
+app the person has, and backs up photos (`docs/PHOTOS.md`). GitHub builds
+it; nothing needs Android Studio.
 
 - **An AlvaOS release** (the one you make for the NAS, e.g. `beta-v0.2.0`):
   the app is added to it, next to the ISO and the .deb: `alvaos-android.apk`

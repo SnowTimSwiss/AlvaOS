@@ -296,38 +296,51 @@ storage healthy, one shared folder.
    NVIDIA's driver was installed before this version, Settings › Graphics
    offers "Install what apps need" (the container toolkit) first.
 
-## 12b. Photo backup from an Android phone (Android 11 or newer)
+## 12b. The Android app: connect, the Hub, photo backup (Android 11 or newer)
 
 1. On the phone open GitHub › Releases › the newest AlvaOS release and
    download `alvaos-android.apk` (between releases: Actions › "Android app"
    › the newest run › Artifacts › `alvaos-android`, unzip). Install it
    (allow "install unknown apps" for the browser once). Once the upload key
    is set up (`docs/ANDROID.md`), uninstall the old debug build once.
-2. Open "AlvaOS", enter the NAS address (`192.168.x.y:8090` at home, the
-   Tailscale address away), name and password of a person with a personal
-   folder and Photos turned on. Allow pictures and notifications.
-3. Choose two albums (Camera and one more), keep "Only on Wi-Fi", tap
-   "Back up these albums". A notification shows the progress. In the Hub ›
+2. On a computer open the Hub, side bar › **Phones and devices** › Connect
+   a phone: a QR code and a code appear. In the app tap **Scan the QR
+   code** and point it at the code: the app connects without a password
+   and shows the Hub; the computer says "<phone> is connected" and lists
+   it (last used, model, app version). Also try: scanning the QR code with
+   the phone's own camera opens the app and connects; "Type the code
+   instead" with the address and the code; "Sign in with name and
+   password". An old or used code says so.
+3. The **Hub** tab: every app the person has (Files, Photos, Calendar,
+   Chat, the store apps) works as in the browser; downloading a file lands
+   in Downloads; uploading opens the phone's file picker; there is no
+   "Sign out" in the Hub (it is in the app's Settings).
+4. In the Hub on the computer › Phones and devices: rename the phone, then
+   **Sign out**: opening the app again says it was signed out on the NAS.
+   Connect it again.
+5. The **Backup** tab › Set up backup: allow pictures. Choose two albums
+   (Camera and one more), keep "Only on Wi-Fi", tap "Back up these
+   albums"; the tab shows "Backing up 3 of 40" while it runs. A notification shows the progress. In the Hub ›
    Photos the albums appear above the timeline (Camera · <phone>); the files
    are in Files › own folder › Photos › <phone> › <album>, with the date
    they were taken.
-4. Take a new photo, tap "Back up now": it is on the NAS a minute later.
+6. Take a new photo, tap "Back up now": it is on the NAS a minute later.
    Tap it again: nothing is uploaded twice.
-5. Delete a backed-up photo **on the phone** (Gallery, and empty the
+7. Delete a backed-up photo **on the phone** (Gallery, and empty the
    phone's own trash if it has one), "Back up now": on the NAS it is in
    the trash of the personal folder, not gone.
-6. After choosing the albums the app offers "Keep deleting in sync":
+8. After choosing the albums the app offers "Keep deleting in sync":
    Allow, turn on AlvaOS, come back. Delete a backed-up photo **in the
    Hub** (Files › Delete), "Back up now" on the phone: it is gone on the
    phone without a question (at the latest when the app is opened next).
    With "Not now" instead, the app says "1 was deleted on your NAS" and
    Android asks once for each batch.
-7. **Move** a backed-up photo into another folder in the Hub, "Back up
+9. **Move** a backed-up photo into another folder in the Hub, "Back up
    now": nothing is deleted on the phone, nothing uploaded again.
-8. "Change albums", untick one: its pictures stay on the NAS.
-9. "Free up space": photos backed up and older than a month go from the
+10. "Change albums", untick one: its pictures stay on the NAS.
+11. "Free up space": photos backed up and older than a month go from the
    phone (Android asks), they stay in Photos on the NAS.
-10. Turn the phone's Wi-Fi off with "Only on Wi-Fi" on: no backup on mobile
+12. Turn the phone's Wi-Fi off with "Only on Wi-Fi" on: no backup on mobile
     data until Wi-Fi is back.
 
 ## 13. Updates
