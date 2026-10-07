@@ -28,6 +28,7 @@ import files_manager
 import hub_apps
 import photo_dates
 import hub_calendar
+import hub_caldav
 import hub_chat
 import hub_data
 from password_utils import verify_password
@@ -1367,6 +1368,7 @@ hub_data.setup(need_session=need_session, shares_for=shares_for, as_user=as_user
                shares_file=lambda: SHARES_FILE)
 app.register_blueprint(hub_calendar.bp)
 app.register_blueprint(hub_chat.bp)
+app.register_blueprint(hub_caldav.bp)
 
 
 # ── The app itself ───────────────────────────────────────────────────────────

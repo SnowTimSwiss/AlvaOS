@@ -86,6 +86,12 @@ storage healthy, one shared folder.
    the tasks panel. Hub page › Where things are kept › Shared family
    calendars: tick "Family": anna changes it, someone with read-only
    access only looks. Try month, schedule and the 3 days on a phone.
+   On a phone: Calendar › "On your phone and computer" › follow the steps
+   (iPhone: install the certificate first, step 9). The calendars and tasks
+   show up; an event made on the phone appears in the Hub after a reload,
+   one changed in the Hub reaches the phone; the Family calendar is
+   read-only on the phone for someone with read-only access. Android: the
+   same with DAVx5.
 9. Chat: Settings › Assistant: set up an AI service (Ollama at home is
    enough). Hub page › Chat: turn it on, Change › tick two models. In the
    Hub: a new chat, switch the model, "Think" on with "High" (a thinking

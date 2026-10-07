@@ -15,6 +15,29 @@ How to add an entry:
 
 ---
 
+## 2026-10-07 · Calendar on phones and computers (CalDAV)
+
+- The Hub calendar now syncs with the calendar apps people already use:
+  iPhone/iPad/Mac, Android (DAVx5), Thunderbird. `backend/hub_caldav.py`
+  is a small CalDAV server inside the Hub (port 8090/9443, found through
+  `/.well-known/caldav`) on the same `calendar.json` files as the page, as
+  the person through the helper. No Radicale and no new library: reading
+  and writing iCalendar is a few functions.
+- Each calendar of a place is one CalDAV calendar, the place's tasks one
+  task list (Reminders on an iPhone). Read-only family calendars are
+  read-only on the phone. ETags and If-Match keep a phone with an old copy
+  from overwriting a newer one. Events made on a phone keep their name and
+  UID when changed on the page.
+- Sign-in as for WebDAV (`files_dav.signed_in` now takes the Hub app); the
+  admin account is not offered.
+- Calendar › "On your phone and computer" shows the address and the steps.
+- Checked with the `caldav` Python client against the running server
+  (discover, add, search, tasks, delete) and in Chromium at desktop and
+  phone width. 9 tests in `tests/test_hub_caldav.py`.
+- Note for next time: not yet tried with a real iPhone or DAVx5
+  (`TESTING.md` 4.8). Repeat rules beyond the page's (every 2 weeks,
+  exceptions) are simplified when a phone saves them.
+
 ## 2026-10-06 · Files: edit text files in the browser
 
 - A text file opened in Files (.txt, .md, .csv, .json, .log, ... up to 1 MB)

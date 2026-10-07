@@ -114,8 +114,22 @@ What it should become (backup from the phone, albums, favourites): `PHOTOS.md`.
 - Times are local times of the NAS, whole days are dates (last day
   included). A repeating event is stored once; changing or moving one
   repeat changes them all (the editor says so).
-- Next: CalDAV, so phones and Outlook sync on their own (calendars as
-  `.ics`, Radicale-compatible), and Contacts next to it.
+- **On phones and computers (CalDAV, `backend/hub_caldav.py`):** the same
+  calendars and tasks sync with the calendar app people already use:
+  iPhone/iPad/Mac (CalDAV account; tasks in Reminders), Android with DAVx5,
+  Thunderbird. The address is the Hub's (`<nas>:9443`, found through
+  `/.well-known/caldav`); name and password as for the shares; the admin
+  account is not offered (as for WebDAV). It works on the same
+  `calendar.json` files as the page, as the person through the helper, so
+  read-only family calendars are read-only on the phone too. Each calendar
+  of a place is one CalDAV calendar, the place's tasks one task list. A
+  phone may rename and recolour a calendar (the colour becomes the nearest
+  of the page's); calendars are made and deleted on the page. What the page
+  cannot show is simplified when a phone saves it: one repeat rule (every 2
+  weeks becomes weekly, "5 times" becomes "until" the fifth day), no
+  exceptions to a repeat, no reminders. "Calendar › On your phone and
+  computer" shows the address and the steps.
+- Next: Contacts over CardDAV next to it.
 
 ### Chat
 
