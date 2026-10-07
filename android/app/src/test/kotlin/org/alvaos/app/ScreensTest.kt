@@ -68,7 +68,7 @@ class ScreensTest {
     }
 
     @Test
-    @Config(qualifiers = "w400dp-h880dp-xxhdpi-night")
+    @Config(qualifiers = "w400dp-h880dp-night-xxhdpi")
     fun theFirstScreenInTheDark() {
         ActivityScenario.launch(MainActivity::class.java).use { picture(it, "1-connect-dark") }
     }

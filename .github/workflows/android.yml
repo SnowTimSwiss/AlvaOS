@@ -65,6 +65,16 @@ jobs:
       - name: Open every screen of the app
         run: ./gradlew --no-daemon :app:testDebugUnitTest
 
+      # Small copies in the log too, to look at when the artifact storage is full.
+      - name: Show the pictures in the log
+        if: always()
+        continue-on-error: true
+        run: |
+          for f in app/build/outputs/roborazzi/*.png; do
+            [ -f "$f" ] || continue
+            convert "$f" -resize 300x -quality 60 /tmp/screen.jpg && echo "SCREEN $(basename "$f") $(base64 -w0 /tmp/screen.jpg)"
+          done
+
       - name: Keep the pictures of the screens
         if: always()
         continue-on-error: true
