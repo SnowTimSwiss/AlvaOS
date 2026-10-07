@@ -34,7 +34,23 @@ data class SyncResult(
     val trashedOnNas: Int,
     val toDeleteHere: Set<String>,
     val lastError: String = "",
+    /** Asked to stop (Android ended the job): what was done is saved, the rest comes next time. */
+    val stopped: Boolean = false,
+    /** Still to upload when this ended (failed, or left over after a stop). */
+    val waiting: Int = 0,
 )
+
+/** How far one album is: `backedUp` of `total` pictures and videos are on the NAS. */
+data class AlbumProgress(val album: String, val total: Int, val backedUp: Int) {
+    val done: Boolean get() = backedUp >= total
+}
+
+/** Per chosen album, from what is on the phone and what is known to be backed up. */
+fun albumProgress(here: List<LocalPhoto>, known: Map<String, String>, chosen: Collection<String>): List<AlbumProgress> =
+    chosen.sorted().map { album ->
+        val mine = here.filter { it.album == album }
+        AlbumProgress(album, mine.size, mine.count { it.id in known })
+    }
 
 /**
  * One sync, the same every time (backend/hub_photos_sync.py does the deciding):
@@ -45,7 +61,20 @@ data class SyncResult(
  */
 class SyncEngine(private val hub: HubApi, private val library: Library, private val state: SyncState) {
 
-    fun run(phoneName: () -> String = { "Phone" }, onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }): SyncResult {
+    companion object {
+        /** After this many uploads the progress is saved (and told to the NAS), so a stop loses little. */
+        const val CHECKPOINT = 5
+    }
+
+    /**
+     * `shouldStop` is asked between pictures; when it says yes, what is done is saved and
+     * the rest is left for the next sync.
+     */
+    fun run(
+        phoneName: () -> String = { "Phone" },
+        shouldStop: () -> Boolean = { false },
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): SyncResult {
         if (state.phoneId.isEmpty()) state.phoneId = hub.addPhone(phoneName()).id
         val chosen = state.albums
         val here = library.photos(chosen)
@@ -68,36 +97,48 @@ class SyncEngine(private val hub: HubApi, private val library: Library, private 
         var lastError = ""
         val done = mutableListOf<DoneItem>()
         var uploaded = 0
-        plan.upload.forEachIndexed { i, target ->
-            onProgress(i, plan.upload.size)
-            val photo = byId[target.id] ?: return@forEachIndexed
-            try {
-                hub.upload(target, photo.size, photo.modified) { offset -> library.open(photo.id, offset) }
-                done += DoneItem(photo.id, target.path, target.name, photo.size, photo.modified)
-                nowKnown[photo.id] = photo.album
-                uploaded += 1
-                if (done.size >= 50) {
-                    hub.done(state.phoneId, done.toList())
-                    done.clear()
-                    state.known = nowKnown.toMap()
+        var stopped = false
+        var left = plan.upload.size
+        var offline = 0                       // in a row: the NAS cannot be reached, so stop trying
+        try {
+            for ((i, target) in plan.upload.withIndex()) {
+                if (shouldStop()) { stopped = true; break }
+                if (offline >= 3) break
+                onProgress(i, plan.upload.size)
+                val photo = byId[target.id]
+                if (photo == null) { left -= 1; continue }
+                try {
+                    hub.upload(target, photo.size, photo.modified) { offset -> library.open(photo.id, offset) }
+                    done += DoneItem(photo.id, target.path, target.name, photo.size, photo.modified)
+                    nowKnown[photo.id] = photo.album
+                    uploaded += 1
+                    left -= 1
+                    offline = 0
+                    if (done.size >= CHECKPOINT) {
+                        hub.done(state.phoneId, done.toList())
+                        done.clear()
+                        state.known = nowKnown.toMap()
+                    }
+                } catch (e: HubException) {
+                    if (e.signedOut) throw e
+                    failed += photo.id
+                    lastError = e.message ?: ""
+                } catch (e: java.io.IOException) {
+                    failed += photo.id
+                    lastError = e.message ?: ""
+                    offline += 1
                 }
-            } catch (e: HubException) {
-                if (e.signedOut) throw e
-                failed += photo.id
-                lastError = e.message ?: ""
-            } catch (e: java.io.IOException) {
-                failed += photo.id
-                lastError = e.message ?: ""
             }
+            if (done.isNotEmpty()) hub.done(state.phoneId, done.toList())
+        } finally {
+            state.known = nowKnown.toMap()     // also when signed out half way: what is on the NAS stays known
         }
-        if (done.isNotEmpty()) hub.done(state.phoneId, done)
-        onProgress(plan.upload.size, plan.upload.size)
+        if (!stopped && offline < 3) onProgress(plan.upload.size, plan.upload.size)
 
-        state.known = nowKnown.toMap()
         state.keep = state.keep - vanished
         // Only what is still here and in a chosen album; the person says yes first.
         state.pendingDeletes = (state.pendingDeletes + plan.delete_on_phone).intersect(hereIds)
-        return SyncResult(uploaded, failed, plan.trashed, state.pendingDeletes, lastError)
+        return SyncResult(uploaded, failed, plan.trashed, state.pendingDeletes, lastError, stopped, left)
     }
 
     /** The person said yes and the phone deleted them: tell the NAS. */

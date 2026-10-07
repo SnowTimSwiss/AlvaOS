@@ -67,6 +67,10 @@ class Store(context: Context) : SyncState {
     var wifiOnly: Boolean
         get() = prefs.getBoolean("wifi_only", true)
         set(v) = prefs.edit().putBoolean("wifi_only", v).apply()
+    /** Back up only while the phone charges (the default is: whenever the battery is not low). */
+    var chargingOnly: Boolean
+        get() = prefs.getBoolean("charging_only", false)
+        set(v) = prefs.edit().putBoolean("charging_only", v).apply()
     var lastSync: Long
         get() = prefs.getLong("last_sync", 0)
         set(v) = prefs.edit().putLong("last_sync", v).apply()

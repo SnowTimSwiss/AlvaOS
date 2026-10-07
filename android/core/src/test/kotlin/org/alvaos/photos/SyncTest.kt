@@ -13,6 +13,7 @@ class FakeHub : HubApi {
     val manifest = mutableMapOf<String, String>()     // phone id -> "album/name"
     val uploads = mutableListOf<String>()
     var failNext = false
+    var failAlways = false
 
     override fun addPhone(name: String) = Phone("0123456789ab", name, name)
 
@@ -33,6 +34,7 @@ class FakeHub : HubApi {
 
     override fun upload(target: Upload, size: Long, modified: Long, open: (offset: Long) -> InputStream) {
         if (failNext) { failNext = false; throw java.io.IOException("Connection lost") }
+        if (failAlways) throw java.io.IOException("Connection lost")
         val bytes = open(0).readBytes()
         assertEquals(size, bytes.size.toLong())
         files["${target.path.substringAfterLast('/')}/${target.name}"] = size
@@ -136,5 +138,52 @@ class SyncTest {
         state.albums = setOf("Camera")
         assertEquals(0, engine.run().trashedOnNas)
         assertEquals(setOf("Screenshots/1.jpg"), hub.files.keys)
+    }
+
+    @Test
+    fun stopsBetweenPicturesAndKeepsWhatIsDone() {
+        (1..8).forEach { library.add("$it") }
+        var asked = 0
+        val first = engine.run(shouldStop = { asked++ >= 3 })
+        assertEquals(3, first.uploaded)
+        assertTrue(first.stopped)
+        assertEquals(5, first.waiting)
+        assertEquals(3, state.known.size)                 // saved, so the next run goes on from there
+        val next = engine.run()
+        assertEquals(5, next.uploaded)
+        assertTrue(!next.stopped && next.waiting == 0)
+        assertEquals(8, hub.uploads.toSet().size)
+    }
+
+    @Test
+    fun savesTheProgressEveryFewPictures() {
+        (1..7).forEach { library.add("$it") }
+        val seen = mutableListOf<Int>()
+        engine.run(onProgress = { _, _ -> seen += state.known.size })
+        // After 5 uploads the state was saved while the sync was still going.
+        assertTrue(seen.any { it == SyncEngine.CHECKPOINT }, seen.toString())
+    }
+
+    @Test
+    fun givesUpWhenTheNasCannotBeReached() {
+        (1..10).forEach { library.add("$it") }
+        hub.failAlways = true
+        val result = engine.run()
+        assertEquals(0, result.uploaded)
+        assertEquals(3, result.failed.size)               // three in a row, then it stops trying
+        assertEquals(10, result.waiting)
+        assertEquals("Connection lost", result.lastError)
+    }
+
+    @Test
+    fun countsEachAlbumsProgress() {
+        library.add("1"); library.add("2"); library.add("3", album = "Screenshots")
+        state.albums = setOf("Camera", "Screenshots")
+        engine.run()
+        library.add("4")
+        val here = library.photos(setOf("Camera", "Screenshots"))
+        assertEquals(listOf(AlbumProgress("Camera", 3, 2), AlbumProgress("Screenshots", 1, 1)),
+            albumProgress(here, state.known, state.albums))
+        assertTrue(albumProgress(here, state.known, state.albums).last().done)
     }
 }

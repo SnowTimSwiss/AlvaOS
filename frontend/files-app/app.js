@@ -42,6 +42,7 @@
         copy: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
         clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
         phone: '<rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/>',
+        'cloud-upload': '<path d="M12 13v8"/><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="m8 17 4-4 4 4"/>',
         refresh: '<path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/>',
         monitor: '<rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/>',
         calendar: '<path d="M8 2v4M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
@@ -203,6 +204,17 @@
     $('fwd-btn').addEventListener('click', () => history.forward());
     const up = () => { if (path) go(share, path.split('/').slice(0, -1).join('/')); };
 
+    // In the AlvaOS app there is no side bar: the shared folders are chips above the files.
+    function renderChips() {
+        const chips = $('share-chips');
+        const list = me?.shares || [];
+        const show = IN_APP && list.length > 1 && current === 'files' && !found && !inTrash;
+        chips.hidden = !show;
+        if (!show) return;
+        chips.innerHTML = list.map((s) => `<button type="button" data-chip="${esc(s.name)}" aria-pressed="${s.name === share}">${esc(s.name)}</button>`).join('');
+        chips.querySelectorAll('[data-chip]').forEach((b) => b.addEventListener('click', () => go(b.dataset.chip, '')));
+    }
+
     function renderSide() {
         $('share-list').innerHTML = (me?.shares || []).map((s) => `
             <button type="button" class="side-item${s.name === share ? ' active' : ''}" data-share="${esc(s.name)}">
@@ -297,6 +309,7 @@
     }
 
     function render() {
+        renderChips();
         if (inTrash) { paintTrash(); return; }
         const q = found ? '' : $('search').value.trim().toLowerCase();
         shown = found ? found.slice() : entries.filter((e) => !q || e.name.toLowerCase().includes(q));
@@ -382,14 +395,15 @@
             items.prepend(head);
             if (foundInfo.photos && foundInfo.albums?.length) {
                 const strip = document.createElement('div');
-                strip.className = 'albums';
+                strip.className = 'chips albums';
                 strip.setAttribute('role', 'group');
                 strip.setAttribute('aria-label', 'Albums');
-                strip.innerHTML = `<button type="button" data-album="-1" aria-pressed="${foundInfo.album === -1}">All</button>`
+                strip.innerHTML = `<button type="button" data-album="-1" aria-pressed="${foundInfo.album === -1}">All<small>${foundInfo.all.length}${foundInfo.complete ? '' : '+'} items</small></button>`
                     + foundInfo.albums.map((a, i) => `<button type="button" data-album="${i}" aria-pressed="${foundInfo.album === i}" title="${esc(`${a.phone} › ${a.name}`)}">${esc(a.name)}<small>${esc(a.phone)}</small></button>`).join('');
                 head.after(strip);
                 strip.querySelectorAll('[data-album]').forEach((b) => b.addEventListener('click', () => showAlbum(Number(b.dataset.album))));
             }
+            if (foundInfo.photos && window.AlvaApp) head.after(appBackupBanner());
             head.querySelector('#results-close').addEventListener('click', clearSearch);
             head.querySelectorAll('[data-scope]').forEach((b) => b.addEventListener('click', () => {
                 searchAll = b.dataset.scope === 'all';
@@ -633,13 +647,15 @@
         $('ctx').hidden = true;
         $('new-menu').hidden = true;
         $('sort-menu').hidden = true;
+        $('more-menu').hidden = true;
+        $('more-btn').setAttribute('aria-expanded', 'false');
         $('sort-btn').setAttribute('aria-expanded', 'false');
         if ($('store-menu')) {
             $('store-menu').hidden = true;
             $('rail-store').setAttribute('aria-expanded', 'false');
         }
     };
-    document.addEventListener('click', (e) => { if (!e.target.closest('.menu') && !e.target.closest('#new-btn') && !e.target.closest('#sort-btn')) hideMenus(); });
+    document.addEventListener('click', (e) => { if (!e.target.closest('.menu') && !e.target.closest('#new-btn') && !e.target.closest('#sort-btn') && !e.target.closest('#more-btn')) hideMenus(); });
     $('ctx').addEventListener('click', (e) => {
         const b = e.target.closest('[data-ctx]');
         if (!b) return;
@@ -677,6 +693,26 @@
     $('sel-download').addEventListener('click', () => action('download'));
     $('sel-rename').addEventListener('click', () => action('rename'));
     $('sel-delete').addEventListener('click', () => action('delete'));
+    // "⋯" (in the app only): the view, and what the side bar has elsewhere.
+    $('more-btn').addEventListener('click', () => {
+        const menu = $('more-menu');
+        const opening = menu.hidden;
+        hideMenus();
+        if (!opening) return;
+        menu.innerHTML = `<button type="button" role="menuitem" data-more="view">${icon(view === 'grid' ? 'list' : 'grid')}${view === 'grid' ? 'Show as a list' : 'Show as a grid'}</button><hr>
+            <button type="button" role="menuitem" data-more="links">${icon('link')}Shared links</button>
+            <button type="button" role="menuitem" data-more="trash">${icon('trash')}Trash</button>
+            <button type="button" role="menuitem" data-more="devices">${icon('phone')}Phones and devices</button>`;
+        menu.hidden = false;
+        $('more-btn').setAttribute('aria-expanded', 'true');
+    });
+    $('more-menu').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-more]');
+        if (!b) return;
+        hideMenus();
+        if (b.dataset.more === 'view') setView(view === 'grid' ? 'list' : 'grid');
+        else openTool(b.dataset.more);
+    });
     $('sort-btn').addEventListener('click', () => {
         const menu = $('sort-menu');
         const opening = menu.hidden;
@@ -1007,6 +1043,12 @@
     // out this phone (the app's Settings) and offering the app itself.
     const IN_APP = /AlvaOSApp\//.test(navigator.userAgent);
     if (IN_APP) document.documentElement.classList.add('in-app');
+    let pendingTool = '';
+    function openTool(t) {
+        if (t === 'trash') showTrash((me?.shares || []).some((s) => s.name === share) ? share : me?.shares?.[0]?.name);
+        else if (t === 'links') $('links-nav').click();
+        else if (t === 'devices') $('devices-nav').click();
+    }
     function ago(iso) {
         const t = new Date(iso).getTime();
         if (Number.isNaN(t)) return '';
@@ -1109,10 +1151,13 @@
     async function showPhotos() {
         leaveView();
         current = 'photos';
+        renderChips();
         closeSide();
         $('search').value = '';
         const id = ++searchId;
         markRail();
+        $('crumbs').innerHTML = '<span class="crumb">Photos</span>';
+        $('new-btn').hidden = true;
         $('items').innerHTML = '<div class="empty">Looking for photos…</div>';
         document.querySelectorAll('.side-item').forEach((b) => b.classList.remove('active'));
         try {
@@ -1140,6 +1185,34 @@
             toast(err.message, 'error');
         }
     }
+
+    // The photo backup of this phone, as a card on top of Photos (only in the AlvaOS app).
+    function appBackupBanner() {
+        let b = {};
+        try { b = JSON.parse(window.AlvaApp.backup()); } catch (_e) { /* no answer */ }
+        const el = document.createElement('div');
+        el.className = 'appbackup';
+        let head = 'Back up this phone\'s photos';
+        let sub = 'Pictures and videos go to your NAS by themselves.';
+        let bar = '';
+        if (b.on && b.running) {
+            head = b.total ? `Backing up ${b.done} of ${b.total}` : 'Looking for new pictures…';
+            sub = 'Photos from this phone';
+            bar = `<div class="up-bar"><span style="width:${b.total ? Math.round((100 * b.done) / b.total) : 0}%"></span></div>`;
+        } else if (b.on) {
+            head = `${b.count} picture${b.count === 1 ? '' : 's'} backed up`;
+            sub = b.last ? `Last backup ${ago(new Date(b.last).toISOString())}` : 'Starting soon';
+        }
+        el.innerHTML = `<span class="ab-ic">${icon('cloud-upload')}</span><div class="ab-text"><strong>${esc(head)}</strong><small>${esc(sub)}</small>${bar}</div>
+            <button type="button" class="btn ${b.on ? '' : 'primary'}">${b.on ? 'Open' : 'Set up'}</button>`;
+        el.querySelector('button').onclick = () => window.AlvaApp.openBackup();
+        el.onclick = (e) => { if (e.target.closest('button')) return; window.AlvaApp.openBackup(); };
+        return el;
+    }
+    setInterval(() => {
+        const old = document.querySelector('.appbackup');
+        if (old && window.AlvaApp && !document.hidden) old.replaceWith(appBackupBanner());
+    }, 4000);
 
     function showAlbum(i) {
         const a = foundInfo.albums[i];
@@ -1282,10 +1355,11 @@
         found = null;
         selected = new Set();
         inTrash = forShare;
+        renderChips();
         $('search').value = '';
         document.querySelectorAll('.side-item').forEach((b) => b.classList.toggle('active', b.id === 'trash-nav'));
         $('new-btn').hidden = true;
-        $('crumbs').innerHTML = `<span class="crumb current">Trash</span>`;
+        $('crumbs').innerHTML = '<span class="crumb">Trash</span>';
         $('items').className = 'items list trash';
         $('items').innerHTML = '<div class="empty">Looking in the trash…</div>';
         paintSelection();
@@ -1722,6 +1796,8 @@
         signOut,
         // The AlvaOS app has the app bar itself (its tabs) and switches with this.
         open: (id) => { if (started) openApp(id); else pendingApp = id; },
+        // One of the Files tools ("trash", "links", "devices"), asked by the app's Settings.
+        tool: (t) => { if (started) openTool(t); else pendingTool = t; },
         // The person and "Sign out", at the foot of each app's sidebar.
         foot: () => `<div class="side-foot"><div class="me"><span class="avatar">${esc((me?.user || '?').slice(0, 1).toUpperCase())}</span><span>${esc(me?.user || '')}</span></div><button type="button" class="link" data-signout>Sign out</button></div>`,
     };
@@ -1773,6 +1849,7 @@
         const wanted = me.shares.find((s) => s.name === q.get('share'));
         go(wanted ? wanted.name : me.shares[0].name, wanted ? q.get('path') || '' : '', false);
         history.replaceState(null, '', hashFor(share, path));
+        if (pendingTool) { const t = pendingTool; pendingTool = ''; openTool(t); }
     }
 
     // Installable as an app where the browser allows it (HTTPS or localhost).

@@ -1,5 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="alva_primary">#8AB4F8</color>
+    <color name="alva_bg">#111318</color>
+    <color name="alva_panel">#171A21</color>
+    <color name="alva_side">#14171D</color>
+    <color name="alva_hover">#212631</color>
+    <color name="alva_sel">#1D3157</color>
+    <color name="alva_line">#262B35</color>
+    <color name="alva_text">#E8EAEE</color>
+    <color name="alva_muted">#A2A9B6</color>
+    <color name="alva_faint">#79818F</color>
+    <color name="alva_accent">#4D8EF2</color>
+    <color name="alva_on_accent">#0B1220</color>
+    <color name="alva_danger">#F07171</color>
+    <color name="alva_danger_bg">#3A1F22</color>
+    <color name="alva_danger_on">#F9D4D4</color>
+    <color name="alva_warn_bg">#3A2E14</color>
+    <color name="alva_ok">#4CC38A</color>
     <bool name="light_bars">false</bool>
 </resources>

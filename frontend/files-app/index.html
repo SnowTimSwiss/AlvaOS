@@ -79,6 +79,10 @@
                         <button type="button" class="icon-btn" id="view-grid" aria-label="Grid" title="Grid"><span data-icon="grid"></span></button>
                         <button type="button" class="icon-btn" id="view-list" aria-label="List" title="List"><span data-icon="list"></span></button>
                     </div>
+                    <div class="new-wrap more-wrap">
+                        <button type="button" class="icon-btn" id="more-btn" aria-label="More" title="More" aria-haspopup="menu" aria-expanded="false"><span data-icon="more"></span></button>
+                        <div class="menu" id="more-menu" hidden role="menu" aria-label="More"></div>
+                    </div>
                     <div class="new-wrap">
                         <button type="button" class="btn primary" id="new-btn"><span data-icon="plus"></span><span class="hide-phone">New</span></button>
                         <div class="menu" id="new-menu" hidden role="menu">
@@ -91,6 +95,8 @@
                     <input type="file" id="folder-input" webkitdirectory multiple hidden>
                 </div>
             </header>
+
+            <div class="chips" id="share-chips" role="group" aria-label="Shared folders" hidden></div>
 
             <div class="selbar" id="selbar" hidden>
                 <button type="button" class="icon-btn" id="sel-clear" aria-label="Clear selection"><span data-icon="x"></span></button>

@@ -1,8 +1,8 @@
 package org.alvaos.app
 
+import android.app.ActivityOptions
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.ActivityOptions
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -24,33 +24,84 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.alvaos.photos.HubException
 import org.alvaos.photos.SyncEngine
+import org.alvaos.photos.SyncResult
 import java.util.concurrent.TimeUnit
 
-/** The backup in the background: every hour (on Wi-Fi if chosen), and on "Back up now". */
+/**
+ * The backup in the background. Three ways to start it, one sync at a time:
+ *  - WATCH: a minute after a new picture or video appeared on the phone (a content trigger);
+ *  - PERIODIC: every hour, which also brings what was deleted on the NAS;
+ *  - NOW: "Back up now", at once.
+ * A sync that Android ends (the ten minutes of a background job) saves what it did and
+ * continues by itself right away.
+ */
 class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
     companion object {
         const val PERIODIC = "alvaos-backup"
         const val NOW = "alvaos-backup-now"
+        const val WATCH = "alvaos-backup-watch"
+        const val MORE = "alvaos-backup-more"
         const val CHANNEL = "backup"
         const val CHANNEL_ALERTS = "alerts"
         private const val PROGRESS_ID = 1
         private const val DELETE_ID = 2
         private const val SIGNIN_ID = 3
+        private const val KEY_WATCH = "watch"
 
-        private fun constraints(store: Store) = Constraints.Builder()
-            .setRequiredNetworkType(if (store.wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED)
+        /** One sync at a time, whichever way it was started. */
+        private val one = Mutex()
+
+        /** While a sync runs: how many are done of how many (the app shows it live), else null. */
+        @Volatile var live: Pair<Int, Int>? = null
+
+        fun constraints(store: Store, network: Boolean = true): Constraints = Constraints.Builder()
+            .setRequiredNetworkType(
+                when {
+                    !network -> NetworkType.NOT_REQUIRED
+                    store.wifiOnly -> NetworkType.UNMETERED
+                    else -> NetworkType.CONNECTED
+                })
             .setRequiresBatteryNotLow(true)
+            .setRequiresCharging(store.chargingOnly)
             .build()
 
+        /** The hourly check and the watcher for new pictures; safe to call as often as wanted. */
         fun schedule(context: Context) {
             val store = Store(context)
+            val work = WorkManager.getInstance(context)
             val request = PeriodicWorkRequestBuilder<SyncWorker>(1, TimeUnit.HOURS)
                 .setConstraints(constraints(store)).build()
-            WorkManager.getInstance(context).enqueueUniquePeriodicWork(PERIODIC, ExistingPeriodicWorkPolicy.UPDATE, request)
+            work.enqueueUniquePeriodicWork(PERIODIC, ExistingPeriodicWorkPolicy.UPDATE, request)
+            watch(context, again = false)
+        }
+
+        /**
+         * Waits for a new picture or video (MediaStore changes), then syncs. Each run puts the next
+         * one in line (again = true), so it goes on for as long as the backup is on.
+         */
+        fun watch(context: Context, again: Boolean) {
+            val store = Store(context)
+            val constraints = Constraints.Builder()
+                .setRequiredNetworkType(if (store.wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED)
+                .setRequiresBatteryNotLow(true)
+                .setRequiresCharging(store.chargingOnly)
+                .addContentUriTrigger(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true)
+                .addContentUriTrigger(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true)
+                .setTriggerContentUpdateDelay(30, TimeUnit.SECONDS)      // the camera is still writing
+                .setTriggerContentMaxDelay(3, TimeUnit.MINUTES)
+                .build()
+            val request = OneTimeWorkRequestBuilder<SyncWorker>()
+                .setConstraints(constraints)
+                .setInputData(workDataOf(KEY_WATCH to true))
+                .build()
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                WATCH, if (again) ExistingWorkPolicy.APPEND_OR_REPLACE else ExistingWorkPolicy.KEEP, request)
         }
 
         fun now(context: Context) {
@@ -60,8 +111,16 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             WorkManager.getInstance(context).enqueueUniqueWork(NOW, ExistingWorkPolicy.KEEP, request)
         }
 
+        /** Android ended a long sync: go on with the rest at once, not after a backoff. */
+        private fun more(context: Context) {
+            val request = OneTimeWorkRequestBuilder<SyncWorker>()
+                .setConstraints(constraints(Store(context))).build()
+            WorkManager.getInstance(context).enqueueUniqueWork(MORE, ExistingWorkPolicy.REPLACE, request)
+        }
+
         fun stop(context: Context) {
-            WorkManager.getInstance(context).cancelUniqueWork(PERIODIC)
+            val work = WorkManager.getInstance(context)
+            for (name in listOf(PERIODIC, WATCH, MORE)) work.cancelUniqueWork(name)
         }
 
         fun channels(context: Context) {
@@ -79,37 +138,56 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         .setContentText(if (total > 0) "$done of $total" else "Looking for new pictures…")
         .setProgress(total, done, total == 0)
         .setOngoing(true)
+        .setOnlyAlertOnce(true)
         .build()
 
     override suspend fun getForegroundInfo() =
         ForegroundInfo(PROGRESS_ID, progress(0, 0), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
-        if (!store.signedIn || !store.backupOn || store.albums.isEmpty()) return@withContext Result.success()
-        channels(applicationContext)
-        store.pickServer()                    // at home or away: the address that answers now
-        val engine = SyncEngine(store.hub(), Gallery(applicationContext), store)
+        val watching = inputData.getBoolean(KEY_WATCH, false)
         try {
-            val result = engine.run(phoneName = { Build.MODEL }) { done, total ->
+            if (!store.signedIn || !store.backupOn || store.albums.isEmpty()) return@withContext Result.success()
+            channels(applicationContext)
+            one.withLock {
+                live = 0 to 0
+                try { sync() } finally { live = null }
+            }
+        } finally {
+            // The next wait for a new picture, as long as the backup is on and this phone is signed in.
+            if (watching && store.signedIn && store.backupOn) watch(applicationContext, again = true)
+        }
+    }
+
+    private suspend fun sync(): Result {
+        store.pickServer()                    // at home or away: the address that answers now
+        val gallery = Gallery(applicationContext)
+        val engine = SyncEngine(store.hub(), gallery, store)
+        return try {
+            val result = engine.run(
+                phoneName = { Build.MODEL },
+                shouldStop = { isStopped },
+            ) { done, total ->
+                live = done to total
                 setProgressAsync(workDataOf("done" to done, "total" to total))
                 if (total > 0) setForegroundAsync(ForegroundInfo(PROGRESS_ID, progress(done, total),
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC))
             }
             store.lastSync = System.currentTimeMillis()
-            store.lastMessage = when {
-                result.failed.isNotEmpty() -> "${result.failed.size} could not be backed up: ${result.lastError}"
-                result.uploaded > 0 -> "${result.uploaded} backed up."
-                else -> "Everything is backed up."
-            }
+            store.lastMessage = message(result)
             if (result.toDeleteHere.isNotEmpty()) {
-                val gallery = Gallery(applicationContext)
                 if (gallery.maySilentlyDelete()) {
                     // Allowed to delete without asking: try it now; what Android does not let a
                     // background job do goes, again without asking, the next time the app opens.
                     silentlyDelete(gallery, engine, result.toDeleteHere)
                 } else askToDelete(result.toDeleteHere.size)
             }
-            if (result.failed.isNotEmpty()) Result.retry() else Result.success()
+            when {
+                // Ended by Android, not by a failure: go on at once.
+                result.stopped && result.waiting > 0 -> { more(applicationContext); Result.success() }
+                result.failed.isNotEmpty() -> Result.retry()
+                else -> Result.success()
+            }
         } catch (e: HubException) {
             store.lastMessage = e.message ?: "The NAS said no."
             if (e.signedOut) {
@@ -121,6 +199,14 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             store.lastMessage = "The NAS cannot be reached: ${e.message}"
             Result.retry()
         }
+    }
+
+    private fun message(r: SyncResult) = when {
+        r.stopped -> "Paused, it goes on by itself."
+        r.failed.isNotEmpty() && r.uploaded == 0 && r.lastError.isNotEmpty() -> "Waiting for the NAS: ${r.lastError}"
+        r.failed.isNotEmpty() -> "${r.failed.size} could not be backed up yet: ${r.lastError}"
+        r.uploaded > 0 -> "${r.uploaded} backed up."
+        else -> "Everything is backed up."
     }
 
     private suspend fun silentlyDelete(gallery: Gallery, engine: SyncEngine, ids: Set<String>) {
