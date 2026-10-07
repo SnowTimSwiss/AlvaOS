@@ -15,6 +15,12 @@ How to add an entry:
 
 ---
 
+## 2026-10-07 · Version beta-v0.2.0
+
+- `VERSION` says `beta-v0.2.0`: the next release (NAS, installer and app)
+  is that one, and a NAS on beta-v0.1.0 sees it as an update. The NAS needs
+  it for the app's QR code (Phones and devices).
+
 ## 2026-10-07 · Phones: connect with a QR code, the whole Hub in the app, Phones and devices
 
 - Hub (`files_server.py`): sessions of the app's own ("devices": name,

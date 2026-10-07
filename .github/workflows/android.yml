@@ -25,7 +25,7 @@ on:
         type: boolean
         default: false
       release:
-        description: Add the app to this existing release too (its tag, e.g. beta-v0.1.0), or leave empty
+        description: Add the app to this existing release too (its tag, e.g. beta-v0.2.0), or leave empty
         type: string
         default: ''
 

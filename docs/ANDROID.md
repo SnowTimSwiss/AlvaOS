@@ -19,7 +19,7 @@ it; nothing needs Android Studio.
   added to that release afterwards (for a release made before the app).
 
 The app has the version of AlvaOS: the release's name, between releases the
-`VERSION` file (`beta-v0.1.0`). The version code Google Play needs is
+`VERSION` file (`beta-v0.2.0`). The version code Google Play needs is
 counted up by CI on its own (minutes since 2026); nobody needs to see it.
 
 ## Once: the upload key (5 minutes)
