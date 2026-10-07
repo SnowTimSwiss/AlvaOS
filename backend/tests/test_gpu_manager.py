@@ -161,7 +161,7 @@ def test_secure_boot_is_read_from_efi(tmp_path):
 def test_every_package_is_checked_against_debian_in_ci():
     listed = open(os.path.join(os.path.dirname(__file__), "../../scripts/ci/optional-packages.txt")).read().split()
     for packages in gm.PACKAGES.values():
-        assert set(packages) <= set(listed)
+        assert set(packages) - {gm.TOOLKIT} <= set(listed)   # the toolkit comes from NVIDIA's source
 
 
 def test_only_nvidias_signed_source_may_be_added():
