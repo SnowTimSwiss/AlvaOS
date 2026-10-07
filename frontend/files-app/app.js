@@ -371,12 +371,22 @@
             head.className = 'results-head';
             const here = path ? path.split('/').pop() : share;
             head.innerHTML = foundInfo.photos
-                ? `${icon('image').replace('<svg', '<svg width="16" height="16"')}<span>${found.length}${foundInfo.complete ? '' : '+'} photos and videos, newest first</span>
+                ? `${icon('image').replace('<svg', '<svg width="16" height="16"')}<span>${found.length}${foundInfo.complete ? '' : '+'} photos and videos${foundInfo.albums?.[foundInfo.album] ? ` in ${esc(foundInfo.albums[foundInfo.album].name)}` : ''}, newest first</span>
                 <button type="button" class="link" id="results-close">Back to the folder</button>`
                 : `${icon('search').replace('<svg', '<svg width="16" height="16"')}<span>${found.length}${foundInfo.complete ? '' : '+'} found for "${esc(foundInfo.q)}"${foundInfo.complete ? '' : ' · type more to narrow it down'}</span>
                 <span class="scope" role="group" aria-label="Where to search"><button type="button" data-scope="here" aria-pressed="${!searchAll}">In ${esc(here)}</button><button type="button" data-scope="all" aria-pressed="${searchAll}">All shared folders</button></span>
                 <button type="button" class="link" id="results-close">Back to the folder</button>`;
             items.prepend(head);
+            if (foundInfo.photos && foundInfo.albums?.length) {
+                const strip = document.createElement('div');
+                strip.className = 'albums';
+                strip.setAttribute('role', 'group');
+                strip.setAttribute('aria-label', 'Albums');
+                strip.innerHTML = `<button type="button" data-album="-1" aria-pressed="${foundInfo.album === -1}">All</button>`
+                    + foundInfo.albums.map((a, i) => `<button type="button" data-album="${i}" aria-pressed="${foundInfo.album === i}" title="${esc(`${a.phone} › ${a.name}`)}">${esc(a.name)}<small>${esc(a.phone)}</small></button>`).join('');
+                head.after(strip);
+                strip.querySelectorAll('[data-album]').forEach((b) => b.addEventListener('click', () => showAlbum(Number(b.dataset.album))));
+            }
             head.querySelector('#results-close').addEventListener('click', clearSearch);
             head.querySelectorAll('[data-scope]').forEach((b) => b.addEventListener('click', () => {
                 searchAll = b.dataset.scope === 'all';
@@ -927,18 +937,36 @@
         try {
             // Own photos and the photo libraries (chosen on the admin's Hub page), together.
             const { sources } = await api('photos/sources');
-            const parts = await Promise.all(sources.map((src) => api(`media?${new URLSearchParams({ share: src.share, path: src.path })}`)
-                .catch(() => ({ results: [], complete: true }))));   // e.g. a Photos folder not made yet
+            const [parts, phones] = await Promise.all([
+                Promise.all(sources.map((src) => api(`media?${new URLSearchParams({ share: src.share, path: src.path })}`)
+                    .catch(() => ({ results: [], complete: true })))),   // e.g. a Photos folder not made yet
+                api('photos/phones').catch(() => ({ phones: [] })),
+            ]);
             if (id !== searchId) return;
             // The date the photo was taken (from the photo itself) where known, else the file's.
-            found = parts.flatMap((p) => p.results || [])
+            const all = parts.flatMap((p) => p.results || [])
                 .sort((a, b) => shotAt(b).localeCompare(shotAt(a)));
-            foundInfo = { q: '', complete: parts.every((p) => p.complete), photos: true, sources };
+            // The albums the phones back up (Photos/<phone>/<album>), each one to open on its own.
+            const albums = (phones.phones || []).flatMap((ph) => (ph.albums || []).map((name) => ({
+                name, phone: ph.name, share: phones.share,
+                folder: [phones.folder, ph.folder, name].filter(Boolean).join('/'),
+            })));
+            found = all;
+            foundInfo = { q: '', complete: parts.every((p) => p.complete), photos: true, sources, all, albums, album: -1 };
             selected = new Set();
             render();
         } catch (err) {
             toast(err.message, 'error');
         }
+    }
+
+    function showAlbum(i) {
+        const a = foundInfo.albums[i];
+        foundInfo.album = a ? i : -1;
+        found = a ? foundInfo.all.filter((e) => sh(e) === a.share && (e.folder === a.folder || (e.folder || '').startsWith(`${a.folder}/`)))
+            : foundInfo.all;
+        selected = new Set();
+        render();
     }
 
     $('links-nav').addEventListener('click', async () => {
