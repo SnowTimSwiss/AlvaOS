@@ -71,31 +71,18 @@ jobs:
           sudo chown $USER:$USER checksums.txt
           cat checksums.txt
       
-      # Builds between releases go to the pre-release "installer-dev" (always
-      # the newest, one file), not to an artifact: an ISO alone nearly fills
-      # the account's artifact storage, release files do not count toward it.
-      # The NAS update check skips that tag (it is no AlvaOS version).
-      - name: Name the build between releases
+      # Builds between releases: kept with the run for two days only (an ISO
+      # is most of the account's artifact storage).
+      - name: Upload installer artifact (for non-release builds)
         if: github.event_name != 'release'
-        run: |
-          cd installer/build
-          sudo mv [Aa][Ll][Vv][Aa][Oo][Ss]-installer-*.iso alvaos-installer-dev.iso
-          sudo sha256sum alvaos-installer-dev.iso | sudo tee checksums.txt > /dev/null
-
-      - name: Upload installer to the installer-dev pre-release
-        if: github.event_name != 'release'
-        uses: softprops/action-gh-release@9d7c94cfd0a1f3ed45544c887983e9fa900f0564 # v2.0.4
+        continue-on-error: true
+        uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
         with:
-          tag_name: installer-dev
-          target_commitish: ${{ github.sha }}
-          name: AlvaOS installer (newest build, not a release)
-          body: "The newest installer built between releases, from ${{ github.ref_name }} at ${{ github.sha }} (version file: ${{ steps.version.outputs.version }}). For testing; real releases are the ones without \"pre-release\"."
-          prerelease: true
-          files: |
-            installer/build/alvaos-installer-dev.iso
+          name: alvaos-installer-${{ steps.version.outputs.version }}
+          path: |
+            installer/build/[Aa][Ll][Vv][Aa][Oo][Ss]-installer-*.iso
             installer/build/checksums.txt
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          retention-days: 2
 
       - name: Upload installer to release
         if: github.event_name == 'release'

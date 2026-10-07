@@ -5,7 +5,8 @@ plugins {
 
 // The version name is the one of AlvaOS (the VERSION file); the version code
 // counts up with every build CI makes (Google Play needs a bigger one each time).
-val alvaosVersion = rootDir.resolve("../VERSION").takeIf { it.exists() }?.readText()?.trim() ?: "dev"
+val alvaosVersion = System.getenv("ALVAOS_VERSION_NAME")
+    ?: rootDir.resolve("../VERSION").takeIf { it.exists() }?.readText()?.trim() ?: "dev"
 val buildNumber = System.getenv("ALVAOS_VERSION_CODE")?.toIntOrNull() ?: 1
 
 // The upload key for Google Play, only from the environment (CI secrets),

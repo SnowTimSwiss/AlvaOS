@@ -15,6 +15,21 @@ How to add an entry:
 
 ---
 
+## 2026-10-07 · One release for the OS and the app
+
+- The app no longer has a pre-release of its own (`android-beta` showed up
+  as a second release next to the OS one and is removed by the next run).
+  An AlvaOS release gets `alvaos-android.apk` (and `.aab` once the upload
+  key exists) next to the ISO and the .deb, and goes to Play's internal
+  testing when Play is set up. Between releases the APK is the run's
+  artifact (7 days, about 15 MB).
+- The app shows the release's name as its version (`ALVAOS_VERSION_NAME`),
+  between releases the `VERSION` file.
+- Installer builds between releases are an artifact again, kept two days
+  (no `installer-dev` release either).
+- Push builds of the app run only for branches, not for tags (the tag of a
+  release started one before, "from beta-v0.1.0").
+
 ## 2026-10-07 · App: deleting without asking, ready for Google Play; CI storage
 
 - Deleting what was deleted on the NAS needs no question any more once the

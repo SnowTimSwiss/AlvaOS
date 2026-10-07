@@ -17,4 +17,4 @@ Signing and Google Play: `docs/ANDROID.md`.
 
 Building the APK needs the Android SDK (`ANDROID_HOME` or `local.properties`);
 without it Gradle builds only `core`. GitHub builds it on every change to
-`android/` (workflow "Android app"; the newest APK is `alvaos-beta.apk` on the pre-release `android-beta`).
+`android/` (workflow "Android app": the APK of each push as the run's artifact; every AlvaOS release has `alvaos-android.apk` next to the ISO).
