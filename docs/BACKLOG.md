@@ -68,9 +68,13 @@ How to add an entry:
   the driver; a card whose driver already runs shows "Install what apps
   need" on Settings › Graphics. No restart for that.
 - If the card is gone later, the app starts without it and says why.
-- Note for next time: CI checks that `nvidia-container-toolkit` is in
-  Debian trixie (`optional-packages.txt`); if it is not, it needs NVIDIA's
-  own apt source, which the helper does not allow today.
+- `nvidia-container-toolkit` is not in Debian (CI showed it). It comes from
+  NVIDIA's own apt source: the helper allows exactly one more source file,
+  `/etc/apt/sources.list.d/alvaos-nvidia-container-toolkit.list`, with
+  exactly one line, `signed-by` the key AlvaOS ships in
+  `/opt/alvaos/keys/nvidia-container-toolkit.asc` (NVIDIA's key, fingerprint
+  C95B 321B 61E8 8C18 09C4 F759 DDCA E044 F796 ECB0). It is written only when
+  NVIDIA's driver is installed.
 
 ## 2026-10-07 · Calendar on phones and computers (CalDAV)
 

@@ -101,6 +101,10 @@ if [ -f "${REPO_ROOT}/keys/update-signing.pub" ]; then
 else
     log "WARNING: keys/update-signing.pub missing; installed systems will reject updates"
 fi
+# NVIDIA's apt key, for its container toolkit (backend/gpu_manager.py NVIDIA_SOURCE).
+mkdir -p "${PKG_DIR}/opt/alvaos/keys"
+cp "${REPO_ROOT}/keys/nvidia-container-toolkit.asc" "${PKG_DIR}/opt/alvaos/keys/nvidia-container-toolkit.asc"
+chmod 644 "${PKG_DIR}/opt/alvaos/keys/nvidia-container-toolkit.asc"
 
 # Copy frontend
 cp -r "${REPO_ROOT}/frontend/"* "${PKG_DIR}/opt/alvaos/webui/"

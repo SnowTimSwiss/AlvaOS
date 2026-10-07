@@ -7,7 +7,7 @@ intel-media-va-driver-non-free
 mesa-va-drivers
 vainfo
 nvidia-driver
-nvidia-container-toolkit
+# (nvidia-container-toolkit comes from NVIDIA's own apt source, not Debian.)
 linux-headers-amd64
 # Virtual machines, installed when they are set up (backend/vm_manager.py PACKAGES).
 qemu-system-x86

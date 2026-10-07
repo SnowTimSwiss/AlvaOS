@@ -960,9 +960,9 @@ FSTAB_EOF
         cp /opt/alvaos/backend/alvaos-priv /mnt/opt/alvaos/bin/alvaos-priv
         chmod 755 /mnt/opt/alvaos/bin/alvaos-priv
     fi
-    if [ -f "/opt/alvaos/keys/update-signing.pub" ]; then
+    if [ -d "/opt/alvaos/keys" ]; then
         mkdir -p /mnt/opt/alvaos/keys
-        cp /opt/alvaos/keys/update-signing.pub /mnt/opt/alvaos/keys/update-signing.pub
+        cp /opt/alvaos/keys/* /mnt/opt/alvaos/keys/
     fi
 
     # Copy scripts

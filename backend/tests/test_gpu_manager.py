@@ -4,6 +4,8 @@ import os
 import subprocess
 import time
 
+import pytest
+
 import gpu_manager as gm
 import priv_policy
 from fakes import FakeSystem
@@ -72,8 +74,13 @@ def test_installing_runs_apt_with_the_fixed_list_and_asks_for_a_restart(tmp_path
     sys_root, ids = machine(tmp_path)
     ran = []
 
-    def run(cmd, timeout=30, extra_env=None):
-        ran.append((cmd, extra_env))
+    written = []
+
+    def run(cmd, timeout=30, extra_env=None, input=None):
+        if cmd[0].endswith("/tee"):
+            written.append((cmd, input))
+        else:
+            ran.append((cmd, extra_env))
         return subprocess.CompletedProcess(cmd, 0, "ok", ""), None
 
     flag = tmp_path / "restart"
@@ -92,6 +99,10 @@ def test_installing_runs_apt_with_the_fixed_list_and_asks_for_a_restart(tmp_path
                               "nvidia-container-toolkit"]
     assert priv_policy.validate(ran[1][0], FakeSystem()).argv == ran[1][0]   # the helper runs it as is
     assert ran[1][1] == {"DEBIAN_FRONTEND": "noninteractive"}
+    # NVIDIA's own source first (the toolkit is not in Debian), exactly as the helper allows it.
+    [(tee, source)] = written
+    plan = priv_policy.validate(tee, FakeSystem())
+    plan.stdin_check(source.encode())
     assert flag.exists() and gpu.status()["restart_needed"]
     gpu.clear_after_boot(boot_time=time.time() - 3600)          # started before the install: still needed
     assert flag.exists()
@@ -104,8 +115,9 @@ def test_missing_headers_for_the_running_kernel_are_explained_not_retried(tmp_pa
     sys_root, ids = machine(tmp_path)
     ran = []
 
-    def run(cmd, timeout=30, extra_env=None):
-        ran.append(cmd)
+    def run(cmd, timeout=30, extra_env=None, input=None):
+        if not cmd[0].endswith("/tee"):
+            ran.append(cmd)
         return subprocess.CompletedProcess(cmd, 0, "ok", ""), None
 
     flag = tmp_path / "restart"
@@ -150,3 +162,15 @@ def test_every_package_is_checked_against_debian_in_ci():
     listed = open(os.path.join(os.path.dirname(__file__), "../../scripts/ci/optional-packages.txt")).read().split()
     for packages in gm.PACKAGES.values():
         assert set(packages) <= set(listed)
+
+
+def test_only_nvidias_signed_source_may_be_added():
+    check = priv_policy.CONFIG_CHECKS[priv_policy.NVIDIA_SOURCE_FILE]
+    check(gm.NVIDIA_SOURCE.encode())
+    for bad in ("deb [trusted=yes] https://nvidia.github.io/libnvidia-container/stable/deb/amd64 /\n",
+                "deb [signed-by=/tmp/k.asc] https://nvidia.github.io/libnvidia-container/stable/deb/amd64 /\n",
+                gm.NVIDIA_SOURCE + "deb http://evil.example/ /\n", ""):
+        with pytest.raises(priv_policy.PolicyError):
+            check(bad.encode())
+    key = open(os.path.join(os.path.dirname(__file__), "..", "..", "keys", "nvidia-container-toolkit.asc")).read()
+    assert key.startswith("-----BEGIN PGP PUBLIC KEY BLOCK-----")

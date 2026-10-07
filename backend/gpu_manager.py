@@ -35,6 +35,12 @@ PACKAGES: Dict[str, List[str]] = {
     'nvidia': ['linux-headers-amd64', 'nvidia-driver', 'firmware-misc-nonfree', 'nvidia-container-toolkit'],
 }
 TOOLKIT = 'nvidia-container-toolkit'
+# The toolkit is not in Debian: it comes from NVIDIA's own apt source, the
+# one the privilege helper allows, signed with the key AlvaOS ships.
+NVIDIA_SOURCE_FILE = '/etc/apt/sources.list.d/alvaos-nvidia-container-toolkit.list'
+NVIDIA_SOURCE = ('# NVIDIA container toolkit, for apps on NVIDIA cards (AlvaOS Settings › Graphics)\n'
+                 'deb [signed-by=/opt/alvaos/keys/nvidia-container-toolkit.asc] '
+                 'https://nvidia.github.io/libnvidia-container/stable/deb/amd64 /\n')
 # Kernel drivers that make a card usable, per vendor. nouveau runs NVIDIA
 # cards for a screen, but apps cannot use it to convert video or run models.
 GOOD_DRIVERS = {'intel': {'i915', 'xe'}, 'amd': {'amdgpu'}, 'nvidia': {'nvidia'}}
@@ -200,6 +206,10 @@ class GpuManager:
     def _install(self, vendor: str) -> None:
         error, log = '', []
         try:
+            if TOOLKIT in PACKAGES[vendor]:
+                res, err = self.run([CMD['TEE'], NVIDIA_SOURCE_FILE], timeout=30, input=NVIDIA_SOURCE)
+                if err or not res or res.returncode != 0:
+                    raise RuntimeError('NVIDIA\'s package source could not be added.')
             res, err = self.run([CMD['APT_GET'], 'update'], timeout=600)
             log.append((res.stdout if res else '') or '')
             packages = list(PACKAGES[vendor])
