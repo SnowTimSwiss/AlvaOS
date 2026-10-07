@@ -13,6 +13,8 @@ The app lives in `android/` (see `android/README.md`; what it does:
   between releases. No release entry.
 - **Actions › Android app › Run workflow**, with a track (internal, alpha,
   beta, production): builds and uploads to that track on Google Play.
+  With a release tag in "Add the app to this existing release", the app is
+  added to that release afterwards (for a release made before the app).
 
 The app has the version of AlvaOS: the release's name, between releases the
 `VERSION` file (`beta-v0.1.0`). The version code Google Play needs is

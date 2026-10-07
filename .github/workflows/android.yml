@@ -24,6 +24,10 @@ on:
         description: As a draft (needed while the app was never published on Play)
         type: boolean
         default: false
+      release:
+        description: Add the app to this existing release too (its tag, e.g. beta-v0.1.0), or leave empty
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -65,6 +69,7 @@ jobs:
       - name: Get the upload key
         env:
           KEYSTORE_BASE64: ${{ secrets.ALVAOS_KEYSTORE_BASE64 }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release }}
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
@@ -75,8 +80,8 @@ jobs:
           # A bigger number for every build (minutes since 2026), as Google Play wants.
           echo "ALVAOS_VERSION_CODE=$(( ($(date +%s) - 1767225600) / 60 ))" >> "$GITHUB_ENV"
           # A release shows its own name in the app (else the VERSION file).
-          if [ "${{ github.event_name }}" = release ]; then
-            echo "ALVAOS_VERSION_NAME=${{ github.event.release.tag_name }}" >> "$GITHUB_ENV"
+          if [ -n "$RELEASE_TAG" ]; then
+            echo "ALVAOS_VERSION_NAME=$RELEASE_TAG" >> "$GITHUB_ENV"
           fi
 
       - name: Build the app
@@ -107,10 +112,10 @@ jobs:
           retention-days: 7
 
       - name: Add the app to the release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.release != '')
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ github.event.release.tag_name || inputs.release }}
         run: |
           gh release upload "$TAG" out/* --clobber
 
