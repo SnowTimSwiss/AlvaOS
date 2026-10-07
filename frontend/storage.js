@@ -325,14 +325,11 @@ async function addDiskToPool(diskName) {
 
 function choosePool(pools) {
     return new Promise((resolve) => {
-        const overlay = document.createElement('div');
-        overlay.className = 'modal-overlay';
-        overlay.innerHTML = `
-            <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="choose-pool-title" style="max-width: 420px;">
-                <div class="modal-title" id="choose-pool-title">
-                    <span>Add to which pool?</span>
-                    <button type="button" class="modal-close-x" aria-label="Close">&times;</button>
-                </div>
+        let picked = null;
+        const dlg = openDialog({
+            title: 'Add to which pool?',
+            size: 'narrow',
+            body: `
                 <div class="choice-list">
                     ${pools.map((p, i) => `
                         <label class="choice">
@@ -340,22 +337,17 @@ function choosePool(pools) {
                             <div><strong>${escapeHtml(p.name)}</strong><span>${escapeHtml(p.used_size || '?')} used of ${escapeHtml(p.total_size || '?')}</span></div>
                         </label>
                     `).join('')}
-                </div>
-                <div class="modal-actions">
-                    <button type="button" class="btn-secondary" data-act="cancel">Cancel</button>
-                    <button type="button" class="btn-primary" data-act="ok">Continue</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(overlay);
-        const close = (value) => { overlay.remove(); resolve(value); };
-        overlay.querySelector('.modal-close-x').onclick = () => close(null);
-        overlay.querySelector('[data-act="cancel"]').onclick = () => close(null);
-        overlay.querySelector('[data-act="ok"]').onclick = () => {
-            const picked = overlay.querySelector('input[name="choose-pool"]:checked');
-            close(picked ? pools[Number(picked.value)] : null);
+                </div>`,
+            actions: `
+                <button type="button" class="btn-secondary" data-close>Cancel</button>
+                <button type="button" class="btn-primary" data-act="ok">Continue</button>`,
+            onClose: () => resolve(picked),
+        });
+        dlg.$('[data-act="ok"]').onclick = () => {
+            const input = dlg.$('input[name="choose-pool"]:checked');
+            picked = input ? pools[Number(input.value)] : null;
+            dlg.close();
         };
-        attachModalDismiss(overlay, () => close(null));
     });
 }
 
@@ -400,19 +392,13 @@ async function wipeDisk(diskName) {
 // View Disk Details (SMART)
 async function viewDiskDetails(diskName) {
     const token = localStorage.getItem('alvaos_token');
-
-    // Create modal immediately for loading state
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay';
-
-    const panel = document.createElement('div');
-    panel.className = 'modal-content';
-    panel.style.maxWidth = '800px';
-
-    panel.innerHTML = `<h2 style="color: var(--text-secondary); text-align: center;">Loading SMART data for ${escapeHtml(diskName)}...</h2>`;
-    modal.appendChild(panel);
-    document.body.appendChild(modal);
-    attachModalDismiss(modal, () => modal.remove());
+    const dlg = openDialog({
+        title: `Disk health: /dev/${escapeHtml(diskName)}`,
+        size: 'wide',
+        className: 'smart-dialog',
+        body: `<p class="smart-loading">Reading the disk's own health report…</p>`,
+        actions: '<button type="button" class="btn-secondary" data-close>Close</button>',
+    });
 
     try {
         const response = await apiFetch(`${API_BASE}/storage/disks/${diskName}/smart`, {
@@ -424,23 +410,11 @@ async function viewDiskDetails(diskName) {
 
         // Handle case where SMART is not supported but returned 200 (common for USB)
         if (data.error) {
-            panel.innerHTML = `
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-shrink: 0;">
-                    <h2 style="margin: 0; color: var(--text-primary);">Disk Health: /dev/${escapeHtml(diskName)}</h2>
-                    <button id="close-modal-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">${window.alvaIcon ? window.alvaIcon('x', '', 'aria-hidden="true"') : 'x'}</button>
-                </div>
-                <div style="overflow-y: auto; min-height: 0; flex: 1 1 auto;">
-                <div style="padding: 2rem; text-align: center; background: var(--bg-primary); border-radius: 8px; border-left: 4px solid var(--accent-warning);">
-                    <div style="font-size: 3rem; margin-bottom: 1rem;">${window.alvaIcon ? window.alvaIcon('info', '', 'aria-hidden="true"') : 'i'}</div>
-                    <h3 style="margin-bottom: 0.5rem;">SMART Monitoring Unavailable</h3>
-                    <p style="color: var(--text-secondary);">${escapeHtml(data.error)}</p>
-                </div>
-                </div>
-                <button id="close-btn" style="width: 100%; margin-top: 2rem; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--bg-border); padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600; flex-shrink: 0;">Close</button>
-             `;
-            const close = () => modal.remove();
-            panel.querySelector('#close-modal-btn').onclick = close;
-            panel.querySelector('#close-btn').onclick = close;
+            dlg.body.innerHTML = `
+                <div class="smart-note warn">
+                    <strong>This disk does not report its health</strong>
+                    <p>${escapeHtml(data.error)}</p>
+                </div>`;
             return;
         }
 
@@ -457,76 +431,34 @@ async function viewDiskDetails(diskName) {
 
         const attributes = data.ata_smart_attributes?.table || [];
 
-        panel.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-shrink: 0;">
-                <h2 style="margin: 0; color: var(--text-primary);">Disk Health: /dev/${escapeHtml(diskName)}</h2>
-                <button id="close-modal-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">${window.alvaIcon ? window.alvaIcon('x', '', 'aria-hidden="true"') : 'x'}</button>
+        dlg.body.innerHTML = `
+            <div class="smart-tiles">
+                <div style="border-bottom: 3px solid ${color};"><span>Status</span><strong style="color: ${color};">${escapeHtml(status)}</strong></div>
+                <div><span>Temperature</span><strong>${escapeHtml(temp)}&deg;C</strong></div>
+                <div><span>Power on</span><strong>${escapeHtml(hours)} hrs</strong></div>
             </div>
-
-            <div style="overflow-y: auto; min-height: 0; flex: 1 1 auto;">
-
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
-                <div style="background: var(--bg-primary); padding: 1rem; border-radius: 6px; text-align: center; border-bottom: 3px solid ${color};">
-                    <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase;">Status</div>
-                    <div style="font-size: 1.25rem; font-weight: 700; color: ${color};">${escapeHtml(status)}</div>
-                </div>
-                <div style="background: var(--bg-primary); padding: 1rem; border-radius: 6px; text-align: center;">
-                    <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase;">Temperature</div>
-                    <div style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary);">${escapeHtml(temp)}&deg;C</div>
-                </div>
-                <div style="background: var(--bg-primary); padding: 1rem; border-radius: 6px; text-align: center;">
-                    <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase;">Power On</div>
-                    <div style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary);">${escapeHtml(hours)} hrs</div>
-                </div>
-            </div>
-
             ${attributes.length > 0 ? `
-                <h3 style="font-size: 1rem; margin-bottom: 1rem; color: var(--text-primary);">Detailed Attributes</h3>
-                <div style="overflow-x: auto;">
-                    <table style="width: 100%; border-collapse: collapse; font-size: 0.875rem;">
-                        <thead>
-                            <tr style="text-align: left; border-bottom: 1px solid var(--bg-border);">
-                                <th style="padding: 0.75rem 0.5rem; color: var(--text-secondary);">ID</th>
-                                <th style="padding: 0.75rem 0.5rem; color: var(--text-secondary);">Attribute</th>
-                                <th style="padding: 0.75rem 0.5rem; color: var(--text-secondary); text-align: right;">Raw Value</th>
-                                <th style="padding: 0.75rem 0.5rem; color: var(--text-secondary); text-align: right;">Normalized</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${attributes.map(attr => `
-                                <tr style="border-bottom: 1px solid var(--bg-border);">
-                                    <td style="padding: 0.75rem 0.5rem; font-family: monospace;">${attr.id}</td>
-                                    <td style="padding: 0.75rem 0.5rem;">${escapeHtml(attr.name)}</td>
-                                    <td style="padding: 0.75rem 0.5rem; text-align: right; font-family: monospace;">${escapeHtml(attr.raw?.value)}</td>
-                                    <td style="padding: 0.75rem 0.5rem; text-align: right; font-family: monospace;">${escapeHtml(attr.value)}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            ` : `
-                <div style="padding: 1.5rem; background: var(--bg-primary); border-radius: 6px; text-align: center; color: var(--text-secondary);">
-                    No extended attribute table available for this device type.
-                </div>
-            `}
-
-            </div>
-
-            <button id="close-btn" style="width: 100%; margin-top: 2rem; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--bg-border); padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600; flex-shrink: 0;">
-                Close
-            </button>
-        `;
-
-        const close = () => modal.remove();
-        panel.querySelector('#close-modal-btn').onclick = close;
-        panel.querySelector('#close-btn').onclick = close;
-
+                <details class="smart-attrs">
+                    <summary>All attributes (${attributes.length})</summary>
+                    <div class="table-scroll">
+                        <table class="smart-table">
+                            <thead><tr><th>ID</th><th>Attribute</th><th class="num">Raw value</th><th class="num">Normalized</th></tr></thead>
+                            <tbody>
+                                ${attributes.map(attr => `
+                                    <tr>
+                                        <td class="mono-text">${escapeHtml(attr.id)}</td>
+                                        <td>${escapeHtml(attr.name)}</td>
+                                        <td class="num mono-text">${escapeHtml(attr.raw?.value)}</td>
+                                        <td class="num mono-text">${escapeHtml(attr.value)}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </details>
+            ` : '<p class="smart-note">No extended attribute table available for this device type.</p>'}`;
     } catch (error) {
-        panel.innerHTML = `<div style="text-align:center; padding: 2rem;">
-            <h2 style="color: var(--accent-danger);">Error</h2><p>${escapeHtml(error.message)}</p>
-            <button id="err-close" style="margin-top: 1rem; padding: 0.5rem 1rem; background: var(--accent-danger); color: white; border:none; border-radius:4px; cursor:pointer;">Close</button>
-        </div>`;
-        panel.querySelector('#err-close').onclick = () => modal.remove();
+        dlg.body.innerHTML = `<div class="smart-note warn"><strong>Could not read the health report</strong><p>${escapeHtml(error.message)}</p></div>`;
     }
 }
 
@@ -559,13 +491,9 @@ async function loadEmptyDisks() {
 
 function diskChoiceHtml(disk, className, checked) {
     return `
-        <label style="display: flex; align-items: center; padding: 0.5rem; cursor: pointer; border-radius: 4px;">
-            <input type="checkbox" value="${escapeHtml(disk.path)}" class="${className}" ${checked ? 'checked' : ''}
-                style="margin-right: 0.75rem; accent-color: var(--accent-primary);">
-            <div>
-                <div style="font-weight: 600;">${escapeHtml(diskTitle(disk))}</div>
-                <div style="font-size: 0.8rem; color: var(--text-secondary); font-family: var(--font-mono);">${escapeHtml(diskMeta(disk))}</div>
-            </div>
+        <label class="choice">
+            <input type="checkbox" value="${escapeHtml(disk.path)}" class="${className}" ${checked ? 'checked' : ''}>
+            <div><strong>${escapeHtml(diskTitle(disk))}</strong><span class="mono-text">${escapeHtml(diskMeta(disk))}</span></div>
         </label>
     `;
 }
@@ -577,66 +505,35 @@ async function showCreatePoolDialog(preselect = []) {
     const availableDisks = found.empty;
     const preselected = new Set(Array.isArray(preselect) ? preselect : []);
 
-    // Create modal
-    const modal = document.createElement('div');
-    modal.id = 'pool-wizard-modal';
-    modal.className = 'modal-overlay';
-
-    const wizard = document.createElement('div');
-    wizard.className = 'modal-content';
-    wizard.style.maxWidth = '600px';
-
-    wizard.innerHTML = `
-        <div class="modal-title">
-            <span>Create Storage Pool</span>
-            <button type="button" class="modal-close-x" id="close-pool-wizard-x" aria-label="Close">&times;</button>
-        </div>
-
-        <div style="overflow-y: auto; min-height: 0; flex: 1 1 auto;">
-
-        <div style="margin-bottom: 1.5rem;">
-            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Pool Name</label>
-            <input type="text" id="pool-name-input" placeholder="e.g., storage-pool" 
-                style="width: 100%; padding: 0.75rem;">
-            <div id="pool-name-error" style="color: var(--accent-danger); font-size: 0.8rem; margin-top: 4px; display: none;"></div>
-        </div>
-
-        <div style="margin-bottom: 1.5rem;">
-            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Select Disks</label>
-            <div id="disk-selection" style="max-height: 240px; overflow-y: auto; border: 1px solid var(--bg-border); border-radius: 4px; padding: 0.5rem;">
-                ${availableDisks.map((disk) => diskChoiceHtml(disk, 'disk-checkbox', preselected.has(disk.path))).join('')}
+    const dlg = openDialog({
+        title: 'Create a storage pool',
+        size: 'wide',
+        body: `
+            <label class="form-field">
+                <span class="field-label">Pool name</span>
+                <input type="text" id="pool-name-input" placeholder="e.g. main" autocomplete="off">
+                <div id="pool-name-error" class="field-error" style="display: none;"></div>
+            </label>
+            <div class="form-field">
+                <span class="field-label">Disks</span>
+                <div id="disk-selection" class="disk-pick">
+                    ${availableDisks.map((disk) => diskChoiceHtml(disk, 'disk-checkbox', preselected.has(disk.path))).join('')}
+                </div>
+                <div class="field-hint">
+                    Selected: <span id="selected-count">${availableDisks.filter((d) => preselected.has(d.path)).length}</span> disk(s).
+                    Only empty disks are listed${found.withData ? `; ${found.withData} disk(s) with old data can be erased on the Disks tab` : ''}.
+                </div>
             </div>
-            <p style="font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.5rem;">
-                Selected: <span id="selected-count">${availableDisks.filter((d) => preselected.has(d.path)).length}</span> disk(s).
-                Only empty disks are listed${found.withData ? `; ${found.withData} disk(s) with old data can be erased on the Disks tab` : ''}.
-            </p>
-        </div>
-
-        <div style="margin-bottom: 1.5rem;">
-            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">RAID Level</label>
-            <select id="raid-level-select" 
-                style="width: 100%; padding: 0.75rem;">
-            </select>
-            <p style="font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.5rem;" id="raid-description">
-            </p>
-        </div>
-
-        </div>
-
-        <div style="display: flex; gap: 0.75rem; margin-top: 2rem; flex-shrink: 0;">
-            <button id="cancel-pool-btn"
-                style="flex: 1; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--bg-border); padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600;">
-                Cancel
-            </button>
-            <button id="create-pool-confirm-btn" disabled
-                style="flex: 1; background: var(--accent-primary); color: white; border: none; padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600; opacity: 0.55;">
-                Create Pool
-            </button>
-        </div>
-    `;
-
-    modal.appendChild(wizard);
-    document.body.appendChild(modal);
+            <label class="form-field">
+                <span class="field-label">Protection</span>
+                <select id="raid-level-select"></select>
+                <div class="field-hint" id="raid-description"></div>
+            </label>`,
+        actions: `
+            <button type="button" class="btn-secondary" data-close>Cancel</button>
+            <button type="button" class="btn-primary" id="create-pool-confirm-btn" disabled>Create pool</button>`,
+    });
+    const wizard = dlg.dialog;
 
     const poolNameInput = wizard.querySelector('#pool-name-input');
     const poolNameError = wizard.querySelector('#pool-name-error');
@@ -725,7 +622,6 @@ async function showCreatePoolDialog(preselect = []) {
         if (raidLevel === 'raid10' && selectedDisksCount < 4) isValid = false;
 
         createBtn.disabled = !isValid;
-        createBtn.style.opacity = isValid ? '1' : '0.55';
     };
 
     checkboxes.forEach(cb => {
@@ -747,13 +643,6 @@ async function showCreatePoolDialog(preselect = []) {
     updateRaidOptions();
     validateForm();
 
-    // Cancel button
-    wizard.querySelector('#cancel-pool-btn').addEventListener('click', () => {
-        modal.remove();
-    });
-    wizard.querySelector('#close-pool-wizard-x').addEventListener('click', () => modal.remove());
-    attachModalDismiss(modal, () => modal.remove());
-
     // Create button
     createBtn.addEventListener('click', async () => {
         const poolName = poolNameInput.value.trim();
@@ -774,8 +663,7 @@ async function showCreatePoolDialog(preselect = []) {
 
         try {
             createBtn.disabled = true;
-            createBtn.textContent = 'Creating Pool...';
-            createBtn.style.opacity = '0.7';
+            createBtn.textContent = 'Creating pool…';
 
             const response = await apiFetch(`${API_BASE}/storage/pools`, {
                 method: 'POST',
@@ -797,13 +685,12 @@ async function showCreatePoolDialog(preselect = []) {
             }
 
             showSuccess(result.message);
-            modal.remove();
+            dlg.close();
             showStorageTab('pools');
         } catch (error) {
             showError(error.message);
             createBtn.disabled = false;
-            createBtn.textContent = 'Create Pool';
-            createBtn.style.opacity = '1';
+            createBtn.textContent = 'Create pool';
         }
     });
 }
@@ -816,38 +703,18 @@ async function showExpandPoolDialog(poolId, poolName, preselect = []) {
     const availableDisks = found.empty;
     const preselected = new Set(Array.isArray(preselect) ? preselect : []);
 
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay';
-
-    const dialog = document.createElement('div');
-    dialog.className = 'modal-content';
-    dialog.style.maxWidth = '500px';
-
-    dialog.innerHTML = `
-        <div class="modal-title">
-            <span>Expand Pool: ${escapeHtml(poolName)}</span>
-            <button type="button" class="modal-close-x" id="close-expand-pool-x" aria-label="Close">&times;</button>
-        </div>
-        <p style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 1.5rem;">
-            Select one or more disks to add to this pool. Btrfs will immediately increase the total capacity.
-        </p>
-
-        <div style="max-height: 200px; overflow-y: auto; border: 1px solid var(--bg-border); border-radius: 4px; padding: 0.5rem; margin-bottom: 1.5rem;">
-            ${availableDisks.map((disk) => diskChoiceHtml(disk, 'expand-disk-checkbox', preselected.has(disk.path))).join('')}
-        </div>
-        
-        <div style="display: flex; gap: 0.75rem;">
-            <button id="cancel-expand-btn" style="flex: 1; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--bg-border); padding: 0.75rem; border-radius: 4px; cursor: pointer;">Cancel</button>
-            <button id="confirm-expand-btn" style="flex: 1; background: var(--accent-primary); color: white; border: none; padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 600;">Add Disks</button>
-        </div>
-    `;
-
-    modal.appendChild(dialog);
-    document.body.appendChild(modal);
-
-    dialog.querySelector('#cancel-expand-btn').onclick = () => modal.remove();
-    dialog.querySelector('#close-expand-pool-x').onclick = () => modal.remove();
-    attachModalDismiss(modal, () => modal.remove());
+    const dlg = openDialog({
+        title: `Add disks to “${escapeHtml(poolName)}”`,
+        body: `
+            <p style="margin-top: 0;">The pool grows by the space of the disks you add, right away.</p>
+            <div class="disk-pick">
+                ${availableDisks.map((disk) => diskChoiceHtml(disk, 'expand-disk-checkbox', preselected.has(disk.path))).join('')}
+            </div>`,
+        actions: `
+            <button type="button" class="btn-secondary" data-close>Cancel</button>
+            <button type="button" class="btn-primary" id="confirm-expand-btn">Add disks</button>`,
+    });
+    const dialog = dlg.dialog;
     dialog.querySelector('#confirm-expand-btn').onclick = async () => {
         const selectedDisks = Array.from(dialog.querySelectorAll('.expand-disk-checkbox:checked')).map(cb => cb.value);
 
@@ -881,7 +748,7 @@ async function showExpandPoolDialog(poolId, poolName, preselect = []) {
             if (!response.ok) throw new Error(result.error || 'Failed to expand pool');
 
             showNotification(result.message, 'success');
-            modal.remove();
+            dlg.close();
             if (document.getElementById('tab-pools').classList.contains('active')) loadPools();
             else showStorageTab('pools');
         } catch (error) {
@@ -894,46 +761,36 @@ async function showExpandPoolDialog(poolId, poolName, preselect = []) {
 // pool can be imported again; erasing the disks is an explicit second choice.
 function askHowToRemovePool(poolName) {
     return new Promise((resolve) => {
-        const overlay = document.createElement('div');
-        overlay.className = 'modal-overlay';
-        overlay.innerHTML = `
-            <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="remove-pool-title" style="max-width: 480px;">
-                <div class="modal-title" id="remove-pool-title">
-                    <span>Remove pool “${escapeHtml(poolName)}”?</span>
-                    <button type="button" class="modal-close-x" aria-label="Close">&times;</button>
-                </div>
-                <div class="modal-body" style="text-align: left;">
-                    The pool is unmounted and disappears from AlvaOS. Shares on it must be deleted first, and apps using it must be stopped.
-                    <div class="choice-list">
-                        <label class="choice">
-                            <input type="radio" name="remove-pool-mode" value="keep" checked>
-                            <div><strong>Keep the data</strong><span>The files stay on the disks. You can import the pool again at any time, here or on another AlvaOS.</span></div>
-                        </label>
-                        <label class="choice">
-                            <input type="radio" name="remove-pool-mode" value="erase">
-                            <div><strong>Erase the disks</strong><span>Every file in the pool is deleted for good, and the disks become empty for a new pool.</span></div>
-                        </label>
-                    </div>
-                </div>
-                <div class="modal-actions">
-                    <button type="button" class="btn-secondary" data-act="cancel">Cancel</button>
-                    <button type="button" class="btn-primary" data-act="ok">Remove pool</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(overlay);
-        const okBtn = overlay.querySelector('[data-act="ok"]');
-        const sync = () => {
-            const erase = overlay.querySelector('input[value="erase"]').checked;
-            okBtn.textContent = erase ? 'Remove and erase' : 'Remove pool';
-            okBtn.style.background = erase ? 'var(--accent-danger)' : '';
+        let result = null;
+        const dlg = openDialog({
+            title: `Remove pool “${escapeHtml(poolName)}”?`,
+            body: `
+                The pool is unmounted and disappears from AlvaOS. Shares on it must be deleted first, and apps using it must be stopped.
+                <div class="choice-list">
+                    <label class="choice">
+                        <input type="radio" name="remove-pool-mode" value="keep" checked>
+                        <div><strong>Keep the data</strong><span>The files stay on the disks. You can import the pool again at any time, here or on another AlvaOS.</span></div>
+                    </label>
+                    <label class="choice">
+                        <input type="radio" name="remove-pool-mode" value="erase">
+                        <div><strong>Erase the disks</strong><span>Every file in the pool is deleted for good, and the disks become empty for a new pool.</span></div>
+                    </label>
+                </div>`,
+            actions: `
+                <button type="button" class="btn-secondary" data-close>Cancel</button>
+                <button type="button" class="btn-primary" data-act="ok">Remove pool</button>`,
+            onClose: () => resolve(result),
+        });
+        const okBtn = dlg.$('[data-act="ok"]');
+        const erasing = () => dlg.$('input[value="erase"]').checked;
+        dlg.$$('input[name="remove-pool-mode"]').forEach((el) => el.addEventListener('change', () => {
+            okBtn.textContent = erasing() ? 'Remove and erase' : 'Remove pool';
+            okBtn.classList.toggle('btn-danger', erasing());
+        }));
+        okBtn.onclick = () => {
+            result = erasing() ? 'erase' : 'keep';
+            dlg.close();
         };
-        overlay.querySelectorAll('input[name="remove-pool-mode"]').forEach((el) => el.addEventListener('change', sync));
-        const close = (value) => { overlay.remove(); resolve(value); };
-        overlay.querySelector('.modal-close-x').onclick = () => close(null);
-        overlay.querySelector('[data-act="cancel"]').onclick = () => close(null);
-        okBtn.onclick = () => close(overlay.querySelector('input[value="erase"]').checked ? 'erase' : 'keep');
-        attachModalDismiss(overlay, () => close(null));
     });
 }
 
@@ -974,6 +831,8 @@ async function deletePool(poolId, poolName) {
 }
 
 // Manage Subvolumes
+let subvolumeDialog = null;
+
 async function manageSubvolumes(poolId) {
     const token = localStorage.getItem('alvaos_token');
     const response = await apiFetch(`${API_BASE}/storage/pools/${poolId}/subvolumes`, {
@@ -988,80 +847,27 @@ async function manageSubvolumes(poolId) {
     const data = await response.json();
     const subvolumes = data.subvolumes || [];
 
-    const modal = document.createElement('div');
-    modal.id = 'subvolume-modal';
-    modal.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: var(--scrim);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 10000;
-    `;
-
-    const panel = document.createElement('div');
-    panel.style.cssText = `
-        background: var(--bg-surface);
-        border: 1px solid var(--border-hover);
-        border-radius: 8px;
-        padding: 2rem;
-        max-width: 600px;
-        width: 90%;
-        max-height: min(80vh, 640px);
-        display: flex;
-        flex-direction: column;
-    `;
-
-    panel.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-shrink: 0;">
-            <h2 style="margin: 0; color: var(--text-primary);">Manage Subvolumes</h2>
-            <button id="close-subvol-btn" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">${window.alvaIcon ? window.alvaIcon('x', '', 'aria-hidden="true"') : 'x'}</button>
-        </div>
-
-        <div style="overflow-y: auto; min-height: 0; flex: 1 1 auto;">
-
-        <div style="margin-bottom: 1.5rem;">
-            <div style="display: flex; gap: 0.5rem;">
-                <input type="text" id="new-subvol-name" placeholder="Subvolume name"
-                    style="flex: 1; padding: 0.75rem;">
-                <button id="create-subvol-btn"
-                    style="background: var(--accent-primary); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; cursor: pointer; font-weight: 600;">
-                    Create
-                </button>
-            </div>
-        </div>
-
-        <div id="subvolumes-list">
-            ${subvolumes.length === 0 ?
-            '<p style="text-align: center; color: var(--text-secondary);">No subvolumes yet</p>' :
-            subvolumes.map(sv => `
-                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; border: 1px solid var(--bg-border); border-radius: 4px; margin-bottom: 0.5rem;">
-                        <div>
-                            <div style="font-weight: 600;">${escapeHtml(sv.name)}</div>
-                            <div style="font-size: 0.875rem; color: var(--text-secondary); font-family: var(--font-mono);">${escapeHtml(sv.path)}</div>
-                        </div>
-                        <button onclick="deleteSubvolume('${jsArg(poolId)}', '${jsArg(sv.name)}')"
-                            style="background: var(--accent-danger); color: white; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; font-size: 0.875rem;">
-                            Delete
-                        </button>
-                    </div>
-                `).join('')
-        }
-        </div>
-
-        </div>
-    `;
-
-    modal.appendChild(panel);
-    document.body.appendChild(modal);
-
-    panel.querySelector('#close-subvol-btn').addEventListener('click', () => {
-        modal.remove();
+    subvolumeDialog?.close();
+    const dlg = openDialog({
+        title: 'Manage folders',
+        size: 'wide',
+        onClose: () => { if (subvolumeDialog === dlg) subvolumeDialog = null; },
+        body: `
+            <form class="subvol-new" onsubmit="return false">
+                <input type="text" id="new-subvol-name" placeholder="New folder name" aria-label="New folder name" autocomplete="off">
+                <button type="submit" class="btn-primary" id="create-subvol-btn">Create</button>
+            </form>
+            <div id="subvolumes-list" class="subvol-list">
+                ${subvolumes.length === 0 ? '<p class="field-hint">No folders yet.</p>' : subvolumes.map(sv => `
+                    <div class="subvol-row">
+                        <div><strong>${escapeHtml(sv.name)}</strong><span class="mono-text">${escapeHtml(sv.path)}</span></div>
+                        <button type="button" class="btn-danger-quiet" onclick="deleteSubvolume('${jsArg(poolId)}', '${jsArg(sv.name)}')">Delete</button>
+                    </div>`).join('')}
+            </div>`,
+        actions: '<button type="button" class="btn-secondary" data-close>Close</button>',
     });
+    subvolumeDialog = dlg;
+    const panel = dlg.dialog;
 
     panel.querySelector('#create-subvol-btn').addEventListener('click', async () => {
         const name = panel.querySelector('#new-subvol-name').value.trim();
@@ -1088,7 +894,6 @@ async function manageSubvolumes(poolId) {
             }
 
             showSuccess(result.message);
-            modal.remove();
             manageSubvolumes(poolId);
         } catch (error) {
             showError(`Error: ${error.message}`);
@@ -1128,11 +933,7 @@ async function deleteSubvolume(poolId, subvolName) {
 
         showSuccess(result.message);
 
-        const modal = document.getElementById('subvolume-modal');
-        if (modal) {
-            modal.remove();
-            manageSubvolumes(poolId);
-        }
+        if (subvolumeDialog) manageSubvolumes(poolId);
     } catch (error) {
         showError(`Error: ${error.message}`);
     }

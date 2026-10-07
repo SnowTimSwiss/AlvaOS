@@ -287,8 +287,9 @@ def me():
     shares = sorted(({'name': s['name'], 'access': s['access']} for s in shares_for(session).values()),
                     key=lambda s: s['name'].lower()) if files_on else []
     nas = socket.gethostname().split('.')[0]
+    store = hub_apps.store_tiles(session['user'], session['role'], settings)
     return jsonify({'user': session['user'], 'role': session['role'], 'shares': shares,
-                    'nas_name': nas, 'hub': {'name': hub_apps.NAME, 'apps': apps}})
+                    'nas_name': nas, 'hub': {'name': hub_apps.NAME, 'apps': apps, 'store': store}})
 
 
 # ── Browsing and files ───────────────────────────────────────────────────────

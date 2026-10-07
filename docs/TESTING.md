@@ -199,6 +199,27 @@ storage healthy, one shared folder.
    back / replace it in Storage.
 3. Settings › Power: disk sleep; restart and shut down from the web page.
 
+## 11b. UPS (only with a real UPS on USB)
+
+1. Connect the UPS by USB. Settings › Power › Battery backup › UPS names it
+   (for example "American Power Conversion Back-UPS ..."). "Set up", keep
+   "When the battery runs low": after a minute or two the row reads
+   "On mains · 100% · about N min".
+2. Pull the UPS's plug from the wall: within 30 seconds the bell says "The
+   power failed" and the row turns red "On battery". Plug it back in: "The
+   power is back".
+3. Change to "After 2 minutes on battery", pull the plug and wait: the bell
+   says "Shutting down", the NAS shuts down cleanly, the UPS switches its
+   outlets off a little later. Plug it back in: with "Restore on AC power
+   loss: Power on" in the BIOS the NAS starts by itself, and the pools,
+   shares and apps come back.
+4. Unplug the USB cable: after a minute the alerts say "The UPS does not
+   answer". Plug it back.
+5. "Change" › "Turn off": the row offers "Set up" again and nothing shuts
+   down in a power cut.
+6. Note the UPS model and whether it worked; models that need another
+   driver than usbhid-ups or nutdrv_qx are worth an issue.
+
 ## 12. Graphics card (only with a real card)
 
 1. Settings › Graphics lists the card with its model and driver.

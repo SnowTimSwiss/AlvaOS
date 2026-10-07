@@ -146,6 +146,60 @@
             change(id, { people: chosen }, '');
         }));
         bindModels();
+        renderStore();
+    }
+
+    // Apps from the App Store: a tile in the Hub opens them (their own page,
+    // port and sign-in). Off until shown here.
+    function renderStore() {
+        const box = $('hub-store-list');
+        if (!box) return;
+        const apps = state.store_apps || [];
+        $('hub-store').hidden = !state.enabled;
+        if (!apps.length) {
+            box.innerHTML = '<p class="hub-st-note">No installed app has a page to open yet. Apps from the <a href="apps.html">App Store</a> show up here.</p>';
+            return;
+        }
+        const people = state.people || [];
+        box.innerHTML = apps.map((app) => {
+            const some = Array.isArray(app.people);
+            return `
+            <div class="hub-app">
+                <span class="hub-app-ic hub-letter" aria-hidden="true">${esc(app.name.charAt(0).toUpperCase())}</span>
+                <div>
+                    <strong>${esc(app.name)}</strong>
+                    <div class="hub-desc">Opens ${esc(window.location.hostname)}:${esc(app.port)}${esc(app.path === '/' ? '' : app.path)} in a new tab, with its own sign-in.</div>
+                    ${app.shown ? `<div class="hub-who"><label>Who sees it
+                        <select data-store-who="${esc(app.id)}" aria-label="Who sees ${esc(app.name)}">
+                            <option value="all"${some ? '' : ' selected'}>Everyone</option>
+                            <option value="some"${some ? ' selected' : ''}${people.length ? '' : ' disabled'}>Only some people</option>
+                        </select></label>
+                        ${some ? `<div class="hub-people" role="group" aria-label="People who see ${esc(app.name)}">${people.map((p) => `
+                            <label><input type="checkbox" data-store-person="${esc(app.id)}" value="${esc(p)}"${app.people.includes(p) ? ' checked' : ''}> ${esc(p)}</label>`).join('')}</div>` : ''}
+                    </div>` : ''}
+                </div>
+                <label class="toggle" title="${app.shown ? 'Shown' : 'Not shown'}"><input type="checkbox" data-store="${esc(app.id)}"${app.shown ? ' checked' : ''} aria-label="${esc(app.name)} in the Hub"><span class="toggle-slider"></span></label>
+            </div>`;
+        }).join('');
+        const names = Object.fromEntries(apps.map((a) => [a.id, a.name]));
+        const changeStore = (id, body, message) => post({ store: { [id]: body } }, message);
+        box.querySelectorAll('[data-store]').forEach((b) => b.addEventListener('change', () =>
+            changeStore(b.dataset.store, { shown: b.checked }, `${names[b.dataset.store]} is ${b.checked ? 'now' : 'no longer'} a tile in the Hub.`)));
+        box.querySelectorAll('[data-store-who]').forEach((sel) => sel.addEventListener('change', () => {
+            const id = sel.dataset.storeWho;
+            changeStore(id, { people: sel.value === 'all' ? null : [...people] },
+                sel.value === 'all' ? `Everyone sees ${names[id]}.` : `Untick who should not see ${names[id]}.`);
+        }));
+        box.querySelectorAll('[data-store-person]').forEach((b) => b.addEventListener('change', () => {
+            const id = b.dataset.storePerson;
+            const chosen = [...box.querySelectorAll(`[data-store-person="${id}"]:checked`)].map((x) => x.value);
+            if (!chosen.length) {
+                b.checked = true;
+                window.showToast('Leave at least one person, or choose everyone.', 'info');
+                return;
+            }
+            changeStore(id, { people: chosen }, '');
+        }));
     }
 
     const poolOptions = (chosen) => (state.pools || []).map((p) =>

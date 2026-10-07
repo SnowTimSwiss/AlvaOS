@@ -22,6 +22,9 @@
         search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
         grid: '<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>',
         list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+        apps: '<rect width="7" height="7" x="3" y="3" rx="1.5"/><rect width="7" height="7" x="14" y="3" rx="1.5"/><rect width="7" height="7" x="3" y="14" rx="1.5"/><path d="M17.5 14v7M14 17.5h7"/>',
+        sort: '<path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/>',
+        check: '<path d="M20 6 9 17l-5-5"/>',
         plus: '<path d="M5 12h14M12 5v14"/>',
         upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/>',
         'folder-plus': '<path d="M12 10v6M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
@@ -110,6 +113,9 @@
     let anchor = -1;
     let view = 'grid';
     try { view = localStorage.getItem('alvaos_files_view') || 'grid'; } catch (_e) { /* storage off */ }
+    // How a folder is sorted: name, modified, size or type; folders stay first.
+    let sortBy = 'name:asc';
+    try { sortBy = localStorage.getItem('alvaos_files_sort') || 'name:asc'; } catch (_e) { /* storage off */ }
     let loadId = 0;
     let found = null;       // search results below the folder, or null
     let foundInfo = { q: '', complete: true };
@@ -231,10 +237,37 @@
         }
     }
 
+    const byName = (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+    const extOf = (e) => (e.type === 'folder' || !e.name.includes('.') ? '' : e.name.split('.').pop().toLowerCase());
+    function compare(a, b) {
+        const [key, dir] = sortBy.split(':');
+        const sign = dir === 'desc' ? -1 : 1;
+        const folders = (a.type === 'folder' ? 0 : 1) - (b.type === 'folder' ? 0 : 1);
+        if (folders) return folders;
+        let d = 0;
+        if (key === 'modified') d = String(a.modified_at || '').localeCompare(String(b.modified_at || ''));
+        else if (key === 'size') d = (Number(a.size_bytes) || 0) - (Number(b.size_bytes) || 0);
+        else if (key === 'type') d = extOf(a).localeCompare(extOf(b)) || kindOf(a).localeCompare(kindOf(b));
+        else d = byName(a, b);
+        return sign * d || byName(a, b);
+    }
+    function setSort(value) {
+        sortBy = value;
+        try { localStorage.setItem('alvaos_files_sort', value); } catch (_e) { /* off */ }
+        render();
+    }
+    const SORT_HEADS = { name: ['name:asc', 'name:desc'], size: ['size:desc', 'size:asc'], modified: ['modified:desc', 'modified:asc'] };
+    function headCell(key, label, extra = '') {
+        const [key0, dir] = sortBy.split(':');
+        const on = key0 === key;
+        const next = on && sortBy === SORT_HEADS[key][0] ? SORT_HEADS[key][1] : SORT_HEADS[key][0];
+        return `<button type="button" class="hsort${on ? ' on' : ''}" data-sort="${next}"${extra} aria-label="Sort by ${label.toLowerCase()}">${label}${on ? `<span aria-hidden="true">${dir === 'desc' ? ' ↓' : ' ↑'}</span>` : ''}</button>`;
+    }
+
     function render() {
         const q = found ? '' : $('search').value.trim().toLowerCase();
         shown = found ? found.slice() : entries.filter((e) => !q || e.name.toLowerCase().includes(q));
-        if (!found) shown.sort((a, b) => (a.type === 'folder' ? 0 : 1) - (b.type === 'folder' ? 0 : 1) || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+        if (!found) shown.sort(compare);
         const items = $('items');
         items.className = `items ${view}`;
         $('new-btn').hidden = access() !== 'write';
@@ -276,7 +309,9 @@
                     <button type="button" class="more" data-more="${i}" aria-label="More for ${esc(e.name)}">${icon('more')}</button></div>`;
             }).join('');
         } else {
-            items.innerHTML = `<div class="head"><span></span><span>Name</span><span style="text-align:right">Size</span><span>Modified</span><span></span></div>` + shown.map((e, i) => {
+            const heads = found ? '<span>Name</span><span style="text-align:right">Size</span><span>Modified</span>'
+                : `${headCell('name', 'Name')}${headCell('size', 'Size', ' style="justify-content:flex-end"')}${headCell('modified', 'Modified')}`;
+            items.innerHTML = `<div class="head"><span></span>${heads}<span></span></div>` + shown.map((e, i) => {
                 const k = kindOf(e);
                 const lead = THUMB.test(e.name)
                     ? `<img class="rthumb" loading="lazy" alt="" src="/api/thumb?share=${encodeURIComponent(sh(e))}&path=${encodeURIComponent(rel(e))}&v=${encodeURIComponent(e.modified_at || '')}" data-fallback="${k}">`
@@ -471,8 +506,17 @@
         menu.style.top = `${Math.max(8, Math.min(y, innerHeight - h - 8))}px`;
         menu.querySelector('button')?.focus();
     }
-    const hideMenus = () => { $('ctx').hidden = true; $('new-menu').hidden = true; };
-    document.addEventListener('click', (e) => { if (!e.target.closest('.menu') && !e.target.closest('#new-btn')) hideMenus(); });
+    const hideMenus = () => {
+        $('ctx').hidden = true;
+        $('new-menu').hidden = true;
+        $('sort-menu').hidden = true;
+        $('sort-btn').setAttribute('aria-expanded', 'false');
+        if ($('store-menu')) {
+            $('store-menu').hidden = true;
+            $('rail-store').setAttribute('aria-expanded', 'false');
+        }
+    };
+    document.addEventListener('click', (e) => { if (!e.target.closest('.menu') && !e.target.closest('#new-btn') && !e.target.closest('#sort-btn')) hideMenus(); });
     $('ctx').addEventListener('click', (e) => {
         const b = e.target.closest('[data-ctx]');
         if (!b) return;
@@ -508,6 +552,31 @@
     $('sel-download').addEventListener('click', () => action('download'));
     $('sel-rename').addEventListener('click', () => action('rename'));
     $('sel-delete').addEventListener('click', () => action('delete'));
+    $('sort-btn').addEventListener('click', () => {
+        const menu = $('sort-menu');
+        const opening = menu.hidden;
+        hideMenus();
+        if (!opening) return;
+        menu.querySelectorAll('[data-sort]').forEach((b) => {
+            const on = b.dataset.sort === sortBy;
+            b.setAttribute('aria-checked', on);
+            b.innerHTML = `<span class="mark">${on ? icon('check') : ''}</span>${b.textContent}`;
+        });
+        menu.hidden = false;
+        $('sort-btn').setAttribute('aria-expanded', 'true');
+        (menu.querySelector('[aria-checked="true"]') || menu.querySelector('button')).focus();
+    });
+    $('sort-menu').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-sort]');
+        if (!b) return;
+        hideMenus();
+        setSort(b.dataset.sort);
+        $('sort-btn').focus();
+    });
+    $('items').addEventListener('click', (e) => {
+        const b = e.target.closest('.hsort');
+        if (b) setSort(b.dataset.sort);
+    });
     $('view-grid').addEventListener('click', () => setView('grid'));
     $('view-list').addEventListener('click', () => setView('list'));
     function setView(v) { view = v; try { localStorage.setItem('alvaos_files_view', v); } catch (_e) { /* off */ } render(); }
@@ -1116,19 +1185,42 @@
     let hubApps = [];
     function renderRail() {
         hubApps = (me.hub && me.hub.apps) || [];
+        const store = (me.hub && me.hub.store) || [];
         const rail = $('rail');
-        if (hubApps.length < 2) {
+        if (hubApps.length < 2 && !store.length) {
             rail.hidden = true;
             $('app').classList.remove('with-rail');
             return;
         }
         rail.innerHTML = `<img class="rail-logo" src="hub.svg" alt="" title="${esc((me.hub && me.hub.name) || 'AlvaOS Hub')}">`
-            + hubApps.map((a) => `<button type="button" class="rail-app" data-app="${esc(a.id)}">${icon(a.icon)}<span>${esc(a.name)}</span></button>`).join('');
+            + hubApps.map((a) => `<button type="button" class="rail-app" data-app="${esc(a.id)}">${icon(a.icon)}<span>${esc(a.name)}</span></button>`).join('')
+            + (store.length ? `<span class="rail-gap" aria-hidden="true"></span><button type="button" class="rail-app" id="rail-store" aria-haspopup="menu" aria-expanded="false">${icon('apps')}<span>Apps</span></button>
+                <div class="menu store-menu" id="store-menu" hidden role="menu" aria-label="Apps">${store.map((a) => `
+                    <a role="menuitem" href="${esc(storeUrl(a))}" target="_blank" rel="noopener"><span class="store-letter" aria-hidden="true">${esc(a.name.charAt(0).toUpperCase())}</span><span class="store-name">${esc(a.name)}<small>${esc(storeUrl(a).replace(/^https?:\/\//, '').replace(/\/$/, ''))}</small></span>${icon('open')}</a>`).join('')}</div>` : '');
         rail.hidden = false;
         $('app').classList.add('with-rail');
         rail.querySelectorAll('[data-app]').forEach((b) => b.addEventListener('click', () => openApp(b.dataset.app)));
+        const storeBtn = $('rail-store');
+        if (storeBtn) storeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const menu = $('store-menu');
+            const opening = menu.hidden;
+            hideMenus();
+            menu.hidden = !opening;
+            storeBtn.setAttribute('aria-expanded', String(opening));
+            // Beside the button in the rail on the left; above the bar on a phone (CSS).
+            const box = storeBtn.getBoundingClientRect();
+            const side = getComputedStyle(rail).flexDirection === 'column';
+            menu.style.left = side ? `${box.right + 8}px` : '';
+            menu.style.top = side ? `${Math.max(8, Math.min(box.top, innerHeight - menu.offsetHeight - 8))}px` : '';
+            menu.style.bottom = side ? 'auto' : '';
+            if (opening) menu.querySelector('a')?.focus();
+        });
         markRail();
     }
+    // Apps from the App Store live on ports of their own, always plain http
+    // (they bring no certificate of this NAS).
+    const storeUrl = (a) => `http://${location.hostname}:${a.port}${a.path || '/'}`;
     function markRail() {
         $('rail').querySelectorAll('[data-app]').forEach((b) => {
             if (b.dataset.app === current) b.setAttribute('aria-current', 'page');
