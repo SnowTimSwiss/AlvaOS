@@ -163,6 +163,20 @@ storage healthy, one shared folder.
 3. Turn on "HTTPS only" (only possible from the https page): plain
    `http://…:8080` now goes to https.
 
+## 9b. SSH (Settings › Security)
+
+1. Turn SSH on. `ssh root@alva-test` signs in with the admin password.
+2. Add your Ed25519 public key, turn password sign-in off, save:
+   `ssh root@alva-test` signs in with the key, a password is refused.
+3. The same key must **not** sign in as any other account with a shell
+   (`ssh someone@alva-test`), and a key in an account's own
+   `~/.ssh/authorized_keys` (also `/root/.ssh/authorized_keys`) still works.
+4. Change the port to 2222 and save: an open SSH session stays, new ones
+   need `-p 2222`.
+5. Break the main config on the console (add a line `Bogus yes` to
+   `/etc/ssh/sshd_config`), then save in the page: it says SSH did not
+   accept the settings and nothing changed; remove the line again.
+
 ## 10. Assistant
 
 1. Settings › Assistant: Ollama on another computer (`ollama pull
@@ -190,6 +204,10 @@ storage healthy, one shared folder.
 3. NVIDIA: "Install NVIDIA driver" (a few minutes), then "Restart now";
    after the restart the driver reads "nvidia" and the state is "Ready".
    With Secure Boot on, the NAS asks for the MOK key on its screen once.
+4. NVIDIA on an older kernel than the newest offered (install the ISO,
+   skip updates): the install stops right away with "Install the system
+   updates ... restart the NAS"; after doing that it works. An interrupted
+   install (switch off during it) offers "Repair package setup".
 
 ## 13. Updates
 

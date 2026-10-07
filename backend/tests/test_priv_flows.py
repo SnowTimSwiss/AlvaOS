@@ -27,6 +27,7 @@ class Box:
         self.denied = []
         self.ran = []
         self.root = tmp_path / "mnt" / "alvaos"
+        self.fail = {}             # command name -> (returncode, stderr) to answer instead
 
     def check(self, argv, stdin=b""):
         """(returncode, stdout, stderr) as the helper would answer."""
@@ -47,6 +48,14 @@ class Box:
         assert plan.argv[1:] == args[1:] or plan.stage, ("the helper would run something else", args, plan.argv)
         self.ran.append(args)
         name, rest = os.path.basename(args[0]), args[1:]
+        if name in self.fail:
+            return self.fail[name][0], "", self.fail[name][1]
+        if name == "tee" and rest[:1] != ["-a"]:
+            self.system.files[rest[0]] = stdin if isinstance(stdin, bytes) else str(stdin).encode()
+        elif name == "cat":
+            if rest[0] not in self.system.files:
+                return 1, "", "No such file or directory"
+            return 0, self.system.files[rest[0]].decode(), ""
         if name == "useradd":
             self.system.users[rest[-1]] = 2000 + len(self.system.users)
         elif name == "groupadd":
@@ -125,3 +134,53 @@ def test_adding_a_person_and_a_shared_folder_passes_the_helper(backend, box, mon
     gone = client.delete("/api/v1/users", json={"username": "test"}, headers=headers)
     assert gone.status_code == 200, (gone.get_json(), box.denied)
     assert box.denied == []
+
+
+KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl tim@laptop"
+DROPIN = "/etc/ssh/sshd_config.d/00-alvaos-security.conf"
+
+
+def test_ssh_settings_pass_the_helper_and_keep_admin_keys_to_root(backend, box):  # noqa: F811
+    client, headers = admin(backend)
+    res = client.post("/api/v1/system/ssh", headers=headers,
+                      json={"enabled": True, "port": 2222, "password_login": False, "keys": [KEY]})
+    assert res.status_code == 200, (res.get_json(), box.denied)
+    assert box.denied == []
+    config = box.system.files[DROPIN].decode()
+    assert "PermitRootLogin yes" in config and "Port 2222" in config and "PasswordAuthentication no" in config
+    # People keep their own keys; the admin keys exist for root only.
+    assert "AuthorizedKeysFile .ssh/authorized_keys .ssh/authorized_keys2 /etc/ssh/alvaos-authorized-keys-%u" in config
+    assert box.system.files["/etc/ssh/alvaos-authorized-keys-root"].decode() == KEY + "\n"
+    names = [os.path.basename(a[0]) + " " + " ".join(a[1:]) for a in box.ran]
+    assert names.index("sshd -t") < names.index("systemctl reload ssh")
+    assert res.get_json()["keys"] == [KEY] and res.get_json()["port"] == 2222
+
+
+def test_ssh_settings_that_sshd_refuses_are_put_back(backend, box):  # noqa: F811
+    client, headers = admin(backend)
+    old = b"PermitRootLogin no\nPasswordAuthentication yes\nPermitEmptyPasswords no\n"
+    box.system.files[DROPIN] = old
+    box.fail["sshd"] = (255, "/etc/ssh/sshd_config line 3: Bad configuration option")
+    res = client.post("/api/v1/system/ssh", headers=headers, json={"enabled": True, "port": 2222})
+    assert res.status_code == 400 and "nothing was changed" in res.get_json()["error"]
+    assert "Bad configuration option" in res.get_json()["detail"]
+    assert box.system.files[DROPIN] == old
+    assert not any(os.path.basename(a[0]) == "systemctl" for a in box.ran)
+    assert box.denied == []
+
+
+def test_ssh_settings_that_lock_everyone_out_are_refused(backend, box):  # noqa: F811
+    client, headers = admin(backend)
+    res = client.post("/api/v1/system/ssh", headers=headers, json={"enabled": True, "password_login": False, "keys": []})
+    assert res.status_code == 400 and "key" in res.get_json()["error"]
+    assert DROPIN not in box.system.files and box.ran == [a for a in box.ran if os.path.basename(a[0]) == "cat"]
+
+
+def test_admin_keys_of_the_first_ssh_settings_are_carried_over(backend, box):  # noqa: F811
+    client, headers = admin(backend)
+    box.system.files["/etc/ssh/alvaos-admin-authorized-keys"] = (KEY + "\n").encode()
+    box.system.files[DROPIN] = b"PermitRootLogin yes\nAuthorizedKeysFile /etc/ssh/alvaos-admin-authorized-keys\n"
+    assert client.get("/api/v1/system/ssh", headers=headers).get_json()["keys"] == [KEY]
+    res = client.post("/api/v1/system/ssh", headers=headers, json={"enabled": True})
+    assert res.status_code == 200, (res.get_json(), box.denied)
+    assert box.system.files["/etc/ssh/alvaos-authorized-keys-root"].decode() == KEY + "\n"

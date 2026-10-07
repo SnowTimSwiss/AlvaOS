@@ -68,10 +68,12 @@ CONFIG_FILES = {
     '/etc/samba/smb.conf',
     '/etc/hosts',
     '/etc/ssh/sshd_config.d/00-alvaos-security.conf',
-    '/etc/ssh/alvaos-admin-authorized-keys',
+    '/etc/ssh/alvaos-authorized-keys-root',
     '/etc/apt/sources.list',
 }
-READABLE_FILES = CONFIG_FILES | {'/var/log/syslog'}
+# The admin key file of the first SSH settings (2026-10-05) applied to every
+# account; it is only read now, to carry its keys over.
+READABLE_FILES = CONFIG_FILES | {'/var/log/syslog', '/etc/ssh/alvaos-admin-authorized-keys'}
 
 # Environment variables a caller may forward to the privileged command.
 ALLOWED_ENV = {
@@ -405,6 +407,9 @@ _SSHD_ALLOWED = {
 }
 
 
+SSH_AUTHORIZED_KEYS = '.ssh/authorized_keys .ssh/authorized_keys2 /etc/ssh/alvaos-authorized-keys-%u'
+
+
 def check_sshd_dropin(content: bytes, current: bytes = b'') -> None:
     for raw in content.decode('utf-8', 'strict').splitlines():
         line = raw.strip()
@@ -423,7 +428,9 @@ def check_sshd_dropin(content: bytes, current: bytes = b'') -> None:
             _fail(f'sshd value not allowed for {key}')
         if key == 'port' and (not value.isdigit() or not 1 <= int(value) <= 65535):
             _fail('SSH port must be between 1 and 65535')
-        if key == 'authorizedkeysfile' and value != '/etc/ssh/alvaos-admin-authorized-keys':
+        # Everyone's own ~/.ssh/authorized_keys, plus the admin keys for root
+        # only (the file exists for root alone; see CONFIG_FILES).
+        if key == 'authorizedkeysfile' and value != SSH_AUTHORIZED_KEYS:
             _fail('AuthorizedKeysFile path not allowed')
 
 
@@ -485,7 +492,7 @@ CONFIG_CHECKS = {
     '/etc/samba/smb.conf': check_smb_conf,
     '/etc/hosts': check_hosts,
     '/etc/ssh/sshd_config.d/00-alvaos-security.conf': check_sshd_dropin,
-    '/etc/ssh/alvaos-admin-authorized-keys': check_admin_ssh_keys,
+    '/etc/ssh/alvaos-authorized-keys-root': check_admin_ssh_keys,
     '/etc/apt/sources.list': check_apt_sources,
 }
 
@@ -704,7 +711,7 @@ def _rule_mv(sys_: System, args):
 _SYSTEMCTL_ALLOWED = {
     ('restart', 'alvaos.service'), ('start', 'alvaos.service'),
     ('stop', 'alvaos.service'), ('status', 'alvaos.service'),
-    ('restart', 'ssh'), ('restart', 'smbd'),
+    ('restart', 'ssh'), ('reload', 'ssh'), ('restart', 'smbd'),
     ('restart', 'docker'), ('restart', 'docker.service'), ('status', 'docker.service'),
     ('reload', 'nfs-kernel-server'), ('restart', 'nfs-kernel-server'),
     # AlvaOS Files, turned on and off under Apps.
@@ -780,6 +787,13 @@ def _rule_dpkg(sys_: System, args):
     # The package is copied to the staging dir and, if it is an AlvaOS package,
     # its signature is verified there (see alvaos-priv).
     return Plan(argv=['-i', resolved], stage={1: 'deb'})
+
+
+def _rule_sshd(sys_: System, args):
+    # Only "check the configuration": sshd -t reads the files and exits.
+    # Never -f, -o or -d, which would run a second server or another config.
+    _expect(args, '-t')
+    return Plan(argv=['-t'])
 
 
 _SMARTCTL_FLAGS = {'-a', '-x', '-H', '-A', '-i', '-j', '-d', 'sat', 'scsi', 'nvme', 'auto'}
@@ -1294,6 +1308,7 @@ RULES = {
     'apt-get': _rule_apt,
     'apt': _rule_apt,
     'dpkg': _rule_dpkg,
+    'sshd': _rule_sshd,
     'smartctl': _rule_smartctl,
     'hdparm': _rule_hdparm,
     'lsblk': _rule_readonly_flags(r'^(-[a-zA-Z]{1,6}|[A-Z,-]{1,120})$'),

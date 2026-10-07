@@ -5,6 +5,8 @@ import subprocess
 import time
 
 import gpu_manager as gm
+import priv_policy
+from fakes import FakeSystem
 
 PCI_IDS = """# test database
 10de  NVIDIA Corporation
@@ -76,7 +78,7 @@ def test_installing_runs_apt_with_the_fixed_list_and_asks_for_a_restart(tmp_path
 
     flag = tmp_path / "restart"
     gpu = gm.GpuManager(run, installed=lambda pkgs: {p: False for p in pkgs}, sys_root=str(sys_root),
-                        restart_flag=str(flag), pci_ids=ids)
+                        restart_flag=str(flag), pci_ids=ids, available=lambda p: True)
     assert not gpu.install("matrox")[0]
     ok, message = gpu.install("nvidia")
     assert ok and "NVIDIA" in message
@@ -85,13 +87,39 @@ def test_installing_runs_apt_with_the_fixed_list_and_asks_for_a_restart(tmp_path
             break
         time.sleep(0.02)
     assert ran[0][0][1:] == ["update"]
-    assert ran[1][0][1:] == ["-y", "install"] + gm.PACKAGES["nvidia"]
+    headers = f"linux-headers-{os.uname().release}"
+    assert ran[1][0][1:] == ["-y", "install", "linux-headers-amd64", headers, "nvidia-driver", "firmware-misc-nonfree"]
+    assert priv_policy.validate(ran[1][0], FakeSystem()).argv == ran[1][0]   # the helper runs it as is
     assert ran[1][1] == {"DEBIAN_FRONTEND": "noninteractive"}
     assert flag.exists() and gpu.status()["restart_needed"]
     gpu.clear_after_boot(boot_time=time.time() - 3600)          # started before the install: still needed
     assert flag.exists()
     gpu.clear_after_boot(boot_time=time.time() + 5)               # started after it: done
     assert not flag.exists()
+
+
+def test_missing_headers_for_the_running_kernel_are_explained_not_retried(tmp_path):
+    # After a kernel update Debian no longer offers the old kernel's headers.
+    sys_root, ids = machine(tmp_path)
+    ran = []
+
+    def run(cmd, timeout=30, extra_env=None):
+        ran.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "ok", ""), None
+
+    flag = tmp_path / "restart"
+    gpu = gm.GpuManager(run, installed=lambda pkgs: {p: False for p in pkgs}, sys_root=str(sys_root),
+                        restart_flag=str(flag), pci_ids=ids, available=lambda p: False)
+    assert gpu.install("nvidia")[0]
+    for _ in range(100):
+        if not gpu.status()["job"]["running"]:
+            break
+        time.sleep(0.02)
+    job = gpu.status()["job"]
+    assert [c[1:] for c in ran] == [["update"]]          # no apt install that cannot work
+    assert "Updates page" in job["error"] and "restart the NAS" in job["error"]
+    assert not flag.exists()
+    assert "Updates page" in gm._apt_problem("E: Unable to locate package linux-headers-6.1.0-9-amd64")
 
 
 def test_a_card_that_is_not_there_is_not_installed_for(tmp_path):

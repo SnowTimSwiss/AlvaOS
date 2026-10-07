@@ -16,9 +16,9 @@ Every page follows the same pattern as the reworked Dashboard, Storage and Backu
 
 ### 1 From the first test on real hardware (2026-10-05)
 Fixed right away: adding people and making shared folders (both refused by the privilege helper), setup offers to erase disks with old data, memory as an amount on the dashboard, calmer app store cards.
-- **NVIDIA driver:** fixed the installation path to include the running kernel's headers, surface the installation log and identify common DKMS, Secure Boot and interrupted-dpkg failures. The page offers the fixed `dpkg --configure -a` repair action when the package setup is interrupted. A hardware run is still needed.
+- **NVIDIA driver:** installs the running kernel's headers (and says clearly when they are no longer offered), shows the installation log, explains DKMS, Secure Boot and interrupted-dpkg failures and offers the `dpkg --configure -a` repair. A hardware run is still needed (`TESTING.md` 12).
 - **Assistant:** its page guide now lists the real pages and controls, forbids invented buttons and fields, and explains read-only versus confirmed proposal mode. People and shared folders are available as confirmable proposals.
-- **SSH in Settings › Security:** on/off, port, password sign-in, and Ed25519 admin public keys. SSH config and key file contents pass through explicit privilege-policy validation.
+- **SSH in Settings › Security:** on/off, port, password sign-in, and Ed25519 admin public keys for root only; the config is checked with `sshd -t` before it is used. A hardware run is still needed (`TESTING.md` 9b).
 - **The assistant in a terminal:** design written in `docs/ADMIN-TERMINAL.md`. It specifies an admin-only `alvaos` shell, session and output limits, and a separate fixed catalog of commands shown in full and run only after confirmation; no free-form root commands.
 - **Dialogs:** the TLS, email, virtual-machine and shared-folder dialogs keep their frame and controls still when details open; details float inside the dialog, so the dialog itself does not need to scroll for them. Still open: move the hand-built dialogs onto one shared component and reduce scrolling in longer forms.
 

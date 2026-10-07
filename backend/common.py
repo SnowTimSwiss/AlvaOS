@@ -32,6 +32,7 @@ CMD = {
     'APT_GET': '/usr/bin/apt-get',
     'APT': '/usr/bin/apt',
     'DPKG': '/usr/bin/dpkg',
+    'SSHD': '/usr/sbin/sshd',
     'TAIL': '/usr/bin/tail',
     'JOURNALCTL': '/usr/bin/journalctl',
     'SMARTCTL': '/usr/sbin/smartctl',

@@ -38,6 +38,7 @@ PACKAGES: Dict[str, List[str]] = {
 GOOD_DRIVERS = {'intel': {'i915', 'xe'}, 'amd': {'amdgpu'}, 'nvidia': {'nvidia'}}
 RESTART_FLAG = '/var/lib/alvaos/gpu_restart_needed'
 DPKG_QUERY = '/usr/bin/dpkg-query'   # reads the package list, runs without the helper
+APT_CACHE = '/usr/bin/apt-cache'     # asks the package lists, runs without the helper
 
 _lock = threading.Lock()
 _job: Dict[str, Any] = {'running': False, 'vendor': '', 'started_at': '', 'finished_at': '', 'error': '',
@@ -118,9 +119,11 @@ def secure_boot(sys_root: str = '/sys') -> bool:
 
 class GpuManager:
     def __init__(self, run_command: Callable, installed: Optional[Callable[[List[str]], Dict[str, bool]]] = None,
-                 sys_root: str = '/sys', restart_flag: Optional[str] = None, pci_ids=PCI_IDS):
+                 sys_root: str = '/sys', restart_flag: Optional[str] = None, pci_ids=PCI_IDS,
+                 available: Optional[Callable[[str], bool]] = None):
         self.run = run_command
         self.installed = installed or _installed
+        self.available = available or _available
         self.sys_root = sys_root
         self.restart_flag = restart_flag or RESTART_FLAG
         self.pci_ids = pci_ids
@@ -203,7 +206,12 @@ class GpuManager:
                 release = os.uname().release
                 if not release or not all(c.isalnum() or c in '.+-_' for c in release):
                     raise ValueError('Could not safely determine the running kernel version.')
-                packages.insert(1, f'linux-headers-{release}')
+                headers = f'linux-headers-{release}'
+                # After a kernel update Debian drops the old kernel's headers from
+                # the archive: apt would fail the same way on every try.
+                if not self.installed([headers]).get(headers) and not self.available(headers):
+                    raise _NoHeaders(release)
+                packages.insert(1, headers)
             res, err = self.run([CMD['APT_GET'], '-y', 'install'] + packages, timeout=3600,
                                 extra_env={'DEBIAN_FRONTEND': 'noninteractive'})
             log.append(((res.stdout if res else '') or '') + ((res.stderr if res else '') or ''))
@@ -211,11 +219,19 @@ class GpuManager:
                 error = _apt_problem((err or '') + '\n' + ((res.stdout or '') + '\n' + (res.stderr or '') if res else ''))
             elif vendor == 'nvidia':
                 _touch(self.restart_flag)   # nouveau stays loaded until the next start
+        except _NoHeaders as e:
+            error = (f'The NVIDIA driver must be built for the running system (Linux {e}), but its build files '
+                     '(kernel headers) are no longer offered. Install the system updates on the Updates page, '
+                     'restart the NAS, then try again.')
         except Exception as e:  # noqa: BLE001 - report it on the page
             error = f'The installation stopped: {e}'
         with _lock:
             _job.update({'running': False, 'finished_at': _now(), 'error': error,
                          'log': '\n'.join(log)[-4000:]})
+
+
+class _NoHeaders(Exception):
+    """No headers package for the running kernel in the package lists."""
 
 
 def _advice(card: Dict[str, Any], restart: bool) -> Tuple[str, str]:
@@ -242,6 +258,9 @@ def _advice(card: Dict[str, Any], restart: bool) -> Tuple[str, str]:
 
 def _apt_problem(text: str) -> str:
     text = text.strip()
+    if 'Unable to locate package linux-headers-' in text:
+        return ('The kernel headers for the running system are not offered any more. Install the system updates '
+                'on the Updates page, restart the NAS, then try again.')
     if 'Unable to locate package' in text or 'has no installation candidate' in text:
         return ('A package was not found. Check that "non-free" and "non-free-firmware" are in the package '
                 'sources (Updates page), then try again.')
@@ -255,6 +274,22 @@ def _apt_problem(text: str) -> str:
         return 'A previous package installation was interrupted. Repair the package setup, then try again.'
     last = [line for line in text.splitlines() if line.strip()][-1:] or ['']
     return f'The installation failed: {last[0][:300]}'
+
+
+def _available(package: str) -> bool:
+    """Whether apt could install the package (apt-cache needs no privileges)."""
+    import subprocess
+    try:
+        res = subprocess.run([APT_CACHE, 'policy', package], capture_output=True, text=True, timeout=30,
+                             env={'LC_ALL': 'C'})
+    except (OSError, subprocess.TimeoutExpired):
+        return True   # cannot tell: let apt try and explain
+    if res.returncode != 0:
+        return True
+    for line in res.stdout.splitlines():
+        if line.strip().startswith('Candidate:'):
+            return line.split(':', 1)[1].strip() not in ('', '(none)')
+    return False
 
 
 def _installed(packages: List[str]) -> Dict[str, bool]:

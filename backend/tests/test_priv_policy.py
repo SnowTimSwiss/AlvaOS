@@ -191,6 +191,68 @@ def test_sshd_dropin_only_allows_known_options():
         plan.stdin_check(b'ForceCommand /tmp/x\n')
 
 
+DROPIN = '/etc/ssh/sshd_config.d/00-alvaos-security.conf'
+
+
+def test_sshd_dropin_written_by_the_settings_page_is_allowed():
+    import api_system
+    for enabled, port, password in ((True, 2222, False), (False, 22, True)):
+        allowed('/usr/bin/tee', DROPIN).stdin_check(api_system._ssh_config(enabled, port, password).encode())
+
+
+@pytest.mark.parametrize('line', [
+    # The admin keys must not apply to every account with a shell.
+    'AuthorizedKeysFile /etc/ssh/alvaos-admin-authorized-keys',
+    'AuthorizedKeysFile /etc/ssh/alvaos-authorized-keys-root',
+    'AuthorizedKeysFile /tmp/keys',
+    'AuthorizedKeysFile .ssh/authorized_keys /home/%u/../../tmp/keys',
+    'Match User root',
+    'Include /tmp/evil.conf',
+    'AuthorizedKeysCommand /tmp/x',
+    'PermitUserEnvironment yes',
+    'PermitRootLogin forced-commands-only',
+    'PasswordAuthentication maybe',
+    'Port 0',
+    'Port 70000',
+    'Port 22x',
+    'PermitRootLogin',
+])
+def test_sshd_dropin_refuses(line):
+    with pytest.raises(p.PolicyError):
+        allowed('/usr/bin/tee', DROPIN).stdin_check(f'PermitRootLogin yes\n{line}\n'.encode())
+
+
+def test_admin_ssh_keys_are_only_root_s_and_only_ed25519_public_keys():
+    plan = allowed('/usr/bin/tee', '/etc/ssh/alvaos-authorized-keys-root')
+    plan.stdin_check(b'')
+    plan.stdin_check(b'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl tim@laptop\n')
+    for bad in (b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ tim\n',
+                b'command="/bin/sh" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqq\n',
+                b'ssh-ed25519 AAAA tim@laptop extra words\n',
+                b'-----BEGIN OPENSSH PRIVATE KEY-----\n'):
+        with pytest.raises(p.PolicyError):
+            plan.stdin_check(bad)
+    # No key file for any other account, and the old file for all accounts is gone.
+    denied('/usr/bin/tee', '/etc/ssh/alvaos-authorized-keys-anna')
+    denied('/usr/bin/tee', '/etc/ssh/alvaos-admin-authorized-keys')
+    allowed('/usr/bin/cat', '/etc/ssh/alvaos-admin-authorized-keys')
+
+
+def test_sshd_may_only_check_its_configuration():
+    allowed('/usr/sbin/sshd', '-t')
+    for args in ([], ['-t', '-f', '/tmp/x'], ['-f', '/tmp/x'], ['-o', 'AuthorizedKeysCommand=/tmp/x', '-t'],
+                 ['-d'], ['-D', '-p', '2222'], ['-T']):
+        denied('/usr/sbin/sshd', *args)
+    allowed('/usr/bin/systemctl', 'reload', 'ssh')
+
+
+def test_dpkg_may_finish_an_interrupted_configuration_and_nothing_else():
+    allowed('/usr/bin/dpkg', '--configure', '-a')
+    for args in (['--configure', 'nvidia-driver'], ['--configure', '-a', '--force-all'], ['--purge', 'openssh-server'],
+                 ['-a', '--configure'], ['--remove', '-a'], ['-i', '/tmp/evil.deb']):
+        denied('/usr/bin/dpkg', *args)
+
+
 def test_exports_only_share_data_dirs():
     plan = allowed('/usr/bin/tee', '-a', '/etc/exports')
     plan.stdin_check(b'/mnt/alvaos/main/media *(rw,sync,no_subtree_check)\n')
