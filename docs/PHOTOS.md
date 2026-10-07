@@ -92,8 +92,10 @@ the JSON files are small and are backed up with the pictures.
 ## Built in small steps
 
 1. **The date a picture was taken** (EXIF), sorted by it: **done**.
-2. Video thumbnails (a still from the video, made by ffmpeg in the Hub process
-   at low priority, only when ffmpeg is installed).
+2. Video thumbnails (a still from the video, made by ffmpeg at low priority,
+   only when ffmpeg is installed): **done**. Videos play in the viewer; what the
+   browser cannot play (AVI, HEVC from an iPhone) gets a copy made on request
+   (H.264, 720 p, kept in the Hub cache); HEIC and TIFF open through a JPEG.
 3. Favourites and albums in the browser (`Photos/.albums/`), sharing an album
    with people in the household.
 4. Upload into the own photos from the Hub (button and drag and drop), into

@@ -328,8 +328,18 @@ storage healthy, one shared folder.
    Photos the albums appear above the timeline (Camera · <phone>); the files
    are in Files › own folder › Photos › <phone> › <album>, with the date
    they were taken.
-6. Take a new photo, tap "Back up now": it is on the NAS a minute later.
-   Tap it again: nothing is uploaded twice.
+6. Take a new photo and **wait**, without tapping anything: within a minute
+   or two (Wi-Fi, screen off is fine) it is on the NAS. That is the watcher
+   for new pictures; "Back up now" does the same at once. Tap it again:
+   nothing is uploaded twice. With "Only while charging" on (Settings) a new
+   picture waits until the charger is plugged in; the Backup tab says
+   "Waiting for the charger".
+6a. A big first backup (hundreds of pictures): the Backup tab counts up
+    live ("Backing up 120 of 600", each album "x of y backed up"). Lock the
+    phone and wait ten minutes or more: it goes on by itself (Android ends
+    a background job after ten minutes; the app starts the next one at
+    once). Turn the NAS off in the middle: the tab says "Waiting for the
+    NAS", turn it on, and it goes on without anything from you.
 7. Delete a backed-up photo **on the phone** (Gallery, and empty the
    phone's own trash if it has one), "Back up now": on the NAS it is in
    the trash of the personal folder, not gone.
@@ -346,6 +356,37 @@ storage healthy, one shared folder.
    phone (Android asks), they stay in Photos on the NAS.
 12. Turn the phone's Wi-Fi off with "Only on Wi-Fi" on: no backup on mobile
     data until Wi-Fi is back.
+
+## 12c. The app and the Hub look as one
+
+1. In the app, Files: no side bar, no arrows, no status line at the bottom;
+   the title is the folder; the shared folders are chips under the bar (when
+   there is more than one); "⋯" has Show as a list, Shared links, Trash,
+   Phones and devices. The phone's back gesture goes up a folder.
+2. Photos: the title says Photos, a card shows the backup ("Backing up 16 of
+   32" with a bar, or "120 pictures backed up"; Open goes to the Backup
+   tab), the albums are chips, an empty library fills the width.
+3. Backup and Settings look like the Hub (the same blues, cards, icons)
+   in light and dark; the colours do not follow the wallpaper.
+4. Settings › Trash opens Files with the trash; Phones and devices opens
+   the list.
+
+## 12d. Videos and more picture formats (browser and app)
+
+1. Put an MP4 from a phone, a MOV, an MKV, an old AVI and a HEIC or TIFF
+   picture in a folder: the grid shows a still of each video with a small
+   play mark, and the pictures as pictures. Photos shows the videos in the
+   timeline too.
+2. Open the MP4/MOV/MKV: it plays (the first frames can take a moment on a
+   big file); in the app the full-screen button works and the back gesture
+   leaves full screen.
+3. Open the AVI: "This video cannot be played in the browser as it is". Press
+   "Make a copy that plays here": "Converting… 35%" and then it plays. Close
+   and open it again: it plays at once (the copy is kept).
+4. On a NAS without ffmpeg (`which ffmpeg` in Settings › Terminal) the AVI
+   says so and offers Download; MP4/WebM/MOV/MKV still play.
+5. The HEIC/TIFF opens as a picture (HEIC needs `libheif-examples`; the
+   installer brings it).
 
 ## 13. Updates
 

@@ -15,6 +15,41 @@ How to add an entry:
 
 ---
 
+## 2026-10-08 · The app and the Hub as one, a backup that keeps up, videos
+
+- Android: the app has the Hub's colours (no wallpaper colours), its line
+  icons (`android/tools/icons.py` makes them from the Hub's), a top bar,
+  cards and buttons of the same shape. Settings, Backup and Apps are lists
+  of rows. In the app the Hub drops its own frame (no drawer, arrows or
+  status line): shared folders as chips, "⋯" for Trash, Shared links and
+  Phones and devices (also under Settings), a Photos card with the backup's
+  state. The Hub's page title is Photos/Trash, and the album chips are
+  styled also when the library is empty.
+- Backup: one sync at a time; a new picture starts one within about a
+  minute (a content trigger, put in line again after each run); a sync that
+  Android ends after ten minutes saves its progress (every five pictures)
+  and the next starts at once; three failed uploads in a row (NAS away)
+  stop the run instead of waiting for each; 'Only while charging'; the
+  Backup tab counts live, per album. Core tests for all of it.
+- CI puts the pictures of every screen on the branch `app-screens`
+  (`git fetch origin app-screens`).
+- Files: videos play (MOV, MKV, 3GP are inline types now), stills of
+  videos in the grid and Photos (`hub_video.py`: ffmpeg on the first and
+  last megabytes), HEIC/TIFF through a JPEG (`/api/preview`), and a
+  converted copy for formats browsers cannot play (`/api/video`,
+  `/api/video/convert`, `/api/video/stream`; H.264 + AAC, 720 p at most,
+  one job at a time, kept in the Hub cache up to 4 GB). ffmpeg reads a
+  temporary copy, the demuxer chosen by the file's extension, no network,
+  low priority. The installer and the package (recommends) bring ffmpeg
+  and libheif-examples; a NAS installed before: `apt install ffmpeg
+  libheif-examples` (Settings › Terminal). Tests: `test_hub_video.py` (with
+  real ffmpeg where it is installed).
+- **Note for next time:** the converted copy is made from a full temporary
+  copy of the video (ffmpeg needs to seek), so a conversion needs the free
+  space of the video once; below that it says so. The app screens could not
+  be looked at on a real phone yet; the pictures from CI are close but not
+  the same as a real device.
+
 ## 2026-10-07 · Roadmap: the app and the Hub as one; the app's Play name
 
 - From the first test of the app on a phone (beta-v0.2.0): native screens and
