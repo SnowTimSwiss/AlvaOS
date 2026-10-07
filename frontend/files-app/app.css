@@ -84,7 +84,7 @@ svg { display: block; }
 .side-sep { height: 1px; background: var(--line); margin: 10px 8px; }
 #trash-nav .ic { color: var(--muted); }
 .space { margin: auto 8px 10px; font-size: 0.8rem; color: var(--muted); }
-.space + .side-foot { margin-top: 0; }
+.space:not([hidden]) + .side-foot { margin-top: 0; }
 .space-bar { height: 6px; border-radius: 3px; background: var(--line); margin-top: 5px; overflow: hidden; }
 .space-bar span { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
 .space.warn .space-bar span { background: var(--warn); }
@@ -114,6 +114,8 @@ svg { display: block; }
 .selbar[hidden] { display: none; }
 .selbar-actions { margin-left: auto; display: flex; gap: 4px; }
 .content { flex: 1; overflow-y: auto; position: relative; outline: none; padding: 16px; }
+.band { position: absolute; z-index: 4; pointer-events: none; border: 1px solid var(--sel-border); background: color-mix(in srgb, var(--sel-border) 16%, transparent); border-radius: 2px; }
+body.sweeping, body.sweeping * { user-select: none; cursor: default; }
 .status { padding: 6px 16px; font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--line); background: var(--panel); }
 
 /* Grid */

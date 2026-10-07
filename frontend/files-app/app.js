@@ -452,7 +452,7 @@
             return;
         }
         const item = e.target.closest('[data-i]');
-        if (!item) { selected = new Set(); paintSelection(); return; }
+        if (!item) return;                   // empty space: see the click on #content below
         const i = Number(item.dataset.i);
         // Touch: a tap opens, like on a phone. Mouse: click selects, double-click opens.
         // In Photos a click opens the picture, like in any photo app.
@@ -474,6 +474,83 @@
             paintSelection();
         }
         showContext(e.clientX, e.clientY);
+    });
+
+    // A click beside the files (also below them) selects nothing, like on a desktop.
+    let swept = false;                       // a rectangle was just drawn: its click is not "beside"
+    $('content').addEventListener('click', (e) => {
+        if (swept) { swept = false; return; }
+        if (e.target.closest('[data-i], button, a, input, select, textarea, .menu')) return;
+        if (!selected.size || e.ctrlKey || e.metaKey || e.shiftKey) return;
+        selected = new Set();
+        paintSelection();
+    });
+
+    // Drawing a rectangle with the mouse from empty space selects what it touches
+    // (with Ctrl or Shift it adds to what was selected), as in Windows Explorer or Finder.
+    $('content').addEventListener('pointerdown', (e) => {
+        if (e.pointerType !== 'mouse' || e.button !== 0) return;
+        if (e.target.closest('[data-i], button, a, input, select, textarea, .menu, .albums, .results-head')) return;
+        const content = $('content');
+        const box = content.getBoundingClientRect();
+        if (e.clientX > box.left + content.clientWidth) return;     // on the scrollbar
+        const keep = e.ctrlKey || e.metaKey || e.shiftKey ? new Set(selected) : new Set();
+        const start = { x: e.clientX - box.left + content.scrollLeft, y: e.clientY - box.top + content.scrollTop };
+        let last = { x: e.clientX, y: e.clientY };
+        let band = null;
+        let scroller = 0;
+        const update = () => {
+            const b = content.getBoundingClientRect();
+            const x = last.x - b.left + content.scrollLeft;
+            const y = last.y - b.top + content.scrollTop;
+            if (!band) {
+                if (Math.abs(x - start.x) < 4 && Math.abs(y - start.y) < 4) return;
+                band = document.createElement('div');
+                band.className = 'band';
+                content.appendChild(band);
+                document.body.classList.add('sweeping');
+            }
+            const r = { left: Math.min(x, start.x), top: Math.min(y, start.y), right: Math.max(x, start.x), bottom: Math.max(y, start.y) };
+            Object.assign(band.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.right - r.left}px`, height: `${r.bottom - r.top}px` });
+            const next = new Set(keep);
+            content.querySelectorAll('[data-i]').forEach((el) => {
+                const t = el.getBoundingClientRect();
+                const tl = t.left - b.left + content.scrollLeft;
+                const tt = t.top - b.top + content.scrollTop;
+                if (tl < r.right && tl + t.width > r.left && tt < r.bottom && tt + t.height > r.top) {
+                    const entry = shown[Number(el.dataset.i)];
+                    if (entry) next.add(entry.name);
+                }
+            });
+            selected = next;
+            paintSelection();
+        };
+        // Near the top or bottom edge the folder scrolls on, so a rectangle can reach further.
+        const edge = () => {
+            const b = content.getBoundingClientRect();
+            const step = last.y < b.top + 30 ? -14 : last.y > b.bottom - 30 ? 14 : 0;
+            if (step && band) { content.scrollTop += step; update(); }
+            scroller = requestAnimationFrame(edge);
+        };
+        const move = (ev) => { last = { x: ev.clientX, y: ev.clientY }; update(); };
+        const up = () => {
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', up);
+            window.removeEventListener('pointercancel', up);
+            cancelAnimationFrame(scroller);
+            if (band) {
+                band.remove();
+                document.body.classList.remove('sweeping');
+                swept = true;
+                setTimeout(() => { swept = false; }, 0);   // only the click that ends this drag
+                anchor = -1;
+            }
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', up);
+        window.addEventListener('pointercancel', up);
+        scroller = requestAnimationFrame(edge);
+        e.preventDefault();                  // no text selection while drawing
     });
 
     function selectedEntries() { return shown.filter((e) => selected.has(e.name)); }

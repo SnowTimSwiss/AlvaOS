@@ -15,6 +15,17 @@ How to add an entry:
 
 ---
 
+## 2026-10-07 · Files: select with a rectangle; the name at the bottom
+
+- Drawing a rectangle with the mouse from empty space selects what it
+  touches, as in Windows Explorer or Finder (Ctrl/Shift add to the
+  selection; the folder scrolls on at the top and bottom edge). A click
+  beside the files, also below them, selects nothing.
+- The name and "Sign out" sit at the bottom of the side bar again: a CSS
+  rule meant for the space bar also applied while it was hidden.
+- The Android workflow can add the app to an existing release ("Run
+  workflow" › the release's tag); beta-v0.1.0 got its APK this way.
+
 ## 2026-10-07 · One release for the OS and the app
 
 - The app no longer has a pre-release of its own (`android-beta` showed up

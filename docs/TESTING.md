@@ -62,6 +62,10 @@ storage healthy, one shared folder.
    see "No apps for you yet", and WebDAV refuses them.
 2. Sign in as `anna`. Upload photos (also a big file, > 1 GB, and stop
    and resume it), make a folder, move and copy, download a ZIP.
+   Select: draw a rectangle with the mouse from an empty spot over a few
+   files (Ctrl or Shift adds to the selection); the bar on top shows them
+   and nothing below it moves. Click beside the files: nothing is selected.
+   Your name and "Sign out" are at the bottom of the side bar.
 3. Photos: pictures appear by month, with the date they were taken. Copy
    old phone pictures in over the network (the copies get today's file
    date), open Photos, wait a minute and open it again: they move to the
