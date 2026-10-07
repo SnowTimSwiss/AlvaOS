@@ -4,15 +4,29 @@ import android.content.Context
 import android.content.SharedPreferences
 import org.alvaos.photos.HubClient
 import org.alvaos.photos.SyncState
+import org.json.JSONArray
 import org.json.JSONObject
 
 /** Everything the app remembers, in its private preferences. */
 class Store(context: Context) : SyncState {
     private val prefs: SharedPreferences = context.getSharedPreferences("alvaos", Context.MODE_PRIVATE)
 
+    /** The address that worked last; see `addresses` for all of them. */
     var server: String
         get() = prefs.getString("server", "").orEmpty()
         set(v) = prefs.edit().putString("server", v).apply()
+    /** Every address of the NAS from the QR code: at home first, then away (Cloudflare). */
+    var addresses: List<String>
+        get() = JSONArray(prefs.getString("addresses", "[]")).let { a -> List(a.length()) { a.getString(it) } }
+            .ifEmpty { listOfNotNull(server.ifEmpty { null }) }
+        set(v) = prefs.edit().putString("addresses", JSONArray(v).toString()).apply()
+    var nasName: String
+        get() = prefs.getString("nas_name", "").orEmpty()
+        set(v) = prefs.edit().putString("nas_name", v).apply()
+    /** Whether the person set up the photo backup (it is optional). */
+    var backupOn: Boolean
+        get() = prefs.getBoolean("backup_on", albums.isNotEmpty())
+        set(v) = prefs.edit().putBoolean("backup_on", v).apply()
     var user: String
         get() = prefs.getString("user", "").orEmpty()
         set(v) = prefs.edit().putString("user", v).apply()
@@ -39,6 +53,17 @@ class Store(context: Context) : SyncState {
 
     fun hub() = HubClient(server, token)
 
+    /**
+     * The address that answers now: the last one if it still does, else the next
+     * (at home the NAS's own address, away the internet one). Not on the main thread.
+     */
+    fun pickServer(): String {
+        val all = (listOf(server) + addresses).filter { it.isNotEmpty() }.distinct()
+        val found = all.firstOrNull { HubClient(it).reachable() } ?: return server
+        if (found != server) server = found
+        return found
+    }
+
     override var phoneId: String
         get() = prefs.getString("phone_id", "").orEmpty()
         set(v) = prefs.edit().putString("phone_id", v).apply()
@@ -58,5 +83,6 @@ class Store(context: Context) : SyncState {
         get() = prefs.getBoolean("delete_on_nas", true)
         set(v) = prefs.edit().putBoolean("delete_on_nas", v).apply()
 
+    /** Signed out (here or on the NAS): the session goes, the rest stays for signing in again. */
     fun signOut() = prefs.edit().remove("token").apply()
 }

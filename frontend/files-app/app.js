@@ -1001,6 +1001,10 @@
     // Phones and devices: connect the AlvaOS app with a QR code (or a code to
     // type), and see, rename and sign out the phones that are connected.
     const APP_DOWNLOAD = 'https://github.com/SnowTimSwiss/AlvaOS/releases/latest/download/alvaos-android.apk';
+    // Inside the AlvaOS app the Hub leaves to the app what is the app's: signing
+    // out this phone (the app's Settings) and offering the app itself.
+    const IN_APP = /AlvaOSApp\//.test(navigator.userAgent);
+    if (IN_APP) document.documentElement.classList.add('in-app');
     function ago(iso) {
         const t = new Date(iso).getTime();
         if (Number.isNaN(t)) return '';
@@ -1043,7 +1047,7 @@
                     </div></div>`
                 : `<p>Phones with the AlvaOS app use every Hub app you have, back up their photos, and stay signed in. Connect one with a QR code: no password to type.</p>
                     <div class="actions" style="justify-content:flex-start;margin:0 0 14px"><button type="button" class="btn primary" id="pair-btn">${icon('plus')}Connect a phone</button>
-                    <a class="btn" href="${APP_DOWNLOAD}" target="_blank" rel="noopener">${icon('download')}Get the Android app</a></div>`}
+                    ${IN_APP ? '' : `<a class="btn" href="${APP_DOWNLOAD}" target="_blank" rel="noopener">${icon('download')}Get the Android app</a>`}</div>`}
                 <div class="trash-list">${error ? esc(error) : list.length ? list.map((d) => `<div class="trash-row device">
                     <div class="dev-ic">${icon('phone')}</div>
                     <div><strong>${esc(d.name)}${d.this ? ' <span class="badge">This device</span>' : ''}${me?.role === 'admin' && d.user !== me.user ? ` <span class="badge">${esc(d.user)}</span>` : ''}</strong>

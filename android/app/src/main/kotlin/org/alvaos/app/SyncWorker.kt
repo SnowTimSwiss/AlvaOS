@@ -21,6 +21,7 @@ import androidx.work.OutOfQuotaPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import androidx.work.workDataOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -32,8 +33,8 @@ import java.util.concurrent.TimeUnit
 class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
     companion object {
-        private const val PERIODIC = "alvaos-backup"
-        private const val NOW = "alvaos-backup-now"
+        const val PERIODIC = "alvaos-backup"
+        const val NOW = "alvaos-backup-now"
         const val CHANNEL = "backup"
         const val CHANNEL_ALERTS = "alerts"
         private const val PROGRESS_ID = 1
@@ -84,11 +85,13 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         ForegroundInfo(PROGRESS_ID, progress(0, 0), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
-        if (!store.signedIn || store.albums.isEmpty()) return@withContext Result.success()
+        if (!store.signedIn || !store.backupOn || store.albums.isEmpty()) return@withContext Result.success()
         channels(applicationContext)
+        store.pickServer()                    // at home or away: the address that answers now
         val engine = SyncEngine(store.hub(), Gallery(applicationContext), store)
         try {
             val result = engine.run(phoneName = { Build.MODEL }) { done, total ->
+                setProgressAsync(workDataOf("done" to done, "total" to total))
                 if (total > 0) setForegroundAsync(ForegroundInfo(PROGRESS_ID, progress(done, total),
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC))
             }
