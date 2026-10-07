@@ -395,6 +395,8 @@
         $('items').querySelectorAll('[data-i]').forEach((el) => el.classList.toggle('selected', selected.has(shown[Number(el.dataset.i)]?.name)));
         const n = selected.size;
         $('selbar').hidden = n === 0;
+        // Exactly over the top bar, whatever its height on this screen.
+        if (n) $('selbar').style.height = `${document.querySelector('#main > .bar').offsetHeight}px`;
         const files = shown.filter((e) => e.type === 'file');
         const folders = shown.length - files.length;
         if (n) {
