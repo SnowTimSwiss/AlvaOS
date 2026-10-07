@@ -27,6 +27,7 @@
         .hub-app { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 14px; align-items: start; padding: 14px 0; border-top: 1px solid var(--border-subtle); }
         .hub-app-ic { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; background: var(--accent-primary-soft); color: var(--accent-primary); }
         .hub-app-ic svg { width: 22px; height: 22px; }
+        .hub-letter { font-weight: 700; font-size: 1.1rem; }
         .hub-app strong { display: block; }
         .hub-app .hub-desc { color: var(--text-secondary); font-size: 0.88rem; line-height: 1.4; }
         .hub-who { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: 0.88rem; }
@@ -146,6 +147,11 @@
                 <h2 id="hub-apps-title">Apps in the Hub</h2>
                 <p>Turn on what your household uses. An app that is off is not shown and does not run.</p>
                 <div id="hub-app-list"></div>
+            </section>
+            <section class="hub-apps" id="hub-store" aria-labelledby="hub-store-title" hidden>
+                <h2 id="hub-store-title">Apps from the App Store</h2>
+                <p>Show an installed app as a tile in the Hub. It opens in its own tab, with its own sign-in.</p>
+                <div id="hub-store-list"></div>
             </section>
             <section class="hub-apps" id="hub-storage" aria-labelledby="hub-storage-title" hidden>
                 <h2 id="hub-storage-title">Where things are kept</h2>
