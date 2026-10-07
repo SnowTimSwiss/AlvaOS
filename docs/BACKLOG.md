@@ -15,6 +15,13 @@ How to add an entry:
 
 ---
 
+## 2026-10-07 · Roadmap: the app and the Hub as one
+
+- From the first test of the app on a phone (beta-v0.2.0): native screens and
+  the Hub inside look like two apps (colours, the Hub's own frame, Photos
+  chips, the backup's numbers). What to change is in `ROADMAP.md` under
+  Native apps, "Next (tonight)".
+
 ## 2026-10-07 · App fixes from the first test; Files: Trash as a view
 
 - App: choosing Backup or Settings crashed (marking the tab selected it
