@@ -49,7 +49,7 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
 - **Done:** the Files app (port 8090, HTTPS 9443, turned on under Apps); grid and list, thumbnails, viewer for images, video, audio, PDF and text; Photos timeline by month; search by name (this folder and below, or all shared folders); copy and move (also by dragging), ZIP download, resumable uploads of any size; trash per share (also for files deleted over SMB) and previous versions of a file; share links (read-only or upload-only drop box, password, expiry, limits); WebDAV (8091, HTTPS 9444); installable as an app (PWA); keyboard shortcuts.
 - **Simple, noticed by everyone (next, in this order):**
   1. ~~Sort~~ done (name, date, size, type; folders first).
-  2. A start page with "Recent" and favourites.
+  2. ~~A start page with "Recent" and favourites~~ done as "Recent" (files opened) and "Starred" (files and folders) at the top of the side bar, kept in the browser for now. Next: keep them on the NAS so every device sees the same.
   3. Upload whole folders by drag and drop: done (also New › Upload a folder).
   4. "You use 42 of 100 GB" in Files (the person's own space limit).
   5. ~~Edit text files~~ done (.txt, .md and other plain text up to 1 MB; the old one goes to the trash).

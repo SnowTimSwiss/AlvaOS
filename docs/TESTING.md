@@ -416,3 +416,9 @@ possible a screenshot. Settings › Diagnostics has the logs.
 1. Make an upload link for a folder (Share link › Upload only) and open it in a private window.
 2. Upload two files. In the Hub, Shared links shows "2 new" (reload once).
 3. Open Shared links: the link says "2 new files"; close and reopen: the mark is gone.
+
+## 12g Recent and Starred
+
+1. Open two files in Files. Side bar › Recent lists them, the newest first.
+2. Right-click a folder › Star. Side bar › Starred shows it; open it from there. Right-click again › Remove from Starred.
+3. Sign in as another person in the same browser: the lists are different.

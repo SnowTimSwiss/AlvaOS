@@ -40,6 +40,7 @@
         undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
         link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
         copy: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+        star: '<path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/>',
         clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
         heart: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
         'heart-fill': '<path fill="currentColor" d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
@@ -228,6 +229,13 @@
                 ${s.access === 'read' ? `<span class="ro" title="You can look, not change">${icon('lock').replace('<svg', '<svg width="13" height="13"')}</span>` : ''}
             </button>`).join('');
         const parts = path ? path.split('/') : [];
+        $('recent-nav').classList.toggle('active', foundInfo.list === 'recent' && !!found);
+        $('starred-nav').classList.toggle('active', foundInfo.list === 'starred' && !!found);
+        if (found && foundInfo.list) {
+            $('crumbs').innerHTML = `<span class="crumb">${foundInfo.list === 'recent' ? 'Recent' : 'Starred'}</span>`;
+            $('new-btn').hidden = true;
+            return showSpace();
+        }
         $('crumbs').innerHTML = [`<button type="button" class="crumb" data-path="">${esc(share)}</button>`,
             ...parts.map((p, i) => `<span class="sep">›</span><button type="button" class="crumb" data-path="${esc(parts.slice(0, i + 1).join('/'))}">${esc(p)}</button>`)].join('');
         const canWrite = access() === 'write';
@@ -261,6 +269,8 @@
             box.hidden = true;
         }
     }
+    $('recent-nav').addEventListener('click', () => showList('recent'));
+    $('starred-nav').addEventListener('click', () => showList('starred'));
     $('share-list').addEventListener('click', (e) => { const b = e.target.closest('[data-share]'); if (b) go(b.dataset.share, ''); });
     $('crumbs').addEventListener('click', (e) => { const b = e.target.closest('[data-path]'); if (b) go(share, b.dataset.path); });
 
@@ -329,6 +339,10 @@
             items.innerHTML = `<div class="empty">${icon('heart')}<strong>No favourites yet</strong>Tap the heart when you look at a picture, or select pictures and choose Favourite.</div>`;
         } else if (found && !shown.length && foundInfo.photos && foundInfo.view.type === 'album') {
             items.innerHTML = `<div class="empty">${icon('image')}<strong>This album is empty</strong>Select pictures in All and choose Add to album.</div>`;
+        } else if (found && !shown.length && foundInfo.list) {
+            items.innerHTML = foundInfo.list === 'recent'
+                ? `<div class="empty">${icon('clock')}<strong>Nothing opened yet</strong>Files you open show up here.</div>`
+                : `<div class="empty">${icon('star')}<strong>Nothing starred yet</strong>Right-click a file or folder and choose Star.</div>`;
         } else if (found && !shown.length && foundInfo.photos) {
             const own = (foundInfo.sources || []).find((src) => src.own);
             items.innerHTML = `<div class="empty">${icon('image')}<strong>No photos or videos yet</strong>${own
@@ -404,7 +418,9 @@
                 : albumNow ? `${found.length} picture${found.length === 1 ? '' : 's'} in "${esc(albumNow.name)}"`
                     : phoneNow ? `${found.length} from ${esc(phoneNow.phone)} · ${esc(phoneNow.name)}`
                         : `${found.length}${foundInfo.complete ? '' : '+'} photos and videos, newest first`;
-            head.innerHTML = foundInfo.photos
+            head.innerHTML = foundInfo.list
+                ? `${icon(foundInfo.list === 'recent' ? 'clock' : 'star').replace('<svg', '<svg width="16" height="16"')}<span>${foundInfo.list === 'recent' ? 'Recently opened' : 'Starred'} · ${found.length} ${found.length === 1 ? 'item' : 'items'}</span>`
+                : foundInfo.photos
                 ? `${icon(v.type === 'fav' ? 'heart' : 'image').replace('<svg', '<svg width="16" height="16"')}<span>${what}</span>
                 <span class="head-actions">${albumNow && foundInfo.lib.writable ? `<button type="button" class="link" id="album-rename">Rename</button><button type="button" class="link" id="album-delete">Delete album</button>` : ''}
                 <button type="button" class="btn${foundInfo.selecting ? ' primary' : ''}" id="photos-select" aria-pressed="${!!foundInfo.selecting}">${foundInfo.selecting ? 'Done' : 'Select'}</button></span>
@@ -436,7 +452,7 @@
                 }));
             }
             if (foundInfo.photos && window.AlvaApp) head.after(appBackupBanner());
-            head.querySelector('#results-close').addEventListener('click', clearSearch);
+            head.querySelector('#results-close')?.addEventListener('click', clearSearch);
             head.querySelector('#photos-select')?.addEventListener('click', () => { foundInfo.selecting = !foundInfo.selecting; if (!foundInfo.selecting) selected = new Set(); render(); });
             head.querySelector('#album-rename')?.addEventListener('click', renameAlbum);
             head.querySelector('#album-delete')?.addEventListener('click', deleteAlbum);
@@ -615,8 +631,50 @@
 
     function selectedEntries() { return shown.filter((e) => selected.has(e.name)); }
 
+
+    // ── Recent and starred: kept in this browser, shown like search results ─────
+    const listKey = (name) => `alvaos_files_${name}_${me?.user || ''}`;
+    function readList(name) {
+        try { const v = JSON.parse(localStorage.getItem(listKey(name)) || '[]'); return Array.isArray(v) ? v : []; } catch (_e) { return []; }
+    }
+    function writeList(name, items) { try { localStorage.setItem(listKey(name), JSON.stringify(items)); } catch (_e) { /* off */ } }
+    const itemId = (e) => `${sh(e)}/${rel(e)}`;
+    const slim = (e) => ({ name: e.name, type: e.type, share: sh(e), folder: rel(e).includes('/') ? rel(e).split('/').slice(0, -1).join('/') : '',
+        size_bytes: e.size_bytes, modified_at: e.modified_at });
+    function rememberRecent(e) {
+        if (!me || e.type !== 'file') return;
+        const id = itemId(e);
+        writeList('recent', [slim(e), ...readList('recent').filter((x) => itemId(x) !== id)].slice(0, 40));
+    }
+    const isStarred = (e) => readList('starred').some((x) => itemId(x) === itemId(e));
+    function toggleStar(list) {
+        const all = readList('starred');
+        const every = list.every(isStarred);
+        const ids = new Set(list.map(itemId));
+        const rest = all.filter((x) => !ids.has(itemId(x)));
+        writeList('starred', every ? rest : [...list.map(slim), ...rest].slice(0, 200));
+        toast(every ? 'Removed from Starred.' : list.length === 1 ? `"${list[0].name}" is in Starred now.` : `${list.length} items are in Starred now.`);
+        if (found && foundInfo.list === 'starred') showList('starred');
+    }
+    function showList(kind) {
+        leaveView();
+        current = 'files';
+        leavePhotos();
+        $('search').value = '';
+        selected = new Set();
+        anchor = -1;
+        share = '';
+        path = '';
+        found = readList(kind);
+        foundInfo = { q: '', complete: true, list: kind };
+        closeSide();
+        renderSide();
+        render();
+    }
+
     async function open(entry) {
         if (!entry) return;
+        rememberRecent(entry);
         if (entry.type === 'folder') { go(sh(entry), rel(entry)); return; }
         if (/\.pdf$/i.test(entry.name)) {
             const w = window.open('', '_blank');
@@ -673,6 +731,7 @@
         if (canWrite && one) rows.push(`<button type="button" data-ctx="rename">${icon('pen')}Rename</button>`);
         if (one && one.type === 'folder' && !shareOf(sh(one))?.from) rows.push(`<button type="button" data-ctx="people">${icon('user-plus')}Share with people…</button>`);
         if (one && !shareOf(sh(one))?.from) rows.push(`<button type="button" data-ctx="share">${icon('link')}Share link…</button>`);
+        if (sel.length) rows.push(`<button type="button" data-ctx="star">${icon('star')}${sel.every(isStarred) ? 'Remove from Starred' : 'Star'}</button>`);
         if (one && one.type === 'file') rows.push(`<button type="button" data-ctx="versions">${icon('clock')}Previous versions…</button>`);
         if (canWrite && sel.length) rows.push(`<button type="button" data-ctx="move">${icon('folder')}Move to…</button>`, `<button type="button" data-ctx="copy">${icon('copy')}Copy to…</button>`);
         if (canWrite && sel.length) rows.push('<hr>', `<button type="button" class="danger" data-ctx="delete">${icon('trash')}Delete</button>`);
@@ -723,6 +782,7 @@
         if (name === 'upload-folder') $('folder-input').click();
         if (name === 'people' && sel.length === 1) peopleDialog(sel[0]);
         if (name === 'folder') newFolder();
+        if (name === 'star' && sel.length) toggleStar(sel);
     }
 
     $('new-btn').addEventListener('click', () => { $('new-menu').hidden = !$('new-menu').hidden; });

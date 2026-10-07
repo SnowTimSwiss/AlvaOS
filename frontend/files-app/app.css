@@ -439,3 +439,4 @@ a.btn { text-decoration: none; color: inherit; }
 .pick-ic svg { width: 18px; height: 18px; }
 .items.photos .ptile.selected img { transform: scale(.86); border-radius: 8px; }
 .in-app .results-head .head-actions { margin-left: auto; }
+.side-tools.top { margin-top: 0; padding: 0 0 6px; }
