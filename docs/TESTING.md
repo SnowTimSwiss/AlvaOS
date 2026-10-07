@@ -447,3 +447,7 @@ Search for a word that matches different kinds of files. The chips above the res
 ## 12k Photos upload
 
 Photos › Upload: choose a few pictures from the computer or phone. They appear in the timeline (newest by their own date) and are in Files › your photos › Uploads.
+
+## 12l Backup warning
+
+Switch off the NAS (or the Hub) for three days with backup on and the phone online: a notification "No backup for 3 days" appears once a day; after the NAS is back and a backup worked, it goes away. (Shortcut: set the phone's clock three days ahead.)

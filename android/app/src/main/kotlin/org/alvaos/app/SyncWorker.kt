@@ -30,6 +30,7 @@ import kotlinx.coroutines.withContext
 import org.alvaos.photos.HubException
 import org.alvaos.photos.SyncEngine
 import org.alvaos.photos.SyncResult
+import org.alvaos.photos.staleDays
 import java.util.concurrent.TimeUnit
 
 /**
@@ -52,6 +53,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         private const val PROGRESS_ID = 1
         private const val DELETE_ID = 2
         private const val SIGNIN_ID = 3
+        private const val STALE_ID = 4
         private const val KEY_WATCH = "watch"
 
         /** One sync at a time, whichever way it was started. */
@@ -149,10 +151,12 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         try {
             if (!store.signedIn || !store.backupOn || store.albums.isEmpty()) return@withContext Result.success()
             channels(applicationContext)
-            one.withLock {
+            val result = one.withLock {
                 live = 0 to 0
                 try { sync() } finally { live = null }
             }
+            warnIfStale()
+            result
         } finally {
             // The next wait for a new picture, as long as the backup is on and this phone is signed in.
             if (watching && store.signedIn && store.backupOn) watch(applicationContext, again = true)
@@ -199,6 +203,20 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             store.lastMessage = "The NAS cannot be reached: ${e.message}"
             Result.retry()
         }
+    }
+
+    /** No backup for days (the NAS is away, a battery saver stops the app): say so, once a day. */
+    private fun warnIfStale() {
+        val nm = applicationContext.getSystemService(NotificationManager::class.java)
+        val now = System.currentTimeMillis()
+        val days = staleDays(now, store.lastSync, store.lastWarned)
+        if (days == null) {
+            if (store.lastSync > 0 && now - store.lastSync < 60 * 60 * 1000L) nm.cancel(STALE_ID)
+            return
+        }
+        store.lastWarned = now
+        notify(STALE_ID, "No backup for $days days",
+            "Your pictures are safe on the phone, but not backed up. Open AlvaOS to see why: ${store.lastMessage}")
     }
 
     private fun message(r: SyncResult) = when {

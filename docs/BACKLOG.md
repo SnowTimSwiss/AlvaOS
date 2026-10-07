@@ -15,6 +15,12 @@ How to add an entry:
 
 ---
 
+## 2026-10-08 — Android: a warning when the backup has not worked for days
+
+- After 3 days without a successful backup the app shows a notification ("No backup for N days", with the last reason), at most once a day, and removes it once a backup worked. The rule is `staleDays` in the core (tested in `StaleTest`); a phone that never backed up is not warned.
+
+---
+
 ## 2026-10-08 — Photos: upload from the Hub
 
 - Photos header › **Upload** adds pictures and videos from this device into the own photos folder `Photos/Uploads` (the folder is made on the first upload; resumable like Files; the grid refreshes). Only shown when the own photos folder is writable (`writable` in `/api/photos/sources`).

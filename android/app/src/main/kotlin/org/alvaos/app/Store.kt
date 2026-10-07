@@ -74,6 +74,10 @@ class Store(context: Context) : SyncState {
     var lastSync: Long
         get() = prefs.getLong("last_sync", 0)
         set(v) = prefs.edit().putLong("last_sync", v).apply()
+    /** When the person was last told that the backup has not worked for days. */
+    var lastWarned: Long
+        get() = prefs.getLong("last_warned", 0)
+        set(v) = prefs.edit().putLong("last_warned", v).apply()
     var lastMessage: String
         get() = prefs.getString("last_message", "").orEmpty()
         set(v) = prefs.edit().putString("last_message", v).apply()
