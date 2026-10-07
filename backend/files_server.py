@@ -159,7 +159,8 @@ def shares_for(session: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
                 continue
             if share.get('read_only'):
                 access = 'read'
-        result[share['name']] = {'name': share['name'], 'path': share['path'], 'access': access}
+        result[share['name']] = {'name': share['name'], 'path': share['path'], 'access': access,
+                                 'limit_bytes': share.get('quota_bytes') if isinstance(share.get('quota_bytes'), int) else None}
     return result
 
 
@@ -284,7 +285,8 @@ def me():
     settings = hub_apps.load()
     apps = hub_apps.visible(session['user'], session['role'], settings)
     files_on = any(a['id'] == 'files' for a in apps)
-    shares = sorted(({'name': s['name'], 'access': s['access']} for s in shares_for(session).values()),
+    shares = sorted(({'name': s['name'], 'access': s['access'], **({'limited': True} if s['limit_bytes'] else {})}
+                     for s in shares_for(session).values()),
                     key=lambda s: s['name'].lower()) if files_on else []
     nas = socket.gethostname().split('.')[0]
     store = hub_apps.store_tiles(session['user'], session['role'], settings)
@@ -376,6 +378,34 @@ def photo_sources():
         if name in mine and not any(s['share'] == name for s in sources):
             sources.append({'share': name, 'path': '', 'own': False})
     return jsonify({'sources': sources})
+
+
+_space_cache: Dict[str, Tuple[float, Optional[Dict[str, Optional[int]]]]] = {}
+SPACE_SECONDS = 60
+
+
+@app.get('/api/space')
+def space():
+    """How much of its space limit a shared folder uses ("42 of 100 GB").
+    Only for folders with a limit; read through the helper, at most once a minute."""
+    session, refused = need_session()
+    if refused:
+        return refused
+    share, _, _, bad = target(session, {'share': request.args.get('share'), 'path': ''})
+    if bad:
+        return bad
+    if not share.get('limit_bytes'):
+        return jsonify({'share': share['name'], 'limit_bytes': None, 'used_bytes': None})
+    now = time.time()
+    cached = _space_cache.get(share['path'])
+    if not cached or now - cached[0] > SPACE_SECONDS:
+        import share_quota
+        from common import CMD, run_sudo_command
+        cached = (now, share_quota.read_usage(share['path'], run_sudo_command, CMD['BTRFS']))
+        _space_cache[share['path']] = cached
+    usage = cached[1] or {}
+    return jsonify({'share': share['name'], 'limit_bytes': usage.get('limit_bytes') or share['limit_bytes'],
+                    'used_bytes': usage.get('used_bytes')})
 
 
 @app.get('/api/media')

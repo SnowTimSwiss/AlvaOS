@@ -83,6 +83,13 @@ svg { display: block; }
 .side-item .ro { margin-left: auto; color: var(--faint); font-size: 0.72rem; }
 .side-sep { height: 1px; background: var(--line); margin: 10px 8px; }
 #trash-nav .ic { color: var(--muted); }
+.space { margin: auto 8px 10px; font-size: 0.8rem; color: var(--muted); }
+.space + .side-foot { margin-top: 0; }
+.space-bar { height: 6px; border-radius: 3px; background: var(--line); margin-top: 5px; overflow: hidden; }
+.space-bar span { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.space.warn .space-bar span { background: var(--warn); }
+.space.full .space-bar span { background: var(--danger); }
+.space strong { color: var(--text); font-weight: 600; }
 .side-foot { margin-top: auto; padding: 12px 8px 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid var(--line); }
 .me { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 0.9rem; }
 .me span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
