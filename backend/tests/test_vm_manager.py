@@ -283,3 +283,23 @@ def test_a_screen_that_is_not_there_answers_bad_gateway():
         door.close()
         return answer
     assert asyncio.run(scenario()).startswith(b"HTTP/1.1 502")
+
+
+def test_a_second_disk_grows_only_and_a_graphics_card_goes_to_one_machine(box, monkeypatch):
+    box.set_up()
+    vm, _ = box.manager.create(NEW)
+    added, error = box.manager.update(vm["id"], {"data_gb": 200, "network": "bridge", "priority": "low"})
+    assert error == "" and added["data_gb"] == 200 and box.helped[-1] == ["vm-grow", vm["id"]]
+    assert "removed here" in box.manager.update(vm["id"], {"data_gb": 0})[1]
+    assert "second disk can only grow" in box.manager.update(vm["id"], {"data_gb": 100})[1]
+    cards = [{"slot": "0000:01:00.0", "why_not": "", "members": ["0000:01:00.0"], "name": "NVIDIA RTX"},
+             {"slot": "0000:00:02.0", "why_not": "This is the card the NAS itself shows its screen on.",
+              "members": [], "name": "Intel"}]
+    monkeypatch.setattr(box.manager, "cards", lambda: cards)
+    assert "shows its screen" in box.manager.update(vm["id"], {"gpu": "0000:00:02.0"})[1]
+    assert "not in this NAS" in box.manager.update(vm["id"], {"gpu": "0000:09:00.0"})[1]
+    assert box.manager.update(vm["id"], {"gpu": "0000:01:00.0"})[1] == ""
+    other, _ = box.manager.create({**NEW, "name": "Games", "gpu": "0000:01:00.0"})
+    box.units[vm["id"]] = "active"
+    ok, message = box.manager.action(other["id"], "start")
+    assert not ok and "Windows 11" in message and "graphics card" in message

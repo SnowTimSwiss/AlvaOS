@@ -263,3 +263,17 @@
     .chip-time { display: none; }
     .cal-pop { width: calc(100vw - 16px); }
 }
+
+/* On the phone and computer (CalDAV) */
+.cal-sync { display: flex; align-items: center; gap: 10px; margin: 6px 4px 4px; padding: 8px 10px; border: 0; border-radius: 8px;
+    background: none; color: var(--muted); font: inherit; font-size: 0.86rem; cursor: pointer; text-align: left; }
+.cal-sync:hover, .cal-sync:focus-visible { background: var(--hover); color: var(--text); }
+.cal-sync svg { width: 18px; height: 18px; flex: none; }
+.sync-facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 12px 0; }
+.sync-facts dt { color: var(--muted); }
+.sync-facts dd { margin: 0; overflow-wrap: anywhere; }
+.sync-how { border-top: 1px solid var(--line); padding: 8px 0; }
+.sync-how summary { cursor: pointer; font-weight: 600; }
+.sync-how p { margin: 8px 0 2px; }
+.sync-note { color: var(--muted); font-size: 0.85rem; }
+.sync-note a { color: var(--accent); }

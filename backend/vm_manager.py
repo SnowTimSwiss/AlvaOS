@@ -193,7 +193,8 @@ class VmManager:
     def _describe(self, cfg: Dict[str, Any]) -> Dict[str, Any]:
         state = STATES.get(self.unit_state(cfg['id']), 'stopped')
         out = {**cfg, 'os_name': vm_ops.OS_TYPES[cfg['os']]['name'], 'state': state,
-               'iso_name': os.path.basename(cfg['iso']) if cfg['iso'] else '', 'problem': '',
+               'iso_name': os.path.basename(cfg['iso']) if cfg['iso'] else '',
+               'iso2_name': os.path.basename(cfg['iso2']) if cfg['iso2'] else '', 'problem': '',
                'disk_used_bytes': None}
         if state == 'failed':
             out['problem'] = self._problem(cfg['id'])
@@ -289,9 +290,12 @@ class VmManager:
             return None, f'This NAS has {host["cpus"]} processor cores.'
         if cfg['memory_mb'] > max(256, host['memory_mb'] - KEEP_FREE_MB):
             return None, 'That is more memory than this NAS can give: it needs some for itself.'
+        problem = self._device_problem(cfg)
+        if problem:
+            return None, problem
         try:
             free_gb = self.free_bytes(store) / 2**30
-            if cfg['disk_gb'] > free_gb:
+            if cfg['disk_gb'] + cfg['data_gb'] > free_gb:
                 return None, f'The pool has {free_gb:.0f} GB free: a smaller disk, or free some space.'
         except OSError:
             pass
@@ -313,7 +317,8 @@ class VmManager:
         if STATES.get(self.unit_state(vm_id), 'stopped') in ('running', 'starting', 'stopping'):
             return None, 'Shut it down first, then change it.'
         merged: Dict[str, Any] = dict(cfg)
-        merged.update({k: data[k] for k in ('name', 'cpus', 'memory_mb', 'disk_gb', 'iso', 'ports', 'autostart')
+        merged.update({k: data[k] for k in ('name', 'cpus', 'memory_mb', 'disk_gb', 'iso', 'ports', 'autostart',
+                                            'data_gb', 'iso2', 'fast', 'network', 'usb', 'gpu', 'priority')
                        if k in data})
         try:
             new = vm_ops.check_config(merged, self.root, self.store())
@@ -328,15 +333,22 @@ class VmManager:
             return None, f'There is a virtual machine called "{new["name"]}" already.'
         if new['disk_gb'] < cfg['disk_gb']:
             return None, f'A disk can only grow. It has {cfg["disk_gb"]} GB.'
-        if new['disk_gb'] > cfg['disk_gb']:
+        if cfg['data_gb'] and new['data_gb'] < cfg['data_gb']:
+            return None, (f'The second disk can only grow. It has {cfg["data_gb"]} GB.' if new['data_gb'] else
+                          'A second disk is not removed here: its files would be gone.')
+        problem = self._device_problem(new)
+        if problem:
+            return None, problem
+        grown = (new['disk_gb'] - cfg['disk_gb']) + (new['data_gb'] - cfg['data_gb'])
+        if grown > 0:
             try:
                 free_gb = self.free_bytes(self.store()) / 2**30
-                if new['disk_gb'] - cfg['disk_gb'] > free_gb:
+                if grown > free_gb:
                     return None, f'The pool has {free_gb:.0f} GB free: grow it by less, or free some space.'
             except OSError:
                 pass
         self._write_config(new)
-        if new['disk_gb'] > cfg['disk_gb']:
+        if grown > 0:
             _result, error = self.helper(['vm-grow', vm_id], 300)
             if error:
                 self._write_config(cfg)
@@ -344,6 +356,23 @@ class VmManager:
         if new['autostart'] != cfg['autostart']:
             self.run([CMD['SYSTEMCTL'], 'enable' if new['autostart'] else 'disable', _unit(vm_id)], timeout=30)
         return self._describe(new), ''
+
+    def _device_problem(self, cfg: Dict[str, Any]) -> str:
+        """'' when the NAS can give the machine the graphics card it asks for."""
+        if not cfg['gpu']:
+            return ''
+        card = next((c for c in self.cards() if c['slot'] == cfg['gpu']), None)
+        if not card:
+            return 'That graphics card is not in this NAS.'
+        return card['why_not']
+
+    def devices(self) -> Dict[str, Any]:
+        """What can be handed to a machine: USB devices and graphics cards."""
+        return {'usb': vm_ops.usb_devices(), 'gpus': self.cards(), 'iommu': vm_ops.iommu_on()}
+
+    def cards(self) -> List[Dict[str, Any]]:
+        names = {c['slot']: f"{c['vendor_name']} {c['model']}" for c in gpu_manager.detect()}
+        return [{**c, 'name': names.get(c['slot'], c['slot'])} for c in vm_ops.graphics_cards()]
 
     def _remove_config(self, vm_id: str) -> None:
         try:
@@ -373,7 +402,12 @@ class VmManager:
         if what == 'start':
             if state in ('running', 'starting'):
                 return False, 'It is running already.'
-            problem = self._checked() or self._memory_problem(cfg)
+            problem = self._checked() or self._memory_problem(cfg) or self._device_problem(cfg)
+            if not problem and cfg['gpu']:
+                other = next((c for c in self._read_configs() if c['id'] != vm_id and c['gpu'] == cfg['gpu']
+                              and STATES.get(self.unit_state(c['id']), 'stopped') in ('running', 'starting')), None)
+                if other:
+                    problem = f'"{other["name"]}" has the graphics card now. Shut it down first.'
             if problem:
                 return False, problem
             _res, error = self.run([CMD['SYSTEMCTL'], 'start', unit], timeout=60)

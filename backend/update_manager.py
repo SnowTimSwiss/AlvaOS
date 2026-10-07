@@ -474,6 +474,10 @@ class UpdateManager:
             return ""
         # Normalize common tag styles like "Release_Candidate_1" to "rc1".
         v = version_str.strip().lstrip("v").lower()
+        # "beta-v0.1.0": the stage first, then the number -> "0.1.0beta".
+        m = re.match(r"^(alpha|beta|rc|pre)[._-]*v?(\d+(?:\.\d+)*)$", v)
+        if m:
+            v = f"{m.group(2)}{m.group(1)}"
         v = v.replace("_", ".").replace("-", ".")
         v = re.sub(r"pre[.\-]*release", "pre", v)
         v = re.sub(r"preview", "pre", v)

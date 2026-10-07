@@ -15,6 +15,12 @@
         .settings-head p { color: var(--text-secondary); font-size: 0.95rem; margin: 0; }
 
         .tab-panel .set-group + .set-group { margin-top: 14px; }
+        #term-start[hidden], #term-box[hidden] { display: none; }
+        .term-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 10px; }
+        .term-status { flex: 1; min-width: 160px; color: var(--text-secondary); font-size: 0.86rem; }
+        .term-status.ok { color: var(--accent-success); }
+        .term-status.bad { color: var(--accent-danger); }
+        .term-screen { height: min(62vh, 640px); padding: 8px; border-radius: var(--radius-default, 10px); background: #111827; overflow: hidden; }
 
         .set-group {
             background: var(--bg-card);
@@ -279,6 +285,7 @@
                 <button class="tab-btn" data-tab="remote"><i data-lucide="laptop" aria-hidden="true"></i> Remote access</button>
                 <button class="tab-btn" data-tab="assistant"><i data-lucide="bot" aria-hidden="true"></i> Assistant</button>
                 <button class="tab-btn" data-tab="logs"><i data-lucide="activity" aria-hidden="true"></i> Diagnostics</button>
+                <button class="tab-btn" data-tab="terminal"><i data-lucide="terminal" aria-hidden="true"></i> Terminal</button>
             </div>
 
             <!-- ============ NETWORK ============ -->
@@ -492,14 +499,19 @@
 
             <div class="tab-panel" id="tab-remote">
                 <section class="set-group">
-                    <h2 class="set-group-title">Remote access</h2>
-                    <p class="set-group-desc">Open this NAS and its files from anywhere, on your phone or laptop, through an encrypted WireGuard tunnel. Only this NAS can be reached through it, not the rest of your home network.</p>
+                    <h2 class="set-group-title">Your own devices: Tailscale</h2>
+                    <p class="set-group-desc">Your phone, laptop and this NAS in one private network, from anywhere, end to end encrypted. Nothing to set in the router, and it works behind any internet connection. Free for home use with a Tailscale account.</p>
                     <div class="set-row">
-                        <div class="set-text"><div class="set-label"><label for="remote-enabled">Remote access</label></div><div class="set-desc" id="remote-summary">Checking...</div></div>
-                        <div class="set-value"><label class="toggle"><input type="checkbox" id="remote-enabled"><span class="toggle-slider"></span></label></div>
+                        <div class="set-text"><div class="set-label"><label for="ts-enabled">Tailscale</label></div><div class="set-desc" id="ts-summary">Checking...</div></div>
+                        <div class="set-value"><label class="toggle"><input type="checkbox" id="ts-enabled"><span class="toggle-slider"></span></label></div>
                         <div class="set-action"></div>
                     </div>
-                    <div id="remote-body"></div>
+                    <div id="ts-body"></div>
+                </section>
+                <section class="set-group">
+                    <h2 class="set-group-title">The Hub at your own domain: Cloudflare Tunnel</h2>
+                    <p class="set-group-desc">Files, Photos, Calendar and share links at an address like <strong>cloud.example.com</strong>, in any browser, for anyone you give a link. Needs a free Cloudflare account with your domain. Only the Hub goes through it, never these admin pages.</p>
+                    <div id="cf-body"><p class="set-desc">Checking...</p></div>
                 </section>
             </div>
 
@@ -541,6 +553,27 @@
             </div>
 
             <!-- ============ DIAGNOSTICS ============ -->
+            <div class="tab-panel" id="tab-terminal">
+                <section class="set-group">
+                    <h2 class="set-group-title">Terminal</h2>
+                    <p class="set-group-desc">A command line on this NAS, for when you know what you are doing. It runs as the AlvaOS service account, not as root: what needs root goes through AlvaOS's own checked helper. Commands can still damage data in the shared folders. Nothing you type is kept.</p>
+                    <div id="term-start" class="set-row">
+                        <div class="set-text"><div class="set-label">Open a terminal</div><div class="set-desc">Closes after 30 minutes without typing, and when you sign out.</div></div>
+                        <div class="set-action"><button type="button" class="btn-primary" id="term-open">Open terminal</button></div>
+                    </div>
+                    <div id="term-box" hidden>
+                        <div class="term-bar">
+                            <span class="term-status" id="term-status" role="status"></span>
+                            <button type="button" class="btn-secondary" id="term-again" hidden>Open again</button>
+                            <button type="button" class="btn-secondary" id="term-copy">Copy</button>
+                            <button type="button" class="btn-secondary" id="term-clear">Clear</button>
+                            <button type="button" class="btn-secondary" id="term-close">Close</button>
+                        </div>
+                        <div id="term-screen" class="term-screen"></div>
+                    </div>
+                </section>
+            </div>
+
             <div class="tab-panel" id="tab-logs">
                 <section class="set-group">
                     <div class="set-group-head">
@@ -594,6 +627,7 @@
     <script src="settings-remote.js"></script>
     <script src="settings-gpu.js"></script>
     <script src="settings-ups.js"></script>
+    <script src="settings-terminal.js"></script>
 </body>
 
 </html>

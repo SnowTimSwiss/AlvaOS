@@ -280,10 +280,58 @@
         };
     }
 
+    // Disks, network and devices (backend vm_ops: data disk, second CD,
+    // virtio for Windows, macvtap, USB and VFIO, priority).
+    const WINDOWS = new Set(['windows11', 'windows10']);
+    function advancedHtml(vm, devices) {
+        const chosen = new Set((vm.usb || []).map((u) => `${u.vendor}:${u.product}`));
+        const usb = [...(devices.usb || [])];
+        for (const u of vm.usb || []) {   // a chosen device that is unplugged now stays listed
+            if (!usb.some((x) => x.vendor === u.vendor && x.product === u.product)) usb.push({ ...u, name: `${u.name || `${u.vendor}:${u.product}`} (not plugged in)` });
+        }
+        const gpus = devices.gpus || [];
+        return `
+            <div class="vm-grid vm-grid-2">
+                <label class="vm-field">Second disk (GB)<input type="number" id="vm-data" min="${vm.data_gb || 0}" value="${vm.data_gb || 0}">
+                    <small>0 = none. For data next to the system; it can only grow.</small></label>
+                <label class="vm-field">Second CD<select id="vm-iso2">${isoOptions(vm.iso2 || '')}</select>
+                    <small>${WINDOWS.has(vm.os) ? 'For Windows: the <a href="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/virtio-win.iso" target="_blank" rel="noopener">virtio drivers</a> (put them in ISOs).' : 'Drivers or tools on a CD.'}</small></label>
+            </div>
+            ${WINDOWS.has(vm.os) ? `<label class="vm-check"><input type="checkbox" id="vm-fast"${vm.fast ? ' checked' : ''}> Fast disks and network (virtio)</label>
+                <small class="vm-hint">Only once the virtio drivers are installed in Windows (from the second CD), or Windows does not start.</small>` : ''}
+            <div class="vm-field"><span>Network</span>
+                <label class="vm-check"><input type="radio" name="vm-net" value="nat"${vm.network !== 'bridge' ? ' checked' : ''}> Through the NAS (forward ports to reach it)</label>
+                <label class="vm-check"><input type="radio" name="vm-net" value="bridge"${vm.network === 'bridge' ? ' checked' : ''}> Its own address at home, from the router</label>
+                <small>With its own address, devices at home reach it directly; the NAS itself cannot reach it then (a limit of this kind of network).</small></div>
+            <div class="vm-field"><span>USB devices</span>
+                ${usb.length ? usb.map((u) => `<label class="vm-check"><input type="checkbox" data-usb="${esc(u.vendor)}:${esc(u.product)}" data-name="${esc(u.name)}"${chosen.has(`${u.vendor}:${u.product}`) ? ' checked' : ''}> ${esc(u.name)}</label>`).join('')
+                    : '<small>No USB devices are plugged into the NAS.</small>'}
+                <small>A device given to the machine is only there for the machine while it runs.</small></div>
+            <label class="vm-field">Graphics card<select id="vm-gpu"><option value="">None (a screen in the browser)</option>
+                ${gpus.map((g) => `<option value="${esc(g.slot)}"${g.slot === vm.gpu ? ' selected' : ''}${g.why_not && g.slot !== vm.gpu ? ' disabled' : ''}>${esc(g.name)}${g.why_not ? ` — ${esc(g.why_not)}` : ''}</option>`).join('')}</select>
+                <small>The whole card goes to the machine while it runs (for games or AI in the machine); apps on the NAS cannot use it meanwhile. ${devices.iommu ? '' : 'IOMMU is off on this NAS: turn on VT-d or AMD-Vi in the BIOS.'}</small></label>
+            <label class="vm-field">Priority<select id="vm-prio"><option value="normal"${vm.priority !== 'low' ? ' selected' : ''}>Normal</option>
+                <option value="low"${vm.priority === 'low' ? ' selected' : ''}>Low: the NAS's own work comes first</option></select></label>`;
+    }
+    function readAdvanced(el) {
+        const q = (s) => el.querySelector(s);
+        return {
+            data_gb: Number(q('#vm-data').value) || 0, iso2: q('#vm-iso2').value, fast: Boolean(q('#vm-fast')?.checked),
+            network: el.querySelector('input[name="vm-net"]:checked')?.value || 'nat',
+            usb: [...el.querySelectorAll('[data-usb]:checked')].map((b) => {
+                const [vendor, product] = b.dataset.usb.split(':');
+                return { vendor, product, name: b.dataset.name.replace(/ \(not plugged in\)$/, '') };
+            }),
+            gpu: q('#vm-gpu').value, priority: q('#vm-prio').value,
+        };
+    }
+
     async function settingsDialog(vm) {
         const limits = state.limits;
         const d = dialog(`Settings of ${vm.name}`, '<div class="vm-summary">Looking for installers…</div>', '');
         await loadIsos();
+        let devices = { usb: [], gpus: [] };
+        try { devices = await call('/devices'); } catch (_e) { /* shown as none */ }
         d.el.querySelector('.modal-body').innerHTML = `
             <label class="vm-field">Name<input id="vm-name" maxlength="60" value="${esc(vm.name)}" autocomplete="off"></label>
             <label class="vm-field">Installer<select id="vm-iso">${isoOptions(vm.iso)}</select>
@@ -295,17 +343,24 @@
             </div>
             <small class="vm-hint">The disk can only grow. Afterwards, let the system in the machine use the new space (Windows: Disk Management › Extend Volume).</small>
             <label class="vm-check"><input type="checkbox" id="vm-auto"${vm.autostart ? ' checked' : ''}> Start it together with the NAS</label>
-            ${portsHtml(vm.ports)}
+            <div id="vm-ports-wrap"${vm.network === 'bridge' ? ' hidden' : ''}>${portsHtml(vm.ports)}</div>
+            <details class="vm-more modal-details"${vm.data_gb || vm.iso2 || vm.fast || vm.network === 'bridge' || (vm.usb || []).length || vm.gpu || vm.priority === 'low' ? ' open' : ''}>
+                <summary>Disks, network and devices</summary>
+                <div class="modal-disclosure-panel">${advancedHtml(vm, devices)}</div>
+            </details>
             <div class="vm-error" id="vm-err" role="alert"></div>`;
         d.el.querySelector('.modal-actions').innerHTML = '<button type="button" class="btn-secondary" data-close>Cancel</button><button type="button" class="btn-primary" id="vm-save">Save</button>';
         bindPorts(d.el);
+        d.el.addEventListener('change', (e) => {
+            if (e.target.name === 'vm-net') d.el.querySelector('#vm-ports-wrap').hidden = e.target.value === 'bridge';
+        });
         const q = (s) => d.el.querySelector(s);
         q('#vm-save').onclick = async () => {
             q('#vm-err').textContent = '';
             try {
                 state = await post(`/${vm.id}`, { name: q('#vm-name').value, iso: q('#vm-iso').value, cpus: Number(q('#vm-cpus').value),
                     memory_mb: Math.round(Number(q('#vm-mem').value) * 1024), disk_gb: Number(q('#vm-disk').value),
-                    autostart: q('#vm-auto').checked, ports: readPorts(d.el) });
+                    autostart: q('#vm-auto').checked, ports: readPorts(d.el), ...readAdvanced(d.el) });
                 d.close();
                 toast('Saved. It applies the next time the machine starts.');
                 render();

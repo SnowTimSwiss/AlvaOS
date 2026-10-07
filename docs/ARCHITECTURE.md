@@ -115,7 +115,7 @@ NAS-to-NAS encrypted incremental backup.
 
 **Network:**
 - LAN access by default
-- Optional WireGuard for remote access
+- Optional remote access: Tailscale (own devices) and Cloudflare Tunnel (the Hub at an own domain), as containers
 - Buddy Backup uses encrypted tunnels
 
 **Data:**

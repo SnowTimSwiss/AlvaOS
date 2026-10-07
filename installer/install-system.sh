@@ -910,7 +910,7 @@ FSTAB_EOF
         linux-image-amd64 python3 python3-flask python3-waitress python3-psutil python3-requests python3-packaging python3-yaml python3-cryptography \
         python3-pyotp python3-qrcode python3-pil samba-vfs-modules miniupnpc \
         systemd systemd-timesyncd network-manager openssh-server docker.io docker-compose btrfs-progs wireguard-tools nbd-client cryptsetup \
-        curl wget vim sudo smartmontools hdparm nfs-kernel-server samba pciutils >> "$INSTALL_LOG" 2>&1
+        curl wget vim sudo smartmontools hdparm nfs-kernel-server samba pciutils iproute2 iputils-ping >> "$INSTALL_LOG" 2>&1
 
     update_progress "Installing bootloader..."
     if [ -d /sys/firmware/efi ]; then
@@ -960,9 +960,9 @@ FSTAB_EOF
         cp /opt/alvaos/backend/alvaos-priv /mnt/opt/alvaos/bin/alvaos-priv
         chmod 755 /mnt/opt/alvaos/bin/alvaos-priv
     fi
-    if [ -f "/opt/alvaos/keys/update-signing.pub" ]; then
+    if [ -d "/opt/alvaos/keys" ]; then
         mkdir -p /mnt/opt/alvaos/keys
-        cp /opt/alvaos/keys/update-signing.pub /mnt/opt/alvaos/keys/update-signing.pub
+        cp /opt/alvaos/keys/* /mnt/opt/alvaos/keys/
     fi
 
     # Copy scripts

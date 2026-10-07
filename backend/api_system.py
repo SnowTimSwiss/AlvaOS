@@ -3,6 +3,7 @@
 
 # ── Standard library ──────────────────────────────────────────────────────────
 import os
+import pwd
 from typing import Any, Dict
 import platform
 import re
@@ -959,6 +960,34 @@ def _write_root_file(path, content):
     if not err:
         return None
     return ((res.stderr or '').strip() if res else '') or err
+
+
+@bp.route('/api/v1/system/services/restart', methods=['POST'])
+@require_auth(require_admin=True)
+def system_service_restart():
+    """Restart one of the few services the assistant may propose (ai_assistant.RESTARTABLE)."""
+    import ai_assistant
+    service = str((request.get_json(silent=True) or {}).get('service') or '')
+    if service not in ai_assistant.RESTARTABLE:
+        return jsonify({'error': 'That service cannot be restarted from here.'}), 400
+    unit = 'alvaos-files.service' if service == 'alvaos-files' else service
+    result, error = run_sudo_command([CMD['SYSTEMCTL'], 'restart', unit], timeout=120)
+    if error or result is None or result.returncode != 0:
+        detail = error or ((result.stderr or result.stdout or '').strip() if result else '')
+        return jsonify({'error': f'{ai_assistant.RESTARTABLE[service][0]} did not restart.', 'detail': detail}), 500
+    return jsonify({'success': True, 'message': f'{ai_assistant.RESTARTABLE[service][0].capitalize()} restarted.'})
+
+
+@bp.route('/api/v1/system/terminal', methods=['POST'])
+@require_auth(require_admin=True)
+def system_terminal():
+    """A one-time ticket for a shell in the browser (admin_terminal.py)."""
+    import admin_terminal
+    ticket = admin_terminal.issue(request.headers.get('Authorization', '').strip())
+    response = jsonify({'success': True, 'ticket': ticket, 'port': admin_terminal.PORT,
+                        'tls_port': admin_terminal.TLS_PORT, 'user': pwd.getpwuid(os.getuid()).pw_name})
+    response.headers['Cache-Control'] = 'no-store'
+    return response
 
 
 @bp.route('/api/v1/system/ssh', methods=['GET', 'POST'])

@@ -482,7 +482,7 @@ def test_every_assistant_proposal_points_at_a_real_endpoint(backend):
             "turn_on_automatic_backups": {"every": "day"}, "update_app": {"app_id": "jellyfin"},
             "set_disk_sleep": {"minutes": 20}, "create_shared_folder": {"name": "X", "pool_id": "u1", "everyone": True},
             "set_folder_access": {"folder": "Family", "person": "ben", "access": "read"},
-            "set_folder_limit": {"folder": "Family", "gigabytes": 10}}
+            "set_folder_limit": {"folder": "Family", "gigabytes": 10}, "restart_service": {"service": "smbd"}}
     adapter = module.app.url_map.bind("localhost")
     for name in ai_assistant.ACTION_SPECS:
         action = ai_assistant.build_action(name, args.get(name, {}), lambda p: (200, state.get(p, {})))
@@ -653,3 +653,27 @@ def test_virtual_machines_are_for_the_admin_and_answer_in_sentences(backend, mon
     assert refused.status_code == 409 and refused.get_json()["error"] == "It is not running."
     ticket = client.post("/api/v1/vms/0a1b2c3d/console", headers=headers)
     assert ticket.get_json()["ticket"] == "t" and ticket.headers["Cache-Control"] == "no-store"
+
+
+def test_terminal_tickets_and_service_restarts_are_for_admins(backend, monkeypatch):
+    module, state = backend
+    set_up(state)
+    import admin_terminal
+    import api_system
+    client = module.app.test_client()
+    assert client.post("/api/v1/system/terminal").status_code == 401
+    token = auth_manager._create_session("root", role="admin")
+    headers = {"Authorization": token, "X-CSRF-Token": auth_manager.SESSIONS[token]["csrf_token"]}
+    got = client.post("/api/v1/system/terminal", headers=headers)
+    assert got.headers["Cache-Control"] == "no-store" and got.get_json()["port"] == admin_terminal.PORT
+    # The ticket belongs to this sign-in, and ends with it.
+    assert admin_terminal.redeem(got.get_json()["ticket"]) == token
+    assert auth_manager.admin_signed_in(token)
+    ran = []
+    monkeypatch.setattr(api_system, "run_sudo_command",
+                        lambda cmd, **kw: ran.append(cmd) or (subprocess.CompletedProcess(cmd, 0, "", ""), None))
+    assert client.post("/api/v1/system/services/restart", json={"service": "ssh"}, headers=headers).status_code == 400
+    ok = client.post("/api/v1/system/services/restart", json={"service": "alvaos-files"}, headers=headers)
+    assert ok.status_code == 200 and ran == [["/usr/bin/systemctl", "restart", "alvaos-files.service"]]
+    auth_manager._destroy_session(token)
+    assert not auth_manager.admin_signed_in(token)

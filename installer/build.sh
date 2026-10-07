@@ -131,6 +131,9 @@ if [ -f "${SCRIPT_DIR}/../keys/update-signing.pub" ]; then
   mkdir -p config/includes.chroot/opt/alvaos/keys
   cp "${SCRIPT_DIR}/../keys/update-signing.pub" config/includes.chroot/opt/alvaos/keys/
 fi
+# NVIDIA's apt key, for its container toolkit (backend/gpu_manager.py)
+mkdir -p config/includes.chroot/opt/alvaos/keys
+cp "${SCRIPT_DIR}/../keys/nvidia-container-toolkit.asc" config/includes.chroot/opt/alvaos/keys/
 
 # Apps catalog (optional)
 if [ -d "${SCRIPT_DIR}/../apps" ]; then

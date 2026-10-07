@@ -197,7 +197,7 @@ def test_a_disk_grows_to_its_description_but_never_shrinks(pool, monkeypatch):
     with pytest.raises(vm.VmError, match="Shut"):
         vm.grow("0a1b2c3d", state, configs, str(root), is_active=lambda i: True, size_of=lambda p: 40 * 2**30)
     assert vm.grow("0a1b2c3d", state, configs, str(root), is_active=lambda i: False, size_of=lambda p: 40 * 2**30) \
-        == {"disk_gb": 80}
+        == {"disk_gb": 80, "data_gb": 0}
     disk = str(store / "0a1b2c3d" / "disk.qcow2")
     assert ran == [[vm.QEMU_IMG, "resize", "-f", "qcow2", disk, str(80 * 2**30)]]
     vm.grow("0a1b2c3d", state, configs, str(root), is_active=lambda i: False, size_of=lambda p: 80 * 2**30)

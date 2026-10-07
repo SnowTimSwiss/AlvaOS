@@ -49,6 +49,14 @@ GRACE_SECONDS = 110      # a guest gets this long to shut down before it is swit
 VNC_WEBSOCKET_BASE = 5700
 
 ID_RE = re.compile(r'^[0-9a-f]{8}$')
+USB_ID_RE = re.compile(r'^[0-9a-f]{4}$')
+PCI_RE = re.compile(r'^0000:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$')
+SYS = '/sys'
+DEV = '/dev'
+IP = '/usr/bin/ip'
+IONICE = '/usr/bin/ionice'
+NETWORKS = ('nat', 'bridge')
+PRIORITIES = ('normal', 'low')
 ISO_FOLDER = 'ISOs'
 UNIT_FMT = 'alvaos-vm@{}.service'
 
@@ -66,8 +74,8 @@ OS_TYPES: Dict[str, Dict[str, Any]] = {
                   'nic': 'e1000e', 'localtime': False},
 }
 # Ports the NAS itself uses: a virtual machine cannot take them over.
-RESERVED_PORTS = {22, 25, 80, 111, 139, 443, 445, 2049, 5353, 8080, 8085, 8090, 8091, 8443, 9443, 9444, 9445,
-                  51820}
+RESERVED_PORTS = {22, 25, 80, 111, 139, 443, 445, 2049, 5353, 8080, 8085, 8086, 8090, 8091, 8443, 9443, 9444, 9445,
+                  9446, 51820}
 
 
 class VmError(Exception):
@@ -133,6 +141,31 @@ def check_config(raw: Any, root: str = DATA_ROOT, store: Optional[str] = None) -
         ports.append({'proto': proto, 'host': host, 'guest': guest})
     if len(ports) > 16 or len({(p['proto'], p['host']) for p in ports}) != len(ports):
         raise VmError('Each port on the NAS can be forwarded once, 16 at most.')
+    iso2 = str(raw.get('iso2') or '')
+    if iso2:
+        iso2 = clean_path(iso2, root)
+        if not iso2.lower().endswith('.iso'):
+            raise VmError('The second CD has to be an .iso file.')
+        if store is not None and not iso2.startswith(os.path.join(store, ISO_FOLDER) + '/'):
+            raise VmError(f'Put the second CD in the folder "{ISO_FOLDER}" of the VMs shared folder.')
+    usb = []
+    for item in raw.get('usb') or []:
+        if not isinstance(item, dict) or not USB_ID_RE.match(str(item.get('vendor') or '')) \
+                or not USB_ID_RE.match(str(item.get('product') or '')):
+            raise VmError('A USB device is not described properly.')
+        usb.append({'vendor': str(item['vendor']), 'product': str(item['product']),
+                    'name': re.sub(r'[^\w .,()+-]', '', str(item.get('name') or ''))[:60]})
+    if len(usb) > 8 or len({(u['vendor'], u['product']) for u in usb}) != len(usb):
+        raise VmError('Up to 8 different USB devices.')
+    gpu = str(raw.get('gpu') or '')
+    if gpu and not PCI_RE.match(gpu):
+        raise VmError('That is not a graphics card of this NAS.')
+    network = str(raw.get('network') or 'nat')
+    if network not in NETWORKS:
+        raise VmError('Choose how the machine is on the network.')
+    priority = str(raw.get('priority') or 'normal')
+    if priority not in PRIORITIES:
+        raise VmError('Choose a priority.')
     return {
         'id': vm_id, 'name': name, 'os': kind,
         'cpus': _int(raw.get('cpus'), 1, 64, 'The number of processor cores'),
@@ -141,6 +174,12 @@ def check_config(raw: Any, root: str = DATA_ROOT, store: Optional[str] = None) -
         'iso': iso, 'autostart': bool(raw.get('autostart')),
         'slot': _int(raw.get('slot', 0), 0, 99, 'The screen number'),
         'ports': ports,
+        # Since 2026-10-07: a second disk, a second CD (drivers), fast virtio
+        # devices for Windows once its drivers are in, the home network,
+        # USB devices, a graphics card, and a lower priority.
+        'data_gb': _int(raw.get('data_gb', 0), 0, 65536, 'The second disk'),
+        'iso2': iso2, 'fast': bool(raw.get('fast')), 'network': network, 'usb': usb, 'gpu': gpu,
+        'priority': priority,
     }
 
 
@@ -195,7 +234,7 @@ def find_firmware(secure: bool, dirs: Optional[Tuple[str, ...]] = None) -> Tuple
 
 
 def qemu_args(cfg: Dict[str, Any], store: str, run_dir: str = RUN_DIR, firmware: Optional[Tuple[str, str]] = None,
-              kvm: bool = True) -> List[str]:
+              kvm: bool = True, tap_fd: Optional[int] = None, vfio: Optional[List[str]] = None) -> List[str]:
     """The whole QEMU command line for one virtual machine."""
     kind = OS_TYPES[cfg['os']]
     base = vm_dir(store, cfg['id'])
@@ -211,21 +250,37 @@ def qemu_args(cfg: Dict[str, Any], store: str, run_dir: str = RUN_DIR, firmware:
                  '-drive', f'if=pflash,format=raw,unit=1,file={os.path.join(base, "OVMF_VARS.fd")}']
         if kind['secure']:
             args += ['-global', 'driver=cfi.pflash01,property=secure,value=on']
-    disk = os.path.join(base, 'disk.qcow2')
-    args += ['-drive', f'file={disk},if=none,id=disk0,format=qcow2,cache=none,discard=unmap']
-    if kind['disk'] == 'virtio':
-        args += ['-device', 'virtio-blk-pci,drive=disk0,bootindex=2']
+    fast = kind['disk'] == 'virtio' or cfg.get('fast')
+    disks = [('disk0', os.path.join(base, 'disk.qcow2'), 2)]
+    if cfg.get('data_gb'):
+        disks.append(('disk1', os.path.join(base, 'data.qcow2'), 3))
+    if not fast:
+        args += ['-device', 'ich9-ahci,id=ahci']
+    for n, (ident, path, boot) in enumerate(disks):
+        args += ['-drive', f'file={path},if=none,id={ident},format=qcow2,cache=none,discard=unmap']
+        args += ['-device', f'virtio-blk-pci,drive={ident},bootindex={boot}' if fast
+                 else f'ide-hd,drive={ident},bus=ahci.{n},bootindex={boot}']
+    cds = [c for c in (cfg['iso'], cfg.get('iso2')) if c]
+    if cds:
+        args += ['-device', 'ich9-ahci,id=ahci1']
+        for n, iso in enumerate(cds):
+            args += ['-drive', f'file={iso},if=none,id=cd{n},media=cdrom,readonly=on',
+                     '-device', f'ide-cd,drive=cd{n},bus=ahci1.{n}' + (',bootindex=1' if n == 0 else '')]
+    nic = 'virtio-net-pci' if fast else kind['nic']
+    if cfg.get('network') == 'bridge' and tap_fd is not None:
+        # Its own address from the router (macvtap, made by `ready` as root).
+        args += ['-netdev', f'tap,id=net0,fd={tap_fd}', '-device', f'{nic},netdev=net0,mac={mac_address(cfg["id"])}']
     else:
-        args += ['-device', 'ich9-ahci,id=ahci', '-device', 'ide-hd,drive=disk0,bus=ahci.0,bootindex=2']
-    if cfg['iso']:
-        args += ['-drive', f'file={cfg["iso"]},if=none,id=cd0,media=cdrom,readonly=on',
-                 '-device', 'ich9-ahci,id=ahci1', '-device', 'ide-cd,drive=cd0,bus=ahci1.0,bootindex=1']
-    forwards = ''.join(f',hostfwd={p["proto"]}::{p["host"]}-:{p["guest"]}' for p in cfg['ports'])
-    args += ['-netdev', f'user,id=net0{forwards}', '-device', f'{kind["nic"]},netdev=net0',
-             '-device', 'virtio-rng-pci', '-vga', 'std',
-             '-device', 'qemu-xhci', '-device', 'usb-tablet', '-device', 'usb-kbd',
+        forwards = ''.join(f',hostfwd={p["proto"]}::{p["host"]}-:{p["guest"]}' for p in cfg['ports'])
+        args += ['-netdev', f'user,id=net0{forwards}', '-device', f'{nic},netdev=net0']
+    args += ['-device', 'virtio-rng-pci', '-vga', 'std',
+             '-device', 'qemu-xhci,id=xhci', '-device', 'usb-tablet', '-device', 'usb-kbd',
              '-vnc', f'127.0.0.1:{slot},websocket={VNC_WEBSOCKET_BASE + slot}',
              '-qmp', f'unix:{os.path.join(run_dir, cfg["id"] + ".qmp")},server=on,wait=off']
+    for dev in cfg.get('usb') or []:
+        args += ['-device', f'usb-host,bus=xhci.0,vendorid=0x{dev["vendor"]},productid=0x{dev["product"]}']
+    for addr in vfio or []:
+        args += ['-device', f'vfio-pci,host={addr}']
     if kind['tpm']:
         args += ['-chardev', f'socket,id=chrtpm,path={os.path.join(run_dir, cfg["id"] + ".tpm")}',
                  '-tpmdev', 'emulator,id=tpm0,chardev=chrtpm', '-device', 'tpm-tis,tpmdev=tpm0']
@@ -236,6 +291,204 @@ def swtpm_args(cfg: Dict[str, Any], store: str, run_dir: str = RUN_DIR) -> List[
     state = os.path.join(vm_dir(store, cfg['id']), 'tpm')
     return [SWTPM, 'socket', '--tpm2', '--tpmstate', f'dir={state}',
             '--ctrl', f'type=unixio,path={os.path.join(run_dir, cfg["id"] + ".tpm")}']
+
+
+# ── The NAS's own devices for a machine ──────────────────────────────────────
+#
+# Reading what there is needs no privileges (the page lists it). Handing a
+# device to a machine happens as root right before it starts (`ready`, from
+# the unit's ExecStartPre=+) and is undone after it stopped (`cleanup`,
+# ExecStopPost=+): a USB device's node goes to `alvaos-vm`; a graphics card
+# and everything in its IOMMU group is bound to vfio-pci (and back to its
+# own driver afterwards); "own address at home" is a macvtap interface on
+# the NAS's network port whose tap device `alvaos-vm` may open.
+
+def _read_sys(path: str) -> str:
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return ''
+
+
+def _write_sys(path: str, value: str) -> None:
+    with open(path, 'w') as f:
+        f.write(value)
+
+
+def mac_address(vm_id: str) -> str:
+    """A fixed address per machine, so the router gives it the same IP again."""
+    return '52:54:00:' + ':'.join(vm_id[i:i + 2] for i in (0, 2, 4))
+
+
+def tap_name(vm_id: str) -> str:
+    return f'mvt{vm_id}'
+
+
+def default_interface(route_file: str = '/proc/net/route') -> str:
+    """The network port the NAS reaches its router through."""
+    try:
+        with open(route_file) as f:
+            for line in f.readlines()[1:]:
+                parts = line.split()
+                if len(parts) > 2 and parts[1] == '00000000' and re.match(r'^[A-Za-z0-9_.-]{1,15}$', parts[0]):
+                    return parts[0]
+    except OSError:
+        pass
+    raise VmError('The NAS has no network port with a router.')
+
+
+def usb_devices(sys_root: str = SYS) -> List[Dict[str, Any]]:
+    """USB devices plugged into the NAS (without hubs)."""
+    out = []
+    base = os.path.join(sys_root, 'bus/usb/devices')
+    for name in sorted(os.listdir(base)) if os.path.isdir(base) else []:
+        dev = os.path.join(base, name)
+        vendor, product = _read_sys(os.path.join(dev, 'idVendor')), _read_sys(os.path.join(dev, 'idProduct'))
+        if not USB_ID_RE.match(vendor) or not USB_ID_RE.match(product):
+            continue
+        if _read_sys(os.path.join(dev, 'bDeviceClass')) == '09' or vendor == '1d6b':
+            continue                                    # hubs and the root hubs
+        label = ' '.join(x for x in (_read_sys(os.path.join(dev, 'manufacturer')),
+                                     _read_sys(os.path.join(dev, 'product'))) if x)
+        out.append({'vendor': vendor, 'product': product, 'name': label[:60] or f'USB device {vendor}:{product}',
+                    'bus': _read_sys(os.path.join(dev, 'busnum')), 'dev': _read_sys(os.path.join(dev, 'devnum'))})
+    return out
+
+
+def iommu_on(sys_root: str = SYS) -> bool:
+    try:
+        return bool(os.listdir(os.path.join(sys_root, 'kernel/iommu_groups')))
+    except OSError:
+        return False
+
+
+def group_members(slot: str, sys_root: str = SYS) -> List[str]:
+    """The PCI devices that go with this one (its IOMMU group), without bridges."""
+    folder = os.path.join(sys_root, 'bus/pci/devices', slot, 'iommu_group/devices')
+    try:
+        names = sorted(os.listdir(folder))
+    except OSError:
+        return []
+    return [n for n in names if PCI_RE.match(n)
+            and not _read_sys(os.path.join(sys_root, 'bus/pci/devices', n, 'class')).startswith('0x0604')]
+
+
+def graphics_cards(sys_root: str = SYS) -> List[Dict[str, Any]]:
+    """Graphics cards with whether a machine can have them, and why not."""
+    out = []
+    base = os.path.join(sys_root, 'bus/pci/devices')
+    on = iommu_on(sys_root)
+    for slot in sorted(os.listdir(base)) if os.path.isdir(base) else []:
+        dev = os.path.join(base, slot)
+        if not PCI_RE.match(slot) or not _read_sys(os.path.join(dev, 'class')).startswith('0x03'):
+            continue
+        link = os.path.join(dev, 'driver')
+        driver = os.path.basename(os.path.realpath(link)) if os.path.islink(link) else ''
+        card = {'slot': slot, 'vendor': _read_sys(os.path.join(dev, 'vendor')), 'driver': driver,
+                'screen': _read_sys(os.path.join(dev, 'boot_vga')) == '1', 'members': group_members(slot, sys_root)}
+        if not on:
+            card['why_not'] = ('IOMMU is off: turn on VT-d (Intel) or AMD-Vi/IOMMU in the BIOS. Intel machines may '
+                               'also need intel_iommu=on when the NAS starts.')
+        elif card['screen']:
+            card['why_not'] = 'This is the card the NAS itself shows its screen on.'
+        elif not card['members']:
+            card['why_not'] = 'This card has no IOMMU group.'
+        else:
+            card['why_not'] = ''
+        out.append(card)
+    return out
+
+
+def bind_vfio(members: List[str], sys_root: str = SYS) -> None:
+    subprocess.run(['/usr/sbin/modprobe', 'vfio-pci'], capture_output=True, timeout=30, env={'LC_ALL': 'C'})
+    for slot in members:
+        dev = os.path.join(sys_root, 'bus/pci/devices', slot)
+        _write_sys(os.path.join(dev, 'driver_override'), 'vfio-pci')
+        link = os.path.join(dev, 'driver')
+        if os.path.islink(link) and os.path.basename(os.path.realpath(link)) != 'vfio-pci':
+            _write_sys(os.path.join(link, 'unbind'), slot)
+        if not os.path.islink(link):
+            _write_sys(os.path.join(sys_root, 'bus/pci/drivers_probe'), slot)
+
+
+def unbind_vfio(members: List[str], sys_root: str = SYS) -> None:
+    """Give the devices back to their own drivers."""
+    for slot in members:
+        dev = os.path.join(sys_root, 'bus/pci/devices', slot)
+        link = os.path.join(dev, 'driver')
+        try:
+            if os.path.islink(link) and os.path.basename(os.path.realpath(link)) == 'vfio-pci':
+                _write_sys(os.path.join(link, 'unbind'), slot)
+            _write_sys(os.path.join(dev, 'driver_override'), '\n')
+            _write_sys(os.path.join(sys_root, 'bus/pci/drivers_probe'), slot)
+        except OSError:
+            pass
+
+
+def _vm_uid() -> int:
+    import pwd
+    return pwd.getpwnam(VM_USER).pw_uid
+
+
+def _give(path: str, uid: int) -> None:
+    os.chown(path, uid, -1)
+    os.chmod(path, 0o600)
+
+
+def _ip(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run([IP, *args], capture_output=True, text=True, timeout=30, env={'LC_ALL': 'C'})
+
+
+def devices_ready(cfg: Dict[str, Any], sys_root: str = SYS, dev_root: str = DEV,
+                  uid: Optional[int] = None) -> None:
+    """As root, before a start: hand the machine its devices."""
+    if not (cfg.get('usb') or cfg.get('gpu') or cfg.get('network') == 'bridge'):
+        return
+    uid = _vm_uid() if uid is None else uid
+    present = usb_devices(sys_root)
+    for want in cfg.get('usb') or []:
+        for d in present:
+            if (d['vendor'], d['product']) == (want['vendor'], want['product']) and d['bus'].isdigit() \
+                    and d['dev'].isdigit():
+                _give(os.path.join(dev_root, 'bus/usb', f'{int(d["bus"]):03d}', f'{int(d["dev"]):03d}'), uid)
+    if cfg.get('gpu'):
+        card = next((c for c in graphics_cards(sys_root) if c['slot'] == cfg['gpu']), None)
+        if not card:
+            raise VmError('Its graphics card is not in the NAS any more. Choose none in its settings.')
+        if card['why_not']:
+            raise VmError(card['why_not'])
+        bind_vfio(card['members'], sys_root)
+        group = os.path.basename(os.path.realpath(os.path.join(sys_root, 'bus/pci/devices', cfg['gpu'],
+                                                               'iommu_group')))
+        node = os.path.join(dev_root, 'vfio', group)
+        for _ in range(30):
+            if os.path.exists(node):
+                break
+            time.sleep(0.1)
+        _give(node, uid)
+    if cfg.get('network') == 'bridge':
+        name = tap_name(cfg['id'])
+        _ip('link', 'delete', name)                     # left over from a crash
+        res = _ip('link', 'add', 'link', default_interface(), 'name', name, 'type', 'macvtap', 'mode', 'bridge')
+        if res.returncode != 0:
+            raise VmError(f'Its network port could not be made: {res.stderr.strip()[:200]}')
+        _ip('link', 'set', name, 'address', mac_address(cfg['id']), 'up')
+        index = _read_sys(os.path.join(sys_root, 'class/net', name, 'ifindex'))
+        node = os.path.join(dev_root, f'tap{index}')
+        for _ in range(30):
+            if os.path.exists(node):
+                break
+            time.sleep(0.1)
+        _give(node, uid)
+
+
+def devices_back(cfg: Dict[str, Any], sys_root: str = SYS) -> None:
+    """As root, after it stopped: the network port goes, the card goes back."""
+    if cfg.get('network') == 'bridge':
+        _ip('link', 'delete', tap_name(cfg['id']))
+    if cfg.get('gpu'):
+        unbind_vfio(group_members(cfg['gpu'], sys_root), sys_root)
 
 
 # ── Talking to a running machine (QMP) ───────────────────────────────────────
@@ -303,8 +556,9 @@ def run_vm(vm_id: str, state_file: str = STATE_FILE, config_dir: str = CONFIG_DI
         raise VmError('The disk of this virtual machine is missing.')
     if not os.path.exists('/dev/kvm'):
         raise VmError('This NAS cannot run virtual machines: no KVM (is virtualization on in the BIOS?).')
-    if cfg['iso'] and not os.path.isfile(cfg['iso']):
-        raise VmError('The installer image is not there any more. Choose another or eject it.')
+    for iso in (cfg['iso'], cfg['iso2']):
+        if iso and not os.path.isfile(iso):
+            raise VmError(f'The image {os.path.basename(iso)} is not there any more. Choose another or eject it.')
     os.makedirs(run_dir, exist_ok=True)
     for ext in ('qmp', 'tpm'):
         try:
@@ -319,7 +573,17 @@ def run_vm(vm_id: str, state_file: str = STATE_FILE, config_dir: str = CONFIG_DI
             if os.path.exists(os.path.join(run_dir, f'{vm_id}.tpm')):
                 break
             time.sleep(0.1)
-    qemu = subprocess.Popen(qemu_args(cfg, store, run_dir))
+    tap_fd = None
+    if cfg['network'] == 'bridge':
+        index = _read_sys(os.path.join(SYS, 'class/net', tap_name(vm_id), 'ifindex'))
+        tap_fd = os.open(os.path.join(DEV, f'tap{index}'), os.O_RDWR)
+    vfio = group_members(cfg['gpu']) if cfg['gpu'] else []
+    argv = qemu_args(cfg, store, run_dir, tap_fd=tap_fd, vfio=vfio)
+    if cfg['priority'] == 'low':
+        # Lower priority for processor and disks: the NAS's own work comes first.
+        argv = [IONICE, '-c', '2', '-n', '7', '--'] + argv
+    qemu = subprocess.Popen(argv, pass_fds=(tap_fd,) if tap_fd is not None else (),
+                            preexec_fn=(lambda: os.nice(10)) if cfg['priority'] == 'low' else None)
     signal.signal(signal.SIGTERM, lambda *_: qemu.terminate())
     try:
         return qemu.wait()
@@ -350,11 +614,9 @@ def prepare(vm_id: str, state_file: str = STATE_FILE, config_dir: str = CONFIG_D
         raise VmError('That virtual machine has files already.')
     os.mkdir(base, 0o750)
     try:
-        res = subprocess.run([QEMU_IMG, 'create', '-f', 'qcow2', os.path.join(base, 'disk.qcow2'),
-                              f'{cfg["disk_gb"]}G'], capture_output=True, text=True, timeout=120,
-                             env={'LC_ALL': 'C'})
-        if res.returncode != 0:
-            raise VmError(f'The disk could not be made: {(res.stderr or res.stdout).strip()[:200]}')
+        _make_disk(os.path.join(base, 'disk.qcow2'), cfg['disk_gb'])
+        if cfg['data_gb']:
+            _make_disk(os.path.join(base, 'data.qcow2'), cfg['data_gb'])
         if OS_TYPES[cfg['os']]['uefi']:
             shutil.copyfile(find_firmware(OS_TYPES[cfg['os']]['secure'])[1], os.path.join(base, 'OVMF_VARS.fd'))
         os.chmod(os.path.join(base, 'disk.qcow2'), 0o660)
@@ -363,6 +625,14 @@ def prepare(vm_id: str, state_file: str = STATE_FILE, config_dir: str = CONFIG_D
         shutil.rmtree(base, ignore_errors=True)
         raise
     return {'folder': base}
+
+
+def _make_disk(path: str, gb: int) -> None:
+    res = subprocess.run([QEMU_IMG, 'create', '-f', 'qcow2', path, f'{gb}G'], capture_output=True, text=True,
+                         timeout=120, env={'LC_ALL': 'C'})
+    if res.returncode != 0:
+        raise VmError(f'The disk could not be made: {(res.stderr or res.stdout).strip()[:200]}')
+    os.chmod(path, 0o660)
 
 
 def disk_size(path: str) -> int:
@@ -376,26 +646,34 @@ def disk_size(path: str) -> int:
 
 
 def grow(vm_id: str, state_file: str = STATE_FILE, config_dir: str = CONFIG_DIR, root: str = DATA_ROOT,
-         is_active: Optional[Callable[[str], bool]] = None, size_of: Callable[[str], int] = disk_size
-         ) -> Dict[str, Any]:
-    """Make a stopped machine's disk as large as its description says. Only
-    larger: shrinking would cut off what the guest keeps at the end."""
+         is_active: Optional[Callable[[str], bool]] = None, size_of: Callable[[str], int] = disk_size,
+         chown: Optional[Callable[[str], None]] = None) -> Dict[str, Any]:
+    """Make a stopped machine's disks as large as its description says, and
+    its second disk when it has none yet. Only larger: shrinking would cut
+    off what the guest keeps at the end."""
     cfg = load_config(vm_id, config_dir, root, state_file)
     if (is_active or _unit_active)(vm_id):
         raise VmError('Shut the virtual machine down first.')
-    disk = os.path.join(vm_dir(read_store(state_file, root), vm_id), 'disk.qcow2')
-    if os.path.islink(disk) or not os.path.isfile(disk):
-        raise VmError('The disk of this virtual machine is not there.')
-    want = cfg['disk_gb'] * 2**30
-    have = size_of(disk)
-    if want < have:
-        raise VmError('A disk can only grow, not shrink.')
-    if want > have:
-        res = subprocess.run([QEMU_IMG, 'resize', '-f', 'qcow2', disk, str(want)], capture_output=True, text=True,
-                             timeout=300, env={'LC_ALL': 'C'})
-        if res.returncode != 0:
-            raise VmError(f'The disk could not grow: {(res.stderr or res.stdout).strip()[:200]}')
-    return {'disk_gb': cfg['disk_gb']}
+    base = vm_dir(read_store(state_file, root), vm_id)
+    for name, gb in (('disk.qcow2', cfg['disk_gb']), ('data.qcow2', cfg['data_gb'])):
+        disk = os.path.join(base, name)
+        if name == 'data.qcow2' and not os.path.lexists(disk):
+            if gb:
+                _make_disk(disk, gb)
+                (chown or _chown_tree)(disk)
+            continue
+        if os.path.islink(disk) or not os.path.isfile(disk):
+            raise VmError('The disk of this virtual machine is not there.')
+        want = gb * 2**30
+        have = size_of(disk)
+        if want < have:
+            raise VmError('A disk can only grow, not shrink.')
+        if want > have:
+            res = subprocess.run([QEMU_IMG, 'resize', '-f', 'qcow2', disk, str(want)], capture_output=True,
+                                 text=True, timeout=300, env={'LC_ALL': 'C'})
+            if res.returncode != 0:
+                raise VmError(f'The disk could not grow: {(res.stderr or res.stdout).strip()[:200]}')
+    return {'disk_gb': cfg['disk_gb'], 'data_gb': cfg['data_gb']}
 
 
 def _let_in(path: str) -> None:
@@ -414,10 +692,17 @@ def ready(vm_id: str, state_file: str = STATE_FILE, config_dir: str = CONFIG_DIR
     isos = os.path.join(store, ISO_FOLDER)
     if os.path.isdir(isos) and not os.path.islink(isos):
         _let_in(isos)
-    if cfg['iso'] and os.path.isfile(cfg['iso']) and not os.path.islink(cfg['iso']):
-        mode = os.stat(cfg['iso']).st_mode
-        if not mode & 0o004:
-            os.chmod(cfg['iso'], (mode & 0o7777) | 0o004)
+    for iso in (cfg['iso'], cfg['iso2']):
+        if iso and os.path.isfile(iso) and not os.path.islink(iso):
+            mode = os.stat(iso).st_mode
+            if not mode & 0o004:
+                os.chmod(iso, (mode & 0o7777) | 0o004)
+    devices_ready(cfg)
+
+
+def cleanup(vm_id: str, state_file: str = STATE_FILE, config_dir: str = CONFIG_DIR, root: str = DATA_ROOT) -> None:
+    """After a stop, as root: undo what `ready` did for its devices."""
+    devices_back(load_config(vm_id, config_dir, root, state_file))
 
 
 def setup_store(state_file: str = STATE_FILE, root: str = DATA_ROOT) -> Dict[str, Any]:
@@ -519,7 +804,10 @@ def main(argv: List[str]) -> int:
         if len(argv) == 2 and argv[0] == 'stop':
             stop_vm(argv[1])
             return 0
-        raise VmError('usage: vm_ops.py run ID | stop ID')
+        if len(argv) == 2 and argv[0] == 'cleanup':
+            cleanup(argv[1])
+            return 0
+        raise VmError('usage: vm_ops.py ready ID | run ID | stop ID | cleanup ID')
     except VmError as exc:
         print(f'alvaos-vm: {exc}', file=sys.stderr)
         return 1

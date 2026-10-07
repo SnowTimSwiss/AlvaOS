@@ -15,6 +15,148 @@ How to add an entry:
 
 ---
 
+## 2026-10-07 · Every version is beta-v0.1.0
+
+- The `VERSION` file already said `beta-v0.1.0`; builds between releases
+  (installer and package workflows) used `0.0.0-dev` and now read the file.
+- `build-deb.sh` turns `beta-v0.1.0` into the Debian version `0.1.0~beta`.
+  It also had an old bug: `${v//-/~}` turned every `-` into `$HOME`
+  (`1.0.0-beta2` became `1.0.0.root~beta2`); the `~` is quoted now.
+- The update check understands the stage-first form (`beta-v0.1.0` →
+  `0.1.0b`); before, it could not compare it and never offered an update.
+  Tests in `tests/test_update_versions.py`.
+
+## 2026-10-07 · Remote access: Tailscale and Cloudflare Tunnel instead of WireGuard
+
+- The own WireGuard remote access (remote0, a forwarded router port, UPnP,
+  DuckDNS, device QR codes) is gone. Settings › Remote access has two
+  parts now, each on its own:
+  - **Tailscale** for the own devices: on → "Sign in to Tailscale" (the link
+    from `tailscale status --json`, only login.tailscale.com) → the NAS's
+    address and name, and the devices in the network. No router setting,
+    works behind CGNAT.
+  - **Cloudflare Tunnel** for the Hub at an own domain: paste an API token,
+    pick the domain, type a name; AlvaOS makes the tunnel, its route (only
+    `http://localhost:8090`, never the admin pages) and the DNS name, and
+    removes them again. Or paste a tunnel token made in the dashboard.
+    Share links in the Hub then use that address.
+- Both run as the official containers (`tailscale/tailscale:stable` on the
+  host network with /dev/net/tun, `cloudflare/cloudflared`) through the
+  helper's checked docker-compose: no foreign apt sources (their package
+  servers and keys could not be checked from here; Docker Hub images are
+  what Tailscale and Cloudflare publish).
+- A NAS with the old remote access on: at the first start it is taken down
+  once (wg-quick down, the router port closed) and the bell explains. The
+  helper now only allows taking `remote0` down. Buddy Backup keeps its own
+  WireGuard tunnel.
+- Tests in `tests/test_remote_access.py` (Cloudflare's API faked); tried in
+  Chromium. Note for next time: neither ran against the real services yet
+  (`TESTING.md` 7).
+
+## 2026-10-07 · Virtual machines: disks, network and devices
+
+- A second disk (only grows), a second CD (the virtio drivers for Windows),
+  "fast disks and network" (virtio) for Windows once its drivers are in,
+  its own address at home (macvtap), USB devices, a whole graphics card
+  through VFIO, and a low priority. All in Settings › Disks, network and
+  devices; old descriptions get the defaults.
+- What needs root happens in the unit, not in the backend:
+  `vm_ops.py ready` (ExecStartPre=+) hands the devices over (USB node and
+  `/dev/vfio/<group>` to `alvaos-vm`, the card's IOMMU group to vfio-pci,
+  the macvtap port), `vm_ops.py cleanup` (new ExecStopPost=+) gives them
+  back. QEMU gets the tap as an open file. No new helper command.
+- Not the NAS's own screen card; one running machine per card; the
+  unit locks memory for VFIO. `GET /api/v1/vms/devices` lists USB devices
+  and cards with why one cannot be used (IOMMU off, the screen card).
+- Tests: `tests/test_vm_devices.py` against a fake /sys and /dev, and
+  `test_vm_manager.py`; tried in Chromium.
+- Note for next time: none of this ran on real hardware yet
+  (`TESTING.md` 8b.8). macvtap guests cannot talk to the NAS itself.
+
+## 2026-10-07 · The admin terminal, and the assistant runs diagnostic commands
+
+- Settings › Terminal: a real shell in the browser as the AlvaOS service
+  account (never root), xterm.js vendored. `admin_terminal.py` is its own
+  small WebSocket door on 8086/9446 (like the VM screens): a one-time
+  ticket tied to the admin's sign-in, the page's origin checked, one PTY
+  per connection, at most 3, closed after 30 idle minutes, when the
+  browser goes and when the sign-in ends; the process group is killed;
+  nothing is logged.
+- The assistant's `run_command` tool: a fixed catalog of read-only commands
+  (df, free, ps, lsblk, ip, ss, systemctl status of listed services,
+  ping, …), no shell, a time limit, output masked and cut to 60 lines; the
+  chat shows which ran. New proposal `restart_service` (smbd, NFS, Docker,
+  AlvaOS Hub), confirmed by a click, through the helper.
+- The installer now installs `iproute2` and `iputils-ping` explicitly.
+- Tests: `test_admin_terminal.py` (a real shell over a real WebSocket),
+  the catalog in `test_ai_assistant.py`, endpoints in `test_api.py`; the
+  terminal was tried in Chromium.
+
+## 2026-10-07 · Files: whole folders, and sharing a folder with people
+
+- Upload whole folders: drop them into Files (the browser reads the tree,
+  also empty folders) or New › Upload a folder. Folders are made first,
+  then the files go like any upload; one row per folder shows "12 of 340".
+- Share with people…: a person gives others on the NAS a folder they can
+  open, to look at or to change too. The others see it as
+  "<folder> (from anna)" in Files and WebDAV. Nothing changes on disk and
+  no new privileged operation: their file operations run as the person
+  who shared it (`files_server._granted`, `as_user`), below that folder
+  only, never with more than that person's own access, and the grant ends
+  when she loses the folder. Deleting goes to her share's trash; they
+  cannot look through her trash, make public links or share it further.
+  Not over SMB (that would need ACLs on disk).
+- Kept in `/var/lib/alvaos/files_grants.json`. Tests in
+  `tests/test_files_grants.py`; the folder upload was tried in Chromium.
+
+## 2026-10-07 · A graphics card for apps, with one switch
+
+- Apps › Installed › an app › "Graphics card": a switch for apps whose
+  catalog entry says they can use one (Jellyfin, Immich, Ollama; new `gpu`
+  key: which service, which makers, an image per maker). The app is
+  recreated with the same images and settings; folders, ports and updates
+  keep the card.
+- `gpu_manager.app_plan` picks the first ready card the app can use:
+  Intel/AMD come in as `/dev/dri` with the render and video groups (by
+  number), AMD for Ollama also `/dev/kfd` and the `ollama/ollama:rocm`
+  image, NVIDIA through Docker's GPU request (`deploy.resources...devices`).
+  The compose check now allows `/dev/kfd`; nothing else changed in the
+  helper.
+- NVIDIA's container toolkit (`nvidia-container-toolkit`) is installed with
+  the driver; a card whose driver already runs shows "Install what apps
+  need" on Settings › Graphics. No restart for that.
+- If the card is gone later, the app starts without it and says why.
+- `nvidia-container-toolkit` is not in Debian (CI showed it). It comes from
+  NVIDIA's own apt source: the helper allows exactly one more source file,
+  `/etc/apt/sources.list.d/alvaos-nvidia-container-toolkit.list`, with
+  exactly one line, `signed-by` the key AlvaOS ships in
+  `/opt/alvaos/keys/nvidia-container-toolkit.asc` (NVIDIA's key, fingerprint
+  C95B 321B 61E8 8C18 09C4 F759 DDCA E044 F796 ECB0). It is written only when
+  NVIDIA's driver is installed.
+
+## 2026-10-07 · Calendar on phones and computers (CalDAV)
+
+- The Hub calendar now syncs with the calendar apps people already use:
+  iPhone/iPad/Mac, Android (DAVx5), Thunderbird. `backend/hub_caldav.py`
+  is a small CalDAV server inside the Hub (port 8090/9443, found through
+  `/.well-known/caldav`) on the same `calendar.json` files as the page, as
+  the person through the helper. No Radicale and no new library: reading
+  and writing iCalendar is a few functions.
+- Each calendar of a place is one CalDAV calendar, the place's tasks one
+  task list (Reminders on an iPhone). Read-only family calendars are
+  read-only on the phone. ETags and If-Match keep a phone with an old copy
+  from overwriting a newer one. Events made on a phone keep their name and
+  UID when changed on the page.
+- Sign-in as for WebDAV (`files_dav.signed_in` now takes the Hub app); the
+  admin account is not offered.
+- Calendar › "On your phone and computer" shows the address and the steps.
+- Checked with the `caldav` Python client against the running server
+  (discover, add, search, tasks, delete) and in Chromium at desktop and
+  phone width. 9 tests in `tests/test_hub_caldav.py`.
+- Note for next time: not yet tried with a real iPhone or DAVx5
+  (`TESTING.md` 4.8). Repeat rules beyond the page's (every 2 weeks,
+  exceptions) are simplified when a phone saves them.
+
 ## 2026-10-06 · Files: edit text files in the browser
 
 - A text file opened in Files (.txt, .md, .csv, .json, .log, ... up to 1 MB)

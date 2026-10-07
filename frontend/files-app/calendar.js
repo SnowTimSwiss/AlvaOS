@@ -20,6 +20,7 @@
         repeat: '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
         tasks: '<path d="M13 5h8M13 12h8M13 19h8"/><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/>',
         palette: '<circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.65-.75 1.65-1.69 0-.44-.18-.84-.44-1.13-.29-.29-.44-.65-.44-1.13a1.64 1.64 0 0 1 1.67-1.67h2c3.05 0 5.55-2.5 5.55-5.55C21.97 6.01 17.46 2 12 2z"/>',
+        phone: '<rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/>',
         users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
     });
 
@@ -208,6 +209,7 @@
                 <button type="button" class="cal-create" id="cal-create">${icon('plus')}<span>Create</span></button>
                 <div class="cal-mini" id="cal-mini"></div>
                 <div class="cal-lists" id="cal-lists"></div>
+                <button type="button" class="cal-sync" id="cal-sync">${icon('phone')}<span>On your phone and computer</span></button>
                 ${H.foot()}
             </aside>
             <div class="cal-scrim" id="cal-scrim" hidden></div>
@@ -232,6 +234,7 @@
                 <div class="cal-body" id="cal-body"></div>
             </section>
             <aside class="cal-tasks" id="cal-tasks" hidden></aside>`;
+        $c('#cal-sync').addEventListener('click', syncDialog);
         $c('#cal-create').addEventListener('click', (e) => {
             const start = new Date(cursor);
             const now = new Date();
@@ -1024,6 +1027,30 @@
                 d.close();
             } catch (err) { toast(err.message, 'error'); }
         });
+    }
+
+    // The same calendars on a phone or computer, over CalDAV (backend/hub_caldav.py).
+    function syncDialog() {
+        const user = (H.me() || {}).user || '';
+        const secure = location.protocol === 'https:';
+        const server = secure ? location.host : `${location.hostname}:9443`;
+        const d = dialog(`
+            <h2>On your phone and computer</h2>
+            <p>Your calendars and tasks sync with the calendar app you already use. Changes show up on both sides.</p>
+            <dl class="sync-facts">
+                <dt>Server</dt><dd><code>${esc(server)}</code></dd>
+                <dt>Name</dt><dd><code>${esc(user)}</code></dd>
+                <dt>Password</dt><dd>The one you sign in with here</dd>
+            </dl>
+            <details class="sync-how"><summary>iPhone, iPad and Mac</summary>
+                <p>Settings › Apps › Calendar › Calendar Accounts › Add Account › Other › <b>Add CalDAV Account</b>. Enter the server, name and password. Tasks show up in Reminders.</p></details>
+            <details class="sync-how"><summary>Android</summary>
+                <p>Install <b>DAVx⁵</b> (free in F-Droid, also in the Play Store), add an account with “URL and user name” and enter <code>https://${esc(server)}/</code>. Calendars appear in the phone's calendar app, tasks in Tasks.org or jtx Board.</p></details>
+            <details class="sync-how"><summary>Thunderbird and Outlook</summary>
+                <p>Thunderbird: New Calendar › On the Network, location <code>https://${esc(server)}/dav/${esc(user)}/</code>. Outlook needs a CalDAV add-in.</p></details>
+            <p class="sync-note">The phone has to trust this NAS once: open <a href="/alvaos-ca.crt">its certificate</a> on the phone and install it (on an iPhone also turn it on under Settings › General › About › Certificate Trust Settings). Away from home this works over remote access.</p>
+            <div class="actions"><span class="grow"></span><button type="button" class="btn primary" data-close>Done</button></div>`);
+        d.el.querySelector('[data-close]').focus();
     }
 
     function calendarDialog(placeObj, cal) {

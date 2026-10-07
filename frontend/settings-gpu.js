@@ -45,7 +45,7 @@
                 ${nvidiaNote}
                 <div class="gpu-actions">
                     ${busy ? '<span class="gpu-busy" role="status">Installing… this takes a few minutes.</span>' : ''}
-                    ${canInstall ? `<button type="button" class="btn-primary" data-install="${esc(card.vendor)}">${card.vendor === 'nvidia' ? 'Install NVIDIA driver' : 'Install firmware and video drivers'}</button>` : ''}
+                    ${canInstall ? `<button type="button" class="btn-primary" data-install="${esc(card.vendor)}">${card.vendor === 'nvidia' ? (card.driver === 'nvidia' ? 'Install what apps need' : 'Install NVIDIA driver') : 'Install firmware and video drivers'}</button>` : ''}
                     ${card.missing.length && !job.running ? `<span class="set-desc">Installs ${esc(card.missing.join(', '))}</span>` : ''}
                 </div>
             </div>`;

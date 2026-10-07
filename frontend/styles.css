@@ -2635,37 +2635,22 @@ body.ai-open .feedback-fab-wrap { display: none; }
 .copy-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .copy-actions .btn-quiet { margin-left: auto; }
 
-/* Settings › Remote access */
-.remote-intro { padding: 12px 0 4px; color: var(--text-secondary); }
-.remote-intro ol, .remote-connect ol { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 8px; }
-.remote-endpoint input { width: 100%; min-width: 0; }
-.remote-subtitle { font-size: 0.95rem; margin: 18px 0 8px; }
-.remote-devices { display: grid; gap: 8px; }
-.remote-device { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px;
-    border: 1px solid var(--border-default); border-radius: 10px; }
-.remote-device div { display: grid; gap: 2px; min-width: 0; }
-.remote-device span { font-size: 0.82rem; color: var(--text-secondary); overflow-wrap: anywhere; }
-.remote-add { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
-.remote-add input { flex: 1 1 200px; min-width: 0; }
-.remote-open { margin-top: 12px; }
-.remote-qr { display: block; width: 220px; max-width: 100%; margin: 10px 0 4px; background: #fff; padding: 8px; border-radius: 8px; }
-.remote-once { margin-top: 14px; padding: 10px 12px; border-radius: 8px; background: var(--bg-surface);
-    border: 1px solid var(--border-default); font-size: 0.88rem; }
+/* Settings › Remote access (Tailscale, Cloudflare Tunnel) */
+.remote-step, .cf-steps { padding: 6px 0 2px; display: grid; gap: 8px; }
+.remote-step p, .cf-steps p { margin: 0; font-size: 0.9rem; }
+.remote-devices { display: grid; gap: 6px; margin: 12px 0; }
+.remote-device { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--border-default); border-radius: 10px; }
+.remote-device .set-desc { margin-left: auto; }
+.remote-device .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-tertiary); flex: none; }
+.remote-device .dot.ok { background: var(--accent-success); }
+.cf-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cf-line .input { flex: 1 1 180px; min-width: 0; }
+.cf-manual summary { cursor: pointer; font-size: 0.9rem; }
+.cf-manual > * + * { margin-top: 8px; }
 
 /* The floating Feedback button must not cover the last buttons of a page. */
 body.has-feedback-fab .content-scroll { padding-bottom: 72px; }
-.remote-warning { margin: 8px 0 4px; padding: 10px 12px; border-radius: 8px; font-size: 0.88rem;
-    border: 1px solid var(--accent-warning); color: var(--text-primary); }
-.remote-ddns { margin: 4px 0 8px; padding: 10px 0; border-bottom: 1px solid var(--border-subtle); }
-.remote-ddns summary { cursor: pointer; font-size: 0.9rem; }
-.remote-ddns-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; align-items: end; }
-.remote-ddns-form label { display: grid; gap: 4px; font-size: 0.85rem; min-width: 0; }
-.remote-ddns-form input { width: 100%; min-width: 0; }
-.remote-ddns-name { display: flex; align-items: center; gap: 6px; }
-.remote-ddns-name span { color: var(--text-secondary); white-space: nowrap; }
-.remote-ddns-actions { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
 .remote-bad { color: var(--accent-danger); }
-@media (max-width: 640px) { .remote-ddns-form { grid-template-columns: 1fr; } }
 
 /* Settings › Graphics */
 .gpu-card { border: 1px solid var(--border-default); border-radius: 10px; padding: 12px 14px; margin-top: 10px; }
@@ -2681,3 +2666,4 @@ body.has-feedback-fab .content-scroll { padding-bottom: 72px; }
     padding: 10px 12px; border-radius: 8px; margin-top: 10px; font-size: 0.9rem; }
 .gpu-restart { border: 1px solid var(--accent-warning); }
 .gpu-error { border: 1px solid var(--accent-danger); }
+.ai-ran code { font-size: 0.72rem; padding: 1px 5px; border-radius: 4px; background: var(--bg-hover, rgba(127, 127, 127, 0.12)); }

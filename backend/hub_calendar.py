@@ -191,6 +191,9 @@ def _upsert(items: List[Dict[str, Any]], item: Dict[str, Any], limit: int) -> st
     item['updated'] = _stamp()
     for i, old in enumerate(items):
         if old.get('id') == item['id']:
+            for key in ('uid', 'href'):   # how a phone knows it (hub_caldav.py)
+                if old.get(key) and not item.get(key):
+                    item[key] = old[key]
             items[i] = item
             return ''
     if len(items) >= limit:

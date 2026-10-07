@@ -77,6 +77,14 @@ storage healthy, one shared folder.
    SMB too, and the old one is in the trash.
 5. Share link: read-only, then a "drop box" with a limit; open it in a
    private window and upload into the drop box.
+   Drag a folder with subfolders (and an empty one) from the computer into
+   Files: the same tree appears, with one row while it uploads; New ›
+   Upload a folder does the same. As `anna`, right-click a folder of her
+   own › Share with people… › tick `ben`, "Look at and download": ben
+   sees "<folder> (from anna)" in Files and over WebDAV, can open and
+   download but not change; switch to "Also add, change and delete": ben
+   adds a file, anna sees it (also over SMB, owned by anna). Stop sharing:
+   it is gone for ben.
 6. On a phone: open it, "Add to home screen" (needs HTTPS, step 9).
 7. WebDAV: Windows "Map network drive" or Finder › `http://alva-test:8091`.
 8. Calendar (as `anna`, who has a personal folder): drag in the week to
@@ -86,6 +94,12 @@ storage healthy, one shared folder.
    the tasks panel. Hub page › Where things are kept › Shared family
    calendars: tick "Family": anna changes it, someone with read-only
    access only looks. Try month, schedule and the 3 days on a phone.
+   On a phone: Calendar › "On your phone and computer" › follow the steps
+   (iPhone: install the certificate first, step 9). The calendars and tasks
+   show up; an event made on the phone appears in the Hub after a reload,
+   one changed in the Hub reaches the phone; the Family calendar is
+   read-only on the phone for someone with read-only access. Android: the
+   same with DAVx5.
 9. Chat: Settings › Assistant: set up an AI service (Ollama at home is
    enough). Hub page › Chat: turn it on, Change › tick two models. In the
    Hub: a new chat, switch the model, "Think" on with "High" (a thinking
@@ -118,22 +132,25 @@ storage healthy, one shared folder.
    "Backup disk · Not connected" and no alarm goes off.
 4. Buddy Backup with a second AlvaOS (a second VM) if you have one.
 
-## 7. Remote access (only on a real machine with a router)
+## 7. Remote access (Tailscale, Cloudflare Tunnel)
 
-1. Settings › Remote access › turn on. "Find it" fills in the public address.
-   Better: make a free name at duckdns.org and enter it with its token under
-   "Your address changes?"; "Last updated" appears within a few seconds.
-   If the page warns about CGNAT, remote access cannot work with this
-   internet connection until the provider gives a public IPv4 address.
-2. "Open it automatically" (UPnP; on a FRITZ!Box allow it first for the NAS
-   under Internet › Permit Access). Otherwise forward the UDP port shown
-   (51821) to the NAS address shown by hand.
-3. "Add a device" › name it › on the phone install WireGuard › scan the QR
-   code. Turn off Wi-Fi on the phone (use mobile data), switch the tunnel
-   on, open `http://100.96.96.1:8080`. AlvaOS opens; Files is at
-   `http://100.96.96.1:8090`.
-4. The device list says "Connected now". Remove the device: the phone can
-   no longer connect.
+1. Settings › Remote access › Tailscale on. After a minute "Sign in to
+   Tailscale" appears; sign in (or make a free account). The page then
+   shows the NAS's Tailscale address. Install the Tailscale app on a phone,
+   sign in with the same account, turn off Wi-Fi (mobile data) and open
+   `http://<Tailscale address>:8080` (AlvaOS) and `:8090` (the Hub). The
+   phone shows up under "Devices in your Tailscale network".
+2. Restart the NAS: Tailscale comes back by itself, still signed in.
+   Tailscale off: the phone can no longer reach the NAS from outside.
+3. Cloudflare (needs a domain in a Cloudflare account): make an API token
+   with "Cloudflare Tunnel: Edit" and "DNS: Edit", paste it, "Find my
+   domains", name `cloud`, "Put the Hub there". Within two minutes
+   `https://cloud.<domain>` shows the Hub sign-in from a phone on mobile
+   data; a share link copied in the Hub starts with that address. The
+   admin pages are not reachable there. Remove: the DNS name and the tunnel
+   are gone in the Cloudflare dashboard.
+4. A NAS that had the old WireGuard remote access on: after the update the
+   bell says it works differently now, `ip link` shows no `remote0`.
 
 ## 8. Apps
 
@@ -164,6 +181,19 @@ storage healthy, one shared folder.
 7. Disk size: shut a machine down › Settings › Disk 80 → 120 › Save. Start
    it; in Windows, Disk Management shows 40 GB unallocated after C:,
    "Extend Volume" takes it. A smaller number is refused.
+8. Settings › Disks, network and devices:
+   - Second disk 50 GB: Windows shows a new disk to initialise.
+   - Second CD `virtio-win.iso`: install the drivers in Windows, then tick
+     "Fast disks and network": it still starts, Device Manager shows
+     VirtIO devices.
+   - "Its own address at home": the router lists the machine with its own
+     address; a laptop at home reaches it (RDP) without a forwarded port.
+     After stopping it, `ip link` on the NAS shows no `mvt…` left.
+   - A USB stick ticked: it shows up in the machine, not on the NAS.
+   - A second graphics card (not the one with the NAS's screen, IOMMU on in
+     the BIOS): the machine shows it in Device Manager; after stopping,
+     Settings › Graphics shows it back on its own driver.
+   - Priority low: a big copy to the NAS stays fast while the machine works.
 
 ## 9. HTTPS
 
@@ -197,6 +227,19 @@ storage healthy, one shared folder.
 3. Switch to "Suggest changes, I confirm": "Make a shared folder Photos for
    anna" › a card with "Do it" appears; nothing happens before "Do it".
 4. Links in answers (like "Storage › Shared folders") open the right page.
+
+## 10b. Terminal (Settings › Terminal)
+
+1. Open terminal: a prompt as `alvaos`. `ls /mnt/alvaos`, `df -h`, a long
+   `top` (q to quit), resize the window: the terminal follows.
+   `sudo -i` is refused (no root shell).
+2. Over HTTPS (9443 for the page): the terminal opens on 9446 once the
+   certificate is trusted.
+3. Sign out in another tab: the terminal closes within half a minute.
+   Leave it 30 minutes without typing: it closes and says why.
+4. Assistant: ask "why is my NAS slow?" and "is Samba running?": the answer
+   shows "Ran: `ps …`" / "Ran: `systemctl status … smbd`". At the "ask"
+   level, ask it to restart Samba: it proposes, and runs only after the click.
 
 ## 11. Notifications, disks, power
 
@@ -239,6 +282,15 @@ storage healthy, one shared folder.
    skip updates): the install stops right away with "Install the system
    updates ... restart the NAS"; after doing that it works. An interrupted
    install (switch off during it) offers "Repair package setup".
+5. Apps: install Jellyfin, open it in Apps › Installed › "Graphics card",
+   turn it on (the app restarts). In Jellyfin turn on hardware
+   acceleration as the line under the switch says and play a video that
+   needs converting: the dashboard shows the transcode using the card
+   (`intel_gpu_top` / `radeontop` / `nvidia-smi` on the NAS show load).
+   Turn it off again: Jellyfin still starts. Ollama with an NVIDIA or AMD
+   card: `ollama ps` in the app's terminal shows "GPU". NVIDIA: if
+   NVIDIA's driver was installed before this version, Settings › Graphics
+   offers "Install what apps need" (the container toolkit) first.
 
 ## 13. Updates
 

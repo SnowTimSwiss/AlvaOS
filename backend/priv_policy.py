@@ -63,6 +63,14 @@ UPDATE_CACHE_DIR = '/var/lib/alvaos/updates'
 COMPOSE_DIR = '/var/lib/alvaos/compose'
 
 # Files the helper may read or replace, with the checker for their new content.
+# The one apt source that is not Debian: NVIDIA's container toolkit (apps use
+# NVIDIA cards through it). Exactly this line, signed with the key AlvaOS
+# ships in /opt/alvaos/keys (fingerprint C95B 321B 61E8 8C18 09C4 F759 DDCA
+# E044 F796 ECB0); nothing else can be written to the file.
+NVIDIA_SOURCE_FILE = '/etc/apt/sources.list.d/alvaos-nvidia-container-toolkit.list'
+NVIDIA_SOURCE_LINE = ('deb [signed-by=/opt/alvaos/keys/nvidia-container-toolkit.asc] '
+                      'https://nvidia.github.io/libnvidia-container/stable/deb/amd64 /')
+
 CONFIG_FILES = {
     '/etc/exports',
     '/etc/samba/smb.conf',
@@ -70,6 +78,8 @@ CONFIG_FILES = {
     '/etc/ssh/sshd_config.d/00-alvaos-security.conf',
     '/etc/ssh/alvaos-authorized-keys-root',
     '/etc/apt/sources.list',
+    # NVIDIA's container toolkit is not in Debian (backend/gpu_manager.py)
+    NVIDIA_SOURCE_FILE,
     # A UPS on USB (backend/ups_nut.py)
     '/etc/nut/nut.conf',
     '/etc/nut/ups.conf',
@@ -481,6 +491,13 @@ _APT_SOURCE_RE = re.compile(
 )
 
 
+def check_nvidia_source(content: bytes, current: bytes = b'') -> None:
+    lines = [ln.strip() for ln in content.decode('utf-8', 'strict').splitlines()
+             if ln.strip() and not ln.strip().startswith('#')]
+    if lines != [NVIDIA_SOURCE_LINE]:
+        _fail('Only NVIDIA\'s container toolkit source, signed with the shipped key, may go here')
+
+
 def check_apt_sources(content: bytes, current: bytes = b'') -> None:
     for raw in content.decode('utf-8', 'strict').splitlines():
         line = raw.strip()
@@ -556,6 +573,7 @@ CONFIG_CHECKS = {
     '/etc/ssh/sshd_config.d/00-alvaos-security.conf': check_sshd_dropin,
     '/etc/ssh/alvaos-authorized-keys-root': check_admin_ssh_keys,
     '/etc/apt/sources.list': check_apt_sources,
+    NVIDIA_SOURCE_FILE: check_nvidia_source,
     '/etc/nut/nut.conf': check_nut_conf,
     '/etc/nut/ups.conf': check_nut_ups_conf,
     '/etc/nut/upsd.users': check_nut_users,
@@ -598,7 +616,8 @@ _DANGEROUS_HOST_PATHS = (
 )
 _ALLOWED_CAPS = {'NET_ADMIN', 'NET_RAW', 'NET_BIND_SERVICE', 'CHOWN', 'SETUID', 'SETGID',
                  'DAC_OVERRIDE', 'FOWNER', 'SYS_NICE', 'SYS_TIME', 'KILL', 'MKNOD', 'AUDIT_WRITE'}
-_ALLOWED_DEVICE_PREFIXES = ('/dev/dri', '/dev/net/tun', '/dev/nvidia', '/dev/video', '/dev/snd')
+# /dev/kfd: AMD's compute interface, for AI models on AMD cards (Ollama).
+_ALLOWED_DEVICE_PREFIXES = ('/dev/dri', '/dev/kfd', '/dev/net/tun', '/dev/nvidia', '/dev/video', '/dev/snd')
 
 
 def _check_host_path(src: str) -> None:
@@ -1312,15 +1331,16 @@ def _rule_ip(sys_: System, args):
 
 def _rule_wg(sys_: System, args):
     # Never `show ... dump` or `private-key`: those print the private key.
-    if len(args) == 3:
-        _expect(args, 'show', 'remote0', 'latest-handshakes')
-    else:
-        _expect(args, 'show', 'buddy0')
+    _expect(args, 'show', 'buddy0')
     return Plan(argv=list(args))
 
 
 def _rule_wg_quick(sys_: System, args):
+    # The old remote access tunnel (remote0) can only be taken down: remote
+    # access is Tailscale and Cloudflare Tunnel since 2026-10 (remote_access.py).
     _expect(args, {'up', 'down'}, {WG_CONFIG_PATH, WG_REMOTE_CONFIG_PATH})
+    if args[1] == WG_REMOTE_CONFIG_PATH and args[0] != 'down':
+        _fail('The old remote access tunnel can only be taken down')
     return Plan(argv=list(args), stage={1: 'wg'})
 
 

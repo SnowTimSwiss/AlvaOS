@@ -73,7 +73,9 @@ def _stored_hash(user: str) -> str:
     return str(entry.get('files_auth')) if isinstance(entry, dict) else ''
 
 
-def signed_in() -> Tuple[Optional[Dict[str, Any]], Optional[Response]]:
+def signed_in(app_id: str = 'files') -> Tuple[Optional[Dict[str, Any]], Optional[Response]]:
+    """The person signing in with HTTP Basic, if they may use this Hub app
+    (Files for WebDAV, Calendar for CalDAV in hub_caldav.py)."""
     auth = request.authorization
     if not auth or auth.type != 'basic' or not auth.username:
         return None, _challenge()
@@ -84,7 +86,7 @@ def signed_in() -> Tuple[Optional[Dict[str, Any]], Optional[Response]]:
     with _cred_lock:
         known = _good_credentials.get(key)
     if known and known[1] > now and known[2] == _stored_hash(known[0]):
-        return _admit(known[0], 'user')   # a changed password ends this at once
+        return _admit(known[0], 'user', app_id)   # a changed password ends this at once
     if name == 'admin':
         return None, _challenge('The admin account cannot be used here. Sign in as a person from Storage › Users.')
     ip = request.remote_addr or ''
@@ -98,14 +100,15 @@ def signed_in() -> Tuple[Optional[Dict[str, Any]], Optional[Response]]:
         for k in [k for k, v in _good_credentials.items() if v[1] < now]:
             del _good_credentials[k]
         _good_credentials[key] = (who[0], now + CREDENTIAL_SECONDS, _stored_hash(who[0]))
-    return _admit(who[0], who[1])
+    return _admit(who[0], who[1], app_id)
 
 
-def _admit(user: str, role: str):
-    """WebDAV belongs to Files: only for people who may use Files in the Hub."""
+def _admit(user: str, role: str, app_id: str = 'files'):
+    """WebDAV belongs to Files (CalDAV to Calendar): only for people who may use it in the Hub."""
     import hub_apps
-    if not hub_apps.allowed('files', user, role):
-        return None, Response('Files is not turned on for you. Ask the person who looks after the NAS.\n', 403)
+    if not hub_apps.allowed(app_id, user, role):
+        name = next((a['name'] for a in hub_apps.APPS if a['id'] == app_id), app_id)
+        return None, Response(f'{name} is not turned on for you. Ask the person who looks after the NAS.\n', 403)
     return {'user': user, 'role': role}, None
 
 
@@ -125,6 +128,8 @@ def _resolve(session, raw: str):
     share = fs.shares_for(session).get(share_name)
     if not share:
         return None, None, '', Response('Not found\n', 404)
+    from flask import g
+    g.files_act_as = share.get('act_as', fs._OWN)   # a folder shared with them: as its owner
     path, rel, error = files_manager.resolve({'s': share}, share['name'], rel)
     if error or path is None:
         return None, None, '', Response('Not found\n', 404)
@@ -271,7 +276,7 @@ def _helper(args: List[str], session, timeout: int = 600) -> Optional[str]:
 
 
 def _to_trash(share, folder: str, name: str, session) -> Optional[str]:
-    return _helper(['files-trash', share['path'], folder, name], session)
+    return _helper(['files-trash', share.get('root', share['path']), folder, name], session)
 
 
 def put(session, raw: str) -> Response:
