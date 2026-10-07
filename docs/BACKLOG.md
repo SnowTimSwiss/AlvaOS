@@ -1,4 +1,4 @@
-# Work log
+Der NVIDIA-Test läuft wieder. Fehlen die Kernel-Header für den laufenden Kernel, erscheint eine klare Meldung statt endloser Fehlschläge.# Work log
 
 What has been done to AlvaOS, newest first. One short entry per work session
 or pull request: what changed, why, and anything the next person should know.
@@ -14,6 +14,16 @@ How to add an entry:
   the same thing again without a new reason.
 
 ---
+
+## 2026-10-06 · Files: sort by name, date, size or type
+
+- A sort button next to the view switch in Files (Name A–Z/Z–A, newest or
+  oldest first, largest or smallest first, type). Folders stay on top. In
+  the list the column heads Name, Size and Modified sort too, a second click
+  turns the order round. The choice is kept per browser.
+- Names sort like people count ("song 9" before "song 10"), as before.
+- Checked in Chromium at desktop and phone width against the real Files
+  server with a faked folder.
 
 ## 2026-10-06 · A UPS on USB (NUT)
 

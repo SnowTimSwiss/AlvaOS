@@ -41,7 +41,7 @@ One place for the whole household: one address, one sign-in, and the apps side b
 Everything people use Nextcloud for at home, built into AlvaOS and working on the same folders as the shares. No separate app, no database server. Lightweight: a few MB of code, no PHP and no extra database, and it does not run when nobody uses it. Stays in Python + plain JavaScript (same helper, tests and packaging as the rest; the disk and network are the limit, not the language); a part that turns out too slow in real use is replaced on its own.
 - **Done:** the Files app (port 8090, HTTPS 9443, turned on under Apps); grid and list, thumbnails, viewer for images, video, audio, PDF and text; Photos timeline by month; search by name (this folder and below, or all shared folders); copy and move (also by dragging), ZIP download, resumable uploads of any size; trash per share (also for files deleted over SMB) and previous versions of a file; share links (read-only or upload-only drop box, password, expiry, limits); WebDAV (8091, HTTPS 9444); installable as an app (PWA); keyboard shortcuts.
 - **Simple, noticed by everyone (next, in this order):**
-  1. Sort by name, date, size and type (today only by name, folders first).
+  1. ~~Sort~~ done (name, date, size, type; folders first).
   2. A start page with "Recent" and favourites.
   3. Upload whole folders by drag and drop (check what works today).
   4. "You use 42 of 100 GB" in Files (the person's own space limit).
