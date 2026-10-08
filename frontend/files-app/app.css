@@ -454,3 +454,55 @@ details.dav > summary { cursor: pointer; font-weight: 600; display: flex; align-
 details.dav > summary::-webkit-details-marker { display: none; }
 details.dav[open] > summary { margin-bottom: 10px; }
 details.dav > summary svg { width: 18px; height: 18px; flex: none; }
+
+/* Pinned folders in the side bar */
+.side-pin { display: flex; align-items: center; border-radius: 8px; }
+.side-pin .side-item { flex: 1; min-width: 0; }
+.side-pin.active .side-item { background: var(--active, var(--hover)); font-weight: 600; }
+.side-pin .unpin { display: none; flex: none; width: 28px; height: 28px; margin-right: 4px; align-items: center; justify-content: center; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
+.side-pin:hover .unpin, .side-pin:focus-within .unpin { display: inline-flex; }
+.side-pin .unpin:hover { background: var(--hover); color: var(--text); }
+@media (hover: none) { .side-pin .unpin { display: inline-flex; } }
+
+/* The time slider of Photos */
+.scrub { position: absolute; right: 2px; width: 34px; z-index: 5; touch-action: none; cursor: pointer; opacity: .55; transition: opacity .15s; }
+.scrub:hover, .scrub.active, .scrub.seen { opacity: 1; }
+.scrub-marks { position: absolute; inset: 0 0 0 0; pointer-events: none; }
+.scrub-mark { position: absolute; right: 8px; width: 6px; height: 2px; border-radius: 1px; background: var(--muted); opacity: .55; transform: translateY(-1px); font-size: 0; }
+.scrub-mark.year { width: auto; height: auto; right: 12px; background: none; opacity: .95; font-size: 0.68rem; font-weight: 600; line-height: 1; color: var(--muted); transform: translateY(-50%); }
+.scrub-thumb { position: absolute; right: 0; width: 34px; height: 0; pointer-events: none; }
+.scrub-thumb::after { content: ''; position: absolute; right: 2px; top: -14px; width: 5px; height: 28px; border-radius: 3px; background: var(--accent, #1a73e8); }
+.scrub-bubble { position: absolute; right: 14px; top: -14px; padding: 5px 10px; border-radius: 14px; background: var(--text, #1f2937); color: var(--panel, #fff); font-size: 0.8rem; font-weight: 600; white-space: nowrap; opacity: 0; transition: opacity .12s; }
+.scrub.active .scrub-bubble, .scrub:hover .scrub-bubble, .scrub.seen .scrub-bubble { opacity: 1; }
+/* leave room so the strip never covers the pictures */
+.items.photos { padding-right: 30px; }
+
+/* ── Movement: windows and screens come in, they do not jump ───────────────────────── */
+@keyframes hub-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes hub-pop { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes hub-sheet { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes hub-slide { from { opacity: .4; transform: translateX(32px); } to { opacity: 1; transform: none; } }
+.dialog-wrap:not([hidden]) { animation: hub-fade .16s ease-out; }
+.dialog-wrap:not([hidden]) > .dialog { animation: hub-pop .2s cubic-bezier(.2, .8, .2, 1); }
+.viewer:not([hidden]) { animation: hub-fade .18s ease-out; }
+.toast { animation: hub-pop .2s ease-out; }
+.scrim:not([hidden]) { animation: hub-fade .2s ease-out; }
+.ctx:not([hidden]), .menu:not([hidden]) { animation: hub-pop .12s ease-out; }
+.ptile img, .tile .thumb img, .rthumb { animation: hub-fade .25s ease-out; }
+.scrub { transition: opacity .2s; }
+
+/* On a phone, and in the app, the big windows (Devices, links, versions) are whole screens
+   that slide in from the right; the back gesture slides them out again. */
+@media (max-width: 760px) {
+    .dialog-wrap:not([hidden]) > .dialog.wide { max-width: none; width: 100%; height: 100%; max-height: none; border-radius: 0; overflow-y: auto; animation: hub-slide .22s cubic-bezier(.2, .8, .2, 1); padding-top: calc(20px + env(safe-area-inset-top)); padding-bottom: calc(20px + env(safe-area-inset-bottom)); }
+    #dialog.dialog-wrap { padding: 0; }
+    .dialog-wrap:not([hidden]) > .dialog:not(.wide) { animation: hub-sheet .22s cubic-bezier(.2, .8, .2, 1); align-self: flex-end; border-radius: 16px 16px 0 0; }
+    #dialog.dialog-wrap:has(> .dialog:not(.wide)) { align-items: flex-end; }
+}
+.in-app .dialog-wrap:not([hidden]) > .dialog.wide { max-width: none; width: 100%; height: 100%; max-height: none; border-radius: 0; overflow-y: auto; }
+.in-app #dialog.dialog-wrap { padding: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
+.pinchip { display: inline-flex; align-items: center; gap: 5px; }

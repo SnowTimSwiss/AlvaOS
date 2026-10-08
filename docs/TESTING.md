@@ -484,3 +484,16 @@ Calendar › Create › Birthday: type a name and a year; choose "And make a new
    Hub opens (see 7). Settings › "AlvaOS Link: On …".
 2. A build without the library: settings say "not available in this build";
    nothing else breaks.
+
+## 12q From the first real test
+
+1. Files opens on your own folder, on a computer and on a phone. A folder shared with you that you cannot open is not where it starts.
+2. Files: right-click a folder › Pin to side bar: it is under "Pinned"; the ✕ takes it away. Inside a folder, right-click the empty space › Pin this folder.
+3. Photos with many pictures: the strip at the right edge shows years; drag it, the month shows next to the handle; tap a place on it to jump.
+4. Calendar on a phone: tap a day (Month view): the Create window stays open and sits above the keyboard.
+5. Back gesture (phone or app): open Devices, swipe back: it closes, and you are still in the same folder. Open the folder drawer, back: it closes. Open a picture, back: the viewer closes.
+6. Swipes: from the left edge opens the folder drawer (not in the app); in the viewer swipe left and right for the next picture, down to close; in the calendar's month view swipe left and right for the next month; drag a window down by its top to close it.
+7. Devices, shared links and previous versions are whole screens on a phone and in the app; the app's Settings › Devices opens it the same way. Pinned folders show as chips above the files in the app.
+8. With "reduce motion" turned on in the phone's settings nothing slides.
+9. In a browser, Devices › Sign out for the phone. On the phone, open the app or do something in the Hub: it shows the app's "Connect to your NAS" screen with the message that it was signed out, not the Hub's sign-in page.
+

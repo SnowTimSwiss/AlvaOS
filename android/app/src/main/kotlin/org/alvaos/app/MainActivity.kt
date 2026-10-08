@@ -453,7 +453,8 @@ class MainActivity : AppCompatActivity() {
             openBackup = {
                 val backup = nav.menu.findItem(TAB_BACKUP)
                 if (backup != null) nav.selectedItemId = backup.itemId
-            }).also { hub = it }
+            },
+            signedOut = { signedOut("This phone was signed out on the NAS. Connect it again.") }).also { hub = it }
         (page.view.parent as? ViewGroup)?.removeView(page.view)
         frame.addView(page.view)
         if (appId != null) page.open(appId) else page.load()

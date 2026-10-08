@@ -40,6 +40,7 @@
         undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
         link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
         copy: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+        pin: '<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>',
         star: '<path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/>',
         contact: '<path d="M16 2v2M7 22v-2a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2M8 2v2"/><circle cx="12" cy="11" r="3"/><rect width="18" height="18" x="3" y="4" rx="2"/>',
         clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
@@ -120,6 +121,7 @@
     // ── State ──────────────────────────────────────────────────────────────
     let me = null;
     let share = '';
+    let autoShare = false;   // Files opened by itself on a folder, not the one the person asked for
     let path = '';
     let entries = [];
     let shown = [];
@@ -140,7 +142,13 @@
     const access = () => (found ? 'read' : (me?.shares || []).find((s) => s.name === share)?.access || 'read');
 
     // ── Sign in ────────────────────────────────────────────────────────────
+    let reportedOut = false;
     function showSignin() {
+        // In the AlvaOS app a ended session means: the app's own connect screen, not the Hub's sign-in.
+        if (/AlvaOSApp\//.test(navigator.userAgent) && window.AlvaApp && typeof window.AlvaApp.signedOut === 'function') {
+            if (!reportedOut) { reportedOut = true; window.AlvaApp.signedOut(); }
+            return;
+        }
         $('app').hidden = true;
         $('signin').hidden = false;
         $('in-user').focus();
@@ -186,7 +194,19 @@
         if (p) q.set('path', p);
         return `#${q}`;
     }
+    // Where Files opens when nothing is asked for: the person's own folder, else one they can
+    // change, else the first. (The first in the list is often a folder someone shared, and the
+    // person may not even be able to look into it.)
+    function firstShare() {
+        const own = (me.user || '').toLowerCase();
+        const mine = me.shares.filter((x) => !x.from);
+        return mine.find((x) => x.name.toLowerCase() === own)
+            || mine.find((x) => x.access === 'write')
+            || me.shares.find((x) => x.access === 'write')
+            || me.shares[0];
+    }
     function go(s, p, push = true) {
+        if (push) autoShare = false;
         markSeen(s);
         leaveView();
         current = 'files';
@@ -217,11 +237,13 @@
     function renderChips() {
         const chips = $('share-chips');
         const list = me?.shares || [];
-        const show = IN_APP && list.length > 1 && current === 'files' && !found && !inTrash;
+        const show = IN_APP && (list.length > 1 || readPins().length) && current === 'files' && !found && !inTrash;
         chips.hidden = !show;
         if (!show) return;
-        chips.innerHTML = list.map((s) => `<button type="button" data-chip="${esc(s.name)}" aria-pressed="${s.name === share}">${esc(s.name)}</button>`).join('');
-        chips.querySelectorAll('[data-chip]').forEach((b) => b.addEventListener('click', () => go(b.dataset.chip, '')));
+        const pins = readPins();
+        chips.innerHTML = list.map((s) => `<button type="button" data-chip="${esc(s.name)}" aria-pressed="${s.name === share && !path}">${esc(s.name)}</button>`).join('')
+            + pins.map((x) => `<button type="button" class="pinchip" data-chip="${esc(x.share)}" data-chip-path="${esc(x.path)}" aria-pressed="${x.share === share && x.path === path}">${icon('pin').replace('<svg', '<svg width="13" height="13"')}${esc(x.name)}</button>`).join('');
+        chips.querySelectorAll('[data-chip]').forEach((b) => b.addEventListener('click', () => go(b.dataset.chip, b.dataset.chipPath || '')));
     }
 
     // Folders others shared with this person: the ones not opened yet are marked "New".
@@ -254,7 +276,15 @@
             </button>`;
         const mine = (me?.shares || []).filter((s) => !s.from);
         const theirs = (me?.shares || []).filter((s) => s.from);
-        $('share-list').innerHTML = mine.map(shareRow).join('')
+        const pins = readPins();
+        const pinRow = (x) => `
+            <div class="side-pin${x.share === share && x.path === path && !found ? ' active' : ''}">
+                <button type="button" class="side-item" data-pin-share="${esc(x.share)}" data-pin-path="${esc(x.path)}" title="${esc(x.share + (x.path ? '/' + x.path : ''))}">
+                    <span class="ic">${icon('pin')}</span><span>${esc(x.name)}</span></button>
+                <button type="button" class="unpin" data-unpin="${esc(pinId(x))}" aria-label="Unpin ${esc(x.name)}" title="Unpin">${icon('x').replace('<svg', '<svg width="14" height="14"')}</button>
+            </div>`;
+        $('share-list').innerHTML = (pins.length ? `<div class="side-head2">Pinned</div>${pins.map(pinRow).join('')}<div class="side-head2">Folders</div>` : '')
+            + mine.map(shareRow).join('')
             + (theirs.length ? `<div class="side-head2">Shared with me</div>${theirs.map(shareRow).join('')}` : '');
         const parts = path ? path.split('/') : [];
         $('recent-nav').classList.toggle('active', foundInfo.list === 'recent' && !!found);
@@ -299,7 +329,18 @@
     }
     $('recent-nav').addEventListener('click', () => showList('recent'));
     $('starred-nav').addEventListener('click', () => showList('starred'));
-    $('share-list').addEventListener('click', (e) => { const b = e.target.closest('[data-share]'); if (b) go(b.dataset.share, ''); });
+    $('share-list').addEventListener('click', (e) => {
+        const un = e.target.closest('[data-unpin]');
+        if (un) {
+            const x = readPins().find((p) => pinId(p) === un.dataset.unpin);
+            if (x) togglePin(x.share, x.path, x.name);
+            return;
+        }
+        const pin = e.target.closest('[data-pin-share]');
+        if (pin) { go(pin.dataset.pinShare, pin.dataset.pinPath || ''); return; }
+        const b = e.target.closest('[data-share]');
+        if (b) go(b.dataset.share, '');
+    });
     $('crumbs').addEventListener('click', (e) => { const b = e.target.closest('[data-path]'); if (b) go(share, b.dataset.path); });
 
     const openSide = () => { $('side').classList.add('open'); $('scrim').hidden = false; };
@@ -321,6 +362,12 @@
         } catch (err) {
             if (id !== loadId) return;
             entries = [];
+            // Opened by itself and not allowed: try another folder of the person before showing the error.
+            if (autoShare && !path) {
+                autoShare = false;
+                const other = me.shares.find((x) => x.name !== share && !x.from) || me.shares.find((x) => x.name !== share);
+                if (other) { go(other.name, '', false); return; }
+            }
             $('items').innerHTML = `<div class="empty">${icon('lock')}<strong>Cannot open this folder</strong>${esc(err.message)}</div>`;
         }
     }
@@ -369,7 +416,73 @@
         return true;
     }
 
+    // The time slider of Photos (like Immich): a thin strip at the right edge with the years and
+    // months of the timeline. Drag it, or tap a place on it, to jump there; it follows the scrolling.
+    let scrub = null;
+    function removeScrubber() {
+        if (scrub) { scrub.cleanup(); scrub.el.remove(); scrub = null; }
+    }
+    function buildScrubber() {
+        const content = $('content');
+        const heads = [...$('items').querySelectorAll('.month')];
+        if (heads.length < 2) return;
+        const el = document.createElement('div');
+        el.className = 'scrub';
+        el.setAttribute('aria-hidden', 'true');
+        el.innerHTML = '<div class="scrub-marks"></div><div class="scrub-thumb"><span class="scrub-bubble"></span></div>';
+        $('main').appendChild(el);
+        const marks = el.querySelector('.scrub-marks');
+        const thumb = el.querySelector('.scrub-thumb');
+        const bubble = el.querySelector('.scrub-bubble');
+        const place = () => { const r = content.getBoundingClientRect(); const m = $('main').getBoundingClientRect(); el.style.top = `${r.top - m.top + 6}px`; el.style.height = `${Math.max(0, r.height - 12)}px`; };
+        let tops = [];
+        const layout = () => {
+            place();
+            const total = content.scrollHeight || 1;
+            const base = content.getBoundingClientRect().top - content.scrollTop;
+            tops = heads.map((h) => ({ label: h.textContent, y: h.getBoundingClientRect().top - base }));
+            let lastYear = '';
+            marks.innerHTML = tops.map((t, i) => {
+                const year = (t.label.match(/\d{4}$/) || [''])[0];
+                const showYear = year !== lastYear;
+                lastYear = year;
+                return `<span class="scrub-mark${showYear ? ' year' : ''}" style="top:${(t.y / total) * 100}%">${showYear ? year : ''}</span>`;
+            }).join('');
+            follow();
+        };
+        const monthAt = (y) => { let found = tops[0]; for (const t of tops) { if (t.y <= y) found = t; else break; } return found; };
+        let dragging = false;
+        function follow() {
+            const total = content.scrollHeight || 1;
+            const f = content.scrollTop / Math.max(1, total - content.clientHeight);
+            thumb.style.top = `${Math.max(0, Math.min(1, f)) * 100}%`;
+            const t = monthAt(content.scrollTop + 8);
+            if (t) bubble.textContent = t.label;
+        }
+        const jump = (clientY) => {
+            const r = el.getBoundingClientRect();
+            const f = Math.max(0, Math.min(1, (clientY - r.top) / Math.max(1, r.height)));
+            content.scrollTop = f * Math.max(0, content.scrollHeight - content.clientHeight);
+            follow();
+        };
+        const down = (e) => { dragging = true; el.classList.add('active'); el.setPointerCapture(e.pointerId); jump(e.clientY); e.preventDefault(); };
+        const move = (e) => { if (dragging) jump(e.clientY); };
+        const up = () => { dragging = false; el.classList.remove('active'); };
+        el.addEventListener('pointerdown', down);
+        el.addEventListener('pointermove', move);
+        el.addEventListener('pointerup', up);
+        el.addEventListener('pointercancel', up);
+        const onScroll = () => { if (!dragging) { el.classList.add('seen'); clearTimeout(el.hide); el.hide = setTimeout(() => el.classList.remove('seen'), 1500); } follow(); };
+        content.addEventListener('scroll', onScroll, { passive: true });
+        window.addEventListener('resize', layout);
+        const watch = typeof ResizeObserver === 'function' ? new ResizeObserver(layout) : null;
+        if (watch) watch.observe($('items'));
+        scrub = { el, cleanup: () => { content.removeEventListener('scroll', onScroll); window.removeEventListener('resize', layout); if (watch) watch.disconnect(); clearTimeout(el.hide); } };
+        layout();
+    }
+
     function render() {
+        removeScrubber();
         renderChips();
         if (inTrash) { paintTrash(); return; }
         const q = found ? '' : $('search').value.trim().toLowerCase();
@@ -412,6 +525,7 @@
                 const heart = favs.has(refOf(e)) ? `<span class="heart">${icon('heart-fill')}</span>` : '';
                 return `${head}<div class="ptile${k === 'video' ? ' vid' : ''}" data-i="${i}" title="${esc(rel(e))}">${thumb}${heart}</div>`;
             }).join('');
+            buildScrubber();
         } else if (!shown.length) {
             items.innerHTML = q
                 ? `<div class="empty">${icon('search')}<strong>Nothing found</strong>No name in this folder contains "${esc(q)}".</div>`
@@ -610,7 +724,8 @@
         const item = e.target.closest('[data-i]');
         if (item) open(shown[Number(item.dataset.i)]);
     });
-    $('items').addEventListener('contextmenu', (e) => {
+    // The whole field answers, also the empty space below and beside the files.
+    $('content').addEventListener('contextmenu', (e) => {
         e.preventDefault();
         const item = e.target.closest('[data-i]');
         if (item) {
@@ -727,6 +842,18 @@
         toast(every ? 'Removed from Starred.' : list.length === 1 ? `"${list[0].name}" is in Starred now.` : `${list.length} items are in Starred now.`);
         if (found && foundInfo.list === 'starred') showList('starred');
     }
+    // Pinned folders: shortcuts in the side bar, kept in this browser like Starred.
+    const pinId = (x) => `${x.share}/${x.path || ''}`;
+    const readPins = () => readList('pins').filter((x) => (me?.shares || []).some((s) => s.name === x.share));
+    const isPinned = (shareName, folder) => readPins().some((x) => pinId(x) === `${shareName}/${folder || ''}`);
+    function togglePin(shareName, folder, name) {
+        const all = readList('pins');
+        const id = `${shareName}/${folder || ''}`;
+        const was = all.some((x) => pinId(x) === id);
+        writeList('pins', was ? all.filter((x) => pinId(x) !== id) : [...all, { share: shareName, path: folder || '', name }].slice(0, 30));
+        toast(was ? `"${name}" is not pinned any more.` : `"${name}" is pinned to the side bar.`);
+        renderSide();
+    }
     function showList(kind) {
         leaveView();
         current = 'files';
@@ -802,6 +929,8 @@
         if (canWrite && one) rows.push(`<button type="button" data-ctx="rename">${icon('pen')}Rename</button>`);
         if (one && one.type === 'folder' && !shareOf(sh(one))?.from) rows.push(`<button type="button" data-ctx="people">${icon('user-plus')}Share with people…</button>`);
         if (one && !shareOf(sh(one))?.from) rows.push(`<button type="button" data-ctx="share">${icon('link')}Share link…</button>`);
+        if (one && one.type === 'folder' && !found) rows.push(`<button type="button" data-ctx="pin">${icon('pin')}${isPinned(sh(one), rel(one)) ? 'Unpin from side bar' : 'Pin to side bar'}</button>`);
+        else if (!sel.length && !found && path) rows.push(`<button type="button" data-ctx="pin-here">${icon('pin')}${isPinned(share, path) ? 'Unpin this folder' : 'Pin this folder to the side bar'}</button>`);
         if (sel.length) rows.push(`<button type="button" data-ctx="star">${icon('star')}${sel.every(isStarred) ? 'Remove from Starred' : 'Star'}</button>`);
         if (one && one.type === 'file') rows.push(`<button type="button" data-ctx="versions">${icon('clock')}Previous versions…</button>`);
         if (canWrite && sel.length) rows.push(`<button type="button" data-ctx="move">${icon('folder')}Move to…</button>`, `<button type="button" data-ctx="copy">${icon('copy')}Copy to…</button>`);
@@ -854,6 +983,8 @@
         if (name === 'people' && sel.length === 1) peopleDialog(sel[0]);
         if (name === 'folder') newFolder();
         if (name === 'star' && sel.length) toggleStar(sel);
+        if (name === 'pin' && sel.length === 1) togglePin(sh(sel[0]), rel(sel[0]), sel[0].name);
+        if (name === 'pin-here') togglePin(share, path, path.split('/').pop());
     }
 
     $('new-btn').addEventListener('click', () => { $('new-menu').hidden = !$('new-menu').hidden; });
@@ -2234,7 +2365,8 @@
             return;
         }
         const wanted = me.shares.find((s) => s.name === q.get('share'));
-        go(wanted ? wanted.name : me.shares[0].name, wanted ? q.get('path') || '' : '', false);
+        autoShare = !wanted;
+        go(wanted ? wanted.name : firstShare().name, wanted ? q.get('path') || '' : '', false);
         history.replaceState(null, '', hashFor(share, path));
         if (pendingTool) { const t = pendingTool; pendingTool = ''; openTool(t); }
     }

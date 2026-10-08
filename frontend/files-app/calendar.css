@@ -277,3 +277,14 @@
 .sync-how p { margin: 8px 0 2px; }
 .sync-note { color: var(--muted); font-size: 0.85rem; }
 .sync-note a { color: var(--accent); }
+
+/* On a phone the small windows are sheets at the bottom of the screen (above the keyboard). */
+.cal-pop.sheet { left: 0 !important; right: 0; top: auto !important; bottom: 0; width: 100%; max-width: none; border-radius: 16px 16px 0 0; max-height: 80vh; overflow-y: auto; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+
+/* Movement */
+@keyframes cal-pop-in { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes cal-sheet-up { from { transform: translateY(100%); } to { transform: none; } }
+.cal-pop { animation: cal-pop-in .16s ease-out; }
+.cal-pop.sheet { animation: cal-sheet-up .22s cubic-bezier(.2, .8, .2, 1); }
+.cal-dialog-wrap { animation: cal-pop-in .16s ease-out; }
+@media (prefers-reduced-motion: reduce) { .cal-pop, .cal-pop.sheet, .cal-dialog-wrap { animation: none; } }
