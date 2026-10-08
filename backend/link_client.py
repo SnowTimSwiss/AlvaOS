@@ -66,3 +66,27 @@ def remove_device(device_id: str) -> bool:
 
 def set_enabled(enabled: bool) -> Optional[Dict[str, Any]]:
     return _call('POST', '/config', {'enabled': bool(enabled)}, timeout=40)
+
+
+def pair(peer_id: str, request: Dict[str, Any]) -> Dict[str, Any]:
+    """Send the other NAS a pairing request through Link: {'op': 'buddy', 'secret', 'token'}.
+    Answers its JSON, or {'error': ...}."""
+    found = _call('POST', '/pair', {'id': peer_id, 'request': request}, timeout=60)
+    return found if found is not None else {'error': 'AlvaOS Link is not running on this NAS.'}
+
+
+def ping(peer_id: str) -> Dict[str, Any]:
+    """{'ok': bool, 'ms': int, 'error': str}: does this buddy answer through Link?"""
+    found = _call('POST', '/ping', {'id': peer_id}, timeout=40)
+    return found if found is not None else {'ok': False, 'error': 'AlvaOS Link is not running on this NAS.'}
+
+
+def secret_key() -> str:
+    """This NAS's Link key (64 hex digits), for the Buddy Backup recovery kit; '' when Link does not answer."""
+    return str((_call('GET', '/secret') or {}).get('secret') or '')
+
+
+def import_secret_key(secret: str) -> bool:
+    """A new install takes over the old Link key (from the recovery kit)."""
+    found = _call('POST', '/secret', {'secret': secret}, timeout=60)
+    return bool(found and not found.get('error'))

@@ -276,3 +276,48 @@ def test_the_control_api_needs_its_token_and_manages_the_peers(tmp_path, monkeyp
             server.shutdown()
             await nas.stop()
     asyncio.run(scenario())
+
+
+def test_two_nas_pair_and_ping_each_other_and_a_new_install_takes_over_the_key(tmp_path, monkeypatch):
+    import link_client
+    hub = FakeHub()
+
+    async def scenario():
+        a = await node(tmp_path, "a", {"hub": ("127.0.0.1", 1), "nbd": ("127.0.0.1", 1), "api": ("127.0.0.1", hub.server_address[1])},
+                       {"nbd": free_port(), "api": free_port()})
+        b = await node(tmp_path, "b", {"hub": ("127.0.0.1", 1), "nbd": ("127.0.0.1", 1), "api": ("127.0.0.1", 1)},
+                       {"nbd": free_port(), "api": free_port()})
+        try:
+            b.hints[a.node_id] = a.address_hints()
+            # B pairs with A through Link (a stranger to A), the request ends in A's backend.
+            answer = await b.remote_pair(a.node_id, {"op": "buddy", "secret": "sss", "token": "T"})
+            assert answer["accepted"] == "T" and hub.seen[-1][2] == "sss"
+            # Both let each other in (the backup code does this), then a ping goes through.
+            a.state.set_buddies([{"id": b.node_id, "name": "B"}])
+            b.state.set_buddies([{"id": a.node_id, "name": "A"}])
+            a.hints[b.node_id] = b.address_hints()
+            ok = await b.ping(a.node_id)
+            assert ok["ok"] and ok["ms"] >= 0
+            assert (await b.ping("e" * 64))["ok"] is False                  # not on the list
+            # The key can be exported and a new install takes it over: same address again.
+            port = free_port()
+            token = a.state.control_token()
+            server = ld.control_server(a, asyncio.get_running_loop(), token, ("127.0.0.1", port))
+            monkeypatch.setattr(link_client, "BASE", f"http://127.0.0.1:{port}")
+            monkeypatch.setattr(link_client, "TOKEN_FILE", str(tmp_path / "a" / "control_token"))
+            loop = asyncio.get_running_loop()
+            try:
+                secret = await loop.run_in_executor(None, link_client.secret_key)
+                assert len(secret) == 64
+                before = a.node_id
+                new_key = "ab" * 32
+                assert await loop.run_in_executor(None, link_client.import_secret_key, new_key)
+                assert a.node_id != before and a.state.secret_key().hex() == new_key
+                assert await loop.run_in_executor(None, link_client.import_secret_key, secret)
+                assert a.node_id == before
+            finally:
+                server.shutdown()
+        finally:
+            await a.stop()
+            await b.stop()
+    asyncio.run(scenario())

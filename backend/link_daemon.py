@@ -127,6 +127,12 @@ class State:
             f.write(key)
         return key
 
+    def write_secret_key(self, key: bytes) -> None:
+        path = os.path.join(self.dir, 'key')
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'wb') as f:
+            f.write(key)
+
     def control_token(self) -> str:
         """The password of the local control API: a file only the NAS's own services can read."""
         path = os.path.join(self.dir, 'control_token')
@@ -461,6 +467,32 @@ class Link:
                     raise
         raise RuntimeError('unreachable')
 
+    async def remote_pair(self, peer_id: str, request: Dict[str, Any]) -> Dict[str, Any]:
+        """Pair with another NAS: the same narrow request a stranger may make (see _pair)."""
+        try:
+            conn = await self._connection_to(peer_id)
+            bi = await conn.open_bi()
+            await bi.send().write_all(b'pair\n' + json.dumps(request).encode() + b'\n')
+            await bi.send().finish()
+            raw = await asyncio.wait_for(bi.recv().read_to_end(REQUEST_LIMIT), 40)
+            parsed = json.loads(raw.decode('utf-8').split('\n')[0])
+            return parsed if isinstance(parsed, dict) else {'error': 'The other NAS answered something odd.'}
+        except Exception as exc:  # noqa: BLE001
+            self.connections.pop(peer_id, None)
+            return {'error': f'The other NAS could not be reached: {exc}'}
+
+    async def ping(self, peer_id: str) -> Dict[str, Any]:
+        """Whether an allowed buddy answers, and how fast."""
+        started = time.monotonic()
+        try:
+            bi = await self._open_stream(peer_id, 'ping')
+            await bi.send().finish()
+            answer = await asyncio.wait_for(bi.recv().read_to_end(16), 20)
+        except Exception as exc:  # noqa: BLE001
+            return {'ok': False, 'error': str(exc)}
+        ok = answer.strip() == b'pong'
+        return {'ok': ok, 'ms': round((time.monotonic() - started) * 1000), 'error': '' if ok else 'The other NAS did not answer.'}
+
     # -- For the control API ---------------------------------------------------------
 
     def status(self) -> Dict[str, Any]:
@@ -526,9 +558,13 @@ def control_server(link: Link, loop: asyncio.AbstractEventLoop, token: str,
             return True
 
         def do_GET(self) -> None:  # noqa: N802
-            if self._ok() and self.path == '/status':
+            if not self._ok():
+                return
+            if self.path == '/status':
                 self._send(200, link.status())
-            elif self.path != '/status':
+            elif self.path == '/secret':
+                self._send(200, {'secret': link.state.secret_key().hex()})
+            else:
                 self._send(404, {'error': 'Not found.'})
 
         def do_POST(self) -> None:  # noqa: N802
@@ -544,6 +580,30 @@ def control_server(link: Link, loop: asyncio.AbstractEventLoop, token: str,
                     return
                 link.state.set_buddies(clean)
                 self._run(link.refresh_forwarders())
+                self._send(200, link.status())
+            elif self.path == '/pair':
+                peer_id = str(body.get('id') or '').lower()
+                request = body.get('request')
+                if not ID_RE.match(peer_id) or not isinstance(request, dict) or not link.started:
+                    self._send(400, {'error': 'Link is not running, or that address is not valid.'})
+                    return
+                self._send(200, self._run(link.remote_pair(peer_id, request)))
+            elif self.path == '/ping':
+                peer_id = str(body.get('id') or '').lower()
+                if peer_id not in link.state.peers or not link.started:
+                    self._send(200, {'ok': False, 'error': 'That buddy is not known to Link.'})
+                    return
+                self._send(200, self._run(link.ping(peer_id)))
+            elif self.path == '/secret':
+                # The recovery kit of Buddy Backup carries this key: a new install is the same node again.
+                secret = str(body.get('secret') or '').lower() if isinstance(body, dict) else ''
+                if not re.fullmatch(r'[0-9a-f]{64}', secret):
+                    self._send(400, {'error': 'That key is not valid.'})
+                    return
+                link.state.write_secret_key(bytes.fromhex(secret))
+                if link.started:
+                    self._run(link.stop())
+                    self._run(link.start())
                 self._send(200, link.status())
             elif self.path == '/remove-device':
                 device = str(body.get('device') or '') if isinstance(body, dict) else ''
