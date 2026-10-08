@@ -15,6 +15,15 @@ How to add an entry:
 
 ---
 
+## 2026-10-08 — Workflows: no duplicate runs, no waste
+
+- Tests and Android: a branch is tested through its pull request, not a second time as a push; `main` is tested on every push. Runs of the same branch cancel each other. `test.yml` has read-only permissions.
+- Android: the Link library (Rust, iroh) is built only for a release or a run by hand, and only for arm64-v8a. Run the workflow by hand once before a release to see that it works. A manual run uploads to Google Play only when a track is chosen (default: none).
+- Installer: the build container gets `python3-pip` (the build downloads the iroh wheel).
+- Removed: the cleanup of the old `android-beta` pre-release, old TODO blocks and emoji in the package workflow.
+
+---
+
 ## 2026-10-08 — Docs for the public beta: README, contributing and AI rules, comment cleanup
 
 - README rewritten for what AlvaOS is now (Hub, Link, Buddy Backup, apps, VMs, Android app), with a documentation table and the beta status.
