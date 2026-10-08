@@ -13,6 +13,14 @@ val buildNumber = System.getenv("ALVAOS_VERSION_CODE")?.toIntOrNull() ?: 1
 // never in the repository. Without it a release build is not signed.
 val keystore = System.getenv("ALVAOS_KEYSTORE")?.let { file(it) }?.takeIf { it.exists() }
 
+// The Hub's pages go into the app too, for the demo (frontend/files-app, answered by demo.js).
+val hubAssets = layout.buildDirectory.dir("generated/hub-assets")
+val copyHubAssets = tasks.register<Copy>("copyHubAssets") {
+    from(rootDir.resolve("../frontend/files-app")) { exclude("sw.js", "manifest.webmanifest", "share.html", "share.js") }
+    into(hubAssets.map { it.dir("hub") })
+}
+tasks.named("preBuild") { dependsOn(copyHubAssets) }
+
 android {
     namespace = "org.alvaos.app"
     compileSdk = 36
@@ -45,6 +53,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+    sourceSets.getByName("main").assets.srcDir(hubAssets)
     lint { abortOnError = false }
     // Every screen opened on the JVM (Robolectric) with pictures of it (Roborazzi):
     // app/build/outputs/roborazzi/*.png, kept by CI.

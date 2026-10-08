@@ -15,6 +15,15 @@ How to add an entry:
 
 ---
 
+## 2026-10-08 — beta-v0.3.3: a demo mode in the Android app
+
+- **"Try the demo"** on the app's first screen opens the whole app with sample data, no NAS and no account: files and folders, 140 photos with the time slider, a calendar with events, tasks and birthdays, contacts, a chat with a ready answer. For the Google Play review ("App access") and for people who want to look first. Nothing is sent or saved; Settings has "Exit the demo".
+- How: the build copies the Hub's pages into the app (`frontend/files-app` → assets, Gradle `copyHubAssets`); `demo.js` answers what a NAS would answer, in the page only, and draws the pictures itself. The same page runs in a browser with `index.html#demo`. The native Backup and Settings tabs explain the demo instead of asking for permissions.
+- `docs/ANDROID.md` says what to enter under "App access" in the Play Console.
+- Note for next time: the app side (button, assets, tabs) could not be built here; CI builds it and `ScreensTest` opens the demo. Check on a phone that the Hub loads from the app's assets.
+
+---
+
 ## 2026-10-08 — beta-v0.3.2: the Photos slider as in Immich, no side bar in Photos, Files opens at home
 
 - **Photos time slider** reworked after Immich: the years are written on the strip where they begin (no two closer than 20 px), the months are dots, a short bar shows where you are, and the date under the pointer shows while the mouse is over the strip (not only while dragging). The bar and the marks use the same scale, so the bar sits on a year when you are at that year. The strip is only there when the page scrolls; its date label stays inside the strip's height.

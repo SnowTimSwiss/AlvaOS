@@ -99,6 +99,7 @@ class HubPage(
         web.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val url = request.url
+                if (store.demo) return url.scheme == "file"                // the demo stays in its own pages
                 val nas = Uri.parse(store.server)
                 if (url.host == nas.host) return false                   // the Hub and the NAS's apps
                 ctx.startActivity(Intent(Intent.ACTION_VIEW, url).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -161,7 +162,7 @@ class HubPage(
      */
     fun open(appId: String) {
         app = appId
-        if (loadedFor == store.server + store.token) {
+        if (loadedFor == key()) {
             web.evaluateJavascript("window.Hub && window.Hub.open(${org.json.JSONObject.quote(appId)})", null)
         } else {
             load()
@@ -169,10 +170,21 @@ class HubPage(
     }
 
     /** Opens the Hub, signed in with the app's session (again only if the address or session changed). */
+    /** What the loaded page was loaded for: the demo, or an address and a session. */
+    private fun key() = if (store.demo) "demo" else store.server + store.token
+
     fun load(force: Boolean = false) {
-        val key = store.server + store.token
+        val key = key()
         if (!force && key == loadedFor) return
         loadedFor = key
+        if (store.demo) {
+            // The demo: the app's own copy of the Hub, which answers with sample data (frontend/files-app/demo.js).
+            val tool = pendingTool
+            pendingTool = ""
+            web.loadUrl("file:///android_asset/hub/index.html#demo" + if (app.isNotEmpty()) "&app=$app" else "")
+            if (tool.isNotEmpty()) web.postDelayed({ openTool(tool) }, 1500)
+            return
+        }
         val cookies = CookieManager.getInstance()
         cookies.setAcceptCookie(true)
         for (address in (store.addresses + store.server).distinct()) {
@@ -221,7 +233,7 @@ class HubPage(
     /** One of the Hub's tools in the Files app: "trash", "links" or "devices". */
     fun openTool(tool: String) {
         val script = "window.Hub && window.Hub.tool(${JSONObject.quote(tool)})"
-        if (loadedFor == store.server + store.token) web.evaluateJavascript(script, null)
+        if (loadedFor == key()) web.evaluateJavascript(script, null)
         else { pendingTool = tool; load() }
     }
 

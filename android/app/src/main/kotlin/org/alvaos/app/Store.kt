@@ -39,12 +39,16 @@ class Store(context: Context) : SyncState {
     var linkPort: Int
         get() = prefs.getInt("link_port", 0)
         set(v) = prefs.edit().putInt("link_port", v).apply()
+    /** The demo: the whole app with sample data and no NAS (what Google Play's review and curious people open). */
+    var demo: Boolean
+        get() = prefs.getBoolean("demo", false)
+        set(v) = prefs.edit().putBoolean("demo", v).apply()
     var nasName: String
-        get() = prefs.getString("nas_name", "").orEmpty()
+        get() = if (demo) "Demo NAS" else prefs.getString("nas_name", "").orEmpty()
         set(v) = prefs.edit().putString("nas_name", v).apply()
     /** The Hub apps of the person (the app's tabs), as the NAS said last. */
     var hubApps: List<HubApp>
-        get() = JSONArray(prefs.getString("hub_apps", "[]")).let { a ->
+        get() = if (demo) DEMO_APPS else JSONArray(prefs.getString("hub_apps", "[]")).let { a ->
             List(a.length()) { a.getJSONObject(it) }.map { HubApp(it.optString("id"), it.optString("name"), it.optString("icon")) }
         }
         set(v) = prefs.edit().putString("hub_apps", JSONArray(v.map {
@@ -52,7 +56,7 @@ class Store(context: Context) : SyncState {
         }).toString()).apply()
     /** The App Store apps with a tile in the Hub (they open in the browser). */
     var storeApps: List<StoreTile>
-        get() = JSONArray(prefs.getString("store_apps", "[]")).let { a ->
+        get() = if (demo) emptyList() else JSONArray(prefs.getString("store_apps", "[]")).let { a ->
             List(a.length()) { a.getJSONObject(it) }.map { StoreTile(it.optString("id"), it.optString("name"), it.optInt("port"), it.optString("path", "/")) }
         }
         set(v) = prefs.edit().putString("store_apps", JSONArray(v.map {
@@ -72,7 +76,7 @@ class Store(context: Context) : SyncState {
         get() = prefs.getBoolean("backup_on", albums.isNotEmpty())
         set(v) = prefs.edit().putBoolean("backup_on", v).apply()
     var user: String
-        get() = prefs.getString("user", "").orEmpty()
+        get() = if (demo) "demo" else prefs.getString("user", "").orEmpty()
         set(v) = prefs.edit().putString("user", v).apply()
     /** The Hub session (cookie), not the password. */
     var token: String
@@ -101,7 +105,7 @@ class Store(context: Context) : SyncState {
         get() = prefs.getBoolean("asked_manage_media", false)
         set(v) = prefs.edit().putBoolean("asked_manage_media", v).apply()
 
-    val signedIn: Boolean get() = server.isNotEmpty() && token.isNotEmpty()
+    val signedIn: Boolean get() = demo || (server.isNotEmpty() && token.isNotEmpty())
 
     fun hub() = HubClient(server, token)
 
@@ -138,5 +142,13 @@ class Store(context: Context) : SyncState {
         set(v) = prefs.edit().putBoolean("delete_on_nas", v).apply()
 
     /** Signed out (here or on the NAS): the session goes, the rest stays for signing in again. */
-    fun signOut() = prefs.edit().remove("token").apply()
+    fun signOut() = prefs.edit().remove("token").remove("demo").apply()
+
+    companion object {
+        /** The Hub apps in the demo (the same as a NAS with everything turned on). */
+        val DEMO_APPS = listOf(
+            HubApp("files", "Files", "folder"), HubApp("photos", "Photos", "image"), HubApp("calendar", "Calendar", "calendar"),
+            HubApp("contacts", "Contacts", "contact"), HubApp("chat", "Chat", "message-circle"),
+        )
+    }
 }

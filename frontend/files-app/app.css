@@ -514,3 +514,6 @@ details.dav > summary svg { width: 18px; height: 18px; flex: none; }
 .app.no-side > .side, .app.no-side > .scrim { display: none !important; }
 .app.no-side #menu-btn { display: none !important; }
 @media (max-width: 760px) { .app.no-side, .app.no-side.with-rail { grid-template-columns: 1fr; } }
+
+/* Demo mode: a small line that says so */
+.demo-tag { position: fixed; top: 6px; right: 10px; z-index: 140; padding: 3px 10px; border-radius: 10px; background: #f6bf26; color: #1f2937; font-size: 0.72rem; font-weight: 700; pointer-events: none; opacity: .92; }

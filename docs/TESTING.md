@@ -506,3 +506,12 @@ Calendar › Create › Birthday: type a name and a year; choose "And make a new
 3. Photos has no side bar and no folder button; Files has them again.
 4. Open a deep folder in Files, go to Photos, then click Files: you are in your own folder, not in the deep one.
 \n
+
+## 12s The demo (Android app)
+
+1. On the first screen "Try the demo" opens the app with Files, Photos, Calendar, Contacts and Chat: sample folders and files, 140 pictures with the time slider, events in the calendar, five contacts, a chat that answers. The yellow "Demo · sample data" mark is in the corner.
+2. Create an event, a contact, a folder: it appears. Close the app completely and open it again: the changes are gone (nothing is kept) and the demo is still on.
+3. Backup tab: only an explanation, no permission asks. Settings: "This is the demo" and "Exit the demo": it returns to the first screen.
+4. Airplane mode: the demo works the same.
+5. The same in a browser: open `http://<NAS>:8090/#demo`.
+

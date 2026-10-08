@@ -186,6 +186,7 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         if (!store.signedIn) return
         if (!showsHub()) show()
+        if (store.demo) return                                    // no NAS to ask, nothing to back up
         if (store.backupOn) SyncWorker.schedule(this)         // the watchers survive an update of the app
         deleteWhatTheNasDeleted()
         // Which apps the person has now, or signed out on the NAS (Devices › Sign out, a new password)?
@@ -282,6 +283,41 @@ class MainActivity : AppCompatActivity() {
         return true
     }
 
+    /** The demo: the app with sample data, no NAS, nothing sent or kept. */
+    private fun startDemo() {
+        store.demo = true
+        autoDeleted = false
+        tab = TAB_HUB
+        appsOpen = null
+        navKey = ""
+        buildNav()
+        hub?.destroy(); hub = null
+        show()
+    }
+
+    private fun demoBackupTab() {
+        val page = ui.screen(frame, "Photo backup")
+        val card = ui.card(page, 4)
+        ui.badge(card, R.drawable.ic_tab_backup, 52)
+        ui.title(card, "Back up your photos", 14)
+        ui.body(card, "With your own NAS, the pictures and videos of the albums you choose go to it by themselves, also " +
+            "when the app is closed, and show up in Photos. Deleting stays in sync both ways, through the NAS's trash.")
+        ui.caption(card, "In the demo nothing is backed up and the app does not ask to see your pictures.", 12)
+    }
+
+    private fun demoSettingsTab() {
+        val page = ui.screen(frame, "Settings")
+        val card = ui.card(page, 4)
+        ui.badge(card, R.drawable.ic_tab_settings, 52)
+        ui.title(card, "This is the demo", 14)
+        ui.body(card, "Everything here is sample data, and nothing is sent or saved. Connect your own NAS to use the app for real.")
+        ui.button(card, "Exit the demo", top = 16) { signedOut("") }
+        val tools = ui.group(page, 14)
+        ui.item(tools, R.drawable.ic_phone, "Devices", "See and sign out the connected phones") { hubTool("devices") }
+        ui.item(tools, R.drawable.ic_trash, "Trash", "Deleted files, kept for 30 days") { hubTool("trash") }
+        ui.caption(page, "AlvaOS app ${HubPage.appVersion(this)}", 24).gravity = Gravity.CENTER
+    }
+
     private fun signedOut(message: String) {
         store.signOut()
         SyncWorker.stop(this)
@@ -324,6 +360,8 @@ class MainActivity : AppCompatActivity() {
                     .gravity = Gravity.CENTER
                 ui.button(page, "Type the code instead", Ui.Kind.Outlined, top = 24) { signIn(mode = Mode.Code) }
                 ui.button(page, "Sign in with name and password", Ui.Kind.Text, top = 4) { signIn(mode = Mode.Password) }
+                ui.button(page, "Try the demo", Ui.Kind.Text, top = 4) { startDemo() }
+                ui.caption(page, "No NAS needed: the whole app with sample files, photos, calendar and chat.", 2).gravity = Gravity.CENTER
             }
             Mode.Code -> {
                 val address = ui.field(page, "NAS address", store.server, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI,
@@ -507,6 +545,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun backupTab() {
+        if (store.demo) { demoBackupTab(); return }
         val page = ui.screen(frame, "Photo backup")
         if (!store.backupOn || store.albums.isEmpty()) {
             val card = ui.card(page, 4)
@@ -757,6 +796,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun settingsTab() {
+        if (store.demo) { demoSettingsTab(); return }
         val page = ui.screen(frame, "Settings")
 
         val account = ui.card(page, 4)
