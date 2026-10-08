@@ -632,11 +632,20 @@ async def _nothing() -> None:
 
 async def run() -> None:
     state = State(STATE_DIR)
-    link = Link(state)
+    # Tests start the daemon with other services and no relay (ALVAOS_LINK_TEST, a JSON object).
+    test = json.loads(os.environ.get('ALVAOS_LINK_TEST') or 'null')
+    if isinstance(test, dict):
+        services = {k: ('127.0.0.1', int(v)) for k, v in (test.get('services') or {}).items()}
+        link = Link(state, services={**SERVICES, **services}, direct_only=True)
+    else:
+        link = Link(state)
     token = state.control_token()
     if state.config.get('enabled', True):
         await link.start()
-    control_server(link, asyncio.get_running_loop(), token)
+    control_server(link, asyncio.get_running_loop(), token,
+                   ('127.0.0.1', int(test['control_port'])) if isinstance(test, dict) and test.get('control_port') else CONTROL_ADDRESS)
+    if isinstance(test, dict):
+        print(json.dumps({'node_id': link.node_id, 'addresses': link.address_hints()}), flush=True)
     print(f'AlvaOS Link: {link.node_id or "off"}', flush=True)
     while True:
         await asyncio.sleep(3600)
