@@ -200,19 +200,16 @@ def apply_smb_permissions_to_fs(share_path, group_name, smb_permissions, guest_a
         if guest_access:
             allowed_users.append('nobody')
 
-        # Add allowed users to group
         for user in sorted(set(allowed_users)):
             if not user:
                 continue
             run_sudo_command([CMD['GPASSWD'], '-a', user, group_name])
 
-        # Remove users that are no longer allowed
         current_members = get_group_members(group_name)
         for user in current_members:
             if user not in allowed_users:
                 run_sudo_command([CMD['GPASSWD'], '-d', user, group_name])
 
-        # Set group ownership and permissions on path
         run_sudo_command([CMD['CHGRP'], '-R', group_name, share_path])
 
         # Determine permission mode
@@ -332,7 +329,6 @@ def render_smb_share_config(share_name, share_path, read_only, guest_access, per
         lines += RECYCLE_LINES
 
     if use_permissions:
-        # Add guest account when enabled
         if guest_access:
             allowed_users.append('nobody')
         if allowed_users:

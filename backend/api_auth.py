@@ -161,7 +161,6 @@ def complete_setup():
         
         password = data['password']
         
-        # Validate password strength
         if len(password) < 8:
             return jsonify({'error': 'Password must be at least 8 characters'}), 400
 
@@ -582,13 +581,11 @@ def manage_users():
                 return jsonify({'error': problem}), 400
 
         try:
-            # Create system user
             # Share accounts only open network shares: no home directory, no login shell.
             res, err = run_sudo_command([CMD['USERADD'], '-M', '-s', '/usr/sbin/nologin', username])
             if err:
                 return jsonify({'error': f'Failed to create user: {err}'}), 500
 
-            # Set password
             process = subprocess.Popen(
                 build_privileged_cmd([CMD['CHPASSWD']]),
                 stdin=subprocess.PIPE,
@@ -649,7 +646,6 @@ def manage_users():
                 ):
                     return jsonify({'error': f'Failed to delete user: {userdel_err or "unknown error"}'}), 500
 
-            # Remove user from share permissions
             shares_state = load_shares_state()
             updated = False
             for share_id, share in shares_state.items():

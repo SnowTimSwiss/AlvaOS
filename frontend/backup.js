@@ -1084,7 +1084,6 @@ async function loadBackupSettings() {
     fillSettingsUi();
     updateStatusUi();
 
-    // Set target options after loading settings
     // We assume targets are loaded separately, but we can try to set values now if targets exist
     // Actually we await loadBackupTargets in init
 }

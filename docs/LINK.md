@@ -39,4 +39,4 @@ See `docs/BUDDY_BACKUP.md`: Link gives each buddy a loopback address; the vault 
 - The default relays belong to the iroh project (n0). Their terms and availability are theirs; Link works without a relay only when a direct connection is possible. A relay of its own can be set up (`iroh-relay`); a setting for it is not in the pages yet.
 - A relay connection is slower than a direct one. Large first backups work best with a direct connection.
 - Share links for people without the app and a custom domain are not part of Link. They are planned separately.
-- Install: the daemon needs the Python package `iroh` (a wheel with a native library; amd64 for now, arm64 follows with an arm64 package). The package and the installer ship it in `/opt/alvaos/vendor`.
+- Install: the daemon needs the Python package `iroh` (a wheel with a native library). AlvaOS is amd64 only for now (package and installer), so the amd64 wheel is all that ships; an arm64 build of AlvaOS would also need the aarch64 wheel. The package and the installer ship it in `/opt/alvaos/vendor`.

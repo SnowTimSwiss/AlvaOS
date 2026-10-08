@@ -192,7 +192,6 @@ def manage_shares():
     """Manage network shares (NFS and SMB)"""
     
     if request.method == 'GET':
-        # Load shares from state file
         shares_state = load_shares_state()
         shares = [dict(s) for s in shares_state.values() if isinstance(s, dict)]
         if platform.system() == 'Linux':
@@ -209,7 +208,6 @@ def manage_shares():
         return jsonify(payload), status
 
     elif request.method == 'DELETE':
-        # Delete share
         data = request.get_json()
         share_id = data.get('share_id')
         
@@ -231,7 +229,6 @@ def manage_shares():
                 if protocol == 'nfs':
                     # Remove from /etc/exports using sudo
                     try:
-                        # Read the file content via sudo
                         res, err = run_sudo_command([CMD['CAT'], '/etc/exports'])
                         if err or not res:
                             raise Exception(f"Could not read /etc/exports: {err}")
@@ -253,7 +250,6 @@ def manage_shares():
                         if content and not content.endswith('\n'):
                             content += '\n'
                         
-                        # Write back using sudo tee
                         process = subprocess.Popen(build_privileged_cmd([CMD['TEE'], '/etc/exports']), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env={'LC_ALL': 'C'})
                         _, tee_err = process.communicate(input=content)
                         if process.returncode != 0:
@@ -267,19 +263,16 @@ def manage_shares():
                 elif protocol == 'smb':
                     # Remove from /etc/samba/smb.conf using sudo
                     try:
-                        # Read the file content via sudo
                         res, err = run_sudo_command([CMD['CAT'], '/etc/samba/smb.conf'])
                         if err or not res:
                             raise Exception(f"Could not read /etc/samba/smb.conf: {err}")
                         
                         content = res.stdout
                         
-                        # Find and remove the share section
                         import re
                         pattern = rf'# AlvaOS Share: {re.escape(share_name)}\n\[{re.escape(share_name)}\].*?(?=\n\[|\n# AlvaOS Share:|\Z)'
                         content = re.sub(pattern, '', content, flags=re.DOTALL)
                         
-                        # Write back using sudo tee
                         process = subprocess.Popen(build_privileged_cmd([CMD['TEE'], '/etc/samba/smb.conf']), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env={'LC_ALL': 'C'})
                         _, tee_err = process.communicate(input=content)
                         if process.returncode != 0:
@@ -289,7 +282,6 @@ def manage_shares():
                         run_sudo_command([CMD['SYSTEMCTL'], 'restart', 'smbd'])
                     except Exception as e:
                         print(f"Error removing SMB share: {e}")
-                    # Remove share group
                     try:
                         group_name = share_info.get('smb_group')
                         if group_name:
@@ -297,7 +289,6 @@ def manage_shares():
                     except Exception as e:
                         print(f"Error removing SMB group: {e}")
             
-            # Remove from state
             del shares_state[share_id]
             save_shares_state(shares_state)
             if platform.system() == 'Linux':

@@ -587,7 +587,6 @@ def system_time():
         
         if platform.system() == 'Linux':
             try:
-                # Get current timezone
                 tz_result = subprocess.run([CMD['TIMEDATECTL'], 'show', '--property=Timezone', '--value'], 
                                          capture_output=True, text=True)
                 if tz_result.returncode == 0:
@@ -837,7 +836,6 @@ def get_network_details():
     
     # Try to get real network information
     try:
-        # Get all network interfaces
         import psutil
         net_if_addrs = psutil.net_if_addrs()
         
@@ -1093,7 +1091,6 @@ def set_hostname():
         try:
             hosts_file = '/etc/hosts'
             
-            # Read current hosts file
             res, err = run_sudo_command([CMD['CAT'], hosts_file])
             if res and res.returncode == 0:
                 content = res.stdout
@@ -1115,7 +1112,6 @@ def set_hostname():
                 
                 new_content = "\n".join(new_lines) + "\n"
                 
-                # Write back with tee
                 process = subprocess.Popen(
                     build_privileged_cmd([CMD['TEE'], hosts_file]), 
                     stdin=subprocess.PIPE, 

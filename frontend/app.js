@@ -68,7 +68,6 @@ function hidePageLoading() {
     }
 }
 
-// Add loading state to navigation links
 document.addEventListener('DOMContentLoaded', function() {
     const navLinks = document.querySelectorAll('.nav-link');
     navLinks.forEach(link => {

@@ -64,7 +64,7 @@ Everything people use Nextcloud for at home, built into AlvaOS and working on th
   13. Unpack ZIP files, folder sizes, rename many files at once, properties (checksum, exact dates).
   14. File sync for PC and phone (camera upload, folders kept in sync): with the native apps; WebDAV is the stopgap.
 - **Not in Files on purpose:** faces, maps and albums (Immich does that as an app); chat, calendar and contacts are Hub apps of their own (see 2), not part of Files.
-- **AlvaOS Link (away from home): done** (v0.3.0; replaced Tailscale, Cloudflare Tunnel and the own WireGuard tunnel). iroh: no router setting, no account, end-to-end encrypted; one switch in Settings › AlvaOS Link; the Android app and Buddy Backup use it (`docs/LINK.md`). Next: an own relay setting, Cloudflare/own-domain access for share links and non-app users (done differently, later), the iPhone and desktop apps on the same Link, arm64 packages.
+- **AlvaOS Link (away from home): done** (v0.3.0; replaced Tailscale, Cloudflare Tunnel and the own WireGuard tunnel). iroh: no router setting, no account, end-to-end encrypted; one switch in Settings › AlvaOS Link; the Android app and Buddy Backup use it (`docs/LINK.md`). Next: an own relay setting, Cloudflare/own-domain access for share links and non-app users (done differently, later), the iPhone and desktop apps on the same Link.
 
 ### 2b. Virtual machines
 - **Done:** the Virtual machines page (set up once, a larger disk in the settings, new machine, start, shut down, switch off, delete, settings, the screen in the browser). QEMU/KVM run by systemd as an own account, disks as qcow2 files in the shared folder `VMs` (so restore points, backups and limits cover them), Windows 11 with UEFI and a TPM. Reference: `docs/VMS.md`.

@@ -15,6 +15,15 @@ How to add an entry:
 
 ---
 
+## 2026-10-08 — Docs for the public beta: README, contributing and AI rules, comment cleanup
+
+- README rewritten for what AlvaOS is now (Hub, Link, Buddy Backup, apps, VMs, Android app), with a documentation table and the beta status.
+- CONTRIBUTING: a checklist for pull requests (ruff, pytest, docs entries) and a section on AI tools: allowed, but assisted, not generated; a human understands, reads and tests every line; no invented facts; comments say why.
+- Cleanup: removed about 60 comments that only restated the next line, and the Args/Returns boilerplate from the docstrings of `docker_manager.py` and `app_store.py`.
+- Note for next time: other files still have long docstrings; trim them when you touch the file.
+
+---
+
 ## 2026-10-08 — Name and Hub: "AlvaOS Link" everywhere, one Devices entry
 
 - The settings page is called **AlvaOS Link** (was "Away from home"), in the pages, messages, assistant, app and docs; "away from home" stays as the plain description.

@@ -1,105 +1,81 @@
 # AlvaOS
 
-**AlvaOS** is an ultra-stable, lightweight NAS operating system focused on simplicity, reliability, and effortless backups between trusted peers.
+**AlvaOS** is a calm NAS operating system for storage, apps and offsite backup: simple by default, powerful when needed, light enough for old hardware. It is in **beta** (see Project Status).
 
 ---
 
-## Key Features
+## What it does
 
-* **Flexible Storage Pools**
-  * Btrfs-based pools
-  * Easy disk expansion (Unraid-like workflow)
-  * Snapshots and health monitoring
-
-* **Docker and App Store**
-  * Docker and Docker Compose
-  * Git-based app templates
-  * One-click install and updates
-
-* **Buddy Backup**
-  * NAS-to-NAS backups over the internet
-  * Encrypted, snapshot-based, incremental
-  * Full system restore on a fresh install
-
-* **Clean Web UI**
-  * Inspired by UmbrelOS, ZimaOS Unraid and TrueNAS UX (Taking the best of all)
-  * Dark and light theme (follows your device, or pick one)
-  * API-driven, minimal clicks
-
-* **Ultra Stable Base**
-  * Debian Stable
-  * Conservative defaults
+* **Storage**: Btrfs pools that grow disk by disk, shared folders (SMB, NFS), people with their own folders and limits, restore points, health monitoring.
+* **AlvaOS Hub**: one address for what people use every day, in the browser and in the Android app.
+  * **Files**: a lightweight file cloud (sharing, links, trash, previous versions, WebDAV).
+  * **Photos**: backup from the phone, albums, favourites.
+  * **Calendar and Contacts**: with CalDAV/CardDAV, so phones sync on their own; birthdays included.
+  * **Chat**: a simple page in front of a local or cloud model.
+* **AlvaOS Link**: the app and a second NAS reach your NAS from anywhere, with no router setting and no account. Built on [iroh](https://www.iroh.computer); end-to-end encrypted, direct where possible, through a relay otherwise. On by default, one switch to turn it off.
+* **Buddy Backup**: an encrypted, incremental copy of your data on a friend's or family member's AlvaOS, over AlvaOS Link. Only you can read it. Restore everything on a fresh install with the recovery kit.
+* **Apps**: Docker and Docker Compose, a catalog with one-click install and updates, graphics cards for apps and VMs.
+* **Virtual machines**: QEMU/KVM with the screen in the browser (Windows 11 with UEFI and TPM).
+* **Android app**: the whole Hub, photo backup in the background, share to AlvaOS.
+* **Clean web UI**: dark and light, works on a phone, API-driven.
+* **Stable base**: Debian, conservative defaults, signed updates with rollback.
 
 ---
 
-## Project Goals
+## Project goals
 
 * Stability over features
 * Simplicity over complexity
 * Easy backups and restore
-* Fully self-hosted
+* Fully self-hosted, no telemetry
 * Lightweight and easily manageable
 
 ---
 
-## Architecture Overview
+## Architecture
 
-* **Base OS:** Debian (minimal)
+* **Base OS:** Debian (minimal), amd64
 * **Storage:** Btrfs
 * **Containers:** Docker and Docker Compose
-* **Backend:** Python
-* **Frontend:** Web UI
-* **Networking:** LAN; AlvaOS Link (iroh) for the app and Buddy Backup away from home
+* **Backend:** Python (Flask); the web UI never runs system commands itself, everything goes through a versioned API and a narrow privileged helper
+* **Frontend:** vanilla HTML, CSS and JS
+* **Away from home:** AlvaOS Link (iroh)
 
-The Web UI never executes system commands directly. All actions go through a versioned API layer.
-
----
-
-## Buddy Backup
-
-AlvaOS introduces **Buddy Backup**: a built-in, peer-to-peer backup system.
-
-* Pair two AlvaOS instances
-* Automatic encrypted connection
-* Incremental snapshot transfer
-* Restore everything on a new machine
+More in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/STRUCTURE.md](docs/STRUCTURE.md).
 
 ---
 
-## Distribution Model
+## Documentation
 
-AlvaOS is **not a classic live ISO**.
-
-Instead:
-
-* Minimal installer image
-* Post-install setup via scripts
-* System assembled deterministically
-
-This keeps builds reproducible, small, and easy to automate.
+| | |
+|---|---|
+| [docs/HUB.md](docs/HUB.md) | The Hub and its apps |
+| [docs/LINK.md](docs/LINK.md) | AlvaOS Link: how phones and buddies reach the NAS |
+| [docs/BUDDY_BACKUP.md](docs/BUDDY_BACKUP.md) | Buddy Backup |
+| [docs/ANDROID.md](docs/ANDROID.md) | The Android app: building, signing, Google Play |
+| [docs/PRIVACY.md](docs/PRIVACY.md) | What leaves your NAS and what does not |
+| [docs/TESTING.md](docs/TESTING.md) | Step-by-step checks for a real installation |
+| [docs/ROADMAP.md](docs/ROADMAP.md) / [docs/BACKLOG.md](docs/BACKLOG.md) | What is next / what was done |
+| [docs/RELEASE.md](docs/RELEASE.md) | How a release is made |
+| [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) | How to help, and our rules on AI-assisted code |
 
 ---
 
 ## License
 
-AlvaOS is licensed under the **GPLv3-license**.
-
-You are free to use, modify, and distribute this software, including for commercial purposes.
+AlvaOS is licensed under the **GPLv3**. You are free to use, modify and distribute it, including commercially. Third-party components are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ---
 
-## Project Status
+## Project status
 
-AlvaOS is in active development.
+AlvaOS is in active development and heading for a first public beta. APIs, formats and behavior may still change before a stable release. Please test on a spare machine first and keep a backup.
 
-APIs, formats, and behavior may change until the first stable release.
 ---
 
 ## Contributing
 
-Contributions, ideas, and feedback are welcome.
-
-Please open an issue or pull request to get involved.
+Contributions, ideas and feedback are welcome: open an issue or a pull request. Read [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) first; it also says how we treat AI tools (short version: allowed, but a human understands, reads and tests every line).
 
 ---
 

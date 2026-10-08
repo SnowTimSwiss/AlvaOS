@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 AlvaOS Docker Manager
-Manages Docker containers for the app store
+Manages Docker containers for the app store.
+Methods return `(result, error)`: `error` is a message or None.
 """
 
 import subprocess
@@ -65,15 +66,7 @@ class DockerManager:
             return None, str(e)
     
     def list_containers(self, all_containers: bool = True) -> Tuple[Optional[List[Dict]], Optional[str]]:
-        """
-        List all Docker containers
-        
-        Args:
-            all_containers: If True, include stopped containers
-        
-        Returns:
-            Tuple of (list of containers, error message)
-        """
+        """List all Docker containers"""
         args = ['ps', '--format', '{{json .}}']
         if all_containers:
             args.append('-a')
@@ -93,15 +86,7 @@ class DockerManager:
             return None, f"Failed to parse Docker output: {str(e)}"
     
     def get_container_details(self, container_id: str) -> Tuple[Optional[Dict], Optional[str]]:
-        """
-        Get detailed information about a container
-        
-        Args:
-            container_id: Container ID or name
-        
-        Returns:
-            Tuple of (container details dict, error message)
-        """
+        """Get detailed information about a container"""
         result, error = self._run_docker_command(['inspect', container_id])
         if error or result is None:
             return None, error
@@ -115,15 +100,7 @@ class DockerManager:
             return None, f"Failed to parse container details: {str(e)}"
 
     def get_image_repo_digests(self, image: str) -> Tuple[Optional[List[str]], Optional[str]]:
-        """
-        Return the locally known RepoDigests for an image reference.
-
-        Args:
-            image: Image reference such as 'nginx:latest'
-
-        Returns:
-            Tuple of (list of repo digests, error message)
-        """
+        """Return the locally known RepoDigests for an image reference."""
         result, error = self._run_docker_command([
             'image',
             'inspect',
@@ -143,62 +120,28 @@ class DockerManager:
             return None, f"Failed to parse image digests: {str(e)}"
     
     def start_container(self, container_id: str) -> Tuple[bool, Optional[str]]:
-        """
-        Start a container
-        
-        Args:
-            container_id: Container ID or name
-        
-        Returns:
-            Tuple of (success bool, error message)
-        """
+        """Start a container"""
         result, error = self._run_docker_command(['start', container_id])
         if error or result is None:
             return False, error
         return True, None
     
     def stop_container(self, container_id: str, timeout: int = 10) -> Tuple[bool, Optional[str]]:
-        """
-        Stop a container
-        
-        Args:
-            container_id: Container ID or name
-            timeout: Seconds to wait before killing
-        
-        Returns:
-            Tuple of (success bool, error message)
-        """
+        """Stop a container"""
         result, error = self._run_docker_command(['stop', '-t', str(timeout), container_id])
         if error or result is None:
             return False, error
         return True, None
     
     def restart_container(self, container_id: str) -> Tuple[bool, Optional[str]]:
-        """
-        Restart a container
-        
-        Args:
-            container_id: Container ID or name
-        
-        Returns:
-            Tuple of (success bool, error message)
-        """
+        """Restart a container"""
         result, error = self._run_docker_command(['restart', container_id])
         if error or result is None:
             return False, error
         return True, None
     
     def remove_container(self, container_id: str, force: bool = False) -> Tuple[bool, Optional[str]]:
-        """
-        Remove a container
-        
-        Args:
-            container_id: Container ID or name
-            force: Force removal even if running
-        
-        Returns:
-            Tuple of (success bool, error message)
-        """
+        """Remove a container"""
         args = ['rm']
         if force:
             args.append('-f')
@@ -210,16 +153,7 @@ class DockerManager:
         return True, None
     
     def get_container_logs(self, container_id: str, lines: int = 100) -> Tuple[Optional[str], Optional[str]]:
-        """
-        Get container logs
-        
-        Args:
-            container_id: Container ID or name
-            lines: Number of lines to retrieve
-        
-        Returns:
-            Tuple of (logs string, error message)
-        """
+        """Get container logs"""
         result, error = self._run_docker_command(['logs', '--tail', str(lines), container_id])
         if error or result is None:
             return None, error
@@ -239,19 +173,7 @@ class DockerManager:
         user: Optional[str] = None,
         workdir: Optional[str] = None
     ) -> Tuple[Optional[Dict], Optional[str]]:
-        """
-        Execute a shell command inside a running container.
-
-        Args:
-            container_id: Container ID or name
-            command: Shell command to execute (limited to alphanumeric, spaces, and basic shell operators)
-            timeout: Timeout in seconds
-            user: Optional user to run as inside container
-            workdir: Optional working directory inside container
-
-        Returns:
-            Tuple of (result dict, error message)
-        """
+        """Execute a shell command inside a running container."""
         try:
             # Security: Validate container_id to prevent injection
             if not container_id or not isinstance(container_id, str):
@@ -275,12 +197,10 @@ class DockerManager:
 
             cmd = ['exec']
             if user:
-                # Validate user parameter
                 if not re.match(r'^[a-zA-Z0-9_-]+$', user):
                     return None, "Invalid user format"
                 cmd.extend(['-u', user])
             if workdir:
-                # Validate workdir parameter
                 if not workdir.startswith('/') or '..' in workdir:
                     return None, "Invalid workdir path"
                 cmd.extend(['-w', workdir])
@@ -312,15 +232,7 @@ class DockerManager:
             return None, str(e)
     
     def get_container_stats(self, container_id: str) -> Tuple[Optional[Dict], Optional[str]]:
-        """
-        Get container resource usage statistics
-        
-        Args:
-            container_id: Container ID or name
-        
-        Returns:
-            Tuple of (stats dict, error message)
-        """
+        """Get container resource usage statistics"""
         result, error = self._run_docker_command(['stats', '--no-stream', '--format', '{{json .}}', container_id])
         if error or result is None:
             return None, error
@@ -339,19 +251,7 @@ class DockerManager:
         project_name: Optional[str] = None,
         callback: Optional[Callable[[str], None]] = None
     ) -> Tuple[bool, Optional[str]]:
-        """
-        Create and start containers from a Docker Compose configuration
-        
-        Args:
-            compose_dict: Docker Compose configuration as dict
-            app_name: Name of the app
-            pool_path: Path to the pool where app data will be stored
-            project_name: Optional project name (defaults to app_name)
-            callback: Optional function(line: str) to receive real-time output
-        
-        Returns:
-            Tuple of (success bool, error message)
-        """
+        """Create and start containers from a Docker Compose configuration"""
         import yaml
         
         if project_name is None:
@@ -429,20 +329,9 @@ class DockerManager:
         callback: Optional[Callable[[str], None]] = None,
         pull: bool = True
     ) -> Tuple[bool, Optional[str]]:
-        """
-        Update containers from a Docker Compose configuration.
+        """Update containers from a Docker Compose configuration.
         Pulls new images first (unless pull is False, for a settings change),
         then recreates containers while preserving volumes.
-
-        Args:
-            compose_dict: Docker Compose configuration as dict
-            app_name: Name of the app
-            pool_path: Path to the app storage
-            project_name: Optional project name (defaults to app_name)
-            callback: Optional function(line: str) for real-time output
-
-        Returns:
-            Tuple of (success bool, error message)
         """
         import yaml
 
@@ -515,27 +404,14 @@ class DockerManager:
                 pass
     
     def pull_image(self, image: str) -> Tuple[bool, Optional[str]]:
-        """
-        Pull a Docker image
-        
-        Args:
-            image: Image name (e.g., 'nginx:latest')
-        
-        Returns:
-            Tuple of (success bool, error message)
-        """
+        """Pull a Docker image"""
         result, error = self._run_docker_command(['pull', image], timeout=300)
         if error or result is None:
             return False, error
         return True, None
     
     def check_docker_running(self) -> Tuple[bool, Optional[str]]:
-        """
-        Check if Docker daemon is running
-        
-        Returns:
-            Tuple of (is_running bool, error message)
-        """
+        """Check if Docker daemon is running"""
         try:
             result = subprocess.run(
                 [self.CMD['SYSTEMCTL'], 'is-active', 'docker'],
