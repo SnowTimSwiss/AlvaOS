@@ -74,7 +74,7 @@ Git-based template repository for one-click app installs. No Kubernetes or compl
 ### 4. Buddy Backup (Core Feature)
 NAS-to-NAS encrypted incremental backup.
 - **Setup**: Link devices via pairing codes.
-- **Replication**: each NAS keeps an encrypted vault on its buddy (an image the buddy exports over NBD inside the WireGuard tunnel; LUKS2 with a key only the owner has). Btrfs snapshots are replicated into it with `btrfs send -p`, so after the first sync only changes travel, and old snapshots can be deleted freely.
+- **Replication**: each NAS keeps an encrypted vault on its buddy (an image the buddy exports over NBD through AlvaOS Link; LUKS2 with a key only the owner has). Btrfs snapshots are replicated into it with `btrfs send -p`, so after the first sync only changes travel, and old snapshots can be deleted freely.
 - **Scope**: Backs up configs, shares, and app state (not the OS itself).
 
 ### 5. Web UI & API
@@ -115,11 +115,11 @@ NAS-to-NAS encrypted incremental backup.
 
 **Network:**
 - LAN access by default
-- Optional remote access: Tailscale (own devices) and Cloudflare Tunnel (the Hub at an own domain), as containers
-- Buddy Backup uses encrypted tunnels
+- Away from home: AlvaOS Link (`link_daemon.py`, `docs/LINK.md`): the app and buddy NAS connect end to end encrypted, directly or through a relay, with no router setting and no account
+- Buddy Backup uses AlvaOS Link
 
 **Data:**
-- Buddy Backup data is encrypted on the owner before it reaches the buddy (LUKS2 vault; its key is stored on the buddy sealed with the encryption password, see `docs/BUDDY_BACKUP.md`) and travels only through the WireGuard tunnel. A fresh install can restore with only the encryption password.
+- Buddy Backup data is encrypted on the owner before it reaches the buddy (LUKS2 vault; its key is stored on the buddy sealed with the encryption password, see `docs/BUDDY_BACKUP.md`) and travels only through AlvaOS Link. A fresh install can restore with only the encryption password.
 - No telemetry or phone-home.
 
 ## Service Architecture
@@ -153,7 +153,7 @@ The backend is a single Flask process that serves both the REST API and the stat
 | Backend | Python 3 + Flask on waitress | Simple, batteries-included, easy to audit |
 | UI | Vanilla HTML/CSS/JS | No framework, no build step, lightweight |
 | Auth | Session tokens + TOTP | Local-first, no external IdP |
-| Backup | WireGuard + encrypted transfer | Secure, efficient |
+| Backup | AlvaOS Link + encrypted transfer | Secure, efficient |
 | Packaging | Debian `.deb` | Native, predictable upgrades |
 
 ## Non-Goals & Future

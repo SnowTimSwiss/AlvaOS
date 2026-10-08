@@ -36,9 +36,10 @@ photos and videos of your phone to it. It talks to nobody else.
 
 **Security**
 
-The connection is encrypted when your NAS is reached over HTTPS (for example
-through Tailscale or your own domain). At home, on your own network, the app
-can also use plain HTTP.
+Away from home the app reaches your NAS through AlvaOS Link: encrypted from end to
+end with keys only your phone and your NAS have. If a direct connection is not
+possible, the packets pass a relay server, which cannot read them; it learns that
+two keys talk, and when. At home, on your own network, the app can also use plain HTTP.
 
 **Questions**
 

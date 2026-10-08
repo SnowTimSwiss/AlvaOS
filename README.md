@@ -49,7 +49,7 @@
 * **Containers:** Docker and Docker Compose
 * **Backend:** Python
 * **Frontend:** Web UI
-* **Networking:** LAN and WireGuard (Buddy Backup)
+* **Networking:** LAN; AlvaOS Link (iroh) for the app and Buddy Backup away from home
 
 The Web UI never executes system commands directly. All actions go through a versioned API layer.
 

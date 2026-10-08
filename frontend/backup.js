@@ -617,14 +617,11 @@ function renderBuddyStatus() {
     const identity = buddyState.identity || {};
     const peers = Array.isArray(buddyState.peers) ? buddyState.peers : [];
     const tunnel = buddyState.tunnel || {};
-    const requirements = buddyState.requirements || {};
 
     const supportedEl = document.getElementById('buddy-support-info');
     const tunnelEl = document.getElementById('buddy-tunnel-state');
     const nodeEl = document.getElementById('buddy-node-id');
     const keyEl = document.getElementById('buddy-public-key');
-    const ipEl = document.getElementById('buddy-tunnel-ip');
-    const portEl = document.getElementById('buddy-listen-port');
     const peersEl = document.getElementById('buddy-peers-list');
 
     if (supportedEl) {
@@ -640,8 +637,6 @@ function renderBuddyStatus() {
     }
     if (nodeEl) nodeEl.textContent = identity.node_id || '-';
     if (keyEl) keyEl.textContent = identity.public_key || '-';
-    if (ipEl) ipEl.textContent = identity.tunnel_ip || '-';
-    if (portEl) portEl.textContent = String(identity.listen_port || '-');
 
     // Calm status pill for the Buddy tab header.
     const buddyPill = document.getElementById('buddy-status-pill');
@@ -668,10 +663,8 @@ function renderBuddyStatus() {
     }
     if (buddyIc) buddyIc.classList.toggle('warn', buddyCls !== 'ok');
 
-    if (tunnelEl && identity.key_error && !buddyState.supported) {
-        tunnelEl.title = identity.key_error;
-    } else if (tunnelEl && !buddyState.supported && !requirements.wg_cmd) {
-        tunnelEl.title = 'WireGuard tools are missing. Pairing/settings work, tunnel starts after installing wireguard-tools.';
+    if (tunnelEl && (identity.key_error || tunnel.message)) {
+        tunnelEl.title = identity.key_error || tunnel.message;
     }
 
     // One plain sentence about where things stand.
@@ -679,11 +672,11 @@ function renderBuddyStatus() {
     if (statusSub) {
         const sending = peers.filter((peer) => peer.policy?.enabled === true);
         if (!buddyState.supported) {
-            statusSub.textContent = 'This system cannot run the encrypted connection yet. See Technical details.';
+            statusSub.textContent = 'AlvaOS Link is not running, so buddies cannot connect. Turn it on in Settings \u203a Away from home.';
         } else if (!peers.length) {
             statusSub.textContent = 'Keep an encrypted copy of your data at a friend\'s or family member\'s AlvaOS. Only you can read it.';
         } else if (!tunnelUp) {
-            statusSub.textContent = 'The connection to your buddies is down. Try Test connection, or restart it under Technical details.';
+            statusSub.textContent = tunnel.message ? `${tunnel.message}. Try Test connection, or reconnect under Technical details.` : 'The connection to your buddies is down. Try Test connection, or reconnect under Technical details.';
         } else if (sending.length) {
             statusSub.textContent = `Sending to ${sending.map((peer) => peer.name || 'a buddy').join(', ')} automatically.`;
         } else {
@@ -715,7 +708,7 @@ function renderBuddyStatus() {
         const online = runtime.online === true;
         const connected = runtime.connected === true;
         const reachable = online && connected;
-        const handshakeText = runtime.latest_handshake || '-';
+        const lastSeenText = runtime.last_seen ? new Date(runtime.last_seen * 1000).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
         const intervalText = { 60: 'every hour', 360: 'every 6 hours', 720: 'every 12 hours', 1440: 'every day', 10080: 'every week' }[Number(peer.policy?.interval_minutes || 1440)] || 'on a schedule';
         const sendingText = peer.policy?.enabled === true
             ? `Sends ${intervalText} at ${peer.policy?.send_time || '02:00'}`
@@ -735,7 +728,7 @@ function renderBuddyStatus() {
                             <strong>${backupEscapeHtml(peer.name || peer.node_id || 'Buddy')}</strong>
                             <span class="buddy-state-pill${reachable ? ' ok' : ''}">${reachable ? 'Online' : 'Offline'}</span>
                         </div>
-                        <div class="metric-sub">${backupEscapeHtml(sendingText)}${runtime.latest_handshake ? ` &bull; last contact ${backupEscapeHtml(handshakeText)}` : ''}</div>
+                        <div class="metric-sub">${backupEscapeHtml(sendingText)}${lastSeenText ? ` &bull; last contact ${backupEscapeHtml(lastSeenText)}` : ''}</div>
                     </div>
                     <div class="buddy-peer-actions">
                         <button class="btn-primary buddy-backup-now-peer-btn" data-node-id="${nodeAttr}">Send backup now</button>
@@ -803,8 +796,7 @@ function renderBuddyStatus() {
                         <h4>Connection</h4>
                         <dl class="buddy-facts">
                             <dt>Buddy ID</dt><dd class="mono-text">${backupEscapeHtml(peer.node_id || '-')}</dd>
-                            <dt>Address</dt><dd>${backupEscapeHtml(peer.endpoint || '(not set)')}</dd>
-                            <dt>Tunnel IP</dt><dd>${backupEscapeHtml(peer.tunnel_ip || '-')}</dd>
+                            <dt>Link address</dt><dd class="mono-text">${backupEscapeHtml(peer.public_key ? `${peer.public_key.slice(0, 8)}\u2026${peer.public_key.slice(-4)}` : '-')}</dd>
                             <dt>Status</dt><dd>${backupEscapeHtml(peer.status || 'unknown')}</dd>
                         </dl>
                     </section>
@@ -1312,10 +1304,10 @@ async function restartBuddyTunnel() {
     });
     const data = await backupReadJson(response);
     if (!response || !response.ok || !data) {
-        backupNotify(data?.error || 'Failed to restart buddy tunnel', 'error');
+        backupNotify(data?.error || 'Could not reconnect the buddies', 'error');
         return;
     }
-    backupNotify('Buddy tunnel restarted', 'success');
+    backupNotify('Buddies reconnected', 'success');
     await loadBuddyStatus();
 }
 
