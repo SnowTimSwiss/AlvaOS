@@ -12,6 +12,10 @@ import org.alvaos.photos.DeviceInfo
 import org.alvaos.photos.HubException
 import org.junit.Assume.assumeTrue
 import java.io.BufferedReader
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import java.net.InetSocketAddress
 import java.nio.file.Files
@@ -30,6 +34,7 @@ import kotlin.test.assertTrue
 class LinkTest {
     private lateinit var hub: HttpServer
     private var daemon: Process? = null
+    private var daemonLog: File? = null
     private lateinit var nasId: String
     private lateinit var hints: List<String>
     private val seen = mutableListOf<String>()
@@ -67,12 +72,15 @@ class LinkTest {
         pb.environment()["ALVAOS_LINK_DIR"] = dir.toString()
         pb.environment()["ALVAOS_LINK_TEST"] = """{"services": {"hub": ${hub.address.port}}}"""
         pb.environment()["PYTHONUNBUFFERED"] = "1"
+        pb.redirectError(File(dir.toFile(), "daemon.err"))
+        daemonLog = File(dir.toFile(), "daemon.err")
         daemon = pb.start()
         val reader = daemon!!.inputStream.bufferedReader()
         val line = readFirstJson(reader)
-        nasId = Regex("\"node_id\": \"([0-9a-f]{64})\"").find(line)!!.groupValues[1]
-        hints = Regex("\"addresses\": \\[([^]]*)]").find(line)!!.groupValues[1].split(",")
-            .map { it.trim().trim('"') }.filter { it.isNotEmpty() }
+        // Parsed as JSON: an IPv6 address like "[::1]:1234" has a "]" in it, which a regex for the list would cut.
+        val found = Json.parseToJsonElement(line).jsonObject
+        nasId = found["node_id"]!!.jsonPrimitive.content
+        hints = found["addresses"]!!.jsonArray.map { it.jsonPrimitive.content }
     }
 
     private fun readFirstJson(reader: BufferedReader): String {
@@ -102,7 +110,10 @@ class LinkTest {
             val http = OkHttpClient.Builder().callTimeout(10, TimeUnit.SECONDS).build()
             assertFailsWith<Exception> { http.newCall(Request.Builder().url(proxy.baseUrl + "/api/me").build()).execute().use { it.body!!.string() } }
             // A wrong code pairs nothing.
-            val e = assertFailsWith<HubException> { phone.pairDevice(nasId, "WRONG000", DeviceInfo("Pixel 8"), hints) }
+            val failure = runCatching { phone.pairDevice(nasId, "WRONG000", DeviceInfo("Pixel 8"), hints) }.exceptionOrNull()
+            val e = failure as? HubException ?: throw AssertionError(
+                "a wrong code must be refused by the NAS, but: ${failure?.let { it::class.simpleName + ": " + it.message }}\n" +
+                    "--- daemon ---\n${daemonLog?.takeIf { it.exists() }?.readText()}", failure)
             assertTrue(e.message!!.contains("not valid"))
             // The right one trades for the session of this phone.
             val paired = phone.pairDevice(nasId, "ABCD1234", DeviceInfo("Pixel 8", "Pixel 8"), hints)
