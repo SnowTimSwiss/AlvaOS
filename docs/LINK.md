@@ -4,6 +4,9 @@ Link lets the AlvaOS app and a buddy NAS reach this NAS from anywhere: no port f
 
 ## How it works
 
+Link is on by default (Settings › Away from home has the switch; there is no question in the setup). The page says that it uses iroh and that a public relay may carry the encrypted traffic when no direct connection is possible.
+
+
 - Every NAS has a key pair (Ed25519, kept in `/var/lib/alvaos/link/key`). Its public key (64 hex digits) is its **Link address**. Whoever knows it can *try* to connect; what they may do depends on the key list (below).
 - Connections are made with [iroh](https://www.iroh.computer/): QUIC, end to end encrypted, authenticated by the keys. Both sides first try a **direct** connection through the routers (hole punching). When that is not possible, the packets pass a **relay** that only forwards encrypted data. The public relays of the iroh project are used by default.
 - The daemon `alvaos-link` (`backend/link_daemon.py`, systemd unit `scripts/alvaos-link.service`) runs on the NAS. Nothing else on the NAS speaks iroh: the Hub, the backup code and the admin pages use a small local control API (`link_client.py`, `127.0.0.1:8095`, password file `link/control_token`, readable by group `alvaos`).

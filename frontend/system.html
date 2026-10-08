@@ -500,7 +500,8 @@
             <div class="tab-panel" id="tab-link">
                 <section class="set-group">
                     <h2 class="set-group-title">Away from home: AlvaOS Link</h2>
-                    <p class="set-group-desc">The AlvaOS app on your phone, and a second NAS for Buddy Backup, can reach this NAS from anywhere. Nothing to set in the router, no account, and it works behind any internet connection. Only phones and buddies you paired can connect, each proven by its own key; the connection is encrypted from end to end. Where a direct way is not possible it goes through a relay that only passes on encrypted packets.</p>
+                    <p class="set-group-desc">The AlvaOS app on your phone, and a second NAS for Buddy Backup, can reach this NAS from anywhere. Nothing to set in the router, no account, and it works behind any internet connection. It is on by default; switch it off if this NAS should only be reachable at home.</p>
+                    <p class="set-group-desc">AlvaOS Link is built on <a href="https://www.iroh.computer" target="_blank" rel="noopener">iroh</a>: phones and buddies find this NAS by its key, and only the ones you paired can connect, each proven by its own key. The connection is encrypted from end to end. When a direct way is not possible (a strict router or mobile network), it goes through a public relay server. The relay only passes on encrypted packets: it cannot read or change anything, and it never stores your files.</p>
                     <div class="set-row">
                         <div class="set-text"><div class="set-label"><label for="link-enabled">Reach this NAS from outside</label></div><div class="set-desc" id="link-summary">Checking...</div></div>
                         <div class="set-value"><label class="toggle"><input type="checkbox" id="link-enabled"><span class="toggle-slider"></span></label></div>
