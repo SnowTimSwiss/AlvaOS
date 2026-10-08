@@ -25,7 +25,7 @@ pytestmark = pytest.mark.skipif(
     reason="needs root and ALVAOS_E2E=1 (runs in the vault-e2e CI job)",
 )
 
-BUDDY_IP = "100.95.95.8"
+BUDDY_IP = "127.95.1.8"
 MARKER = b"ALVAOS-PLAINTEXT-MARKER-" + secrets.token_hex(8).encode()
 
 

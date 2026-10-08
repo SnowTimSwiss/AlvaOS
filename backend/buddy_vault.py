@@ -189,7 +189,6 @@ class VaultStore:
     def __init__(self, manager: "BuddyBackupManager"):
         self.m = manager
         self.server: Optional[nbd_server.NbdServer] = None
-        self._server_ip = ""
         self._lock = threading.Lock()
 
     def _paths(self, owner: str) -> Tuple[str, str, str]:
@@ -266,23 +265,22 @@ class VaultStore:
         return nbd_server.Export(key=export_name, path=image, space_ok=space_ok)
 
     def serve_forever(self, interval: float = 30.0, stop: Optional[threading.Event] = None) -> None:
-        """Keep the NBD server listening on this NAS's tunnel address."""
+        """Keep the NBD server listening, on the loopback network only: AlvaOS Link connects to it
+        from the buddy's own address (127.95.x.y), which is how `resolve` knows who is asking."""
         stop = stop or threading.Event()
         warned = ""
         while not stop.is_set():
             try:
                 has_peers = bool(self.m._load_peers())
-                ip = str(self.m._identity_public().get("tunnel_ip") or "") if has_peers else ""
-                if self.server is not None and ip != self._server_ip:
+                if self.server is not None and not has_peers:
                     self.server.close()
-                    self.server, self._server_ip = None, ""
-                if ip and self.server is None:
+                    self.server = None
+                if has_peers and self.server is None:
                     server = nbd_server.NbdServer(self.resolve)
-                    server.listen(ip, nbd_server.NBD_PORT)
-                    self.server, self._server_ip = server, ip
+                    server.listen("127.0.0.1", nbd_server.NBD_PORT)
+                    self.server = server
                     warned = ""
             except OSError as exc:
-                # The tunnel interface may not be up yet; try again later.
                 if warned != str(exc):
                     print(f"Buddy vault server not listening yet: {exc}")
                     warned = str(exc)

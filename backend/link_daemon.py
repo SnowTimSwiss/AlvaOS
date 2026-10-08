@@ -202,7 +202,7 @@ class Link:
         self.endpoint: Any = None
         self.iroh: Any = None
         self.tasks: List[asyncio.Task] = []
-        self.forwarders: Dict[str, List[asyncio.AbstractServer]] = {}
+        self.forwarders: Dict[str, List[Any]] = {}
         self.connections: Dict[str, Any] = {}
         self.conn_lock = asyncio.Lock()
         self.streams: Dict[str, int] = {}
@@ -309,7 +309,7 @@ class Link:
             elif service == 'ping' and peer:
                 await send.write_all(b'pong\n')
                 await send.finish()
-            elif peer and service in ALLOWED.get(peer.get('kind'), ()) and service in self.services:
+            elif peer and service in ALLOWED.get(str(peer.get('kind')), ()) and service in self.services:
                 host, port = self.services[service]
                 reader, writer = await asyncio.open_connection(host, port, local_addr=(peer['alias'], 0))
                 if rest:

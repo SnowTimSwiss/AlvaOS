@@ -30,7 +30,7 @@ from typing import Callable, List, Optional
 NAME_RE = re.compile(r"^[a-z0-9]{4,32}$")
 EXPORT_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 KEY_RE = re.compile(r"^[0-9a-f]{64}$")
-BUDDY_SUBNET = ipaddress.ip_network("100.95.95.0/24")
+BUDDY_SUBNET = ipaddress.ip_network("127.95.0.0/16")      # the addresses AlvaOS Link gives buddies
 NBD_PORT = "10809"
 NBD_DEVICES = 16
 
@@ -119,7 +119,7 @@ def validate(name: str, host: str = "0.0.0.0", export: str = "x", key: str = "0"
         raise VaultError("Invalid vault name")
     try:
         if ipaddress.ip_address(host) not in BUDDY_SUBNET and host != "0.0.0.0":
-            raise VaultError("Vaults can only be attached from a buddy tunnel address")
+            raise VaultError("Vaults can only be attached through a buddy address of AlvaOS Link")
     except ValueError:
         raise VaultError("Invalid buddy address") from None
     if not EXPORT_RE.match(export or ""):

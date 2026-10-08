@@ -93,9 +93,9 @@ def world(tmp_path, monkeypatch):
 
     owner, buddy = make("owner"), make("buddy")
     owner_id = owner._identity_public()["node_id"]
-    owner._save_peers({BUDDY_ID: {"node_id": BUDDY_ID, "name": "Buddy", "tunnel_ip": "100.95.95.8",
+    owner._save_peers({BUDDY_ID: {"node_id": BUDDY_ID, "name": "Buddy", "tunnel_ip": "127.95.1.8",
                                   "api_secret": "s"}})
-    buddy._save_peers({owner_id: {"node_id": owner_id, "name": "Owner", "tunnel_ip": "100.95.95.7"}})
+    buddy._save_peers({owner_id: {"node_id": owner_id, "name": "Owner", "tunnel_ip": "127.95.1.7"}})
     monkeypatch.setattr(buddy, "_owner_quota_bytes", lambda owner: 64 * 1024 * 1024)
     ok, _ = owner.save_settings({"encryption_enabled": True, "encryption_password": PASSWORD})
     assert ok
@@ -195,7 +195,7 @@ def test_first_sync_creates_an_encrypted_vault(world):
     assert not first["incremental"]
     args, stdin = world.helper_calls[0]
     assert args[:2] == ["vault-open", bv.vault_name(BUDDY_ID)]
-    assert args[2:] == ["100.95.95.8", world.owner_id, "create"]
+    assert args[2:] == ["127.95.1.8", world.owner_id, "create"]
     key = stdin.decode()
     assert len(key) == 64 and key not in " ".join(args)
     assert world.helper_calls[-1][0][0] == "vault-close"
@@ -357,7 +357,7 @@ def test_password_change_reseals_the_key_on_the_buddy(world):
 
 def test_removing_the_owner_on_the_buddy_deletes_its_vault(world, monkeypatch):
     world.sync()
-    monkeypatch.setattr(world.buddy, "apply_tunnel_config", lambda: (True, {}))
+    monkeypatch.setattr(world.buddy, "sync_link", lambda: (True, {}))
     ok, _ = world.buddy.remove_peer(world.owner_id, reciprocal=False)
     assert ok and not world.buddy.vault_store.info(world.owner_id)["exists"]
 

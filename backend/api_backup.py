@@ -24,10 +24,10 @@ def _authenticated_buddy():
     """Identify the buddy behind a peer-to-peer request, or return an error response.
 
     Two checks: the request carries this NAS's buddy secret, and it arrives
-    through the WireGuard tunnel from the tunnel address of a paired buddy.
+    through AlvaOS Link from the address of a paired buddy (127.95.x.y).
     The secret is shared with every buddy, so on its own it cannot tell them
-    apart; the tunnel address can, because WireGuard only accepts traffic
-    from it when it is signed with that buddy's key.
+    apart; the address can, because Link only connects from it for the buddy
+    that proved its key.
     """
     if buddy_backup_manager is None:
         return None, (jsonify({'error': 'Buddy backup manager not initialized'}), 500)
@@ -36,7 +36,7 @@ def _authenticated_buddy():
         return None, (jsonify({'error': 'Unauthorized buddy request'}), 403)
     peer = buddy_backup_manager.peer_for_tunnel_ip(request.remote_addr or '')
     if peer is None:
-        return None, (jsonify({'error': 'Buddy requests are only accepted through the buddy tunnel'}), 403)
+        return None, (jsonify({'error': 'Buddy requests are only accepted through AlvaOS Link'}), 403)
     return peer, None
 
 
@@ -355,27 +355,7 @@ def buddy_pairing_generate():
         return jsonify({'error': 'Buddy backup manager not initialized'}), 500
 
     data = request.get_json() or {}
-    endpoint = (data.get('endpoint') or '').strip()
-    expires_minutes = data.get('expires_minutes', 20)
-    try:
-        identity = buddy_backup_manager._identity_public()
-        listen_port = int(identity.get('listen_port') or 51820)
-    except Exception:
-        listen_port = 51820
-    listen_port = max(1024, min(65535, listen_port))
-
-    host_header = (request.headers.get('X-Forwarded-Host') or request.host or '').split(',')[0].strip()
-    api_endpoint = host_header
-    if not endpoint:
-        host = host_header.split(':', 1)[0].strip()
-        if host and host not in ('localhost', '127.0.0.1', '::1'):
-            endpoint = f"{host}:{listen_port}"
-
-    success, payload = buddy_backup_manager.generate_pairing_token(
-        endpoint=endpoint,
-        expires_minutes=expires_minutes,
-        api_endpoint=api_endpoint,
-    )
+    success, payload = buddy_backup_manager.generate_pairing_token(expires_minutes=data.get('expires_minutes', 20))
     if not success:
         return jsonify({'error': payload.get('error', 'Failed to generate pairing token')}), 400
     return jsonify({'success': True, **payload})
@@ -383,34 +363,15 @@ def buddy_pairing_generate():
 @bp.route('/api/v1/backup/pairing/validate', methods=['POST'])
 @require_auth(require_admin=True)
 def buddy_pairing_validate():
-    """Validate and store a buddy pairing token."""
+    """Validate and store a buddy pairing token, and give the buddy ours through AlvaOS Link."""
     if buddy_backup_manager is None:
         return jsonify({'error': 'Buddy backup manager not initialized'}), 500
 
     data = request.get_json() or {}
-    token = (data.get('token') or '').strip()
-    endpoint_override = (data.get('endpoint_override') or '').strip()
-    name_override = (data.get('name_override') or '').strip()
-    try:
-        identity = buddy_backup_manager._identity_public()
-        listen_port = int(identity.get('listen_port') or 51820)
-    except Exception:
-        listen_port = 51820
-    listen_port = max(1024, min(65535, listen_port))
-    host_header = (request.headers.get('X-Forwarded-Host') or request.host or '').split(',')[0].strip()
-    local_api_endpoint = host_header
-    local_host = host_header.split(':', 1)[0].strip()
-    local_wg_endpoint = ''
-    if local_host and local_host not in ('localhost', '127.0.0.1', '::1'):
-        local_wg_endpoint = f'{local_host}:{listen_port}'
-
     success, payload = buddy_backup_manager.validate_pairing_token(
-        token=token,
-        endpoint_override=endpoint_override,
-        name_override=name_override,
+        token=(data.get('token') or '').strip(),
+        name_override=(data.get('name_override') or '').strip(),
         auto_reciprocal=True,
-        local_wg_endpoint=local_wg_endpoint,
-        local_api_endpoint=local_api_endpoint,
     )
     if not success:
         return jsonify({'error': payload.get('error', 'Pairing failed')}), 400

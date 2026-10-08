@@ -54,7 +54,7 @@ SCAN_MOUNT_BASE = '/run/alvaos-scan'
 # Root-owned staging directory for files that are checked before use.
 STAGING_DIR = '/run/alvaos-priv'
 
-# The only WireGuard config the helper will bring up or down: the Buddy Backup tunnel.
+# The old Buddy Backup tunnel (before AlvaOS 0.3), which an update takes down once.
 WG_CONFIG_PATH = '/var/lib/alvaos/wireguard/buddy0.conf'
 
 UPDATE_CACHE_DIR = '/var/lib/alvaos/updates'
@@ -1327,14 +1327,10 @@ def _rule_ip(sys_: System, args):
     _fail('ip usage not allowed')
 
 
-def _rule_wg(sys_: System, args):
-    # Never `show ... dump` or `private-key`: those print the private key.
-    _expect(args, 'show', 'buddy0')
-    return Plan(argv=list(args))
-
-
 def _rule_wg_quick(sys_: System, args):
-    _expect(args, {'up', 'down'}, {WG_CONFIG_PATH})
+    # Buddy Backup used its own WireGuard tunnel until AlvaOS 0.3 (AlvaOS Link replaced it):
+    # an update can only take the old one down.
+    _expect(args, 'down', {WG_CONFIG_PATH})
     return Plan(argv=list(args), stage={1: 'wg'})
 
 
@@ -1424,7 +1420,6 @@ RULES = {
     'docker': _rule_docker,
     'docker-compose': _rule_compose,
     'ip': _rule_ip,
-    'wg': _rule_wg,
     'wg-quick': _rule_wg_quick,
     'id': _rule_readonly_any,
     'getent': _rule_readonly_any,

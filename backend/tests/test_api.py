@@ -143,8 +143,8 @@ def test_security_headers_on_api_and_ui(backend):
 
 # ── Buddy peer-to-peer endpoints ─────────────────────────────────────────────
 
-PEER_TUNNEL_IP = "100.95.95.77"
-OTHER_TUNNEL_IP = "100.95.95.78"
+PEER_TUNNEL_IP = "127.95.1.77"
+OTHER_TUNNEL_IP = "127.95.1.78"
 
 
 @pytest.fixture

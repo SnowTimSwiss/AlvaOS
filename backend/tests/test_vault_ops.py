@@ -8,7 +8,7 @@ import priv_policy as policy
 import vault_ops as vo
 
 KEY = "ab" * 32
-BUDDY = "100.95.95.8"
+BUDDY = "127.95.1.8"
 
 
 class FakeHost(vo.Host):
