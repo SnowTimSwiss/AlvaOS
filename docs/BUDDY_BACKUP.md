@@ -41,7 +41,7 @@ Core NAS-to-NAS backup system for AlvaOS. Peer-to-peer, encrypted, and increment
   hands it to the backend (`/api/v1/backup/pairing/accept`) together with the secret from the
   code, so nobody can register as a buddy without it.
 - **Ports**: none. Neither side needs a port forwarded, a public address or a domain. Both need
-  AlvaOS Link on (Settings › Away from home) and AlvaOS 0.3 or newer.
+  AlvaOS Link on (Settings › AlvaOS Link) and AlvaOS 0.3 or newer.
 - Buddies paired before 0.3 (WireGuard) show "Pair again". Their old backups stay on them; pairing
   again with the same node id gives access to them again.
 - Link is told the buddies at startup and after every change; the vault server listens on the

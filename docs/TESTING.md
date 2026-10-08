@@ -65,7 +65,7 @@ storage healthy, one shared folder.
    Select: draw a rectangle with the mouse from an empty spot over a few
    files (Ctrl or Shift adds to the selection); the bar on top shows them
    and nothing below it moves. Click beside the files: nothing is selected.
-   Shared links, Trash, Connect a computer and Phones and devices sit at
+   Shared links, Trash and Devices sit at
    the bottom of the side bar, above your name and "Sign out".
    Delete a file, then Trash: it opens like a folder (not a window), with
    where it was and when; switch between your shared folders at the top,
@@ -139,31 +139,31 @@ storage healthy, one shared folder.
    files" works while it is connected. Unplugged, Storage shows it as
    "Backup disk · Not connected" and no alarm goes off.
 4. Buddy Backup with a second AlvaOS (a second VM) if you have one, both
-   with Away from home on and **no router setting on either side**: on the
+   with AlvaOS Link on and **no router setting on either side**: on the
    first, Backup › Buddy › make a pairing token; on the second paste it.
    Both list each other (status "Connected", then the time last seen).
    Start a backup: it runs through Link (a direct connection when
    possible; slower through a relay). A buddy paired before the update says
-   "repair": pair again. Settings › Away from home lists the buddy, too.
+   "repair": pair again. Settings › AlvaOS Link lists the buddy, too.
    Recovery kit: make one, restore on a fresh NAS: the Link address stays.
 
-## 7. Away from home (AlvaOS Link)
+## 7. AlvaOS Link (away from home)
 
 Needs the NAS with the internet and a phone on mobile data (Wi-Fi off).
 
-1. `systemctl status alvaos-link` is active. Settings › Away from home
+1. `systemctl status alvaos-link` is active. Settings › AlvaOS Link
    shows the switch on, the sentence "Phones and buddies can reach this NAS
    from anywhere" and a Link address (a long code, shown short).
 2. Switch off: the sentence says it is off, `systemctl status` still runs
    but nothing connects. On again: running within a few seconds.
-3. Hub › Phones and devices › show the QR code: its text under the code says
+3. Hub › Devices › show the QR code: its text under the code says
    the phone also works away. Scan it with the app **on mobile data** (not
    at home): "Connecting…" then the Hub opens. The settings of the app say
-   "Through AlvaOS Link". The NAS list under Away from home names the phone.
+   "Through AlvaOS Link". The NAS list under AlvaOS Link names the phone.
 4. Pair the phone at home, then switch Wi-Fi off: the Hub, Files and the
    photo backup keep working (the first start away can take some seconds).
-5. Phones and devices › sign the phone out: it is gone from the list under
-   Away from home and can no longer reach the NAS.
+5. Devices › sign the phone out: it is gone from the list under
+   AlvaOS Link and can no longer reach the NAS.
 6. No router setting was needed anywhere, and no account.
 7. The app build without the Link library (CI step "Build the Link library
    failed"): the app still works at home; settings say "not available in
@@ -319,7 +319,7 @@ Needs the NAS with the internet and a phone on mobile data (Wi-Fi off).
    › the newest run › Artifacts › `alvaos-android`, unzip). Install it
    (allow "install unknown apps" for the browser once). Once the upload key
    is set up (`docs/ANDROID.md`), uninstall the old debug build once.
-2. On a computer open the Hub, side bar › **Phones and devices** › Connect
+2. On a computer open the Hub, side bar › **Devices** › Connect
    a phone: a QR code and a code appear. In the app tap **Scan the QR
    code** and point it at the code: the app connects without a password
    and shows the Hub; the computer says "<phone> is connected" and lists
@@ -331,7 +331,7 @@ Needs the NAS with the internet and a phone on mobile data (Wi-Fi off).
    Chat, the store apps) works as in the browser; downloading a file lands
    in Downloads; uploading opens the phone's file picker; there is no
    "Sign out" in the Hub (it is in the app's Settings).
-4. In the Hub on the computer › Phones and devices: rename the phone, then
+4. In the Hub on the computer › Devices: rename the phone, then
    **Sign out**: opening the app again says it was signed out on the NAS.
    Connect it again.
 5. The **Backup** tab › Set up backup: allow pictures. Choose two albums
@@ -374,13 +374,13 @@ Needs the NAS with the internet and a phone on mobile data (Wi-Fi off).
 1. In the app, Files: no side bar, no arrows, no status line at the bottom;
    the title is the folder; the shared folders are chips under the bar (when
    there is more than one); "⋯" has Show as a list, Shared links, Trash,
-   Phones and devices. The phone's back gesture goes up a folder.
+   Devices. The phone's back gesture goes up a folder.
 2. Photos: the title says Photos, a card shows the backup ("Backing up 16 of
    32" with a bar, or "120 pictures backed up"; Open goes to the Backup
    tab), the albums are chips, an empty library fills the width.
 3. Backup and Settings look like the Hub (the same blues, cards, icons)
    in light and dark; the colours do not follow the wallpaper.
-4. Settings › Trash opens Files with the trash; Phones and devices opens
+4. Settings › Trash opens Files with the trash; Devices opens
    the list.
 
 ## 12e. Photos: favourites and albums
@@ -481,6 +481,6 @@ Calendar › Create › Birthday: type a name and a year; choose "And make a new
 ## 12p Link on the phone
 
 1. Install the app from CI, scan a QR code at home, then leave Wi-Fi: the
-   Hub opens (see 7). Settings › "Away from home: On …".
+   Hub opens (see 7). Settings › "AlvaOS Link: On …".
 2. A build without the library: settings say "not available in this build";
    nothing else breaks.

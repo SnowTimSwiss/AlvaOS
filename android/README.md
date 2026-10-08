@@ -2,7 +2,7 @@
 
 The app of an AlvaOS NAS, Android 11 or newer:
 
-- **Connect** with the QR code of the Hub (Phones and devices › Connect a
+- **Connect** with the QR code of the Hub (Devices › Connect a
   phone): `alvaos://pair?c=<code>&a=<address>…`, scanned in the app
   (Google's scanner) or with the phone's camera. Or the code typed, or name
   and password. The app gets a session of its own, listed in the Hub, and

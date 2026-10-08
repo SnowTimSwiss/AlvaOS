@@ -115,7 +115,7 @@ NAS-to-NAS encrypted incremental backup.
 
 **Network:**
 - LAN access by default
-- Away from home: AlvaOS Link (`link_daemon.py`, `docs/LINK.md`): the app and buddy NAS connect end to end encrypted, directly or through a relay, with no router setting and no account
+- AlvaOS Link (away from home; `link_daemon.py`, `docs/LINK.md`): the app and buddy NAS connect end to end encrypted, directly or through a relay, with no router setting and no account
 - Buddy Backup uses AlvaOS Link
 
 **Data:**

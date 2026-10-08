@@ -291,7 +291,7 @@ class BuddyBackupManager:
             "public_key": link_id,
             "created_at": identity.get("created_at"),
             "updated_at": identity.get("updated_at"),
-            "key_error": "" if link_id else "AlvaOS Link is not running on this NAS. Turn it on in Settings \u203a Away from home.",
+            "key_error": "" if link_id else "AlvaOS Link is not running on this NAS. Turn it on in Settings \u203a AlvaOS Link.",
             "key_source": "link",
         }
 
@@ -1594,7 +1594,7 @@ class BuddyBackupManager:
                    for nid, p in peers.items() if isinstance(p, dict) and LINK_ID_RE.match(str(p.get("public_key") or ""))]
         answer = link_client.set_buddies(buddies)
         if answer is None:
-            return False, {"error": "AlvaOS Link is not running on this NAS. Turn it on in Settings \u203a Away from home."}
+            return False, {"error": "AlvaOS Link is not running on this NAS. Turn it on in Settings \u203a AlvaOS Link."}
         if answer.get("error"):
             return False, {"error": str(answer["error"])}
         aliases = {p["id"]: p["alias"] for p in answer.get("peers", []) if p.get("kind") == "buddy"}
@@ -1614,7 +1614,7 @@ class BuddyBackupManager:
         if status is None:
             return {"state": "down", "message": "AlvaOS Link is not running on this NAS"}
         if not status.get("enabled"):
-            return {"state": "down", "message": "Away from home is turned off (Settings \u203a Away from home)"}
+            return {"state": "down", "message": "AlvaOS Link is turned off (Settings \u203a AlvaOS Link)"}
         if not status.get("running"):
             return {"state": "down", "message": "AlvaOS Link is starting"}
         peers = [{"public_key": p.get("id"), "connected": bool(p.get("connected")), "last_seen": p.get("last_seen")}

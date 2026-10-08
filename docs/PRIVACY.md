@@ -8,7 +8,7 @@ photos and videos of your phone to it. It talks to nobody else.
 - To the NAS whose address you enter, and only there: the photos and videos
   of the albums you choose (with the date they were taken and, if you allow
   it, where), their names and sizes, the name and model of your phone and the
-  app's version (so you see it under Phones and devices), and your name and
+  app's version (so you see it under Devices), and your name and
   password, or the code of the QR code, to sign in.
 - The Hub of your NAS opens inside the app, like a web page, from your NAS
   only; links to other places open in your browser.

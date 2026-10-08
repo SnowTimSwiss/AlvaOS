@@ -4,7 +4,7 @@ Link lets the AlvaOS app and a buddy NAS reach this NAS from anywhere: no port f
 
 ## How it works
 
-Link is on by default (Settings › Away from home has the switch; there is no question in the setup). The page says that it uses iroh and that a public relay may carry the encrypted traffic when no direct connection is possible.
+Link is on by default (Settings › AlvaOS Link has the switch; there is no question in the setup). The page says that it uses iroh and that a public relay may carry the encrypted traffic when no direct connection is possible.
 
 
 - Every NAS has a key pair (Ed25519, kept in `/var/lib/alvaos/link/key`). Its public key (64 hex digits) is its **Link address**. Whoever knows it can *try* to connect; what they may do depends on the key list (below).
@@ -24,11 +24,11 @@ One QUIC stream per request; the first line names a **service**:
 
 Everyone else is refused; a stranger cannot even reach the Hub's sign-in page. A paired phone still signs in as its person (the session token from pairing).
 
-**What the NAS sees:** for every allowed peer the daemon has an address on the loopback network (`127.95.x.y`) and connects to the service *from that address*. The Hub then counts failed sign-ins per phone, and the backup code identifies a buddy by it (peer `tunnel_ip`). Removing a phone in the Hub (Phones and devices) or a buddy (Backup › Buddy) takes its key off the list at once. Settings › Away from home switches Link off for everyone.
+**What the NAS sees:** for every allowed peer the daemon has an address on the loopback network (`127.95.x.y`) and connects to the service *from that address*. The Hub then counts failed sign-ins per phone, and the backup code identifies a buddy by it (peer `tunnel_ip`). Removing a phone in the Hub (Devices) or a buddy (Backup › Buddy) takes its key off the list at once. Settings › AlvaOS Link switches Link off for everyone.
 
 ## Phones (the Android app)
 
-The QR code of the Hub (Phones and devices) carries the pairing code and, when Link is on, the NAS's Link address (`l=`). The app pairs at home or away; away it reaches the Hub through a local forwarder (`127.0.0.1:<port>` in the app) that opens a `hub` stream per connection. See `docs/ANDROID.md`.
+The QR code of the Hub (Devices) carries the pairing code and, when Link is on, the NAS's Link address (`l=`). The app pairs at home or away; away it reaches the Hub through a local forwarder (`127.0.0.1:<port>` in the app) that opens a `hub` stream per connection. See `docs/ANDROID.md`.
 
 ## Buddies
 

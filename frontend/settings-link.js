@@ -1,4 +1,4 @@
-// Settings › Away from home: AlvaOS Link on or off, and who is connected (backend/api_link.py).
+// Settings › AlvaOS Link: AlvaOS Link on or off, and who is connected (backend/api_link.py).
 (function () {
     const $ = (id) => document.getElementById(id);
     const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -39,10 +39,10 @@
             <div class="set-desc">${p.connected ? 'Connected now' : `Last seen ${esc(ago(p.last_seen))}`}</div></div><div class="set-value"></div><div class="set-action"></div></div>`;
         body.innerHTML = `
             <div class="set-row"><div class="set-text"><div class="set-label">This NAS's Link address</div>
-                <div class="set-desc">The app and your buddies find this NAS by it. It is in the QR code of the Hub (Phones and devices) and in the Buddy pairing code, so you rarely need it.</div></div>
+                <div class="set-desc">The app and your buddies find this NAS by it. It is in the QR code of the Hub (Devices) and in the Buddy pairing code, so you rarely need it.</div></div>
                 <div class="set-value mono-text" title="${esc(state.node_id)}">${esc(state.node_id.slice(0, 8))}…${esc(state.node_id.slice(-4))}</div><div class="set-action"></div></div>
             <h3 class="set-group-subtitle">Phones</h3>
-            ${phones.length ? phones.map(row).join('') : '<p class="set-desc">No phone is paired yet. Show the QR code in the Hub (Phones and devices) while the phone is at home or away.</p>'}
+            ${phones.length ? phones.map(row).join('') : '<p class="set-desc">No phone is paired yet. Show the QR code in the Hub (Devices) while the phone is at home or away.</p>'}
             <h3 class="set-group-subtitle">Buddies</h3>
             ${buddies.length ? buddies.map(row).join('') : '<p class="set-desc">No buddy NAS is paired. See Backup › Buddy.</p>'}`;
     }
@@ -56,7 +56,7 @@
         e.target.disabled = true;
         try {
             render(await api({ method: 'POST', body: JSON.stringify({ enabled: want }) }));
-            note(want ? 'Away from home is on.' : 'Away from home is off. Phones and buddies reach this NAS at home only.', 'success');
+            note(want ? 'AlvaOS Link is on.' : 'AlvaOS Link is off. Phones and buddies reach this NAS at home only.', 'success');
         } catch (err) {
             e.target.checked = !want;
             note(err.message, 'error');

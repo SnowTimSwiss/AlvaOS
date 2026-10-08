@@ -41,7 +41,7 @@ data class PlanItem(val id: String, val album: String, val name: String, val siz
 @Serializable
 data class DoneItem(val id: String, val path: String, val name: String, val size: Long, val modified: Long)
 
-/** What the app says about the phone; the Hub lists it under Phones and devices. */
+/** What the app says about the phone; the Hub lists it under Devices. */
 @Serializable
 data class DeviceInfo(val name: String, val model: String = "", val platform: String = "android", val app_version: String = "")
 
@@ -72,7 +72,7 @@ data class Me(
 data class Paired(val token: String, val user: String = "", val nas_name: String = "", val device: String = "")
 
 /**
- * What the QR code in the Hub › Phones and devices says:
+ * What the QR code in the Hub › Devices says:
  * `alvaos://pair?c=CODE&n=<NAS>&u=<person>&a=<address>&a=<address>`.
  * The addresses: the one the browser used, then the internet one if there is.
  */

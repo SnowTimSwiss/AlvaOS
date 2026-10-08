@@ -305,7 +305,7 @@
             <p><strong>iPhone</strong>: Settings › Contacts › Accounts › Add Account › Other › Add CardDAV Account. Server: the address above.<br>
             <strong>Android</strong>: install DAVx5, add an account with a URL and your name, base URL <code>${esc(host)}/dav/</code>.<br>
             <strong>Thunderbird, Mac</strong>: add a CardDAV address book with <code>${esc(host)}/dav/</code>.</p>
-            <p class="muted">Away from home this needs the internet address of your NAS (Settings › Remote access). Photos and groups of a phone's contacts are not kept.</p>
+            <p class="muted">Away from home, contacts sync only through the AlvaOS app; other apps need the home network. Photos and groups of a phone's contacts are not kept.</p>
             <div class="actions"><button type="button" class="btn primary" data-close>Done</button></div></div>`;
         wrap.querySelector('[data-close]').onclick = () => { wrap.hidden = true; wrap.innerHTML = ''; };
     }

@@ -1,7 +1,7 @@
 # The Android app: building, signing, Google Play
 
 The app lives in `android/` (see `android/README.md`). It connects with
-the QR code of the Hub (Phones and devices), shows the whole Hub with every
+the QR code of the Hub (Devices), shows the whole Hub with every
 app the person has, and backs up photos (`docs/PHOTOS.md`). GitHub builds
 it; nothing needs Android Studio.
 
@@ -22,7 +22,7 @@ The app has the version of AlvaOS: the release's name, between releases the
 `VERSION` file (`beta-v0.2.0`). The version code Google Play needs is
 counted up by CI on its own (minutes since 2026); nobody needs to see it.
 
-## Away from home (AlvaOS Link)
+## AlvaOS Link (away from home)
 
 The app reaches the NAS from anywhere through AlvaOS Link (`docs/LINK.md`).
 The native library comes from iroh-ffi v1.1.0, built in the CI step "Build

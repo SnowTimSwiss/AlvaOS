@@ -15,6 +15,14 @@ How to add an entry:
 
 ---
 
+## 2026-10-08 — Name and Hub: "AlvaOS Link" everywhere, one Devices entry
+
+- The settings page is called **AlvaOS Link** (was "Away from home"), in the pages, messages, assistant, app and docs; "away from home" stays as the plain description.
+- Hub › Files: **Connect a computer** and **Phones and devices** are one entry, **Devices**. Its dialog: connect a phone (QR code), the connected phones, and a folded "Computer: open your folders" part (WebDAV). The app's settings call it Devices, too.
+- Calendar and Contacts notes no longer point to the removed Remote access.
+
+---
+
 ## 2026-10-08 — v0.3.0: AlvaOS Link (away from home without a router), Buddy Backup rework
 
 - New **AlvaOS Link** (`link_daemon.py`, `alvaos-link.service`, `docs/LINK.md`): iroh (QUIC, end-to-end encrypted, keys as addresses, direct connection or a relay) lets phones and buddy NASes reach this NAS with no router setting and no account. Each paired peer gets its own loopback address (`127.95.x.y`); the NAS connects to its services from there, so the source address is the identity.

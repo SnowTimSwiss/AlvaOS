@@ -1,4 +1,4 @@
-"""Away from home (Settings › Away from home): AlvaOS Link on or off, and who is connected. See link_daemon.py."""
+"""AlvaOS Link (Settings › AlvaOS Link): on or off, and who is connected. See link_daemon.py."""
 
 from flask import Blueprint, jsonify, request
 

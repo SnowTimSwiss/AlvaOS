@@ -188,7 +188,7 @@ class MainActivity : AppCompatActivity() {
         if (!showsHub()) show()
         if (store.backupOn) SyncWorker.schedule(this)         // the watchers survive an update of the app
         deleteWhatTheNasDeleted()
-        // Which apps the person has now, or signed out on the NAS (Phones and devices › Sign out, a new password)?
+        // Which apps the person has now, or signed out on the NAS (Devices › Sign out, a new password)?
         lifecycleScope.launch {
             val answer: Any? = withContext(Dispatchers.IO) {
                 try { store.pickServer(); LinkService.register(store, store.hub()); store.hub().me() }
@@ -320,7 +320,7 @@ class MainActivity : AppCompatActivity() {
                 ui.feature(page, R.drawable.ic_tab_calendar, "Calendar and chat", "Every app of your Hub, in one place.")
                 ui.space(page, 12)
                 ui.button(page, "Scan the QR code", icon = R.drawable.ic_qr, top = 16) { scan() }
-                ui.caption(page, "On a computer, open the Hub of your NAS and choose Phones and devices › Connect a phone.", 10)
+                ui.caption(page, "On a computer, open the Hub of your NAS and choose Devices › Connect a phone.", 10)
                     .gravity = Gravity.CENTER
                 ui.button(page, "Type the code instead", Ui.Kind.Outlined, top = 24) { signIn(mode = Mode.Code) }
                 ui.button(page, "Sign in with name and password", Ui.Kind.Text, top = 4) { signIn(mode = Mode.Password) }
@@ -361,7 +361,7 @@ class MainActivity : AppCompatActivity() {
         GmsBarcodeScanning.getClient(this, options).startScan()
             .addOnSuccessListener { code ->
                 val link = PairLink.parse(code.rawValue.orEmpty())
-                if (link == null) signIn("That is not the QR code of AlvaOS. Use the one in the Hub › Phones and devices.")
+                if (link == null) signIn("That is not the QR code of AlvaOS. Use the one in the Hub › Devices.")
                 else connect(link)
             }
             .addOnFailureListener { e ->
@@ -459,7 +459,7 @@ class MainActivity : AppCompatActivity() {
         if (appId != null) page.open(appId) else page.load()
     }
 
-    /** Opens a Hub app and one of its tools (Trash, Phones and devices) in it. */
+    /** Opens a Hub app and one of its tools (Trash, Devices) in it. */
     private fun hubTool(tool: String) {
         tab = tabApps.entries.firstOrNull { it.value == "files" }?.key ?: nav.menu.getItem(0).itemId
         appsOpen = null
@@ -766,12 +766,12 @@ class MainActivity : AppCompatActivity() {
         ui.title(texts, store.user)
         ui.caption(texts, "on ${store.nasName.ifEmpty { "your NAS" }}", 1)
         ui.caption(account, if (LinkService.isProxy(store.server)) where() else "${where()} · ${Uri.parse(store.server).host.orEmpty()}", 14)
-        ui.caption(account, "Away from home: ${LinkService.describe(store)}", 2)
+        ui.caption(account, "AlvaOS Link: ${LinkService.describe(store)}", 2)
         val others = store.addresses.filter { it != store.server }
         if (others.isNotEmpty()) ui.caption(account, "Also tries ${others.joinToString(", ") { Uri.parse(it).host.orEmpty() }}", 2)
 
         val tools = ui.group(page, 14)
-        ui.item(tools, R.drawable.ic_phone, "Phones and devices", "See and sign out the connected phones") { hubTool("devices") }
+        ui.item(tools, R.drawable.ic_phone, "Devices", "See and sign out the connected phones") { hubTool("devices") }
         ui.item(tools, R.drawable.ic_trash, "Trash", "Deleted files, kept for 30 days") { hubTool("trash") }
         ui.item(tools, R.drawable.ic_link, "Shared links", "Links you made to files and folders") { hubTool("links") }
 

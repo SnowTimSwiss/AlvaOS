@@ -1147,7 +1147,7 @@
                 <p>Install <b>DAVx⁵</b> (free in F-Droid, also in the Play Store), add an account with “URL and user name” and enter <code>https://${esc(server)}/</code>. Calendars appear in the phone's calendar app, tasks in Tasks.org or jtx Board.</p></details>
             <details class="sync-how"><summary>Thunderbird and Outlook</summary>
                 <p>Thunderbird: New Calendar › On the Network, location <code>https://${esc(server)}/dav/${esc(user)}/</code>. Outlook needs a CalDAV add-in.</p></details>
-            <p class="sync-note">The phone has to trust this NAS once: open <a href="/alvaos-ca.crt">its certificate</a> on the phone and install it (on an iPhone also turn it on under Settings › General › About › Certificate Trust Settings). Away from home this works over remote access.</p>
+            <p class="sync-note">The phone has to trust this NAS once: open <a href="/alvaos-ca.crt">its certificate</a> on the phone and install it (on an iPhone also turn it on under Settings › General › About › Certificate Trust Settings). Away from home, the calendar syncs through the AlvaOS app; other apps need the home network.</p>
             <div class="actions"><span class="grow"></span><button type="button" class="btn primary" data-close>Done</button></div>`);
         d.el.querySelector('[data-close]').focus();
     }

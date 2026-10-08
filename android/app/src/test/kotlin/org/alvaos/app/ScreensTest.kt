@@ -158,7 +158,7 @@ class ScreensTest {
             openTab(scenario, MainActivity.TAB_SETTINGS)
             scenario.onActivity { a ->
                 val shown = texts(a.window.decorView)
-                assertTrue(shown.toString(), "Phones and devices" in shown && "Trash" in shown && "Sign out" in shown)
+                assertTrue(shown.toString(), "Devices" in shown && "Trash" in shown && "Sign out" in shown)
                 assertTrue(shown.toString(), shown.any { it.startsWith("At home") })
             }
             picture(scenario, "4-settings")

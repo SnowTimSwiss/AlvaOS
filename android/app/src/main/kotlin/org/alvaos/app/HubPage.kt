@@ -190,7 +190,7 @@ class HubPage(
         ui.headline(box, "${store.nasName.ifEmpty { "Your NAS" }} cannot be reached", 16).gravity = Gravity.CENTER
         ui.body(box, "Is the phone online? At home it uses ${store.addresses.firstOrNull() ?: store.server}; " +
             if (store.linkNas.isNotEmpty() && LinkService.available) "away it goes through AlvaOS Link, which may take a moment."
-            else "away it needs AlvaOS Link: turn it on in the NAS settings (Away from home) and scan a new QR code.").gravity = Gravity.CENTER
+            else "away it needs AlvaOS Link: turn it on in the NAS settings (AlvaOS Link) and scan a new QR code.").gravity = Gravity.CENTER
         ui.button(box, "Try again", top = 20) { unreachable() }
     }
 

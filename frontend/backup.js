@@ -672,7 +672,7 @@ function renderBuddyStatus() {
     if (statusSub) {
         const sending = peers.filter((peer) => peer.policy?.enabled === true);
         if (!buddyState.supported) {
-            statusSub.textContent = 'AlvaOS Link is not running, so buddies cannot connect. Turn it on in Settings \u203a Away from home.';
+            statusSub.textContent = 'AlvaOS Link is not running, so buddies cannot connect. Turn it on in Settings \u203a AlvaOS Link.';
         } else if (!peers.length) {
             statusSub.textContent = 'Keep an encrypted copy of your data at a friend\'s or family member\'s AlvaOS. Only you can read it.';
         } else if (!tunnelUp) {

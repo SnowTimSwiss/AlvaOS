@@ -876,7 +876,7 @@
         menu.innerHTML = `<button type="button" role="menuitem" data-more="view">${icon(view === 'grid' ? 'list' : 'grid')}${view === 'grid' ? 'Show as a list' : 'Show as a grid'}</button><hr>
             <button type="button" role="menuitem" data-more="links">${icon('link')}Shared links</button>
             <button type="button" role="menuitem" data-more="trash">${icon('trash')}Trash</button>
-            <button type="button" role="menuitem" data-more="devices">${icon('phone')}Phones and devices</button>`;
+            <button type="button" role="menuitem" data-more="devices">${icon('phone')}Devices</button>`;
         menu.hidden = false;
         $('more-btn').setAttribute('aria-expanded', 'true');
     });
@@ -1190,13 +1190,11 @@
     }
 
     // WebDAV (files_dav.py, port 8091): the same folders in Finder, Windows
-    // Explorer or a file app on a phone.
-    $('connect-nav').addEventListener('click', () => {
-        closeSide();
+    // Explorer or a file app on a computer. It sits in the Devices dialog.
+    function davBlock() {
         const secure = location.protocol === 'https:';
         const url = secure ? `https://${location.hostname}:9444/` : `http://${location.hostname}:8091/`;
-        const wrap = $('dialog');
-        wrap.innerHTML = `<div class="dialog wide"><h2>Open your folders on a computer</h2>
+        const html = `<details class="dav" id="dav-block"><summary>${icon('monitor')} Computer: open your folders</summary>
             <p>Your shared folders also open in the file manager of a computer or phone, with the same name and password as here (WebDAV).${me?.role === 'admin' ? ' The admin account cannot be used there; sign in as one of the people from Storage › Users.' : ''}</p>
             <div class="linkbox"><input readonly value="${esc(url)}" id="dav-url"><button type="button" class="btn primary" id="dav-copy">${icon('copy')}Copy</button></div>
             <div class="howto">
@@ -1204,15 +1202,12 @@
                 <p><strong>Linux:</strong> Files › Other Locations, enter <code>${secure ? `davs://${esc(location.hostname)}:9444/` : `dav://${esc(location.hostname)}:8091/`}</code>.</p>
                 <p><strong>Windows:</strong> This PC › Map network drive › "Connect to a Web site…", paste the address. ${secure ? 'This works once the NAS certificate is trusted (Settings › Security in AlvaOS).' : `Windows only signs in to WebDAV over HTTPS: open Files with https:// first. The shared folders (\\\\${esc(location.hostname)}) also work.`}</p>
                 <p><strong>Phone:</strong> a file app with WebDAV, like Documents (iPhone) or Solid Explorer (Android).</p>
-            </div>
-            <div class="actions"><button type="button" class="btn primary" data-close>Done</button></div></div>`;
-        wrap.hidden = false;
-        $('dav-copy').onclick = () => copy(url);
-        wrap.querySelector('[data-close]').onclick = () => { wrap.hidden = true; wrap.innerHTML = ''; };
-    });
+            </div></details>`;
+        return { html, wire: (root) => { const c = root.querySelector('#dav-copy'); if (c) c.onclick = () => copy(url); } };
+    }
 
-    // Phones and devices: connect the AlvaOS app with a QR code (or a code to
-    // type), and see, rename and sign out the phones that are connected.
+    // Devices: connect the AlvaOS app on a phone with a QR code (or a code to
+    // type), open the folders on a computer, and see, rename and sign out what is connected.
     const APP_DOWNLOAD = 'https://github.com/SnowTimSwiss/AlvaOS/releases/latest/download/alvaos-android.apk';
     // Inside the AlvaOS app the Hub leaves to the app what is the app's: signing
     // out this phone (the app's Settings) and offering the app itself.
@@ -1254,7 +1249,9 @@
             known = new Set(list.map((d) => d.id));
             const left = pairing ? Math.max(0, Math.round((pairing.until - Date.now()) / 1000)) : 0;
             if (pairing && !left) pairing = null;
-            wrap.innerHTML = `<div class="dialog wide devices"><h2>Phones and devices</h2>
+            const dav = davBlock();
+            const davOpen = wrap.querySelector('#dav-block')?.open;
+            wrap.innerHTML = `<div class="dialog wide devices"><h2>Devices</h2>
                 ${pairing ? `<div class="pair">
                     <div class="qr">${pairing.qr ? `<img alt="QR code to connect a phone" src="${pairing.qr}">` : ''}</div>
                     <div class="pair-steps">
@@ -1262,9 +1259,9 @@
                         <p><strong>2.</strong> Open it and tap <strong>Scan QR code</strong>.</p>
                         <p><strong>3.</strong> Point the phone at this code. That's it: no password needed.</p>
                         <p class="pair-code">Or type the code <strong>${esc(pairing.code)}</strong> in the app${pairing.addresses.length ? `, with the address <code>${esc(pairing.addresses[0])}</code>` : ''}.</p>
-                        <p class="muted">Works once, for ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} more minutes.${pairing.away ? ' Away from home the app connects through AlvaOS Link.' : ' At home only: the admin can turn on Away from home in Settings.'}</p>
+                        <p class="muted">Works once, for ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} more minutes.${pairing.away ? ' Away from home the app connects through AlvaOS Link.' : ' At home only: the admin can turn on AlvaOS Link in Settings.'}</p>
                     </div></div>`
-                : `<p>Phones with the AlvaOS app use every Hub app you have, back up their photos, and stay signed in. Connect one with a QR code: no password to type.</p>
+                : `<p>Connect a phone with the AlvaOS app: it uses every Hub app you have, backs up its photos and stays signed in, at home and away (AlvaOS Link). A QR code is all it takes, no password to type.</p>
                     <div class="actions" style="justify-content:flex-start;margin:0 0 14px"><button type="button" class="btn primary" id="pair-btn">${icon('plus')}Connect a phone</button>
                     ${IN_APP ? '' : `<a class="btn" href="${APP_DOWNLOAD}" target="_blank" rel="noopener">${icon('download')}Get the Android app</a>`}</div>`}
                 <div class="trash-list">${error ? esc(error) : list.length ? list.map((d) => `<div class="trash-row device">
@@ -1276,9 +1273,12 @@
                     <div class="dev-actions"><button type="button" class="btn" data-rename="${esc(d.id)}" title="Rename">${icon('pen')}</button>
                     <button type="button" class="btn danger" data-remove="${esc(d.id)}">Sign out</button></div></div>`).join('')
                 : '<div class="empty" style="padding:24px 0">No phone is connected yet.</div>'}</div>
+                ${dav.html}
                 <div class="actions">${pairing ? '<button type="button" class="btn" id="pair-new">New code</button>' : ''}<button type="button" class="btn primary" data-close>Done</button></div></div>`;
             wrap.hidden = false;
             paintIcons(wrap);
+            dav.wire(wrap);
+            if (davOpen) wrap.querySelector('#dav-block').open = true;
             wrap.querySelector('[data-close]').onclick = close;
             wrap.onclick = (e) => { if (e.target === wrap) close(); };
             const start = async () => {
@@ -2223,7 +2223,7 @@
         if (!has('files')) {
             $('crumbs').innerHTML = '';
             $('share-list').innerHTML = '';
-            ['links-nav', 'trash-nav', 'connect-nav', 'new-btn'].forEach((id) => { $(id).hidden = true; });   // Devices stays
+            ['links-nav', 'trash-nav', 'new-btn'].forEach((id) => { $(id).hidden = true; });   // Devices stays
             $('items').innerHTML = `<div class="empty">${icon('grid')}<strong>No apps for you yet</strong>Ask whoever runs this NAS to turn on an app for you in the Hub.</div>`;
             return;
         }

@@ -59,7 +59,7 @@ TOOLS: List[Tuple[str, str, str]] = [
     ('ups', '/api/v1/system/ups', 'The UPS on USB: set up or not, on mains or on battery, charge, minutes left, '
                                   'when the NAS shuts down'),
     ('https', '/api/v1/system/tls', 'The HTTPS certificate of this NAS and whether "HTTPS only" is on'),
-    ('away_from_home', '/api/v1/link', 'Away from home (AlvaOS Link): on or off, whether the NAS is online for the '
+    ('away_from_home', '/api/v1/link', 'AlvaOS Link (away from home): on or off, whether the NAS is online for the '
                                        'phones and buddies that connect from outside, and which are connected'),
     ('graphics_cards', '/api/v1/system/gpu', 'Graphics cards, their driver and what is missing for apps to use them'),
     ('signed_in_devices', '/api/v1/auth/sessions', 'Where AlvaOS is signed in: device, address, last use'),
@@ -483,7 +483,7 @@ SYSTEM_PROMPT = (
     'Installed, App Store, app settings/logs and container terminal. Backup: Data (restore points, schedules, USB '
     'copy), System (system restore points), Buddy (second NAS). Updates: AlvaOS and package updates. Settings: '
     'Network, Time, Security (password, two-step sign-in, HTTPS, SSH, sessions), Notifications, Power, Graphics, '
-    'Away from home (AlvaOS Link), Assistant, Diagnostics, Terminal (a shell for the admin). Virtual machines: machine setup, create, settings, start/stop and console. '
+    'AlvaOS Link (away from home), Assistant, Diagnostics, Terminal (a shell for the admin). Virtual machines: machine setup, create, settings, start/stop and console. '
     'Hub: Files, Photos, Calendar and Chat as enabled by the owner. If the current assistant mode is read-only, '
     'state that changes are disabled and point to Settings > Assistant to enable confirmed proposals. In confirmed '
     'proposal mode, people and shared folders can be proposed with the available actions; present them as proposals '
