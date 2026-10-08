@@ -15,6 +15,14 @@ How to add an entry:
 
 ---
 
+## 2026-10-08 — Fix: the Link test in the Android CI failed (and so did the release build of the app)
+
+- `LinkTest` read the daemon's addresses with a regex. On a machine with IPv6 an address like `[::]:1234` has a `]` in it, the list was cut, the phone got garbage and could not connect (CI runner; not on the dev machine). The test now reads the line as JSON.
+- A failing Link test shows its reason (the exception and the daemon's own error output) and the core tests print the full failure in the CI log.
+- Note for next time: the Android workflow runs the core tests first; a failing one stops the build, so no APK is added to the release. If it happens at a release, fix the test and run the workflow by hand with the release's tag ("Add the app to this existing release").
+
+---
+
 ## 2026-10-08 — Fix: AlvaOS Link did not start on a real NAS (status 226/NAMESPACE)
 
 - `alvaos-link.service` used `ReadWritePaths=/var/lib/alvaos/link` and made that folder in an `ExecStartPre=`. With `ProtectSystem=strict` systemd needs the folder before it sets up the sandbox, so even the `ExecStartPre=` failed, in a loop, and Link stayed off. Now `StateDirectory=alvaos/link` (mode 0750): systemd makes the folder itself.

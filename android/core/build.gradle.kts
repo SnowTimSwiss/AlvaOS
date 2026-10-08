@@ -26,7 +26,14 @@ dependencies {
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 }
 
-tasks.test { useJUnitPlatform() }
+tasks.test {
+    useJUnitPlatform()
+    // The reason of a failure in the CI log, not only "IOException at line 94".
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
+}
 
 // The tests of AlvaOS Link use the real iroh. Its desktop libraries come out of the published JVM package
 // (computer.iroh:iroh), fetched once into build/. The phone gets its own library built by CI (docs/LINK.md).
