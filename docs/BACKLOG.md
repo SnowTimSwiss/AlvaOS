@@ -17,7 +17,7 @@ How to add an entry:
 
 ## 2026-10-08 — Calendar: add a birthday (tab Birthday)
 
-- Create › **Birthday**: a name, the day (the clicked one), optionally the year, and where to keep it: only in the calendar (a yearly whole-day event), also as a new contact, or on a contact there is (listed under "Add to a contact"). The contact's birthday then shows in the read-only "Birthdays" calendar. Only shown when Contacts is on for the person; on a phone the small create sheet is used then (it opened the full editor before).
+- Create › **Birthday**: a name, the day (the clicked one), optionally the year, and where to keep it: only in the calendar (a yearly whole-day event), also as a new contact, or on a contact there is (listed under "Add to a contact"). The contact's birthday then shows in the read-only "Birthdays" calendar. Always there; with Contacts off for the person the only choice is "Only in the calendar". On a phone the small create sheet is used (it opened the full editor before).
 
 ---
 

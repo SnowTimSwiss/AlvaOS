@@ -931,12 +931,12 @@
         card.innerHTML = `
             <div class="pop-tools"><button type="button" class="icon-btn" data-act="close" aria-label="Close">${icon('x')}</button></div>
             <input class="pop-title" placeholder="Add title, or “20:00 Choir”" aria-label="Title" maxlength="300">
-            <div class="pop-tabs" role="tablist"><button type="button" role="tab" data-kind="event" aria-selected="true">Event</button><button type="button" role="tab" data-kind="task" aria-selected="false">Task</button>${hasContacts() ? '<button type="button" role="tab" data-kind="birthday" aria-selected="false">Birthday</button>' : ''}</div>
+            <div class="pop-tabs" role="tablist"><button type="button" role="tab" data-kind="event" aria-selected="true">Event</button><button type="button" role="tab" data-kind="task" aria-selected="false">Task</button><button type="button" role="tab" data-kind="birthday" aria-selected="false">Birthday</button></div>
             <div class="pop-row">${icon('clock')}<div class="pop-when">${esc(whenLine())}</div></div>
             <div class="pop-row" data-for="event">${icon('calendar')}<select class="pop-select" data-target aria-label="Calendar">${targetOptions(defaultTarget(), false)}</select></div>
             <div class="pop-row" data-for="task" hidden>${icon('tasks')}<select class="pop-select" data-task-target aria-label="Task list">${targetOptions((writable().find((p) => p.own) || writable()[0]).id, true)}</select></div>
             <div class="pop-row" data-for="birthday" hidden>${icon('clock')}<input class="pop-select" data-born type="number" min="1900" max="2100" placeholder="Year born (optional)" aria-label="Year born"></div>
-            <div class="pop-row" data-for="birthday" hidden>${icon('users')}<select class="pop-select" data-bday-how aria-label="Where to keep it"><option value="event">Only in the calendar</option><option value="new">And make a new contact</option></select></div>
+            <div class="pop-row" data-for="birthday" hidden>${icon('users')}<select class="pop-select" data-bday-how aria-label="Where to keep it"><option value="event">Only in the calendar</option>${hasContacts() ? '<option value="new">And make a new contact</option>' : ''}</select></div>
             <div class="pop-actions"><button type="button" class="btn ghost" data-act="more">More options</button><button type="button" class="btn primary" data-act="save">Save</button></div>`;
         const title = card.querySelector('.pop-title');
         const setKind = (k) => {
@@ -946,7 +946,7 @@
             card.querySelector('.pop-when').textContent = whenLine();
             card.querySelector('[data-act=more]').hidden = k === 'birthday';
             title.placeholder = k === 'birthday' ? 'Name' : 'Add title, or “20:00 Choir”';
-            if (k === 'birthday') loadContactChoices(card.querySelector('[data-bday-how]'));
+            if (k === 'birthday' && hasContacts()) loadContactChoices(card.querySelector('[data-bday-how]'));
         };
         const draft = () => {
             const named = timeInTitle(title.value);
@@ -984,7 +984,6 @@
             }
         });
         title.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } if (e.key === 'Escape') closePop(); });
-        if (phone.matches && !hasContacts()) { closePop(true); eventDialog(placeOf(defaultTarget().split('|')[0]), draft().item, true); return; }
         place(card, anchor, at);
         title.focus();
     }
