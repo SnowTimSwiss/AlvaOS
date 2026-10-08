@@ -476,3 +476,33 @@ details.dav > summary svg { width: 18px; height: 18px; flex: none; }
 .scrub.active .scrub-bubble, .scrub:hover .scrub-bubble, .scrub.seen .scrub-bubble { opacity: 1; }
 /* leave room so the strip never covers the pictures */
 .items.photos { padding-right: 30px; }
+
+/* ── Movement: windows and screens come in, they do not jump ───────────────────────── */
+@keyframes hub-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes hub-pop { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes hub-sheet { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes hub-slide { from { opacity: .4; transform: translateX(32px); } to { opacity: 1; transform: none; } }
+.dialog-wrap:not([hidden]) { animation: hub-fade .16s ease-out; }
+.dialog-wrap:not([hidden]) > .dialog { animation: hub-pop .2s cubic-bezier(.2, .8, .2, 1); }
+.viewer:not([hidden]) { animation: hub-fade .18s ease-out; }
+.toast { animation: hub-pop .2s ease-out; }
+.scrim:not([hidden]) { animation: hub-fade .2s ease-out; }
+.ctx:not([hidden]), .menu:not([hidden]) { animation: hub-pop .12s ease-out; }
+.ptile img, .tile .thumb img, .rthumb { animation: hub-fade .25s ease-out; }
+.scrub { transition: opacity .2s; }
+
+/* On a phone, and in the app, the big windows (Devices, links, versions) are whole screens
+   that slide in from the right; the back gesture slides them out again. */
+@media (max-width: 760px) {
+    .dialog-wrap:not([hidden]) > .dialog.wide { max-width: none; width: 100%; height: 100%; max-height: none; border-radius: 0; overflow-y: auto; animation: hub-slide .22s cubic-bezier(.2, .8, .2, 1); padding-top: calc(20px + env(safe-area-inset-top)); padding-bottom: calc(20px + env(safe-area-inset-bottom)); }
+    #dialog.dialog-wrap { padding: 0; }
+    .dialog-wrap:not([hidden]) > .dialog:not(.wide) { animation: hub-sheet .22s cubic-bezier(.2, .8, .2, 1); align-self: flex-end; border-radius: 16px 16px 0 0; }
+    #dialog.dialog-wrap:has(> .dialog:not(.wide)) { align-items: flex-end; }
+}
+.in-app .dialog-wrap:not([hidden]) > .dialog.wide { max-width: none; width: 100%; height: 100%; max-height: none; border-radius: 0; overflow-y: auto; }
+.in-app #dialog.dialog-wrap { padding: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
+.pinchip { display: inline-flex; align-items: center; gap: 5px; }

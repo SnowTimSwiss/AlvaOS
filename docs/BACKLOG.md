@@ -15,6 +15,16 @@ How to add an entry:
 
 ---
 
+## 2026-10-08 — Gestures, movement and whole-screen windows in the Hub
+
+- **Back gesture:** every window over the page (a dialog, the viewer, the folder drawer, a small calendar window) takes one step in the browser history, so the phone's back gesture (and Android's in the app) closes the top window first and only then goes back through folders. `gestures.js`, loaded before `app.js`; it watches the windows, no page code had to change.
+- **Swipes on touch screens:** from the left edge opens the folder drawer, swipe it shut; swipe down on a window or the viewer's picture closes it (the window follows the finger); swipe sideways in the viewer for the next picture; in the calendar's month and schedule for the next or last period.
+- **Movement:** windows fade and rise in, sheets come up from the bottom, whole screens slide in from the right, menus and toasts pop in; nothing moves for people who ask their device for reduced motion.
+- **Whole screens on a phone:** the big windows (Devices, shared links, previous versions) fill the screen on a phone and in the app (the app's Settings open them), with the back gesture to leave. In the app the pinned folders are chips above the files, too.
+- Note for next time: tested in a desktop browser with touch emulation (back, drawer, dialogs); the swipes need a real phone. Chrome skips history steps made without a tap, which is why the back gesture only works after the person touched the page (always true for a window they opened).
+
+---
+
 ## 2026-10-08 — From the first real test: Files opens on your own folder, pinned folders, a time slider in Photos, calendar on a phone
 
 - **Files** opens on the person's own folder (then one they may change), not the first in the list; if it opens by itself on a folder that is not allowed, it tries another before showing an error.

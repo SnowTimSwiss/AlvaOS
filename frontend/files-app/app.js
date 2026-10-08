@@ -231,11 +231,13 @@
     function renderChips() {
         const chips = $('share-chips');
         const list = me?.shares || [];
-        const show = IN_APP && list.length > 1 && current === 'files' && !found && !inTrash;
+        const show = IN_APP && (list.length > 1 || readPins().length) && current === 'files' && !found && !inTrash;
         chips.hidden = !show;
         if (!show) return;
-        chips.innerHTML = list.map((s) => `<button type="button" data-chip="${esc(s.name)}" aria-pressed="${s.name === share}">${esc(s.name)}</button>`).join('');
-        chips.querySelectorAll('[data-chip]').forEach((b) => b.addEventListener('click', () => go(b.dataset.chip, '')));
+        const pins = readPins();
+        chips.innerHTML = list.map((s) => `<button type="button" data-chip="${esc(s.name)}" aria-pressed="${s.name === share && !path}">${esc(s.name)}</button>`).join('')
+            + pins.map((x) => `<button type="button" class="pinchip" data-chip="${esc(x.share)}" data-chip-path="${esc(x.path)}" aria-pressed="${x.share === share && x.path === path}">${icon('pin').replace('<svg', '<svg width="13" height="13"')}${esc(x.name)}</button>`).join('');
+        chips.querySelectorAll('[data-chip]').forEach((b) => b.addEventListener('click', () => go(b.dataset.chip, b.dataset.chipPath || '')));
     }
 
     // Folders others shared with this person: the ones not opened yet are marked "New".
