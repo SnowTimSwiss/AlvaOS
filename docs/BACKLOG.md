@@ -15,6 +15,14 @@ How to add an entry:
 
 ---
 
+## 2026-10-08 — beta-v0.3.2: the Photos slider as in Immich, no side bar in Photos, Files opens at home
+
+- **Photos time slider** reworked after Immich: the years are written on the strip where they begin (no two closer than 20 px), the months are dots, a short bar shows where you are, and the date under the pointer shows while the mouse is over the strip (not only while dragging). The bar and the marks use the same scale, so the bar sits on a year when you are at that year. The strip is only there when the page scrolls; its date label stays inside the strip's height.
+- **Photos has no side bar** (it had Files' folders, Recent and Starred, which mean nothing there). Later it can hold people.
+- **"Files" in the app bar always opens the person's own folder** (the home), not where they were before; Android's Files tab does the same.
+
+---
+
 ## 2026-10-08 — beta-v0.3.1
 
 - Version `beta-v0.3.1`: the fixes from the first real test of 0.3.0 (AlvaOS Link starts on a real NAS, the Android Link test, Files and Photos, the calendar and the app's sign-out) and the gestures and movement in the Hub.

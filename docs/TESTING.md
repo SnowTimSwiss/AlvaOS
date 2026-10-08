@@ -497,3 +497,12 @@ Calendar › Create › Birthday: type a name and a year; choose "And make a new
 8. With "reduce motion" turned on in the phone's settings nothing slides.
 9. In a browser, Devices › Sign out for the phone. On the phone, open the app or do something in the Hub: it shows the app's "Connect to your NAS" screen with the message that it was signed out, not the Hub's sign-in page.
 
+
+
+## 12r Photos slider and Files home
+
+1. Photos with a few hundred pictures: the strip at the right edge shows years with dots for the months. Move the mouse over it: the date under the pointer shows. Drag: the page follows; the bar sits on the year you are at.
+2. Photos with only a few pictures: no strip.
+3. Photos has no side bar and no folder button; Files has them again.
+4. Open a deep folder in Files, go to Photos, then click Files: you are in your own folder, not in the deep one.
+\n

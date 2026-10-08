@@ -416,8 +416,10 @@
         return true;
     }
 
-    // The time slider of Photos (like Immich): a thin strip at the right edge with the years and
-    // months of the timeline. Drag it, or tap a place on it, to jump there; it follows the scrolling.
+    // The time slider of Photos, as in Immich: a strip at the right edge as tall as the view. The
+    // years are written on it where they begin, the months are dots, a short bar is where you are.
+    // Move the mouse over it and the date under the pointer shows; press and drag (or tap) to jump.
+    // It is only there when there is something to scroll.
     let scrub = null;
     function removeScrubber() {
         if (scrub) { scrub.cleanup(); scrub.el.remove(); scrub = null; }
@@ -429,50 +431,85 @@
         const el = document.createElement('div');
         el.className = 'scrub';
         el.setAttribute('aria-hidden', 'true');
-        el.innerHTML = '<div class="scrub-marks"></div><div class="scrub-thumb"><span class="scrub-bubble"></span></div>';
+        el.innerHTML = '<div class="scrub-track"><div class="scrub-marks"></div><div class="scrub-here"></div><div class="scrub-tip"></div></div>';
         $('main').appendChild(el);
+        const track = el.querySelector('.scrub-track');
         const marks = el.querySelector('.scrub-marks');
-        const thumb = el.querySelector('.scrub-thumb');
-        const bubble = el.querySelector('.scrub-bubble');
-        const place = () => { const r = content.getBoundingClientRect(); const m = $('main').getBoundingClientRect(); el.style.top = `${r.top - m.top + 6}px`; el.style.height = `${Math.max(0, r.height - 12)}px`; };
-        let tops = [];
-        const layout = () => {
-            place();
-            const total = content.scrollHeight || 1;
-            const base = content.getBoundingClientRect().top - content.scrollTop;
-            tops = heads.map((h) => ({ label: h.textContent, y: h.getBoundingClientRect().top - base }));
+        const here = el.querySelector('.scrub-here');
+        const tip = el.querySelector('.scrub-tip');
+        let months = [];
+        let dragging = false;
+        const range = () => Math.max(1, content.scrollHeight - content.clientHeight);
+        const monthAt = (top) => { let found = months[0]; for (const m of months) { if (m.y <= top + 4) found = m; else break; } return found; };
+        const showTip = (frac, label) => {
+            tip.textContent = label;
+            tip.style.top = `${frac * 100}%`;
+            el.classList.add('tip');
+        };
+        function layout() {
+            const r = content.getBoundingClientRect();
+            const m = $('main').getBoundingClientRect();
+            el.style.top = `${r.top - m.top}px`;
+            el.style.height = `${r.height}px`;
+            el.hidden = content.scrollHeight <= content.clientHeight + 24;     // nothing to scroll: no slider
+            const base = r.top - content.scrollTop;
+            months = heads.map((h) => ({ label: h.textContent, y: h.getBoundingClientRect().top - base }));
+            const h = track.clientHeight || 1;
+            const reach = range();
             let lastYear = '';
-            marks.innerHTML = tops.map((t, i) => {
-                const year = (t.label.match(/\d{4}$/) || [''])[0];
-                const showYear = year !== lastYear;
+            let lastLabelAt = -99;
+            let lastDotAt = -99;
+            marks.innerHTML = months.filter((x) => x.y <= reach + 4).map((x) => {
+                const at = Math.min(1, x.y / reach) * h;
+                const year = (x.label.match(/\d{4}$/) || [''])[0];
+                const newYear = year !== lastYear;
                 lastYear = year;
-                return `<span class="scrub-mark${showYear ? ' year' : ''}" style="top:${(t.y / total) * 100}%">${showYear ? year : ''}</span>`;
+                let out = '';
+                if (newYear && at - lastLabelAt >= 20) { out = `<span class="scrub-year" style="top:${at}px">${year}</span>`; lastLabelAt = at; lastDotAt = at; }
+                else if (at - lastDotAt >= 7) { out = `<span class="scrub-dot" style="top:${at}px"></span>`; lastDotAt = at; }
+                return out;
             }).join('');
             follow();
-        };
-        const monthAt = (y) => { let found = tops[0]; for (const t of tops) { if (t.y <= y) found = t; else break; } return found; };
-        let dragging = false;
-        function follow() {
-            const total = content.scrollHeight || 1;
-            const f = content.scrollTop / Math.max(1, total - content.clientHeight);
-            thumb.style.top = `${Math.max(0, Math.min(1, f)) * 100}%`;
-            const t = monthAt(content.scrollTop + 8);
-            if (t) bubble.textContent = t.label;
         }
+        function follow() {
+            const f = Math.max(0, Math.min(1, content.scrollTop / range()));
+            here.style.top = `${f * 100}%`;
+            if (dragging || el.classList.contains('hover')) return;
+            const cur = monthAt(content.scrollTop);
+            if (cur && el.classList.contains('seen')) showTip(f, cur.label);
+        }
+        const fracOf = (clientY) => {
+            const r = track.getBoundingClientRect();
+            return Math.max(0, Math.min(1, (clientY - r.top) / Math.max(1, r.height)));
+        };
         const jump = (clientY) => {
-            const r = el.getBoundingClientRect();
-            const f = Math.max(0, Math.min(1, (clientY - r.top) / Math.max(1, r.height)));
-            content.scrollTop = f * Math.max(0, content.scrollHeight - content.clientHeight);
+            const f = fracOf(clientY);
+            content.scrollTop = f * range();
+            const cur = monthAt(content.scrollTop);
+            here.style.top = `${f * 100}%`;
+            if (cur) showTip(f, cur.label);
+        };
+        el.addEventListener('pointerdown', (e) => { dragging = true; el.classList.add('drag'); el.setPointerCapture(e.pointerId); jump(e.clientY); e.preventDefault(); });
+        el.addEventListener('pointermove', (e) => {
+            if (dragging) { jump(e.clientY); return; }
+            if (e.pointerType === 'touch') return;
+            el.classList.add('hover');
+            const f = fracOf(e.clientY);
+            const at = monthAt(f * range());
+            if (at) showTip(f, at.label);
+        });
+        const end = () => { dragging = false; el.classList.remove('drag'); if (!el.classList.contains('hover')) el.classList.remove('tip'); };
+        el.addEventListener('pointerup', end);
+        el.addEventListener('pointercancel', end);
+        el.addEventListener('pointerleave', () => { el.classList.remove('hover'); if (!dragging && !el.classList.contains('seen')) el.classList.remove('tip'); });
+        const onScroll = () => {
+            if (!dragging) {
+                el.classList.add('seen');
+                clearTimeout(el.hide);
+                el.hide = setTimeout(() => { el.classList.remove('seen'); if (!el.classList.contains('hover') && !dragging) el.classList.remove('tip'); }, 1200);
+            }
             follow();
         };
-        const down = (e) => { dragging = true; el.classList.add('active'); el.setPointerCapture(e.pointerId); jump(e.clientY); e.preventDefault(); };
-        const move = (e) => { if (dragging) jump(e.clientY); };
-        const up = () => { dragging = false; el.classList.remove('active'); };
-        el.addEventListener('pointerdown', down);
-        el.addEventListener('pointermove', move);
-        el.addEventListener('pointerup', up);
-        el.addEventListener('pointercancel', up);
-        const onScroll = () => { if (!dragging) { el.classList.add('seen'); clearTimeout(el.hide); el.hide = setTimeout(() => el.classList.remove('seen'), 1500); } follow(); };
         content.addEventListener('scroll', onScroll, { passive: true });
         window.addEventListener('resize', layout);
         const watch = typeof ResizeObserver === 'function' ? new ResizeObserver(layout) : null;
@@ -2275,6 +2312,8 @@
     // (they bring no certificate of this NAS).
     const storeUrl = (a) => `http://${location.hostname}:${a.port}${a.path || '/'}`;
     function markRail() {
+        // Photos has no folders to show: no side bar there (later maybe people).
+        $('app').classList.toggle('no-side', current === 'photos');
         $('rail').querySelectorAll('[data-app]').forEach((b) => {
             if (b.dataset.app === current) b.setAttribute('aria-current', 'page');
             else b.removeAttribute('aria-current');
@@ -2294,7 +2333,8 @@
     function openApp(id, push = true) {
         inTrash = null;
         if (id === 'photos') { showPhotos(); return; }
-        if (!VIEWS[id]) { go(share, path, push); return; }
+        // "Files" in the app bar always lands on the person's own folder (the home), not where they left off.
+        if (!VIEWS[id]) { go(push && me?.shares?.length ? firstShare().name : share, push ? '' : path, push); return; }
         closeSide();
         Object.entries(VIEWS).forEach(([k, el]) => { $(el).hidden = k !== id; });
         $('app').classList.add('in-view');

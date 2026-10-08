@@ -5,7 +5,7 @@ Predictable, well-tested, and easy-to-upgrade releases.
 ## Versioning & Channels
 - **SemVer**: `vMAJOR.MINOR.PATCH` (e.g., `v1.0.0`).
 - **Stable**: Production-ready (default).
-- **Beta**: Feature previews. The current version is `beta-v0.3.1` (the `VERSION` file, also the release tag). Builds between releases carry the `VERSION` file's version too. The package becomes `0.2.0~beta` (Debian sorts it before `0.2.0`), and updates read it as `0.2.0b`, so `beta-v0.3.0` and `v0.2.0` count as newer.
+- **Beta**: Feature previews. The current version is `beta-v0.3.2` (the `VERSION` file, also the release tag). Builds between releases carry the `VERSION` file's version too. The package becomes `0.2.0~beta` (Debian sorts it before `0.2.0`), and updates read it as `0.2.0b`, so `beta-v0.3.0` and `v0.2.0` count as newer.
 
 ## Artifacts
 1. **Installer**: `alvaos-installer-{version}.iso` (~500MB) for fresh installs.
