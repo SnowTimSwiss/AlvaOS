@@ -97,7 +97,7 @@ Thought through and decided. In this order:
 
 ### Security
 - Keep the privilege helper strict: every new privileged command gets a policy rule and tests.
-- Validate everything that ends up in config files (`smb.conf`, `/etc/exports`, WireGuard, compose files).
+- Validate everything that ends up in config files (`smb.conf`, `/etc/exports`, compose files).
 - Sessions: idle sign-out (8 h) and "last sign-in / wrong passwords since" after signing in: done.
 - HTTPS on the LAN with the NAS's own authority and instructions: done (next to HTTP). "HTTPS only" switch: done.
 - Regular dependency updates and a short security review for every PR that touches `priv_policy.py` or auth.
