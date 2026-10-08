@@ -31,6 +31,7 @@ import photo_dates
 import hub_calendar
 import hub_caldav
 import hub_albums
+import link_client
 import hub_photos_sync
 import hub_video
 import hub_chat
@@ -376,12 +377,10 @@ def me():
                     key=lambda s: s['name'].lower()) if files_on else []
     nas = socket.gethostname().split('.')[0]
     store = hub_apps.store_tiles(session['user'], session['role'], settings)
-    import remote_access
     return jsonify({'user': session['user'], 'role': session['role'], 'shares': shares,
                     'new_uploads': _new_uploads(session['user']),
                     'nas_name': nas, 'hub': {'name': hub_apps.NAME, 'apps': apps, 'store': store},
-                    'features': hub_video.features(),
-                    'public_url': remote_access.public_url(os.path.join(STATE_DIR, 'remote_access.json'))})
+                    'features': hub_video.features()})
 
 
 def _new_uploads(user: str) -> int:
@@ -419,14 +418,10 @@ def _device_from(raw: Any) -> Optional[Dict[str, Any]]:
 
 
 def _addresses(origin: str) -> List[str]:
-    """Where the app can reach the Hub: the address this browser uses, then
-    the internet address (Cloudflare Tunnel) if there is one."""
-    import remote_access
-    out = []
-    for url in (origin.rstrip('/'), remote_access.public_url(os.path.join(STATE_DIR, 'remote_access.json'))):
-        if url and ADDRESS_RE.match(url) and url not in out:
-            out.append(url)
-    return out
+    """Where the app can reach the Hub at home: the address this browser uses. Away from
+    home the app comes through AlvaOS Link (the NAS's Link address is in the QR code)."""
+    url = origin.rstrip('/')
+    return [url] if url and ADDRESS_RE.match(url) else []
 
 
 def _qr_data_url(text: str) -> str:
@@ -462,10 +457,12 @@ def pair_code():
                                    'tag': session.get('tag'), 'expires': expires}
     nas = socket.gethostname().split('.')[0]
     addresses = _addresses(str(data.get('origin') or request.host_url))
+    link_id = link_client.node_id()      # '' when Link is off: the app then works at home only
     link = 'alvaos://pair?' + '&'.join([f'c={code}', f'n={quote(nas)}', f'u={quote(session["user"])}']
-                                         + [f'a={quote(a, safe="")}' for a in addresses])
+                                         + [f'a={quote(a, safe="")}' for a in addresses]
+                                         + ([f'l={link_id}'] if link_id else []))
     return jsonify({'code': f'{code[:4]}-{code[4:]}', 'link': link, 'qr': _qr_data_url(link),
-                    'addresses': addresses, 'nas_name': nas, 'expires_in': PAIR_CODE_SECONDS})
+                    'addresses': addresses, 'away': bool(link_id), 'nas_name': nas, 'expires_in': PAIR_CODE_SECONDS})
 
 
 @app.post('/api/devices/pair')
@@ -543,6 +540,8 @@ def remove_device(device_id):
         for k in hits:
             del sessions[k]
         _save_sessions(sessions)
+    if hits:
+        link_client.remove_device(device_id)     # its Link key is not let in any more
     return jsonify({'success': True}) if hits else (jsonify({'error': 'That device is not known here.'}), 404)
 
 

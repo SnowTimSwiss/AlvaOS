@@ -282,7 +282,7 @@
                 <button class="tab-btn" data-tab="alerts"><i data-lucide="bell" aria-hidden="true"></i> Notifications</button>
                 <button class="tab-btn" data-tab="power"><i data-lucide="power" aria-hidden="true"></i> Power</button>
                 <button class="tab-btn" data-tab="graphics"><i data-lucide="monitor" aria-hidden="true"></i> Graphics</button>
-                <button class="tab-btn" data-tab="remote"><i data-lucide="laptop" aria-hidden="true"></i> Remote access</button>
+                <button class="tab-btn" data-tab="link"><i data-lucide="laptop" aria-hidden="true"></i> Away from home</button>
                 <button class="tab-btn" data-tab="assistant"><i data-lucide="bot" aria-hidden="true"></i> Assistant</button>
                 <button class="tab-btn" data-tab="logs"><i data-lucide="activity" aria-hidden="true"></i> Diagnostics</button>
                 <button class="tab-btn" data-tab="terminal"><i data-lucide="terminal" aria-hidden="true"></i> Terminal</button>
@@ -497,21 +497,16 @@
                 </section>
             </div>
 
-            <div class="tab-panel" id="tab-remote">
+            <div class="tab-panel" id="tab-link">
                 <section class="set-group">
-                    <h2 class="set-group-title">Your own devices: Tailscale</h2>
-                    <p class="set-group-desc">Your phone, laptop and this NAS in one private network, from anywhere, end to end encrypted. Nothing to set in the router, and it works behind any internet connection. Free for home use with a Tailscale account.</p>
+                    <h2 class="set-group-title">Away from home: AlvaOS Link</h2>
+                    <p class="set-group-desc">The AlvaOS app on your phone, and a second NAS for Buddy Backup, can reach this NAS from anywhere. Nothing to set in the router, no account, and it works behind any internet connection. Only phones and buddies you paired can connect, each proven by its own key; the connection is encrypted from end to end. Where a direct way is not possible it goes through a relay that only passes on encrypted packets.</p>
                     <div class="set-row">
-                        <div class="set-text"><div class="set-label"><label for="ts-enabled">Tailscale</label></div><div class="set-desc" id="ts-summary">Checking...</div></div>
-                        <div class="set-value"><label class="toggle"><input type="checkbox" id="ts-enabled"><span class="toggle-slider"></span></label></div>
+                        <div class="set-text"><div class="set-label"><label for="link-enabled">Reach this NAS from outside</label></div><div class="set-desc" id="link-summary">Checking...</div></div>
+                        <div class="set-value"><label class="toggle"><input type="checkbox" id="link-enabled"><span class="toggle-slider"></span></label></div>
                         <div class="set-action"></div>
                     </div>
-                    <div id="ts-body"></div>
-                </section>
-                <section class="set-group">
-                    <h2 class="set-group-title">The Hub at your own domain: Cloudflare Tunnel</h2>
-                    <p class="set-group-desc">Files, Photos, Calendar and share links at an address like <strong>cloud.example.com</strong>, in any browser, for anyone you give a link. Needs a free Cloudflare account with your domain. Only the Hub goes through it, never these admin pages.</p>
-                    <div id="cf-body"><p class="set-desc">Checking...</p></div>
+                    <div id="link-body"></div>
                 </section>
             </div>
 
@@ -624,7 +619,7 @@
     <script src="settings-disks.js"></script>
     <script src="settings-ai.js"></script>
     <script src="settings-tls.js"></script>
-    <script src="settings-remote.js"></script>
+    <script src="settings-link.js"></script>
     <script src="settings-gpu.js"></script>
     <script src="settings-ups.js"></script>
     <script src="settings-terminal.js"></script>

@@ -103,3 +103,22 @@ def devices(c):
     r = c.get("/api/devices")
     assert r.status_code == 200
     return r.get_json()["devices"]
+
+
+def test_the_qr_code_carries_the_link_address_and_a_removed_phone_loses_it(client, monkeypatch):  # noqa: F811
+    import link_client
+    removed = []
+    monkeypatch.setattr(link_client, "node_id", lambda: "ab" * 32)
+    monkeypatch.setattr(link_client, "remove_device", lambda device: removed.append(device) or True)
+    sign_in(client, "anna", "anna-pass")
+    data = pair_link(client)
+    assert parse_qs(urlparse(data["link"]).query)["l"] == ["ab" * 32] and data["away"] is True
+    p = phone()
+    assert p.post("/api/devices/pair", json={"code": data["code"], "device": {"name": "Pixel"}}).status_code == 200
+    dev = client.get("/api/devices").get_json()["devices"][0]["id"]
+    assert client.delete(f"/api/devices/{dev}", headers=H).status_code == 200
+    assert removed == [dev]
+    # Link off (or not running): no address in the code, the app then works at home only.
+    monkeypatch.setattr(link_client, "node_id", lambda: "")
+    off = pair_link(client)
+    assert "l" not in parse_qs(urlparse(off["link"]).query) and off["away"] is False

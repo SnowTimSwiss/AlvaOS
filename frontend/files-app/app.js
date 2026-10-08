@@ -1262,7 +1262,7 @@
                         <p><strong>2.</strong> Open it and tap <strong>Scan QR code</strong>.</p>
                         <p><strong>3.</strong> Point the phone at this code. That's it: no password needed.</p>
                         <p class="pair-code">Or type the code <strong>${esc(pairing.code)}</strong> in the app${pairing.addresses.length ? `, with the address <code>${esc(pairing.addresses[0])}</code>` : ''}.</p>
-                        <p class="muted">Works once, for ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} more minutes.${pairing.addresses.length > 1 ? ` Away from home the app uses ${esc(pairing.addresses.slice(1).join(', '))}.` : ''}</p>
+                        <p class="muted">Works once, for ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} more minutes.${pairing.away ? ' Away from home the app connects through AlvaOS Link.' : ' At home only: the admin can turn on Away from home in Settings.'}</p>
                     </div></div>`
                 : `<p>Phones with the AlvaOS app use every Hub app you have, back up their photos, and stay signed in. Connect one with a QR code: no password to type.</p>
                     <div class="actions" style="justify-content:flex-start;margin:0 0 14px"><button type="button" class="btn primary" id="pair-btn">${icon('plus')}Connect a phone</button>

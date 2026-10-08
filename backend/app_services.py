@@ -44,9 +44,6 @@ def get_version():
 
 VERSION = get_version()
 
-import remote_access  # noqa: E402 - after the managers it sits next to
-remote = remote_access.RemoteAccess(run_sudo_command)
-
 import gpu_manager  # noqa: E402
 gpu = gpu_manager.GpuManager(run_sudo_command)
 import vm_manager  # noqa: E402
