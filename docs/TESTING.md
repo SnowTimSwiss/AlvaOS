@@ -484,3 +484,11 @@ Calendar › Create › Birthday: type a name and a year; choose "And make a new
    Hub opens (see 7). Settings › "AlvaOS Link: On …".
 2. A build without the library: settings say "not available in this build";
    nothing else breaks.
+
+## 12q From the first real test
+
+1. Files opens on your own folder, on a computer and on a phone. A folder shared with you that you cannot open is not where it starts.
+2. Files: right-click a folder › Pin to side bar: it is under "Pinned"; the ✕ takes it away. Inside a folder, right-click the empty space › Pin this folder.
+3. Photos with many pictures: the strip at the right edge shows years; drag it, the month shows next to the handle; tap a place on it to jump.
+4. Calendar on a phone: tap a day (Month view): the Create window stays open and sits above the keyboard.
+

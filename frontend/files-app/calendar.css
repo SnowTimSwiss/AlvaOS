@@ -277,3 +277,6 @@
 .sync-how p { margin: 8px 0 2px; }
 .sync-note { color: var(--muted); font-size: 0.85rem; }
 .sync-note a { color: var(--accent); }
+
+/* On a phone the small windows are sheets at the bottom of the screen (above the keyboard). */
+.cal-pop.sheet { left: 0 !important; right: 0; top: auto !important; bottom: 0; width: 100%; max-width: none; border-radius: 16px 16px 0 0; max-height: 80vh; overflow-y: auto; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }

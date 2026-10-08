@@ -261,7 +261,14 @@
         document.addEventListener('pointerdown', (e) => {
             if (pop && !pop.contains(e.target) && !e.target.closest('.cal-pop-keep')) closePop();
         });
-        window.addEventListener('resize', () => { if (!root.hidden && view === 'month') renderBody(); });
+        // Only a new width needs a new month grid. The on-screen keyboard changes the height, and
+        // drawing the grid again then closed the "Create" window the moment it opened.
+        let lastWidth = window.innerWidth;
+        window.addEventListener('resize', () => {
+            if (window.innerWidth === lastWidth) return;
+            lastWidth = window.innerWidth;
+            if (!root.hidden && view === 'month') renderBody();
+        });
         setInterval(() => { if (!root.hidden && (view === 'week' || view === 'day')) paintNow(); }, 60000);
         built = true;
     }
@@ -763,8 +770,22 @@
         if (pop) { pop.remove(); pop = null; }
         if (!keepGhosts && root) root.querySelectorAll('.ev.ghost').forEach((g) => g.remove());
     }
+    // On a phone the window is a sheet at the bottom, lifted above the keyboard.
+    function sheet(card) {
+        card.classList.add('sheet');
+        const vv = window.visualViewport;
+        if (!vv) return;
+        const lift = () => {
+            if (!card.isConnected) { vv.removeEventListener('resize', lift); vv.removeEventListener('scroll', lift); return; }
+            card.style.bottom = `${Math.max(0, window.innerHeight - vv.height - vv.offsetTop)}px`;
+        };
+        vv.addEventListener('resize', lift);
+        vv.addEventListener('scroll', lift);
+        lift();
+    }
     function place(card, anchor, at) {
         document.body.appendChild(card);
+        if (phone.matches) { sheet(card); pop = card; return; }
         const w = card.offsetWidth;
         const h = card.offsetHeight;
         let x;

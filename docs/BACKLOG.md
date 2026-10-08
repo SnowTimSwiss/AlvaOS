@@ -15,6 +15,16 @@ How to add an entry:
 
 ---
 
+## 2026-10-08 — From the first real test: Files opens on your own folder, pinned folders, a time slider in Photos, calendar on a phone
+
+- **Files** opens on the person's own folder (then one they may change), not the first in the list; if it opens by itself on a folder that is not allowed, it tries another before showing an error.
+- **Files:** pin folders to the side bar (right-click a folder, or the empty space inside a folder › Pin; the ✕ next to a pinned folder unpins). Kept in the browser, like Starred.
+- **Photos:** a time slider at the right edge like Immich: the years and months of the timeline, a handle that follows the scrolling with the month shown, drag or tap to jump.
+- **Calendar on a phone:** tapping a day no longer opens the "Create" window and closes it at once (the keyboard changed the height, which redrew the month); the small windows are sheets at the bottom, above the keyboard.
+- Note for next time: not yet done from the same test: the app's Settings (Trash, Shared links, Devices) open Files with a window instead of their own screens; shared folders as a screen in the app; what "Sign out" in the browser should do.
+
+---
+
 ## 2026-10-08 — Fix: the Link test in the Android CI failed (and so did the release build of the app)
 
 - `LinkTest` read the daemon's addresses with a regex. On a machine with IPv6 an address like `[::]:1234` has a `]` in it, the list was cut, the phone got garbage and could not connect (CI runner; not on the dev machine). The test now reads the line as JSON.
