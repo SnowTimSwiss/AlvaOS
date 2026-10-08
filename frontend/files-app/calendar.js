@@ -862,6 +862,53 @@
         return { start: s, end: e };
     }
 
+
+    // ── Birthdays: only in the calendar, with a new contact, or on a contact there is ──
+    const hasContacts = () => (H.me()?.hub?.apps || []).some((a) => a.id === 'contacts');
+    let contactChoices = null;
+    async function loadContactChoices(select) {
+        if (!select || select.dataset.loaded) return;
+        select.dataset.loaded = '1';
+        try {
+            contactChoices = (await api('contacts')).contacts || [];
+        } catch (_e) { contactChoices = []; }
+        if (!contactChoices.length) return;
+        const name = (c) => [c.first, c.last].filter(Boolean).join(' ') || c.org || 'No name';
+        select.insertAdjacentHTML('beforeend', `<optgroup label="Add to a contact">${contactChoices
+            .slice().sort((a, b) => name(a).localeCompare(name(b)))
+            .map((c) => `<option value="c:${esc(c.id)}">${esc(name(c))}</option>`).join('')}</optgroup>`);
+    }
+    async function saveBirthday(card, title, day) {
+        const name = title.value.trim();
+        const how = card.querySelector('[data-bday-how]').value;
+        const born = card.querySelector('[data-born]').value.trim();
+        if (!how.startsWith('c:') && !name) { title.focus(); toast('Whose birthday is it?', 'error'); return; }
+        if (born && !/^\d{4}$/.test(born)) { toast('The year is four digits, like 1985.', 'error'); return; }
+        const mmdd = `${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
+        const birthday = born ? `${born}-${mmdd}` : `--${mmdd}`;
+        try {
+            if (how === 'event') {
+                const target = defaultTarget().split('|');
+                const first = born ? `${born}-${mmdd}` : ymd(day);
+                await save(target[0], 'event', { title: `${name}'s birthday`, calendar: target[1], all_day: true, start: first, end: first,
+                    repeat: 'yearly', until: '', color: '', location: '', notes: '' });
+            } else if (how === 'new') {
+                const words = name.split(/\s+/);
+                const last = words.length > 1 ? words.pop() : '';
+                await api('contacts/item', { method: 'POST', json: { item: { first: words.join(' '), last, birthday } } });
+                toast(`${name} is in your contacts now.`);
+                await refresh();
+            } else {
+                const c = (contactChoices || []).find((x) => `c:${x.id}` === how);
+                if (!c) { toast('That contact is not there any more.', 'error'); return; }
+                await api('contacts/item', { method: 'POST', json: { item: { ...c, birthday } } });
+                toast('The birthday is saved in the contact.');
+                await refresh();
+            }
+            closePop();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
     function quickCreate(anchor, start, end, allDay, at) {
         closePop(true);
         root.querySelectorAll('.ev.ghost').forEach((g) => { if (!at || g !== at.ghost) g.remove(); });
@@ -877,16 +924,19 @@
         const card = document.createElement('div');
         card.className = 'cal-pop create';
         card.setAttribute('role', 'dialog');
-        const whenLine = () => (kind === 'task'
+        const whenLine = () => (kind === 'birthday' ? `${fmt(start, { day: 'numeric', month: 'long' })}, every year`
+            : kind === 'task'
             ? (allDay ? longDay(start) : `${longDay(start)} · ${hm(start)}`)
             : whenText(start, end, allDay));
         card.innerHTML = `
             <div class="pop-tools"><button type="button" class="icon-btn" data-act="close" aria-label="Close">${icon('x')}</button></div>
             <input class="pop-title" placeholder="Add title, or “20:00 Choir”" aria-label="Title" maxlength="300">
-            <div class="pop-tabs" role="tablist"><button type="button" role="tab" data-kind="event" aria-selected="true">Event</button><button type="button" role="tab" data-kind="task" aria-selected="false">Task</button></div>
+            <div class="pop-tabs" role="tablist"><button type="button" role="tab" data-kind="event" aria-selected="true">Event</button><button type="button" role="tab" data-kind="task" aria-selected="false">Task</button>${hasContacts() ? '<button type="button" role="tab" data-kind="birthday" aria-selected="false">Birthday</button>' : ''}</div>
             <div class="pop-row">${icon('clock')}<div class="pop-when">${esc(whenLine())}</div></div>
             <div class="pop-row" data-for="event">${icon('calendar')}<select class="pop-select" data-target aria-label="Calendar">${targetOptions(defaultTarget(), false)}</select></div>
             <div class="pop-row" data-for="task" hidden>${icon('tasks')}<select class="pop-select" data-task-target aria-label="Task list">${targetOptions((writable().find((p) => p.own) || writable()[0]).id, true)}</select></div>
+            <div class="pop-row" data-for="birthday" hidden>${icon('clock')}<input class="pop-select" data-born type="number" min="1900" max="2100" placeholder="Year born (optional)" aria-label="Year born"></div>
+            <div class="pop-row" data-for="birthday" hidden>${icon('users')}<select class="pop-select" data-bday-how aria-label="Where to keep it"><option value="event">Only in the calendar</option><option value="new">And make a new contact</option></select></div>
             <div class="pop-actions"><button type="button" class="btn ghost" data-act="more">More options</button><button type="button" class="btn primary" data-act="save">Save</button></div>`;
         const title = card.querySelector('.pop-title');
         const setKind = (k) => {
@@ -894,6 +944,9 @@
             card.querySelectorAll('[data-kind]').forEach((b) => b.setAttribute('aria-selected', b.dataset.kind === k));
             card.querySelectorAll('[data-for]').forEach((r) => { r.hidden = r.dataset.for !== k; });
             card.querySelector('.pop-when').textContent = whenLine();
+            card.querySelector('[data-act=more]').hidden = k === 'birthday';
+            title.placeholder = k === 'birthday' ? 'Name' : 'Add title, or “20:00 Choir”';
+            if (k === 'birthday') loadContactChoices(card.querySelector('[data-bday-how]'));
         };
         const draft = () => {
             const named = timeInTitle(title.value);
@@ -909,6 +962,7 @@
                 start: whole ? ymd(s) : stamp(s), end: whole ? ymd(addDays(e, -1)) : stamp(e), color: '', repeat: '', location: '', notes: '' } };
         };
         const submit = async () => {
+            if (kind === 'birthday') { await saveBirthday(card, title, start); return; }
             const { place: pid, item } = draft();
             if (kind === 'task' && !item.title) { title.focus(); toast('Give the task a title.', 'error'); return; }
             try {
@@ -930,7 +984,7 @@
             }
         });
         title.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } if (e.key === 'Escape') closePop(); });
-        if (phone.matches) { closePop(true); eventDialog(placeOf(defaultTarget().split('|')[0]), draft().item, true); return; }
+        if (phone.matches && !hasContacts()) { closePop(true); eventDialog(placeOf(defaultTarget().split('|')[0]), draft().item, true); return; }
         place(card, anchor, at);
         title.focus();
     }

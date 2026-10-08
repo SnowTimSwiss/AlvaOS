@@ -455,3 +455,7 @@ Switch off the NAS (or the Hub) for three days with backup on and the phone onli
 ## 12m Time in the title
 
 Calendar › Create: type `20:00 Choir` as the title › Save: the event is at 20:00 and called Choir. Try `19:30-21 Choir`, `Choir um 20 Uhr`, and `5 friends` (stays a title).
+
+## 12n Add a birthday
+
+Calendar › Create › Birthday: type a name and a year; choose "And make a new contact": the contact exists and the Birthdays calendar shows it. Again with "Add to a contact" and with "Only in the calendar" (a yearly entry in your own calendar). Try it on the phone too.

@@ -15,6 +15,12 @@ How to add an entry:
 
 ---
 
+## 2026-10-08 — Calendar: add a birthday (tab Birthday)
+
+- Create › **Birthday**: a name, the day (the clicked one), optionally the year, and where to keep it: only in the calendar (a yearly whole-day event), also as a new contact, or on a contact there is (listed under "Add to a contact"). The contact's birthday then shows in the read-only "Birthdays" calendar. Only shown when Contacts is on for the person; on a phone the small create sheet is used then (it opened the full editor before).
+
+---
+
 ## 2026-10-08 — Calendar: the time in the title
 
 - Writing "20:00 Choir", "19:30-21 Choir", "20 Uhr Choir" or "Choir um 20 Uhr" as the title sets the time and keeps only "Choir" (quick create, the full editor, tasks too). A colon or "Uhr"/"h" is needed, so "5 friends" stays a title. The length stays (1 hour for a whole-day start) unless an end is written.
