@@ -22,6 +22,15 @@ The app has the version of AlvaOS: the release's name, between releases the
 `VERSION` file (`beta-v0.2.0`). The version code Google Play needs is
 counted up by CI on its own (minutes since 2026); nobody needs to see it.
 
+## Away from home (AlvaOS Link)
+
+The app reaches the NAS from anywhere through AlvaOS Link (`docs/LINK.md`).
+The native library comes from iroh-ffi v1.1.0, built in the CI step "Build
+the Link library for Android" (cargo-ndk, NDK 27, four CPU types). The step
+is best effort: if it fails, the app is built without it and says "not
+available in this build" in the settings. A release should be checked for
+that line on a phone.
+
 ## Once: the upload key (5 minutes)
 
 Google Play needs every app signed with the same key. With Play App Signing,

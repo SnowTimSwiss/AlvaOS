@@ -138,27 +138,39 @@ storage healthy, one shared folder.
    Restore points › the copies are listed ("On the backup disk"); "Get
    files" works while it is connected. Unplugged, Storage shows it as
    "Backup disk · Not connected" and no alarm goes off.
-4. Buddy Backup with a second AlvaOS (a second VM) if you have one.
+4. Buddy Backup with a second AlvaOS (a second VM) if you have one, both
+   with Away from home on and **no router setting on either side**: on the
+   first, Backup › Buddy › make a pairing token; on the second paste it.
+   Both list each other (status "Connected", then the time last seen).
+   Start a backup: it runs through Link (a direct connection when
+   possible; slower through a relay). A buddy paired before the update says
+   "repair": pair again. Settings › Away from home lists the buddy, too.
+   Recovery kit: make one, restore on a fresh NAS: the Link address stays.
 
-## 7. Remote access (Tailscale, Cloudflare Tunnel)
+## 7. Away from home (AlvaOS Link)
 
-1. Settings › Remote access › Tailscale on. After a minute "Sign in to
-   Tailscale" appears; sign in (or make a free account). The page then
-   shows the NAS's Tailscale address. Install the Tailscale app on a phone,
-   sign in with the same account, turn off Wi-Fi (mobile data) and open
-   `http://<Tailscale address>:8080` (AlvaOS) and `:8090` (the Hub). The
-   phone shows up under "Devices in your Tailscale network".
-2. Restart the NAS: Tailscale comes back by itself, still signed in.
-   Tailscale off: the phone can no longer reach the NAS from outside.
-3. Cloudflare (needs a domain in a Cloudflare account): make an API token
-   with "Cloudflare Tunnel: Edit" and "DNS: Edit", paste it, "Find my
-   domains", name `cloud`, "Put the Hub there". Within two minutes
-   `https://cloud.<domain>` shows the Hub sign-in from a phone on mobile
-   data; a share link copied in the Hub starts with that address. The
-   admin pages are not reachable there. Remove: the DNS name and the tunnel
-   are gone in the Cloudflare dashboard.
-4. A NAS that had the old WireGuard remote access on: after the update the
-   bell says it works differently now, `ip link` shows no `remote0`.
+Needs the NAS with the internet and a phone on mobile data (Wi-Fi off).
+
+1. `systemctl status alvaos-link` is active. Settings › Away from home
+   shows the switch on, the sentence "Phones and buddies can reach this NAS
+   from anywhere" and a Link address (a long code, shown short).
+2. Switch off: the sentence says it is off, `systemctl status` still runs
+   but nothing connects. On again: running within a few seconds.
+3. Hub › Phones and devices › show the QR code: its text under the code says
+   the phone also works away. Scan it with the app **on mobile data** (not
+   at home): "Connecting…" then the Hub opens. The settings of the app say
+   "Through AlvaOS Link". The NAS list under Away from home names the phone.
+4. Pair the phone at home, then switch Wi-Fi off: the Hub, Files and the
+   photo backup keep working (the first start away can take some seconds).
+5. Phones and devices › sign the phone out: it is gone from the list under
+   Away from home and can no longer reach the NAS.
+6. No router setting was needed anywhere, and no account.
+7. The app build without the Link library (CI step "Build the Link library
+   failed"): the app still works at home; settings say "not available in
+   this build".
+8. A NAS that had the old Remote access (Tailscale, Cloudflare, WireGuard)
+   on: after the update there is no Remote access page, `ip link` shows no
+   `remote0`, and old buddies show "repair" (see 6, step 4).
 
 ## 8. Apps
 
@@ -465,3 +477,10 @@ Calendar › Create › Birthday: type a name and a year; choose "And make a new
 1. Calendar › Birthdays › the menu next to it: pick a colour. A contact born in 1985 shows "(41)".
 2. Files: search, then the size chips narrow the results.
 3. Share a folder with another person: in their Files side bar it says New until they open it.
+
+## 12p Link on the phone
+
+1. Install the app from CI, scan a QR code at home, then leave Wi-Fi: the
+   Hub opens (see 7). Settings › "Away from home: On …".
+2. A build without the library: settings say "not available in this build";
+   nothing else breaks.

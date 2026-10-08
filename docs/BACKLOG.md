@@ -15,6 +15,17 @@ How to add an entry:
 
 ---
 
+## 2026-10-08 — v0.3.0: AlvaOS Link (away from home without a router), Buddy Backup rework
+
+- New **AlvaOS Link** (`link_daemon.py`, `alvaos-link.service`, `docs/LINK.md`): iroh (QUIC, end-to-end encrypted, keys as addresses, direct connection or a relay) lets phones and buddy NASes reach this NAS with no router setting and no account. Each paired peer gets its own loopback address (`127.95.x.y`); the NAS connects to its services from there, so the source address is the identity.
+- Settings › **Away from home** (`settings-link.js`, `api_link.py`): one switch, a sentence about the state, the Link address, the paired phones and buddies. **The old Remote access (Tailscale, Cloudflare Tunnel, own WireGuard) is gone** (backend, page, assistant, policy, tests). Share links for people without the app are gone with it until a new approach.
+- **Buddy Backup reworked**: no WireGuard, no tunnel IPs, no ports to open. Token v2 carries only the identity; pairing goes through Link's `pair` service; the vault and the buddy API are reached at the buddy's loopback address. Recovery kit v2 keeps the Link key. Old buddies show "repair" and need pairing again; the old `buddy0` tunnel is taken down once.
+- **Android**: QR code carries the NAS's Link address (`l=`); `LinkClient` and a local proxy (`android/core`, tested against the real daemon), `LinkService` in the app falls back to it when no address answers; the phone's key is registered at pairing (or after pairing at home, `POST /api/devices/link`). The Link library (`libiroh_ffi.so`) is built in CI best-effort; without it the app works at home.
+- Packaging: the deb and the installer ship the iroh wheel (checked by hash) in `/opt/alvaos/vendor` and the Link unit. `VERSION` is `beta-v0.3.0`.
+- Note for next time: the Android native build and a real two-site buddy test (relay and direct) have not run anywhere yet; CI minutes were used up when this was written, so nothing was verified by CI. Check n0's relay terms before telling people it is "private by default"; an own relay setting is the follow-up. arm64 packages need the aarch64 wheel.
+
+---
+
 ## 2026-10-08 — Quick wins: birthday colour and age, size filter, "New" on shared folders
 
 - Calendar: the Birthdays calendar has a menu to choose its colour (kept in the browser); birthdays with a known year show the age ("Max Muster's birthday (41)"; `born` in the event).

@@ -972,10 +972,13 @@ FSTAB_EOF
         cp /opt/alvaos/scripts/setup_sudoers.sh /mnt/opt/alvaos/scripts/ 2>/dev/null || true
         cp /opt/alvaos/scripts/sudoers.alvaos /mnt/opt/alvaos/scripts/ 2>/dev/null || true
         chmod +x /mnt/opt/alvaos/scripts/*.sh 2>/dev/null || true
-        for unit in alvaos-update-checker.service alvaos-update-checker.timer alvaos-watchdog.service alvaos-watchdog.timer alvaos-files.service alvaos-vm@.service; do
+        for unit in alvaos-update-checker.service alvaos-update-checker.timer alvaos-watchdog.service alvaos-watchdog.timer alvaos-files.service alvaos-link.service alvaos-vm@.service; do
             [ -f "/opt/alvaos/scripts/${unit}" ] && cp "/opt/alvaos/scripts/${unit}" /mnt/etc/systemd/system/
         done
     fi
+
+    # AlvaOS Link: the iroh library next to the code
+    [ -d "/opt/alvaos/vendor" ] && { mkdir -p /mnt/opt/alvaos/vendor; cp -r /opt/alvaos/vendor/* /mnt/opt/alvaos/vendor/; }
 
     # Copy frontend
     [ -d "/opt/alvaos/webui" ] && cp -r /opt/alvaos/webui/* /mnt/opt/alvaos/webui/
@@ -1072,6 +1075,7 @@ VERSION_EOF
     chroot /mnt systemctl enable alvaos.service >> "$INSTALL_LOG" 2>&1 || true
     [ -f "/mnt/etc/systemd/system/alvaos-update-checker.timer" ] && chroot /mnt systemctl enable alvaos-update-checker.timer >> "$INSTALL_LOG" 2>&1 || true
     [ -f "/mnt/etc/systemd/system/alvaos-watchdog.timer" ] && chroot /mnt systemctl enable alvaos-watchdog.timer >> "$INSTALL_LOG" 2>&1 || true
+    [ -f "/mnt/etc/systemd/system/alvaos-link.service" ] && chroot /mnt systemctl enable alvaos-link.service >> "$INSTALL_LOG" 2>&1 || true
     chroot /mnt systemctl enable NetworkManager >> "$INSTALL_LOG" 2>&1 || true
 
     update_progress "Cleanup..."
