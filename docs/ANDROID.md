@@ -10,11 +10,14 @@ it; nothing needs Android Studio.
   to install by hand and, once the upload key is set up,
   `alvaos-android.aab` for Google Play. With Play set up (below) it also
   goes to Play's internal testing by itself. One release, OS and app.
-- **Every push** to `android/`: tests and build; the APK is kept with the
-  run for a week (Actions › Android app › the run › Artifacts), for testing
-  between releases. No release entry.
-- **Actions › Android app › Run workflow**, with a track (internal, alpha,
-  beta, production): builds and uploads to that track on Google Play.
+- **Every pull request and every push to `main`** that touches `android/`:
+  the tests run and the app is built (the screens of the app are put on the
+  `app-screens` branch). Nothing is kept or published.
+- **Actions › Android app › Run workflow**: builds the app including the Link
+  library and keeps the APK with the run for a day (Actions › the run ›
+  Artifacts), to test between releases. Run it once by hand before a release.
+  With a track (internal, alpha, beta, production) it also uploads to that
+  track on Google Play (the default is none).
   With a release tag in "Add the app to this existing release", the app is
   added to that release afterwards (for a release made before the app).
 

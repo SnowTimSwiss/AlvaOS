@@ -7,7 +7,7 @@ name: Android app
 # Play's internal testing. Run by hand with a track, it goes to that track.
 on:
   push:
-    branches: ['**']
+    branches: [main]
     paths: ['android/**', 'VERSION', '.github/workflows/android.yml']
   pull_request:
     paths: ['android/**', 'VERSION', '.github/workflows/android.yml']
@@ -19,7 +19,7 @@ on:
         description: Google Play track to upload to
         type: choice
         options: [none, internal, alpha, beta, production]
-        default: internal
+        default: none
       draft:
         description: As a draft (needed while the app was never published on Play)
         type: boolean
@@ -66,22 +66,25 @@ jobs:
       - name: Test the sync core
         run: ./gradlew --no-daemon :core:test
 
-      # AlvaOS Link on the phone needs libiroh_ffi.so (Rust, from iroh-ffi) for each
-      # CPU type. Without it the app still builds and works at home; the Link
-      # parts then say "not available in this build". Best effort: a failed build
-      # here never stops the app.
+      # AlvaOS Link on the phone needs libiroh_ffi.so (Rust, from iroh-ffi).
+      # Without it the app still builds and works at home; the Link parts then
+      # say "not available in this build". Best effort: a failed build here never
+      # stops the app. It takes a while (Rust), so only for a release or a run by
+      # hand: run the workflow by hand once before a release to see that it works.
+      # Only arm64-v8a: every phone with Android 11 or newer that matters is 64-bit.
       - name: Build the Link library for Android (iroh)
+        if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
         continue-on-error: true
         run: |
           set -eu
           sdkmanager "ndk;27.2.12479018" >/dev/null
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
-          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android
+          rustup target add aarch64-linux-android
           cargo install --version 3.5.4 cargo-ndk --locked
           git clone --depth 1 --branch v1.1.0 https://github.com/n0-computer/iroh-ffi "$RUNNER_TEMP/iroh-ffi"
           cd "$RUNNER_TEMP/iroh-ffi"
           cargo ndk -o "$GITHUB_WORKSPACE/android/app/src/main/jniLibs" \
-            -t armeabi-v7a -t arm64-v8a -t x86 -t x86_64 build --release
+            -t arm64-v8a build --release
           ls -l "$GITHUB_WORKSPACE"/android/app/src/main/jniLibs/*/
 
       - name: Open every screen of the app
@@ -178,13 +181,6 @@ jobs:
           TAG: ${{ github.event.release.tag_name || inputs.release }}
         run: |
           gh release upload "$TAG" out/* --clobber
-
-      # The first app builds had a pre-release of their own; not used any more.
-      - name: Remove the old android-beta pre-release
-        if: github.event_name != 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release delete android-beta --cleanup-tag --yes 2>/dev/null || true
 
       - name: Upload to Google Play
         if: >-
