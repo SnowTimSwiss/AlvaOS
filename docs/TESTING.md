@@ -459,3 +459,9 @@ Calendar › Create: type `20:00 Choir` as the title › Save: the event is at 2
 ## 12n Add a birthday
 
 Calendar › Create › Birthday: type a name and a year; choose "And make a new contact": the contact exists and the Birthdays calendar shows it. Again with "Add to a contact" and with "Only in the calendar" (a yearly entry in your own calendar). Try it on the phone too.
+
+## 12o Quick wins
+
+1. Calendar › Birthdays › the menu next to it: pick a colour. A contact born in 1985 shows "(41)".
+2. Files: search, then the size chips narrow the results.
+3. Share a folder with another person: in their Files side bar it says New until they open it.

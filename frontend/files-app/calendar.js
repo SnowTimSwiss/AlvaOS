@@ -144,7 +144,7 @@
                 if (hidden.has(calKey(place, cal))) return;
                 occurrences(ev, from, to).forEach(([start, end]) => out.push({
                     key: `${place.id}|${ev.id}|${+start}`, kind: 'event', item: ev, place, cal, start, end,
-                    allDay: !!ev.all_day, color: ev.color || cal.color, title: ev.title || '(No title)',
+                    allDay: !!ev.all_day, color: ev.color || cal.color, title: (ev.title || '(No title)') + (ev.born ? ` (${start.getFullYear() - ev.born})` : ''),
                 }));
             });
             if (hidden.has(`${place.id}|tasks`)) return;
@@ -167,6 +167,8 @@
             const got = await api('calendar');
             places = got.places || [];
             colors = got.colors || [];
+            const bday = places.find((p) => p.id === 'birthdays');
+            if (bday && store.get('bdaycolor', '')) bday.calendars[0].color = store.get('bdaycolor', '');
             hasOwn = !!got.has_own;
             loaded = true;
             (got.problems || []).forEach((p) => toast(p, 'error'));
@@ -341,7 +343,8 @@
                 <div class="cal-group-head"><span>${place.own ? 'My calendars' : `${icon('users')}${esc(place.name)}`}</span>
                     ${place.writable ? `<button type="button" class="icon-btn" data-add-cal="${esc(place.id)}" title="Add a calendar" aria-label="Add a calendar">${icon('plus')}</button>` : '<span class="cal-ro" title="You can look, not change">read only</span>'}</div>
                 ${place.calendars.map((c) => item(calKey(place, c), c.name, c.color,
-                    place.writable ? `<button type="button" class="cal-more" data-edit-cal="${esc(calKey(place, c))}" aria-label="Change ${esc(c.name)}">${icon('more')}</button>` : '')).join('')}
+                    place.writable ? `<button type="button" class="cal-more" data-edit-cal="${esc(calKey(place, c))}" aria-label="Change ${esc(c.name)}">${icon('more')}</button>`
+                        : place.id === 'birthdays' ? `<button type="button" class="cal-more" data-bday-color aria-label="Change the colour of ${esc(c.name)}">${icon('more')}</button>` : '')).join('')}
                 ${place.writable || place.tasks.length ? item(`${place.id}|tasks`, place.own ? 'Tasks' : `Tasks of ${place.name}`, TASK_COLOR) : ''}
             </section>`;
         $c('#cal-lists').innerHTML = places.map(section).join('')
@@ -364,6 +367,7 @@
     function onListClick(e) {
         const add = e.target.closest('[data-add-cal]');
         if (add) { e.preventDefault(); calendarDialog(placeOf(add.dataset.addCal), null); return; }
+        if (e.target.closest('[data-bday-color]')) { e.preventDefault(); birthdayColorDialog(); return; }
         const edit = e.target.closest('[data-edit-cal]');
         if (edit) {
             e.preventDefault();
@@ -1174,6 +1178,23 @@
         };
         name.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
         d.el.querySelector('[data-save]').addEventListener('click', submit);
+    }
+
+    // The colour of the read-only Birthdays calendar is the person's own choice, kept in this browser.
+    function birthdayColorDialog() {
+        const place = placeOf('birthdays');
+        if (!place) return;
+        const d = dialog(`
+            <h2>Birthdays</h2>
+            <p>The birthdays of your contacts. Choose the colour they have in your calendar.</p>
+            ${swatches('color', place.calendars[0].color, false)}
+            <div class="actions"><button type="button" class="btn" data-close>Cancel</button><button type="button" class="btn primary" data-save>Save</button></div>`);
+        d.el.querySelector('[data-save]').addEventListener('click', () => {
+            const color = (d.el.querySelector('[name="color"]:checked') || {}).value;
+            if (color) { place.calendars[0].color = color; store.set('bdaycolor', color); }
+            d.close();
+            render();
+        });
     }
 
     // ── Tasks, next to the calendar ────────────────────────────────────────

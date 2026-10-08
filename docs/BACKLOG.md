@@ -15,6 +15,14 @@ How to add an entry:
 
 ---
 
+## 2026-10-08 — Quick wins: birthday colour and age, size filter, "New" on shared folders
+
+- Calendar: the Birthdays calendar has a menu to choose its colour (kept in the browser); birthdays with a known year show the age ("Max Muster's birthday (41)"; `born` in the event).
+- Files: search results can also be narrowed by size (over 1 MB / 100 MB / 1 GB).
+- Files: a folder another person shared with you is marked "New" in the side bar until you open it (kept in the browser; nothing is marked the first time you use a browser).
+
+---
+
 ## 2026-10-08 — Calendar: add a birthday (tab Birthday)
 
 - Create › **Birthday**: a name, the day (the clicked one), optionally the year, and where to keep it: only in the calendar (a yearly whole-day event), also as a new contact, or on a contact there is (listed under "Add to a contact"). The contact's birthday then shows in the read-only "Birthdays" calendar. Always there; with Contacts off for the person the only choice is "Only in the calendar". On a phone the small create sheet is used (it opened the full editor before).

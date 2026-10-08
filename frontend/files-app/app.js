@@ -187,6 +187,7 @@
         return `#${q}`;
     }
     function go(s, p, push = true) {
+        markSeen(s);
         leaveView();
         current = 'files';
         share = s;
@@ -223,10 +224,32 @@
         chips.querySelectorAll('[data-chip]').forEach((b) => b.addEventListener('click', () => go(b.dataset.chip, '')));
     }
 
+    // Folders others shared with this person: the ones not opened yet are marked "New".
+    // The first time ever, all count as seen (nothing is new to someone who just came).
+    const seenKey = () => `alvaos_files_seen_${me?.user || ''}`;
+    function seenShares() {
+        let seen = null;
+        try { seen = JSON.parse(localStorage.getItem(seenKey()) || 'null'); } catch (_e) { /* off */ }
+        if (!Array.isArray(seen)) {
+            seen = (me?.shares || []).filter((s) => s.from).map((s) => `${s.from}/${s.name}`);
+            try { localStorage.setItem(seenKey(), JSON.stringify(seen)); } catch (_e) { /* off */ }
+        }
+        return seen;
+    }
+    function markSeen(name) {
+        const s = (me?.shares || []).find((x) => x.name === name && x.from);
+        if (!s) return;
+        const seen = seenShares();
+        const id = `${s.from}/${s.name}`;
+        if (!seen.includes(id)) { try { localStorage.setItem(seenKey(), JSON.stringify([...seen, id])); } catch (_e) { /* off */ } }
+    }
+
     function renderSide() {
+        const seen = seenShares();
         const shareRow = (s) => `
             <button type="button" class="side-item${s.name === share && !(found && foundInfo.list) ? ' active' : ''}" data-share="${esc(s.name)}"${s.from ? ` title="Shared with you by ${esc(s.from)}"` : ''}>
                 <span class="ic">${icon(s.from ? 'users' : 'folder-fill')}</span><span>${esc(s.name)}</span>
+                ${s.from && !seen.includes(`${s.from}/${s.name}`) ? `<span class="ro new-badge">New</span>` : ''}
                 ${s.access === 'read' ? `<span class="ro" title="You can look, not change">${icon('lock').replace('<svg', '<svg width="13" height="13"')}</span>` : ''}
             </button>`;
         const mine = (me?.shares || []).filter((s) => !s.from);
@@ -332,10 +355,12 @@
     // Search results can be narrowed by kind and by when they changed (in the browser, on what was found).
     const KIND_FILTERS = [['', 'Everything'], ['folder', 'Folders'], ['image', 'Pictures'], ['video', 'Videos'], ['audio', 'Audio'], ['pdf', 'PDF'], ['doc', 'Documents'], ['archive', 'Archives']];
     const AGE_FILTERS = [['', 'Any time'], ['1', 'Today'], ['7', 'Past week'], ['30', 'Past month'], ['365', 'Past year']];
-    let searchFilter = { kind: '', age: '' };
+    const SIZE_FILTERS = [['', 'Any size'], ['1', 'Over 1 MB'], ['100', 'Over 100 MB'], ['1024', 'Over 1 GB']];
+    let searchFilter = { kind: '', age: '', size: '' };
     const isSearch = () => !!found && !foundInfo.photos && !foundInfo.list;
     function passesFilter(e) {
         if (searchFilter.kind && kindOf(e) !== searchFilter.kind) return false;
+        if (searchFilter.size && !(e.type === 'file' && (Number(e.size_bytes) || 0) > Number(searchFilter.size) * 1048576)) return false;
         if (searchFilter.age) {
             const t = new Date(e.modified_at).getTime();
             const start = new Date(); start.setHours(0, 0, 0, 0);
@@ -483,13 +508,16 @@
                 strip.innerHTML = KIND_FILTERS.filter(([k]) => !k || present.has(k) || searchFilter.kind === k)
                     .map(([k, l]) => `<button type="button" data-fk="${k}" aria-pressed="${searchFilter.kind === k}">${l}</button>`).join('')
                     + '<span class="chip-gap"></span>'
-                    + AGE_FILTERS.map(([k, l]) => `<button type="button" data-fa="${k}" aria-pressed="${searchFilter.age === k}">${l}</button>`).join('');
+                    + AGE_FILTERS.map(([k, l]) => `<button type="button" data-fa="${k}" aria-pressed="${searchFilter.age === k}">${l}</button>`).join('')
+                    + '<span class="chip-gap"></span>'
+                    + SIZE_FILTERS.map(([k, l]) => `<button type="button" data-fs="${k}" aria-pressed="${searchFilter.size === k}">${l}</button>`).join('');
                 head.after(strip);
                 strip.addEventListener('click', (ev) => {
                     const b = ev.target.closest('button');
                     if (!b) return;
                     if (b.dataset.fk !== undefined) searchFilter.kind = b.dataset.fk;
                     if (b.dataset.fa !== undefined) searchFilter.age = b.dataset.fa;
+                    if (b.dataset.fs !== undefined) searchFilter.size = b.dataset.fs;
                     selected = new Set();
                     render();
                 });
@@ -901,7 +929,7 @@
             if (id !== searchId || $('search').value.trim() !== q) return;
             found = (data.results || []).filter((e) => !e.name.startsWith('.'));
             foundInfo = { q, complete: !!data.complete };
-            searchFilter = { kind: '', age: '' };
+            searchFilter = { kind: '', age: '', size: '' };
             selected = new Set();
             anchor = -1;
             render();

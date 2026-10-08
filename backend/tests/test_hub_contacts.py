@@ -197,6 +197,7 @@ def test_birthdays_of_the_contacts_show_in_the_calendar_read_only(book):
     places = book.get("/api/calendar").get_json()["places"]
     day = places[-1]
     assert day["id"] == "birthdays" and day["writable"] is False and day["calendars"][0]["id"] == "birthdays"
+    assert sorted((e["title"], e["born"]) for e in day["events"]) == [("Berta's birthday", None), ("Max Muster's birthday", 1985)]
     assert sorted((e["title"], e["start"], e["repeat"], e["all_day"]) for e in day["events"]) == [
         ("Berta's birthday", "2000-06-30", "yearly", True), ("Max Muster's birthday", "1985-03-09", "yearly", True)]
     refused = book.post("/api/calendar/item", json={"place": "birthdays", "kind": "event", "item": day["events"][0]},

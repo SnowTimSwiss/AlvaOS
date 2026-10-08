@@ -167,7 +167,7 @@ def birthdays(session: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         name = ' '.join(p for p in (c.get('first'), c.get('last')) if p) or str(c.get('org') or '')
         events.append({'id': f"birthday-{c['id']}", 'calendar': 'birthdays', 'title': f"{name}'s birthday",
                        'start': day, 'end': day, 'all_day': True, 'color': '', 'location': '', 'notes': '',
-                       'repeat': 'yearly', 'until': ''})
+                       'repeat': 'yearly', 'until': '', 'born': int(m.group(1)[:4]) if m.group(1) != '--' else None})
     if not events:
         return None
     return {'id': 'birthdays', 'name': 'Birthdays', 'own': False, 'writable': False,
