@@ -451,3 +451,7 @@ Photos › Upload: choose a few pictures from the computer or phone. They appear
 ## 12l Backup warning
 
 Switch off the NAS (or the Hub) for three days with backup on and the phone online: a notification "No backup for 3 days" appears once a day; after the NAS is back and a backup worked, it goes away. (Shortcut: set the phone's clock three days ahead.)
+
+## 12m Time in the title
+
+Calendar › Create: type `20:00 Choir` as the title › Save: the event is at 20:00 and called Choir. Try `19:30-21 Choir`, `Choir um 20 Uhr`, and `5 friends` (stays a title).

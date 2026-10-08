@@ -15,6 +15,12 @@ How to add an entry:
 
 ---
 
+## 2026-10-08 — Calendar: the time in the title
+
+- Writing "20:00 Choir", "19:30-21 Choir", "20 Uhr Choir" or "Choir um 20 Uhr" as the title sets the time and keeps only "Choir" (quick create, the full editor, tasks too). A colon or "Uhr"/"h" is needed, so "5 friends" stays a title. The length stays (1 hour for a whole-day start) unless an end is written.
+
+---
+
 ## 2026-10-08 — Android: a warning when the backup has not worked for days
 
 - After 3 days without a successful backup the app shows a notification ("No backup for N days", with the last reason), at most once a day, and removes it once a backup worked. The rule is `staleDays` in the core (tested in `StaleTest`); a phone that never backed up is not warned.

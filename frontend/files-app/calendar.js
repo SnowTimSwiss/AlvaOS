@@ -834,6 +834,34 @@
         return p ? calKey(p, c) : '';
     }
 
+
+    // A time written in the title moves out of it: "20:00 Choir", "19:30-21 Choir",
+    // "Choir um 20 Uhr". Colon or "Uhr"/"h" is needed, so "5 friends" stays a title.
+    function timeInTitle(text) {
+        const t = String(text || '').trim();
+        const at = (h, m) => (Number(h) <= 23 && Number(m || 0) <= 59 ? { h: Number(h), m: Number(m || 0) } : null);
+        let m = /^(\d{1,2})(?:([:.])(\d{2}))?(?:\s*[-–]\s*(\d{1,2})(?:[:.](\d{2}))?)?\s*(uhr|h)?\s+(?:um\s+)?(\S.*)$/i.exec(t);
+        if (m && (m[2] === ':' || m[6])) {
+            const from = at(m[1], m[3]);
+            const to = m[4] !== undefined ? at(m[4], m[5]) : null;
+            if (from && (m[4] === undefined || to)) return { title: m[7].trim(), from, to };
+        }
+        m = /^(\S.*?)\s+(?:um\s+|ab\s+)?(\d{1,2})(?:(:)(\d{2})|(?:[.:](\d{2}))?\s*(uhr|h))$/i.exec(t);
+        if (m) {
+            const from = at(m[2], m[4] || m[5]);
+            if (from) return { title: m[1].trim(), from, to: null };
+        }
+        return null;
+    }
+    // Where the start and end of an item go when the title names a time (the length stays).
+    function withTitleTime(parsed, start, end, wasAllDay) {
+        const s = new Date(start.getFullYear(), start.getMonth(), start.getDate(), parsed.from.h, parsed.from.m);
+        const length = wasAllDay ? 60 * 60000 : Math.max(15 * 60000, end - start);
+        let e = parsed.to ? new Date(s.getFullYear(), s.getMonth(), s.getDate(), parsed.to.h, parsed.to.m) : new Date(s.getTime() + length);
+        if (e <= s) e = new Date(s.getTime() + length);
+        return { start: s, end: e };
+    }
+
     function quickCreate(anchor, start, end, allDay, at) {
         closePop(true);
         root.querySelectorAll('.ev.ghost').forEach((g) => { if (!at || g !== at.ghost) g.remove(); });
@@ -854,7 +882,7 @@
             : whenText(start, end, allDay));
         card.innerHTML = `
             <div class="pop-tools"><button type="button" class="icon-btn" data-act="close" aria-label="Close">${icon('x')}</button></div>
-            <input class="pop-title" placeholder="Add title" aria-label="Title" maxlength="300">
+            <input class="pop-title" placeholder="Add title, or “20:00 Choir”" aria-label="Title" maxlength="300">
             <div class="pop-tabs" role="tablist"><button type="button" role="tab" data-kind="event" aria-selected="true">Event</button><button type="button" role="tab" data-kind="task" aria-selected="false">Task</button></div>
             <div class="pop-row">${icon('clock')}<div class="pop-when">${esc(whenLine())}</div></div>
             <div class="pop-row" data-for="event">${icon('calendar')}<select class="pop-select" data-target aria-label="Calendar">${targetOptions(defaultTarget(), false)}</select></div>
@@ -868,13 +896,17 @@
             card.querySelector('.pop-when').textContent = whenLine();
         };
         const draft = () => {
+            const named = timeInTitle(title.value);
             if (kind === 'task') {
                 return { place: card.querySelector('[data-task-target]').value,
-                    item: { title: title.value.trim(), date: ymd(start), time: allDay ? '' : hm(start), notes: '', done: false } };
+                    item: { title: named ? named.title : title.value.trim(), date: ymd(start),
+                        time: named ? `${pad(named.from.h)}:${pad(named.from.m)}` : (allDay ? '' : hm(start)), notes: '', done: false } };
             }
             const [pid, cid] = card.querySelector('[data-target]').value.split('|');
-            return { place: pid, item: { title: title.value.trim(), calendar: cid, all_day: allDay,
-                start: allDay ? ymd(start) : stamp(start), end: allDay ? ymd(addDays(end, -1)) : stamp(end), color: '', repeat: '', location: '', notes: '' } };
+            let s = start; let e = end; let whole = allDay;
+            if (named) { ({ start: s, end: e } = withTitleTime(named, start, end, allDay)); whole = false; }
+            return { place: pid, item: { title: named ? named.title : title.value.trim(), calendar: cid, all_day: whole,
+                start: whole ? ymd(s) : stamp(s), end: whole ? ymd(addDays(e, -1)) : stamp(e), color: '', repeat: '', location: '', notes: '' } };
         };
         const submit = async () => {
             const { place: pid, item } = draft();
@@ -979,11 +1011,21 @@
         d.el.querySelector('[data-save]').addEventListener('click', async () => {
             const all = f('all_day').checked;
             const [pid, cid] = f('target').value.split('|');
+            let named = timeInTitle(f('title').value);
+            let [sDay, sTime, eDay, eTime] = [f('sd').value, f('st').value, f('ed').value, f('et').value];
+            let whole = all;
+            if (named && parse(sDay)) {
+                const from = parse(`${sDay}T${sTime || '00:00'}`);
+                const till = parse(`${eDay || sDay}T${eTime || sTime || '00:00'}`) || from;
+                const moved = withTitleTime(named, from, till, all);
+                [sDay, sTime, eDay, eTime] = [ymd(moved.start), hm(moved.start), ymd(moved.end), hm(moved.end)];
+                whole = false;
+            } else named = null;
             const item = {
                 ...(existing && pid === placeObj.id ? { id: ev.id } : {}),
-                title: f('title').value.trim(), calendar: cid, all_day: all,
-                start: all ? f('sd').value : `${f('sd').value}T${f('st').value}`,
-                end: all ? f('ed').value : `${f('ed').value}T${f('et').value}`,
+                title: named ? named.title : f('title').value.trim(), calendar: cid, all_day: whole,
+                start: whole ? sDay : `${sDay}T${sTime}`,
+                end: whole ? eDay : `${eDay}T${eTime}`,
                 repeat: f('repeat').value, until: f('repeat').value ? f('until').value : '',
                 color: (d.el.querySelector('[name="color"]:checked') || {}).value || '',
                 location: f('location').value.trim(), notes: f('notes').value,
