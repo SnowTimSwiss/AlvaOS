@@ -1,5 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The colours of the Hub (frontend/files-app/app.css), so the native screens and the Hub inside the app match. -->
 <resources>
-    <color name="alva_primary">#2563EB</color>
+    <color name="alva_bg">#F6F7F9</color>
+    <color name="alva_panel">#FFFFFF</color>
+    <color name="alva_side">#EEF1F5</color>
+    <color name="alva_hover">#E7ECF3</color>
+    <color name="alva_sel">#DBE7FD</color>
+    <color name="alva_line">#E3E7EE</color>
+    <color name="alva_text">#1A1D23</color>
+    <color name="alva_muted">#5D6573</color>
+    <color name="alva_faint">#8A93A3</color>
+    <color name="alva_accent">#1F6FE5</color>
+    <color name="alva_on_accent">#FFFFFF</color>
+    <color name="alva_danger">#C93A3A</color>
+    <color name="alva_danger_bg">#FBE5E5</color>
+    <color name="alva_danger_on">#7A1F1F</color>
+    <color name="alva_warn_bg">#FCF0D6</color>
+    <color name="alva_ok">#1D8A4E</color>
     <bool name="light_bars">true</bool>
 </resources>

@@ -41,7 +41,7 @@ data class PlanItem(val id: String, val album: String, val name: String, val siz
 @Serializable
 data class DoneItem(val id: String, val path: String, val name: String, val size: Long, val modified: Long)
 
-/** What the app says about the phone; the Hub lists it under Phones and devices. */
+/** What the app says about the phone; the Hub lists it under Devices. */
 @Serializable
 data class DeviceInfo(val name: String, val model: String = "", val platform: String = "android", val app_version: String = "")
 
@@ -56,20 +56,31 @@ data class StoreTile(val id: String = "", val name: String = "", val port: Int =
 @Serializable
 data class HubInfo(val apps: List<HubApp> = emptyList(), val store: List<StoreTile> = emptyList())
 
+/** A shared folder the person may open: `access` is "write" or "read". */
+@Serializable
+data class ShareInfo(val name: String, val access: String = "read")
+
 /** Who is signed in, on which NAS, with which apps. */
 @Serializable
-data class Me(val user: String = "", val nas_name: String = "", val hub: HubInfo = HubInfo(), val public_url: String = "")
+data class Me(
+    val user: String = "", val nas_name: String = "", val hub: HubInfo = HubInfo(),
+    val shares: List<ShareInfo> = emptyList(),
+)
 
 /** A session of the app's own, from a QR code or a password. */
 @Serializable
 data class Paired(val token: String, val user: String = "", val nas_name: String = "", val device: String = "")
 
 /**
- * What the QR code in the Hub › Phones and devices says:
+ * What the QR code in the Hub › Devices says:
  * `alvaos://pair?c=CODE&n=<NAS>&u=<person>&a=<address>&a=<address>`.
  * The addresses: the one the browser used, then the internet one if there is.
  */
-data class PairLink(val code: String, val addresses: List<String>, val nas: String, val user: String) {
+data class PairLink(
+    val code: String, val addresses: List<String>, val nas: String, val user: String,
+    /** The NAS's AlvaOS Link address (64 hex characters): the way in when no address answers. */
+    val link: String = "",
+) {
     companion object {
         fun parse(text: String): PairLink? {
             val t = text.trim()
@@ -82,9 +93,11 @@ data class PairLink(val code: String, val addresses: List<String>, val nas: Stri
             val code = params.firstOrNull { it.first == "c" }?.second.orEmpty()
             val addresses = params.filter { it.first == "a" }.map { it.second.trimEnd('/') }
                 .filter { it.startsWith("http://") || it.startsWith("https://") }
-            if (code.length < 8 || addresses.isEmpty()) return null
+            val link = params.firstOrNull { it.first == "l" }?.second.orEmpty().lowercase()
+                .takeIf { Regex("[0-9a-f]{64}").matches(it) }.orEmpty()
+            if (code.length < 8 || (addresses.isEmpty() && link.isEmpty())) return null
             return PairLink(code, addresses, params.firstOrNull { it.first == "n" }?.second.orEmpty(),
-                params.firstOrNull { it.first == "u" }?.second.orEmpty())
+                params.firstOrNull { it.first == "u" }?.second.orEmpty(), link)
         }
     }
 }
@@ -100,7 +113,7 @@ interface HubApi {
 
 /**
  * The Hub of a NAS: the same address and sign-in as in the browser (port 8090,
- * HTTPS 9443, or through Tailscale or a Cloudflare Tunnel). The session is the
+ * HTTPS 9443, or away through AlvaOS Link's local proxy). The session is the
  * `alvaos_files` cookie; every change carries `X-AlvaOS-Files: 1`.
  */
 class HubClient(
@@ -186,6 +199,14 @@ class HubClient(
         return paired
     }
 
+    @Serializable
+    private data class LinkKey(val key: String)
+
+    /** Tells the NAS this phone's AlvaOS Link key, so the phone may come in from away (the session is the proof). */
+    fun registerLink(key: String) {
+        post("/api/devices/link", LinkKey(key))
+    }
+
     /** Ends this phone's session on the NAS (it leaves the Hub's device list). */
     fun signOut() {
         try { post("/api/logout", emptyMap<String, String>()) } catch (e: IOException) { /* signed out here anyway */ }
@@ -204,6 +225,26 @@ class HubClient(
 
     /** Whether this session still works: false only when the NAS says signed out (401). */
     fun signedIn(): Boolean = http.newCall(request("/api/me").build()).execute().use { it.code != 401 }
+
+    @Serializable
+    private data class Entry(val name: String = "")
+
+    @Serializable
+    private data class Listing(val entries: List<Entry> = emptyList())
+
+    /** The names in a folder of a shared folder ("" is its top). */
+    fun names(share: String, path: String): Set<String> =
+        json.decodeFromString<Listing>(send(request("/api/list?share=${enc(share)}&path=${enc(path)}")))
+            .entries.map { it.name }.toSet()
+
+    @Serializable
+    private data class Mkdir(val share: String, val path: String, val name: String)
+
+    /** Makes a folder in a folder, unless it is there already. */
+    fun makeFolder(share: String, path: String, name: String) {
+        if (name in names(share, path)) return
+        post("/api/mkdir", Mkdir(share, path, name))
+    }
 
     @Serializable
     private data class Added(val phone: Phone)

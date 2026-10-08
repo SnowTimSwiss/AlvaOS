@@ -131,6 +131,15 @@ if [ -f "${SCRIPT_DIR}/../keys/update-signing.pub" ]; then
   mkdir -p config/includes.chroot/opt/alvaos/keys
   cp "${SCRIPT_DIR}/../keys/update-signing.pub" config/includes.chroot/opt/alvaos/keys/
 fi
+# AlvaOS Link (iroh): the Python library of the Link daemon, checked against its hash.
+IROH_WHEEL="iroh-1.1.0-py3-none-manylinux_2_28_x86_64.whl"
+mkdir -p "${SCRIPT_DIR}/.cache/wheels" config/includes.chroot/opt/alvaos/vendor
+[ -f "${SCRIPT_DIR}/.cache/wheels/${IROH_WHEEL}" ] || python3 -m pip download "iroh==1.1.0" --no-deps --only-binary=:all: \
+  --platform manylinux_2_28_x86_64 --python-version 3.11 -d "${SCRIPT_DIR}/.cache/wheels"
+echo "4989c7b8f6ab2ebe7afc0c2cf55b7608f7fd05f02bffee1af8d937e05de0e768  ${SCRIPT_DIR}/.cache/wheels/${IROH_WHEEL}" | sha256sum -c - >/dev/null
+python3 -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' \
+  "${SCRIPT_DIR}/.cache/wheels/${IROH_WHEEL}" config/includes.chroot/opt/alvaos/vendor
+
 # NVIDIA's apt key, for its container toolkit (backend/gpu_manager.py)
 mkdir -p config/includes.chroot/opt/alvaos/keys
 cp "${SCRIPT_DIR}/../keys/nvidia-container-toolkit.asc" config/includes.chroot/opt/alvaos/keys/
@@ -165,7 +174,7 @@ if [ -f "${SCRIPT_DIR}/../scripts/alvaos-update-checker.service" ]; then
   mkdir -p config/includes.chroot/opt/alvaos/scripts
   cp "${SCRIPT_DIR}/../scripts/alvaos-update-checker.service" config/includes.chroot/opt/alvaos/scripts/
 fi
-for unit in scripts/alvaos-update-checker.timer scripts/alvaos-files.service scripts/alvaos-vm@.service backend/alvaos-watchdog.service backend/alvaos-watchdog.timer; do
+for unit in scripts/alvaos-update-checker.timer scripts/alvaos-files.service scripts/alvaos-link.service scripts/alvaos-vm@.service backend/alvaos-watchdog.service backend/alvaos-watchdog.timer; do
   if [ -f "${SCRIPT_DIR}/../${unit}" ]; then
     mkdir -p config/includes.chroot/opt/alvaos/scripts
     cp "${SCRIPT_DIR}/../${unit}" config/includes.chroot/opt/alvaos/scripts/

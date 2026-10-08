@@ -1,0 +1,24 @@
+[Unit]
+Description=AlvaOS Link (phones and buddies reach this NAS without a router setting)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Its own account would be tidier, but it must give the services of the NAS
+# (Hub, backup code) a password file to read: group alvaos reads it.
+User=alvaos
+Group=alvaos
+WorkingDirectory=/opt/alvaos/bin
+ExecStartPre=+/usr/bin/install -d -o alvaos -g alvaos -m 0750 /var/lib/alvaos/link
+ExecStart=/usr/bin/python3 /opt/alvaos/bin/link_daemon.py
+Restart=always
+RestartSec=5
+Environment="PYTHONUNBUFFERED=1"
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/alvaos/link
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

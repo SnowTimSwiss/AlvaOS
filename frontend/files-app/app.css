@@ -80,6 +80,7 @@ svg { display: block; }
 .side-item:hover { background: var(--hover); }
 .side-item.active { background: var(--sel); font-weight: 600; }
 .side-item .ic { color: var(--folder); display: inline-flex; }
+.side-item .new-badge { background: var(--accent); color: var(--accent-text); border-radius: 999px; padding: 1px 7px; font-weight: 600; }
 .side-item .ro { margin-left: auto; color: var(--faint); font-size: 0.72rem; }
 .side-sep { height: 1px; background: var(--line); margin: 10px 8px; }
 #trash-nav .ic { color: var(--muted); }
@@ -324,11 +325,14 @@ body.public { display: flex; flex-direction: column; min-height: 100%; }
 /* Photos view: a timeline of pictures by month */
 .items.photos { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px; }
 .items.photos .month { grid-column: 1 / -1; font-weight: 700; font-size: 0.95rem; padding: 14px 2px 4px; }
-.items.photos .results-head + .month, .items.photos .albums + .month { padding-top: 0; }
-.items.photos .albums { grid-column: 1 / -1; display: flex; gap: 8px; overflow-x: auto; padding: 0 2px 10px; scrollbar-width: none; }
-.items.photos .albums button { flex: none; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 1px; padding: 6px 14px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: inherit; font: inherit; font-size: 0.86rem; font-weight: 600; cursor: pointer; }
-.items.photos .albums button small { font-weight: 400; font-size: 0.72rem; color: var(--muted); }
-.items.photos .albums button[aria-pressed="true"] { background: var(--sel); border-color: transparent; }
+.items.photos .results-head + .month, .items.photos .chips + .month, .items.photos .appbackup + .month { padding-top: 0; }
+.chips { display: flex; gap: 8px; overflow-x: auto; padding: 10px 14px 6px; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chips button { flex: none; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 1px; padding: 6px 14px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: inherit; font: inherit; font-size: 0.86rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.chips button small { font-weight: 400; font-size: 0.72rem; color: var(--muted); }
+.chips button[aria-pressed="true"] { background: var(--sel); border-color: transparent; }
+.items > .chips { grid-column: 1 / -1; padding: 0 2px 10px; }
+.items > .empty { grid-column: 1 / -1; }
 .ptile { aspect-ratio: 1; overflow: hidden; border-radius: 6px; background: var(--hover); cursor: pointer; position: relative; outline-offset: 2px; }
 .ptile img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .15s; }
 .ptile:hover img { transform: scale(1.03); }
@@ -355,7 +359,7 @@ body.public { display: flex; flex-direction: column; min-height: 100%; }
 .dialog .muted { color: var(--muted); }
 .actions .grow { flex: 1; }
 
-/* Phones and devices */
+/* Devices */
 .devices .pair { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 18px; align-items: center; margin-bottom: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; }
 .devices .qr { background: #fff; border-radius: 10px; padding: 8px; aspect-ratio: 1; display: flex; }
 .devices .qr img { width: 100%; height: 100%; image-rendering: pixelated; }
@@ -392,3 +396,61 @@ a.btn { text-decoration: none; color: inherit; }
     .items.trash .row { grid-template-columns: 34px minmax(0, 1fr) auto; }
     .items.trash .rsize, .items.trash .rdate { display: none; }
 }
+
+/* The photo backup of the phone, on top of Photos (in the AlvaOS app) */
+.appbackup { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin: 0 2px 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); cursor: pointer; }
+.appbackup .ab-ic { width: 40px; height: 40px; border-radius: 10px; background: var(--sel); color: var(--accent); display: flex; align-items: center; justify-content: center; flex: none; }
+.appbackup .ab-ic svg { width: 20px; height: 20px; }
+.appbackup .ab-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.appbackup .ab-text small { color: var(--muted); font-size: 0.8rem; }
+.appbackup .up-bar { margin-top: 8px; }
+
+/* The "⋯" menu and the shared folders as chips: only in the AlvaOS app, where there is no side bar */
+.more-wrap { display: none; }
+.in-app .more-wrap { display: block; }
+.in-app #menu-btn, .in-app #back-btn, .in-app #fwd-btn, .in-app .seg, .in-app .status, .in-app .side { display: none !important; }
+.in-app .bar { padding: 8px 8px 8px 12px; }
+.in-app #results-close { display: none; }
+.in-app #more-menu { min-width: 230px; right: 0; left: auto; }
+.in-app .menu button { white-space: nowrap; }
+
+/* Videos: a small play mark on the still */
+.ptile.vid::after, .tile .thumb.vid::after { content: ''; position: absolute; right: 6px; bottom: 6px; width: 24px; height: 24px; border-radius: 50%; background: rgba(0, 0, 0, .55) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M8 5v14l11-7z'/%3E%3C/svg%3E") center / 14px no-repeat; pointer-events: none; }
+.tile .thumb.vid { position: relative; }
+.viewer-note { max-width: 420px; margin: auto; padding: 24px; text-align: center; color: #eef1f5; display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.viewer-note span { color: #aab2c0; font-size: 0.92rem; }
+.viewer-note .btn { color: #eef1f5; background: rgba(255,255,255,.1); border-color: transparent; }
+.viewer-note .btn.primary { background: var(--accent); color: var(--accent-text); }
+.viewer-note-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 6px; }
+
+/* Photos: hearts, albums, choosing */
+.ptile .heart { position: absolute; left: 6px; top: 6px; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; color: #ff6b81; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); pointer-events: none; }
+.ptile .heart svg { width: 16px; height: 16px; }
+.head-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.results-head #results-close { margin-left: 0; }
+.chips .chip-new { border-style: dashed; flex-direction: row; align-items: center; gap: 6px; color: var(--muted); }
+.chips button svg { display: inline-block; vertical-align: -2px; }
+.pick-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 6px; border: none; border-top: 1px solid var(--line); background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; border-radius: 8px; }
+.pick-row:first-child { border-top: none; }
+.pick-row:hover { background: var(--hover); }
+.pick-row strong { display: block; }
+.pick-row small { color: var(--muted); font-size: 0.78rem; }
+.pick-ic { width: 38px; height: 38px; border-radius: 10px; background: var(--sel); color: var(--accent); display: flex; align-items: center; justify-content: center; flex: none; }
+.pick-ic svg { width: 18px; height: 18px; }
+.items.photos .ptile.selected img { transform: scale(.86); border-radius: 8px; }
+.in-app .results-head .head-actions { margin-left: auto; }
+.side-tools.top { margin-top: 0; padding: 0 0 6px; }
+
+/* Search results: narrow by kind and by time */
+.chips.filters { grid-column: 1 / -1; flex-wrap: wrap; overflow: visible; padding: 0 4px 10px; gap: 6px; }
+.chips.filters button { flex-direction: row; padding: 4px 12px; border-radius: 999px; font-weight: 500; font-size: 0.82rem; }
+.chips.filters .chip-gap { width: 10px; }
+
+.side-head2 { font-size: 0.72rem; font-weight: 600; color: var(--faint); padding: 12px 10px 4px; }
+
+/* Devices: the computer part folds away under the phones */
+details.dav { margin-bottom: 18px; border-top: 1px solid var(--border, rgba(128,128,128,.25)); margin-top: 14px; padding-top: 12px; }
+details.dav > summary { cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px; list-style: none; }
+details.dav > summary::-webkit-details-marker { display: none; }
+details.dav[open] > summary { margin-bottom: 10px; }
+details.dav > summary svg { width: 18px; height: 18px; flex: none; }

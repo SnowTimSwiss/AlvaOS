@@ -5,7 +5,8 @@ Core NAS-to-NAS backup system for AlvaOS. Peer-to-peer, encrypted, and increment
 ## Overview & Philosophy
 **Buddy Backup** allows two AlvaOS instances to back up to each other over the internet.
 - **Simple**: Pair via short code; no manual key management.
-- **Secure**: WireGuard in transit, LUKS at rest on the buddy; keys stay with the owner.
+- **Secure**: end-to-end encrypted in transit (AlvaOS Link), LUKS at rest on the buddy; keys stay with the owner.
+- **No router work**: it connects from anywhere, with no port forwarding on either side and no account (AlvaOS Link).
 - **Efficient**: One full transfer, then only changes, forever.
 - **Reliable**: Full disaster recovery (data, shares, Docker, users).
 - **Easy restore**: Option for full system backup - everything can be transfered to a new instance just with the paring code.
@@ -20,27 +21,31 @@ Core NAS-to-NAS backup system for AlvaOS. Peer-to-peer, encrypted, and increment
 
 ## Architecture
 - **Daemon**: `alvaos-buddy-backup.service` manages pairing and sync.
-- **Tunnel**: WireGuard for encrypted NAT traversal.
+- **Link**: AlvaOS Link (`link_daemon.py`, see `docs/LINK.md`) connects the two NAS directly or through a relay that only passes on encrypted packets. Before AlvaOS 0.3 this was an own WireGuard tunnel with a forwarded port.
 - **Engine**: Btrfs send/receive into an encrypted vault on the buddy (see below).
 
 ## Network and trust
-- **All buddy traffic after pairing goes through the WireGuard tunnel** (`buddy0`,
-  `100.95.95.0/24`): the vault (NBD, port 10809), listing, deletion, health probes.
-  WireGuard encrypts it and authenticates the buddy by the public key from the
-  pairing code, so no TLS certificates are involved.
-- A buddy request is accepted only if it carries this NAS's buddy secret **and**
-  arrives from the tunnel address of a paired buddy. The tunnel address is
-  what identifies the buddy (WireGuard only accepts it with that buddy's key),
-  so one buddy cannot read, delete or overwrite another buddy's snapshots.
-- **Pairing** is the only step outside the tunnel: the NAS that enters a code
-  calls the other NAS's API once to pair back. That call must present the
-  secret from the code, so nobody can register themselves as a buddy just by
-  reaching the port.
-- **Ports**: the WireGuard UDP port (default `51820`) must be reachable on at
-  least one side. The web port (`8080`) only needs to be reachable while
-  pairing, never permanently. A buddy behind NAT works as long as the other side
-  is reachable.
-- The tunnel is brought up again automatically when AlvaOS starts.
+- **All buddy traffic after pairing goes through AlvaOS Link**: the vault (NBD), listing,
+  deletion, health probes. Link gives every buddy an address of its own on this NAS's loopback
+  network (`127.95.x.y`, stored as the peer's `tunnel_ip`) and carries what is sent there, end to end
+  encrypted, to that buddy. The backup code connects to `127.95.x.y:10809` (the vault) and
+  `127.95.x.y:18080` (the buddy's API) as if the buddy were next door.
+- A buddy is identified by its **Link key** (iroh: a public key; connecting needs the matching
+  private key). A buddy request is accepted only if it carries this NAS's buddy secret **and**
+  arrives from the address Link gave that buddy: on the receiving side Link connects to the
+  backend and the vault server *from the buddy's own address*, and only for keys on its list, so one
+  buddy cannot read, delete or overwrite another buddy's snapshots.
+- **Pairing** goes through Link too. The code carries the NAS's Link address (64 hex digits), a name
+  and the buddy secret. The NAS that enters a code allows the other in, then sends its own code
+  through Link to the other NAS's `pair` service, the one thing Link lets a stranger do. Link
+  hands it to the backend (`/api/v1/backup/pairing/accept`) together with the secret from the
+  code, so nobody can register as a buddy without it.
+- **Ports**: none. Neither side needs a port forwarded, a public address or a domain. Both need
+  AlvaOS Link on (Settings › AlvaOS Link) and AlvaOS 0.3 or newer.
+- Buddies paired before 0.3 (WireGuard) show "Pair again". Their old backups stay on them; pairing
+  again with the same node id gives access to them again.
+- Link is told the buddies at startup and after every change; the vault server listens on the
+  loopback network only.
 
 ## Vaults: encrypted replication
 Each NAS keeps one **vault** on each of its buddies: an image file on the
@@ -50,9 +55,9 @@ TrueNAS, and the buddy only ever sees encrypted blocks:
 
 ```
 Owner NAS                                   Buddy NAS
-btrfs send -p <common> <new>                 NBD server (backend, tunnel only)
+btrfs send -p <common> <new>                 NBD server (backend, loopback, via Link only)
   | btrfs receive /run/alvaos-vault/<v>/…       ↑ only this owner's image
-Btrfs  ─ LUKS2 (key only here) ─ /dev/nbdN ══ WireGuard ══ <owner>/vault.img
+Btrfs  ─ LUKS2 (key only here) ─ /dev/nbdN ══ AlvaOS Link ══ <owner>/vault.img
 ```
 
 1. The owner asks the buddy to create (or grow) its image

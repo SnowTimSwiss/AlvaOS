@@ -92,10 +92,15 @@ the JSON files are small and are backed up with the pictures.
 ## Built in small steps
 
 1. **The date a picture was taken** (EXIF), sorted by it: **done**.
-2. Video thumbnails (a still from the video, made by ffmpeg in the Hub process
-   at low priority, only when ffmpeg is installed).
-3. Favourites and albums in the browser (`Photos/.albums/`), sharing an album
-   with people in the household.
+2. Video thumbnails (a still from the video, made by ffmpeg at low priority,
+   only when ffmpeg is installed): **done**. Videos play in the viewer; what the
+   browser cannot play (AVI, HEVC from an iPhone) gets a copy made on request
+   (H.264, 720 p, kept in the Hub cache); HEIC and TIFF open through a JPEG.
+3. Favourites and albums in the browser: **done** for the person's own
+   (`Photos/.alvaos/albums/<id>.json`, `Photos/.alvaos/favourites.json`: lists of
+   pictures, no copies; `backend/hub_albums.py`). Select pictures › Add to album or
+   Favourite; the heart in the viewer; New album, rename, delete; Remove from
+   album. Next: sharing an album with people in the household.
 4. Upload into the own photos from the Hub (button and drag and drop), into
    `Photos/<year>/<month>/` by the date in the photo.
 5. The phone backup in the Android app, with albums and deleting in sync:

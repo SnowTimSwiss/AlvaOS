@@ -15,6 +15,146 @@ How to add an entry:
 
 ---
 
+## 2026-10-08 — Docs for the public beta: README, contributing and AI rules, comment cleanup
+
+- README rewritten for what AlvaOS is now (Hub, Link, Buddy Backup, apps, VMs, Android app), with a documentation table and the beta status.
+- CONTRIBUTING: a checklist for pull requests (ruff, pytest, docs entries) and a section on AI tools: allowed, but assisted, not generated; a human understands, reads and tests every line; no invented facts; comments say why.
+- Cleanup: removed about 60 comments that only restated the next line, and the Args/Returns boilerplate from the docstrings of `docker_manager.py` and `app_store.py`.
+- Note for next time: other files still have long docstrings; trim them when you touch the file.
+
+---
+
+## 2026-10-08 — Name and Hub: "AlvaOS Link" everywhere, one Devices entry
+
+- The settings page is called **AlvaOS Link** (was "Away from home"), in the pages, messages, assistant, app and docs; "away from home" stays as the plain description.
+- Hub › Files: **Connect a computer** and **Phones and devices** are one entry, **Devices**. Its dialog: connect a phone (QR code), the connected phones, and a folded "Computer: open your folders" part (WebDAV). The app's settings call it Devices, too.
+- Calendar and Contacts notes no longer point to the removed Remote access.
+
+---
+
+## 2026-10-08 — v0.3.0: AlvaOS Link (away from home without a router), Buddy Backup rework
+
+- New **AlvaOS Link** (`link_daemon.py`, `alvaos-link.service`, `docs/LINK.md`): iroh (QUIC, end-to-end encrypted, keys as addresses, direct connection or a relay) lets phones and buddy NASes reach this NAS with no router setting and no account. Each paired peer gets its own loopback address (`127.95.x.y`); the NAS connects to its services from there, so the source address is the identity.
+- Settings › **Away from home** (`settings-link.js`, `api_link.py`): one switch, a sentence about the state, the Link address, the paired phones and buddies. **The old Remote access (Tailscale, Cloudflare Tunnel, own WireGuard) is gone** (backend, page, assistant, policy, tests). Share links for people without the app are gone with it until a new approach.
+- **Buddy Backup reworked**: no WireGuard, no tunnel IPs, no ports to open. Token v2 carries only the identity; pairing goes through Link's `pair` service; the vault and the buddy API are reached at the buddy's loopback address. Recovery kit v2 keeps the Link key. Old buddies show "repair" and need pairing again; the old `buddy0` tunnel is taken down once.
+- **Android**: QR code carries the NAS's Link address (`l=`); `LinkClient` and a local proxy (`android/core`, tested against the real daemon), `LinkService` in the app falls back to it when no address answers; the phone's key is registered at pairing (or after pairing at home, `POST /api/devices/link`). The Link library (`libiroh_ffi.so`) is built in CI best-effort; without it the app works at home.
+- Packaging: the deb and the installer ship the iroh wheel (checked by hash) in `/opt/alvaos/vendor` and the Link unit. `VERSION` is `beta-v0.3.0`.
+- Note for next time: the Android native build and a real two-site buddy test (relay and direct) have not run anywhere yet; CI minutes were used up when this was written, so nothing was verified by CI. Check n0's relay terms before telling people it is "private by default"; an own relay setting is the follow-up. arm64 packages need the aarch64 wheel.
+
+---
+
+## 2026-10-08 — Quick wins: birthday colour and age, size filter, "New" on shared folders
+
+- Calendar: the Birthdays calendar has a menu to choose its colour (kept in the browser); birthdays with a known year show the age ("Max Muster's birthday (41)"; `born` in the event).
+- Files: search results can also be narrowed by size (over 1 MB / 100 MB / 1 GB).
+- Files: a folder another person shared with you is marked "New" in the side bar until you open it (kept in the browser; nothing is marked the first time you use a browser).
+
+---
+
+## 2026-10-08 — Calendar: add a birthday (tab Birthday)
+
+- Create › **Birthday**: a name, the day (the clicked one), optionally the year, and where to keep it: only in the calendar (a yearly whole-day event), also as a new contact, or on a contact there is (listed under "Add to a contact"). The contact's birthday then shows in the read-only "Birthdays" calendar. Always there; with Contacts off for the person the only choice is "Only in the calendar". On a phone the small create sheet is used (it opened the full editor before).
+
+---
+
+## 2026-10-08 — Calendar: the time in the title
+
+- Writing "20:00 Choir", "19:30-21 Choir", "20 Uhr Choir" or "Choir um 20 Uhr" as the title sets the time and keeps only "Choir" (quick create, the full editor, tasks too). A colon or "Uhr"/"h" is needed, so "5 friends" stays a title. The length stays (1 hour for a whole-day start) unless an end is written.
+
+---
+
+## 2026-10-08 — Android: a warning when the backup has not worked for days
+
+- After 3 days without a successful backup the app shows a notification ("No backup for N days", with the last reason), at most once a day, and removes it once a backup worked. The rule is `staleDays` in the core (tested in `StaleTest`); a phone that never backed up is not warned.
+
+---
+
+## 2026-10-08 — Photos: upload from the Hub
+
+- Photos header › **Upload** adds pictures and videos from this device into the own photos folder `Photos/Uploads` (the folder is made on the first upload; resumable like Files; the grid refreshes). Only shown when the own photos folder is writable (`writable` in `/api/photos/sources`).
+- Files side bar: "Shared with me" heading above the folders others shared.
+
+---
+
+## 2026-10-08 — Android: "Share" to AlvaOS
+
+- Any app's Share sheet now lists **Save to AlvaOS** (`ShareActivity`): choose a shared folder you may write to, the files go into its folder "From phone" (made if needed; a taken name gets "(2)"), with progress, resumable uploads like Files. Core: `HubClient.names/makeFolder`, `Me.shares`, `freeName` (tests in `HubClientTest`, `NamesTest`); screens in `ScreensTest`.
+- Plain text shares are not taken (only files and pictures).
+
+---
+
+## 2026-10-08 — Files: narrow a search by kind and time
+
+- Above search results: Everything / Folders / Pictures / Videos / ... (only kinds that were found) and Any time / Today / Past week / month / year. Done in the browser on what was found.
+
+---
+
+## 2026-10-08 — Birthdays of the contacts in the Calendar
+
+- The Calendar shows a read-only calendar "Birthdays" (yearly, whole day) made from the contacts that have a birthday; nothing is copied or stored. Off with Contacts. Phones show birthdays from their own contacts, so CalDAV does not carry it.
+
+---
+
+## 2026-10-08 — Contacts: the address book of the Hub, with CardDAV
+
+- New Hub app **Contacts** (`hub_contacts.py`, `contacts.js/css`): list, search, favourites, edit form, vCard import/export, a help dialog for syncing a phone. Data: `contacts.json` in the person's folder, as the person.
+- **CardDAV** (`hub_carddav.py`) beside CalDAV; vCards read/written in `hub_vcard.py` (2.1/3.0/4.0 in, 3.0 out, Apple groups and labels, quoted-printable). Discovery: `/.well-known/carddav`, `addressbook-home-set`. Calendar and Contacts can each be off for a person.
+- The app bar, the admin Hub page and the Android app (new tab icon) pick the app up by themselves. Tests: `test_hub_contacts.py`.
+- Not kept from a phone's card: photo, groups, social profiles.
+
+---
+
+## 2026-10-08 — Files: Recent and Starred
+
+- Side bar: **Recent** (the last 40 files opened) and **Starred** (right-click › Star, files and folders). Shown like search results, so open, reveal, share and download work as always. Kept in the browser per person (`localStorage`); not synced between devices yet.
+
+---
+
+## 2026-10-08 — Drop box: the owner sees what came in
+
+- Each upload link counts finished uploads (`new_files`, `last_upload`); `/api/me` returns `new_uploads`; opening Shared links shows "N new files" per link and clears the marks (`POST /api/links/seen`). The sidebar item shows "N new". Test in `test_files_server.py`.
+
+---
+
+## 2026-10-08 · The app and the Hub as one, a backup that keeps up, videos
+
+- Android: the app has the Hub's colours (no wallpaper colours), its line
+  icons (`android/tools/icons.py` makes them from the Hub's), a top bar,
+  cards and buttons of the same shape. Settings, Backup and Apps are lists
+  of rows. In the app the Hub drops its own frame (no drawer, arrows or
+  status line): shared folders as chips, "⋯" for Trash, Shared links and
+  Phones and devices (also under Settings), a Photos card with the backup's
+  state. The Hub's page title is Photos/Trash, and the album chips are
+  styled also when the library is empty.
+- Backup: one sync at a time; a new picture starts one within about a
+  minute (a content trigger, put in line again after each run); a sync that
+  Android ends after ten minutes saves its progress (every five pictures)
+  and the next starts at once; three failed uploads in a row (NAS away)
+  stop the run instead of waiting for each; 'Only while charging'; the
+  Backup tab counts live, per album. Core tests for all of it.
+- CI puts the pictures of every screen on the branch `app-screens`
+  (`git fetch origin app-screens`).
+- Files: videos play (MOV, MKV, 3GP are inline types now), stills of
+  videos in the grid and Photos (`hub_video.py`: ffmpeg on the first and
+  last megabytes), HEIC/TIFF through a JPEG (`/api/preview`), and a
+  converted copy for formats browsers cannot play (`/api/video`,
+  `/api/video/convert`, `/api/video/stream`; H.264 + AAC, 720 p at most,
+  one job at a time, kept in the Hub cache up to 4 GB). ffmpeg reads a
+  temporary copy, the demuxer chosen by the file's extension, no network,
+  low priority. The installer and the package (recommends) bring ffmpeg
+  and libheif-examples; a NAS installed before: `apt install ffmpeg
+  libheif-examples` (Settings › Terminal). Tests: `test_hub_video.py` (with
+  real ffmpeg where it is installed).
+- Photos: favourites (hearts) and albums of one's own (select, add to
+  album, New album, rename, delete, remove from album; the heart in the
+  viewer): lists of pictures in the hidden `Photos/.alvaos/` folder, no
+  copies (`hub_albums.py`, tests in `test_hub_albums.py`).
+- **Note for next time:** the converted copy is made from a full temporary
+  copy of the video (ffmpeg needs to seek), so a conversion needs the free
+  space of the video once; below that it says so. The app screens could not
+  be looked at on a real phone yet; the pictures from CI are close but not
+  the same as a real device.
+
 ## 2026-10-07 · Roadmap: the app and the Hub as one; the app's Play name
 
 - From the first test of the app on a phone (beta-v0.2.0): native screens and

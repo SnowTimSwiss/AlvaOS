@@ -140,7 +140,8 @@ def test_calendar_off_means_no_sync_and_nothing_strange_is_accepted(dav):
     assert dav.open("/dav/anna/new/", method="MKCALENDAR", headers=ANNA).status_code == 403
     assert dav.delete("/dav/anna/own.main/", headers=ANNA).status_code == 403
     hub_apps.save({"apps": {"calendar": {"people": ["ben"]}}}, ["anna", "ben"])
-    assert dav.open("/dav/anna/", method="PROPFIND", headers=ANNA).status_code == 403
+    assert dav.open("/dav/anna/own.main/", method="PROPFIND", headers=ANNA).status_code == 403
+    assert "own.main" not in ok(dav.open("/dav/anna/", method="PROPFIND", headers=ANNA))   # only Contacts is left
 
 
 def test_a_phone_may_rename_and_recolour_a_calendar(dav):

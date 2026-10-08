@@ -65,7 +65,7 @@ storage healthy, one shared folder.
    Select: draw a rectangle with the mouse from an empty spot over a few
    files (Ctrl or Shift adds to the selection); the bar on top shows them
    and nothing below it moves. Click beside the files: nothing is selected.
-   Shared links, Trash, Connect a computer and Phones and devices sit at
+   Shared links, Trash and Devices sit at
    the bottom of the side bar, above your name and "Sign out".
    Delete a file, then Trash: it opens like a folder (not a window), with
    where it was and when; switch between your shared folders at the top,
@@ -138,27 +138,39 @@ storage healthy, one shared folder.
    Restore points › the copies are listed ("On the backup disk"); "Get
    files" works while it is connected. Unplugged, Storage shows it as
    "Backup disk · Not connected" and no alarm goes off.
-4. Buddy Backup with a second AlvaOS (a second VM) if you have one.
+4. Buddy Backup with a second AlvaOS (a second VM) if you have one, both
+   with AlvaOS Link on and **no router setting on either side**: on the
+   first, Backup › Buddy › make a pairing token; on the second paste it.
+   Both list each other (status "Connected", then the time last seen).
+   Start a backup: it runs through Link (a direct connection when
+   possible; slower through a relay). A buddy paired before the update says
+   "repair": pair again. Settings › AlvaOS Link lists the buddy, too.
+   Recovery kit: make one, restore on a fresh NAS: the Link address stays.
 
-## 7. Remote access (Tailscale, Cloudflare Tunnel)
+## 7. AlvaOS Link (away from home)
 
-1. Settings › Remote access › Tailscale on. After a minute "Sign in to
-   Tailscale" appears; sign in (or make a free account). The page then
-   shows the NAS's Tailscale address. Install the Tailscale app on a phone,
-   sign in with the same account, turn off Wi-Fi (mobile data) and open
-   `http://<Tailscale address>:8080` (AlvaOS) and `:8090` (the Hub). The
-   phone shows up under "Devices in your Tailscale network".
-2. Restart the NAS: Tailscale comes back by itself, still signed in.
-   Tailscale off: the phone can no longer reach the NAS from outside.
-3. Cloudflare (needs a domain in a Cloudflare account): make an API token
-   with "Cloudflare Tunnel: Edit" and "DNS: Edit", paste it, "Find my
-   domains", name `cloud`, "Put the Hub there". Within two minutes
-   `https://cloud.<domain>` shows the Hub sign-in from a phone on mobile
-   data; a share link copied in the Hub starts with that address. The
-   admin pages are not reachable there. Remove: the DNS name and the tunnel
-   are gone in the Cloudflare dashboard.
-4. A NAS that had the old WireGuard remote access on: after the update the
-   bell says it works differently now, `ip link` shows no `remote0`.
+Needs the NAS with the internet and a phone on mobile data (Wi-Fi off).
+
+1. `systemctl status alvaos-link` is active. Settings › AlvaOS Link
+   shows the switch on, the sentence "Phones and buddies can reach this NAS
+   from anywhere" and a Link address (a long code, shown short).
+2. Switch off: the sentence says it is off, `systemctl status` still runs
+   but nothing connects. On again: running within a few seconds.
+3. Hub › Devices › show the QR code: its text under the code says
+   the phone also works away. Scan it with the app **on mobile data** (not
+   at home): "Connecting…" then the Hub opens. The settings of the app say
+   "Through AlvaOS Link". The NAS list under AlvaOS Link names the phone.
+4. Pair the phone at home, then switch Wi-Fi off: the Hub, Files and the
+   photo backup keep working (the first start away can take some seconds).
+5. Devices › sign the phone out: it is gone from the list under
+   AlvaOS Link and can no longer reach the NAS.
+6. No router setting was needed anywhere, and no account.
+7. The app build without the Link library (CI step "Build the Link library
+   failed"): the app still works at home; settings say "not available in
+   this build".
+8. A NAS that had the old Remote access (Tailscale, Cloudflare, WireGuard)
+   on: after the update there is no Remote access page, `ip link` shows no
+   `remote0`, and old buddies show "repair" (see 6, step 4).
 
 ## 8. Apps
 
@@ -307,7 +319,7 @@ storage healthy, one shared folder.
    › the newest run › Artifacts › `alvaos-android`, unzip). Install it
    (allow "install unknown apps" for the browser once). Once the upload key
    is set up (`docs/ANDROID.md`), uninstall the old debug build once.
-2. On a computer open the Hub, side bar › **Phones and devices** › Connect
+2. On a computer open the Hub, side bar › **Devices** › Connect
    a phone: a QR code and a code appear. In the app tap **Scan the QR
    code** and point it at the code: the app connects without a password
    and shows the Hub; the computer says "<phone> is connected" and lists
@@ -319,7 +331,7 @@ storage healthy, one shared folder.
    Chat, the store apps) works as in the browser; downloading a file lands
    in Downloads; uploading opens the phone's file picker; there is no
    "Sign out" in the Hub (it is in the app's Settings).
-4. In the Hub on the computer › Phones and devices: rename the phone, then
+4. In the Hub on the computer › Devices: rename the phone, then
    **Sign out**: opening the app again says it was signed out on the NAS.
    Connect it again.
 5. The **Backup** tab › Set up backup: allow pictures. Choose two albums
@@ -328,8 +340,18 @@ storage healthy, one shared folder.
    Photos the albums appear above the timeline (Camera · <phone>); the files
    are in Files › own folder › Photos › <phone> › <album>, with the date
    they were taken.
-6. Take a new photo, tap "Back up now": it is on the NAS a minute later.
-   Tap it again: nothing is uploaded twice.
+6. Take a new photo and **wait**, without tapping anything: within a minute
+   or two (Wi-Fi, screen off is fine) it is on the NAS. That is the watcher
+   for new pictures; "Back up now" does the same at once. Tap it again:
+   nothing is uploaded twice. With "Only while charging" on (Settings) a new
+   picture waits until the charger is plugged in; the Backup tab says
+   "Waiting for the charger".
+6a. A big first backup (hundreds of pictures): the Backup tab counts up
+    live ("Backing up 120 of 600", each album "x of y backed up"). Lock the
+    phone and wait ten minutes or more: it goes on by itself (Android ends
+    a background job after ten minutes; the app starts the next one at
+    once). Turn the NAS off in the middle: the tab says "Waiting for the
+    NAS", turn it on, and it goes on without anything from you.
 7. Delete a backed-up photo **on the phone** (Gallery, and empty the
    phone's own trash if it has one), "Back up now": on the NAS it is in
    the trash of the personal folder, not gone.
@@ -347,6 +369,49 @@ storage healthy, one shared folder.
 12. Turn the phone's Wi-Fi off with "Only on Wi-Fi" on: no backup on mobile
     data until Wi-Fi is back.
 
+## 12c. The app and the Hub look as one
+
+1. In the app, Files: no side bar, no arrows, no status line at the bottom;
+   the title is the folder; the shared folders are chips under the bar (when
+   there is more than one); "⋯" has Show as a list, Shared links, Trash,
+   Devices. The phone's back gesture goes up a folder.
+2. Photos: the title says Photos, a card shows the backup ("Backing up 16 of
+   32" with a bar, or "120 pictures backed up"; Open goes to the Backup
+   tab), the albums are chips, an empty library fills the width.
+3. Backup and Settings look like the Hub (the same blues, cards, icons)
+   in light and dark; the colours do not follow the wallpaper.
+4. Settings › Trash opens Files with the trash; Devices opens
+   the list.
+
+## 12e. Photos: favourites and albums
+
+1. Photos › Select › tap a few pictures › Add to album › New album "Summer":
+   the album opens with them; its chip is in the row; Photos in the app too.
+2. Open a picture: the heart in the bar makes it a favourite (a small heart
+   on its tile); the Favourites chip lists them; Select › "Remove heart".
+3. In an album: Rename, Delete album (the pictures stay), Select › Remove
+   from album. Add the same picture twice: it is there once.
+4. A picture moved or deleted in Files drops out of its albums by itself.
+5. Another person does not see these albums (they are in your own Photos
+   folder, hidden); in Files they are `.alvaos` under Photos.
+
+## 12d. Videos and more picture formats (browser and app)
+
+1. Put an MP4 from a phone, a MOV, an MKV, an old AVI and a HEIC or TIFF
+   picture in a folder: the grid shows a still of each video with a small
+   play mark, and the pictures as pictures. Photos shows the videos in the
+   timeline too.
+2. Open the MP4/MOV/MKV: it plays (the first frames can take a moment on a
+   big file); in the app the full-screen button works and the back gesture
+   leaves full screen.
+3. Open the AVI: "This video cannot be played in the browser as it is". Press
+   "Make a copy that plays here": "Converting… 35%" and then it plays. Close
+   and open it again: it plays at once (the copy is kept).
+4. On a NAS without ffmpeg (`which ffmpeg` in Settings › Terminal) the AVI
+   says so and offers Download; MP4/WebM/MOV/MKV still play.
+5. The HEIC/TIFF opens as a picture (HEIC needs `libheif-examples`; the
+   installer brings it).
+
 ## 13. Updates
 
 1. Updates › check. When a newer signed release exists: install it; the
@@ -357,3 +422,65 @@ storage healthy, one shared folder.
 
 For each problem: the step number, what you expected, what happened, and if
 possible a screenshot. Settings › Diagnostics has the logs.
+
+## 12f Drop box notice
+
+1. Make an upload link for a folder (Share link › Upload only) and open it in a private window.
+2. Upload two files. In the Hub, Shared links shows "2 new" (reload once).
+3. Open Shared links: the link says "2 new files"; close and reopen: the mark is gone.
+
+## 12g Recent and Starred
+
+1. Open two files in Files. Side bar › Recent lists them, the newest first.
+2. Right-click a folder › Star. Side bar › Starred shows it; open it from there. Right-click again › Remove from Starred.
+3. Sign in as another person in the same browser: the lists are different.
+
+## 12h Contacts
+
+1. Hub › Contacts: New contact (name, a phone number, an email, a birthday), Save; Edit, heart, Delete (asks twice).
+2. Menu › Import a vCard file: export your contacts from your phone or Google as .vcf and import them. Import it again: "0 added".
+3. iPhone: Settings › Contacts › Accounts › Add Account › Other › Add CardDAV Account; server = the Hub address, your AlvaOS name and password. The contacts appear. Change one on the phone, reload the Hub: the change is there. Change one in the Hub, pull to refresh on the phone.
+4. Android: DAVx5, URL `https://<nas>:9443/dav/`; tick Contacts. Same checks.
+5. Hub › Settings (admin) › Hub: turn Contacts off for someone: their phone says it is not turned on for them.
+
+6. Contacts: give a contact a birthday; Calendar then lists "Birthdays" (read only) with a yearly all-day entry.
+
+## 12i Search filters
+
+Search for a word that matches different kinds of files. The chips above the results narrow them by kind and by when they changed; a kind that was not found has no chip.
+
+## 12j Share to AlvaOS (Android)
+
+1. In the phone's gallery or a file manager: select a picture and a PDF › Share › Save to AlvaOS.
+2. Choose a shared folder: "Saving 1 of 2", then "2 files saved". In the Hub, Files › that folder › From phone has both.
+3. Share the same files again: they arrive as "name (2).jpg" (nothing is overwritten).
+4. Switch the phone to flight mode half-way through a large file: it should say "That did not work" and offer to try again.
+
+## 12k Photos upload
+
+Photos › Upload: choose a few pictures from the computer or phone. They appear in the timeline (newest by their own date) and are in Files › your photos › Uploads.
+
+## 12l Backup warning
+
+Switch off the NAS (or the Hub) for three days with backup on and the phone online: a notification "No backup for 3 days" appears once a day; after the NAS is back and a backup worked, it goes away. (Shortcut: set the phone's clock three days ahead.)
+
+## 12m Time in the title
+
+Calendar › Create: type `20:00 Choir` as the title › Save: the event is at 20:00 and called Choir. Try `19:30-21 Choir`, `Choir um 20 Uhr`, and `5 friends` (stays a title).
+
+## 12n Add a birthday
+
+Calendar › Create › Birthday: type a name and a year; choose "And make a new contact": the contact exists and the Birthdays calendar shows it. Again with "Add to a contact" and with "Only in the calendar" (a yearly entry in your own calendar). Try it on the phone too.
+
+## 12o Quick wins
+
+1. Calendar › Birthdays › the menu next to it: pick a colour. A contact born in 1985 shows "(41)".
+2. Files: search, then the size chips narrow the results.
+3. Share a folder with another person: in their Files side bar it says New until they open it.
+
+## 12p Link on the phone
+
+1. Install the app from CI, scan a QR code at home, then leave Wi-Fi: the
+   Hub opens (see 7). Settings › "AlvaOS Link: On …".
+2. A build without the library: settings say "not available in this build";
+   nothing else breaks.

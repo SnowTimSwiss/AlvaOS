@@ -143,8 +143,8 @@ def test_security_headers_on_api_and_ui(backend):
 
 # ── Buddy peer-to-peer endpoints ─────────────────────────────────────────────
 
-PEER_TUNNEL_IP = "100.95.95.77"
-OTHER_TUNNEL_IP = "100.95.95.78"
+PEER_TUNNEL_IP = "127.95.1.77"
+OTHER_TUNNEL_IP = "127.95.1.78"
 
 
 @pytest.fixture
@@ -551,8 +551,8 @@ def test_the_admin_turns_hub_apps_on_and_off_and_chooses_who_sees_them(backend, 
     client = module.app.test_client()
     hub = client.get("/api/v1/hub", headers=headers).get_json()
     assert hub["name"] == "AlvaOS Hub" and hub["people"] == ["anna", "ben"]
-    assert [a["id"] for a in hub["apps"]] == ["files", "photos", "calendar", "chat"] and hub["apps"][0]["enabled"]
-    assert hub["apps"][3]["enabled"] is False and hub["chat_service"]["ready"] is False
+    assert [a["id"] for a in hub["apps"]] == ["files", "photos", "calendar", "contacts", "chat"] and hub["apps"][0]["enabled"]
+    assert hub["apps"][4]["enabled"] is False and hub["chat_service"]["ready"] is False
     changed = client.post("/api/v1/hub", json={"apps": {"photos": {"enabled": False}, "files": {"people": ["anna"]}}},
                           headers=headers).get_json()
     apps = {a["id"]: a for a in changed["apps"]}
@@ -677,3 +677,28 @@ def test_terminal_tickets_and_service_restarts_are_for_admins(backend, monkeypat
     assert ok.status_code == 200 and ran == [["/usr/bin/systemctl", "restart", "alvaos-files.service"]]
     auth_manager._destroy_session(token)
     assert not auth_manager.admin_signed_in(token)
+
+
+def test_the_admin_sees_and_switches_alvaos_link(backend, monkeypatch):
+    import link_client
+    module, state = backend
+    set_up(state)
+    token = auth_manager._create_session("root", role="admin")
+    headers = {"Authorization": token, "X-CSRF-Token": auth_manager.SESSIONS[token]["csrf_token"]}
+    client = module.app.test_client()
+    monkeypatch.setattr(link_client, "status", lambda: None)
+    assert client.get("/api/v1/link", headers=headers).get_json()["available"] is False
+    assert client.post("/api/v1/link", json={"enabled": True}, headers=headers).status_code in (400, 503)
+    status = {"enabled": True, "running": True, "node_id": "ab" * 32, "relay": "https://relay.example/",
+              "peers": [{"id": "cd" * 32, "kind": "phone", "name": "Pixel", "user": "anna", "alias": "127.95.1.1",
+                         "connected": True, "last_seen": 1.0}]}
+    monkeypatch.setattr(link_client, "status", lambda: status)
+    got = client.get("/api/v1/link", headers=headers).get_json()
+    assert got["available"] and got["running"] and got["online"] and got["node_id"] == "ab" * 32
+    assert got["peers"] == [{"id": "cd" * 32, "kind": "phone", "name": "Pixel", "user": "anna", "connected": True, "last_seen": 1.0}]
+    monkeypatch.setattr(link_client, "set_enabled", lambda on: {**status, "enabled": on, "running": on})
+    off = client.post("/api/v1/link", json={"enabled": False}, headers=headers).get_json()
+    assert off["success"] and off["enabled"] is False and off["running"] is False
+    assert client.post("/api/v1/link", json={"enabled": "yes"}, headers=headers).status_code == 400
+    # Not for people who are not the admin.
+    assert module.app.test_client().get("/api/v1/link").status_code in (401, 403)

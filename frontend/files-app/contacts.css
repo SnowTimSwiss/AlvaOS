@@ -1,0 +1,70 @@
+/* Contacts in the AlvaOS Hub (contacts.js). */
+.view.contacts { display: grid; grid-template-columns: 330px minmax(0, 1fr); background: var(--panel); }
+.ct-side { background: var(--side); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; padding: 10px 8px 14px; position: relative; }
+.ct-top { display: flex; align-items: center; gap: 4px; padding: 2px 2px 8px; position: relative; }
+.ct-search { flex: 1; display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 0 10px; color: var(--muted); }
+.ct-search svg { width: 16px; height: 16px; flex: none; }
+.ct-search input { flex: 1; min-width: 0; border: none; outline: none; background: none; font: inherit; color: var(--text); padding: 9px 0; }
+.ct-menu { position: absolute; right: 2px; top: 46px; z-index: 30; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); padding: 4px; min-width: 220px; }
+.ct-menu button { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: none; font: inherit; font-size: 0.88rem; padding: 9px 10px; border-radius: 6px; cursor: pointer; color: var(--text); text-align: left; }
+.ct-menu button:hover { background: var(--hover); }
+.ct-menu svg { width: 16px; height: 16px; }
+.ct-new { display: flex; align-items: center; gap: 10px; margin: 0 2px 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); font: inherit; font-weight: 600; font-size: 0.9rem; cursor: pointer; color: var(--text); }
+.ct-new:hover { background: var(--hover); }
+.ct-new svg { width: 18px; height: 18px; }
+.ct-list { flex: 1; overflow-y: auto; min-height: 0; padding: 0 2px; }
+.ct-letter { font-size: 0.72rem; font-weight: 600; color: var(--faint); padding: 12px 10px 4px; }
+.ct-row { display: flex; align-items: center; gap: 12px; width: 100%; border: none; background: none; font: inherit; color: var(--text); text-align: left; padding: 7px 10px; border-radius: 8px; cursor: pointer; }
+.ct-row:hover { background: var(--hover); }
+.ct-row.active { background: var(--sel); }
+.ct-row-text { display: flex; flex-direction: column; min-width: 0; }
+.ct-row-text strong { font-weight: 500; font-size: 0.92rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ct-row-text small { color: var(--muted); font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ct-avatar { flex: none; width: 36px; height: 36px; border-radius: 50%; color: #fff; display: grid; place-items: center; font-weight: 600; font-size: 0.95rem; }
+.ct-avatar.big { width: 72px; height: 72px; font-size: 1.9rem; }
+.ct-empty-list { color: var(--faint); font-size: 0.85rem; padding: 14px 10px; }
+.ct-side .side-foot { margin-top: 8px; }
+
+.ct-main { min-width: 0; min-height: 0; overflow-y: auto; }
+.ct-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--muted); height: 100%; padding: 24px; text-align: center; }
+.ct-empty svg { width: 40px; height: 40px; color: var(--faint); }
+.ct-empty p { max-width: 380px; line-height: 1.5; margin: 0; }
+.ct-bar { display: flex; align-items: center; gap: 8px; padding: 10px 16px; min-height: 56px; }
+.ct-grow { flex: 1; }
+.ct-title { font-size: 1.05rem; font-weight: 600; margin: 0; }
+.ct-back { display: none; }
+.ct-bar .on { color: var(--danger); }
+.ct-card { max-width: 640px; margin: 0 auto; padding: 8px 24px 40px; }
+.ct-head { display: flex; align-items: center; gap: 18px; padding: 8px 0 20px; }
+.ct-head h2 { margin: 0; font-size: 1.5rem; font-weight: 600; overflow-wrap: anywhere; }
+.ct-sub { color: var(--muted); margin-top: 2px; }
+.ct-lines { border-top: 1px solid var(--line); }
+.ct-line { display: flex; gap: 16px; padding: 12px 2px; border-bottom: 1px solid var(--line); align-items: flex-start; }
+.ct-line > svg { width: 18px; height: 18px; color: var(--muted); margin-top: 2px; flex: none; }
+.ct-line a { color: var(--accent); text-decoration: none; overflow-wrap: anywhere; }
+.ct-line a:hover { text-decoration: underline; }
+.ct-line small { display: block; color: var(--faint); font-size: 0.76rem; margin-top: 1px; }
+.ct-multi { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.ct-form label { display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; color: var(--muted); }
+.ct-form input, .ct-form textarea, .ct-form select { font: inherit; font-size: 0.92rem; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+.ct-form input:focus, .ct-form textarea:focus, .ct-form select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.ct-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px; }
+.ct-grid.one { grid-template-columns: 1fr; margin-top: 12px; }
+.ct-set { border: none; padding: 0; margin: 14px 0 0; }
+.ct-set legend { font-size: 0.78rem; color: var(--muted); padding: 0; margin-bottom: 6px; }
+.ct-entry { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 8px; margin-bottom: 8px; align-items: start; }
+.ct-set .link { display: inline-flex; align-items: center; gap: 4px; }
+.ct-set .link svg { width: 14px; height: 14px; }
+.ct-error { color: var(--danger); min-height: 1.2em; margin: 12px 0 0; }
+
+@media (max-width: 760px) {
+    .view.contacts { grid-template-columns: 1fr; }
+    .view.contacts .ct-main { display: none; }
+    .view.contacts.open .ct-side { display: none; }
+    .view.contacts.open .ct-main { display: block; }
+    .ct-back { display: inline-flex; }
+    .ct-card { padding: 8px 16px 40px; }
+    .ct-grid { grid-template-columns: 1fr; }
+    .ct-entry { grid-template-columns: 84px minmax(0, 1fr) auto; }
+}

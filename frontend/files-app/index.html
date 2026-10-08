@@ -10,6 +10,7 @@
     <link rel="apple-touch-icon" href="hub.svg">
     <link rel="stylesheet" href="app.css">
     <link rel="stylesheet" href="calendar.css">
+    <link rel="stylesheet" href="contacts.css">
     <link rel="stylesheet" href="chat.css">
 </head>
 <body>
@@ -36,12 +37,15 @@
                 <img src="icon.svg" alt="" width="30" height="30">
                 <div><h1 class="side-title">Files</h1><div class="side-nas" id="nas-name"></div></div>
             </div>
+            <div class="side-tools top">
+                <button type="button" class="side-item" id="recent-nav"><span class="ic" data-icon="clock"></span><span>Recent</span></button>
+                <button type="button" class="side-item" id="starred-nav"><span class="ic" data-icon="star"></span><span>Starred</span></button>
+            </div>
             <nav class="side-list" id="share-list" aria-label="Shared folders"></nav>
             <div class="side-tools">
-                <button type="button" class="side-item" id="links-nav"><span class="ic" data-icon="link"></span><span>Shared links</span></button>
+                <button type="button" class="side-item" id="links-nav"><span class="ic" data-icon="link"></span><span>Shared links</span><span class="ro new-badge" id="links-badge" hidden></span></button>
                 <button type="button" class="side-item" id="trash-nav"><span class="ic" data-icon="trash"></span><span>Trash</span></button>
-                <button type="button" class="side-item" id="connect-nav"><span class="ic" data-icon="monitor"></span><span>Connect a computer</span></button>
-                <button type="button" class="side-item" id="devices-nav"><span class="ic" data-icon="phone"></span><span>Phones and devices</span></button>
+                <button type="button" class="side-item" id="devices-nav"><span class="ic" data-icon="phone"></span><span>Devices</span></button>
             </div>
             <div class="space" id="space" hidden></div>
             <div class="side-foot">
@@ -52,6 +56,7 @@
         <div class="scrim" id="scrim" hidden></div>
         <!-- Calendar and Chat (calendar.js, chat.js) draw themselves here. -->
         <div class="view cal" id="calendar-view" hidden></div>
+        <div class="view contacts" id="contacts-view" hidden></div>
         <div class="view chat" id="chat-view" hidden></div>
 
         <main class="main" id="main">
@@ -79,6 +84,10 @@
                         <button type="button" class="icon-btn" id="view-grid" aria-label="Grid" title="Grid"><span data-icon="grid"></span></button>
                         <button type="button" class="icon-btn" id="view-list" aria-label="List" title="List"><span data-icon="list"></span></button>
                     </div>
+                    <div class="new-wrap more-wrap">
+                        <button type="button" class="icon-btn" id="more-btn" aria-label="More" title="More" aria-haspopup="menu" aria-expanded="false"><span data-icon="more"></span></button>
+                        <div class="menu" id="more-menu" hidden role="menu" aria-label="More"></div>
+                    </div>
                     <div class="new-wrap">
                         <button type="button" class="btn primary" id="new-btn"><span data-icon="plus"></span><span class="hide-phone">New</span></button>
                         <div class="menu" id="new-menu" hidden role="menu">
@@ -88,14 +97,20 @@
                         </div>
                     </div>
                     <input type="file" id="file-input" multiple hidden>
+                    <input type="file" id="photo-input" accept="image/*,video/*,.heic,.heif" multiple hidden>
                     <input type="file" id="folder-input" webkitdirectory multiple hidden>
                 </div>
             </header>
+
+            <div class="chips" id="share-chips" role="group" aria-label="Shared folders" hidden></div>
 
             <div class="selbar" id="selbar" hidden>
                 <button type="button" class="icon-btn" id="sel-clear" aria-label="Clear selection"><span data-icon="x"></span></button>
                 <span id="sel-count"></span>
                 <div class="selbar-actions">
+                    <button type="button" class="btn ghost" id="sel-fav" hidden><span data-icon="heart"></span><span class="hide-phone">Favourite</span></button>
+                    <button type="button" class="btn ghost" id="sel-album" hidden><span data-icon="folder-plus"></span><span class="hide-phone">Add to album</span></button>
+                    <button type="button" class="btn ghost" id="sel-unalbum" hidden><span data-icon="x"></span><span class="hide-phone">Remove from album</span></button>
                     <button type="button" class="btn ghost" id="sel-download"><span data-icon="download"></span><span class="hide-phone">Download</span></button>
                     <button type="button" class="btn ghost" id="sel-rename"><span data-icon="pen"></span><span class="hide-phone">Rename</span></button>
                     <button type="button" class="btn ghost danger" id="sel-delete"><span data-icon="trash"></span><span class="hide-phone">Delete</span></button>
@@ -119,6 +134,7 @@
             <span class="viewer-title" id="viewer-title"></span>
             <button type="button" class="vbtn" id="viewer-edit" hidden><span data-icon="pen"></span><span class="hide-phone">Edit</span></button>
             <button type="button" class="vbtn" id="viewer-save" hidden><span data-icon="check"></span><span>Save</span></button>
+            <button type="button" class="vbtn" id="viewer-fav" hidden aria-label="Favourite"><span data-icon="heart"></span></button>
             <button type="button" class="vbtn" id="viewer-download"><span data-icon="download"></span><span class="hide-phone">Download</span></button>
         </div>
         <div class="viewer-body" id="viewer-body"></div>
@@ -132,6 +148,7 @@
 
     <script src="app.js"></script>
     <script src="calendar.js"></script>
+    <script src="contacts.js"></script>
     <script src="chat.js"></script>
 </body>
 </html>

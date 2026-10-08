@@ -1111,7 +1111,6 @@ class UpdateManager:
         # 3. Detect and temporarily mount removable devices
         if platform.system() == "Linux":
             try:
-                # Get removable devices from lsblk
                 result = subprocess.run(
                     [CMD['LSBLK'], '-J', '-o', 'NAME,MOUNTPOINT,RM,TYPE,FSTYPE'],
                     capture_output=True, text=True, timeout=5
@@ -1139,7 +1138,6 @@ class UpdateManager:
             except Exception as e:
                 print(f"Error during USB scan: {e}")
 
-        # Remove duplicates by full path
         unique_packages = []
         seen_paths = set()
         for p in packages:

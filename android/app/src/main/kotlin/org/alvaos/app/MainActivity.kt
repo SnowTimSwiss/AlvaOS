@@ -2,10 +2,14 @@ package org.alvaos.app
 
 import android.Manifest
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Typeface
+import android.content.res.ColorStateList
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
+import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
@@ -28,7 +32,6 @@ import androidx.lifecycle.lifecycleScope
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.google.android.material.bottomnavigation.BottomNavigationView
-import com.google.android.material.checkbox.MaterialCheckBox
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.mlkit.vision.barcode.common.Barcode
@@ -37,18 +40,22 @@ import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.alvaos.photos.AlbumProgress
 import org.alvaos.photos.DeviceInfo
 import org.alvaos.photos.HubClient
 import org.alvaos.photos.HubException
 import org.alvaos.photos.Me
+import org.alvaos.photos.Paired
 import org.alvaos.photos.PairLink
 import org.alvaos.photos.SyncEngine
+import org.alvaos.photos.albumProgress
 import com.google.android.material.R as M
 
 /**
- * The AlvaOS app. Signed out: connect with the QR code of the Hub (or a code,
- * or name and password). Signed in, three tabs: the Hub with every app the
- * person has on the NAS, the photo backup, and the settings.
+ * The AlvaOS app. Signed out: connect with the QR code of the Hub (or a code, or name and
+ * password). Signed in, one bar at the bottom: the Hub apps the person has (Files, Photos, …,
+ * the Hub itself inside), the photo backup and the settings. The native screens look like the
+ * Hub (Ui.kt), so it reads as one app.
  */
 class MainActivity : AppCompatActivity() {
     private lateinit var store: Store
@@ -56,18 +63,25 @@ class MainActivity : AppCompatActivity() {
     private lateinit var ui: Ui
     private lateinit var frame: FrameLayout
     private lateinit var nav: BottomNavigationView
+    private lateinit var statusBar: View
     private var hub: HubPage? = null
     private var tab = TAB_HUB
     private val tabApps = mutableMapOf<Int, String>()   // tab → the Hub app it shows
     private var appsOpen: String? = null               // a Hub app opened from the Apps tab
     private var navKey = ""
-    private var choosing = false               // the album list is open in the Backup tab
+    private var choosing = false                       // the album list is open in the Backup tab
     private var bars = WindowInsetsCompat.CONSUMED
     private var afterDelete: ((List<String>) -> Unit)? = null
     private var deleting: List<String> = emptyList()
     private var autoDeleted = false
     private var fileCallback: ValueCallback<Array<Uri>>? = null
     private var backupProgress: Pair<Int, Int>? = null
+
+    // The Backup tab, redrawn in parts while a backup runs.
+    private var statusHost: LinearLayout? = null
+    private var albumsHost: LinearLayout? = null
+    private var albums: List<AlbumProgress>? = null
+    private var albumsAt = 0L
 
     companion object {
         const val TAB_HUB = 1
@@ -99,18 +113,31 @@ class MainActivity : AppCompatActivity() {
         SyncWorker.channels(this)
 
         frame = FrameLayout(this)
+        statusBar = View(this)
         nav = BottomNavigationView(this).apply {
             labelVisibilityMode = BottomNavigationView.LABEL_VISIBILITY_LABELED
+            // The Hub's own bar: the side colour, the selection in blue, the same line icons.
+            setBackgroundColor(ui.color(M.attr.colorSurfaceContainer))
+            itemActiveIndicatorColor = ColorStateList.valueOf(ui.color(M.attr.colorPrimaryContainer))
+            val on = ui.color(M.attr.colorOnSurface)
+            val off = ui.color(M.attr.colorOnSurfaceVariant)
+            val tint = ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()), intArrayOf(on, off))
+            itemIconTintList = tint
+            itemTextColor = tint
             setOnItemSelectedListener { item -> tab = item.itemId; choosing = false; appsOpen = null; show(); true }
             setOnItemReselectedListener { if (appsOpen != null || choosing) { appsOpen = null; choosing = false; show() } }
         }
         buildNav()
+        val line = View(this).apply { setBackgroundColor(ui.color(M.attr.colorOutlineVariant)) }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(ui.color(M.attr.colorSurface))
+            addView(statusBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0))
             addView(frame, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+            addView(line, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ui.dp(1)))
             addView(nav, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
+        nav.tag = line
         // Android draws the app under the status bar and the gesture bar; keep the content clear of them.
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             bars = insets
@@ -124,6 +151,7 @@ class MainActivity : AppCompatActivity() {
                 val page = hub
                 val first = nav.menu.getItem(0).itemId
                 when {
+                    page != null && page.inFullscreen() -> page.exitFullscreen()
                     choosing -> { choosing = false; show() }
                     showsHub() && page != null && page.canGoBack() -> page.goBack()
                     appsOpen != null -> { appsOpen = null; show() }
@@ -135,13 +163,13 @@ class MainActivity : AppCompatActivity() {
 
         // The backup's progress, live in the Backup tab.
         val work = WorkManager.getInstance(this)
-        for (name in listOf(SyncWorker.NOW, SyncWorker.PERIODIC)) {
+        for (name in listOf(SyncWorker.NOW, SyncWorker.PERIODIC, SyncWorker.WATCH, SyncWorker.MORE)) {
             work.getWorkInfosForUniqueWorkLiveData(name).observe(this) { infos ->
                 val running = infos.firstOrNull { it.state == WorkInfo.State.RUNNING }
-                val next = running?.progress?.let { it.getInt("done", 0) to it.getInt("total", 0) }
+                val next = running?.progress?.let { it.getInt("done", 0) to it.getInt("total", 0) } ?: SyncWorker.live
                 if (next != backupProgress) {
                     backupProgress = next
-                    if (tab == TAB_BACKUP && !choosing && store.signedIn) show()
+                    if (tab == TAB_BACKUP && !choosing && store.signedIn) backupChanged()
                 }
             }
         }
@@ -158,11 +186,12 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         if (!store.signedIn) return
         if (!showsHub()) show()
+        if (store.backupOn) SyncWorker.schedule(this)         // the watchers survive an update of the app
         deleteWhatTheNasDeleted()
-        // Which apps the person has now, or signed out on the NAS (Phones and devices › Sign out, a new password)?
+        // Which apps the person has now, or signed out on the NAS (Devices › Sign out, a new password)?
         lifecycleScope.launch {
             val answer: Any? = withContext(Dispatchers.IO) {
-                try { store.pickServer(); store.hub().me() }
+                try { store.pickServer(); LinkService.register(store, store.hub()); store.hub().me() }
                 catch (e: HubException) { if (e.signedOut) "out" else null }
                 catch (e: Exception) { null }
             }
@@ -179,7 +208,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun pad() {
         val i = bars.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
-        frame.setPadding(i.left, i.top, i.right, if (nav.visibility == View.VISIBLE) 0 else i.bottom)
+        // The bar's colour continues under the status bar.
+        statusBar.layoutParams = (statusBar.layoutParams as LinearLayout.LayoutParams).apply { height = i.top }
+        statusBar.setBackgroundColor(ui.color(
+            if (store.signedIn) M.attr.colorSurfaceContainerHigh else M.attr.colorSurface))
+        frame.setPadding(i.left, 0, i.right, if (nav.visibility == View.VISIBLE) 0 else i.bottom)
     }
 
     private fun handle(intent: Intent?) {
@@ -192,14 +225,16 @@ class MainActivity : AppCompatActivity() {
 
     private fun show(message: String = "") {
         frame.removeAllViews()
-        if (!store.signedIn) {
-            nav.visibility = View.GONE
-            pad()
+        statusHost = null
+        albumsHost = null
+        val signed = store.signedIn
+        nav.visibility = if (signed) View.VISIBLE else View.GONE
+        (nav.tag as? View)?.visibility = nav.visibility
+        pad()
+        if (!signed) {
             signIn(message)
             return
         }
-        nav.visibility = View.VISIBLE
-        pad()
         // Only marks the tab: setting selectedItemId here would call this again and again.
         nav.menu.findItem(tab)?.isChecked = true
         when (tab) {
@@ -213,10 +248,11 @@ class MainActivity : AppCompatActivity() {
     private fun showsHub() = tab == TAB_HUB || tab in tabApps || (tab == TAB_APPS && appsOpen != null)
 
     private fun iconFor(name: String) = when (name) {
-        "folder" -> R.drawable.ic_folder
-        "image" -> R.drawable.ic_photos
-        "calendar" -> R.drawable.ic_calendar
-        "message-circle" -> R.drawable.ic_chat
+        "folder" -> R.drawable.ic_tab_files
+        "image" -> R.drawable.ic_tab_photos
+        "calendar" -> R.drawable.ic_tab_calendar
+        "contact" -> R.drawable.ic_tab_contacts
+        "message-circle" -> R.drawable.ic_tab_chat
         else -> R.drawable.ic_tab_hub
     }
 
@@ -279,12 +315,12 @@ class MainActivity : AppCompatActivity() {
         ui.space(page, 12)
         when (mode) {
             Mode.Start -> {
-                ui.feature(page, R.drawable.ic_folder, "Files and photos", "Everything on your NAS, at home and away.")
+                ui.feature(page, R.drawable.ic_tab_files, "Files and photos", "Everything on your NAS, at home and away.")
                 ui.feature(page, R.drawable.ic_tab_backup, "Backup of this phone", "Your pictures go to the NAS by themselves.")
-                ui.feature(page, R.drawable.ic_calendar, "Calendar and chat", "Every app of your Hub, in one place.")
+                ui.feature(page, R.drawable.ic_tab_calendar, "Calendar and chat", "Every app of your Hub, in one place.")
                 ui.space(page, 12)
                 ui.button(page, "Scan the QR code", icon = R.drawable.ic_qr, top = 16) { scan() }
-                ui.caption(page, "On a computer, open the Hub of your NAS and choose Phones and devices › Connect a phone.", 10)
+                ui.caption(page, "On a computer, open the Hub of your NAS and choose Devices › Connect a phone.", 10)
                     .gravity = Gravity.CENTER
                 ui.button(page, "Type the code instead", Ui.Kind.Outlined, top = 24) { signIn(mode = Mode.Code) }
                 ui.button(page, "Sign in with name and password", Ui.Kind.Text, top = 4) { signIn(mode = Mode.Password) }
@@ -325,7 +361,7 @@ class MainActivity : AppCompatActivity() {
         GmsBarcodeScanning.getClient(this, options).startScan()
             .addOnSuccessListener { code ->
                 val link = PairLink.parse(code.rawValue.orEmpty())
-                if (link == null) signIn("That is not the QR code of AlvaOS. Use the one in the Hub › Phones and devices.")
+                if (link == null) signIn("That is not the QR code of AlvaOS. Use the one in the Hub › Devices.")
                 else connect(link)
             }
             .addOnFailureListener { e ->
@@ -337,14 +373,27 @@ class MainActivity : AppCompatActivity() {
     private fun connect(link: PairLink) {
         busy("Connecting to ${link.nas.ifEmpty { "your NAS" }}…") {
             val server = link.addresses.firstOrNull { HubClient(it).reachable() }
-                ?: throw HubException("The NAS cannot be reached at ${link.addresses.joinToString(" or ")}. " +
+            val paired: Paired
+            val base: String
+            if (server != null) {
+                paired = HubClient(server).pair(link.code, device())
+                base = server
+            } else if (link.link.isNotEmpty()) {
+                // Not at home: through AlvaOS Link, no address needed.
+                paired = LinkService.pair(store, link.link, link.code, device())
+                base = LinkService.proxyUrl(store) ?: throw HubException(LinkService.NOT_AVAILABLE)
+            } else {
+                throw HubException("The NAS cannot be reached at ${link.addresses.joinToString(" or ")}. " +
                     "Is the phone in the same network as the NAS (Wi-Fi)?")
-            val paired = HubClient(server).pair(link.code, device())
-            store.server = server
+            }
+            store.linkRegistered = false
+            if (link.link.isNotEmpty()) store.linkNas = link.link
+            store.server = base
             store.addresses = link.addresses
             store.token = paired.token
             store.user = paired.user.ifEmpty { link.user }
             store.nasName = paired.nas_name.ifEmpty { link.nas }
+            if (server != null) LinkService.register(store, store.hub())
             try { store.remember(store.hub().me()) } catch (e: Exception) { /* the tabs come on the next start */ }
         }
     }
@@ -353,6 +402,7 @@ class MainActivity : AppCompatActivity() {
     private fun busy(label: String, work: suspend () -> Unit) {
         frame.removeAllViews()
         nav.visibility = View.GONE
+        (nav.tag as? View)?.visibility = View.GONE
         val page = ui.page(frame)
         page.gravity = Gravity.CENTER_HORIZONTAL
         ui.space(page, 120)
@@ -385,7 +435,7 @@ class MainActivity : AppCompatActivity() {
         return s
     }
 
-    // ── The Hub tab ──────────────────────────────────────────────────────
+    // ── The Hub tabs ─────────────────────────────────────────────────────
 
     private fun hubTab(appId: String?) {
         val page = hub ?: HubPage(this, store, ui,
@@ -399,40 +449,45 @@ class MainActivity : AppCompatActivity() {
                     withContext(Dispatchers.IO) { store.pickServer() }
                     hub?.load(force = true)
                 }
+            },
+            openBackup = {
+                val backup = nav.menu.findItem(TAB_BACKUP)
+                if (backup != null) nav.selectedItemId = backup.itemId
             }).also { hub = it }
         (page.view.parent as? ViewGroup)?.removeView(page.view)
         frame.addView(page.view)
         if (appId != null) page.open(appId) else page.load()
     }
 
+    /** Opens a Hub app and one of its tools (Trash, Devices) in it. */
+    private fun hubTool(tool: String) {
+        tab = tabApps.entries.firstOrNull { it.value == "files" }?.key ?: nav.menu.getItem(0).itemId
+        appsOpen = null
+        show()
+        hub?.openTool(tool)
+    }
+
     // ── The Apps tab (more Hub apps, and the App Store apps) ─────────────
 
     private fun appsTab() {
-        val page = ui.page(frame)
-        ui.headline(page, "Apps")
-        ui.caption(page, "Everything on ${store.nasName.ifEmpty { "your NAS" }} for you.")
-        val tiles = mutableListOf<Triple<Int, String, () -> Unit>>()
-        val subs = mutableListOf<String>()
-        for (a in store.hubApps.filter { it.id !in tabApps.values }) {
-            tiles += Triple(iconFor(a.icon), a.name) { appsOpen = a.id; show() }
-            subs += "In the Hub"
+        val page = ui.screen(frame, "Apps")
+        ui.caption(page, "Everything on ${store.nasName.ifEmpty { "your NAS" }} for you.", 0)
+        val inHub = store.hubApps.filter { it.id !in tabApps.values }
+        if (inHub.isNotEmpty()) {
+            val group = ui.group(page, 14)
+            for (a in inHub) ui.item(group, iconFor(a.icon), a.name, "In the Hub") { appsOpen = a.id; show() }
         }
         val host = Uri.parse(store.server).host.orEmpty()
-        for (t in store.storeApps) {
-            tiles += Triple(R.drawable.ic_tab_hub, t.name) {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("http://$host:${t.port}${t.path.ifEmpty { "/" }}")))
+        if (store.storeApps.isNotEmpty()) {
+            ui.section(page, "From the App Store")
+            val group = ui.group(page)
+            for (t in store.storeApps) {
+                ui.item(group, R.drawable.ic_tab_hub, t.name, "Opens in the browser") {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("http://$host:${t.port}${t.path.ifEmpty { "/" }}")))
+                }
             }
-            subs += "Opens in the browser"
         }
-        if (tiles.isEmpty()) ui.body(page, "No more apps.", 16)
-        tiles.zip(subs).chunked(2).forEach { pair ->
-            val line = ui.row(page, 12)
-            line.gravity = android.view.Gravity.FILL_VERTICAL
-            pair.forEachIndexed { i, (tile, sub) ->
-                ui.weighted(ui.tile(line, tile.first, tile.second, sub, tile.third), if (i == 0) 0 else 12)
-            }
-            if (pair.size == 1) line.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply { marginStart = ui.dp(12) })
-        }
+        if (inHub.isEmpty() && store.storeApps.isEmpty()) ui.body(page, "No more apps.", 16)
     }
 
     // ── The Backup tab ───────────────────────────────────────────────────
@@ -451,44 +506,23 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun backupTab() {
-        val page = ui.page(frame)
-        ui.headline(page, "Photo backup")
+        val page = ui.screen(frame, "Photo backup")
         if (!store.backupOn || store.albums.isEmpty()) {
-            val card = ui.card(page, 20)
-            ui.badge(card, R.drawable.ic_photos, 56)
+            val card = ui.card(page, 4)
+            ui.badge(card, R.drawable.ic_tab_backup, 52)
             ui.title(card, "Back up your photos", 14)
             ui.body(card, "The pictures and videos of the albums you choose go to ${store.nasName.ifEmpty { "your NAS" }} " +
-                "by themselves. They show up in Photos in the Hub, album by album. Deleting stays in sync both ways, " +
-                "through the NAS's trash.")
+                "by themselves, also when the app is closed. They show up in Photos, album by album. Deleting stays " +
+                "in sync both ways, through the NAS's trash.")
             ui.button(card, "Set up backup", top = 16) { setUpBackup() }
             if (!hasGalleryAccess()) ui.caption(card, "The app asks to see your pictures and videos.", 8)
             return
         }
 
-        // How it goes
-        val status = ui.card(page, 16, M.attr.colorPrimaryContainer)
-        val running = backupProgress
-        val head = ui.row(status, 0)
-        ui.badge(head, if (running != null) R.drawable.ic_tab_backup else R.drawable.ic_check, 44,
-            M.attr.colorOnPrimary, M.attr.colorPrimary)
-        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        head.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = ui.dp(14) })
-        val last = if (store.lastSync == 0L) "Not backed up yet"
-        else "Last backup ${DateUtils.getRelativeTimeSpanString(store.lastSync)}"
-        ui.title(texts, when {
-            running != null && running.second > 0 -> "Backing up ${running.first} of ${running.second}"
-            running != null -> "Looking for new pictures…"
-            store.lastMessage.isNotEmpty() -> store.lastMessage
-            else -> "Everything is backed up"
-        })
-        ui.caption(texts, "$last · to ${store.nasName.ifEmpty { Uri.parse(store.server).host ?: "" }}", 2)
-        if (running != null) {
-            LinearProgressIndicator(this).apply {
-                isIndeterminate = running.second == 0
-                max = maxOf(1, running.second)
-                progress = running.first
-            }.also { status.addView(it, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = ui.dp(14) }) }
-        }
+        val status = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        statusHost = status
+        page.addView(status, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        renderStatus()
 
         // Deleted on the NAS
         val pending = store.pendingDeletes
@@ -508,58 +542,151 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // The albums
-        val albums = ui.card(page)
-        ui.title(albums, "Albums")
-        val counts = gallery.counts()
-        for (album in store.albums.sorted()) {
-            ui.body(albums, "$album  ·  ${counts[album] ?: 0}", 8)
-        }
-        ui.caption(albums, "${store.known.size} pictures and videos are on the NAS.", 10)
-        ui.button(albums, "Change albums", Ui.Kind.Text, top = 4) { choosing = true; show() }
+        // The albums, with how far each one is
+        val host = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        albumsHost = host
+        page.addView(host, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        renderAlbums()
+        loadAlbums()
 
         val actions = ui.row(page, 16)
-        val now = ui.button(actions, "Back up now", top = 0) {
-            SyncWorker.now(this); store.lastMessage = ""; Snack.show(frame, "The backup starts.")
+        val now = ui.button(actions, "Back up now", icon = R.drawable.ic_refresh, top = 0) {
+            SyncWorker.now(this); Snack.show(frame, "The backup starts.")
         }
         val free = ui.button(actions, "Free up space", Ui.Kind.Outlined, top = 0) { freeUp() }
         ui.weighted(now); ui.weighted(free, 10)
         ui.caption(page, "Free up space removes what is backed up and older than a month from this phone. It stays on the NAS.", 10)
+        ui.button(page, "Change albums", Ui.Kind.Text, top = 6) { choosing = true; show() }
+    }
+
+    /** What the backup is doing now, in a card. */
+    private fun renderStatus() {
+        val host = statusHost ?: return
+        host.removeAllViews()
+        val running = backupProgress ?: SyncWorker.live
+        val waiting = albums?.sumOf { maxOf(0, it.total - it.backedUp) } ?: 0
+        val card = ui.card(host, 4)
+        val head = ui.row(card, 0)
+        val icon: Int
+        val title: String
+        val caption: String
+        when {
+            running != null -> {
+                icon = R.drawable.ic_tab_backup
+                title = if (running.second > 0) "Backing up ${running.first} of ${running.second}" else "Looking for new pictures…"
+                caption = "to ${store.nasName.ifEmpty { "your NAS" }}"
+            }
+            store.lastMessage.startsWith("Waiting for the NAS") || store.lastMessage.contains("cannot be reached") -> {
+                icon = R.drawable.ic_wifi_off
+                title = "Waiting for the NAS"
+                caption = store.lastMessage.substringAfter(": ", store.lastMessage)
+            }
+            store.lastSync == 0L -> {
+                icon = R.drawable.ic_tab_backup
+                title = "Not backed up yet"
+                caption = waitingReason().ifEmpty { "The first backup starts in a moment." }
+            }
+            waiting > 0 -> {
+                icon = R.drawable.ic_tab_backup
+                title = "$waiting waiting"
+                caption = waitingReason().ifEmpty { "They go to ${store.nasName.ifEmpty { "your NAS" }} by themselves." }
+            }
+            else -> {
+                icon = R.drawable.ic_check
+                title = "Everything is backed up"
+                caption = "Last backup ${DateUtils.getRelativeTimeSpanString(store.lastSync)}"
+            }
+        }
+        ui.badge(head, icon, 44)
+        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        head.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = ui.dp(14) })
+        ui.title(texts, title)
+        ui.caption(texts, caption, 2)
+        if (running != null) ui.progress(card, running.first, running.second, 14, indeterminate = running.second == 0)
+        else if (store.lastMessage.isNotEmpty() && store.lastSync != 0L && waiting == 0 && !store.lastMessage.startsWith("Everything"))
+            ui.caption(card, store.lastMessage, 10)
+    }
+
+    /** Why a backup that is due is not running, if the phone knows. */
+    private fun waitingReason(): String {
+        val cm = getSystemService(ConnectivityManager::class.java)
+        val caps = cm?.getNetworkCapabilities(cm.activeNetwork)
+        if (caps == null) return "Waiting for a connection."
+        if (store.wifiOnly && !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)) return "Waiting for Wi-Fi."
+        val battery = getSystemService(BatteryManager::class.java)
+        if (store.chargingOnly && battery?.isCharging != true) return "Waiting for the charger."
+        return ""
+    }
+
+    private fun renderAlbums() {
+        val host = albumsHost ?: return
+        host.removeAllViews()
+        ui.section(host, "Albums")
+        val group = ui.group(host)
+        val known = store.known.values.groupingBy { it }.eachCount()
+        val list = albums ?: store.albums.sorted().map { AlbumProgress(it, -1, known[it] ?: 0) }
+        for (a in list) {
+            val sub = when {
+                a.total < 0 -> "${a.backedUp} backed up"
+                a.total == 0 -> "Nothing in it"
+                a.done -> "All ${a.total} backed up"
+                else -> "${a.backedUp} of ${a.total} backed up"
+            }
+            val row = ui.item(group, R.drawable.ic_tab_photos, a.album, sub)
+            if (a.total > 0 && !a.done) ui.progress(row.getChildAt(1) as LinearLayout, a.backedUp, a.total, 8)
+        }
+    }
+
+    /** The real numbers from the gallery, off the main thread; at most every few seconds while a backup runs. */
+    private fun loadAlbums() {
+        if (albumsHost == null) return
+        albumsAt = System.currentTimeMillis()
+        val host = albumsHost
+        lifecycleScope.launch {
+            val list = withContext(Dispatchers.IO) { albumProgress(gallery.photos(store.albums), store.known, store.albums) }
+            if (albumsHost === host && host != null) { albums = list; renderAlbums(); renderStatus() }
+        }
+    }
+
+    /** The backup moved on: the status card at once, the albums every few seconds. */
+    private fun backupChanged() {
+        if (statusHost == null) { show(); return }
+        renderStatus()
+        if (System.currentTimeMillis() - albumsAt > 2500 || backupProgress == null) loadAlbums()
     }
 
     private fun chooseAlbums() {
-        val page = ui.page(frame)
-        ui.headline(page, "What to back up")
-        ui.body(page, "Choose the albums of this phone. Each one becomes an album in Photos on your NAS.")
+        val page = ui.screen(frame, "What to back up", back = { choosing = false; show() })
+        ui.caption(page, "Choose the albums of this phone. Each one becomes an album in Photos on your NAS.", 0)
         val counts = gallery.counts()
         val chosen = store.albums.ifEmpty { counts.keys.filter { it.equals("Camera", true) }.toSet() }.toMutableSet()
-        val list = ui.card(page, 16)
-        counts.entries.sortedByDescending { it.value }.forEach { (album, count) ->
-            list.addView(MaterialCheckBox(this).apply {
-                text = "$album  ·  $count"
-                textSize = 16f
-                isChecked = album in chosen
-                minHeight = ui.dp(48)
-                setOnCheckedChangeListener { _, on -> if (on) chosen += album else chosen -= album }
-            })
+        if (counts.isEmpty()) {
+            ui.body(page, "There are no pictures on this phone yet.", 16)
+        } else {
+            val group = ui.group(page, 14)
+            counts.entries.sortedByDescending { it.value }.forEach { (album, count) ->
+                ui.checkItem(group, R.drawable.ic_tab_photos, album, "$count pictures and videos", album in chosen) { on ->
+                    if (on) chosen += album else chosen -= album
+                }
+            }
         }
-        if (counts.isEmpty()) ui.body(list, "There are no pictures on this phone yet.")
         ui.section(page, "How")
-        ui.switch(page, "Only on Wi-Fi", store.wifiOnly) { store.wifiOnly = it }
-        ui.switch(page, "Deleting a picture here deletes it on the NAS too (into its trash)", store.deleteOnNas) {
-            store.deleteOnNas = it
-        }
-        ui.button(page, "Back up these albums", top = 20) {
+        val how = ui.group(page)
+        ui.switchItem(how, R.drawable.ic_tab_backup, "Only on Wi-Fi", "Not on mobile data", store.wifiOnly) { store.wifiOnly = it }
+        ui.switchItem(how, R.drawable.ic_charge, "Only while charging", "Easier on the battery", store.chargingOnly) { store.chargingOnly = it }
+        ui.switchItem(how, R.drawable.ic_trash, "Deleting here deletes on the NAS too",
+            "Into the NAS's trash, for 30 days", store.deleteOnNas) { store.deleteOnNas = it }
+        ui.button(page, "Back up these albums", top = 22) {
             if (chosen.isEmpty()) { Snack.show(frame, "Choose at least one album."); return@button }
             store.albums = chosen
             store.backupOn = true
             choosing = false
+            albums = null
             SyncWorker.schedule(this)
             SyncWorker.now(this)
             if (Build.VERSION.SDK_INT >= 31 && !gallery.maySilentlyDelete() && !store.askedManageMedia) askManageMedia()
             else show()
         }
-        if (store.backupOn) ui.button(page, "Cancel", Ui.Kind.Text, top = 4) { choosing = false; show() }
     }
 
     /** Once: so that deleting stays in sync without a question each time. */
@@ -619,42 +746,56 @@ class MainActivity : AppCompatActivity() {
 
     // ── The Settings tab ─────────────────────────────────────────────────
 
-    private fun settingsTab() {
-        val page = ui.page(frame)
-        ui.headline(page, "Settings")
+    /** "At home" for an address in the home network, "Through AlvaOS Link" for the Link door, else "Over the internet". */
+    private fun where(): String {
+        if (LinkService.isProxy(store.server)) return "Through AlvaOS Link"
+        val host = Uri.parse(store.server).host.orEmpty()
+        val home = Regex("^(192\\.168\\.|10\\.|172\\.(1[6-9]|2\\d|3[01])\\.|100\\.(6[4-9]|[7-9]\\d|1[01]\\d|12[0-7])\\.)").containsMatchIn(host) ||
+            host.endsWith(".local") || host == "localhost"
+        return if (home) "At home" else "Over the internet"
+    }
 
-        val account = ui.card(page, 16)
+    private fun settingsTab() {
+        val page = ui.screen(frame, "Settings")
+
+        val account = ui.card(page, 4)
         val who = ui.row(account, 0)
         ui.avatar(who, store.user)
         val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         who.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = ui.dp(14) })
-        ui.title(texts, store.user).setTypeface(null, Typeface.BOLD)
-        ui.caption(texts, "on ${store.nasName.ifEmpty { "your NAS" }}", 0)
-        ui.caption(account, "Connected through ${store.server}", 14)
+        ui.title(texts, store.user)
+        ui.caption(texts, "on ${store.nasName.ifEmpty { "your NAS" }}", 1)
+        ui.caption(account, if (LinkService.isProxy(store.server)) where() else "${where()} · ${Uri.parse(store.server).host.orEmpty()}", 14)
+        ui.caption(account, "AlvaOS Link: ${LinkService.describe(store)}", 2)
         val others = store.addresses.filter { it != store.server }
-        if (others.isNotEmpty()) ui.caption(account, "Also tries ${others.joinToString(", ")}", 2)
-        ui.button(account, "Phones and devices", Ui.Kind.Text, top = 6) {
-            tab = tabApps.entries.firstOrNull { it.value == "files" }?.key ?: nav.menu.getItem(0).itemId
-            appsOpen = null
-            show()
-            frame.postDelayed({ hub?.openDevices() }, 600)
-        }
+        if (others.isNotEmpty()) ui.caption(account, "Also tries ${others.joinToString(", ") { Uri.parse(it).host.orEmpty() }}", 2)
+
+        val tools = ui.group(page, 14)
+        ui.item(tools, R.drawable.ic_phone, "Devices", "See and sign out the connected phones") { hubTool("devices") }
+        ui.item(tools, R.drawable.ic_trash, "Trash", "Deleted files, kept for 30 days") { hubTool("trash") }
+        ui.item(tools, R.drawable.ic_link, "Shared links", "Links you made to files and folders") { hubTool("links") }
 
         ui.section(page, "Photo backup")
-        ui.switch(page, "Only on Wi-Fi", store.wifiOnly) {
+        val backup = ui.group(page)
+        ui.switchItem(backup, R.drawable.ic_tab_backup, "Only on Wi-Fi", "Not on mobile data", store.wifiOnly) {
             store.wifiOnly = it
             if (store.backupOn) SyncWorker.schedule(this)
         }
-        ui.switch(page, "Deleting here deletes on the NAS too", store.deleteOnNas) { store.deleteOnNas = it }
+        ui.switchItem(backup, R.drawable.ic_charge, "Only while charging", "Easier on the battery", store.chargingOnly) {
+            store.chargingOnly = it
+            if (store.backupOn) SyncWorker.schedule(this)
+        }
+        ui.switchItem(backup, R.drawable.ic_trash, "Deleting here deletes on the NAS too",
+            "Into the NAS's trash, for 30 days", store.deleteOnNas) { store.deleteOnNas = it }
         if (Build.VERSION.SDK_INT >= 31) {
             if (gallery.maySilentlyDelete()) {
-                ui.caption(page, "What is deleted on the NAS goes from this phone without asking.", 4)
+                ui.item(backup, R.drawable.ic_check, "Deleting in sync without asking", "On: what is deleted on the NAS goes from this phone")
             } else {
-                ui.button(page, "Delete in sync without asking", Ui.Kind.Outlined, top = 8) { allowManageMedia() }
+                ui.item(backup, R.drawable.ic_check, "Delete in sync without asking", "Android asks each time until you allow it") { allowManageMedia() }
             }
         }
         if (store.backupOn) {
-            ui.button(page, "Stop backing up", Ui.Kind.Text, top = 4) {
+            ui.item(backup, R.drawable.ic_x, "Stop backing up", "The pictures on the NAS stay there") {
                 MaterialAlertDialogBuilder(this)
                     .setTitle("Stop backing up?")
                     .setMessage("Pictures that are on the NAS stay there. You can set it up again at any time.")
@@ -665,7 +806,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         ui.section(page, "This phone")
-        ui.button(page, "Sign out", Ui.Kind.Danger, top = 10) {
+        val phone = ui.group(page)
+        ui.item(phone, R.drawable.ic_logout, "Sign out", "Leave ${store.nasName.ifEmpty { "your NAS" }}", danger = true) {
             MaterialAlertDialogBuilder(this)
                 .setTitle("Sign out?")
                 .setMessage("This phone leaves ${store.nasName.ifEmpty { "your NAS" }}: no Hub and no backup until you connect it again. " +

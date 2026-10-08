@@ -884,7 +884,6 @@ function selectInstalledApp(appId) {
     renderInspector();
 }
 
-// Load available apps from catalog
 async function loadAvailableApps() {
     const container = document.getElementById('apps-container');
     const refreshBtn = document.getElementById('refresh-apps-btn');
@@ -1231,7 +1230,6 @@ async function showInstallWizard(appId) {
     confirmBtn.disabled = true;
     confirmBtn.textContent = 'Install Application';
 
-    // Close modal handlers
     const closeInstallModal = () => { modal.style.display = 'none'; };
     closeBtns.forEach(btn => {
         btn.onclick = closeInstallModal;
@@ -1242,7 +1240,6 @@ async function showInstallWizard(appId) {
     }
 
     try {
-        // Fetch app details
         const appRes = await apiFetch(`${API_BASE}/apps/available/${appId}`, {
             headers: { 'Authorization': authToken }
         });
@@ -1328,7 +1325,6 @@ async function showInstallWizard(appId) {
             if (note) note.style.display = generated && !stillEmpty.length ? 'block' : 'none';
         }
 
-        // Fetch pools
         const poolsRes = await apiFetch(`${API_BASE}/storage/pools`, {
             headers: { 'Authorization': authToken }
         });
@@ -1356,7 +1352,6 @@ async function showInstallWizard(appId) {
         renderInstallFolders({ ...app, id: appId }, usable, shares);
         renderInstallPorts(app);
 
-        // Handle confirm
         confirmBtn.onclick = async () => {
             const poolPath = poolSelect.value;
             const environmentVars = {};
@@ -1426,7 +1421,6 @@ async function showInstallWizard(appId) {
                 document.getElementById('install-progress-container').style.display = 'block';
                 document.getElementById('install-log-content').textContent = '';
 
-                // Start polling
                 pollInstallStatus(appId);
 
             } catch (error) {

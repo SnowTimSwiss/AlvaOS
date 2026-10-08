@@ -1372,7 +1372,6 @@ class BackupManager:
                     "pool_last_status": "success" if not failed else ("partial" if created else "error"),
                     "pool_last_error": "; ".join([f["error"] for f in failed]) if failed else "",
                 }
-                # Update next run if scheduled
                 if current_settings.get("enabled") and current_settings.get("sources"):
                      next_run = datetime.now(timezone.utc) + timedelta(minutes=current_settings.get("interval_minutes", 1440))
                      status_payload["pool_next_run_at"] = next_run.isoformat()
@@ -1724,7 +1723,6 @@ class BackupManager:
         # Check Pool Backup
         pb = settings.get("pool_backup", {})
         if pb.get("enabled") and pb.get("sources"):
-             # Check if run needed
              should_run = False
              with self._schedule_lock:
                  status = self.get_status()

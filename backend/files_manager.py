@@ -20,8 +20,13 @@ from common import PRIV_HELPER, is_root_user
 INLINE_TYPES = {
     'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/bmp',
     'application/pdf', 'video/mp4', 'video/webm', 'audio/mpeg', 'audio/ogg', 'audio/wav',
-    'audio/flac', 'audio/mp4',
+    'audio/flac', 'audio/mp4', 'video/quicktime', 'video/x-m4v', 'video/x-matroska', 'video/ogg',
+    'video/3gpp', 'video/3gpp2', 'audio/aac', 'audio/x-m4a',
 }
+# Python's list does not know every type a phone makes.
+EXTRA_TYPES = {'.mov': 'video/quicktime', '.m4v': 'video/x-m4v', '.mkv': 'video/x-matroska', '.ogv': 'video/ogg',
+               '.3gp': 'video/3gpp', '.3g2': 'video/3gpp2', '.m4a': 'audio/mp4', '.aac': 'audio/aac',
+               '.opus': 'audio/ogg', '.webm': 'video/webm'}
 # Text is shown as plain text, never as HTML or script.
 TEXT_EXTENSIONS = {'.txt', '.md', '.log', '.csv', '.json', '.xml', '.yml', '.yaml', '.ini', '.conf', '.cfg'}
 
@@ -58,7 +63,7 @@ def content_type(name: str, inline: bool) -> Tuple[str, bool]:
     ext = os.path.splitext(name)[1].lower()
     if inline and ext in TEXT_EXTENSIONS:
         return 'text/plain; charset=utf-8', True
-    guessed = mimetypes.guess_type(name)[0] or 'application/octet-stream'
+    guessed = EXTRA_TYPES.get(ext) or mimetypes.guess_type(name)[0] or 'application/octet-stream'
     if inline and guessed in INLINE_TYPES:
         return guessed, True
     return 'application/octet-stream', False

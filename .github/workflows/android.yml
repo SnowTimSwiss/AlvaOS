@@ -59,21 +59,58 @@ jobs:
       - name: Set up the Android SDK
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
 
+      # LinkTest talks to the real Link daemon of the NAS (backend/link_daemon.py).
+      - name: Python with iroh, for the Link tests
+        run: python3 -m pip install --user 'iroh==1.1.0' flask
+
       - name: Test the sync core
         run: ./gradlew --no-daemon :core:test
+
+      # AlvaOS Link on the phone needs libiroh_ffi.so (Rust, from iroh-ffi) for each
+      # CPU type. Without it the app still builds and works at home; the Link
+      # parts then say "not available in this build". Best effort: a failed build
+      # here never stops the app.
+      - name: Build the Link library for Android (iroh)
+        continue-on-error: true
+        run: |
+          set -eu
+          sdkmanager "ndk;27.2.12479018" >/dev/null
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
+          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android
+          cargo install --version 3.5.4 cargo-ndk --locked
+          git clone --depth 1 --branch v1.1.0 https://github.com/n0-computer/iroh-ffi "$RUNNER_TEMP/iroh-ffi"
+          cd "$RUNNER_TEMP/iroh-ffi"
+          cargo ndk -o "$GITHUB_WORKSPACE/android/app/src/main/jniLibs" \
+            -t armeabi-v7a -t arm64-v8a -t x86 -t x86_64 build --release
+          ls -l "$GITHUB_WORKSPACE"/android/app/src/main/jniLibs/*/
 
       - name: Open every screen of the app
         run: ./gradlew --no-daemon :app:testDebugUnitTest
 
-      # Small copies in the log too, to look at when the artifact storage is full.
-      - name: Show the pictures in the log
-        if: always()
+      # The pictures of every screen, on a branch of their own (the artifact
+      # storage of the account is small): `git fetch origin app-screens` and
+      # look at the .jpg files. One commit, replaced by every run.
+      - name: Put the pictures of the screens on the app-screens branch
+        if: always() && github.event_name == 'push'
         continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          [ -d app/build/outputs/roborazzi ] || exit 0
+          out="$RUNNER_TEMP/screens"
+          mkdir -p "$out"
           for f in app/build/outputs/roborazzi/*.png; do
             [ -f "$f" ] || continue
-            convert "$f" -resize 300x -quality 60 /tmp/screen.jpg && echo "SCREEN $(basename "$f") $(base64 -w0 /tmp/screen.jpg)"
+            convert "$f" -resize 540x -quality 78 "$out/$(basename "${f%.png}").jpg" 2>/dev/null || cp "$f" "$out/"
           done
+          cd "$out"
+          printf 'Screens of the AlvaOS app at %s (%s)\n' "$GITHUB_SHA" "$GITHUB_REF_NAME" > README.md
+          git init -q -b app-screens .
+          git config user.name github-actions
+          git config user.email github-actions@users.noreply.github.com
+          git add -A
+          git commit -qm "Screens of $GITHUB_SHA"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" app-screens
 
       - name: Keep the pictures of the screens
         if: failure()

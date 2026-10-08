@@ -144,7 +144,7 @@
                 if (hidden.has(calKey(place, cal))) return;
                 occurrences(ev, from, to).forEach(([start, end]) => out.push({
                     key: `${place.id}|${ev.id}|${+start}`, kind: 'event', item: ev, place, cal, start, end,
-                    allDay: !!ev.all_day, color: ev.color || cal.color, title: ev.title || '(No title)',
+                    allDay: !!ev.all_day, color: ev.color || cal.color, title: (ev.title || '(No title)') + (ev.born ? ` (${start.getFullYear() - ev.born})` : ''),
                 }));
             });
             if (hidden.has(`${place.id}|tasks`)) return;
@@ -167,6 +167,8 @@
             const got = await api('calendar');
             places = got.places || [];
             colors = got.colors || [];
+            const bday = places.find((p) => p.id === 'birthdays');
+            if (bday && store.get('bdaycolor', '')) bday.calendars[0].color = store.get('bdaycolor', '');
             hasOwn = !!got.has_own;
             loaded = true;
             (got.problems || []).forEach((p) => toast(p, 'error'));
@@ -341,8 +343,9 @@
                 <div class="cal-group-head"><span>${place.own ? 'My calendars' : `${icon('users')}${esc(place.name)}`}</span>
                     ${place.writable ? `<button type="button" class="icon-btn" data-add-cal="${esc(place.id)}" title="Add a calendar" aria-label="Add a calendar">${icon('plus')}</button>` : '<span class="cal-ro" title="You can look, not change">read only</span>'}</div>
                 ${place.calendars.map((c) => item(calKey(place, c), c.name, c.color,
-                    place.writable ? `<button type="button" class="cal-more" data-edit-cal="${esc(calKey(place, c))}" aria-label="Change ${esc(c.name)}">${icon('more')}</button>` : '')).join('')}
-                ${item(`${place.id}|tasks`, place.own ? 'Tasks' : `Tasks of ${place.name}`, TASK_COLOR)}
+                    place.writable ? `<button type="button" class="cal-more" data-edit-cal="${esc(calKey(place, c))}" aria-label="Change ${esc(c.name)}">${icon('more')}</button>`
+                        : place.id === 'birthdays' ? `<button type="button" class="cal-more" data-bday-color aria-label="Change the colour of ${esc(c.name)}">${icon('more')}</button>` : '')).join('')}
+                ${place.writable || place.tasks.length ? item(`${place.id}|tasks`, place.own ? 'Tasks' : `Tasks of ${place.name}`, TASK_COLOR) : ''}
             </section>`;
         $c('#cal-lists').innerHTML = places.map(section).join('')
             || (loaded ? '<p class="cal-empty-side">No calendars yet.</p>' : '');
@@ -364,6 +367,7 @@
     function onListClick(e) {
         const add = e.target.closest('[data-add-cal]');
         if (add) { e.preventDefault(); calendarDialog(placeOf(add.dataset.addCal), null); return; }
+        if (e.target.closest('[data-bday-color]')) { e.preventDefault(); birthdayColorDialog(); return; }
         const edit = e.target.closest('[data-edit-cal]');
         if (edit) {
             e.preventDefault();
@@ -834,6 +838,81 @@
         return p ? calKey(p, c) : '';
     }
 
+
+    // A time written in the title moves out of it: "20:00 Choir", "19:30-21 Choir",
+    // "Choir um 20 Uhr". Colon or "Uhr"/"h" is needed, so "5 friends" stays a title.
+    function timeInTitle(text) {
+        const t = String(text || '').trim();
+        const at = (h, m) => (Number(h) <= 23 && Number(m || 0) <= 59 ? { h: Number(h), m: Number(m || 0) } : null);
+        let m = /^(\d{1,2})(?:([:.])(\d{2}))?(?:\s*[-–]\s*(\d{1,2})(?:[:.](\d{2}))?)?\s*(uhr|h)?\s+(?:um\s+)?(\S.*)$/i.exec(t);
+        if (m && (m[2] === ':' || m[6])) {
+            const from = at(m[1], m[3]);
+            const to = m[4] !== undefined ? at(m[4], m[5]) : null;
+            if (from && (m[4] === undefined || to)) return { title: m[7].trim(), from, to };
+        }
+        m = /^(\S.*?)\s+(?:um\s+|ab\s+)?(\d{1,2})(?:(:)(\d{2})|(?:[.:](\d{2}))?\s*(uhr|h))$/i.exec(t);
+        if (m) {
+            const from = at(m[2], m[4] || m[5]);
+            if (from) return { title: m[1].trim(), from, to: null };
+        }
+        return null;
+    }
+    // Where the start and end of an item go when the title names a time (the length stays).
+    function withTitleTime(parsed, start, end, wasAllDay) {
+        const s = new Date(start.getFullYear(), start.getMonth(), start.getDate(), parsed.from.h, parsed.from.m);
+        const length = wasAllDay ? 60 * 60000 : Math.max(15 * 60000, end - start);
+        let e = parsed.to ? new Date(s.getFullYear(), s.getMonth(), s.getDate(), parsed.to.h, parsed.to.m) : new Date(s.getTime() + length);
+        if (e <= s) e = new Date(s.getTime() + length);
+        return { start: s, end: e };
+    }
+
+
+    // ── Birthdays: only in the calendar, with a new contact, or on a contact there is ──
+    const hasContacts = () => (H.me()?.hub?.apps || []).some((a) => a.id === 'contacts');
+    let contactChoices = null;
+    async function loadContactChoices(select) {
+        if (!select || select.dataset.loaded) return;
+        select.dataset.loaded = '1';
+        try {
+            contactChoices = (await api('contacts')).contacts || [];
+        } catch (_e) { contactChoices = []; }
+        if (!contactChoices.length) return;
+        const name = (c) => [c.first, c.last].filter(Boolean).join(' ') || c.org || 'No name';
+        select.insertAdjacentHTML('beforeend', `<optgroup label="Add to a contact">${contactChoices
+            .slice().sort((a, b) => name(a).localeCompare(name(b)))
+            .map((c) => `<option value="c:${esc(c.id)}">${esc(name(c))}</option>`).join('')}</optgroup>`);
+    }
+    async function saveBirthday(card, title, day) {
+        const name = title.value.trim();
+        const how = card.querySelector('[data-bday-how]').value;
+        const born = card.querySelector('[data-born]').value.trim();
+        if (!how.startsWith('c:') && !name) { title.focus(); toast('Whose birthday is it?', 'error'); return; }
+        if (born && !/^\d{4}$/.test(born)) { toast('The year is four digits, like 1985.', 'error'); return; }
+        const mmdd = `${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
+        const birthday = born ? `${born}-${mmdd}` : `--${mmdd}`;
+        try {
+            if (how === 'event') {
+                const target = defaultTarget().split('|');
+                const first = born ? `${born}-${mmdd}` : ymd(day);
+                await save(target[0], 'event', { title: `${name}'s birthday`, calendar: target[1], all_day: true, start: first, end: first,
+                    repeat: 'yearly', until: '', color: '', location: '', notes: '' });
+            } else if (how === 'new') {
+                const words = name.split(/\s+/);
+                const last = words.length > 1 ? words.pop() : '';
+                await api('contacts/item', { method: 'POST', json: { item: { first: words.join(' '), last, birthday } } });
+                toast(`${name} is in your contacts now.`);
+                await refresh();
+            } else {
+                const c = (contactChoices || []).find((x) => `c:${x.id}` === how);
+                if (!c) { toast('That contact is not there any more.', 'error'); return; }
+                await api('contacts/item', { method: 'POST', json: { item: { ...c, birthday } } });
+                toast('The birthday is saved in the contact.');
+                await refresh();
+            }
+            closePop();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
     function quickCreate(anchor, start, end, allDay, at) {
         closePop(true);
         root.querySelectorAll('.ev.ghost').forEach((g) => { if (!at || g !== at.ghost) g.remove(); });
@@ -849,16 +928,19 @@
         const card = document.createElement('div');
         card.className = 'cal-pop create';
         card.setAttribute('role', 'dialog');
-        const whenLine = () => (kind === 'task'
+        const whenLine = () => (kind === 'birthday' ? `${fmt(start, { day: 'numeric', month: 'long' })}, every year`
+            : kind === 'task'
             ? (allDay ? longDay(start) : `${longDay(start)} · ${hm(start)}`)
             : whenText(start, end, allDay));
         card.innerHTML = `
             <div class="pop-tools"><button type="button" class="icon-btn" data-act="close" aria-label="Close">${icon('x')}</button></div>
-            <input class="pop-title" placeholder="Add title" aria-label="Title" maxlength="300">
-            <div class="pop-tabs" role="tablist"><button type="button" role="tab" data-kind="event" aria-selected="true">Event</button><button type="button" role="tab" data-kind="task" aria-selected="false">Task</button></div>
+            <input class="pop-title" placeholder="Add title, or “20:00 Choir”" aria-label="Title" maxlength="300">
+            <div class="pop-tabs" role="tablist"><button type="button" role="tab" data-kind="event" aria-selected="true">Event</button><button type="button" role="tab" data-kind="task" aria-selected="false">Task</button><button type="button" role="tab" data-kind="birthday" aria-selected="false">Birthday</button></div>
             <div class="pop-row">${icon('clock')}<div class="pop-when">${esc(whenLine())}</div></div>
             <div class="pop-row" data-for="event">${icon('calendar')}<select class="pop-select" data-target aria-label="Calendar">${targetOptions(defaultTarget(), false)}</select></div>
             <div class="pop-row" data-for="task" hidden>${icon('tasks')}<select class="pop-select" data-task-target aria-label="Task list">${targetOptions((writable().find((p) => p.own) || writable()[0]).id, true)}</select></div>
+            <div class="pop-row" data-for="birthday" hidden>${icon('clock')}<input class="pop-select" data-born type="number" min="1900" max="2100" placeholder="Year born (optional)" aria-label="Year born"></div>
+            <div class="pop-row" data-for="birthday" hidden>${icon('users')}<select class="pop-select" data-bday-how aria-label="Where to keep it"><option value="event">Only in the calendar</option>${hasContacts() ? '<option value="new">And make a new contact</option>' : ''}</select></div>
             <div class="pop-actions"><button type="button" class="btn ghost" data-act="more">More options</button><button type="button" class="btn primary" data-act="save">Save</button></div>`;
         const title = card.querySelector('.pop-title');
         const setKind = (k) => {
@@ -866,17 +948,25 @@
             card.querySelectorAll('[data-kind]').forEach((b) => b.setAttribute('aria-selected', b.dataset.kind === k));
             card.querySelectorAll('[data-for]').forEach((r) => { r.hidden = r.dataset.for !== k; });
             card.querySelector('.pop-when').textContent = whenLine();
+            card.querySelector('[data-act=more]').hidden = k === 'birthday';
+            title.placeholder = k === 'birthday' ? 'Name' : 'Add title, or “20:00 Choir”';
+            if (k === 'birthday' && hasContacts()) loadContactChoices(card.querySelector('[data-bday-how]'));
         };
         const draft = () => {
+            const named = timeInTitle(title.value);
             if (kind === 'task') {
                 return { place: card.querySelector('[data-task-target]').value,
-                    item: { title: title.value.trim(), date: ymd(start), time: allDay ? '' : hm(start), notes: '', done: false } };
+                    item: { title: named ? named.title : title.value.trim(), date: ymd(start),
+                        time: named ? `${pad(named.from.h)}:${pad(named.from.m)}` : (allDay ? '' : hm(start)), notes: '', done: false } };
             }
             const [pid, cid] = card.querySelector('[data-target]').value.split('|');
-            return { place: pid, item: { title: title.value.trim(), calendar: cid, all_day: allDay,
-                start: allDay ? ymd(start) : stamp(start), end: allDay ? ymd(addDays(end, -1)) : stamp(end), color: '', repeat: '', location: '', notes: '' } };
+            let s = start; let e = end; let whole = allDay;
+            if (named) { ({ start: s, end: e } = withTitleTime(named, start, end, allDay)); whole = false; }
+            return { place: pid, item: { title: named ? named.title : title.value.trim(), calendar: cid, all_day: whole,
+                start: whole ? ymd(s) : stamp(s), end: whole ? ymd(addDays(e, -1)) : stamp(e), color: '', repeat: '', location: '', notes: '' } };
         };
         const submit = async () => {
+            if (kind === 'birthday') { await saveBirthday(card, title, start); return; }
             const { place: pid, item } = draft();
             if (kind === 'task' && !item.title) { title.focus(); toast('Give the task a title.', 'error'); return; }
             try {
@@ -898,7 +988,6 @@
             }
         });
         title.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } if (e.key === 'Escape') closePop(); });
-        if (phone.matches) { closePop(true); eventDialog(placeOf(defaultTarget().split('|')[0]), draft().item, true); return; }
         place(card, anchor, at);
         title.focus();
     }
@@ -979,11 +1068,21 @@
         d.el.querySelector('[data-save]').addEventListener('click', async () => {
             const all = f('all_day').checked;
             const [pid, cid] = f('target').value.split('|');
+            let named = timeInTitle(f('title').value);
+            let [sDay, sTime, eDay, eTime] = [f('sd').value, f('st').value, f('ed').value, f('et').value];
+            let whole = all;
+            if (named && parse(sDay)) {
+                const from = parse(`${sDay}T${sTime || '00:00'}`);
+                const till = parse(`${eDay || sDay}T${eTime || sTime || '00:00'}`) || from;
+                const moved = withTitleTime(named, from, till, all);
+                [sDay, sTime, eDay, eTime] = [ymd(moved.start), hm(moved.start), ymd(moved.end), hm(moved.end)];
+                whole = false;
+            } else named = null;
             const item = {
                 ...(existing && pid === placeObj.id ? { id: ev.id } : {}),
-                title: f('title').value.trim(), calendar: cid, all_day: all,
-                start: all ? f('sd').value : `${f('sd').value}T${f('st').value}`,
-                end: all ? f('ed').value : `${f('ed').value}T${f('et').value}`,
+                title: named ? named.title : f('title').value.trim(), calendar: cid, all_day: whole,
+                start: whole ? sDay : `${sDay}T${sTime}`,
+                end: whole ? eDay : `${eDay}T${eTime}`,
                 repeat: f('repeat').value, until: f('repeat').value ? f('until').value : '',
                 color: (d.el.querySelector('[name="color"]:checked') || {}).value || '',
                 location: f('location').value.trim(), notes: f('notes').value,
@@ -1048,7 +1147,7 @@
                 <p>Install <b>DAVx⁵</b> (free in F-Droid, also in the Play Store), add an account with “URL and user name” and enter <code>https://${esc(server)}/</code>. Calendars appear in the phone's calendar app, tasks in Tasks.org or jtx Board.</p></details>
             <details class="sync-how"><summary>Thunderbird and Outlook</summary>
                 <p>Thunderbird: New Calendar › On the Network, location <code>https://${esc(server)}/dav/${esc(user)}/</code>. Outlook needs a CalDAV add-in.</p></details>
-            <p class="sync-note">The phone has to trust this NAS once: open <a href="/alvaos-ca.crt">its certificate</a> on the phone and install it (on an iPhone also turn it on under Settings › General › About › Certificate Trust Settings). Away from home this works over remote access.</p>
+            <p class="sync-note">The phone has to trust this NAS once: open <a href="/alvaos-ca.crt">its certificate</a> on the phone and install it (on an iPhone also turn it on under Settings › General › About › Certificate Trust Settings). Away from home, the calendar syncs through the AlvaOS app; other apps need the home network.</p>
             <div class="actions"><span class="grow"></span><button type="button" class="btn primary" data-close>Done</button></div>`);
         d.el.querySelector('[data-close]').focus();
     }
@@ -1079,6 +1178,23 @@
         };
         name.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
         d.el.querySelector('[data-save]').addEventListener('click', submit);
+    }
+
+    // The colour of the read-only Birthdays calendar is the person's own choice, kept in this browser.
+    function birthdayColorDialog() {
+        const place = placeOf('birthdays');
+        if (!place) return;
+        const d = dialog(`
+            <h2>Birthdays</h2>
+            <p>The birthdays of your contacts. Choose the colour they have in your calendar.</p>
+            ${swatches('color', place.calendars[0].color, false)}
+            <div class="actions"><button type="button" class="btn" data-close>Cancel</button><button type="button" class="btn primary" data-save>Save</button></div>`);
+        d.el.querySelector('[data-save]').addEventListener('click', () => {
+            const color = (d.el.querySelector('[name="color"]:checked') || {}).value;
+            if (color) { place.calendars[0].color = color; store.set('bdaycolor', color); }
+            d.close();
+            render();
+        });
     }
 
     // ── Tasks, next to the calendar ────────────────────────────────────────

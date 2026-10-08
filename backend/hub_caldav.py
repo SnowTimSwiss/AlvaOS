@@ -43,7 +43,8 @@ bp = Blueprint('hub_caldav', __name__)
 
 DAV, CALDAV, CS, APPLE = 'DAV:', 'urn:ietf:params:xml:ns:caldav', 'http://calendarserver.org/ns/', \
     'http://apple.com/ns/ical/'
-PREFIX = {DAV: 'D', CALDAV: 'C', CS: 'CS', APPLE: 'A'}
+CARDDAV = 'urn:ietf:params:xml:ns:carddav'   # the address book beside the calendars (hub_carddav.py)
+PREFIX = {DAV: 'D', CALDAV: 'C', CS: 'CS', APPLE: 'A', CARDDAV: 'CR'}
 METHODS = ['OPTIONS', 'GET', 'HEAD', 'PUT', 'DELETE', 'PROPFIND', 'PROPPATCH', 'REPORT', 'MKCOL', 'MKCALENDAR',
            'MOVE', 'COPY']
 MAX_BODY = 512 * 1024
@@ -343,7 +344,7 @@ def _tag(ns: str, name: str) -> str:
 
 def _multistatus(responses: List[str]) -> Response:
     body = ('<?xml version="1.0" encoding="utf-8"?>\n<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"'
-            ' xmlns:CS="http://calendarserver.org/ns/" xmlns:A="http://apple.com/ns/ical/">'
+            ' xmlns:CS="http://calendarserver.org/ns/" xmlns:A="http://apple.com/ns/ical/" xmlns:CR="urn:ietf:params:xml:ns:carddav">'
             + ''.join(responses) + '</D:multistatus>')
     return Response(body, 207, {'Content-Type': 'application/xml; charset=utf-8'})
 
@@ -405,6 +406,7 @@ def _principal_props(user: str) -> Dict[Tuple[str, str], str]:
         (DAV, 'owner'): f'<D:href>{home}</D:href>',
         (CALDAV, 'calendar-home-set'): f'<D:href>{home}</D:href>',
         (CALDAV, 'calendar-user-address-set'): f'<D:href>{home}</D:href>',
+        (CARDDAV, 'addressbook-home-set'): f'<D:href>{home}</D:href>',
         (DAV, 'current-user-privilege-set'): '<D:privilege><D:read/></D:privilege>',
         (DAV, 'supported-report-set'): '',
     }
@@ -464,9 +466,17 @@ def propfind(session: Dict[str, Any], parts: List[str]) -> Response:
     if len(parts) == 1:
         out = [_response(_home(user), _principal_props(user), wanted)]
         if depth != '0':
-            out += [_response(f"{_home(user)}{c['name']}/", _collection_props(user, c), wanted)
-                    for c in collections(session)]
+            if _allowed('calendar', session):
+                out += [_response(f"{_home(user)}{c['name']}/", _collection_props(user, c), wanted)
+                        for c in collections(session)]
+            if _allowed('contacts', session):
+                import hub_carddav
+                place, items = hub_carddav.load(session)
+                out.append(_response(hub_carddav.collection_href(user),
+                                     hub_carddav.collection_props(user, place, items), wanted))
         return _multistatus(out)
+    if not _allowed('calendar', session):
+        return Response('Calendar is not turned on for you.\n', 403)
     coll = _find(session, parts[1])
     if not coll:
         return Response('Not found\n', 404)
@@ -672,7 +682,13 @@ def _nearest(color: str) -> str:
 
 # ── Routes ──────────────────────────────────────────────────────────────────
 
+def _allowed(app_id: str, session: Dict[str, Any]) -> bool:
+    import hub_apps
+    return hub_apps.allowed(app_id, session['user'], session.get('role', 'user'))
+
+
 @bp.route('/.well-known/caldav', methods=METHODS)
+@bp.route('/.well-known/carddav', methods=METHODS)
 def well_known():
     return redirect('/dav/', code=301)
 
@@ -687,15 +703,36 @@ def root():
 @bp.route('/dav/<path:rest>', methods=METHODS)
 def dav(rest: str):
     if request.method == 'OPTIONS':
-        return Response(b'', 200, {'DAV': '1, 2, 3, calendar-access', 'Allow': ', '.join(METHODS)})
+        return Response(b'', 200, {'DAV': '1, 2, 3, calendar-access, addressbook', 'Allow': ', '.join(METHODS)})
     import files_dav
-    session, refused = files_dav.signed_in('calendar')
+    parts = [unquote(p) for p in rest.split('/') if p]
+    book = len(parts) >= 2 and parts[1] == 'contacts'
+    session, refused = files_dav.signed_in('contacts' if book else 'calendar')
+    if session is None and refused is not None and refused.status_code == 403 and len(parts) <= 1:
+        session, refused = files_dav.signed_in('contacts')      # Calendar is off for her, Contacts may not be
     if refused or session is None:
         return refused
-    parts = [unquote(p) for p in rest.split('/') if p]
     if parts and parts[0] != session['user']:
         return Response('Not found\n', 404)
     method = request.method
+    if book:
+        import hub_carddav
+        if method == 'PROPFIND':
+            return hub_carddav.propfind(session, parts)
+        if method == 'REPORT':
+            return hub_carddav.report(session, parts)
+        if method in ('GET', 'HEAD'):
+            if len(parts) < 3:
+                return Response(f'AlvaOS Contacts for {session["user"]}. Add this address to the contacts app '
+                                'of your phone or computer.\n', 200, {'Content-Type': 'text/plain; charset=utf-8'})
+            return hub_carddav.get(session, parts, method == 'HEAD')
+        if method == 'PUT':
+            return hub_carddav.put(session, parts)
+        if method == 'DELETE':
+            return hub_carddav.delete(session, parts)
+        if method == 'PROPPATCH':
+            return hub_carddav.proppatch(parts)
+        return Response('The address book is part of the Hub.\n', 403)
     if method == 'PROPFIND':
         return propfind(session, parts)
     if method == 'REPORT':

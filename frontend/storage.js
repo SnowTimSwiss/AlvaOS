@@ -643,7 +643,6 @@ async function showCreatePoolDialog(preselect = []) {
     updateRaidOptions();
     validateForm();
 
-    // Create button
     createBtn.addEventListener('click', async () => {
         const poolName = poolNameInput.value.trim();
         const selectedDisks = Array.from(wizard.querySelectorAll('.disk-checkbox:checked')).map(cb => cb.value);

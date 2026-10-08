@@ -40,8 +40,13 @@
         undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
         link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
         copy: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+        star: '<path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/>',
+        contact: '<path d="M16 2v2M7 22v-2a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2M8 2v2"/><circle cx="12" cy="11" r="3"/><rect width="18" height="18" x="3" y="4" rx="2"/>',
         clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+        heart: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
+        'heart-fill': '<path fill="currentColor" d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
         phone: '<rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/>',
+        'cloud-upload': '<path d="M12 13v8"/><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="m8 17 4-4 4 4"/>',
         refresh: '<path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/>',
         monitor: '<rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/>',
         calendar: '<path d="M8 2v4M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
@@ -53,15 +58,19 @@
     const $ = (id) => document.getElementById(id);
     const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+    // Videos: what the browser plays itself, and the rest (the Hub can make a copy that plays, see showVideo).
+    const VIDEO = /\.(mp4|m4v|mov|mkv|webm|3gp|3g2|avi|wmv|mpe?g|ogv|flv|ts|mts|m2ts)$/i;
+    const NATIVE_VIDEO = /\.(mp4|m4v|mov|webm|mkv|ogv|3gp)$/i;
+    const PREVIEW_IMAGE = /\.(heic|heif|tiff?)$/i;       // shown through /api/preview (a JPEG made by the NAS)
     const KINDS = [
-        ['image', /\.(jpe?g|png|gif|webp|avif|bmp|heic)$/i], ['video', /\.(mp4|webm|m4v|mov|mkv|avi)$/i],
-        ['audio', /\.(mp3|ogg|wav|flac|m4a|aac)$/i], ['pdf', /\.pdf$/i],
+        ['image', /\.(jpe?g|png|gif|webp|avif|bmp|heic|heif|tiff?)$/i], ['video', VIDEO],
+        ['audio', /\.(mp3|ogg|wav|flac|m4a|aac|opus)$/i], ['pdf', /\.pdf$/i],
         ['doc', /\.(txt|md|log|csv|json|xml|ya?ml|ini|conf|cfg|docx?|odt|xlsx?|ods|pptx?|odp|rtf)$/i],
         ['archive', /\.(zip|tar|gz|tgz|7z|rar|bz2|xz)$/i],
     ];
     const kindOf = (e) => (e.type === 'folder' ? 'folder' : (KINDS.find(([, re]) => re.test(e.name)) || ['file'])[0]);
-    const THUMB = /\.(jpe?g|png|gif|webp|bmp)$/i;
-    const VIEW = { image: /\.(jpe?g|png|gif|webp|avif|bmp)$/i, video: /\.(mp4|webm|m4v)$/i, audio: /\.(mp3|ogg|wav|flac|m4a)$/i, text: /\.(txt|md|log|csv|json|xml|ya?ml|ini|conf|cfg)$/i };
+    const THUMB = /\.(jpe?g|png|gif|webp|bmp|avif|heic|heif|tiff?|mp4|m4v|mov|mkv|webm|3gp|3g2|avi|wmv|mpe?g|ogv|flv|ts|mts|m2ts)$/i;
+    const VIEW = { image: /\.(jpe?g|png|gif|webp|avif|bmp|heic|heif|tiff?)$/i, video: VIDEO, audio: /\.(mp3|ogg|wav|flac|m4a|opus)$/i, text: /\.(txt|md|log|csv|json|xml|ya?ml|ini|conf|cfg)$/i };
 
     function bytes(n) {
         n = Number(n) || 0;
@@ -178,6 +187,7 @@
         return `#${q}`;
     }
     function go(s, p, push = true) {
+        markSeen(s);
         leaveView();
         current = 'files';
         share = s;
@@ -203,13 +213,57 @@
     $('fwd-btn').addEventListener('click', () => history.forward());
     const up = () => { if (path) go(share, path.split('/').slice(0, -1).join('/')); };
 
+    // In the AlvaOS app there is no side bar: the shared folders are chips above the files.
+    function renderChips() {
+        const chips = $('share-chips');
+        const list = me?.shares || [];
+        const show = IN_APP && list.length > 1 && current === 'files' && !found && !inTrash;
+        chips.hidden = !show;
+        if (!show) return;
+        chips.innerHTML = list.map((s) => `<button type="button" data-chip="${esc(s.name)}" aria-pressed="${s.name === share}">${esc(s.name)}</button>`).join('');
+        chips.querySelectorAll('[data-chip]').forEach((b) => b.addEventListener('click', () => go(b.dataset.chip, '')));
+    }
+
+    // Folders others shared with this person: the ones not opened yet are marked "New".
+    // The first time ever, all count as seen (nothing is new to someone who just came).
+    const seenKey = () => `alvaos_files_seen_${me?.user || ''}`;
+    function seenShares() {
+        let seen = null;
+        try { seen = JSON.parse(localStorage.getItem(seenKey()) || 'null'); } catch (_e) { /* off */ }
+        if (!Array.isArray(seen)) {
+            seen = (me?.shares || []).filter((s) => s.from).map((s) => `${s.from}/${s.name}`);
+            try { localStorage.setItem(seenKey(), JSON.stringify(seen)); } catch (_e) { /* off */ }
+        }
+        return seen;
+    }
+    function markSeen(name) {
+        const s = (me?.shares || []).find((x) => x.name === name && x.from);
+        if (!s) return;
+        const seen = seenShares();
+        const id = `${s.from}/${s.name}`;
+        if (!seen.includes(id)) { try { localStorage.setItem(seenKey(), JSON.stringify([...seen, id])); } catch (_e) { /* off */ } }
+    }
+
     function renderSide() {
-        $('share-list').innerHTML = (me?.shares || []).map((s) => `
-            <button type="button" class="side-item${s.name === share ? ' active' : ''}" data-share="${esc(s.name)}">
+        const seen = seenShares();
+        const shareRow = (s) => `
+            <button type="button" class="side-item${s.name === share && !(found && foundInfo.list) ? ' active' : ''}" data-share="${esc(s.name)}"${s.from ? ` title="Shared with you by ${esc(s.from)}"` : ''}>
                 <span class="ic">${icon(s.from ? 'users' : 'folder-fill')}</span><span>${esc(s.name)}</span>
+                ${s.from && !seen.includes(`${s.from}/${s.name}`) ? `<span class="ro new-badge">New</span>` : ''}
                 ${s.access === 'read' ? `<span class="ro" title="You can look, not change">${icon('lock').replace('<svg', '<svg width="13" height="13"')}</span>` : ''}
-            </button>`).join('');
+            </button>`;
+        const mine = (me?.shares || []).filter((s) => !s.from);
+        const theirs = (me?.shares || []).filter((s) => s.from);
+        $('share-list').innerHTML = mine.map(shareRow).join('')
+            + (theirs.length ? `<div class="side-head2">Shared with me</div>${theirs.map(shareRow).join('')}` : '');
         const parts = path ? path.split('/') : [];
+        $('recent-nav').classList.toggle('active', foundInfo.list === 'recent' && !!found);
+        $('starred-nav').classList.toggle('active', foundInfo.list === 'starred' && !!found);
+        if (found && foundInfo.list) {
+            $('crumbs').innerHTML = `<span class="crumb">${foundInfo.list === 'recent' ? 'Recent' : 'Starred'}</span>`;
+            $('new-btn').hidden = true;
+            return showSpace();
+        }
         $('crumbs').innerHTML = [`<button type="button" class="crumb" data-path="">${esc(share)}</button>`,
             ...parts.map((p, i) => `<span class="sep">›</span><button type="button" class="crumb" data-path="${esc(parts.slice(0, i + 1).join('/'))}">${esc(p)}</button>`)].join('');
         const canWrite = access() === 'write';
@@ -243,6 +297,8 @@
             box.hidden = true;
         }
     }
+    $('recent-nav').addEventListener('click', () => showList('recent'));
+    $('starred-nav').addEventListener('click', () => showList('starred'));
     $('share-list').addEventListener('click', (e) => { const b = e.target.closest('[data-share]'); if (b) go(b.dataset.share, ''); });
     $('crumbs').addEventListener('click', (e) => { const b = e.target.closest('[data-path]'); if (b) go(share, b.dataset.path); });
 
@@ -296,23 +352,50 @@
         return `<button type="button" class="hsort${on ? ' on' : ''}" data-sort="${next}"${extra} aria-label="Sort by ${label.toLowerCase()}">${label}${on ? `<span aria-hidden="true">${dir === 'desc' ? ' ↓' : ' ↑'}</span>` : ''}</button>`;
     }
 
+    // Search results can be narrowed by kind and by when they changed (in the browser, on what was found).
+    const KIND_FILTERS = [['', 'Everything'], ['folder', 'Folders'], ['image', 'Pictures'], ['video', 'Videos'], ['audio', 'Audio'], ['pdf', 'PDF'], ['doc', 'Documents'], ['archive', 'Archives']];
+    const AGE_FILTERS = [['', 'Any time'], ['1', 'Today'], ['7', 'Past week'], ['30', 'Past month'], ['365', 'Past year']];
+    const SIZE_FILTERS = [['', 'Any size'], ['1', 'Over 1 MB'], ['100', 'Over 100 MB'], ['1024', 'Over 1 GB']];
+    let searchFilter = { kind: '', age: '', size: '' };
+    const isSearch = () => !!found && !foundInfo.photos && !foundInfo.list;
+    function passesFilter(e) {
+        if (searchFilter.kind && kindOf(e) !== searchFilter.kind) return false;
+        if (searchFilter.size && !(e.type === 'file' && (Number(e.size_bytes) || 0) > Number(searchFilter.size) * 1048576)) return false;
+        if (searchFilter.age) {
+            const t = new Date(e.modified_at).getTime();
+            const start = new Date(); start.setHours(0, 0, 0, 0);
+            if (!(t >= start.getTime() - (Number(searchFilter.age) - 1) * 86400000)) return false;
+        }
+        return true;
+    }
+
     function render() {
+        renderChips();
         if (inTrash) { paintTrash(); return; }
         const q = found ? '' : $('search').value.trim().toLowerCase();
         shown = found ? found.slice() : entries.filter((e) => !q || e.name.toLowerCase().includes(q));
+        if (found && isSearch()) shown = shown.filter(passesFilter);
         if (!found) shown.sort(compare);
         const items = $('items');
         items.className = `items ${view}`;
         $('new-btn').hidden = access() !== 'write';
         $('view-grid').setAttribute('aria-pressed', view === 'grid');
         $('view-list').setAttribute('aria-pressed', view === 'list');
-        if (found && !shown.length && foundInfo.photos) {
+        if (found && !shown.length && foundInfo.photos && foundInfo.view.type === 'fav') {
+            items.innerHTML = `<div class="empty">${icon('heart')}<strong>No favourites yet</strong>Tap the heart when you look at a picture, or select pictures and choose Favourite.</div>`;
+        } else if (found && !shown.length && foundInfo.photos && foundInfo.view.type === 'album') {
+            items.innerHTML = `<div class="empty">${icon('image')}<strong>This album is empty</strong>Select pictures in All and choose Add to album.</div>`;
+        } else if (found && !shown.length && foundInfo.list) {
+            items.innerHTML = foundInfo.list === 'recent'
+                ? `<div class="empty">${icon('clock')}<strong>Nothing opened yet</strong>Files you open show up here.</div>`
+                : `<div class="empty">${icon('star')}<strong>Nothing starred yet</strong>Right-click a file or folder and choose Star.</div>`;
+        } else if (found && !shown.length && foundInfo.photos) {
             const own = (foundInfo.sources || []).find((src) => src.own);
             items.innerHTML = `<div class="empty">${icon('image')}<strong>No photos or videos yet</strong>${own
                 ? `Put pictures into "${esc([own.share, own.path].filter(Boolean).join(' › '))}" and they show up here, newest first.`
                 : 'You have no folder for photos yet. Ask whoever runs this NAS for a personal folder or a photo library.'}</div>`;
         } else if (found && !shown.length) {
-            items.innerHTML = `<div class="empty">${icon('search')}<strong>Nothing found</strong>No name here or in a folder below contains "${esc(foundInfo.q)}".</div>`;
+            items.innerHTML = `<div class="empty">${icon('search')}<strong>Nothing found</strong>${found.length ? 'Nothing found matches these filters. Try another kind or time.' : `No name here or in a folder below contains "${esc(foundInfo.q)}".`}</div>`;
         } else if (found && foundInfo.photos) {
             // The Photos view: a timeline by month, only pictures, no names.
             let month = '';
@@ -326,7 +409,8 @@
                 const thumb = THUMB.test(e.name)
                     ? `<img loading="lazy" decoding="async" alt="${esc(e.name)}" src="/api/thumb?share=${encodeURIComponent(sh(e))}&path=${encodeURIComponent(rel(e))}&v=${encodeURIComponent(e.modified_at || '')}" data-fallback="${k}">`
                     : `<span class="pvideo">${icon(k)}</span>`;
-                return `${head}<div class="ptile" data-i="${i}" title="${esc(rel(e))}">${thumb}</div>`;
+                const heart = favs.has(refOf(e)) ? `<span class="heart">${icon('heart-fill')}</span>` : '';
+                return `${head}<div class="ptile${k === 'video' ? ' vid' : ''}" data-i="${i}" title="${esc(rel(e))}">${thumb}${heart}</div>`;
             }).join('');
         } else if (!shown.length) {
             items.innerHTML = q
@@ -336,7 +420,7 @@
             items.innerHTML = shown.map((e, i) => {
                 const k = kindOf(e);
                 const thumb = THUMB.test(e.name)
-                    ? `<div class="thumb"><img loading="lazy" decoding="async" alt="" src="/api/thumb?share=${encodeURIComponent(sh(e))}&path=${encodeURIComponent(rel(e))}&v=${encodeURIComponent(e.modified_at || '')}" data-fallback="${k}"></div>`
+                    ? `<div class="thumb${k === 'video' ? ' vid' : ''}"><img loading="lazy" decoding="async" alt="" src="/api/thumb?share=${encodeURIComponent(sh(e))}&path=${encodeURIComponent(rel(e))}&v=${encodeURIComponent(e.modified_at || '')}" data-fallback="${k}"></div>`
                     : `<div class="thumb icon kind-${k}">${icon(k === 'folder' ? 'folder-fill' : k)}</div>`;
                 return `<div class="tile" data-i="${i}" title="${esc(found ? rel(e) : e.name)}" draggable="${access() === 'write'}">${thumb}<div class="name">${esc(e.name)}</div>${found ? `<div class="where">${esc(searchAll ? where(e) : where(e).split(' › ').pop())}</div>` : ''}
                     <button type="button" class="more" data-more="${i}" aria-label="More for ${esc(e.name)}">${icon('more')}</button></div>`;
@@ -373,24 +457,76 @@
             const head = document.createElement('div');
             head.className = 'results-head';
             const here = path ? path.split('/').pop() : share;
-            head.innerHTML = foundInfo.photos
-                ? `${icon('image').replace('<svg', '<svg width="16" height="16"')}<span>${found.length}${foundInfo.complete ? '' : '+'} photos and videos${foundInfo.albums?.[foundInfo.album] ? ` in ${esc(foundInfo.albums[foundInfo.album].name)}` : ''}, newest first</span>
+            const v = foundInfo.photos ? foundInfo.view : null;
+            const albumNow = currentAlbum();
+            const phoneNow = v?.type === 'phone' ? foundInfo.albums[v.i] : null;
+            const what = !v ? '' : v.type === 'fav' ? `${found.length} favourite${found.length === 1 ? '' : 's'}`
+                : albumNow ? `${found.length} picture${found.length === 1 ? '' : 's'} in "${esc(albumNow.name)}"`
+                    : phoneNow ? `${found.length} from ${esc(phoneNow.phone)} · ${esc(phoneNow.name)}`
+                        : `${found.length}${foundInfo.complete ? '' : '+'} photos and videos, newest first`;
+            head.innerHTML = foundInfo.list
+                ? `${icon(foundInfo.list === 'recent' ? 'clock' : 'star').replace('<svg', '<svg width="16" height="16"')}<span>${foundInfo.list === 'recent' ? 'Recently opened' : 'Starred'} · ${found.length} ${found.length === 1 ? 'item' : 'items'}</span>`
+                : foundInfo.photos
+                ? `${icon(v.type === 'fav' ? 'heart' : 'image').replace('<svg', '<svg width="16" height="16"')}<span>${what}</span>
+                <span class="head-actions">${albumNow && foundInfo.lib.writable ? `<button type="button" class="link" id="album-rename">Rename</button><button type="button" class="link" id="album-delete">Delete album</button>` : ''}
+                ${(foundInfo.sources || []).some((src) => src.own && src.writable !== false) ? `<button type="button" class="btn" id="photos-upload" title="Add pictures and videos from this device">${icon('upload')}<span class="hide-phone">Upload</span></button>` : ''}
+                <button type="button" class="btn${foundInfo.selecting ? ' primary' : ''}" id="photos-select" aria-pressed="${!!foundInfo.selecting}">${foundInfo.selecting ? 'Done' : 'Select'}</button></span>
                 <button type="button" class="link" id="results-close">Back to the folder</button>`
                 : `${icon('search').replace('<svg', '<svg width="16" height="16"')}<span>${found.length}${foundInfo.complete ? '' : '+'} found for "${esc(foundInfo.q)}"${foundInfo.complete ? '' : ' · type more to narrow it down'}</span>
                 <span class="scope" role="group" aria-label="Where to search"><button type="button" data-scope="here" aria-pressed="${!searchAll}">In ${esc(here)}</button><button type="button" data-scope="all" aria-pressed="${searchAll}">All shared folders</button></span>
                 <button type="button" class="link" id="results-close">Back to the folder</button>`;
             items.prepend(head);
-            if (foundInfo.photos && foundInfo.albums?.length) {
+            if (foundInfo.photos) {
                 const strip = document.createElement('div');
-                strip.className = 'albums';
+                strip.className = 'chips albums';
                 strip.setAttribute('role', 'group');
                 strip.setAttribute('aria-label', 'Albums');
-                strip.innerHTML = `<button type="button" data-album="-1" aria-pressed="${foundInfo.album === -1}">All</button>`
-                    + foundInfo.albums.map((a, i) => `<button type="button" data-album="${i}" aria-pressed="${foundInfo.album === i}" title="${esc(`${a.phone} › ${a.name}`)}">${esc(a.name)}<small>${esc(a.phone)}</small></button>`).join('');
+                const here = new Set(foundInfo.all.map(refOf));
+                const on = (type, id) => foundInfo.view.type === type && (id === undefined || foundInfo.view[id[0]] === id[1]);
+                const chip = (key, pressed, label, small, extra = '') => `<button type="button" data-v="${esc(key)}" aria-pressed="${pressed}"${extra}>${label}<small>${esc(small)}</small></button>`;
+                strip.innerHTML = chip('all', on('all'), 'All', `${foundInfo.all.length}${foundInfo.complete ? '' : '+'} items`)
+                    + chip('fav', on('fav'), `${icon('heart').replace('<svg', '<svg width="13" height="13"')} Favourites`, `${[...favs].filter((r) => here.has(r)).length} pictures`)
+                    + foundInfo.lib.albums.map((a) => chip(`album:${a.id}`, on('album', ['id', a.id]), esc(a.name), `${a.items.filter((r) => here.has(r)).length} pictures`)).join('')
+                    + foundInfo.albums.map((a, i) => chip(`phone:${i}`, on('phone', ['i', i]), esc(a.name), a.phone, ` title="${esc(`${a.phone} › ${a.name}`)}"`)).join('')
+                    + (foundInfo.lib.writable ? `<button type="button" class="chip-new" data-v="new">${icon('plus').replace('<svg', '<svg width="14" height="14"')}New album</button>` : '');
                 head.after(strip);
-                strip.querySelectorAll('[data-album]').forEach((b) => b.addEventListener('click', () => showAlbum(Number(b.dataset.album))));
+                strip.querySelectorAll('[data-v]').forEach((b) => b.addEventListener('click', () => {
+                    const [type, arg] = b.dataset.v.split(':');
+                    if (type === 'new') newAlbum([]);
+                    else if (type === 'album') setPhotoView({ type, id: arg });
+                    else if (type === 'phone') setPhotoView({ type, i: Number(arg) });
+                    else setPhotoView({ type });
+                }));
             }
-            head.querySelector('#results-close').addEventListener('click', clearSearch);
+            if (foundInfo.photos && window.AlvaApp) head.after(appBackupBanner());
+            if (isSearch()) {
+                const present = new Set(found.map(kindOf));
+                const strip = document.createElement('div');
+                strip.className = 'chips filters';
+                strip.setAttribute('role', 'group');
+                strip.setAttribute('aria-label', 'Narrow the results');
+                strip.innerHTML = KIND_FILTERS.filter(([k]) => !k || present.has(k) || searchFilter.kind === k)
+                    .map(([k, l]) => `<button type="button" data-fk="${k}" aria-pressed="${searchFilter.kind === k}">${l}</button>`).join('')
+                    + '<span class="chip-gap"></span>'
+                    + AGE_FILTERS.map(([k, l]) => `<button type="button" data-fa="${k}" aria-pressed="${searchFilter.age === k}">${l}</button>`).join('')
+                    + '<span class="chip-gap"></span>'
+                    + SIZE_FILTERS.map(([k, l]) => `<button type="button" data-fs="${k}" aria-pressed="${searchFilter.size === k}">${l}</button>`).join('');
+                head.after(strip);
+                strip.addEventListener('click', (ev) => {
+                    const b = ev.target.closest('button');
+                    if (!b) return;
+                    if (b.dataset.fk !== undefined) searchFilter.kind = b.dataset.fk;
+                    if (b.dataset.fa !== undefined) searchFilter.age = b.dataset.fa;
+                    if (b.dataset.fs !== undefined) searchFilter.size = b.dataset.fs;
+                    selected = new Set();
+                    render();
+                });
+            }
+            head.querySelector('#results-close')?.addEventListener('click', clearSearch);
+            head.querySelector('#photos-upload')?.addEventListener('click', () => $('photo-input').click());
+            head.querySelector('#photos-select')?.addEventListener('click', () => { foundInfo.selecting = !foundInfo.selecting; if (!foundInfo.selecting) selected = new Set(); render(); });
+            head.querySelector('#album-rename')?.addEventListener('click', renameAlbum);
+            head.querySelector('#album-delete')?.addEventListener('click', deleteAlbum);
             head.querySelectorAll('[data-scope]').forEach((b) => b.addEventListener('click', () => {
                 searchAll = b.dataset.scope === 'all';
                 deepSearch();
@@ -417,8 +553,14 @@
             const size = sel.filter((e) => e.type === 'file').reduce((s, e) => s + (e.size_bytes || 0), 0);
             $('sel-count').textContent = `${n} selected${size ? ` · ${bytes(size)}` : ''}`;
             const canWrite = access() === 'write';
-            $('sel-rename').hidden = !canWrite || n !== 1;
+            const photos = !!(found && foundInfo.photos);
+            const mine = photos && foundInfo.lib?.writable;
+            $('sel-rename').hidden = photos || !canWrite || n !== 1;
             $('sel-delete').hidden = !canWrite;
+            $('sel-fav').hidden = !mine;
+            $('sel-album').hidden = !mine;
+            $('sel-unalbum').hidden = !(mine && foundInfo.view.type === 'album');
+            if (mine) $('sel-fav').lastElementChild.textContent = sel.every((x) => favs.has(refOf(x))) ? 'Remove heart' : 'Favourite';
             $('sel-download').hidden = false;
         }
         if (found) { $('status').textContent = foundInfo.photos ? 'Photos · click one to look through them' : 'Search results · open one, or "Show in folder" to change it'; return; }
@@ -459,7 +601,9 @@
         const i = Number(item.dataset.i);
         // Touch: a tap opens, like on a phone. Mouse: click selects, double-click opens.
         // In Photos a click opens the picture, like in any photo app.
-        if ((found && foundInfo.photos && !(e.ctrlKey || e.metaKey || e.shiftKey)) || (coarse.matches && !selected.size)) open(shown[i]);
+        const photos = !!(found && foundInfo.photos);
+        if (photos && (foundInfo.selecting || selected.size)) select(i, { ctrlKey: true });          // choosing pictures: a tap toggles
+        else if ((photos && !(e.ctrlKey || e.metaKey || e.shiftKey)) || (coarse.matches && !selected.size)) open(shown[i]);
         else select(i, e);
     });
     $('items').addEventListener('dblclick', (e) => {
@@ -558,8 +702,50 @@
 
     function selectedEntries() { return shown.filter((e) => selected.has(e.name)); }
 
+
+    // ── Recent and starred: kept in this browser, shown like search results ─────
+    const listKey = (name) => `alvaos_files_${name}_${me?.user || ''}`;
+    function readList(name) {
+        try { const v = JSON.parse(localStorage.getItem(listKey(name)) || '[]'); return Array.isArray(v) ? v : []; } catch (_e) { return []; }
+    }
+    function writeList(name, items) { try { localStorage.setItem(listKey(name), JSON.stringify(items)); } catch (_e) { /* off */ } }
+    const itemId = (e) => `${sh(e)}/${rel(e)}`;
+    const slim = (e) => ({ name: e.name, type: e.type, share: sh(e), folder: rel(e).includes('/') ? rel(e).split('/').slice(0, -1).join('/') : '',
+        size_bytes: e.size_bytes, modified_at: e.modified_at });
+    function rememberRecent(e) {
+        if (!me || e.type !== 'file') return;
+        const id = itemId(e);
+        writeList('recent', [slim(e), ...readList('recent').filter((x) => itemId(x) !== id)].slice(0, 40));
+    }
+    const isStarred = (e) => readList('starred').some((x) => itemId(x) === itemId(e));
+    function toggleStar(list) {
+        const all = readList('starred');
+        const every = list.every(isStarred);
+        const ids = new Set(list.map(itemId));
+        const rest = all.filter((x) => !ids.has(itemId(x)));
+        writeList('starred', every ? rest : [...list.map(slim), ...rest].slice(0, 200));
+        toast(every ? 'Removed from Starred.' : list.length === 1 ? `"${list[0].name}" is in Starred now.` : `${list.length} items are in Starred now.`);
+        if (found && foundInfo.list === 'starred') showList('starred');
+    }
+    function showList(kind) {
+        leaveView();
+        current = 'files';
+        leavePhotos();
+        $('search').value = '';
+        selected = new Set();
+        anchor = -1;
+        share = '';
+        path = '';
+        found = readList(kind);
+        foundInfo = { q: '', complete: true, list: kind };
+        closeSide();
+        renderSide();
+        render();
+    }
+
     async function open(entry) {
         if (!entry) return;
+        rememberRecent(entry);
         if (entry.type === 'folder') { go(sh(entry), rel(entry)); return; }
         if (/\.pdf$/i.test(entry.name)) {
             const w = window.open('', '_blank');
@@ -616,6 +802,7 @@
         if (canWrite && one) rows.push(`<button type="button" data-ctx="rename">${icon('pen')}Rename</button>`);
         if (one && one.type === 'folder' && !shareOf(sh(one))?.from) rows.push(`<button type="button" data-ctx="people">${icon('user-plus')}Share with people…</button>`);
         if (one && !shareOf(sh(one))?.from) rows.push(`<button type="button" data-ctx="share">${icon('link')}Share link…</button>`);
+        if (sel.length) rows.push(`<button type="button" data-ctx="star">${icon('star')}${sel.every(isStarred) ? 'Remove from Starred' : 'Star'}</button>`);
         if (one && one.type === 'file') rows.push(`<button type="button" data-ctx="versions">${icon('clock')}Previous versions…</button>`);
         if (canWrite && sel.length) rows.push(`<button type="button" data-ctx="move">${icon('folder')}Move to…</button>`, `<button type="button" data-ctx="copy">${icon('copy')}Copy to…</button>`);
         if (canWrite && sel.length) rows.push('<hr>', `<button type="button" class="danger" data-ctx="delete">${icon('trash')}Delete</button>`);
@@ -633,13 +820,15 @@
         $('ctx').hidden = true;
         $('new-menu').hidden = true;
         $('sort-menu').hidden = true;
+        $('more-menu').hidden = true;
+        $('more-btn').setAttribute('aria-expanded', 'false');
         $('sort-btn').setAttribute('aria-expanded', 'false');
         if ($('store-menu')) {
             $('store-menu').hidden = true;
             $('rail-store').setAttribute('aria-expanded', 'false');
         }
     };
-    document.addEventListener('click', (e) => { if (!e.target.closest('.menu') && !e.target.closest('#new-btn') && !e.target.closest('#sort-btn')) hideMenus(); });
+    document.addEventListener('click', (e) => { if (!e.target.closest('.menu') && !e.target.closest('#new-btn') && !e.target.closest('#sort-btn') && !e.target.closest('#more-btn')) hideMenus(); });
     $('ctx').addEventListener('click', (e) => {
         const b = e.target.closest('[data-ctx]');
         if (!b) return;
@@ -664,6 +853,7 @@
         if (name === 'upload-folder') $('folder-input').click();
         if (name === 'people' && sel.length === 1) peopleDialog(sel[0]);
         if (name === 'folder') newFolder();
+        if (name === 'star' && sel.length) toggleStar(sel);
     }
 
     $('new-btn').addEventListener('click', () => { $('new-menu').hidden = !$('new-menu').hidden; });
@@ -677,6 +867,26 @@
     $('sel-download').addEventListener('click', () => action('download'));
     $('sel-rename').addEventListener('click', () => action('rename'));
     $('sel-delete').addEventListener('click', () => action('delete'));
+    // "⋯" (in the app only): the view, and what the side bar has elsewhere.
+    $('more-btn').addEventListener('click', () => {
+        const menu = $('more-menu');
+        const opening = menu.hidden;
+        hideMenus();
+        if (!opening) return;
+        menu.innerHTML = `<button type="button" role="menuitem" data-more="view">${icon(view === 'grid' ? 'list' : 'grid')}${view === 'grid' ? 'Show as a list' : 'Show as a grid'}</button><hr>
+            <button type="button" role="menuitem" data-more="links">${icon('link')}Shared links</button>
+            <button type="button" role="menuitem" data-more="trash">${icon('trash')}Trash</button>
+            <button type="button" role="menuitem" data-more="devices">${icon('phone')}Devices</button>`;
+        menu.hidden = false;
+        $('more-btn').setAttribute('aria-expanded', 'true');
+    });
+    $('more-menu').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-more]');
+        if (!b) return;
+        hideMenus();
+        if (b.dataset.more === 'view') setView(view === 'grid' ? 'list' : 'grid');
+        else openTool(b.dataset.more);
+    });
     $('sort-btn').addEventListener('click', () => {
         const menu = $('sort-menu');
         const opening = menu.hidden;
@@ -719,6 +929,7 @@
             if (id !== searchId || $('search').value.trim() !== q) return;
             found = (data.results || []).filter((e) => !e.name.startsWith('.'));
             foundInfo = { q, complete: !!data.complete };
+            searchFilter = { kind: '', age: '', size: '' };
             selected = new Set();
             anchor = -1;
             render();
@@ -979,13 +1190,11 @@
     }
 
     // WebDAV (files_dav.py, port 8091): the same folders in Finder, Windows
-    // Explorer or a file app on a phone.
-    $('connect-nav').addEventListener('click', () => {
-        closeSide();
+    // Explorer or a file app on a computer. It sits in the Devices dialog.
+    function davBlock() {
         const secure = location.protocol === 'https:';
         const url = secure ? `https://${location.hostname}:9444/` : `http://${location.hostname}:8091/`;
-        const wrap = $('dialog');
-        wrap.innerHTML = `<div class="dialog wide"><h2>Open your folders on a computer</h2>
+        const html = `<details class="dav" id="dav-block"><summary>${icon('monitor')} Computer: open your folders</summary>
             <p>Your shared folders also open in the file manager of a computer or phone, with the same name and password as here (WebDAV).${me?.role === 'admin' ? ' The admin account cannot be used there; sign in as one of the people from Storage › Users.' : ''}</p>
             <div class="linkbox"><input readonly value="${esc(url)}" id="dav-url"><button type="button" class="btn primary" id="dav-copy">${icon('copy')}Copy</button></div>
             <div class="howto">
@@ -993,20 +1202,23 @@
                 <p><strong>Linux:</strong> Files › Other Locations, enter <code>${secure ? `davs://${esc(location.hostname)}:9444/` : `dav://${esc(location.hostname)}:8091/`}</code>.</p>
                 <p><strong>Windows:</strong> This PC › Map network drive › "Connect to a Web site…", paste the address. ${secure ? 'This works once the NAS certificate is trusted (Settings › Security in AlvaOS).' : `Windows only signs in to WebDAV over HTTPS: open Files with https:// first. The shared folders (\\\\${esc(location.hostname)}) also work.`}</p>
                 <p><strong>Phone:</strong> a file app with WebDAV, like Documents (iPhone) or Solid Explorer (Android).</p>
-            </div>
-            <div class="actions"><button type="button" class="btn primary" data-close>Done</button></div></div>`;
-        wrap.hidden = false;
-        $('dav-copy').onclick = () => copy(url);
-        wrap.querySelector('[data-close]').onclick = () => { wrap.hidden = true; wrap.innerHTML = ''; };
-    });
+            </div></details>`;
+        return { html, wire: (root) => { const c = root.querySelector('#dav-copy'); if (c) c.onclick = () => copy(url); } };
+    }
 
-    // Phones and devices: connect the AlvaOS app with a QR code (or a code to
-    // type), and see, rename and sign out the phones that are connected.
+    // Devices: connect the AlvaOS app on a phone with a QR code (or a code to
+    // type), open the folders on a computer, and see, rename and sign out what is connected.
     const APP_DOWNLOAD = 'https://github.com/SnowTimSwiss/AlvaOS/releases/latest/download/alvaos-android.apk';
     // Inside the AlvaOS app the Hub leaves to the app what is the app's: signing
     // out this phone (the app's Settings) and offering the app itself.
     const IN_APP = /AlvaOSApp\//.test(navigator.userAgent);
     if (IN_APP) document.documentElement.classList.add('in-app');
+    let pendingTool = '';
+    function openTool(t) {
+        if (t === 'trash') showTrash((me?.shares || []).some((s) => s.name === share) ? share : me?.shares?.[0]?.name);
+        else if (t === 'links') $('links-nav').click();
+        else if (t === 'devices') $('devices-nav').click();
+    }
     function ago(iso) {
         const t = new Date(iso).getTime();
         if (Number.isNaN(t)) return '';
@@ -1037,7 +1249,9 @@
             known = new Set(list.map((d) => d.id));
             const left = pairing ? Math.max(0, Math.round((pairing.until - Date.now()) / 1000)) : 0;
             if (pairing && !left) pairing = null;
-            wrap.innerHTML = `<div class="dialog wide devices"><h2>Phones and devices</h2>
+            const dav = davBlock();
+            const davOpen = wrap.querySelector('#dav-block')?.open;
+            wrap.innerHTML = `<div class="dialog wide devices"><h2>Devices</h2>
                 ${pairing ? `<div class="pair">
                     <div class="qr">${pairing.qr ? `<img alt="QR code to connect a phone" src="${pairing.qr}">` : ''}</div>
                     <div class="pair-steps">
@@ -1045,9 +1259,9 @@
                         <p><strong>2.</strong> Open it and tap <strong>Scan QR code</strong>.</p>
                         <p><strong>3.</strong> Point the phone at this code. That's it: no password needed.</p>
                         <p class="pair-code">Or type the code <strong>${esc(pairing.code)}</strong> in the app${pairing.addresses.length ? `, with the address <code>${esc(pairing.addresses[0])}</code>` : ''}.</p>
-                        <p class="muted">Works once, for ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} more minutes.${pairing.addresses.length > 1 ? ` Away from home the app uses ${esc(pairing.addresses.slice(1).join(', '))}.` : ''}</p>
+                        <p class="muted">Works once, for ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} more minutes.${pairing.away ? ' Away from home the app connects through AlvaOS Link.' : ' At home only: the admin can turn on AlvaOS Link in Settings.'}</p>
                     </div></div>`
-                : `<p>Phones with the AlvaOS app use every Hub app you have, back up their photos, and stay signed in. Connect one with a QR code: no password to type.</p>
+                : `<p>Connect a phone with the AlvaOS app: it uses every Hub app you have, backs up its photos and stays signed in, at home and away (AlvaOS Link). A QR code is all it takes, no password to type.</p>
                     <div class="actions" style="justify-content:flex-start;margin:0 0 14px"><button type="button" class="btn primary" id="pair-btn">${icon('plus')}Connect a phone</button>
                     ${IN_APP ? '' : `<a class="btn" href="${APP_DOWNLOAD}" target="_blank" rel="noopener">${icon('download')}Get the Android app</a>`}</div>`}
                 <div class="trash-list">${error ? esc(error) : list.length ? list.map((d) => `<div class="trash-row device">
@@ -1059,9 +1273,12 @@
                     <div class="dev-actions"><button type="button" class="btn" data-rename="${esc(d.id)}" title="Rename">${icon('pen')}</button>
                     <button type="button" class="btn danger" data-remove="${esc(d.id)}">Sign out</button></div></div>`).join('')
                 : '<div class="empty" style="padding:24px 0">No phone is connected yet.</div>'}</div>
+                ${dav.html}
                 <div class="actions">${pairing ? '<button type="button" class="btn" id="pair-new">New code</button>' : ''}<button type="button" class="btn primary" data-close>Done</button></div></div>`;
             wrap.hidden = false;
             paintIcons(wrap);
+            dav.wire(wrap);
+            if (davOpen) wrap.querySelector('#dav-block').open = true;
             wrap.querySelector('[data-close]').onclick = close;
             wrap.onclick = (e) => { if (e.target === wrap) close(); };
             const start = async () => {
@@ -1109,15 +1326,19 @@
     async function showPhotos() {
         leaveView();
         current = 'photos';
+        renderChips();
         closeSide();
         $('search').value = '';
         const id = ++searchId;
         markRail();
+        $('crumbs').innerHTML = '<span class="crumb">Photos</span>';
+        $('new-btn').hidden = true;
         $('items').innerHTML = '<div class="empty">Looking for photos…</div>';
         document.querySelectorAll('.side-item').forEach((b) => b.classList.remove('active'));
         try {
             // Own photos and the photo libraries (chosen on the admin's Hub page), together.
             const { sources } = await api('photos/sources');
+            const library = api('photos/library').catch(() => null);        // albums and hearts (not for a read-only place)
             const [parts, phones] = await Promise.all([
                 Promise.all(sources.map((src) => api(`media?${new URLSearchParams({ share: src.share, path: src.path })}`)
                     .catch(() => ({ results: [], complete: true })))),   // e.g. a Photos folder not made yet
@@ -1133,7 +1354,9 @@
                 folder: [phones.folder, ph.folder, name].filter(Boolean).join('/'),
             })));
             found = all;
-            foundInfo = { q: '', complete: parts.every((p) => p.complete), photos: true, sources, all, albums, album: -1 };
+            const lib = libraryOf(await library);
+            foundInfo = { q: '', complete: parts.every((p) => p.complete), photos: true, sources, all, albums, lib, view: { type: 'all' }, selecting: false };
+            favs = new Set(lib.favourites);
             selected = new Set();
             render();
         } catch (err) {
@@ -1141,13 +1364,169 @@
         }
     }
 
-    function showAlbum(i) {
-        const a = foundInfo.albums[i];
-        foundInfo.album = a ? i : -1;
-        found = a ? foundInfo.all.filter((e) => sh(e) === a.share && (e.folder === a.folder || (e.folder || '').startsWith(`${a.folder}/`)))
-            : foundInfo.all;
+    // The photo backup of this phone, as a card on top of Photos (only in the AlvaOS app).
+    function appBackupBanner() {
+        let b = {};
+        try { b = JSON.parse(window.AlvaApp.backup()); } catch (_e) { /* no answer */ }
+        const el = document.createElement('div');
+        el.className = 'appbackup';
+        let head = 'Back up this phone\'s photos';
+        let sub = 'Pictures and videos go to your NAS by themselves.';
+        let bar = '';
+        if (b.on && b.running) {
+            head = b.total ? `Backing up ${b.done} of ${b.total}` : 'Looking for new pictures…';
+            sub = 'Photos from this phone';
+            bar = `<div class="up-bar"><span style="width:${b.total ? Math.round((100 * b.done) / b.total) : 0}%"></span></div>`;
+        } else if (b.on) {
+            head = `${b.count} picture${b.count === 1 ? '' : 's'} backed up`;
+            sub = b.last ? `Last backup ${ago(new Date(b.last).toISOString())}` : 'Starting soon';
+        }
+        el.innerHTML = `<span class="ab-ic">${icon('cloud-upload')}</span><div class="ab-text"><strong>${esc(head)}</strong><small>${esc(sub)}</small>${bar}</div>
+            <button type="button" class="btn ${b.on ? '' : 'primary'}">${b.on ? 'Open' : 'Set up'}</button>`;
+        el.querySelector('button').onclick = () => window.AlvaApp.openBackup();
+        el.onclick = (e) => { if (e.target.closest('button')) return; window.AlvaApp.openBackup(); };
+        return el;
+    }
+    setInterval(() => {
+        const old = document.querySelector('.appbackup');
+        if (old && window.AlvaApp && !document.hidden) old.replaceWith(appBackupBanner());
+    }, 4000);
+
+    // ── Photos: favourites and albums of the person (docs/PHOTOS.md) ──────
+    // A picture is named "<shared folder>/<path>"; an album is a list of those, no copies.
+    let favs = new Set();
+    const refOf = (e) => `${sh(e)}/${rel(e)}`;
+    const libraryOf = (answer) => ({ albums: answer?.albums || [], favourites: answer?.favourites || [], writable: !!answer?.writable });
+
+    // The pictures of the chosen view: all, hearts, an album of the person, or a folder of a phone.
+    function photoList() {
+        const v = foundInfo.view;
+        const all = foundInfo.all;
+        if (v.type === 'fav') return all.filter((e) => favs.has(refOf(e)));
+        if (v.type === 'album') {
+            const album = foundInfo.lib.albums.find((a) => a.id === v.id);
+            const set = new Set(album?.items || []);
+            return all.filter((e) => set.has(refOf(e)));
+        }
+        if (v.type === 'phone') {
+            const a = foundInfo.albums[v.i];
+            return a ? all.filter((e) => sh(e) === a.share && (e.folder === a.folder || (e.folder || '').startsWith(`${a.folder}/`))) : all;
+        }
+        return all;
+    }
+    function setPhotoView(v) {
+        foundInfo.view = v;
+        found = photoList();
         selected = new Set();
         render();
+    }
+    function currentAlbum() {
+        const v = foundInfo?.view;
+        return v?.type === 'album' ? foundInfo.lib.albums.find((a) => a.id === v.id) : null;
+    }
+    async function reloadLibrary() {
+        const answer = await api('photos/library').catch(() => null);
+        foundInfo.lib = libraryOf(answer);
+        favs = new Set(foundInfo.lib.favourites);
+        found = photoList();
+    }
+    // Hearts: on for the pictures, or off if they all have one already.
+    async function toggleFav(entries) {
+        const refs = entries.map(refOf);
+        const off = refs.every((r) => favs.has(r));
+        try {
+            await api('photos/favourites', { method: 'PATCH', json: off ? { remove: refs } : { add: refs } });
+            await reloadLibrary();
+            toast(off ? `${refs.length === 1 ? 'The picture is' : `${refs.length} pictures are`} no longer a favourite.` : `Added to your favourites.`);
+        } catch (err) { toast(err.message, 'error'); }
+        selected = new Set();
+        render();
+        if (!$('viewer').hidden) paintViewerFav();
+    }
+    function paintViewerFav() {
+        const b = $('viewer-fav');
+        const entry = shown[viewing];
+        b.hidden = !(found && foundInfo.photos && foundInfo.lib?.writable && entry);
+        if (b.hidden) return;
+        const on = favs.has(refOf(entry));
+        b.innerHTML = icon(on ? 'heart-fill' : 'heart');
+        b.setAttribute('aria-pressed', on);
+        b.title = on ? 'Remove from favourites' : 'Add to favourites';
+    }
+    $('viewer-fav').addEventListener('click', () => { const e = shown[viewing]; if (e) toggleFav([e]); });
+
+    async function newAlbum(entries) {
+        const name = await ask({ title: 'New album', text: entries.length ? `With ${entries.length} picture${entries.length === 1 ? '' : 's'}.` : '', value: '', okLabel: 'Create' });
+        if (!name) return;
+        try {
+            const r = await api('photos/albums', { method: 'POST', json: { name, items: entries.map(refOf) } });
+            await reloadLibrary();
+            toast(`Album "${r.album.name}" made.`);
+            foundInfo.selecting = false;
+            setPhotoView({ type: 'album', id: r.album.id });
+        } catch (err) { toast(err.message, 'error'); }
+    }
+    function addToAlbum(entries) {
+        const refs = entries.map(refOf);
+        const wrap = $('dialog');
+        const close = () => { wrap.hidden = true; wrap.innerHTML = ''; };
+        wrap.innerHTML = `<div class="dialog"><h2>Add to album</h2>
+            <div class="trash-list">${foundInfo.lib.albums.length ? foundInfo.lib.albums.map((a) => `<button type="button" class="pick-row" data-album="${esc(a.id)}"><span class="pick-ic">${icon('image')}</span><span><strong>${esc(a.name)}</strong><small>${a.items.length} picture${a.items.length === 1 ? '' : 's'}</small></span></button>`).join('')
+                : '<div class="empty" style="padding:18px 0">No albums yet.</div>'}</div>
+            <div class="actions"><button type="button" class="btn" data-cancel>Cancel</button><button type="button" class="btn primary" data-newalbum>${icon('plus')}New album</button></div></div>`;
+        wrap.hidden = false;
+        wrap.onclick = (e) => { if (e.target === wrap) close(); };
+        wrap.querySelector('[data-cancel]').onclick = close;
+        wrap.querySelector('[data-newalbum]').onclick = () => { close(); newAlbum(entries); };
+        wrap.querySelectorAll('[data-album]').forEach((b) => { b.onclick = async () => {
+            const album = foundInfo.lib.albums.find((a) => a.id === b.dataset.album);
+            close();
+            try {
+                await api(`photos/albums/${encodeURIComponent(album.id)}`, { method: 'PATCH', json: { add: refs } });
+                await reloadLibrary();
+                toast(`Added to "${album.name}".`);
+            } catch (err) { toast(err.message, 'error'); }
+            selected = new Set();
+            foundInfo.selecting = false;
+            render();
+        }; });
+    }
+    async function removeFromAlbum(entries) {
+        const album = currentAlbum();
+        if (!album) return;
+        try {
+            await api(`photos/albums/${encodeURIComponent(album.id)}`, { method: 'PATCH', json: { remove: entries.map(refOf) } });
+            await reloadLibrary();
+            toast(`Removed from "${album.name}". The pictures stay where they are.`);
+        } catch (err) { toast(err.message, 'error'); }
+        selected = new Set();
+        render();
+    }
+    async function renameAlbum() {
+        const album = currentAlbum();
+        if (!album) return;
+        const name = await ask({ title: 'Rename the album', value: album.name, okLabel: 'Rename' });
+        if (!name) return;
+        try { await api(`photos/albums/${encodeURIComponent(album.id)}`, { method: 'PATCH', json: { name } }); await reloadLibrary(); } catch (err) { toast(err.message, 'error'); }
+        render();
+    }
+    async function deleteAlbum() {
+        const album = currentAlbum();
+        if (!album) return;
+        const yes = await ask({ title: `Delete the album "${album.name}"?`, text: 'Only the album goes. The pictures stay where they are.', okLabel: 'Delete album', danger: true });
+        if (!yes) return;
+        try { await api(`photos/albums/${encodeURIComponent(album.id)}`, { method: 'DELETE' }); await reloadLibrary(); } catch (err) { toast(err.message, 'error'); }
+        setPhotoView({ type: 'all' });
+    }
+    $('sel-fav').addEventListener('click', () => toggleFav(selectedEntries()));
+    $('sel-album').addEventListener('click', () => addToAlbum(selectedEntries()));
+    $('sel-unalbum').addEventListener('click', () => removeFromAlbum(selectedEntries()));
+
+    function showNewUploads(n) {
+        const badge = $('links-badge');
+        badge.hidden = !n;
+        badge.textContent = n ? `${n} new` : '';
+        badge.title = n ? 'Files that people put into your upload links' : '';
     }
 
     $('links-nav').addEventListener('click', async () => {
@@ -1160,10 +1539,11 @@
             try { links = (await api('links')).links || []; } catch (err) { error = err.message; }
             wrap.innerHTML = `<div class="dialog wide"><h2>Shared links</h2><p>Links you made. Anyone with a link can open what it points to until it expires or you remove it.</p>
                 <div class="trash-list">${error ? esc(error) : links.length ? links.map((l) => `<div class="trash-row"><div><strong>${icon(l.kind === 'folder' ? 'folder' : 'file')} ${esc(l.name)}</strong>
-                <small>${l.mode === 'upload' ? `Upload only${l.max_bytes ? ` (${bytes(l.received || 0)} of ${bytes(l.max_bytes)})` : l.received ? ` (${bytes(l.received)} received)` : ''} · ` : ''}${esc([l.share, ...l.path.split('/').slice(0, -1)].join(' › '))} · ${l.expires_at ? `until ${esc(when(l.expires_at))}` : 'no end date'}${l.has_password ? ' · password' : ''}${me?.role === 'admin' && l.owner !== me.user ? ` · by ${esc(l.owner)}` : ''}</small></div>
+                <small>${l.new_files ? `<strong>${l.new_files} new ${l.new_files === 1 ? 'file' : 'files'}</strong> · ` : ''}${l.mode === 'upload' ? `Upload only${l.max_bytes ? ` (${bytes(l.received || 0)} of ${bytes(l.max_bytes)})` : l.received ? ` (${bytes(l.received)} received)` : ''} · ` : ''}${esc([l.share, ...l.path.split('/').slice(0, -1)].join(' › '))} · ${l.expires_at ? `until ${esc(when(l.expires_at))}` : 'no end date'}${l.has_password ? ' · password' : ''}${me?.role === 'admin' && l.owner !== me.user ? ` · by ${esc(l.owner)}` : ''}</small></div>
                 <div style="display:flex;gap:6px"><button type="button" class="btn" data-copy="${esc(l.url)}">${icon('copy')}<span class="hide-phone">Copy</span></button><button type="button" class="btn danger" data-del="${esc(l.id)}">Remove</button></div></div>`).join('') : '<div class="empty" style="padding:30px 0">No shared links yet. Right-click a file or folder and choose "Share link".</div>'}</div>
                 <div class="actions"><button type="button" class="btn primary" data-close>Done</button></div></div>`;
             wrap.querySelector('[data-close]').onclick = () => { wrap.hidden = true; wrap.innerHTML = ''; };
+            if (links.some((l) => l.new_files)) { api('links/seen', { method: 'POST' }).then(() => showNewUploads(0), () => {}); }
             wrap.querySelectorAll('[data-copy]').forEach((b) => { b.onclick = () => copy(fullUrl(b.dataset.copy)); });
             wrap.querySelectorAll('[data-del]').forEach((b) => { b.onclick = async () => {
                 b.disabled = true;
@@ -1282,10 +1662,11 @@
         found = null;
         selected = new Set();
         inTrash = forShare;
+        renderChips();
         $('search').value = '';
         document.querySelectorAll('.side-item').forEach((b) => b.classList.toggle('active', b.id === 'trash-nav'));
         $('new-btn').hidden = true;
-        $('crumbs').innerHTML = `<span class="crumb current">Trash</span>`;
+        $('crumbs').innerHTML = '<span class="crumb">Trash</span>';
         $('items').className = 'items list trash';
         $('items').innerHTML = '<div class="empty">Looking in the trash…</div>';
         paintSelection();
@@ -1421,6 +1802,23 @@
         }
     }
 
+    // Photos: pictures and videos from this device into the own photos folder "Uploads".
+    $('photo-input').addEventListener('change', async (e) => {
+        const files = [...e.target.files];
+        e.target.value = '';
+        const own = (foundInfo.sources || []).find((src) => src.own);
+        if (!files.length || !own) return;
+        const t = { share: own.share, path: join(own.path, 'Uploads') };
+        try {
+            await api('mkdir', { method: 'POST', json: { share: t.share, path: own.path, name: 'Uploads' } });
+        } catch (err) {
+            if (!/already there/.test(err.message)) { toast(err.message, 'error'); return; }
+        }
+        let ok = 0;
+        for (const f of files) if (await uploadOne(f, t)) ok += 1;
+        if (ok) { toast(`${ok} ${ok === 1 ? 'file' : 'files'} added to your photos.`); if (current === 'photos') showPhotos(); }
+    });
+
     async function uploadFiles(files) {
         if (!files.length) return;
         if (access() !== 'write') { toast(`You can only look at "${share}".`, 'error'); return; }
@@ -1538,12 +1936,21 @@
         $('viewer-download').onclick = () => download([entry]);
         $('viewer-edit').hidden = true;
         $('viewer-save').hidden = true;
+        paintViewerFav();
         editing = null;
         try {
             const url = await link(entry, true);
             if (shown[viewing] !== entry) return;
-            if (kind === 'image') $('viewer-body').innerHTML = `<img src="${esc(url)}" alt="${esc(entry.name)}">`;
-            else if (kind === 'video') $('viewer-body').innerHTML = `<video src="${esc(url)}" controls autoplay playsinline></video>`;
+            if (kind === 'image' && PREVIEW_IMAGE.test(entry.name)) {
+                // HEIC from a phone, TIFF: the NAS makes a JPEG of it.
+                $('viewer-body').innerHTML = `<img src="/api/preview?${new URLSearchParams({ share: sh(entry), path: rel(entry), v: entry.modified_at || '' })}" alt="${esc(entry.name)}">`;
+                $('viewer-body').querySelector('img').addEventListener('error', () => {
+                    $('viewer-body').innerHTML = `<div class="viewer-note"><strong>This picture cannot be shown here</strong><span>${me?.features?.heif === false ? 'This NAS cannot open HEIC pictures yet. ' : ''}Download it to open it on your device.</span><button type="button" class="btn primary" id="viewer-note-dl">${icon('download')}Download</button></div>`;
+                    $('viewer-note-dl').onclick = () => download([entry]);
+                }, { once: true });
+            }
+            else if (kind === 'image') $('viewer-body').innerHTML = `<img src="${esc(url)}" alt="${esc(entry.name)}">`;
+            else if (kind === 'video') showVideo(entry, url);
             else if (kind === 'audio') $('viewer-body').innerHTML = `<audio src="${esc(url)}" controls autoplay></audio>`;
             else {
                 const text = await (await fetch(url)).text();
@@ -1558,6 +1965,59 @@
             $('viewer-body').textContent = err.message;
         }
     }
+    // A video: played from the NAS as it is when the browser knows the format; if not (an AVI,
+    // HEVC from an iPhone, …) the NAS makes a copy that plays everywhere, once, when asked.
+    async function showVideo(entry, url) {
+        const body = $('viewer-body');
+        const stale = () => shown[viewing] !== entry || $('viewer').hidden;
+        const q = new URLSearchParams({ share: sh(entry), path: rel(entry), v: entry.modified_at || '' });
+        const play = (src, onError) => {
+            body.innerHTML = `<video src="${esc(src)}" controls autoplay playsinline preload="metadata"></video>`;
+            if (onError) body.querySelector('video').addEventListener('error', onError, { once: true });
+        };
+        const note = (head, text, buttons = '') => {
+            body.innerHTML = `<div class="viewer-note"><strong>${esc(head)}</strong><span>${esc(text)}</span><div class="viewer-note-actions">${buttons}</div></div>`;
+            paintIcons(body);
+        };
+        const downloadBtn = `<button type="button" class="btn" data-note="download">${icon('download')}Download</button>`;
+        const wire = (convert) => {
+            body.querySelector('[data-note=download]')?.addEventListener('click', () => download([entry]));
+            body.querySelector('[data-note=convert]')?.addEventListener('click', convert);
+        };
+        const watch = async () => {
+            for (;;) {
+                if (stale()) return;
+                let st;
+                try { st = await api(`video?${q}`); } catch (err) { note('The video could not be converted', err.message, downloadBtn); wire(); return; }
+                if (st.state === 'ready') { play(st.url); return; }
+                if (st.state === 'failed') { note('The video could not be converted', st.error || 'Something went wrong.', downloadBtn); wire(); return; }
+                note(st.state === 'queued' ? 'Waiting to convert this video…' : `Converting this video… ${st.percent}%`,
+                    'It plays here as soon as it is ready. You can close this and come back: the NAS keeps going.');
+                await new Promise((r) => setTimeout(r, 1500));
+            }
+        };
+        const needConvert = async () => {
+            if (stale()) return;
+            let st;
+            try { st = await api(`video?${q}`); } catch (err) { note('This video cannot be played here', err.message, downloadBtn); wire(); return; }
+            if (st.state === 'ready') { play(st.url); return; }
+            if (st.state === 'queued' || st.state === 'working') { watch(); return; }
+            if (!st.ffmpeg) {
+                note('This video cannot be played in the browser', 'Its format needs a converter that is not installed on this NAS (ffmpeg). Download it to play it on your device.', downloadBtn);
+                wire();
+                return;
+            }
+            note('This video cannot be played in the browser as it is', 'The NAS can make a copy that plays here. It takes a while, once; the original stays as it is.',
+                `<button type="button" class="btn primary" data-note="convert">${icon('refresh')}Make a copy that plays here</button>${downloadBtn}`);
+            wire(async () => {
+                try { await api('video/convert', { method: 'POST', json: { share: sh(entry), path: rel(entry), v: entry.modified_at || '' } }); } catch (err) { toast(err.message, 'error'); return; }
+                watch();
+            });
+        };
+        if (NATIVE_VIDEO.test(entry.name)) play(url, needConvert);
+        else needConvert();
+    }
+
     function neighbour(step) {
         for (let i = viewing + step; i >= 0 && i < shown.length; i += step) if (viewable(shown[i])) return i;
         return -1;
@@ -1692,7 +2152,7 @@
 
     // Calendar and Chat are views of their own (calendar.js, chat.js): they
     // take the place of the Files sidebar and list and draw themselves.
-    const VIEWS = { calendar: 'calendar-view', chat: 'chat-view' };
+    const VIEWS = { calendar: 'calendar-view', contacts: 'contacts-view', chat: 'chat-view' };
     let current = 'files';
     function leaveView() {
         inTrash = null;
@@ -1722,6 +2182,8 @@
         signOut,
         // The AlvaOS app has the app bar itself (its tabs) and switches with this.
         open: (id) => { if (started) openApp(id); else pendingApp = id; },
+        // One of the Files tools ("trash", "links", "devices"), asked by the app's Settings.
+        tool: (t) => { if (started) openTool(t); else pendingTool = t; },
         // The person and "Sign out", at the foot of each app's sidebar.
         foot: () => `<div class="side-foot"><div class="me"><span class="avatar">${esc((me?.user || '?').slice(0, 1).toUpperCase())}</span><span>${esc(me?.user || '')}</span></div><button type="button" class="link" data-signout>Sign out</button></div>`,
     };
@@ -1740,6 +2202,7 @@
         $('signin').hidden = true;
         $('app').hidden = false;
         $('me-name').textContent = me.user;
+        showNewUploads(me.new_uploads || 0);
         $('me-avatar').textContent = (me.user || '?').slice(0, 1).toUpperCase();
         $('nas-name').textContent = me.nas_name || '';
         document.title = me.nas_name ? `AlvaOS Hub · ${me.nas_name}` : 'AlvaOS Hub';
@@ -1760,7 +2223,7 @@
         if (!has('files')) {
             $('crumbs').innerHTML = '';
             $('share-list').innerHTML = '';
-            ['links-nav', 'trash-nav', 'connect-nav', 'new-btn'].forEach((id) => { $(id).hidden = true; });   // Devices stays
+            ['links-nav', 'trash-nav', 'new-btn'].forEach((id) => { $(id).hidden = true; });   // Devices stays
             $('items').innerHTML = `<div class="empty">${icon('grid')}<strong>No apps for you yet</strong>Ask whoever runs this NAS to turn on an app for you in the Hub.</div>`;
             return;
         }
@@ -1773,6 +2236,7 @@
         const wanted = me.shares.find((s) => s.name === q.get('share'));
         go(wanted ? wanted.name : me.shares[0].name, wanted ? q.get('path') || '' : '', false);
         history.replaceState(null, '', hashFor(share, path));
+        if (pendingTool) { const t = pendingTool; pendingTool = ''; openTool(t); }
     }
 
     // Installable as an app where the browser allows it (HTTPS or localhost).

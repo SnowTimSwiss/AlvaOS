@@ -43,7 +43,7 @@ import api_auth
 import api_backup
 import api_ai
 import api_files
-import api_remote
+import api_link
 import api_gpu
 import api_vms
 import api_shares
@@ -53,7 +53,7 @@ import api_updates
 import api_ups
 
 for _module in (api_auth, api_system, api_updates, api_storage, api_shares, api_backup, api_apps, api_files, api_ai,
-                api_remote, api_gpu, api_vms, api_ups):
+                api_link, api_gpu, api_vms, api_ups):
     app.register_blueprint(_module.bp)
 
 # ── Frontend serving ──────────────────────────────────────────────────────────
@@ -314,19 +314,6 @@ if __name__ == '__main__':
     import auth_manager
     admin_terminal.setup(auth_manager.admin_signed_in)
     admin_terminal.serve_in_background()
-
-    # Remote access is Tailscale and Cloudflare Tunnel now (containers that
-    # restart by themselves); the old WireGuard remote access goes, once.
-    def _retire_old_remote_access():
-        from app_services import remote
-        if remote.retire_wireguard():
-            import alerts_manager
-            alerts_manager.push_notification(
-                'warning', 'Remote access works differently now',
-                'The old remote access (WireGuard with a router port) is off. Turn on Tailscale in Settings › '
-                'Remote access and install the Tailscale app on your devices; you can close the router port.',
-                source='remote', link='system.html#remote', fingerprint='remote-access-wireguard-retired')
-    threading.Thread(target=_retire_old_remote_access, name='remote-access', daemon=True).start()
 
     # wg-quick state does not survive a reboot; bring the buddy tunnel back up.
     threading.Thread(target=buddy_backup_manager.start_tunnel_if_paired, daemon=True).start()

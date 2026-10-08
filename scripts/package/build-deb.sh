@@ -111,6 +111,22 @@ mkdir -p "${PKG_DIR}/opt/alvaos/keys"
 cp "${REPO_ROOT}/keys/nvidia-container-toolkit.asc" "${PKG_DIR}/opt/alvaos/keys/nvidia-container-toolkit.asc"
 chmod 644 "${PKG_DIR}/opt/alvaos/keys/nvidia-container-toolkit.asc"
 
+# AlvaOS Link (iroh): the Python library of the Link daemon comes along inside the package
+# (a wheel with its own native library; checked against the hash before it is used).
+IROH_WHEEL="iroh-1.1.0-py3-none-manylinux_2_28_x86_64.whl"
+IROH_SHA256="4989c7b8f6ab2ebe7afc0c2cf55b7608f7fd05f02bffee1af8d937e05de0e768"
+mkdir -p "${BUILD_DIR}/wheels" "${PKG_DIR}/opt/alvaos/vendor"
+if [ ! -f "${BUILD_DIR}/wheels/${IROH_WHEEL}" ]; then
+    python3 -m pip download "iroh==1.1.0" --no-deps --only-binary=:all: --platform manylinux_2_28_x86_64 \
+        --python-version 3.11 -d "${BUILD_DIR}/wheels"
+fi
+echo "${IROH_SHA256}  ${BUILD_DIR}/wheels/${IROH_WHEEL}" | sha256sum -c - >/dev/null \
+    || error "The iroh wheel does not match its checksum"
+python3 -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' \
+    "${BUILD_DIR}/wheels/${IROH_WHEEL}" "${PKG_DIR}/opt/alvaos/vendor"
+cp "${REPO_ROOT}/scripts/alvaos-link.service" "${PKG_DIR}/etc/systemd/system/"
+cp "${REPO_ROOT}/scripts/alvaos-link.service" "${PKG_DIR}/opt/alvaos/scripts/"
+
 # Copy frontend
 cp -r "${REPO_ROOT}/frontend/"* "${PKG_DIR}/opt/alvaos/webui/"
 
@@ -181,6 +197,7 @@ Version: ${DEB_VERSION}
 Architecture: amd64
 Maintainer: AlvaOS Team <dev@alvaos.org>
 Depends: python3, python3-yaml, python3-cryptography, python3-flask, python3-waitress, python3-psutil, python3-requests, python3-pyotp, python3-qrcode, python3-pil, docker.io, docker-compose, btrfs-progs, wireguard-tools, nbd-client, cryptsetup, systemd, smartmontools, hdparm, nfs-kernel-server, samba, samba-vfs-modules, miniupnpc, pciutils, network-manager
+Recommends: ffmpeg, libheif-examples
 Section: admin
 Priority: optional
 Homepage: https://github.com/SnowTimSwiss/AlvaOS
@@ -259,6 +276,9 @@ systemctl enable alvaos.service
 systemctl disable alvaos-update-checker.service >/dev/null 2>&1 || true
 systemctl enable --now alvaos-update-checker.timer || true
 systemctl enable --now alvaos-watchdog.timer || true
+# AlvaOS Link: phones and buddies reach this NAS without a router setting.
+systemctl enable --now alvaos-link.service || true
+systemctl try-restart alvaos-link.service || true
 # AlvaOS Files keeps running after an update when it was on (it stays off otherwise).
 systemctl try-restart alvaos-files.service || true
 
@@ -279,6 +299,7 @@ systemctl stop alvaos.service || true
 systemctl stop alvaos-backend.service || true
 systemctl stop alvaos-ui.service || true
 systemctl stop alvaos-files.service || true
+systemctl stop alvaos-link.service || true
 
 exit 0
 EOF

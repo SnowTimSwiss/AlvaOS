@@ -644,20 +644,13 @@ def test_compose_allows_normal_app_settings():
 # ── WireGuard ────────────────────────────────────────────────────────────────
 
 def test_wireguard_commands():
-    plan = allowed('/usr/bin/wg-quick', 'up', '/var/lib/alvaos/wireguard/buddy0.conf')
+    # Only the old buddy tunnel can be taken down (AlvaOS Link replaced it); nothing is brought up any more.
+    plan = allowed('/usr/bin/wg-quick', 'down', '/var/lib/alvaos/wireguard/buddy0.conf')
     assert plan.stage == {1: 'wg'}
-    allowed('/usr/bin/wg', 'show', 'buddy0')
-    denied('/usr/bin/wg', 'genkey')   # keys are generated in-process now
-    denied('/usr/bin/wg-quick', 'up', '/tmp/evil.conf')
-    denied('/usr/bin/wg', 'set', 'buddy0', 'private-key', '/etc/shadow')
-    # The old remote access tunnel can only be taken down now (remote_access.py).
-    assert allowed('/usr/bin/wg-quick', 'down', '/var/lib/alvaos/wireguard/remote0.conf').stage == {1: 'wg'}
-    denied('/usr/bin/wg-quick', 'up', '/var/lib/alvaos/wireguard/remote0.conf')
-    denied('/usr/bin/wg', 'show', 'remote0', 'latest-handshakes')
-    denied('/usr/bin/wg', 'show', 'remote0', 'dump')            # would print the private key
-    denied('/usr/bin/wg', 'show', 'remote0', 'private-key')
-    denied('/usr/bin/wg', 'show', 'buddy0', 'latest-handshakes', 'x')
-    denied('/usr/bin/wg-quick', 'up', '/var/lib/alvaos/wireguard/remote1.conf')
+    denied('/usr/bin/wg-quick', 'up', '/var/lib/alvaos/wireguard/buddy0.conf')
+    denied('/usr/bin/wg-quick', 'down', '/tmp/evil.conf')
+    denied('/usr/bin/wg-quick', 'down', '/var/lib/alvaos/wireguard/remote0.conf')
+    denied('/usr/bin/wg', 'show', 'buddy0')
 
 
 def test_wg_config_rejects_hooks():

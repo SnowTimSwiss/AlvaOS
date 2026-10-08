@@ -355,6 +355,13 @@ def test_upload_links_take_files_and_show_nothing(client, monkeypatch):
     assert (["files-part-write", inbox, "photo (3).jpg", "0"], "anna") in calls
     assert calls[-1] == (["files-part-finish", inbox, "photo (3).jpg", "3"], "anna")
 
+    # The owner is told about it, once, until she looks at the list.
+    assert client.get("/api/me").get_json()["new_uploads"] == 1
+    listed = client.get("/api/links").get_json()["links"]
+    assert [x["new_files"] for x in listed if x["mode"] == "upload"] == [1] and listed[0]["last_upload"]
+    assert client.post("/api/links/seen", headers=H).get_json()["success"]
+    assert client.get("/api/me").get_json()["new_uploads"] == 0
+
     view = client.post("/api/links", json={"share": "Family", "path": "Inbox", "kind": "folder"}, headers=H).get_json()
     vtoken = view["url"].split("/")[-1]
     assert visitor.post(f"/api/public/{vtoken}/upload/start", json={"name": "x.jpg"}, headers=H).status_code == 403
@@ -465,8 +472,9 @@ def test_the_hub_shows_each_person_their_apps_and_closes_files_when_it_is_off(cl
     import hub_apps
     sign_in(client, "ben", "ben-pass")
     me = client.get("/api/me").get_json()
-    assert me["hub"]["name"] == "AlvaOS Hub" and [a["id"] for a in me["hub"]["apps"]] == ["files", "photos", "calendar"]
-    hub_apps.save({"apps": {"files": {"people": ["anna"]}, "calendar": {"enabled": False}}}, ["anna", "ben"])
+    assert me["hub"]["name"] == "AlvaOS Hub" and [a["id"] for a in me["hub"]["apps"]] == ["files", "photos", "calendar", "contacts"]
+    hub_apps.save({"apps": {"files": {"people": ["anna"]}, "calendar": {"enabled": False},
+                           "contacts": {"enabled": False}}}, ["anna", "ben"])
     me = client.get("/api/me").get_json()
     assert me["hub"]["apps"] == [] and me["shares"] == []                 # signed in, but nothing for ben
     refused = client.get("/api/list?share=Family")
@@ -493,7 +501,7 @@ def test_photos_shows_own_photos_and_the_libraries_the_person_may_read(client):
                   shares=["Family", "Anna", "anna-home"])
     sign_in(client, "anna", "anna-pass")
     sources = client.get("/api/photos/sources").get_json()["sources"]
-    assert sources == [{"share": "anna-home", "path": "Photos", "own": True},
+    assert sources == [{"share": "anna-home", "path": "Photos", "own": True, "writable": True},
                        {"share": "Anna", "path": "", "own": False}, {"share": "Family", "path": "", "own": False}]
     assert (["files-mkdir", "/mnt/alvaos/main/anna-home", "Photos"], "anna") in client.calls
     sign_in(client, "ben", "ben-pass")                       # no personal folder; may read only Family

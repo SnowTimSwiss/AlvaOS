@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-AlvaOS Buddy Backup Manager (v0.7.0)
-Identity + token pairing + WireGuard tunnel automation.
+AlvaOS Buddy Backup Manager (v0.8.0)
+Identity + token pairing; buddies reach each other through AlvaOS Link (link_daemon.py),
+without a router setting.
 """
 
 import base64
@@ -14,12 +15,9 @@ import platform
 import re
 import secrets
 import shutil
-import socket
 import tempfile
 import threading
 import time
-import urllib.error
-import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, Union
@@ -32,9 +30,10 @@ from buddy_vault import VaultError, VaultReplicator, VaultStore
 from buddy_vault import read_stderr as _read_stderr
 from buddy_vault import spawn_privileged as _spawn_privileged
 import buddy_crypto
+import link_client
+import link_daemon
 
-WG_KEY_RE = re.compile(r"^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$")
-WG_ENDPOINT_RE = re.compile(r"^(\[[0-9a-fA-F:]{2,39}\]|[A-Za-z0-9.-]{1,253}):\d{1,5}$")
+LINK_ID_RE = re.compile(r"^[0-9a-f]{64}$")      # an AlvaOS Link address
 IPV4_RE = re.compile(r"^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$")
 
 # Marker source path for a full-system (root subvolume) buddy transfer. A stream whose
@@ -84,11 +83,6 @@ class BuddyBackupManager:
         # ALVAENC2 key material (scrypt output). Needed to encrypt unattended;
         # restores derive the key from the passphrase and the stream header.
         self.encryption_key_file = os.path.join(self.state_dir, "buddy_encryption_key.json")
-        self.wg_dir = os.path.join(self.state_dir, "wireguard")
-        self.wg_config_path = os.path.join(self.wg_dir, "buddy0.conf")
-        self.interface_name = "buddy0"
-        self.default_listen_port = 51820
-        self.connected_handshake_threshold_seconds = 180
         self._transfer_lock = threading.RLock()
         # Encrypted vaults: the ones buddies keep here, and ours on buddies.
         self.vault_store = VaultStore(self)
@@ -114,7 +108,6 @@ class BuddyBackupManager:
 
     def _ensure_dirs(self) -> None:
         Path(self.state_dir).mkdir(parents=True, exist_ok=True)
-        Path(self.wg_dir).mkdir(parents=True, exist_ok=True)
 
     def _load_json(self, path: str, default):
         try:
@@ -230,30 +223,6 @@ class BuddyBackupManager:
         found = shutil.which(which_name)
         return found if found else None
 
-    def _wg_cmd(self) -> Optional[str]:
-        return self._detect_cmd(
-            ["/usr/bin/wg", "/usr/sbin/wg", "/usr/local/bin/wg", "/bin/wg", "/sbin/wg"],
-            "wg"
-        )
-
-    def _wg_quick_cmd(self) -> Optional[str]:
-        return self._detect_cmd(
-            ["/usr/bin/wg-quick", "/usr/sbin/wg-quick", "/usr/local/bin/wg-quick", "/bin/wg-quick", "/sbin/wg-quick"],
-            "wg-quick"
-        )
-
-    def _ip_cmd(self) -> Optional[str]:
-        return self._detect_cmd(
-            ["/usr/sbin/ip", "/usr/bin/ip", "/sbin/ip", "/bin/ip"],
-            "ip"
-        )
-
-    def _ping_cmd(self) -> Optional[str]:
-        return self._detect_cmd(
-            ["/usr/bin/ping", "/bin/ping", "/usr/sbin/ping", "/sbin/ping"],
-            "ping"
-        )
-
     def _btrfs_cmd(self) -> Optional[str]:
         return self._detect_cmd(
             ["/usr/bin/btrfs", "/bin/btrfs", "/usr/sbin/btrfs", "/sbin/btrfs"],
@@ -284,250 +253,16 @@ class BuddyBackupManager:
             "chmod"
         )
 
-    def _derive_tunnel_ip(self, node_id: str) -> str:
-        # Deterministic host assignment in a private /24 (less likely to collide with common home LAN ranges).
-        digest = hashlib.sha256((node_id or "").encode("utf-8")).digest()
-        host_octet = 2 + (digest[0] % 253)  # 2..254
-        return f"100.95.95.{host_octet}"
-
-    def _local_ipv4_in_use(self, ip: str) -> bool:
-        if platform.system() != "Linux":
-            return False
-        ip_cmd = self._ip_cmd()
-        if not ip_cmd or not ip:
-            return False
-        res, err = self.run_command([ip_cmd, "-4", "-o", "addr", "show"], timeout=10)
-        if err or not res or res.returncode != 0:
-            return False
-        pattern = re.compile(rf"\b{re.escape(ip)}/\d+\b")
-        for raw in (res.stdout or "").splitlines():
-            if pattern.search(raw):
-                return True
-        return False
-
-    def _ipv4_on_interface(self, ip: str, interface: str) -> bool:
-        if platform.system() != "Linux":
-            return False
-        ip_cmd = self._ip_cmd()
-        if not ip_cmd or not ip or not interface:
-            return False
-        res, err = self.run_command([ip_cmd, "-4", "-o", "addr", "show", "dev", interface], timeout=10)
-        if err or not res or res.returncode != 0:
-            return False
-        pattern = re.compile(rf"\b{re.escape(ip)}/\d+\b")
-        return bool(pattern.search(res.stdout or ""))
-
-    def _derive_available_tunnel_ip(self, node_id: str, avoid_ip: str = "") -> str:
-        digest = hashlib.sha256((node_id or "").encode("utf-8")).digest()
-        start = 2 + (digest[0] % 253)
-        avoid = str(avoid_ip or "").strip()
-        for offset in range(253):
-            host_octet = 2 + ((start - 2 + offset) % 253)
-            candidate = f"100.95.95.{host_octet}"
-            if avoid and candidate == avoid:
-                continue
-            if not self._local_ipv4_in_use(candidate):
-                return candidate
-        fallback = f"100.95.95.{start}"
-        if avoid and fallback == avoid:
-            alt_octet = 2 + ((start - 1) % 253)
-            fallback = f"100.95.95.{alt_octet}"
-        return fallback
-
-    def _ensure_identity_tunnel_ip(self, identity: Dict, force_rotate: bool = False) -> Tuple[Dict, bool]:
-        if not isinstance(identity, dict):
-            return identity, False
-
-        current_ip = str(identity.get("tunnel_ip") or "").strip()
-        conflict = (
-            bool(current_ip)
-            and self._local_ipv4_in_use(current_ip)
-            and not self._ipv4_on_interface(current_ip, self.interface_name)
-        )
-        if not (force_rotate or not current_ip or conflict):
-            return identity, False
-
-        replacement_ip = self._derive_available_tunnel_ip(
-            str(identity.get("node_id") or ""),
-            avoid_ip=current_ip if force_rotate else "",
-        )
-        if replacement_ip == current_ip:
-            return identity, False
-
-        identity["tunnel_ip"] = replacement_ip
-        if current_ip and (conflict or force_rotate):
-            identity["key_error"] = (
-                f"Tunnel IP conflict detected for {current_ip}; switched to {replacement_ip}. "
-                "Re-pair with buddy if needed."
-            )
-        self._save_identity(identity)
-        return identity, True
-
-    def _is_address_in_use_error(self, error_text: str) -> bool:
-        text = str(error_text or "").lower()
-        return (
-            "address already in use" in text
-            or ("rtnetlink answers" in text and "already in use" in text)
-        )
-
-    def _udp_port_in_use(self, port: int) -> bool:
-        try:
-            candidate = int(port)
-        except Exception:
-            return False
-        if candidate < 1 or candidate > 65535:
-            return False
-
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            sock.bind(("0.0.0.0", candidate))
-            return False
-        except OSError as exc:
-            code = getattr(exc, "errno", None)
-            if code in (98, 10048):
-                return True
-            return "address already in use" in str(exc).lower()
-        finally:
-            try:
-                sock.close()
-            except Exception:
-                pass
-
-    def _derive_available_listen_port(self, preferred_port: int, avoid_port: int = 0) -> int:
-        try:
-            preferred = int(preferred_port)
-        except Exception:
-            preferred = self.default_listen_port
-        preferred = max(1024, min(65535, preferred))
-        avoid = int(avoid_port) if str(avoid_port or "").strip().isdigit() else 0
-        span = 65535 - 1024 + 1
-        for offset in range(span):
-            candidate = 1024 + ((preferred - 1024 + offset) % span)
-            if avoid and candidate == avoid:
-                continue
-            if not self._udp_port_in_use(candidate):
-                return candidate
-        return self.default_listen_port
-
-    def _ensure_identity_listen_port(self, identity: Dict, force_rotate: bool = False) -> Tuple[Dict, bool]:
-        if not isinstance(identity, dict):
-            return identity, False
-
-        try:
-            current_port = int(identity.get("listen_port") or self.default_listen_port)
-        except Exception:
-            current_port = self.default_listen_port
-        current_port = max(1024, min(65535, current_port))
-        current_in_use = self._udp_port_in_use(current_port)
-
-        if not (force_rotate or current_in_use):
-            if identity.get("listen_port") != current_port:
-                identity["listen_port"] = current_port
-                self._save_identity(identity)
-                return identity, True
-            return identity, False
-
-        replacement_port = self._derive_available_listen_port(
-            current_port,
-            avoid_port=current_port if force_rotate else 0,
-        )
-        if replacement_port == current_port:
-            return identity, False
-
-        identity["listen_port"] = replacement_port
-        if current_in_use or force_rotate:
-            identity["key_error"] = (
-                f"WireGuard listen port conflict detected for {current_port}; switched to {replacement_port}. "
-                "If your endpoint includes the old port, regenerate/share a fresh pairing token."
-            )
-        self._save_identity(identity)
-        return identity, True
-
-    def _parse_handshake_age_seconds(self, value: str) -> Optional[int]:
-        text = str(value or "").strip().lower()
-        if not text or text == "never":
-            return None
-        if text == "now":
-            return 0
-        if text.endswith("ago"):
-            text = text[:-3].strip()
-
-        total = 0
-        matched = False
-        for amount_raw, unit in re.findall(r"(\d+)\s*(second|seconds|minute|minutes|hour|hours|day|days)", text):
-            try:
-                amount = int(amount_raw)
-            except Exception:
-                continue
-            matched = True
-            if unit.startswith("second"):
-                total += amount
-            elif unit.startswith("minute"):
-                total += amount * 60
-            elif unit.startswith("hour"):
-                total += amount * 3600
-            elif unit.startswith("day"):
-                total += amount * 86400
-        if not matched:
-            return None
-        return total
-
-    def _normalize_api_endpoint(self, endpoint: str) -> Tuple[Optional[str], Optional[str]]:
-        value = str(endpoint or "").strip()
-        if not value:
-            return "", None
-        value = re.sub(r"^https?://", "", value, flags=re.IGNORECASE).strip("/")
-        if len(value) > 255:
-            return None, "API endpoint is too long"
-        if any(ch.isspace() for ch in value):
-            return None, "API endpoint must not contain spaces"
-        if ":" not in value:
-            value = f"{value}:8080"
-        return value, None
-
-    def _generate_wg_keypair(self) -> Tuple[Optional[str], Optional[str], Optional[str], str]:
-        """Create a WireGuard key pair.
-
-        WireGuard keys are plain X25519 keys, so they are generated in-process
-        with `cryptography`: no wg binary, no root, and never a fake key. (A
-        random "public key" that does not belong to the private key would make
-        pairing look successful while the tunnel can never come up.)
-        """
-        try:
-            from cryptography.hazmat.primitives import serialization
-            from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-
-            key = X25519PrivateKey.generate()
-            private_raw = key.private_bytes(
-                serialization.Encoding.Raw, serialization.PrivateFormat.Raw, serialization.NoEncryption()
-            )
-            public_raw = key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
-        except Exception as exc:
-            return None, None, f"Could not generate a WireGuard key pair: {exc}", ""
-        return (
-            base64.b64encode(private_raw).decode("ascii"),
-            base64.b64encode(public_raw).decode("ascii"),
-            None,
-            "wireguard",
-        )
-
     def _create_identity(self) -> Dict:
-        node_id = secrets.token_hex(8)
-        private_key, public_key, key_err, key_source = self._generate_wg_keypair()
-        identity = {
-            "node_id": node_id,
+        """This NAS as a buddy: a node id, a name and the secret every buddy gets in the pairing code.
+        Its address is the key of AlvaOS Link (link_daemon.py), which the daemon keeps."""
+        return {
+            "node_id": secrets.token_hex(8),
             "name": self._hostname(),
-            "private_key": private_key or "",
-            "public_key": public_key or "",
             "api_secret": secrets.token_urlsafe(32),
-            "tunnel_ip": self._derive_tunnel_ip(node_id),
-            "listen_port": self.default_listen_port,
             "created_at": self._now_iso(),
             "updated_at": self._now_iso(),
-            "key_error": key_err or "",
-            "key_source": key_source,
         }
-        return identity
 
     def _load_identity(self) -> Dict:
         raw = self._load_json(self.identity_file, {})
@@ -544,45 +279,20 @@ class BuddyBackupManager:
         if not identity:
             identity = self._create_identity()
             self._save_identity(identity)
-        else:
-            key_source = str(identity.get("key_source") or "").strip()
-            if not key_source:
-                identity["key_source"] = "wireguard"
-                key_source = "wireguard"
-                self._save_identity(identity)
+        elif not str(identity.get("api_secret") or "").strip():
+            identity["api_secret"] = secrets.token_urlsafe(32)
+            self._save_identity(identity)
 
-            if not str(identity.get("api_secret") or "").strip():
-                identity["api_secret"] = secrets.token_urlsafe(32)
-                self._save_identity(identity)
-
-            needs_regen = not identity.get("public_key") or not identity.get("private_key")
-            # Older versions stored random placeholder keys when wg was missing;
-            # those can never form a tunnel, so replace them with a real pair.
-            has_placeholder_keys = key_source != "wireguard"
-            if needs_regen or has_placeholder_keys:
-                private_key, public_key, key_err, new_source = self._generate_wg_keypair()
-                if private_key and public_key:
-                    identity["private_key"] = private_key
-                    identity["public_key"] = public_key
-                    identity["key_error"] = key_err or ""
-                    identity["key_source"] = new_source
-                    self._save_identity(identity)
-                else:
-                    identity["key_error"] = key_err or identity.get("key_error", "")
-                    self._save_identity(identity)
-
-        identity, _ = self._ensure_identity_tunnel_ip(identity)
-
+        link_id = link_client.node_id()
         return {
             "node_id": identity.get("node_id", ""),
             "name": identity.get("name", ""),
-            "public_key": identity.get("public_key", ""),
-            "tunnel_ip": identity.get("tunnel_ip", ""),
-            "listen_port": identity.get("listen_port", self.default_listen_port),
+            # The address buddies reach this NAS at: its AlvaOS Link key (64 hex digits).
+            "public_key": link_id,
             "created_at": identity.get("created_at"),
             "updated_at": identity.get("updated_at"),
-            "key_error": identity.get("key_error", ""),
-            "key_source": identity.get("key_source", "wireguard"),
+            "key_error": "" if link_id else "AlvaOS Link is not running on this NAS. Turn it on in Settings \u203a AlvaOS Link.",
+            "key_source": "link",
         }
 
     def _token_encode(self, payload: Dict) -> str:
@@ -602,18 +312,6 @@ class BuddyBackupManager:
             return payload, None
         except Exception:
             return None, "Invalid pairing token format"
-
-    def _normalize_endpoint(self, endpoint: str) -> Tuple[Optional[str], Optional[str]]:
-        value = str(endpoint or "").strip()
-        if not value:
-            return "", None
-        if len(value) > 255:
-            return None, "Endpoint is too long"
-        if any(ch.isspace() for ch in value):
-            return None, "Endpoint must not contain spaces"
-        if ":" not in value:
-            return None, "Endpoint must include host:port"
-        return value, None
 
     def _load_peers(self) -> Dict[str, Dict]:
         data = self._load_json(self.peers_file, {})
@@ -1594,32 +1292,29 @@ class BuddyBackupManager:
         self._save_stream_entries(kept)
         return removed
 
-    # Every AlvaOS backend listens on this port; peers reach it through the tunnel.
-    PEER_API_PORT = 8080
+    # Where Link carries a buddy's API on this NAS (link_daemon.LOCAL_PORTS); the buddy's backend itself is on 8080.
+    PEER_API_PORT = link_daemon.LOCAL_PORTS['api']
 
     def _peer_api_urls(self, peer: Dict, path: str) -> List[str]:
-        """URLs for talking to a paired buddy: only ever through the WireGuard tunnel.
+        """URLs for talking to a paired buddy: only ever through AlvaOS Link.
 
-        The backend speaks plain HTTP, so going to the buddy's public address
-        would send the buddy secret and snapshot data unencrypted over the
-        internet and require exposing the admin port. Inside the tunnel,
-        WireGuard encrypts the traffic and authenticates the buddy by the
-        public key exchanged during pairing.
+        Link gives every buddy an address of its own on this NAS's loopback network (peer
+        `tunnel_ip`, 127.95.x.y) and carries what is sent there, encrypted from end to end,
+        to that buddy's backend. Nothing goes out unencrypted, and no port is exposed.
         """
         path_part = str(path or "").strip()
         if not path_part.startswith("/"):
             path_part = f"/{path_part}"
-        tunnel_ip = str(peer.get("tunnel_ip") or "").strip()
-        if not IPV4_RE.match(tunnel_ip):
+        address = str(peer.get("tunnel_ip") or "").strip()
+        if not IPV4_RE.match(address):
             return []
-        return [f"http://{tunnel_ip}:{self.PEER_API_PORT}{path_part}"]
+        return [f"http://{address}:{self.PEER_API_PORT}{path_part}"]
 
     def peer_for_tunnel_ip(self, remote_ip: str) -> Optional[Dict]:
-        """The paired buddy that owns this tunnel address, if any.
+        """The paired buddy that owns this address, if any.
 
-        WireGuard only accepts packets from a tunnel IP when they are signed
-        by that peer's key (AllowedIPs = tunnel_ip/32), so the source address
-        of a request inside the tunnel identifies the buddy.
+        Link connects to this NAS's services from the buddy's own address (127.95.x.y), and only
+        for a buddy that proved its key, so the source address of a request identifies the buddy.
         """
         ip = str(remote_ip or "").strip()
         if not IPV4_RE.match(ip):
@@ -1629,13 +1324,30 @@ class BuddyBackupManager:
                 return peer
         return None
 
+    def retire_wireguard(self) -> bool:
+        """Before AlvaOS 0.3 buddies talked over their own WireGuard tunnel (buddy0). Take it down once
+        and set its config aside; the buddies pair again through AlvaOS Link."""
+        config = os.path.join(self.state_dir, "wireguard", "buddy0.conf")
+        if not os.path.exists(config):
+            return False
+        self.run_command(["/usr/bin/wg-quick", "down", config], timeout=20)
+        try:
+            os.replace(config, config + ".retired")
+        except OSError:
+            pass
+        return True
+
     def start_tunnel_if_paired(self) -> None:
-        """Bring the tunnel up at startup; wg-quick state does not survive a reboot."""
-        if platform.system() != "Linux" or not self._load_peers():
+        """Tell Link who the buddies are at startup (it may start a moment after this)."""
+        self.retire_wireguard()
+        if not self._load_peers():
             return
-        ok, result = self.apply_tunnel_config()
-        if not ok:
-            print(f"Buddy backup: tunnel not started: {result.get('error')}")
+        for attempt in range(12):
+            ok, result = self.sync_link()
+            if ok:
+                return
+            time.sleep(10 if attempt else 2)
+        print(f"Buddy backup: Link not reached: {result.get('error')}")
 
     # ── Recovery kit ────────────────────────────────────────────────────────
     # A fresh install gets a new node id and new keys, so its buddies would not
@@ -1664,12 +1376,13 @@ class BuddyBackupManager:
         peers = self._load_peers()
         kit: Dict[str, Any] = {
             "kind": self.RECOVERY_KIT_KIND,
-            "v": 1,
+            "v": 2,
             "created_at": self._now_iso(),
             "identity": {
-                key: identity.get(key)
-                for key in ("node_id", "name", "private_key", "public_key", "api_secret",
-                            "tunnel_ip", "listen_port")
+                "node_id": identity.get("node_id"),
+                "name": identity.get("name"),
+                "api_secret": identity.get("api_secret"),
+                "link_secret": link_client.secret_key(),
             },
             "peers": peers,
         }
@@ -1704,39 +1417,16 @@ class BuddyBackupManager:
         if not isinstance(raw, dict):
             raise ValueError("identity is missing")
         node_id = str(raw.get("node_id") or "")
-        private_key = str(raw.get("private_key") or "")
-        public_key = str(raw.get("public_key") or "")
         api_secret = str(raw.get("api_secret") or "")
-        tunnel_ip = str(raw.get("tunnel_ip") or "")
+        link_secret = str(raw.get("link_secret") or "").lower()
         if not re.fullmatch(r"[0-9a-f]{8,64}", node_id):
             raise ValueError("invalid node id")
-        if not (WG_KEY_RE.match(private_key) and WG_KEY_RE.match(public_key)):
-            raise ValueError("invalid WireGuard key")
         if not re.fullmatch(r"[A-Za-z0-9_-]{20,128}", api_secret):
             raise ValueError("invalid buddy secret")
-        if not IPV4_RE.match(tunnel_ip):
-            raise ValueError("invalid tunnel address")
-        try:
-            from cryptography.hazmat.primitives import serialization
-            from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-
-            derived = X25519PrivateKey.from_private_bytes(base64.b64decode(private_key)).public_key()
-            derived_b64 = base64.b64encode(
-                derived.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
-            ).decode("ascii")
-        except Exception:
-            raise ValueError("invalid WireGuard key") from None
-        if derived_b64 != public_key:
-            raise ValueError("WireGuard keys do not belong together")
-        try:
-            listen_port = max(1024, min(65535, int(raw.get("listen_port") or self.default_listen_port)))
-        except (TypeError, ValueError):
-            listen_port = self.default_listen_port
+        if link_secret and not LINK_ID_RE.match(link_secret):     # kits from before 0.3 have none
+            raise ValueError("invalid Link key")
         name = re.sub(r"[^\w .-]+", "", str(raw.get("name") or ""))[:64] or self._hostname()
-        return {
-            "node_id": node_id, "name": name, "private_key": private_key, "public_key": public_key,
-            "api_secret": api_secret, "tunnel_ip": tunnel_ip, "listen_port": listen_port,
-        }
+        return {"node_id": node_id, "name": name, "api_secret": api_secret, "link_secret": link_secret}
 
     def _validated_kit_peers(self, raw: Any) -> Dict[str, Dict]:
         if not isinstance(raw, dict):
@@ -1745,28 +1435,18 @@ class BuddyBackupManager:
         for node_id, peer in raw.items():
             if not isinstance(peer, dict) or not re.fullmatch(r"[0-9a-f]{8,64}", str(node_id)):
                 raise ValueError("invalid buddy entry")
-            public_key = str(peer.get("public_key") or "")
-            tunnel_ip = str(peer.get("tunnel_ip") or "")
-            endpoint = str(peer.get("endpoint") or "")
-            api_endpoint = str(peer.get("api_endpoint") or "")
-            if not (WG_KEY_RE.match(public_key) and IPV4_RE.match(tunnel_ip)):
-                raise ValueError(f"invalid keys for buddy {node_id}")
-            if endpoint and not WG_ENDPOINT_RE.match(endpoint):
-                raise ValueError(f"invalid endpoint for buddy {node_id}")
-            if api_endpoint and not WG_ENDPOINT_RE.match(api_endpoint):
-                api_endpoint = ""
+            public_key = str(peer.get("public_key") or "").lower()
             api_secret = str(peer.get("api_secret") or "")
             if api_secret and not re.fullmatch(r"[A-Za-z0-9_-]{20,128}", api_secret):
                 raise ValueError(f"invalid secret for buddy {node_id}")
+            if not LINK_ID_RE.match(public_key):
+                continue             # a buddy of the WireGuard days: it has to be paired again
             peers[str(node_id)] = {
                 "node_id": str(node_id),
                 "name": re.sub(r"[^\w .-]+", "", str(peer.get("name") or node_id))[:64],
                 "public_key": public_key,
                 "api_secret": api_secret,
-                "tunnel_ip": tunnel_ip,
-                "listen_port": peer.get("listen_port") or self.default_listen_port,
-                "endpoint": endpoint,
-                "api_endpoint": api_endpoint,
+                "tunnel_ip": "",
                 "last_paired_at": str(peer.get("last_paired_at") or ""),
                 "status": "configured",
                 "last_error": "",
@@ -1788,7 +1468,7 @@ class BuddyBackupManager:
             return False, {"error": str(exc)}
         except Exception:
             return False, {"error": "The recovery kit could not be read"}
-        if data.get("kind") != self.RECOVERY_KIT_KIND or data.get("v") != 1:
+        if data.get("kind") != self.RECOVERY_KIT_KIND or data.get("v") not in (1, 2):
             return False, {"error": "This recovery kit comes from an unsupported AlvaOS version"}
         try:
             identity_fields = self._validated_kit_identity(data.get("identity"))
@@ -1806,34 +1486,52 @@ class BuddyBackupManager:
             }
 
         identity = dict(current) if isinstance(current, dict) else {}
-        identity.update(identity_fields)
-        identity.update({"key_source": "wireguard", "key_error": "", "restored_at": self._now_iso()})
+        for old in ("private_key", "public_key", "tunnel_ip", "listen_port", "key_source", "key_error"):
+            identity.pop(old, None)            # the WireGuard days
+        identity.update({k: v for k, v in identity_fields.items() if k != "link_secret"})
+        identity.update({"restored_at": self._now_iso()})
         identity.setdefault("created_at", self._now_iso())
         with self._transfer_lock:
             self._save_identity(identity)
             self._save_peers(peers)
-        tunnel_ok, tunnel_result = self.apply_tunnel_config()
+        if identity_fields.get("link_secret"):
+            link_client.import_secret_key(identity_fields["link_secret"])      # the same address as before
+        tunnel_ok, tunnel_result = self.sync_link()
         self._update_runtime({
             "recovery_kit_exported_at": str(data.get("created_at") or ""),
             "recovery_kit_fingerprint": self._recovery_kit_fingerprint(),
         })
+        lost = len([1 for p in (data.get("peers") or {}).values() if isinstance(p, dict)]) - len(peers)
+        message = self._kit_restored_message(len(peers))
+        if lost > 0:
+            message += f" {lost} buddy(ies) from before AlvaOS 0.3 must be paired again."
         return True, {
             "node_id": identity_fields["node_id"],
             "peer_count": len(peers),
             "tunnel": tunnel_result if tunnel_ok else {"error": tunnel_result.get("error", "")},
-            "message": self._kit_restored_message(len(peers)),
+            "message": message,
         }
 
-    def generate_pairing_token(
-        self,
-        endpoint: str = "",
-        expires_minutes: int = 20,
-        api_endpoint: str = "",
-    ) -> Tuple[bool, Dict]:
+    def _own_token(self, minutes: int) -> Tuple[Optional[str], Dict, Optional[Dict]]:
+        """A pairing code of this NAS: (code, its fields, an error)."""
         identity = self._identity_public()
         if not identity.get("public_key"):
-            return False, {"error": identity.get("key_error") or "WireGuard identity is not ready"}
+            return None, {}, {"error": identity.get("key_error") or "AlvaOS Link is not ready"}
+        issued_at = self._now()
+        expires_at = None if minutes == 0 else (issued_at + timedelta(minutes=minutes))
+        payload = {
+            "v": 2,
+            "node_id": identity.get("node_id"),
+            "name": identity.get("name"),
+            "public_key": identity.get("public_key"),
+            "api_secret": str(self._identity_private().get("api_secret") or ""),
+            "issued_at": issued_at.isoformat(),
+            "expires_at": expires_at.isoformat() if expires_at else "",
+            "nonce": secrets.token_hex(8),
+        }
+        return self._token_encode(payload), payload, None
 
+    def generate_pairing_token(self, expires_minutes: int = 20) -> Tuple[bool, Dict]:
         try:
             ttl = int(expires_minutes)
         except Exception:
@@ -1841,44 +1539,25 @@ class BuddyBackupManager:
         if ttl < 0:
             ttl = 20
         ttl = min(ttl, 43200)
-
-        normalized_endpoint, endpoint_err = self._normalize_endpoint(endpoint)
-        if endpoint_err:
-            return False, {"error": endpoint_err}
-        normalized_api_endpoint, api_err = self._normalize_api_endpoint(api_endpoint)
-        if api_err:
-            return False, {"error": api_err}
-
-        issued_at = self._now()
-        expires_at = None if ttl == 0 else (issued_at + timedelta(minutes=ttl))
-        identity_private = self._identity_private()
-        payload = {
-            "v": 1,
-            "node_id": identity.get("node_id"),
-            "name": identity.get("name"),
-            "public_key": identity.get("public_key"),
-            "api_secret": str(identity_private.get("api_secret") or ""),
-            "tunnel_ip": identity.get("tunnel_ip"),
-            "listen_port": identity.get("listen_port", self.default_listen_port),
-            "endpoint": normalized_endpoint,
-            "api_endpoint": normalized_api_endpoint,
-            "issued_at": issued_at.isoformat(),
-            "expires_at": expires_at.isoformat() if expires_at else "",
-            "nonce": secrets.token_hex(8),
-        }
-        token = self._token_encode(payload)
+        token, payload, error = self._own_token(ttl)
+        if token is None:
+            return False, error or {"error": "AlvaOS Link is not ready"}
         return True, {
             "token": token,
             "expires_at": payload["expires_at"],
             "expires_mode": "until_used" if ttl == 0 else "time_limited",
-            "identity": identity,
+            "identity": self._identity_public(),
         }
 
-    def _token_to_peer(self, payload: Dict, endpoint_override: str = "", name_override: str = "") -> Tuple[Optional[Dict], Optional[str]]:
-        required = ["node_id", "public_key", "tunnel_ip"]
-        for field in required:
+    def _token_to_peer(self, payload: Dict, name_override: str = "") -> Tuple[Optional[Dict], Optional[str]]:
+        if payload.get("v") != 2:
+            return None, ("This pairing code comes from an older AlvaOS (before 0.3, with WireGuard). "
+                          "Make a new one on the other NAS after it was updated.")
+        for field in ("node_id", "public_key"):
             if not payload.get(field):
                 return None, f"Invalid pairing token: missing {field}"
+        if not LINK_ID_RE.match(str(payload.get("public_key"))):
+            return None, "Invalid pairing token: the Link address is not valid"
 
         expires_raw = payload.get("expires_at")
         if expires_raw:
@@ -1892,14 +1571,6 @@ class BuddyBackupManager:
         if payload.get("node_id") == local.get("node_id"):
             return None, "Cannot pair with the same system"
 
-        endpoint_candidate = endpoint_override if str(endpoint_override or "").strip() else payload.get("endpoint", "")
-        endpoint, endpoint_err = self._normalize_endpoint(endpoint_candidate)
-        if endpoint_err:
-            return None, endpoint_err
-        api_endpoint, api_err = self._normalize_api_endpoint(payload.get("api_endpoint", ""))
-        if api_err:
-            return None, api_err
-
         peer_name = str(name_override or payload.get("name") or payload.get("node_id")).strip()
         if not peer_name:
             peer_name = str(payload.get("node_id"))
@@ -1907,278 +1578,65 @@ class BuddyBackupManager:
         peer = {
             "node_id": str(payload.get("node_id")),
             "name": peer_name,
-            "public_key": str(payload.get("public_key")).strip(),
+            "public_key": str(payload.get("public_key")).strip().lower(),
             "api_secret": str(payload.get("api_secret") or "").strip(),
-            "tunnel_ip": str(payload.get("tunnel_ip")).strip(),
-            "listen_port": int(payload.get("listen_port") or self.default_listen_port),
-            "endpoint": endpoint,
-            "api_endpoint": api_endpoint,
+            "tunnel_ip": "",                       # the address Link gives this buddy here (sync_link)
             "last_paired_at": self._now_iso(),
-            "status": "configured" if endpoint else "pending_endpoint",
+            "status": "configured",
             "last_error": "",
         }
         return peer, None
 
-    def _render_wg_config(self, identity: Dict, peers: Dict[str, Dict]) -> str:
-        try:
-            listen_port = int(identity.get("listen_port") or self.default_listen_port)
-        except Exception:
-            listen_port = self.default_listen_port
-        listen_port = max(1024, min(65535, listen_port))
-
-        lines = [
-            "[Interface]",
-            f"PrivateKey = {identity.get('private_key', '')}",
-            f"Address = {identity.get('tunnel_ip', '')}/24",
-            f"ListenPort = {listen_port}",
-            "",
-        ]
-
-        for node_id in sorted(peers.keys()):
-            peer = peers.get(node_id, {})
-            endpoint = str(peer.get("endpoint") or "").strip()
-            public_key = str(peer.get("public_key") or "").strip()
-            tunnel_ip = str(peer.get("tunnel_ip") or "").strip()
-            if not public_key or not tunnel_ip:
-                continue
-            # These values come from the remote buddy. A newline in any of them
-            # would let a peer inject wg-quick directives such as PostUp (a root
-            # shell command), so only accept their exact expected shapes.
-            if not (WG_KEY_RE.match(public_key) and IPV4_RE.match(tunnel_ip)):
-                continue
-            if endpoint and not WG_ENDPOINT_RE.match(endpoint):
-                continue
-            lines.extend(["[Peer]", f"PublicKey = {public_key}", f"AllowedIPs = {tunnel_ip}/32"])
-            # A buddy behind NAT has no reachable endpoint; it connects to us
-            # and WireGuard learns its address from the handshake.
-            if endpoint:
-                lines.append(f"Endpoint = {endpoint}")
-            lines.extend(["PersistentKeepalive = 25", ""])
-
-        return "\n".join(lines).strip() + "\n"
-
-    def apply_tunnel_config(self) -> Tuple[bool, Dict]:
-        if platform.system() != "Linux":
-            return False, {"error": "The Buddy Backup tunnel is only available on the AlvaOS NAS itself (Linux)"}
-
-        identity = self._load_identity()
-        if not identity.get("private_key"):
-            return False, {"error": identity.get("key_error") or "Missing WireGuard private key"}
-        if str(identity.get("key_source") or "wireguard") != "wireguard":
-            return False, {"error": "WireGuard is not fully configured. Install wireguard-tools and regenerate pairing identity."}
-
-        wg_cmd = self._wg_cmd()
-        wg_quick_cmd = self._wg_quick_cmd()
-        if not wg_cmd or not wg_quick_cmd:
-            return False, {"error": "WireGuard tools (wg/wg-quick) are not installed"}
-
+    def sync_link(self) -> Tuple[bool, Dict]:
+        """Tell AlvaOS Link which buddies may connect, and learn the address each has on this NAS."""
         peers = self._load_peers()
-        identity, _ = self._ensure_identity_tunnel_ip(identity)
-
-        active_peers = [
-            p for p in peers.values()
-            if str(p.get("endpoint") or "").strip() and str(p.get("public_key") or "").strip()
-        ]
-        if not active_peers:
-            return True, {"message": "No active peers configured"}
-
-        conflict_notes: List[str] = []
-        for attempt in range(2):
-            # Try to cleanly restart interface. Ignore "down" errors.
-            self.run_command([wg_quick_cmd, "down", self.wg_config_path], timeout=20)
-
-            identity, _ = self._ensure_identity_listen_port(identity)
-            config_text = self._render_wg_config(identity, peers)
-            Path(self.wg_dir).mkdir(parents=True, exist_ok=True)
-            with open(self.wg_config_path, "w", encoding="utf-8") as f:
-                f.write(config_text)
-            try:
-                os.chmod(self.wg_config_path, 0o600)
-            except Exception:
-                pass
-
-            up_res, up_err = self.run_command([wg_quick_cmd, "up", self.wg_config_path], timeout=40)
-            if not up_err and up_res and up_res.returncode == 0:
-                break
-
-            if attempt == 0 and self._is_address_in_use_error(up_err or ""):
-                recovered = False
-
-                current_ip = str(identity.get("tunnel_ip") or "").strip()
-                has_ip_conflict = (
-                    bool(current_ip)
-                    and self._local_ipv4_in_use(current_ip)
-                    and not self._ipv4_on_interface(current_ip, self.interface_name)
-                )
-                if has_ip_conflict:
-                    old_ip = current_ip
-                    identity, ip_changed = self._ensure_identity_tunnel_ip(identity, force_rotate=True)
-                    if ip_changed:
-                        conflict_notes.append(
-                            f"Tunnel IP conflict resolved automatically: {old_ip} -> {identity.get('tunnel_ip', '')}"
-                        )
-                        recovered = True
-
-                try:
-                    current_port = int(identity.get("listen_port") or self.default_listen_port)
-                except Exception:
-                    current_port = self.default_listen_port
-                if self._udp_port_in_use(current_port):
-                    old_port = current_port
-                    identity, port_changed = self._ensure_identity_listen_port(identity, force_rotate=True)
-                    if port_changed:
-                        conflict_notes.append(
-                            f"Listen port conflict resolved automatically: {old_port} -> {identity.get('listen_port', '')}"
-                        )
-                        recovered = True
-
-                if recovered:
-                    continue
-            return False, {"error": up_err or "Failed to bring up WireGuard interface"}
-
-        show_res, show_err = self.run_command([wg_cmd, "show", self.interface_name], timeout=10)
-        if show_err:
-            payload = {"message": "Tunnel configured, but runtime status unavailable", "warning": show_err}
-            if conflict_notes:
-                payload["updates"] = conflict_notes
-                for note in conflict_notes:
-                    if note.startswith("Tunnel IP conflict"):
-                        payload["ip_update"] = note
-                    if note.startswith("Listen port conflict"):
-                        payload["port_update"] = note
-            return True, payload
-        payload = {"message": "Tunnel configured", "runtime": (show_res.stdout or "").strip()[:1200]}
-        if conflict_notes:
-            payload["updates"] = conflict_notes
-            for note in conflict_notes:
-                if note.startswith("Tunnel IP conflict"):
-                    payload["ip_update"] = note
-                if note.startswith("Listen port conflict"):
-                    payload["port_update"] = note
-        return True, payload
+        buddies = [{"id": str(p.get("public_key") or ""), "name": str(p.get("name") or nid)}
+                   for nid, p in peers.items() if isinstance(p, dict) and LINK_ID_RE.match(str(p.get("public_key") or ""))]
+        answer = link_client.set_buddies(buddies)
+        if answer is None:
+            return False, {"error": "AlvaOS Link is not running on this NAS. Turn it on in Settings \u203a AlvaOS Link."}
+        if answer.get("error"):
+            return False, {"error": str(answer["error"])}
+        aliases = {p["id"]: p["alias"] for p in answer.get("peers", []) if p.get("kind") == "buddy"}
+        changed = False
+        for peer in peers.values():
+            alias = aliases.get(str(peer.get("public_key") or ""))
+            if alias and peer.get("tunnel_ip") != alias:
+                peer["tunnel_ip"] = alias
+                changed = True
+        if changed:
+            self._save_peers(peers)
+        return True, {"message": "Buddies are connected through AlvaOS Link", "buddies": len(buddies)}
 
     def _runtime_status(self) -> Dict:
-        if platform.system() != "Linux":
-            return {"state": "unsupported", "message": "WireGuard is only available on the AlvaOS NAS itself (Linux)"}
+        """What AlvaOS Link says: running or not, and per buddy whether it is reachable now."""
+        status = link_client.status()
+        if status is None:
+            return {"state": "down", "message": "AlvaOS Link is not running on this NAS"}
+        if not status.get("enabled"):
+            return {"state": "down", "message": "AlvaOS Link is turned off (Settings \u203a AlvaOS Link)"}
+        if not status.get("running"):
+            return {"state": "down", "message": "AlvaOS Link is starting"}
+        peers = [{"public_key": p.get("id"), "connected": bool(p.get("connected")), "last_seen": p.get("last_seen")}
+                 for p in status.get("peers", []) if p.get("kind") == "buddy"]
+        return {"state": "up", "message": "Link is up", "online": bool(status.get("relay")), "peers": peers}
 
-        wg_cmd = self._wg_cmd()
-        if not wg_cmd:
-            return {"state": "unsupported", "message": "WireGuard command not found"}
-
-        res, err = self.run_command([wg_cmd, "show", self.interface_name], timeout=10)
-        if err or not res or res.returncode != 0:
-            return {"state": "down", "message": err or "Tunnel is down"}
-
-        peers = []
-        current_peer = None
-        for raw in (res.stdout or "").splitlines():
-            line = raw.strip()
-            if line.startswith("peer:"):
-                if current_peer:
-                    peers.append(current_peer)
-                current_peer = {"public_key": line.split("peer:", 1)[1].strip()}
-            elif current_peer and line.startswith("endpoint:"):
-                current_peer["endpoint"] = line.split("endpoint:", 1)[1].strip()
-            elif current_peer and line.startswith("latest handshake:"):
-                current_peer["latest_handshake"] = line.split("latest handshake:", 1)[1].strip()
-        if current_peer:
-            peers.append(current_peer)
-
-        return {
-            "state": "up",
-            "message": "Tunnel is up",
-            "peers": peers,
-        }
-
-    def _attempt_reciprocal_pair(
-        self,
-        remote_api_endpoint: str,
-        local_wg_endpoint: str = "",
-        local_api_endpoint: str = "",
-        remote_secret: str = "",
-    ) -> Tuple[bool, Dict]:
-        normalized_remote, remote_err = self._normalize_api_endpoint(remote_api_endpoint)
-        if remote_err or not normalized_remote:
-            return False, {"error": remote_err or "Remote API endpoint missing"}
-
-        identity = self._identity_public()
-        if not identity.get("public_key"):
-            return False, {"error": identity.get("key_error") or "Local identity is not ready"}
-
-        normalized_local_wg, wg_err = self._normalize_endpoint(local_wg_endpoint)
-        if wg_err:
-            normalized_local_wg = ""
-
-        normalized_local_api, _ = self._normalize_api_endpoint(local_api_endpoint)
-        issued_at = self._now()
-        expires_at = issued_at + timedelta(minutes=20)
-        identity_private = self._identity_private()
-        payload = {
-            "v": 1,
-            "node_id": identity.get("node_id"),
-            "name": identity.get("name"),
-            "public_key": identity.get("public_key"),
-            "api_secret": str(identity_private.get("api_secret") or ""),
-            "tunnel_ip": identity.get("tunnel_ip"),
-            "listen_port": identity.get("listen_port", self.default_listen_port),
-            "endpoint": normalized_local_wg,
-            "api_endpoint": normalized_local_api,
-            "issued_at": issued_at.isoformat(),
-            "expires_at": expires_at.isoformat(),
-            "nonce": secrets.token_hex(8),
-        }
-        token = self._token_encode(payload)
-        req_payload = json.dumps({"token": token}).encode("utf-8")
-
-        urls = [
-            f"http://{normalized_remote}/api/v1/backup/pairing/accept",
-            f"https://{normalized_remote}/api/v1/backup/pairing/accept",
-        ]
-        last_error = "Reciprocal pairing failed"
-        for url in urls:
-            request_obj = urllib.request.Request(
-                url,
-                data=req_payload,
-                # Proves we received the remote's pairing code: the remote only
-                # accepts reciprocal pairing from someone who knows its secret.
-                headers={"Content-Type": "application/json", "X-Buddy-Secret": remote_secret},
-                method="POST",
-            )
-            try:
-                with urllib.request.urlopen(request_obj, timeout=8) as response:
-                    text = response.read().decode("utf-8", errors="replace")
-                    try:
-                        data = json.loads(text) if text else {}
-                    except Exception:
-                        data = {}
-                    if int(response.status) >= 200 and int(response.status) < 300 and not data.get("error"):
-                        return True, {
-                            "message": "Reciprocal pairing completed",
-                            "remote_api_endpoint": normalized_remote,
-                        }
-                    last_error = data.get("error") or f"HTTP {response.status}"
-            except urllib.error.HTTPError as exc:
-                try:
-                    body = exc.read().decode("utf-8", errors="replace")
-                    parsed = json.loads(body) if body else {}
-                    last_error = parsed.get("error") or f"HTTP {exc.code}"
-                except Exception:
-                    last_error = f"HTTP {exc.code}"
-            except Exception as exc:
-                last_error = str(exc)
-        return False, {
-            "error": last_error,
-            "remote_api_endpoint": normalized_remote,
-        }
+    def _attempt_reciprocal_pair(self, peer: Dict) -> Tuple[bool, Dict]:
+        """Give the buddy our own pairing code through Link, with the secret from its code as proof."""
+        token, _payload, error = self._own_token(20)
+        if token is None:
+            return False, error or {"error": "AlvaOS Link is not ready"}
+        answer = link_client.pair(str(peer.get("public_key") or ""),
+                                  {"op": "buddy", "secret": str(peer.get("api_secret") or ""), "token": token})
+        if answer.get("error") or not answer.get("success"):
+            return False, {"error": answer.get("error") or "The other NAS did not accept the pairing"}
+        return True, {"message": "Reciprocal pairing completed"}
 
     def validate_pairing_token(
         self,
         token: str,
-        endpoint_override: str = "",
         name_override: str = "",
         auto_reciprocal: bool = False,
-        local_wg_endpoint: str = "",
-        local_api_endpoint: str = "",
     ) -> Tuple[bool, Dict]:
         payload, decode_err = self._token_decode(token)
         if decode_err or payload is None:
@@ -2187,7 +1645,7 @@ class BuddyBackupManager:
         if self._is_token_used(token):
             return False, {"error": "This pairing token was already used"}
 
-        peer, peer_err = self._token_to_peer(payload, endpoint_override=endpoint_override, name_override=name_override)
+        peer, peer_err = self._token_to_peer(payload, name_override=name_override)
         if peer_err or peer is None:
             return False, {"error": peer_err or "Invalid pairing token"}
 
@@ -2213,8 +1671,8 @@ class BuddyBackupManager:
             settings["updated_at"] = self._now_iso()
             self._save_json(self.settings_file, self._merge_settings(settings))
 
-        # Apply even without an endpoint: a buddy behind NAT connects to us.
-        ok, tunnel_result = self.apply_tunnel_config()
+        # Let the buddy in (and learn its address here) before anything else.
+        ok, link_result = self.sync_link()
         peers = self._load_peers()
         current = peers.get(peer["node_id"], peer)
         if ok:
@@ -2222,28 +1680,19 @@ class BuddyBackupManager:
             current["last_error"] = ""
         else:
             current["status"] = "error"
-            current["last_error"] = tunnel_result.get("error", "Failed to apply tunnel config")
+            current["last_error"] = link_result.get("error", "AlvaOS Link did not take the buddy")
         peers[peer["node_id"]] = current
         self._save_peers(peers)
         peer = current
 
         reciprocal: Dict[str, Any] = {"skipped": True}
-        if auto_reciprocal:
-            remote_api_endpoint = str(peer.get("api_endpoint") or "").strip()
-            if remote_api_endpoint:
-                reciprocal_ok, reciprocal_payload = self._attempt_reciprocal_pair(
-                    remote_api_endpoint=remote_api_endpoint,
-                    local_wg_endpoint=local_wg_endpoint,
-                    local_api_endpoint=local_api_endpoint,
-                    remote_secret=str(peer.get("api_secret") or ""),
-                )
-                reciprocal = {"success": reciprocal_ok, **reciprocal_payload}
-            else:
-                reciprocal = {"skipped": True, "reason": "Remote API endpoint is not available in token"}
+        if auto_reciprocal and ok:
+            reciprocal_ok, reciprocal_payload = self._attempt_reciprocal_pair(peer)
+            reciprocal = {"success": reciprocal_ok, **reciprocal_payload}
 
         return True, {
             "peer": peer,
-            "tunnel_result": tunnel_result,
+            "tunnel_result": link_result,
             "reciprocal": reciprocal,
         }
 
@@ -3155,20 +2604,16 @@ class BuddyBackupManager:
         if reciprocal:
             reciprocal_result = self._notify_remote_peer_removed(removed)
 
-        ok, tunnel_result = self.apply_tunnel_config()
+        ok, link_result = self.sync_link()
         if not ok:
-            err = str(tunnel_result.get("error", "")).lower()
-            if "wireguard" in err or "wg" in err:
-                return True, {
-                    "removed": removed,
-                    "reciprocal": reciprocal_result,
-                    "tunnel_result": {
-                        "message": "Peer removed. Tunnel update deferred until WireGuard is available.",
-                        "warning": tunnel_result.get("error"),
-                    }
-                }
-            return False, {"error": tunnel_result.get("error", "Peer removed, but tunnel reconfigure failed")}
-        return True, {"removed": removed, "reciprocal": reciprocal_result, "tunnel_result": tunnel_result}
+            # The buddy is removed here either way; Link catches up when it is running again.
+            return True, {
+                "removed": removed,
+                "reciprocal": reciprocal_result,
+                "tunnel_result": {"message": "Buddy removed. Link is told when it runs again.",
+                                  "warning": link_result.get("error")},
+            }
+        return True, {"removed": removed, "reciprocal": reciprocal_result, "tunnel_result": link_result}
 
     def test_peer_connection(self, node_id: str) -> Tuple[bool, Dict]:
         target = str(node_id or "").strip()
@@ -3181,95 +2626,43 @@ class BuddyBackupManager:
             return False, {"error": "Peer not found"}
 
         runtime = self._runtime_status()
-        tunnel_state = str(runtime.get("state") or "unknown").lower()
-        tunnel_up = tunnel_state == "up"
-        runtime_peers_by_key = {}
-        for item in runtime.get("peers", []) if isinstance(runtime.get("peers"), list) else []:
-            if not isinstance(item, dict):
-                continue
-            public_key = str(item.get("public_key") or "").strip()
-            if public_key:
-                runtime_peers_by_key[public_key] = item
-
-        public_key = str(peer.get("public_key") or "").strip()
-        runtime_peer = runtime_peers_by_key.get(public_key, {})
-        latest_handshake = str(runtime_peer.get("latest_handshake") or "").strip()
-        handshake_age = self._parse_handshake_age_seconds(latest_handshake)
-        online = bool(tunnel_up and runtime_peer) and latest_handshake.lower() not in ("", "never")
-        connected = bool(
-            tunnel_up
-            and online
-            and handshake_age is not None
-            and handshake_age <= self.connected_handshake_threshold_seconds
-        )
-
-        tunnel_ip = str(peer.get("tunnel_ip") or "").strip()
-        ping_payload = {
-            "attempted": False,
-            "success": False,
-            "error": "",
-        }
-        ping_cmd = self._ping_cmd()
-        if platform.system() == "Linux" and ping_cmd and tunnel_ip:
+        link_up = str(runtime.get("state") or "").lower() == "up"
+        link_id = str(peer.get("public_key") or "").strip()
+        ping_payload: Dict[str, Any] = {"attempted": False, "success": False, "error": ""}
+        if link_up and LINK_ID_RE.match(link_id):
             ping_payload["attempted"] = True
-            ping_res, ping_err = self.run_command([ping_cmd, "-c", "1", "-W", "2", tunnel_ip], timeout=8)
-            ping_err_text = str(ping_err or "").lower()
-            ping_permission_blocked = (
-                "passwordless sudo is not configured" in ping_err_text
-                or "a password is required" in ping_err_text
-                or "password is required" in ping_err_text
-            )
-            if ping_permission_blocked:
-                # Ping is optional for connection test. Do not fail when sudo policy blocks ping.
-                ping_payload["attempted"] = False
-                ping_payload["success"] = False
-                ping_payload["error"] = ""
-                ping_payload["permission_blocked"] = True
-            else:
-                ping_ok = bool(ping_res and ping_res.returncode == 0 and not ping_err)
-                ping_payload["success"] = ping_ok
-                if not ping_ok:
-                    ping_payload["error"] = ping_err or ((ping_res.stderr or ping_res.stdout or "").strip()[:240])
+            answer = link_client.ping(link_id)
+            ping_payload["success"] = bool(answer.get("ok"))
+            ping_payload["ms"] = answer.get("ms")
+            ping_payload["error"] = "" if answer.get("ok") else str(answer.get("error") or "no answer")
+        api_probe = self._probe_peer_api(peer) if ping_payload["success"] else {
+            "attempted": False, "success": False, "url": "", "error": ""}
 
-        api_probe = self._probe_peer_api(peer)
-
-        ping_ok = bool(ping_payload.get("success"))
-        api_ok = bool(api_probe.get("success"))
-        wg_transport_ok = bool(connected and (not ping_payload.get("attempted") or ping_ok))
-        connection_ok = wg_transport_ok
+        connection_ok = bool(ping_payload["success"] and api_probe.get("success"))
         if connection_ok:
-            message = "Connection test successful (WireGuard tunnel + buddy transport reachable)"
+            message = f"Connected through AlvaOS Link ({ping_payload.get('ms')} ms)"
+        elif not LINK_ID_RE.match(link_id):
+            message = "This buddy was paired with an older AlvaOS. Pair again (Backup \u203a Buddy)."
+        elif not link_up:
+            message = runtime.get("message") or "AlvaOS Link is not running"
+        elif not ping_payload["success"]:
+            message = f"The buddy does not answer: {ping_payload.get('error') or 'unknown reason'}"
         else:
-            if not tunnel_up:
-                if api_ok:
-                    message = "Buddy API reachable, but WireGuard tunnel is DOWN"
-                else:
-                    message = f"WireGuard tunnel is DOWN ({runtime.get('message') or 'no runtime info'})"
-            elif not connected:
-                message = "WireGuard tunnel is up, but no recent handshake with this buddy"
-            elif ping_payload.get("attempted") and not ping_ok:
-                message = f"WireGuard handshake exists, but tunnel ping failed: {ping_payload.get('error') or 'unknown error'}"
-            else:
-                message = f"Connection test failed: {api_probe.get('error') or 'unknown reason'}"
+            message = f"The buddy answers, but its backup service does not: {api_probe.get('error') or 'unknown reason'}"
 
         return True, {
             "node_id": target,
             "peer_name": str(peer.get("name") or target),
             "connection_ok": connection_ok,
             "message": message,
-            "runtime": {
-                "state": str(runtime.get("state") or "unknown"),
-                "online": online,
-                "connected": connected,
-                "latest_handshake": latest_handshake,
-                "endpoint": str(runtime_peer.get("endpoint") or "").strip(),
-            },
+            "runtime": {"state": str(runtime.get("state") or "unknown"), "connected": connection_ok,
+                        "online": bool(runtime.get("online"))},
             "ping": ping_payload,
             "api_probe": api_probe,
         }
 
     def restart_tunnel(self) -> Tuple[bool, Dict]:
-        return self.apply_tunnel_config()
+        return self.sync_link()
 
     def get_status(self) -> Dict:
         identity = self._identity_public()
@@ -3277,15 +2670,11 @@ class BuddyBackupManager:
         settings_full = self.get_settings(include_secret=True)
         policies = settings_full.get("peer_policies", {})
         runtime = self._runtime_status()
-        tunnel_state = str(runtime.get("state") or "unknown").lower()
-        tunnel_up = tunnel_state == "up"
+        link_up = str(runtime.get("state") or "unknown").lower() == "up"
         runtime_peers_by_key = {}
         for item in runtime.get("peers", []) if isinstance(runtime.get("peers"), list) else []:
-            if not isinstance(item, dict):
-                continue
-            public_key = str(item.get("public_key") or "").strip()
-            if public_key:
-                runtime_peers_by_key[public_key] = item
+            if isinstance(item, dict) and item.get("public_key"):
+                runtime_peers_by_key[str(item["public_key"])] = item
 
         peers = []
         for peer in peers_map.values():
@@ -3304,46 +2693,31 @@ class BuddyBackupManager:
                 }
             item["policy"] = policy
 
-            public_key = str(item.get("public_key") or "").strip()
-            runtime_peer = runtime_peers_by_key.get(public_key, {})
-            latest_handshake = str(runtime_peer.get("latest_handshake") or "").strip()
-            handshake_age = self._parse_handshake_age_seconds(latest_handshake)
-            online = bool(tunnel_up and runtime_peer) and latest_handshake.lower() not in ("", "never")
-            connected = bool(
-                tunnel_up
-                and online
-                and handshake_age is not None
-                and handshake_age <= self.connected_handshake_threshold_seconds
-            )
+            link_id = str(item.get("public_key") or "").strip()
+            if not LINK_ID_RE.match(link_id):
+                item["status"] = "repair"
+                item["last_error"] = "Paired with an older AlvaOS (WireGuard). Pair again to use AlvaOS Link."
+            runtime_peer = runtime_peers_by_key.get(link_id, {})
+            connected = bool(link_up and runtime_peer.get("connected"))
             item["runtime"] = {
                 "in_tunnel": bool(runtime_peer),
-                "endpoint": str(runtime_peer.get("endpoint") or "").strip(),
-                "latest_handshake": latest_handshake,
-                "handshake_age_seconds": handshake_age,
-                "online": online,
+                "last_seen": runtime_peer.get("last_seen"),
+                "online": connected,
                 "connected": connected,
             }
             peers.append(item)
         peers = sorted(peers, key=lambda item: str(item.get("name", "")).lower())
         settings = self._public_settings(settings_full)
         runtime_state = self._load_runtime()
-        wg_cmd = self._wg_cmd()
-        wg_quick_cmd = self._wg_quick_cmd()
-        key_source = str(identity.get("key_source") or "wireguard")
-        supported = platform.system() == "Linux" and bool(wg_cmd and wg_quick_cmd and identity.get("public_key")) and key_source == "wireguard"
 
         return {
-            "supported": supported,
+            "supported": platform.system() == "Linux" and bool(identity.get("public_key")),
             "identity": identity,
             "peers": peers,
             "tunnel": runtime,
             "settings": settings,
             "transfer": runtime_state,
             "mode": "transfer-ready",
-            "requirements": {
-                "linux": platform.system() == "Linux",
-                "wg_cmd": wg_cmd or "",
-                "wg_quick_cmd": wg_quick_cmd or "",
-                "wireguard_identity": key_source,
-            },
+            "requirements": {"linux": platform.system() == "Linux", "link": bool(identity.get("public_key"))},
         }
+

@@ -196,7 +196,6 @@ def manage_pools():
     """Manage Btrfs pools"""
 
     if request.method == 'GET':
-        # Check cache
         current_time = time.time()
         with _storage_cache_lock:
             if STORAGE_CACHE['pools']['expires'] > current_time:
@@ -208,12 +207,10 @@ def manage_pools():
             if platform.system() == 'Linux':
                 pools, _ = detect_btrfs_pools()
 
-                # Load pools state to get mount points
                 pools_state = load_pools_state()
                 state_key_by_lower = {str(key).lower(): key for key in pools_state.keys()}
                 detected_ids = set()
 
-                # Get usage information for each pool
                 for pool in pools:
                     pool_id = str(pool.get('id', ''))
                     detected_ids.add(pool_id.lower())
@@ -380,7 +377,6 @@ def manage_pools():
         return jsonify({'error': 'CSRF token missing or invalid'}), 403
 
     elif request.method == 'POST':
-        # Create new pool
         data = request.get_json()
         
         if not data:
@@ -440,7 +436,6 @@ def manage_pools():
                 # Add RAID level (parity profiles keep metadata mirrored)
                 cmd.extend(mkfs_profile_args(raid_level))
                 
-                # Add devices
                 cmd.extend(devices)
                 
                 # Execute pool creation
@@ -449,7 +444,6 @@ def manage_pools():
                 if err:
                     return jsonify({'error': f'Failed to create pool: {err}'}), 500
                 
-                # Create mount point
                 mount_point = f'/mnt/alvaos/{pool_name}'
                 # Use sudo to create directory as we might not have permission in /mnt/alvaos
                 res, err = run_sudo_command([CMD['MKDIR'], '-p', mount_point])
@@ -461,7 +455,6 @@ def manage_pools():
                 if err:
                     return jsonify({'error': f'Pool created but failed to mount: {err}'}), 500
                 
-                # Save pool state
                 pools_state = load_pools_state()
                 
                 # Get real BTRFS UUID to use as ID (matches get_pools logic)
@@ -722,7 +715,6 @@ def manage_subvolumes(pool_id):
         return jsonify({'subvolumes': subvolumes})
     
     elif request.method == 'POST':
-        # Create subvolume
         data = request.get_json()
         subvol_name = data.get('name', '').strip()
         
@@ -750,7 +742,6 @@ def manage_subvolumes(pool_id):
             return jsonify({'error': f'Failed to create subvolume: {str(e)}'}), 500
     
     elif request.method == 'DELETE':
-        # Delete subvolume
         data = request.get_json()
         subvol_name = data.get('name', '').strip()
         
@@ -888,7 +879,6 @@ def expand_pool(pool_id):
             # once the replacement below is balanced in.
             run_sudo_command([CMD['BTRFS'], 'device', 'remove', 'missing', mount_point], timeout=30)
 
-            # Add devices to pool
             # cmd: sudo btrfs device add /dev/sdX /mnt/alvaos/poolname
             cmd = [CMD['BTRFS'], 'device', 'add'] + devices + [mount_point]
             res, err = run_sudo_command(cmd, timeout=60)
@@ -921,7 +911,6 @@ def expand_pool(pool_id):
             # blocking the request.
             _start_background(balance_cmd)
 
-            # Update state
             pool_info['devices'].extend(devices)
             pools_state[pool_id] = pool_info
             save_pools_state(pools_state)

@@ -1,8 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Material 3; on Android 12+ the colours come from the phone's wallpaper (AlvaApp). -->
+    <!-- Material 3 in the colours of the Hub: the phone's wallpaper colours are not used, on purpose. -->
     <style name="Theme.AlvaOS" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/alva_primary</item>
+        <item name="colorPrimary">@color/alva_accent</item>
+        <item name="colorOnPrimary">@color/alva_on_accent</item>
+        <item name="colorPrimaryContainer">@color/alva_sel</item>
+        <item name="colorOnPrimaryContainer">@color/alva_text</item>
+        <item name="colorSecondary">@color/alva_accent</item>
+        <item name="colorOnSecondary">@color/alva_on_accent</item>
+        <item name="colorSecondaryContainer">@color/alva_sel</item>
+        <item name="colorOnSecondaryContainer">@color/alva_text</item>
+        <item name="colorTertiaryContainer">@color/alva_warn_bg</item>
+        <item name="colorOnTertiaryContainer">@color/alva_text</item>
+        <item name="android:colorBackground">@color/alva_bg</item>
+        <item name="colorSurface">@color/alva_bg</item>
+        <item name="colorOnSurface">@color/alva_text</item>
+        <item name="colorOnSurfaceVariant">@color/alva_muted</item>
+        <item name="colorSurfaceContainerLowest">@color/alva_bg</item>
+        <item name="colorSurfaceContainerLow">@color/alva_side</item>
+        <item name="colorSurfaceContainer">@color/alva_side</item>
+        <item name="colorSurfaceContainerHigh">@color/alva_panel</item>
+        <item name="colorSurfaceContainerHighest">@color/alva_hover</item>
+        <item name="colorOutline">@color/alva_faint</item>
+        <item name="colorOutlineVariant">@color/alva_line</item>
+        <item name="colorError">@color/alva_danger</item>
+        <item name="colorErrorContainer">@color/alva_danger_bg</item>
+        <item name="colorOnErrorContainer">@color/alva_danger_on</item>
         <item name="android:windowLightStatusBar">@bool/light_bars</item>
         <item name="android:windowLightNavigationBar">@bool/light_bars</item>
     </style>

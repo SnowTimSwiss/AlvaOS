@@ -458,12 +458,7 @@ class AppStore:
             # For now, we keep it in memory until the next install starts.
     
     def get_available_apps(self) -> Tuple[Optional[List[Dict]], Optional[str]]:
-        """
-        Get list of available apps from catalog
-        
-        Returns:
-            Tuple of (list of apps, error message)
-        """
+        """Get list of available apps from catalog"""
         catalog, error = self._load_catalog()
         if error or catalog is None:
             return None, error or "App catalog is unavailable"
@@ -483,15 +478,7 @@ class AppStore:
         return apps, None
     
     def get_app_details(self, app_id: str) -> Tuple[Optional[Dict], Optional[str]]:
-        """
-        Get detailed information about an app
-        
-        Args:
-            app_id: App identifier
-        
-        Returns:
-            Tuple of (app details dict, error message)
-        """
+        """Get detailed information about an app"""
         catalog, error = self._load_catalog()
         if error or catalog is None:
             return None, error or "App catalog is unavailable"
@@ -516,12 +503,7 @@ class AppStore:
         return tokens
 
     def _compare_versions(self, left: str, right: str) -> Optional[int]:
-        """
-        Compare two catalog version strings.
-
-        Returns:
-            -1 if left < right, 0 if equal, 1 if left > right, None if unknown
-        """
+        """Compare two catalog version strings."""
         left_value = str(left or '').strip()
         right_value = str(right or '').strip()
         if not left_value or not right_value:
@@ -825,19 +807,8 @@ class AppStore:
         parent_subvolume: Optional[str],
         app_id: str
     ) -> Tuple[Optional[str], Optional[str]]:
-        """
-        Prepare storage for an app with nested subvolumes
-        
-        Args:
-            pool_path: Base pool path (e.g., /mnt/alvaos/main-pool)
-            parent_subvolume: Optional parent subvolume (e.g., "data")
-            app_id: App identifier
-        
-        Returns:
-            Tuple of (app storage path, error message)
-        """
+        """Prepare storage for an app with nested subvolumes"""
         try:
-            # Build base path
             if parent_subvolume:
                 base_path = os.path.join(pool_path, parent_subvolume)
             else:
@@ -877,13 +848,7 @@ class AppStore:
         volume_mappings: Optional[Dict[str, str]] = None,
         environment_vars: Optional[Dict[str, str]] = None
     ) -> Tuple[bool, Optional[str]]:
-        """
-        Start app installation in the background
-        
-        Returns:
-            Tuple of (success bool, error message)
-        """
-        # Get app details from catalog
+        """Start app installation in the background"""
         app_details, error = self.get_app_details(app_id)
         if error or app_details is None:
             return False, error or f"App '{app_id}' not found in catalog"
@@ -893,7 +858,6 @@ class AppStore:
         if secret_error:
             return False, secret_error
 
-        # Check if app is already installed
         apps_state = self._load_apps_state()
         if app_id in apps_state:
             return False, f"App '{app_id}' is already installed"
@@ -905,7 +869,6 @@ class AppStore:
                 return False, f"Operation for '{active_app_id}' is already in progress"
             return False, "Another app operation is already in progress"
 
-        # Start installation in a thread
         import threading
         thread = threading.Thread(
             target=self._install_app_worker,
@@ -938,12 +901,7 @@ class AppStore:
         parent_subvolume: Optional[str] = None,
         app_id: Optional[str] = None
     ) -> Tuple[bool, Optional[str], Optional[str]]:
-        """
-        Start installation for a custom app defined via Docker Compose.
-
-        Returns:
-            Tuple of (success bool, error message, resolved app_id)
-        """
+        """Start installation for a custom app defined via Docker Compose."""
         display_name = str(app_name or '').strip()
         if not display_name:
             return False, "app_name is required", None
@@ -1057,7 +1015,6 @@ class AppStore:
                 logs.append(line)
                 self._update_install_status(app_id, "installing", progress, msg, logs, action="install")
 
-            # Create containers from compose
             self._update_install_status(app_id, "installing", 30, "Invoking Docker Compose...", logs, action="install")
             success, error = self.docker_manager.create_container_from_compose(
                 compose_config,
@@ -1073,7 +1030,6 @@ class AppStore:
                 self._update_install_status(app_id, "error", 0, f"Failed to create containers: {error}", logs, action="install")
                 return
             
-            # Save app state
             self._update_install_status(app_id, "installing", 95, "Finalizing installation...", action="install")
             apps_state = self._load_apps_state()
             apps_state[app_id] = {
@@ -1196,15 +1152,7 @@ class AppStore:
             )
 
     def update_app(self, app_id: str) -> Tuple[bool, Optional[str]]:
-        """
-        Update an installed app by pulling latest images and recreating containers.
-
-        Args:
-            app_id: App identifier
-
-        Returns:
-            Tuple of (success bool, error message)
-        """
+        """Update an installed app by pulling latest images and recreating containers."""
         apps_state = self._load_apps_state()
         if app_id not in apps_state:
             return False, f"App '{app_id}' is not installed"
@@ -1566,16 +1514,7 @@ class AppStore:
             self._update_install_status(app_id, "error", 0, f"Unexpected error during update: {str(e)}", logs, force_write=True, action=action)
 
     def uninstall_app(self, app_id: str, keep_data: bool = False) -> Tuple[bool, Optional[str]]:
-        """
-        Uninstall an app
-        
-        Args:
-            app_id: App identifier
-            keep_data: If True, keep the app's data subvolume
-        
-        Returns:
-            Tuple of (success bool, error message)
-        """
+        """Uninstall an app"""
         apps_state = self._load_apps_state()
         
         if app_id not in apps_state:
@@ -1584,12 +1523,10 @@ class AppStore:
         app_state = apps_state[app_id]
         storage_path = app_state.get('storage_path')
         
-        # Get all containers for this app
         containers, error = self.docker_manager.list_containers(all_containers=True)
         if error or containers is None:
             return False, f"Failed to list containers: {error or 'no response from Docker'}"
         
-        # Remove containers that belong to this app
         project_name = f"alvaos-{app_id}"
         for container in containers:
             labels = container.get('Labels', '')
@@ -1599,13 +1536,11 @@ class AppStore:
                 if not success:
                     print(f"Warning: Failed to remove container {container_id}: {error}")
         
-        # Remove data subvolume if requested
         if not keep_data and storage_path:
             success, error = self._delete_subvolume(storage_path)
             if not success:
                 print(f"Warning: Failed to delete subvolume {storage_path}: {error}")
         
-        # Remove from state
         del apps_state[app_id]
         self._save_apps_state(apps_state)
         
