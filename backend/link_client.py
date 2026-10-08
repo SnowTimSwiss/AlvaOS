@@ -64,6 +64,12 @@ def remove_device(device_id: str) -> bool:
     return _call('POST', '/remove-device', {'device': device_id}) is not None
 
 
+def add_phone(key: str, device_id: str, name: str, user: str) -> bool:
+    """A phone that paired at home tells its Link key: it may now come in from away."""
+    found = _call('POST', '/phones', {'key': key, 'device': device_id, 'name': name, 'user': user})
+    return bool(found and found.get('ok'))
+
+
 def set_enabled(enabled: bool) -> Optional[Dict[str, Any]]:
     return _call('POST', '/config', {'enabled': bool(enabled)}, timeout=40)
 

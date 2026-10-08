@@ -82,3 +82,6 @@ installer/config.local*
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Built by CI from iroh-ffi (Link library for the phone)
+android/app/src/main/jniLibs/

@@ -485,6 +485,22 @@ def pair():
                     'nas_name': socket.gethostname().split('.')[0]})
 
 
+@app.post('/api/devices/link')
+def device_link():
+    """A phone that paired at home gives its Link key (64 hex digits); from then on it may come in from away."""
+    session, refused = need_session()
+    if refused:
+        return refused
+    device = session.get('device')
+    key = str((request.get_json(silent=True) or {}).get('key') or '').lower()
+    if not isinstance(device, dict) or not device.get('id'):
+        return jsonify({'error': 'Only a paired phone or computer can do this.'}), 403
+    if not re.fullmatch(r'[0-9a-f]{64}', key):
+        return jsonify({'error': 'That key is not valid.'}), 400
+    ok = link_client.add_phone(key, str(device['id']), str(device.get('name') or 'Phone'), session['user'])
+    return jsonify({'success': ok, 'link': link_client.node_id()})
+
+
 def _device_sessions(session: Dict[str, Any]) -> List[Tuple[str, Dict[str, Any]]]:
     """(key, session) of the devices this person may see: their own; the admin all."""
     return [(k, v) for k, v in _load_sessions().items() if isinstance(v.get('device'), dict)

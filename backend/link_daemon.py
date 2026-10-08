@@ -611,6 +611,18 @@ def control_server(link: Link, loop: asyncio.AbstractEventLoop, token: str,
                 for peer_id in gone:
                     link.state.remove_peer(peer_id)
                 self._send(200, {'removed': len(gone)})
+            elif self.path == '/phones':
+                key = str(body.get('key') or '').lower() if isinstance(body, dict) else ''
+                device = str(body.get('device') or '')[:64] if isinstance(body, dict) else ''
+                if not re.fullmatch(r'[0-9a-f]{64}', key) or not device:
+                    self._send(400, {'error': 'That key is not valid.'})
+                    return
+                for peer_id in [i for i, p in list(link.state.peers.items())
+                                if p.get('kind') == 'phone' and p.get('device') == device and i != key]:
+                    link.state.remove_peer(peer_id)           # a phone has one key
+                link.state.add_peer(key, 'phone', str(body.get('name') or 'Phone'), device=device,
+                                    user=str(body.get('user') or ''))
+                self._send(200, {'ok': True})
             elif self.path == '/config':
                 if isinstance(body, dict) and 'enabled' in body:
                     link.state.config['enabled'] = bool(body['enabled'])

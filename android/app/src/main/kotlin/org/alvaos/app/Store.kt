@@ -18,11 +18,27 @@ class Store(context: Context) : SyncState {
     var server: String
         get() = prefs.getString("server", "").orEmpty()
         set(v) = prefs.edit().putString("server", v).apply()
-    /** Every address of the NAS from the QR code: at home first, then away (Cloudflare). */
+    /** Every address of the NAS from the QR code (at home); away it is Link. */
     var addresses: List<String>
         get() = JSONArray(prefs.getString("addresses", "[]")).let { a -> List(a.length()) { a.getString(it) } }
             .ifEmpty { listOfNotNull(server.ifEmpty { null }) }
         set(v) = prefs.edit().putString("addresses", JSONArray(v).toString()).apply()
+    /** The NAS's AlvaOS Link address (64 hex digits): how to reach it from away. */
+    var linkNas: String
+        get() = prefs.getString("link_nas", "").orEmpty()
+        set(v) = prefs.edit().putString("link_nas", v).apply()
+    /** This phone's Link secret key (hex); the NAS knows the phone by it. */
+    var linkKey: String
+        get() = prefs.getString("link_key", "").orEmpty()
+        set(v) = prefs.edit().putString("link_key", v).apply()
+    /** Whether the NAS knows this phone's Link key. */
+    var linkRegistered: Boolean
+        get() = prefs.getBoolean("link_registered", false)
+        set(v) = prefs.edit().putBoolean("link_registered", v).apply()
+    /** The local port of the Link door, kept so the Hub's cookies stay valid. */
+    var linkPort: Int
+        get() = prefs.getInt("link_port", 0)
+        set(v) = prefs.edit().putInt("link_port", v).apply()
     var nasName: String
         get() = prefs.getString("nas_name", "").orEmpty()
         set(v) = prefs.edit().putString("nas_name", v).apply()
@@ -43,14 +59,12 @@ class Store(context: Context) : SyncState {
             JSONObject().put("id", it.id).put("name", it.name).put("port", it.port).put("path", it.path)
         }).toString()).apply()
 
-    /** What /api/me said: the apps, the NAS's name, and its internet address for away. */
+    /** What /api/me said: the apps and the NAS's name. */
     fun remember(me: Me) {
         hubApps = me.hub.apps
         storeApps = me.hub.store
         if (me.nas_name.isNotEmpty()) nasName = me.nas_name
         if (me.user.isNotEmpty()) user = me.user
-        val away = me.public_url.trimEnd('/')
-        if (away.startsWith("https://") && away !in addresses) addresses = addresses + away
     }
 
     /** Whether the person set up the photo backup (it is optional). */
@@ -96,8 +110,10 @@ class Store(context: Context) : SyncState {
      * (at home the NAS's own address, away the internet one). Not on the main thread.
      */
     fun pickServer(): String {
-        val all = (listOf(server) + addresses).filter { it.isNotEmpty() }.distinct()
-        val found = all.firstOrNull { HubClient(it).reachable() } ?: return server
+        val direct = (listOf(server) + addresses).filter { it.isNotEmpty() && !LinkService.isProxy(it) }.distinct()
+        val found = direct.firstOrNull { HubClient(it).reachable() }
+            ?: LinkService.proxyUrl(this)?.takeIf { HubClient(it).reachable() }     // away: through AlvaOS Link
+            ?: return server
         if (found != server) server = found
         return found
     }

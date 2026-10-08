@@ -122,3 +122,18 @@ def test_the_qr_code_carries_the_link_address_and_a_removed_phone_loses_it(clien
     monkeypatch.setattr(link_client, "node_id", lambda: "")
     off = pair_link(client)
     assert "l" not in parse_qs(urlparse(off["link"]).query) and off["away"] is False
+
+
+def test_a_phone_that_paired_at_home_registers_its_link_key(client, monkeypatch):  # noqa: F811
+    import link_client
+    added = []
+    monkeypatch.setattr(link_client, "node_id", lambda: "ab" * 32)
+    monkeypatch.setattr(link_client, "add_phone", lambda key, dev, name, user: added.append((key, name, user)) or True)
+    sign_in(client, "anna", "anna-pass")
+    assert client.post("/api/devices/link", json={"key": "cd" * 32}, headers=H).status_code == 403    # a browser, not a phone
+    p = phone()
+    p.set_cookie(fs.COOKIE, p.post("/api/devices/pair", json={"code": pair_link(client)["code"], "device": {"name": "Pixel"}}).get_json()["token"])
+    assert p.post("/api/devices/link", json={"key": "nonsense"}, headers=H).status_code == 400
+    r = p.post("/api/devices/link", json={"key": "CD" * 32}, headers=H)
+    assert r.status_code == 200 and r.get_json() == {"success": True, "link": "ab" * 32}
+    assert added == [("cd" * 32, "Pixel", "anna")]

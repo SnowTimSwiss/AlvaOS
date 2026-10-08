@@ -189,7 +189,8 @@ class HubPage(
         ui.badge(box, R.drawable.ic_wifi_off, 64)
         ui.headline(box, "${store.nasName.ifEmpty { "Your NAS" }} cannot be reached", 16).gravity = Gravity.CENTER
         ui.body(box, "Is the phone online? At home it uses ${store.addresses.firstOrNull() ?: store.server}; " +
-            "away it needs the NAS's internet address (Cloudflare Tunnel) or Tailscale.").gravity = Gravity.CENTER
+            if (store.linkNas.isNotEmpty() && LinkService.available) "away it goes through AlvaOS Link, which may take a moment."
+            else "away it needs AlvaOS Link: turn it on in the NAS settings (Away from home) and scan a new QR code.").gravity = Gravity.CENTER
         ui.button(box, "Try again", top = 20) { unreachable() }
     }
 

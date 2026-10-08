@@ -79,6 +79,21 @@ class HubClientTest {
         assertEquals(PairLink("QFR9YKZK", listOf("http://192.168.1.20:8090", "https://nas.example.ch"), "cygnus", "tim"), link)
         assertEquals(null, PairLink.parse("https://example.com/?c=QFR9YKZK"))
         assertEquals(null, PairLink.parse("alvaos://pair?c=QFR9YKZK"))          // no address
+        val id = "ab".repeat(32)
+        val away = PairLink.parse("alvaos://pair?c=QFR9YKZK&n=cygnus&l=$id")     // only the Link address: still a way in
+        assertEquals(id, away?.link)
+        assertEquals(emptyList<String>(), away?.addresses)
+        assertEquals(null, PairLink.parse("alvaos://pair?c=QFR9YKZK&l=nothex"))
+    }
+
+    @Test
+    fun theLinkKeyIsToldToTheNas() {
+        server.enqueue(json("""{"success": true, "link": "ab"}"""))
+        val key = "cd".repeat(32)
+        client.registerLink(key)
+        val sent = server.takeRequest()
+        assertEquals("/api/devices/link", sent.path)
+        assertTrue(sent.body.readUtf8().contains(key))
     }
 
     @Test
@@ -103,12 +118,11 @@ class HubClientTest {
         server.enqueue(json("""{"user": "tim", "role": "user", "shares": [], "nas_name": "cygnus",
             "hub": {"name": "AlvaOS Hub", "apps": [{"id": "files", "name": "Files", "icon": "folder"},
             {"id": "photos", "name": "Photos", "icon": "image"}], "store": [{"id": "jellyfin", "name": "Jellyfin",
-            "port": 8096, "path": "/"}]}, "public_url": "https://nas.example.ch"}"""))
+            "port": 8096, "path": "/"}]}}"""))
         val me = client.me()
         assertEquals(listOf("files", "photos"), me.hub.apps.map { it.id })
         assertEquals(8096, me.hub.store.single().port)
         assertEquals("cygnus", me.nas_name)
-        assertEquals("https://nas.example.ch", me.public_url)
     }
 
     @Test

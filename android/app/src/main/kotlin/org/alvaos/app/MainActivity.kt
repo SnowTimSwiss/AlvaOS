@@ -45,6 +45,7 @@ import org.alvaos.photos.DeviceInfo
 import org.alvaos.photos.HubClient
 import org.alvaos.photos.HubException
 import org.alvaos.photos.Me
+import org.alvaos.photos.Paired
 import org.alvaos.photos.PairLink
 import org.alvaos.photos.SyncEngine
 import org.alvaos.photos.albumProgress
@@ -190,7 +191,7 @@ class MainActivity : AppCompatActivity() {
         // Which apps the person has now, or signed out on the NAS (Phones and devices › Sign out, a new password)?
         lifecycleScope.launch {
             val answer: Any? = withContext(Dispatchers.IO) {
-                try { store.pickServer(); store.hub().me() }
+                try { store.pickServer(); LinkService.register(store, store.hub()); store.hub().me() }
                 catch (e: HubException) { if (e.signedOut) "out" else null }
                 catch (e: Exception) { null }
             }
@@ -372,14 +373,27 @@ class MainActivity : AppCompatActivity() {
     private fun connect(link: PairLink) {
         busy("Connecting to ${link.nas.ifEmpty { "your NAS" }}…") {
             val server = link.addresses.firstOrNull { HubClient(it).reachable() }
-                ?: throw HubException("The NAS cannot be reached at ${link.addresses.joinToString(" or ")}. " +
+            val paired: Paired
+            val base: String
+            if (server != null) {
+                paired = HubClient(server).pair(link.code, device())
+                base = server
+            } else if (link.link.isNotEmpty()) {
+                // Not at home: through AlvaOS Link, no address needed.
+                paired = LinkService.pair(store, link.link, link.code, device())
+                base = LinkService.proxyUrl(store) ?: throw HubException(LinkService.NOT_AVAILABLE)
+            } else {
+                throw HubException("The NAS cannot be reached at ${link.addresses.joinToString(" or ")}. " +
                     "Is the phone in the same network as the NAS (Wi-Fi)?")
-            val paired = HubClient(server).pair(link.code, device())
-            store.server = server
+            }
+            store.linkRegistered = false
+            if (link.link.isNotEmpty()) store.linkNas = link.link
+            store.server = base
             store.addresses = link.addresses
             store.token = paired.token
             store.user = paired.user.ifEmpty { link.user }
             store.nasName = paired.nas_name.ifEmpty { link.nas }
+            if (server != null) LinkService.register(store, store.hub())
             try { store.remember(store.hub().me()) } catch (e: Exception) { /* the tabs come on the next start */ }
         }
     }
@@ -732,8 +746,9 @@ class MainActivity : AppCompatActivity() {
 
     // ── The Settings tab ─────────────────────────────────────────────────
 
-    /** "At home" for an address in the home network (or through Tailscale), else "Over the internet". */
+    /** "At home" for an address in the home network, "Through AlvaOS Link" for the Link door, else "Over the internet". */
     private fun where(): String {
+        if (LinkService.isProxy(store.server)) return "Through AlvaOS Link"
         val host = Uri.parse(store.server).host.orEmpty()
         val home = Regex("^(192\\.168\\.|10\\.|172\\.(1[6-9]|2\\d|3[01])\\.|100\\.(6[4-9]|[7-9]\\d|1[01]\\d|12[0-7])\\.)").containsMatchIn(host) ||
             host.endsWith(".local") || host == "localhost"
@@ -750,7 +765,8 @@ class MainActivity : AppCompatActivity() {
         who.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = ui.dp(14) })
         ui.title(texts, store.user)
         ui.caption(texts, "on ${store.nasName.ifEmpty { "your NAS" }}", 1)
-        ui.caption(account, "${where()} · ${Uri.parse(store.server).host.orEmpty()}", 14)
+        ui.caption(account, if (LinkService.isProxy(store.server)) where() else "${where()} · ${Uri.parse(store.server).host.orEmpty()}", 14)
+        ui.caption(account, "Away from home: ${LinkService.describe(store)}", 2)
         val others = store.addresses.filter { it != store.server }
         if (others.isNotEmpty()) ui.caption(account, "Also tries ${others.joinToString(", ") { Uri.parse(it).host.orEmpty() }}", 2)
 

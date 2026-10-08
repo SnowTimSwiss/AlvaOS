@@ -59,8 +59,30 @@ jobs:
       - name: Set up the Android SDK
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
 
+      # LinkTest talks to the real Link daemon of the NAS (backend/link_daemon.py).
+      - name: Python with iroh, for the Link tests
+        run: python3 -m pip install --user 'iroh==1.1.0' flask
+
       - name: Test the sync core
         run: ./gradlew --no-daemon :core:test
+
+      # AlvaOS Link on the phone needs libiroh_ffi.so (Rust, from iroh-ffi) for each
+      # CPU type. Without it the app still builds and works at home; the Link
+      # parts then say "not available in this build". Best effort: a failed build
+      # here never stops the app.
+      - name: Build the Link library for Android (iroh)
+        continue-on-error: true
+        run: |
+          set -eu
+          sdkmanager "ndk;27.2.12479018" >/dev/null
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
+          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android
+          cargo install --version 3.5.4 cargo-ndk --locked
+          git clone --depth 1 --branch v1.1.0 https://github.com/n0-computer/iroh-ffi "$RUNNER_TEMP/iroh-ffi"
+          cd "$RUNNER_TEMP/iroh-ffi"
+          cargo ndk -o "$GITHUB_WORKSPACE/android/app/src/main/jniLibs" \
+            -t armeabi-v7a -t arm64-v8a -t x86 -t x86_64 build --release
+          ls -l "$GITHUB_WORKSPACE"/android/app/src/main/jniLibs/*/
 
       - name: Open every screen of the app
         run: ./gradlew --no-daemon :app:testDebugUnitTest

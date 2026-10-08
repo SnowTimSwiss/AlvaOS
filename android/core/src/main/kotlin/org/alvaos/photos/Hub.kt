@@ -63,7 +63,7 @@ data class ShareInfo(val name: String, val access: String = "read")
 /** Who is signed in, on which NAS, with which apps. */
 @Serializable
 data class Me(
-    val user: String = "", val nas_name: String = "", val hub: HubInfo = HubInfo(), val public_url: String = "",
+    val user: String = "", val nas_name: String = "", val hub: HubInfo = HubInfo(),
     val shares: List<ShareInfo> = emptyList(),
 )
 
@@ -76,7 +76,11 @@ data class Paired(val token: String, val user: String = "", val nas_name: String
  * `alvaos://pair?c=CODE&n=<NAS>&u=<person>&a=<address>&a=<address>`.
  * The addresses: the one the browser used, then the internet one if there is.
  */
-data class PairLink(val code: String, val addresses: List<String>, val nas: String, val user: String) {
+data class PairLink(
+    val code: String, val addresses: List<String>, val nas: String, val user: String,
+    /** The NAS's AlvaOS Link address (64 hex characters): the way in when no address answers. */
+    val link: String = "",
+) {
     companion object {
         fun parse(text: String): PairLink? {
             val t = text.trim()
@@ -89,9 +93,11 @@ data class PairLink(val code: String, val addresses: List<String>, val nas: Stri
             val code = params.firstOrNull { it.first == "c" }?.second.orEmpty()
             val addresses = params.filter { it.first == "a" }.map { it.second.trimEnd('/') }
                 .filter { it.startsWith("http://") || it.startsWith("https://") }
-            if (code.length < 8 || addresses.isEmpty()) return null
+            val link = params.firstOrNull { it.first == "l" }?.second.orEmpty().lowercase()
+                .takeIf { Regex("[0-9a-f]{64}").matches(it) }.orEmpty()
+            if (code.length < 8 || (addresses.isEmpty() && link.isEmpty())) return null
             return PairLink(code, addresses, params.firstOrNull { it.first == "n" }?.second.orEmpty(),
-                params.firstOrNull { it.first == "u" }?.second.orEmpty())
+                params.firstOrNull { it.first == "u" }?.second.orEmpty(), link)
         }
     }
 }
@@ -107,7 +113,7 @@ interface HubApi {
 
 /**
  * The Hub of a NAS: the same address and sign-in as in the browser (port 8090,
- * HTTPS 9443, or through Tailscale or a Cloudflare Tunnel). The session is the
+ * HTTPS 9443, or away through AlvaOS Link's local proxy). The session is the
  * `alvaos_files` cookie; every change carries `X-AlvaOS-Files: 1`.
  */
 class HubClient(
@@ -191,6 +197,14 @@ class HubClient(
         val paired = json.decodeFromString<Paired>(post("/api/devices/pair", PairBody(code, device)))
         token = paired.token
         return paired
+    }
+
+    @Serializable
+    private data class LinkKey(val key: String)
+
+    /** Tells the NAS this phone's AlvaOS Link key, so the phone may come in from away (the session is the proof). */
+    fun registerLink(key: String) {
+        post("/api/devices/link", LinkKey(key))
     }
 
     /** Ends this phone's session on the NAS (it leaves the Hub's device list). */

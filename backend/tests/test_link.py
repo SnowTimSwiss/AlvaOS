@@ -266,6 +266,11 @@ def test_the_control_api_needs_its_token_and_manages_the_peers(tmp_path, monkeyp
             nas.state.add_peer("d" * 64, "phone", "Pixel", device="dev9")
             assert await call(link_client.remove_device, "dev9")
             assert [p["kind"] for p in nas.status()["peers"]] == ["buddy"]
+            assert await call(link_client.add_phone, "e" * 64, "dev7", "Pixel", "tim")
+            assert await call(link_client.add_phone, "f" * 64, "dev7", "Pixel", "tim")      # a new key replaces the old
+            phones = [p for p in nas.status()["peers"] if p["kind"] == "phone"]
+            assert len(phones) == 1 and phones[0]["device"] == "dev7"
+            assert not await call(link_client.add_phone, "nonsense", "dev7", "Pixel", "tim")
             off = await call(link_client.set_enabled, False)
             assert off["running"] is False and off["enabled"] is False
             on = await call(link_client.set_enabled, True)
