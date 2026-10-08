@@ -39,14 +39,14 @@ Current version: **beta-v0.3.0**
 ### Apps for phones and computers
 - [ ] File sync and notifications in the Android app
 - [ ] iPhone app (on AlvaOS Link)
-- [ ] Desktop apps for PC, Mac & Linux
+- [ ] Desktop apps for PC, Mac and Linux
 
 ### AlvaOS Link
 - [ ] An own relay as a setting
 - [ ] arm64, if AlvaOS ever ships for ARM (needs the aarch64 build of iroh and an arm64 package)
 
 ### Buddy Backup and not being without the NAS
-- [ ] A *Take over* button not only buddy backup but a hot spare
+- [ ] A *Take over* button: bring up the shares, the Hub and the people from the buddy's copy (a warm standby you start yourself, not automatic failover)
 - [ ] Tell the buddy when the power is out (UPS), so it can hold off a backup
 
 ### Virtual machines

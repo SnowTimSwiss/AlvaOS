@@ -1,6 +1,6 @@
 # Admin terminal and assistant command proposals
 
-This was the design for the terminal work in `ROADMAP.md` 1; both parts are
+This was the design for the terminal work (see `BACKLOG.md`); both parts are
 built now (2026-10-07). Where the build differs, it says so below.
 
 **Built:** Settings › Terminal (`backend/admin_terminal.py`,

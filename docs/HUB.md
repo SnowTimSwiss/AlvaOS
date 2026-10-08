@@ -3,7 +3,7 @@
 The Hub is one address for the whole household: everyone signs in once and
 finds the apps the admin gave them, side by side. This page is the reference
 for how the Hub is built and where its data lives. What is done and what is
-next is tracked in `ROADMAP.md` (section 2) and `BACKLOG.md`.
+next is tracked in `ROADMAP.md` and `BACKLOG.md`.
 
 ## What the Hub is
 
