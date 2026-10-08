@@ -724,7 +724,8 @@
         const item = e.target.closest('[data-i]');
         if (item) open(shown[Number(item.dataset.i)]);
     });
-    $('items').addEventListener('contextmenu', (e) => {
+    // The whole field answers, also the empty space below and beside the files.
+    $('content').addEventListener('contextmenu', (e) => {
         e.preventDefault();
         const item = e.target.closest('[data-i]');
         if (item) {

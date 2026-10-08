@@ -15,6 +15,13 @@ How to add an entry:
 
 ---
 
+## 2026-10-08 — beta-v0.3.1
+
+- Version `beta-v0.3.1`: the fixes from the first real test of 0.3.0 (AlvaOS Link starts on a real NAS, the Android Link test, Files and Photos, the calendar and the app's sign-out) and the gestures and movement in the Hub.
+- Files (web): a right-click anywhere in the field, also the empty space below the files, opens the menu (New folder, Upload, Pin this folder).
+
+---
+
 ## 2026-10-08 — A phone signed out in the Hub goes to the app's connect screen
 
 - When a phone is signed out under Devices in a browser, the app now shows its own "Connect to your NAS" screen the next time the Hub in it notices (the Hub tells the app through `AlvaApp.signedOut()`), instead of the Hub's sign-in page inside the app. The app also checks when it is opened again, as before.
