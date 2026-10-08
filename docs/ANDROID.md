@@ -34,6 +34,23 @@ is best effort: if it fails, the app is built without it and says "not
 available in this build" in the settings. A release should be checked for
 that line on a phone.
 
+## The demo, and "App access" in the Play Console
+
+Google's review asks how to get into the parts of an app that need a sign-in. The app needs the person's own NAS,
+which a reviewer cannot reach, so the app has a **demo**: on the first screen, "Try the demo". It opens the whole
+app with sample files, photos (with the time slider), a calendar, contacts and a chat, with no NAS and no account.
+Nothing is sent or saved; Settings has "Exit the demo".
+
+How it works: the app carries a copy of the Hub's pages (`frontend/files-app`, copied into the app's assets by the
+build) and `demo.js` answers what the NAS would answer, in the page only. The demo is also on in a browser with
+`index.html#demo`. The native Backup and Settings tabs show a short explanation in the demo.
+
+In the Play Console › App content › App access choose "All or some functionality is restricted" and add one
+group of credentials with the name `Demo mode`, no username and password, and these instructions (English):
+
+> The app connects to the user's own AlvaOS server, which a reviewer cannot reach. Tap "Try the demo" on the
+> first screen to use the whole app with sample data. No account or server is needed.
+
 ## Once: the upload key (5 minutes)
 
 Google Play needs every app signed with the same key. With Play App Signing,
