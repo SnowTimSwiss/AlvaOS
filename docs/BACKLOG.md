@@ -15,6 +15,12 @@ How to add an entry:
 
 ---
 
+## 2026-10-08 — A phone signed out in the Hub goes to the app's connect screen
+
+- When a phone is signed out under Devices in a browser, the app now shows its own "Connect to your NAS" screen the next time the Hub in it notices (the Hub tells the app through `AlvaApp.signedOut()`), instead of the Hub's sign-in page inside the app. The app also checks when it is opened again, as before.
+
+---
+
 ## 2026-10-08 — Gestures, movement and whole-screen windows in the Hub
 
 - **Back gesture:** every window over the page (a dialog, the viewer, the folder drawer, a small calendar window) takes one step in the browser history, so the phone's back gesture (and Android's in the app) closes the top window first and only then goes back through folders. `gestures.js`, loaded before `app.js`; it watches the windows, no page code had to change.

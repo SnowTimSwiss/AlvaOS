@@ -45,6 +45,7 @@ class HubPage(
     private val pickFiles: (Intent, ValueCallback<Array<Uri>>) -> Unit,
     private val unreachable: () -> Unit,
     private val openBackup: () -> Unit = {},
+    private val signedOut: () -> Unit = {},
 ) {
     val view = FrameLayout(ctx)
     private val web = WebView(ctx)
@@ -74,6 +75,10 @@ class HubPage(
 
         @JavascriptInterface
         fun openBackup() { Handler(Looper.getMainLooper()).post { this@HubPage.openBackup() } }
+
+        /** The Hub says this phone's session ended (signed out on the NAS): the app shows its connect screen. */
+        @JavascriptInterface
+        fun signedOut() { Handler(Looper.getMainLooper()).post { this@HubPage.signedOut() } }
     }
 
     init {

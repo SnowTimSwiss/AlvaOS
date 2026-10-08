@@ -142,7 +142,13 @@
     const access = () => (found ? 'read' : (me?.shares || []).find((s) => s.name === share)?.access || 'read');
 
     // ── Sign in ────────────────────────────────────────────────────────────
+    let reportedOut = false;
     function showSignin() {
+        // In the AlvaOS app a ended session means: the app's own connect screen, not the Hub's sign-in.
+        if (/AlvaOSApp\//.test(navigator.userAgent) && window.AlvaApp && typeof window.AlvaApp.signedOut === 'function') {
+            if (!reportedOut) { reportedOut = true; window.AlvaApp.signedOut(); }
+            return;
+        }
         $('app').hidden = true;
         $('signin').hidden = false;
         $('in-user').focus();
