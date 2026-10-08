@@ -15,6 +15,14 @@ How to add an entry:
 
 ---
 
+## 2026-10-08 — Fix: AlvaOS Link did not start on a real NAS (status 226/NAMESPACE)
+
+- `alvaos-link.service` used `ReadWritePaths=/var/lib/alvaos/link` and made that folder in an `ExecStartPre=`. With `ProtectSystem=strict` systemd needs the folder before it sets up the sandbox, so even the `ExecStartPre=` failed, in a loop, and Link stayed off. Now `StateDirectory=alvaos/link` (mode 0750): systemd makes the folder itself.
+- New test (`test_systemd_units.py`): every `ReadWritePaths=` in our units must be made by systemd or marked optional with `-`.
+- Note for next time: this only shows on a real machine; a unit with a sandbox needs a run under systemd. Workaround on an installed 0.3.0: `sudo install -d -o alvaos -g alvaos -m 0750 /var/lib/alvaos/link && sudo systemctl reset-failed alvaos-link && sudo systemctl restart alvaos-link`.
+
+---
+
 ## 2026-10-08 — Workflows: no duplicate runs, no waste
 
 - Tests and Android: a branch is tested through its pull request, not a second time as a push; `main` is tested on every push. Runs of the same branch cancel each other. `test.yml` has read-only permissions.

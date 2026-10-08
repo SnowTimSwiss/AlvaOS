@@ -151,7 +151,7 @@ storage healthy, one shared folder.
 
 Needs the NAS with the internet and a phone on mobile data (Wi-Fi off).
 
-1. `systemctl status alvaos-link` is active. Settings › AlvaOS Link
+1. `systemctl status alvaos-link` is active (not in a restart loop: `journalctl -u alvaos-link -n 20`). Settings › AlvaOS Link
    shows the switch on, the sentence "Phones and buddies can reach this NAS
    from anywhere" and a Link address (a long code, shown short).
 2. Switch off: the sentence says it is off, `systemctl status` still runs

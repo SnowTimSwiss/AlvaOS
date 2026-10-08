@@ -10,14 +10,16 @@ Type=simple
 User=alvaos
 Group=alvaos
 WorkingDirectory=/opt/alvaos/bin
-ExecStartPre=+/usr/bin/install -d -o alvaos -g alvaos -m 0750 /var/lib/alvaos/link
 ExecStart=/usr/bin/python3 /opt/alvaos/bin/link_daemon.py
 Restart=always
 RestartSec=5
 Environment="PYTHONUNBUFFERED=1"
 NoNewPrivileges=yes
 ProtectSystem=strict
-ReadWritePaths=/var/lib/alvaos/link
+# systemd makes the folder (owned by the service account) before it sets up the sandbox,
+# and lets the service write there. ReadWritePaths= alone would fail while it is missing.
+StateDirectory=alvaos/link
+StateDirectoryMode=0750
 PrivateTmp=yes
 
 [Install]
