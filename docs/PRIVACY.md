@@ -36,6 +36,9 @@ photos and videos of your phone to it. It talks to nobody else.
 
 **Security**
 
+The demo in the app ("Try the demo") works with sample data on the phone only: it connects to nothing, sends
+nothing and saves nothing.
+
 Away from home the app reaches your NAS through AlvaOS Link: encrypted from end to
 end with keys only your phone and your NAS have. If a direct connection is not
 possible, the packets pass a relay server, which cannot read them; it learns that

@@ -109,6 +109,7 @@ class ScreensTest {
                 assertTrue(shown.toString(), "Scan the QR code" in shown)
                 assertTrue(shown.toString(), "Type the code instead" in shown)
                 assertTrue(shown.toString(), "Sign in with name and password" in shown)
+                assertTrue(shown.toString(), "Try the demo" in shown)
             }
             picture(scenario, "1-connect")
             scenario.onActivity { clickText(it.window.decorView, "Type the code instead") }
@@ -192,6 +193,29 @@ class ScreensTest {
                 assertTrue(texts(a.window.decorView).toString(), "What to back up" in texts(a.window.decorView))
             }
             picture(scenario, "3-choose-albums")
+        }
+    }
+
+    @Test
+    fun theDemoNeedsNoNasAndCanBeLeft() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            idle()
+            scenario.onActivity { clickText(it.window.decorView, "Try the demo") }
+            idle()
+            picture(scenario, "6-demo-hub")
+            openTab(scenario, MainActivity.TAB_BACKUP)
+            scenario.onActivity { a ->
+                assertTrue(texts(a.window.decorView).toString(), "Back up your photos" in texts(a.window.decorView))
+            }
+            openTab(scenario, MainActivity.TAB_SETTINGS)
+            scenario.onActivity { a ->
+                val shown = texts(a.window.decorView)
+                assertTrue(shown.toString(), "This is the demo" in shown && "Exit the demo" in shown)
+            }
+            picture(scenario, "6-demo-settings")
+            scenario.onActivity { clickText(it.window.decorView, "Exit the demo") }
+            idle()
+            scenario.onActivity { a -> assertTrue("Scan the QR code" in texts(a.window.decorView)) }
         }
     }
 

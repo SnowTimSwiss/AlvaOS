@@ -2417,5 +2417,8 @@
     }
 
     paintIcons();
-    start();
+    // Start once every script of the page has run (Calendar, Contacts and Chat add themselves after this
+    // file): with a quick answer from the NAS the Hub would otherwise open an app that is not there yet.
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+    else start();
 })();
