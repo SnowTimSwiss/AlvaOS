@@ -324,9 +324,8 @@ Needs the NAS with the internet and a phone on mobile data (Wi-Fi off).
    code** and point it at the code: the app connects without a password
    and shows the Hub; the computer says "<phone> is connected" and lists
    it (last used, model, app version). Also try: scanning the QR code with
-   the phone's own camera opens the app and connects; "Type the code
-   instead" with the address and the code; "Sign in with name and
-   password". An old or used code says so.
+   the phone's own camera opens the app and connects; "Sign in with
+   name and password". An old or used code says so.
 3. The **Hub** tab: every app the person has (Files, Photos, Calendar,
    Chat, the store apps) works as in the browser; downloading a file lands
    in Downloads; uploading opens the phone's file picker; there is no
@@ -506,6 +505,12 @@ Calendar › Create › Birthday: type a name and a year; choose "And make a new
 3. Photos has no side bar and no folder button; Files has them again.
 4. Open a deep folder in Files, go to Photos, then click Files: you are in your own folder, not in the deep one.
 \n
+
+## 12t The phone stays signed in
+
+1. Pair the phone, then in the Hub as admin switch two-step sign-in on and off (Settings). The phone stays signed in.
+2. Restart the NAS (or the `alvaos-files` service) with the app open, then open the app again: it stays signed in (it may need a few seconds).
+3. In the Hub › Devices sign the phone out: the app shows the connect screen within a few seconds of opening it. Changing the admin password does the same.
 
 ## 12s The demo (Android app)
 

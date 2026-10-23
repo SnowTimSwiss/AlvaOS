@@ -107,14 +107,10 @@ class ScreensTest {
             scenario.onActivity { a ->
                 val shown = texts(a.window.decorView)
                 assertTrue(shown.toString(), "Scan the QR code" in shown)
-                assertTrue(shown.toString(), "Type the code instead" in shown)
                 assertTrue(shown.toString(), "Sign in with name and password" in shown)
                 assertTrue(shown.toString(), "Try the demo" in shown)
             }
             picture(scenario, "1-connect")
-            scenario.onActivity { clickText(it.window.decorView, "Type the code instead") }
-            picture(scenario, "1-connect-code")
-            scenario.onActivity { a -> clickText(a.window.decorView, "Back") }
             scenario.onActivity { clickText(it.window.decorView, "Sign in with name and password") }
             picture(scenario, "1-connect-password")
         }
