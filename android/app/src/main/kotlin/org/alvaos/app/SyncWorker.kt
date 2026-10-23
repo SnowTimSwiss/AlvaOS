@@ -194,7 +194,8 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             }
         } catch (e: HubException) {
             store.lastMessage = e.message ?: "The NAS said no."
-            if (e.signedOut) {
+            // Once is a moment (a restart of the NAS, a proxy): sign out only when it says so again.
+            if (e.signedOut && runAttemptCount >= 2) {
                 store.signOut()
                 notify(SIGNIN_ID, "Sign in to your NAS again", "The backup is paused until you do.")
                 Result.failure()

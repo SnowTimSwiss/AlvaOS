@@ -15,6 +15,18 @@ How to add an entry:
 
 ---
 
+## 2026-10-23 — beta-v0.3.4: the phone no longer signs itself out
+
+- **Cause on the NAS:** the sign-in of the admin was tied to a fingerprint of the *whole* `auth.json`. Anything written into that file (a 2FA secret, a setup flag, the hash upgrade) ended every admin session, also those of phones. Now only the password itself counts (`algo`, `iterations`, `salt`, `password_hash`). A file that cannot be read for a moment (a write in progress) no longer deletes a session either.
+- **In the app:** one "signed out" answer is no longer enough. On opening the app, and when the Hub page reports it, the app asks the NAS again after 3 seconds and leaves only if it says so again. The backup job signs out only on the third try (it retries with backoff before).
+- The first screen of the app lost "Type the code instead" (the QR code or name and password are enough) and the line under "Try the demo".
+- **Google Play warnings:** R8 is on for the release build (shrinks and obfuscates; rules in `android/app/proguard-rules.pro` for JNA/iroh, the Hub bridge, kotlinx.serialization, WorkManager). 16 KB memory pages: JNA 5.17 and the Link library built with `max-page-size=16384`. Edge-to-edge: `enableEdgeToEdge()` in both activities, Material 1.13. No more forced orientation when a video goes full screen (large screens ignore it from Android 16).
+- Note for next time: R8 only runs on the release build, so install the signed release once and check Link, the QR scan, a backup and a full-screen video.
+- Test: a 2FA secret and a half-written `auth.json` keep the session; a real new password still ends it.
+- Note for next time: if it still happens, note when (home or away over Link, right after an update, after a NAS restart); the app side is built by CI only.
+
+---
+
 ## 2026-10-08 — beta-v0.3.3: a demo mode in the Android app
 
 - **"Try the demo"** on the app's first screen opens the whole app with sample data, no NAS and no account: files and folders, 140 photos with the time slider, a calendar with events, tasks and birthdays, contacts, a chat with a ready answer. For the Google Play review ("App access") and for people who want to look first. Nothing is sent or saved; Settings has "Exit the demo".

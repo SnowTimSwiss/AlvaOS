@@ -25,6 +25,7 @@ import android.widget.LinearLayout
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -38,6 +39,7 @@ import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.alvaos.photos.AlbumProgress
@@ -106,6 +108,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         store = Store(this)
         gallery = Gallery(this)
@@ -197,7 +200,7 @@ class MainActivity : AppCompatActivity() {
                 catch (e: Exception) { null }
             }
             when {
-                answer == "out" -> signedOut("This phone was signed out on the NAS. Connect it again.")
+                answer == "out" -> confirmSignedOut()
                 answer is Me -> {
                     store.remember(answer)
                     if (buildNav()) show() else if (showsHub()) hub?.load()
@@ -318,6 +321,23 @@ class MainActivity : AppCompatActivity() {
         ui.caption(page, "AlvaOS app ${HubPage.appVersion(this)}", 24).gravity = Gravity.CENTER
     }
 
+    /**
+     * One 401 can be a moment (the NAS restarting, a proxy in between). Ask again a little later and
+     * only leave the NAS when it still says so; a failed or answered call keeps the phone signed in.
+     */
+    private fun confirmSignedOut() {
+        lifecycleScope.launch {
+            val still = withContext(Dispatchers.IO) {
+                delay(3000)
+                try { store.pickServer(); store.hub().me(); false }
+                catch (e: HubException) { e.signedOut }
+                catch (e: Exception) { false }
+            }
+            if (still) signedOut("This phone was signed out on the NAS. Connect it again.")
+            else if (showsHub()) hub?.load()
+        }
+    }
+
     private fun signedOut(message: String) {
         store.signOut()
         SyncWorker.stop(this)
@@ -337,7 +357,7 @@ class MainActivity : AppCompatActivity() {
         return DeviceInfo(name.take(60), model.take(60), "android", HubPage.appVersion(this))
     }
 
-    private enum class Mode { Start, Code, Password }
+    private enum class Mode { Start, Password }
 
     private fun signIn(error: String = "", mode: Mode = Mode.Start) {
         frame.removeAllViews()
@@ -358,20 +378,8 @@ class MainActivity : AppCompatActivity() {
                 ui.button(page, "Scan the QR code", icon = R.drawable.ic_qr, top = 16) { scan() }
                 ui.caption(page, "On a computer, open the Hub of your NAS and choose Devices › Connect a phone.", 10)
                     .gravity = Gravity.CENTER
-                ui.button(page, "Type the code instead", Ui.Kind.Outlined, top = 24) { signIn(mode = Mode.Code) }
-                ui.button(page, "Sign in with name and password", Ui.Kind.Text, top = 4) { signIn(mode = Mode.Password) }
+                ui.button(page, "Sign in with name and password", Ui.Kind.Outlined, top = 24) { signIn(mode = Mode.Password) }
                 ui.button(page, "Try the demo", Ui.Kind.Text, top = 4) { startDemo() }
-                ui.caption(page, "No NAS needed: the whole app with sample files, photos, calendar and chat.", 2).gravity = Gravity.CENTER
-            }
-            Mode.Code -> {
-                val address = ui.field(page, "NAS address", store.server, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI,
-                    "As in the Hub, e.g. 192.168.1.20:8090")
-                val code = ui.field(page, "Code", "", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS,
-                    "Shown under the QR code, e.g. QFR9-YKZK")
-                ui.button(page, "Connect", top = 20) {
-                    connect(PairLink(code.text.toString().trim(), listOf(normalise(address.text.toString())), "", ""))
-                }
-                ui.button(page, "Back", Ui.Kind.Text, top = 4) { signIn() }
             }
             Mode.Password -> {
                 val address = ui.field(page, "NAS address", store.server, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI,
@@ -403,7 +411,7 @@ class MainActivity : AppCompatActivity() {
                 else connect(link)
             }
             .addOnFailureListener { e ->
-                signIn("The scanner did not start (${e.message}). Type the code instead.", Mode.Code)
+                signIn("The scanner did not start (${e.message}). Sign in with name and password.", Mode.Password)
             }
     }
 
@@ -492,7 +500,7 @@ class MainActivity : AppCompatActivity() {
                 val backup = nav.menu.findItem(TAB_BACKUP)
                 if (backup != null) nav.selectedItemId = backup.itemId
             },
-            signedOut = { signedOut("This phone was signed out on the NAS. Connect it again.") }).also { hub = it }
+            signedOut = { confirmSignedOut() }).also { hub = it }
         (page.view.parent as? ViewGroup)?.removeView(page.view)
         frame.addView(page.view)
         if (appId != null) page.open(appId) else page.load()

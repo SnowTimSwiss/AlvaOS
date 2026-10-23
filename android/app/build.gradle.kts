@@ -44,7 +44,10 @@ android {
     }
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8: smaller and obfuscated (Google Play asks for it); the rules are in proguard-rules.pro.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             if (keystore != null) signingConfig = signingConfigs.getByName("upload")
         }
     }
@@ -74,13 +77,15 @@ android {
 dependencies {
     implementation(project(":core"))
     implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.activity:activity-ktx:1.10.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("com.google.android.material:material:1.12.0")
+    implementation("com.google.android.material:material:1.13.0")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     // AlvaOS Link (iroh): the bindings are generated code that loads libiroh_ffi.so through JNA.
-    implementation("net.java.dev.jna:jna:5.15.0@aar")
+    // (5.17+: its own native library is aligned for 16 KB memory pages.)
+    implementation("net.java.dev.jna:jna:5.17.0@aar")
     // Google's QR scanner screen (Play services): no camera permission for the app.
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
 

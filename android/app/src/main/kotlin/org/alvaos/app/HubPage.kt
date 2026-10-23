@@ -5,7 +5,6 @@ import android.app.Activity
 import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
@@ -129,7 +128,6 @@ class HubPage(
                     systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
                     hide(WindowInsetsCompat.Type.systemBars())
                 }
-                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR
             }
 
             override fun onHideCustomView() = exitFullscreen()
@@ -226,7 +224,6 @@ class HubPage(
         customCallback = null
         if (activity != null) {
             WindowCompat.getInsetsController(activity.window, activity.window.decorView).show(WindowInsetsCompat.Type.systemBars())
-            activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         }
     }
 

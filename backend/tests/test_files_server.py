@@ -533,3 +533,20 @@ def test_a_changed_text_file_replaces_the_old_one_which_goes_to_the_trash(client
     refused = client.post("/api/upload/finish", json={"share": "Family", "path": "", "name": "a.txt", "size": 1,
                                                       "replace": True}, headers=H)
     assert refused.status_code == 403        # ben may only read Family
+
+
+def test_a_phone_stays_signed_in_when_the_2fa_secret_changes_or_the_file_is_busy(client, tmp_path):
+    sign_in(client, "admin", "admin-pass")
+    auth = tmp_path / "auth.json"
+    # A 2FA secret (or any other field) in the same file is not a new password.
+    auth.write_text(json.dumps({**json.loads(auth.read_text()), "totp_secret": "ABC", "setup_complete": True}))
+    assert client.get("/api/me").status_code == 200
+    # A write in progress (half a file) must not sign anyone out.
+    good = auth.read_text()
+    auth.write_text(good[:20])
+    assert client.get("/api/me").status_code == 200
+    auth.write_text(good)
+    assert client.get("/api/me").status_code == 200
+    # A real password change still ends the session.
+    auth.write_text(json.dumps(hash_password("new-pass")))
+    assert client.get("/api/me").status_code == 401

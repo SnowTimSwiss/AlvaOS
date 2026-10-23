@@ -98,15 +98,40 @@ def _save_sessions(sessions: Dict[str, Dict[str, Any]]) -> None:
     os.replace(tmp, SESSIONS_FILE)
 
 
-def _password_tag(user: str, role: str) -> str:
+def _read_json_strict(path: str) -> Optional[Dict[str, Any]]:
+    """The file, {} when it is not there, None when it cannot be read right now."""
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _password_tag(user: str, role: str) -> Optional[str]:
     """A fingerprint of the stored password: when it changes (or the person
-    is removed), their Files sessions end, also in browsers signed in before."""
-    stored = _read_json(AUTH_FILE) if role == 'admin' else _read_json(USERS_FILE).get(user)
+    is removed), their Files sessions end, also in browsers signed in before.
+    '' when there is no password; None when the file cannot be read right now
+    (a write in progress): then nobody is signed out."""
+    stored = _read_json_strict(AUTH_FILE if role == 'admin' else USERS_FILE)
+    if stored is None:
+        return None
+    if role != 'admin':
+        stored = stored.get(user)
     if not isinstance(stored, dict):
         return ''
-    value = stored if role == 'admin' else stored.get('files_auth')
-    if not value:
-        return ''
+    # Only the password itself: a changed 2FA secret or a setup flag in the
+    # same file must not sign every phone out.
+    if role == 'admin':
+        if not stored.get('password_hash'):
+            return ''
+        value: Any = {k: stored.get(k) for k in ('algo', 'iterations', 'salt', 'password_hash')}
+    else:
+        value = stored.get('files_auth')
+        if not value:
+            return ''
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()[:24]
 
 
@@ -117,7 +142,7 @@ def _new_session(user: str, role: str, device: Optional[Dict[str, Any]] = None) 
     days = DEVICE_DAYS if device else SESSION_DAYS
     with _lock:
         sessions = _load_sessions()
-        session: Dict[str, Any] = {'user': user, 'role': role, 'tag': _password_tag(user, role),
+        session: Dict[str, Any] = {'user': user, 'role': role, 'tag': _password_tag(user, role) or '',
                                    'expires_at': (_now() + timedelta(days=days)).isoformat()}
         if device:
             session['device'] = device
@@ -136,7 +161,7 @@ def current() -> Optional[Dict[str, Any]]:
         if not session:
             return None
         tag = _password_tag(session.get('user', ''), session.get('role', ''))
-        if not tag or tag != session.get('tag'):
+        if tag is not None and (not tag or tag != session.get('tag')):
             del sessions[_key(token)]           # password changed or person removed
             _save_sessions(sessions)
             return None
