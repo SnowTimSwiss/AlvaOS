@@ -24,6 +24,7 @@ import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
+import androidx.appcompat.R as AC
 import com.google.android.material.R as M
 
 /**
@@ -164,7 +165,7 @@ class Ui(private val ctx: Context) {
         LinearLayout.LayoutParams(match, dp(1)).apply { marginStart = dp(68) })
 
     /** A rounded square with an icon in it, as in the Hub's lists. */
-    fun badge(parent: LinearLayout, icon: Int, size: Int = 40, tint: Int = M.attr.colorPrimary,
+    fun badge(parent: LinearLayout, icon: Int, size: Int = 40, tint: Int = AC.attr.colorPrimary,
               fill: Int = M.attr.colorPrimaryContainer): ImageView {
         val view = ImageView(ctx).apply {
             setImageResource(icon)
@@ -187,13 +188,13 @@ class Ui(private val ctx: Context) {
             minimumHeight = dp(64)
             setPadding(dp(16), dp(10), dp(12), dp(10))
         }
-        if (danger) badge(row, icon, 40, M.attr.colorError, M.attr.colorErrorContainer) else badge(row, icon)
+        if (danger) badge(row, icon, 40, AC.attr.colorError, M.attr.colorErrorContainer) else badge(row, icon)
         val texts = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         row.addView(texts, LinearLayout.LayoutParams(0, wrap, 1f).apply { marginStart = dp(14) })
         TextView(ctx).apply {
             text = title
             textSize = 15.5f
-            setTextColor(color(if (danger) M.attr.colorError else M.attr.colorOnSurface))
+            setTextColor(color(if (danger) AC.attr.colorError else M.attr.colorOnSurface))
         }.also { texts.add(it) }
         if (sub.isNotEmpty()) caption(texts, sub, 1)
         if (onClick != null && !danger) {
@@ -246,7 +247,7 @@ class Ui(private val ctx: Context) {
             setProgressCompat(done, false)
             trackThickness = dp(6)
             trackCornerRadius = dp(3)
-            setIndicatorColor(color(M.attr.colorPrimary))
+            setIndicatorColor(color(AC.attr.colorPrimary))
             trackColor = color(M.attr.colorOutlineVariant)
         }.also { parent.add(it, top) }
 
@@ -279,7 +280,7 @@ class Ui(private val ctx: Context) {
         val attr = when (kind) {
             Kind.Filled -> M.attr.materialButtonStyle
             Kind.Outlined, Kind.Danger -> M.attr.materialButtonOutlinedStyle
-            Kind.Text -> M.attr.borderlessButtonStyle
+            Kind.Text -> AC.attr.borderlessButtonStyle
         }
         val b = MaterialButton(ctx, null, attr).apply {
             text = label
@@ -290,8 +291,8 @@ class Ui(private val ctx: Context) {
             if (icon != 0) { setIconResource(icon); iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START }
             if (kind == Kind.Outlined) strokeColor = ColorStateList.valueOf(color(M.attr.colorOutlineVariant))
             if (kind == Kind.Danger) {
-                setTextColor(color(M.attr.colorError))
-                strokeColor = ColorStateList.valueOf(color(M.attr.colorError))
+                setTextColor(color(AC.attr.colorError))
+                strokeColor = ColorStateList.valueOf(color(AC.attr.colorError))
             }
             setOnClickListener { onClick() }
         }
@@ -340,7 +341,7 @@ class Ui(private val ctx: Context) {
         setTypeface(typeface, Typeface.BOLD)
         textSize = 20f
         setTextColor(color(M.attr.colorOnPrimary))
-        background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(color(M.attr.colorPrimary)) }
+        background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(color(AC.attr.colorPrimary)) }
         parent.addView(this, LinearLayout.LayoutParams(dp(size), dp(size)))
     }
 }
