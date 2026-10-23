@@ -83,6 +83,8 @@ jobs:
           cargo install --version 3.5.4 cargo-ndk --locked
           git clone --depth 1 --branch v1.1.0 https://github.com/n0-computer/iroh-ffi "$RUNNER_TEMP/iroh-ffi"
           cd "$RUNNER_TEMP/iroh-ffi"
+          # 16 KB memory pages (Android 15+ devices): the library must be aligned for them.
+          export RUSTFLAGS="-C link-arg=-Wl,-z,max-page-size=16384"
           cargo ndk -o "$GITHUB_WORKSPACE/android/app/src/main/jniLibs" \
             -t arm64-v8a build --release
           ls -l "$GITHUB_WORKSPACE"/android/app/src/main/jniLibs/*/

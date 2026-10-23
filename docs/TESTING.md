@@ -512,6 +512,9 @@ Calendar › Create › Birthday: type a name and a year; choose "And make a new
 2. Restart the NAS (or the `alvaos-files` service) with the app open, then open the app again: it stays signed in (it may need a few seconds).
 3. In the Hub › Devices sign the phone out: the app shows the connect screen within a few seconds of opening it. Changing the admin password does the same.
 
+4. The release build (from the Play .aab or the signed APK) is minified: connect with the QR code, open a Link connection away from home, run a backup, play a video full screen and rotate. Nothing may crash.
+5. In the Play Console the 16 KB and edge-to-edge warnings should be gone with the next upload.
+
 ## 12s The demo (Android app)
 
 1. On the first screen "Try the demo" opens the app with Files, Photos, Calendar, Contacts and Chat: sample folders and files, 140 pictures with the time slider, events in the calendar, five contacts, a chat that answers. The yellow "Demo · sample data" mark is in the corner.
