@@ -196,3 +196,13 @@
 @media (max-width: 860px) {
     .ch-private span { display: none; }
 }
+
+/* Web search: the sources under an answer, [1] in the text as a small link. */
+.ch-sources { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; font-size: 0.8rem; color: var(--muted); }
+.ch-sources > svg { width: 15px; height: 15px; }
+.ch-sources > span { margin-right: 2px; }
+.ch-sources a { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; padding: 3px 10px 3px 4px; border: 1px solid var(--line); border-radius: 999px; color: var(--text); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ch-sources a:hover { background: var(--hover); }
+.ch-sources a b { display: inline-grid; place-items: center; min-width: 18px; height: 18px; border-radius: 50%; background: var(--hover); font-size: 0.7rem; }
+.ch-md a.ch-cite { display: inline-grid; place-items: center; min-width: 17px; height: 17px; padding: 0 4px; margin: 0 1px; border-radius: 9px; background: var(--hover); color: var(--muted); font-size: 0.68rem; font-weight: 600; text-decoration: none; vertical-align: 2px; }
+.ch-md a.ch-cite:hover { background: var(--accent); color: #fff; }

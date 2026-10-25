@@ -183,6 +183,36 @@
         }
     }
 
+    // ── Web search in Chat (DuckDuckGo) ──────────────────────────────────
+    function bindSearch() {
+        const box = $('ai-search');
+        box.checked = !!(settings.search || {}).enabled;
+        box.addEventListener('change', async () => {
+            const on = box.checked;
+            try {
+                settings = await api('/ai/settings', { method: 'POST', body: JSON.stringify({ search: { enabled: on } }) });
+                window.showToast?.(on ? 'Web search is on in Chat.' : 'Web search is off.', 'success');
+            } catch (e) {
+                box.checked = !on;
+                window.showToast?.(e.message, 'error');
+            }
+        });
+        $('ai-search-test').addEventListener('click', async (e) => {
+            const btn = e.target;
+            btn.disabled = true;
+            btn.textContent = 'Searching...';
+            try {
+                const data = await api('/ai/search-test', { method: 'POST', body: '{}' });
+                window.showToast?.(`DuckDuckGo answered: ${data.titles.join(' · ')}`, 'success');
+            } catch (err) {
+                window.showToast?.(err.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Try it';
+            }
+        });
+    }
+
     // ── The assistant ────────────────────────────────────────────────────
     function renderAssistant() {
         const conn = settings.connections.find((c) => c.id === settings.assistant.connection);
@@ -235,6 +265,7 @@
         }
         renderServices();
         renderAssistant();
+        bindSearch();
         $('ai-services').addEventListener('click', onServiceClick);
         $('ai-add').addEventListener('click', () => {
             const p = settings.providers['ollama-local'];

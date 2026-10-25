@@ -117,10 +117,25 @@
                     <div>${chatWho ? `${esc(chatWho)} chooses from` : 'People choose from'}: <strong>${names.length ? esc(names.join(', ')) : 'no model'}</strong></div>
                     ${dirty ? `<div class="hub-form"><button type="button" class="btn-primary" id="chat-rule-save">Save</button><button type="button" class="btn-secondary btn-quiet" id="chat-rule-cancel">Cancel</button></div>` : ''}
                 </div>
+                ${searchHtml(app)}
                 <div class="hub-form"><label>Chats nobody used for
                     <select id="chat-keep" aria-label="Delete unused chats after">${KEEP.map(([d, label]) => `<option value="${d}"${app.keep_days === d ? ' selected' : ''}>${label}</option>`).join('')}${KEEP.some(([d]) => d === app.keep_days) ? '' : `<option value="${app.keep_days}" selected>${app.keep_days} days</option>`}</select></label>
                     <span>are deleted, unless pinned or kept.</span></div>
             </div>`;
+    }
+    function searchHtml(app) {
+        if (!(state.chat_service || {}).search) {
+            return '<div>Web search is off: turn it on in <a href="system.html#assistant">Settings › AI</a> (DuckDuckGo, nothing to install).</div>';
+        }
+        const some = Array.isArray(app.search_people);
+        const people = Array.isArray(app.people) ? app.people : (state.people || []);
+        return `<div class="hub-form"><label>Web search (DuckDuckGo)
+                <select id="chat-search" aria-label="Who may search the web">
+                    <option value="all"${some ? '' : ' selected'}>Everyone</option>
+                    <option value="some"${some ? ' selected' : ''}>Only some people</option>
+                </select></label></div>
+            ${some ? `<div class="hub-people" role="group" aria-label="People who may search the web">${people.map((p) => `
+                <label><input type="checkbox" data-search-person value="${esc(p)}"${app.search_people.includes(p) ? ' checked' : ''}> ${esc(p)}</label>`).join('')}</div>` : ''}`;
     }
     function bindModels() {
         const app = (state.apps || []).find((a) => a.id === 'chat');
@@ -155,6 +170,13 @@
         });
         const cancel = $('chat-rule-cancel');
         if (cancel) cancel.addEventListener('click', () => { chatDraft = null; renderApps(); });
+        const search = $('chat-search');
+        if (search) search.addEventListener('change', () => change('chat', { search_people: search.value === 'all' ? null : [] },
+            search.value === 'all' ? 'Everyone may search the web in Chat.' : 'Tick who may search the web.'));
+        document.querySelectorAll('[data-search-person]').forEach((box) => box.addEventListener('change', () => {
+            const who = [...document.querySelectorAll('[data-search-person]:checked')].map((b) => b.value);
+            change('chat', { search_people: who }, '');
+        }));
         $('chat-keep').addEventListener('change', (e) => {
             const days = Number(e.target.value);
             change('chat', { keep_days: days }, days ? `Unused chats are deleted after ${KEEP.find(([d]) => d === days)?.[1] || `${days} days`}.` : 'Chats are kept until people delete them.');

@@ -31,6 +31,7 @@ from flask import Blueprint, Response, jsonify, request
 import ai_assistant
 import hub_apps
 import hub_data
+import web_search
 
 bp = Blueprint('hub_chat', __name__)
 
@@ -93,13 +94,51 @@ def offered(user: str, ai: Optional[Dict[str, Any]] = None,
     return items, '' if items else 'No model is open to you. Ask the person who looks after the NAS.'
 
 
+def may_search(user: str, ai: Optional[Dict[str, Any]] = None, hub: Optional[Dict[str, Any]] = None) -> bool:
+    """Web search is on (Settings › AI) and open to this person (Hub page)."""
+    ai = ai or ai_assistant.load_settings()
+    if not ai.get('search', {}).get('enabled'):
+        return False
+    people = (hub or hub_apps.load())['apps']['chat'].get('search_people')
+    return people is None or user in people
+
+
+def search_query(service: Dict[str, Any], model: str, history: List[Dict[str, Any]], text: str,
+                 post: Optional[Callable[..., Any]] = None) -> str:
+    """What to search for. A follow-up ("and tomorrow?") needs the chat
+    before it: then the model writes the query; else the question is it."""
+    if not any(m.get('role') == 'assistant' for m in history):
+        return text
+    if post is None:
+        import requests
+        post = requests.post
+    said = '\n'.join(f"{m['role']}: {str(m.get('content') or '')[:600]}" for m in history[-6:]
+                     if m.get('role') in ('user', 'assistant'))
+    headers = {'Content-Type': 'application/json'}
+    if service.get('api_key'):
+        headers['Authorization'] = f"Bearer {service['api_key']}"
+    body = {'model': model, 'stream': False, 'temperature': 0, 'messages': [
+        {'role': 'system', 'content': 'Write one short web search query (at most 12 words) that finds what the '
+                                      'last user message asks, using the chat for context. Only the query.'},
+        {'role': 'user', 'content': f'{said}\nuser: {text}'}]}
+    if service['provider'].startswith('ollama'):
+        body['reasoning_effort'] = 'none'
+    try:
+        res = post(service['base_url'].rstrip('/') + '/chat/completions', headers=headers, json=body, timeout=(10, 30))
+        content = str((((res.json().get('choices') or [{}])[0] or {}).get('message') or {}).get('content') or '')
+    except Exception:  # noqa: BLE001 - then the question itself
+        return text
+    lines = re.sub(r'<think>.*?</think>', '', content, flags=re.S).strip().strip('"').splitlines()
+    return (lines[0].strip() if lines and lines[0].strip() else text)[:web_search.MAX_QUERY]
+
+
 def summary() -> Dict[str, Any]:
     """For the admin's Hub page: the services and their models, without keys."""
     from urllib.parse import urlparse
     ai = ai_assistant.load_settings()
     services = [{'id': c['id'], 'name': c['name'], 'host': urlparse(c['base_url']).netloc,
                  'ready': ai_assistant.usable(c), 'models': c['models']} for c in ai['connections']]
-    return {'ready': bool(catalog(ai)), 'services': services}
+    return {'ready': bool(catalog(ai)), 'services': services, 'search': bool(ai.get('search', {}).get('enabled'))}
 
 
 def title_for(message: str) -> str:
@@ -160,7 +199,8 @@ def overview():
         problem = problem or NO_PLACE
     chats.sort(key=lambda c: str(c.get('updated') or ''), reverse=True)
     return jsonify({'models': [{k: i[k] for k in ('id', 'model', 'service', 'thinking')} for i in items],
-                    'chats': chats, 'problem': problem, 'keep_days': days})
+                    'chats': chats, 'problem': problem, 'keep_days': days,
+                    'search': may_search(session['user'], hub=hub)})
 
 
 @bp.get('/api/chat/<chat_id>')
@@ -377,14 +417,18 @@ def _open(service: Dict[str, Any], model: str, messages: List[Dict[str, str]], r
 
 
 def stream_answer(service: Dict[str, Any], model: str, history: List[Dict[str, Any]], reasoning: bool,
-                  effort: str, post: Optional[Callable[..., Any]] = None) -> Iterator[Tuple[str, str]]:
-    """('r' | 't' | 'note' | 'error', text) as the model answers."""
+                  effort: str, post: Optional[Callable[..., Any]] = None,
+                  found: str = '') -> Iterator[Tuple[str, str]]:
+    """('r' | 't' | 'note' | 'error', text) as the model answers. `found`:
+    web search results, given just before the last question."""
     if post is None:
         import requests
         post = requests.post
     messages = [{'role': 'system', 'content': SYSTEM_PROMPT.format(today=datetime.now().strftime('%A, %d %B %Y'))}]
     messages += [{'role': m['role'], 'content': str(m.get('content') or '')}
                  for m in history[-MAX_CONTEXT_MESSAGES:] if m.get('role') in ('user', 'assistant')]
+    if found:
+        messages.insert(len(messages) - 1, {'role': 'system', 'content': found})
     res, error, no_thinking = _open(service, model, messages, reasoning, effort, post)
     if res is None:
         yield 'error', error
@@ -456,6 +500,7 @@ def send():
     effort = str(body.get('effort') or 'medium')
     effort = effort if effort in EFFORTS and item['thinking'] == 'effort' else 'medium'
     private = bool(body.get('private'))
+    search = bool(body.get('search')) and may_search(session['user'], ai=ai)
 
     place = None if private else _own(session)
     if not private and not place:
@@ -490,8 +535,20 @@ def send():
         thought_until: Optional[float] = None
         yield json.dumps({'chat': {'id': chat_id, 'title': chat['title'], 'private': private}}) + '\n'
         failed = ''
+        found = ''
+        if search:
+            query = search_query(service, model, chat['messages'][:-1], text)
+            yield json.dumps({'searching': query}) + '\n'
+            results, why = web_search.gather(query)
+            if results:
+                answer['sources'] = [{'title': r['title'], 'url': r['url']} for r in results]
+                answer['searched'] = query
+                found = web_search.context(results)
+                yield json.dumps({'sources': answer['sources']}) + '\n'
+            else:
+                yield json.dumps({'note': f'No web search this time: {why}'}) + '\n'
         try:
-            for kind, piece in stream_answer(service, model, list(chat['messages']), reasoning, effort):
+            for kind, piece in stream_answer(service, model, list(chat['messages']), reasoning, effort, found=found):
                 if kind == 'error':
                     failed = piece
                     break

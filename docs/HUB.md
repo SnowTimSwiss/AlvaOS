@@ -156,6 +156,15 @@ What it should become (backup from the phone, albums, favourites): `PHOTOS.md`.
 - **Private chat** (the ghost top right): kept nowhere, not in the list,
   not on the NAS; the page sends what was said so far with each message.
   Gone with "New chat" or when leaving it. The AI service still sees it.
+- **Web search** (the globe, "Search"): turned on by the admin in
+  Settings › AI, no install, no account, no key. The NAS asks DuckDuckGo
+  (its plain HTML page; the lite page when that has nothing), reads the
+  first three pages found (only addresses on the internet, never this NAS
+  or the home network, also not after a redirect) and gives the model the
+  text as numbered sources. The answer shows "[1]" as small links and the
+  sources below it. A follow-up ("and tomorrow?") is first turned into a
+  query by the model. On the Hub page: everyone, or only some people.
+  Searches go to DuckDuckGo; it says so in Settings › AI.
 - **Pinned and kept chats; the rest goes by itself.** Chats nobody used for
   30 days are deleted (the admin can choose 7, 14, 30, 90 days, a year or
   never). Pinned chats are on top and stay; kept chats stay where they are
@@ -259,7 +268,9 @@ service account):
   `except`, `items` a whole AI service (`home`) or one model of it
   (`home/llama3.1`); the services are in `/var/lib/alvaos/ai.json`.
   `people_access`: the same per person, applied on top. `keep_days`: unused
-  chats go after so many days (0: never). Before beta-v0.3.5 it was
+  chats go after so many days (0: never). `search_people`: who may search
+  the web (null: everyone; web search itself is `search.enabled` in
+  `ai.json`). Before beta-v0.4.0 it was
   `models: [names]` of the one service; that is read as `only` those models
   of the service `main`.
 - `storage.cache_pool`: empty for the system disk.

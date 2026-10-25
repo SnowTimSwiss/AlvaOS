@@ -122,7 +122,7 @@ def _clean_rule(raw: Any) -> Optional[Dict[str, Any]]:
 def _clean_models(entry: Dict[str, Any]) -> Dict[str, Any]:
     """Chat: the models for everyone, rules for single people (on top of the
     one for everyone), and after how many days unused chats go (0: never).
-    Before beta-v0.3.5 it was a list of model names of the one AI service."""
+    Before beta-v0.4.0 it was a list of model names of the one AI service."""
     access = _clean_rule(entry.get('access'))
     if access is None:
         legacy = [str(m) for m in entry.get('models') or [] if MODEL_RE.match(str(m))] \
@@ -135,9 +135,12 @@ def _clean_models(entry: Dict[str, Any]) -> Dict[str, Any]:
         rule = _clean_rule(raw)
         if USER_RE.match(str(person)) and rule:
             people[str(person)] = rule
+    # Web search (when on in Settings › AI): None for everyone, or these people.
+    who = entry.get('search_people')
+    search_people = sorted({str(p) for p in who if USER_RE.match(str(p))}) if isinstance(who, list) else None
     days = entry.get('keep_days', KEEP_DAYS)
     days = days if isinstance(days, int) and not isinstance(days, bool) and 0 <= days <= MAX_KEEP_DAYS else KEEP_DAYS
-    return {'access': access, 'people_access': people, 'keep_days': days}
+    return {'access': access, 'people_access': people, 'keep_days': days, 'search_people': search_people}
 
 
 def _clean_location(raw: Any) -> Dict[str, Any]:
@@ -214,7 +217,7 @@ def save(payload: Dict[str, Any], known_people: Iterable[str], path: Optional[st
             if not isinstance(libs, list) or not set(map(str, libs)) <= share_names:
                 return None, 'Choose shared folders that exist.'
             entry['libraries'] = sorted({str(n) for n in libs})
-        if any(k in change for k in ('access', 'people_access', 'keep_days')) and not app.get('models'):
+        if any(k in change for k in ('access', 'people_access', 'keep_days', 'search_people')) and not app.get('models'):
             return None, f'{app["name"]} uses no AI models.'
         if 'access' in change:
             rule = _clean_rule(change['access'])
@@ -236,6 +239,17 @@ def save(payload: Dict[str, Any], known_people: Iterable[str], path: Optional[st
                     return None, 'Choose all models, only some, or all but some.'
                 rules[str(person)] = rule
             entry['people_access'] = rules
+        if 'search_people' in change:
+            who = change['search_people']
+            if who is None:
+                entry['search_people'] = None
+            elif isinstance(who, list):
+                unknown = sorted({str(p) for p in who} - known - {'admin'})
+                if unknown:
+                    return None, f'There is no person called {", ".join(unknown)}.'
+                entry['search_people'] = sorted({str(p) for p in who})
+            else:
+                return None, 'Choose everyone or a list of people for web search.'
         if 'keep_days' in change:
             days = change['keep_days']
             if not isinstance(days, int) or isinstance(days, bool) or not 0 <= days <= MAX_KEEP_DAYS:

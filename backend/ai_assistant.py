@@ -494,11 +494,12 @@ READ_PROMPT = ' You can only look, not change anything.'
 
 # ── Settings ─────────────────────────────────────────────────────────────────
 #
-# ai.json: {enabled, level, connections: [...], assistant: {connection, model}}.
+# ai.json: {enabled, level, connections: [...], assistant: {connection, model},
+# search: {enabled}} (web search in Chat through DuckDuckGo, web_search.py).
 # A connection is one AI service (Ollama at home, OpenAI, OpenRouter, ...)
 # with its address, key and the models the admin added for it. Chat in the
 # Hub offers those models (hub_chat.py); the assistant uses one of them.
-# Before beta-v0.3.5 there was one service: {provider, base_url, model,
+# Before beta-v0.4.0 there was one service: {provider, base_url, model,
 # api_key}; such a file is read as one connection "main".
 
 CONNECTION_ID_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,31}$')
@@ -601,6 +602,7 @@ def load_settings(path: Optional[str] = None) -> Dict[str, Any]:
         'level': raw.get('level') if raw.get('level') in LEVELS else 'read',
         'connections': connections,
         'assistant': {'connection': str(assistant.get('connection') or ''), 'model': str(assistant.get('model') or '')},
+        'search': {'enabled': bool((raw.get('search') or {}).get('enabled')) if isinstance(raw.get('search'), dict) else False},
     })
 
 
@@ -737,6 +739,8 @@ def save_settings(current: Dict[str, Any], payload: Dict[str, Any],
         if payload['level'] not in LEVELS:
             return current, 'Choose what the assistant may do.'
         settings['level'] = payload['level']
+    if isinstance(payload.get('search'), dict) and 'enabled' in payload['search']:
+        settings['search'] = {'enabled': bool(payload['search']['enabled'])}
     for conn in connections:
         problem = _check_connection(conn)
         if problem:
@@ -753,7 +757,7 @@ def save_settings(current: Dict[str, Any], payload: Dict[str, Any],
     tmp = f'{path}.tmp'
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, 'w') as f:
-        json.dump({k: settings[k] for k in ('enabled', 'level', 'connections', 'assistant')}, f)
+        json.dump({k: settings[k] for k in ('enabled', 'level', 'connections', 'assistant', 'search')}, f)
     os.replace(tmp, path)
     return settings, ''
 

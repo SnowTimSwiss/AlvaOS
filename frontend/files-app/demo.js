@@ -262,7 +262,7 @@
             return json({ success: true, result: { deleted: ids.length } });
         }
         if (path === 'contacts/import') return json({ success: true, result: { added: 0, updated: 0, skipped: 0 } });
-        if (path === 'chat' && method === 'GET') return json({ models: DEMO_MODELS, chats, problem: '', keep_days: 30 });
+        if (path === 'chat' && method === 'GET') return json({ models: DEMO_MODELS, chats, problem: '', keep_days: 30, search: true });
         if (path === 'chat/burn') {
             const all = !!(body || {}).everything;
             const before = chats.length;
@@ -274,7 +274,13 @@
             const m = DEMO_MODELS.find((x) => x.id === b.model) || DEMO_MODELS[0];
             let id = b.private ? '' : b.chat;
             const now = iso(today);
-            const text = reply(String(b.message || ''));
+            const sources = b.search ? [
+                { title: 'AlvaOS on GitHub', url: 'https://github.com/SnowTimSwiss/AlvaOS' },
+                { title: 'DuckDuckGo', url: 'https://duckduckgo.com/' },
+            ] : null;
+            const text = sources
+                ? 'In the demo nothing is searched for real. With your own NAS, Chat asks DuckDuckGo first, reads the pages it finds and answers with the sources, like this [1]. Searching goes through DuckDuckGo [2]; the NAS reads the pages itself.'
+                : reply(String(b.message || ''));
             const title = String(b.message || 'New chat').slice(0, 60);
             if (!id && !b.private) {
                 id = newId();
@@ -282,13 +288,18 @@
                 chatFiles[id] = { id, title, created: now, updated: now, model: m.id, messages: [] };
             }
             const file = b.private ? { title, messages: [] } : chatFiles[id];
-            file.messages.push({ role: 'user', content: String(b.message || '') }, { role: 'assistant', content: text, model: m.model, service: m.service });
+            file.messages.push({ role: 'user', content: String(b.message || '') }, { role: 'assistant', content: text, model: m.model, service: m.service, ...(sources ? { sources } : {}) });
             const thinking = b.reasoning && m.thinking !== 'none' ? 'The person asks something simple. A short, friendly answer with the facts is best.' : '';
             const enc = new TextEncoder();
             const parts = text.match(/\S+\s*|\n+/g) || [text];
             const stream = new ReadableStream({
                 async start(controller) {
                     controller.enqueue(enc.encode(`${JSON.stringify({ chat: { id: id || '', title: file.title, private: !!b.private } })}\n`));
+                    if (sources) {
+                        controller.enqueue(enc.encode(`${JSON.stringify({ searching: String(b.message || '').slice(0, 80) })}\n`));
+                        await new Promise((r) => setTimeout(r, 900));
+                        controller.enqueue(enc.encode(`${JSON.stringify({ sources })}\n`));
+                    }
                     for (const p of (thinking.match(/\S+\s*/g) || [])) { await new Promise((r) => setTimeout(r, 30)); controller.enqueue(enc.encode(`${JSON.stringify({ r: p })}\n`)); }
                     for (const p of parts) { await new Promise((r) => setTimeout(r, 35)); controller.enqueue(enc.encode(`${JSON.stringify({ t: p })}\n`)); }
                     controller.enqueue(enc.encode(`${JSON.stringify({ done: true })}\n`));

@@ -10,7 +10,7 @@ check it on a real machine is in [TESTING.md](TESTING.md).
 - [~] Done, but still needs a run on real hardware or a real phone
 - [ ] Not done yet
 
-Current version: **beta-v0.3.5**
+Current version: **beta-v0.4.0**
 
 ---
 
@@ -58,6 +58,7 @@ Current version: **beta-v0.3.5**
 
 ### Chat
 - [ ] Pictures and files in a chat (for models that can read them)
+- [ ] Making pictures (only with a graphics card or a paid service; maybe a ComfyUI app)
 - [ ] Limits per person (messages or tokens per day) and a cost line for paid services
 
 ### Assistant

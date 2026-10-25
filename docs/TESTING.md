@@ -537,6 +537,12 @@ Calendar › Create › Birthday: type a name and a year; choose "And make a new
    a bookmark). Hub page: "Chats nobody used for" 7 days. A chat not used
    for 8 days (set the date of `updated` in `chats.json` back by hand)
    is gone the next time Chat opens; the pinned and kept ones stay.
+10. Web search: Settings › AI › "Web search in Chat" on, "Try it" shows
+    three titles. In the Hub a "Search" pill; ask "Weather in Bern
+    tomorrow?": "Searching the web for …", then an answer with small [1]
+    links and the sources below (opening in a new tab). Ask "and the day
+    after?": it searches again with a sensible query. Hub page › Web search
+    › Only some people › only ben: anna has no "Search" any more.
 9. The flame on a chat (hover; on a phone always there): "Delete this
    chat?" › Delete: gone. The flame next to "New chat": "Delete all chats?"
    says how many go and how many stay; Delete: the others are gone, no

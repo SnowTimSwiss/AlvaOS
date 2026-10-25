@@ -159,3 +159,14 @@ def ai_test():
     except Exception as e:  # noqa: BLE001
         return jsonify({'error': f'No answer: {e}'}), 502
     return jsonify({'success': True, 'reply': str(message.get('content') or '').strip()[:300]})
+
+
+@bp.route('/api/v1/ai/search-test', methods=['POST'])
+@require_auth(require_admin=True)
+def ai_search_test():
+    """Does web search work from this NAS? Asks DuckDuckGo once."""
+    import web_search
+    found, problem = web_search.search('AlvaOS NAS')
+    if not found:
+        return jsonify({'error': problem}), 502
+    return jsonify({'success': True, 'titles': [r['title'] for r in found[:3]]})

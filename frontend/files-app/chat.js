@@ -20,6 +20,7 @@
         alert: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>',
         flame: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
         bookmark: '<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>',
+        globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
         ghost: '<path d="M9 10h.01M15 10h.01"/><path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z"/>',
     });
 
@@ -38,7 +39,10 @@
     let chats = [];
     let problem = '';
     let keepDays = 30;
-    let privateMode = false;  // the open chat is private: kept nowhere, gone when left
+    let privateMode = false;
+    let canSearch = false;    // web search is on and open to this person
+    let searchOn = store.get('search', false);
+    let cites = null;         // the sources of the answer being drawn: [1] becomes a link  // the open chat is private: kept nowhere, gone when left
     let chat = null;          // the open chat: {id, title, messages}
     let streaming = null;     // {controller, answer}
     let stickToBottom = true;
@@ -55,6 +59,12 @@
         let s = String(text)
             .replace(/\\([\\`*_{}[\]()#+\-.!|~>$])/g, (_, c) => hold(esc(c)))
             .replace(/(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/g, (_, _t, code) => hold(`<code>${esc(code.trim() || code)}</code>`));
+        if (cites) {
+            s = s.replace(/\[(\d{1,2})\](?!\()/g, (all, n) => {
+                const src = cites[Number(n) - 1];
+                return src ? hold(`<a class="ch-cite" href="${esc(src.url)}" target="_blank" rel="noopener noreferrer" title="${esc(src.title)}">${n}</a>`) : all;
+            });
+        }
         s = esc(s)
             .replace(/!\[([^\]\n]*)\]\((https?:\/\/[^\s)]+)(?:\s+&quot;[^&]*&quot;)?\)/g, (_, alt, url) => hold(LINK(url, alt || url)))
             .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)(?:\s+&quot;[^&]*&quot;)?\)/g, (_, label, url) => hold(LINK(url, label)))
@@ -262,6 +272,7 @@
                     <form class="ch-box" id="ch-box">
                         <textarea id="ch-input" rows="1" placeholder="Message" aria-label="Message" maxlength="32000"></textarea>
                         <div class="ch-tools">
+                            <button type="button" class="ch-pill" id="ch-search" aria-pressed="false" title="Search the web first (DuckDuckGo) and answer with sources" hidden>${icon('globe')}<span>Search</span></button>
                             <button type="button" class="ch-pill" id="ch-think" aria-pressed="false" title="Think first: slower, better for hard questions" hidden>${icon('bulb')}<span>Think</span></button>
                             <div class="ch-effort" id="ch-effort" role="group" aria-label="How hard it thinks" hidden>
                                 ${EFFORTS.map(([v, label, hint]) => `<button type="button" data-effort="${v}" title="${hint}">${label}</button>`).join('')}
@@ -297,6 +308,7 @@
             closeModels();
             renderBar();
         });
+        $c('#ch-search').addEventListener('click', () => { searchOn = !searchOn; store.set('search', searchOn); renderTools(); $c('#ch-input').focus(); });
         $c('#ch-think').addEventListener('click', () => { reasoning = !reasoning; store.set('reasoning', reasoning); renderTools(); $c('#ch-input').focus(); });
         $c('#ch-effort').addEventListener('click', (e) => {
             const b = e.target.closest('[data-effort]');
@@ -362,6 +374,8 @@
         $c('#ch-think').setAttribute('aria-pressed', reasoning && can !== 'none');
         $c('#ch-effort').hidden = !reasoning || can !== 'effort';
         $c('#ch-private').setAttribute('aria-pressed', privateMode);
+        $c('#ch-search').hidden = !canSearch;
+        $c('#ch-search').setAttribute('aria-pressed', canSearch && searchOn);
         root.classList.toggle('is-private', privateMode);
         root.querySelectorAll('[data-effort]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.effort === effort));
         const empty = !$c('#ch-input').value.trim();
@@ -575,12 +589,20 @@
     }
     function messageHtml(m, i, live) {
         if (m.role === 'user') return `<div class="ch-msg user"><div class="ch-bubble">${esc(m.content)}</div></div>`;
+        cites = m.sources && m.sources.length ? m.sources : null;
         const body = m.content ? markdown(m.content) : '';
+        cites = null;
+        const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (_e) { return u; } };
+        const searching = live && m.searching && !m.sources && !m.content
+            ? `<div class="ch-think live"><span class="ch-think-label">Searching the web for “${esc(m.searching)}”…</span></div>` : '';
+        const sources = m.sources && m.sources.length
+            ? `<div class="ch-sources">${icon('globe')}<span>Sources</span>${m.sources.map((src, k) => `<a href="${esc(src.url)}" target="_blank" rel="noopener noreferrer" title="${esc(src.title)}"><b>${k + 1}</b>${esc(host(src.url))}</a>`).join('')}</div>` : '';
         return `<div class="ch-msg ai" data-i="${i}">
             <div class="ch-avatar">${icon('sparkle')}</div>
             <div class="ch-ai">
-                ${thinkingHtml(m, live)}
+                ${searching}${thinkingHtml(m, live && !searching)}
                 <div class="ch-md">${body}${live && m.content ? '<span class="ch-caret"></span>' : ''}</div>
+                ${sources}
                 ${m.error ? `<div class="ch-error">${icon('alert')}<span>${esc(m.error)}</span></div>` : ''}
                 ${live || !m.content ? '' : `<div class="ch-actions"><button type="button" class="ch-act" data-copy="${i}" title="Copy">${icon('copy')}</button>${m.model ? `<span class="ch-meta">${esc(m.model)}${m.service && manyServices() ? ` · ${esc(m.service)}` : ''}</span>` : ''}</div>`}
             </div>
@@ -670,8 +692,8 @@
                 method: 'POST', credentials: 'same-origin', signal: controller.signal,
                 headers: { 'Content-Type': 'application/json', 'X-AlvaOS-Files': '1' },
                 body: JSON.stringify(privateMode
-                    ? { private: true, history, message: text, model, reasoning, effort }
-                    : { chat: chat.id || null, message: text, model, reasoning, effort }),
+                    ? { private: true, history, message: text, model, reasoning, effort, search: canSearch && searchOn }
+                    : { chat: chat.id || null, message: text, model, reasoning, effort, search: canSearch && searchOn }),
             });
             if (!res.ok) {
                 const data = await res.json().catch(() => ({}));
@@ -702,7 +724,9 @@
                         const now = new Date().toISOString();
                         if (row) { row.updated = now; chats = [row, ...chats.filter((c) => c !== row)]; } else chats.unshift({ id: chat.id, title: chat.title, updated: now, model });
                         if (isNew || row) renderList();
-                    } else if (msg.r) { answer.reasoning += msg.r; schedulePaint(); }
+                    } else if (msg.searching) { answer.searching = msg.searching; schedulePaint(); }
+                    else if (msg.sources) { answer.sources = msg.sources; schedulePaint(); }
+                    else if (msg.r) { answer.reasoning += msg.r; schedulePaint(); }
                     else if (msg.t) {
                         if (!firstText) { firstText = Date.now(); if (answer.reasoning) answer.thought_seconds = Math.round((firstText - started) / 1000); }
                         answer.content += msg.t;
@@ -734,6 +758,7 @@
             chats = got.chats || [];
             problem = got.problem || '';
             keepDays = got.keep_days === undefined ? 30 : got.keep_days;
+            canSearch = !!got.search;
         } catch (err) {
             problem = err.message;
         }
