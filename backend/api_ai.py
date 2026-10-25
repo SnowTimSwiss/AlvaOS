@@ -46,7 +46,7 @@ def _reader(token):
 def ai_chat():
     settings = ai_assistant.load_settings()
     if not settings['enabled']:
-        return jsonify({'error': 'The assistant is off. Turn it on in Settings › Assistant.'}), 409
+        return jsonify({'error': 'The assistant is off. Turn it on in Settings › AI.'}), 409
     data = request.get_json(silent=True) or {}
     token = request.headers.get('Authorization', '')
     try:
@@ -91,19 +91,50 @@ def ai_action(proposal_id):
                     'message': str(data.get('message') or f'Done: {action["title"]}.')})
 
 
+def _draft(payload: Dict[str, Any], settings: Dict[str, Any]) -> Dict[str, Any]:
+    """A connection as the form has it now: a key left empty is the saved one."""
+    found = payload.get('connection')
+    raw: Dict[str, Any] = found if isinstance(found, dict) else {}
+    saved = next((c for c in settings['connections'] if c['id'] == raw.get('id')), None)
+    provider = str(raw.get('provider') or (saved or {}).get('provider') or 'other')
+    provider = provider if provider in ai_assistant.PROVIDERS else 'other'
+    return {'id': str(raw.get('id') or ''), 'name': str(raw.get('name') or ''), 'provider': provider,
+            'base_url': str(raw.get('base_url') or (saved or {}).get('base_url') or '').strip(),
+            'api_key': str(raw.get('api_key') or '').strip() or (saved or {}).get('api_key', '')}
+
+
+@bp.route('/api/v1/ai/models', methods=['POST'])
+@require_auth(require_admin=True)
+def ai_models():
+    """The models a service offers, to add with one click."""
+    settings = ai_assistant.load_settings()
+    conn = _draft(request.get_json(silent=True) or {}, settings)
+    found, problem = ai_assistant.list_models(conn)
+    if problem and not found:
+        return jsonify({'error': problem}), 502
+    return jsonify({'success': True, 'models': found,
+                    'thinking': {m: ai_assistant.guess_thinking(m) for m in found}})
+
+
 @bp.route('/api/v1/ai/test', methods=['POST'])
 @require_auth(require_admin=True)
 def ai_test():
     settings = ai_assistant.load_settings()
     payload = request.get_json(silent=True) or {}
     trial = dict(settings)
-    for key in ('provider', 'base_url', 'model'):
-        if payload.get(key):
-            trial[key] = str(payload[key]).strip()
-    if payload.get('api_key'):
-        trial['api_key'] = str(payload['api_key']).strip()
+    if isinstance(payload.get('connection'), dict):
+        trial.update({k: v for k, v in _draft(payload, settings).items() if k in ('provider', 'base_url', 'api_key')})
+        trial['model'] = str(payload.get('model') or '').strip()
+    else:
+        for key in ('provider', 'base_url', 'model'):
+            if payload.get(key):
+                trial[key] = str(payload[key]).strip()
+        if payload.get('api_key'):
+            trial['api_key'] = str(payload['api_key']).strip()
     if not ai_assistant.check_url(trial['base_url']):
         return jsonify({'error': 'Enter the address of the service.'}), 400
+    if not ai_assistant.MODEL_RE.match(trial['model'] or ''):
+        return jsonify({'error': 'Add a model first.'}), 400
     try:
         message = ai_assistant.call_model(trial, [{'role': 'user', 'content': 'Say hello in five words.'}],
                                           use_tools=False)

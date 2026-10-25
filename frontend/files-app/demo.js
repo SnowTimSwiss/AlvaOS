@@ -124,8 +124,41 @@
     // ── Photos lists, chat, devices ──────────────────────────────────────────
     const library = { albums: [{ id: 'a1b2c3d4e5f6', name: 'Holidays', items: ['Demo/Photos/IMG_3996.jpg', 'Demo/Photos/IMG_3990.jpg', 'Demo/Photos/IMG_3985.jpg'], created_at: iso(addDays(today, -30)) }],
         favourites: ['Demo/Photos/IMG_4000.jpg'], writable: true };
-    const chats = [];
-    const chatFiles = {};
+    const DEMO_MODELS = [
+        { id: 'home/llama3.1', model: 'llama3.1', service: 'Ollama at home', thinking: 'none' },
+        { id: 'home/qwen3:8b', model: 'qwen3:8b', service: 'Ollama at home', thinking: 'on' },
+        { id: 'cloud/gpt-oss:120b', model: 'gpt-oss:120b', service: 'Ollama Cloud', thinking: 'effort' },
+    ];
+    const SAMPLE = [
+        '## A weekend in the mountains',
+        '',
+        'Here is a **simple plan** for two days. Pack *light*, the huts have blankets.',
+        '',
+        '1. **Saturday**',
+        '   - Train to Lauterbrunnen at 8:04',
+        '   - Walk up to the hut (about `3 h`)',
+        '2. **Sunday**',
+        '   - Sunrise at the ridge',
+        '   - Back down and home by 17:00',
+        '',
+        '| What | How many | Weight |',
+        '|:-----|:-------:|------:|',
+        '| Water | 2 l | 2 kg |',
+        '| Sandwiches | 4 | 0.6 kg |',
+        '',
+        '- [x] Book the hut',
+        '- [ ] Check the weather',
+        '',
+        '> Tip: tell someone at home which way you go.',
+    ].join('\n');
+    const chats = [
+        { id: 'demochat01', title: 'Weekend in the mountains', created: iso(addDays(today, -3)), updated: iso(addDays(today, -1)), model: 'home/llama3.1', pinned: true },
+        { id: 'demochat02', title: 'Birthday cake for Mia', created: iso(addDays(today, -12)), updated: iso(addDays(today, -12)), model: 'home/llama3.1', kept: true },
+    ];
+    const chatFiles = {
+        demochat01: { ...chats[0], messages: [{ role: 'user', content: 'Plan a weekend in the mountains for two' }, { role: 'assistant', content: SAMPLE, model: 'llama3.1', service: 'Ollama at home' }] },
+        demochat02: { ...chats[1], messages: [{ role: 'user', content: 'A simple chocolate cake?' }, { role: 'assistant', content: 'A **simple chocolate cake** for 8:\n\n- 200 g dark chocolate\n- 200 g butter\n- 4 eggs\n- 150 g sugar\n- 60 g flour\n\nMelt chocolate and butter, stir in the rest, bake **25 minutes at 180 °C**.', model: 'llama3.1', service: 'Ollama at home' }] },
+    };
     const devices = [{ id: 'dev1', name: 'This phone (demo)', model: 'Demo phone', platform: 'android', app_version: 'demo', created_at: iso(addDays(today, -2)),
         last_seen: iso(today), address: '', user: 'demo', this: false, backup: null }];
 
@@ -137,7 +170,8 @@
         const q = question.toLowerCase();
         if (/\bhello|\bhi\b|hallo/.test(q)) return 'Hello! This is the demo of the AlvaOS chat. With your own NAS I answer through the AI service you set up there.';
         if (/photo|picture|bild|foto/.test(q)) return 'Your photos stay on your NAS. The app can back up this phone\'s pictures to it by itself, and Photos shows them by date with a slider.';
-        return 'This is a demo answer. In your own AlvaOS the chat uses a model you choose (a local one or a cloud one), and the chats are kept in your personal folder.';
+        if (/plan|list|format|table|markdown/.test(q)) return SAMPLE;
+        return 'This is a demo answer. In your own AlvaOS the chat uses the models of the AI services you set up (a local one or a cloud one), and the chats are kept in your personal folder. Unused chats go after 30 days, unless you **pin** or **keep** them.';
     }
 
     async function handle(method, url, body) {
@@ -228,25 +262,34 @@
             return json({ success: true, result: { deleted: ids.length } });
         }
         if (path === 'contacts/import') return json({ success: true, result: { added: 0, updated: 0, skipped: 0 } });
-        if (path === 'chat' && method === 'GET') return json({ models: ['demo-model'], chats, problem: '' });
+        if (path === 'chat' && method === 'GET') return json({ models: DEMO_MODELS, chats, problem: '', keep_days: 30 });
+        if (path === 'chat/burn') {
+            const all = !!(body || {}).everything;
+            const before = chats.length;
+            for (let i = chats.length - 1; i >= 0; i -= 1) if (all || !(chats[i].pinned || chats[i].kept)) { delete chatFiles[chats[i].id]; chats.splice(i, 1); }
+            return json({ success: true, deleted: before - chats.length, stayed: chats.length });
+        }
         if (path === 'chat/send') {
             const b = body || {};
-            let id = b.chat;
+            const m = DEMO_MODELS.find((x) => x.id === b.model) || DEMO_MODELS[0];
+            let id = b.private ? '' : b.chat;
             const now = iso(today);
             const text = reply(String(b.message || ''));
-            if (!id) {
+            const title = String(b.message || 'New chat').slice(0, 60);
+            if (!id && !b.private) {
                 id = newId();
-                const title = String(b.message || 'New chat').slice(0, 60);
-                chats.unshift({ id, title, created: now, updated: now, model: 'demo-model' });
-                chatFiles[id] = { id, title, created: now, updated: now, model: 'demo-model', messages: [] };
+                chats.unshift({ id, title, created: now, updated: now, model: m.id });
+                chatFiles[id] = { id, title, created: now, updated: now, model: m.id, messages: [] };
             }
-            const file = chatFiles[id];
-            file.messages.push({ role: 'user', content: String(b.message || '') }, { role: 'assistant', content: text });
+            const file = b.private ? { title, messages: [] } : chatFiles[id];
+            file.messages.push({ role: 'user', content: String(b.message || '') }, { role: 'assistant', content: text, model: m.model, service: m.service });
+            const thinking = b.reasoning && m.thinking !== 'none' ? 'The person asks something simple. A short, friendly answer with the facts is best.' : '';
             const enc = new TextEncoder();
-            const parts = text.match(/\S+\s*/g) || [text];
+            const parts = text.match(/\S+\s*|\n+/g) || [text];
             const stream = new ReadableStream({
                 async start(controller) {
-                    controller.enqueue(enc.encode(`${JSON.stringify({ chat: { id, title: file.title } })}\n`));
+                    controller.enqueue(enc.encode(`${JSON.stringify({ chat: { id: id || '', title: file.title, private: !!b.private } })}\n`));
+                    for (const p of (thinking.match(/\S+\s*/g) || [])) { await new Promise((r) => setTimeout(r, 30)); controller.enqueue(enc.encode(`${JSON.stringify({ r: p })}\n`)); }
                     for (const p of parts) { await new Promise((r) => setTimeout(r, 35)); controller.enqueue(enc.encode(`${JSON.stringify({ t: p })}\n`)); }
                     controller.enqueue(enc.encode(`${JSON.stringify({ done: true })}\n`));
                     controller.close();
@@ -258,6 +301,12 @@
             const [, id, action] = path.split('/');
             if (action === 'delete') { const i = chats.findIndex((c) => c.id === id); if (i >= 0) chats.splice(i, 1); return json({ success: true }); }
             if (action === 'rename') { const c = chats.find((x) => x.id === id); if (c) c.title = String((body || {}).title || c.title).slice(0, 60); return json({ success: true }); }
+            if (action === 'pin' || action === 'keep') {
+                const key = action === 'pin' ? 'pinned' : 'kept';
+                const c = chats.find((x) => x.id === id);
+                if (c) { c[key] = !!(body || {})[key]; if (chatFiles[id]) chatFiles[id][key] = c[key]; }
+                return json({ success: true, [key]: !!(c && c[key]) });
+            }
             return chatFiles[id] ? json(chatFiles[id]) : json({ error: 'This chat is not there.' }, 404);
         }
         if (path === 'devices' && method === 'GET') return json({ devices });

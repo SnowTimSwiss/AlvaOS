@@ -485,7 +485,7 @@ SYSTEM_PROMPT = (
     'Network, Time, Security (password, two-step sign-in, HTTPS, SSH, sessions), Notifications, Power, Graphics, '
     'AlvaOS Link (away from home), Assistant, Diagnostics, Terminal (a shell for the admin). Virtual machines: machine setup, create, settings, start/stop and console. '
     'Hub: Files, Photos, Calendar and Chat as enabled by the owner. If the current assistant mode is read-only, '
-    'state that changes are disabled and point to Settings > Assistant to enable confirmed proposals. In confirmed '
+    'state that changes are disabled and point to Settings > AI to enable confirmed proposals. In confirmed '
     'proposal mode, people and shared folders can be proposed with the available actions; present them as proposals '
     'and never claim they have happened before confirmation. Never ask for passwords.'
 )
@@ -493,6 +493,81 @@ READ_PROMPT = ' You can only look, not change anything.'
 
 
 # ── Settings ─────────────────────────────────────────────────────────────────
+#
+# ai.json: {enabled, level, connections: [...], assistant: {connection, model}}.
+# A connection is one AI service (Ollama at home, OpenAI, OpenRouter, ...)
+# with its address, key and the models the admin added for it. Chat in the
+# Hub offers those models (hub_chat.py); the assistant uses one of them.
+# Before beta-v0.3.5 there was one service: {provider, base_url, model,
+# api_key}; such a file is read as one connection "main".
+
+CONNECTION_ID_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,31}$')
+MODEL_RE = re.compile(r'^[A-Za-z0-9._:/@+-]{1,120}$')
+MAX_CONNECTIONS = 20
+MAX_MODELS = 60
+THINKING = ('none', 'on', 'effort')   # no thinking; thinking on or off; and how hard
+EFFORT_MODELS = re.compile(r'(^|[/:-])(gpt-oss|o[134](-mini|-pro)?|gpt-5|grok-3-mini|grok-4)', re.I)
+THINKING_MODELS = re.compile(r'(qwen3(?!-coder)|deepseek-r1|deepseek-v3\.[12]|qwq|magistral|phi4-reasoning|cogito|'
+                             r'thinking|reasoner|glm-4\.[5-9]|kimi-k2|r1-)', re.I)
+
+
+def guess_thinking(model: str) -> str:
+    """Whether a model can think first, from its name (the admin can change it)."""
+    if EFFORT_MODELS.search(model):
+        return 'effort'
+    return 'on' if THINKING_MODELS.search(model) else 'none'
+
+
+def _clean_connection(raw: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(raw, dict) or not CONNECTION_ID_RE.match(str(raw.get('id') or '')):
+        return None
+    provider = str(raw.get('provider') or '')
+    provider = provider if provider in PROVIDERS else 'other'
+    listed = raw.get('models')
+    models = list(dict.fromkeys(str(m) for m in (listed if isinstance(listed, list) else [])
+                                if MODEL_RE.match(str(m))))[:MAX_MODELS]
+    marked = raw.get('thinking')
+    thinking: Dict[str, Any] = marked if isinstance(marked, dict) else {}
+    return {
+        'id': str(raw['id']),
+        'name': str(raw.get('name') or '').strip()[:40] or PROVIDERS[provider]['label'],
+        'provider': provider,
+        'base_url': str(raw.get('base_url') if raw.get('base_url') is not None else PROVIDERS[provider]['base_url']),
+        'api_key': str(raw.get('api_key') or ''),
+        'models': models,
+        # Per model: can it think first ('none', 'on', 'effort')? Not set: guessed from the name.
+        'thinking': {m: str(thinking[m]) if thinking.get(m) in THINKING else guess_thinking(m) for m in models},
+    }
+
+
+def _legacy_chat_models() -> List[str]:
+    """The models the admin chose for Chat before there were connections."""
+    try:
+        import hub_apps
+        with open(hub_apps.SETTINGS_FILE) as f:
+            entry = (json.load(f).get('apps') or {}).get('chat') or {}
+        models = entry.get('models') if isinstance(entry, dict) and 'access' not in entry else None
+        return [str(m) for m in models if MODEL_RE.match(str(m))] if isinstance(models, list) else []
+    except (OSError, ValueError, AttributeError):
+        return []
+
+
+def _resolve(settings: Dict[str, Any]) -> Dict[str, Any]:
+    """The flat fields the assistant talks with: its connection and model."""
+    connections = settings['connections']
+    wanted = settings['assistant'].get('connection')
+    conn = next((c for c in connections if c['id'] == wanted), connections[0] if connections else None)
+    if conn is None:
+        preset = PROVIDERS['ollama-local']
+        settings.update(provider='ollama-local', base_url=preset['base_url'], api_key='', model=preset['model'])
+        return settings
+    model = settings['assistant'].get('model') or ''
+    if model not in conn['models']:
+        model = conn['models'][0] if conn['models'] else ''
+    settings['assistant'] = {'connection': conn['id'], 'model': model}
+    settings.update(provider=conn['provider'], base_url=conn['base_url'], api_key=conn['api_key'], model=model)
+    return settings
+
 
 def load_settings(path: Optional[str] = None) -> Dict[str, Any]:
     path = path or SETTINGS_FILE
@@ -502,21 +577,38 @@ def load_settings(path: Optional[str] = None) -> Dict[str, Any]:
     except (OSError, ValueError):
         raw = {}
     raw = raw if isinstance(raw, dict) else {}
-    provider = str(raw.get('provider') or '')
-    provider = provider if provider in PROVIDERS else 'ollama-local'
-    return {
+    if isinstance(raw.get('connections'), list):
+        connections: List[Dict[str, Any]] = []
+        for item in raw['connections']:
+            conn = _clean_connection(item)
+            if conn and all(c['id'] != conn['id'] for c in connections):
+                connections.append(conn)
+        found = raw.get('assistant')
+        assistant: Dict[str, Any] = found if isinstance(found, dict) else {}
+    elif raw.get('provider') or raw.get('base_url') or raw.get('model'):
+        provider = str(raw.get('provider') or '')
+        provider = provider if provider in PROVIDERS else 'ollama-local'
+        model = str(raw.get('model') or PROVIDERS[provider]['model'])
+        conn = _clean_connection({'id': 'main', 'provider': provider, 'base_url': raw.get('base_url'),
+                                  'api_key': raw.get('api_key'), 'models': [model] + _legacy_chat_models()})
+        connections = [conn] if conn else []
+        assistant = {'connection': 'main', 'model': model}
+    else:
+        connections, assistant = [], {}
+    return _resolve({
         'enabled': bool(raw.get('enabled')),
-        'provider': provider,
-        'base_url': str(raw.get('base_url') or PROVIDERS[provider]['base_url']),
-        'model': str(raw.get('model') or PROVIDERS[provider]['model']),
-        'api_key': str(raw.get('api_key') or ''),
         'level': raw.get('level') if raw.get('level') in LEVELS else 'read',
-    }
+        'connections': connections,
+        'assistant': {'connection': str(assistant.get('connection') or ''), 'model': str(assistant.get('model') or '')},
+    })
 
 
 def public_settings(settings: Dict[str, Any]) -> Dict[str, Any]:
-    out = {k: v for k, v in settings.items() if k != 'api_key'}
+    """For the page: no keys, only whether one is there."""
+    out = {k: v for k, v in settings.items() if k not in ('api_key', 'connections')}
     out['key_set'] = bool(settings.get('api_key'))
+    out['connections'] = [{**{k: v for k, v in c.items() if k != 'api_key'}, 'key_set': bool(c['api_key'])}
+                          for c in settings['connections']]
     out['providers'] = {k: {kk: vv for kk, vv in v.items()} for k, v in PROVIDERS.items()}
     return out
 
@@ -525,34 +617,134 @@ def check_url(url: str) -> bool:
     return bool(re.match(r'^https?://[A-Za-z0-9.\-\[\]:]+(/[A-Za-z0-9._~/-]*)?$', url or ''))
 
 
+def thinking_of(conn: Dict[str, Any], model: str) -> str:
+    return conn.get('thinking', {}).get(model) or guess_thinking(model)
+
+
+def usable(conn: Dict[str, Any]) -> bool:
+    """Can AlvaOS talk to this connection (an address, and a key when it needs one)?"""
+    return check_url(conn.get('base_url', '')) and (not PROVIDERS[conn['provider']]['needs_key'] or bool(conn['api_key']))
+
+
+def _new_id(name: str, taken: List[str]) -> str:
+    base = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')[:24] or 'service'
+    base = base if CONNECTION_ID_RE.match(base) else 'service'
+    cid, n = base, 2
+    while cid in taken:
+        cid, n = f'{base}-{n}', n + 1
+    return cid
+
+
+def _connections_from(payload: Any, current: List[Dict[str, Any]]) -> Tuple[Optional[List[Dict[str, Any]]], str]:
+    """The list the page sends. A key left empty stays as it was."""
+    if not isinstance(payload, list):
+        return None, 'Nothing to save.'
+    if len(payload) > MAX_CONNECTIONS:
+        return None, f'At most {MAX_CONNECTIONS} AI services.'
+    old = {c['id']: c for c in current}
+    out: List[Dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            return None, 'Nothing to save.'
+        provider = str(item.get('provider') or '')
+        if provider not in PROVIDERS:
+            return None, 'Unknown provider.'
+        cid = str(item.get('id') or '')
+        if cid not in old or any(c['id'] == cid for c in out):
+            cid = _new_id(str(item.get('name') or provider), [c['id'] for c in out] + list(old))
+        listed = item.get('models')
+        models: List[Any] = listed if isinstance(listed, list) else []
+        bad = [str(m) for m in models if not MODEL_RE.match(str(m))]
+        if bad:
+            return None, f'"{bad[0]}" is not a model name. Model names look like llama3.1 or gpt-4o-mini.'
+        if len(models) > MAX_MODELS:
+            return None, f'At most {MAX_MODELS} models per service.'
+        key = str(item.get('api_key') or '').strip()
+        if not key and not item.get('clear_key'):
+            key = old.get(cid, {}).get('api_key', '')
+        conn = _clean_connection({'id': cid, 'name': item.get('name'), 'provider': provider,
+                                  'base_url': str(item.get('base_url') or '').strip() or PROVIDERS[provider]['base_url'],
+                                  'api_key': key,
+                                  'models': models, 'thinking': item.get('thinking')})
+        assert conn is not None
+        out.append(conn)
+    return out, ''
+
+
+def _check_connection(conn: Dict[str, Any]) -> str:
+    if not check_url(conn['base_url']):
+        return f'{conn["name"]}: enter the address of the service, like http://192.168.1.20:11434/v1.'
+    return ''
+
+
 def save_settings(current: Dict[str, Any], payload: Dict[str, Any],
                   path: Optional[str] = None) -> Tuple[Dict[str, Any], str]:
+    """Change the settings. `connections` replaces the list of AI services;
+    `assistant` ({connection, model}) chooses the assistant's model. The
+    fields of the time with one service (provider, base_url, model, api_key,
+    clear_key) still change the assistant's connection."""
     path = path or SETTINGS_FILE
-    settings = dict(current)
-    if 'provider' in payload:
-        if payload['provider'] not in PROVIDERS:
-            return current, 'Unknown provider.'
-        if payload['provider'] != settings['provider']:
-            settings['base_url'] = PROVIDERS[payload['provider']]['base_url']
-            settings['model'] = PROVIDERS[payload['provider']]['model']
-        settings['provider'] = payload['provider']
-    for key in ('base_url', 'model'):
-        if key in payload:
-            settings[key] = str(payload.get(key) or '').strip()
-    if payload.get('api_key'):
-        settings['api_key'] = str(payload['api_key']).strip()
-    if payload.get('clear_key'):
-        settings['api_key'] = ''
+    connections = [dict(c, models=list(c['models'])) for c in current['connections']]
+    assistant = dict(current['assistant'])
+    if 'connections' in payload:
+        found, problem = _connections_from(payload['connections'], connections)
+        if found is None:
+            return current, problem
+        connections = found
+    if any(k in payload for k in ('provider', 'base_url', 'model', 'api_key', 'clear_key')):
+        conn = next((c for c in connections if c['id'] == assistant.get('connection')), None)
+        if conn is None:
+            conn = next(iter(connections), None)
+        if conn is None:
+            conn = _clean_connection({'id': 'main', 'provider': 'ollama-local',
+                                      'models': [PROVIDERS['ollama-local']['model']]})
+            assert conn is not None
+            connections.append(conn)
+        if 'provider' in payload:
+            if payload['provider'] not in PROVIDERS:
+                return current, 'Unknown provider.'
+            if payload['provider'] != conn['provider']:
+                preset = PROVIDERS[payload['provider']]
+                conn.update(provider=payload['provider'], base_url=preset['base_url'], name=preset['label'],
+                            models=[preset['model']] if preset['model'] else [])
+                assistant['model'] = preset['model']
+        if 'base_url' in payload:
+            conn['base_url'] = str(payload.get('base_url') or '').strip()
+        if 'model' in payload:
+            model = str(payload.get('model') or '').strip()
+            if model and not MODEL_RE.match(model):
+                return current, 'Enter the name of the model.'
+            if model and model not in conn['models']:
+                conn['models'].insert(0, model)
+            assistant['model'] = model
+        if payload.get('api_key'):
+            conn['api_key'] = str(payload['api_key']).strip()
+        if payload.get('clear_key'):
+            conn['api_key'] = ''
+        assistant['connection'] = conn['id']
+    if isinstance(payload.get('assistant'), dict):
+        wanted = payload['assistant']
+        conn = next((c for c in connections if c['id'] == str(wanted.get('connection') or '')), None)
+        if conn is None or str(wanted.get('model') or '') not in conn['models']:
+            return current, 'Choose one of the models of your AI services for the assistant.'
+        assistant = {'connection': conn['id'], 'model': str(wanted['model'])}
+    connections = [c for c in map(_clean_connection, connections) if c]
+    settings = dict(current, connections=connections, assistant=assistant)
     if 'enabled' in payload:
         settings['enabled'] = bool(payload['enabled'])
     if 'level' in payload:
         if payload['level'] not in LEVELS:
             return current, 'Choose what the assistant may do.'
         settings['level'] = payload['level']
+    for conn in connections:
+        problem = _check_connection(conn)
+        if problem:
+            return current, problem
+    settings = _resolve(settings)
     if settings['enabled']:
-        if not check_url(settings['base_url']):
-            return current, 'Enter the address of the service, like http://192.168.1.20:11434/v1.'
-        if not re.match(r'^[A-Za-z0-9._:/@+-]{1,120}$', settings['model'] or ''):
+        if not connections:
+            return current, 'Add an AI service first.'
+        if not MODEL_RE.match(settings['model'] or ''):
             return current, 'Enter the name of the model.'
         if PROVIDERS[settings['provider']]['needs_key'] and not settings['api_key']:
             return current, 'This service needs an API key.'
@@ -560,9 +752,37 @@ def save_settings(current: Dict[str, Any], payload: Dict[str, Any],
     tmp = f'{path}.tmp'
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, 'w') as f:
-        json.dump(settings, f)
+        json.dump({k: settings[k] for k in ('enabled', 'level', 'connections', 'assistant')}, f)
     os.replace(tmp, path)
     return settings, ''
+
+
+def list_models(conn: Dict[str, Any], get: Optional[Callable[..., Any]] = None) -> Tuple[List[str], str]:
+    """The models the service offers (its /models list), or why not."""
+    if get is None:
+        import requests
+        get = requests.get
+    if not check_url(conn.get('base_url', '')):
+        return [], 'Enter the address of the service first.'
+    headers = {'Authorization': f"Bearer {conn['api_key']}"} if conn.get('api_key') else {}
+    try:
+        res = get(conn['base_url'].rstrip('/') + '/models', headers=headers, timeout=15)
+    except Exception:  # noqa: BLE001 - requests raises many kinds
+        return [], f'The NAS cannot reach {conn["base_url"]}.'
+    if res.status_code == 401:
+        return [], 'The service does not accept the key.'
+    if res.status_code >= 400:
+        return [], f'The service answered {res.status_code}. Type the model names instead.'
+    try:
+        data = res.json()
+    except ValueError:
+        return [], 'The service sent no list of models. Type the model names instead.'
+    found = sorted({str(m.get('id')) for m in (data.get('data') or data.get('models') or [])
+                    if isinstance(m, dict) and MODEL_RE.match(str(m.get('id') or m.get('name') or ''))
+                    and m.get('id')} |
+                   {str(m.get('name')) for m in (data.get('models') or [])
+                    if isinstance(m, dict) and not m.get('id') and MODEL_RE.match(str(m.get('name') or ''))})
+    return found[:500], '' if found else 'The service lists no models. Type the model names instead.'
 
 
 # ── Talking to the model ─────────────────────────────────────────────────────
@@ -624,7 +844,7 @@ def call_model(settings: Dict[str, Any], messages: List[Dict[str, Any]], post: O
         except Exception:  # noqa: BLE001 - any body
             detail = str(getattr(res, 'text', ''))[:200]
         if res.status_code == 401:
-            raise RuntimeError('The AI service does not accept the API key. Check it in Settings › Assistant.')
+            raise RuntimeError('The AI service does not accept the API key. Check it in Settings › AI.')
         if res.status_code == 404 and 'model' in detail.lower():
             raise RuntimeError(f'The AI service does not know the model "{settings["model"]}". '
                                f'(For Ollama: ollama pull {settings["model"]})')

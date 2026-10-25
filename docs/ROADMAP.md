@@ -10,7 +10,7 @@ check it on a real machine is in [TESTING.md](TESTING.md).
 - [~] Done, but still needs a run on real hardware or a real phone
 - [ ] Not done yet
 
-Current version: **beta-v0.3.4**
+Current version: **beta-v0.3.5**
 
 ---
 
@@ -55,6 +55,10 @@ Current version: **beta-v0.3.4**
 
 ### Apps and graphics cards
 - [ ] More catalog apps that can use a graphics card (Plex, Frigate, Stable Diffusion)
+
+### Chat
+- [ ] Pictures and files in a chat (for models that can read them)
+- [ ] Limits per person (messages or tokens per day) and a cost line for paid services
 
 ### Assistant
 - [ ] Answers that stream word by word

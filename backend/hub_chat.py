@@ -3,13 +3,16 @@
 
 Only a chat: no tools, nothing on the NAS is read or changed (that is the
 assistant in the admin pages, ai_assistant.py, a different thing). It uses
-the AI service set up in Settings › Assistant (address, key); the key never
-leaves the NAS. The admin chooses on the Hub page which models people may
-pick; without a choice it is the model set there.
+the AI services set up in Settings › AI (address, key, models); keys never
+leave the NAS. On the Hub page the admin chooses which models Chat offers
+(all, only some, all but some; whole services or single models), and may
+narrow that further for single people.
 
 Each person's chats are files in their own place (hub_data.py), by default
 ".alvaos/chat/" in their personal folder: chats.json (the list) and
-chat-<id>.json per chat.
+chat-<id>.json per chat. Chats not used for 30 days (the admin can change
+it) go, unless pinned or kept. A private chat is never written anywhere:
+the page sends what was said so far with each message.
 
 Answers stream to the page as lines of JSON: {"chat": {...}} first, then
 {"r": "..."} (thinking) and {"t": "..."} (the answer) as they come, and
@@ -17,11 +20,10 @@ Answers stream to the page as lines of JSON: {"chat": {...}} first, then
 """
 
 import json
-import os
 import re
 import secrets
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 from flask import Blueprint, Response, jsonify, request
@@ -50,19 +52,49 @@ def _chat_file(chat_id: str) -> str:
     return f'chat-{chat_id}.json'
 
 
-def connection() -> Tuple[Dict[str, Any], str]:
-    """The AI service from Settings › Assistant, and why it cannot be used ('' when it can)."""
-    settings = ai_assistant.load_settings()
-    if not os.path.exists(ai_assistant.SETTINGS_FILE) or not ai_assistant.check_url(settings['base_url']):
-        return settings, 'No AI service is set up yet. Ask the person who looks after the NAS (Settings › Assistant).'
-    if ai_assistant.PROVIDERS[settings['provider']]['needs_key'] and not settings['api_key']:
-        return settings, 'The AI service needs a key. Ask the person who looks after the NAS (Settings › Assistant).'
-    return settings, ''
+def catalog(ai: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """Every model of every AI service AlvaOS can talk to."""
+    ai = ai or ai_assistant.load_settings()
+    return [{'id': f"{c['id']}/{m}", 'model': m, 'service': c['name'], 'connection': c['id'],
+             'thinking': ai_assistant.thinking_of(c, m)}
+            for c in ai['connections'] if ai_assistant.usable(c) for m in c['models']]
 
 
-def models(service: Dict[str, Any], settings: Optional[Dict[str, Any]] = None) -> List[str]:
-    chosen = (settings or hub_apps.load())['apps']['chat'].get('models') or []
-    return list(chosen) or ([service['model']] if service.get('model') else [])
+def _apply(items: List[Dict[str, Any]], rule: Dict[str, Any]) -> List[Dict[str, Any]]:
+    refs = set(rule.get('items') or [])
+
+    def listed(item: Dict[str, Any]) -> bool:
+        return item['connection'] in refs or item['id'] in refs
+    if rule.get('mode') == 'only':
+        return [i for i in items if listed(i)]
+    if rule.get('mode') == 'except':
+        return [i for i in items if not listed(i)]
+    return items
+
+
+def offered(user: str, ai: Optional[Dict[str, Any]] = None,
+            hub: Optional[Dict[str, Any]] = None) -> Tuple[List[Dict[str, Any]], str]:
+    """The models this person may choose, and why there are none ('' when there are)."""
+    ai = ai or ai_assistant.load_settings()
+    entry = (hub or hub_apps.load())['apps']['chat']
+    every = catalog(ai)
+    if not every:
+        if not any(ai_assistant.usable(c) for c in ai['connections']):
+            return [], 'No AI service is set up yet. Ask the person who looks after the NAS (Settings › AI).'
+        return [], 'The AI service has no models yet. Ask the person who looks after the NAS (Settings › AI).'
+    items = _apply(every, entry['access'])
+    if user in entry['people_access']:
+        items = _apply(items, entry['people_access'][user])
+    return items, '' if items else 'No model is open to you. Ask the person who looks after the NAS.'
+
+
+def summary() -> Dict[str, Any]:
+    """For the admin's Hub page: the services and their models, without keys."""
+    from urllib.parse import urlparse
+    ai = ai_assistant.load_settings()
+    services = [{'id': c['id'], 'name': c['name'], 'host': urlparse(c['base_url']).netloc,
+                 'ready': ai_assistant.usable(c), 'models': c['models']} for c in ai['connections']]
+    return {'ready': bool(catalog(ai)), 'services': services}
 
 
 def title_for(message: str) -> str:
@@ -78,16 +110,42 @@ NO_PLACE = ('You have no personal folder yet, so your chats have nowhere to go. 
             'Ask the person who looks after the NAS to make you one.')
 
 
+def _row(chat: Dict[str, Any]) -> Dict[str, Any]:
+    return {k: chat.get(k) for k in ('id', 'title', 'created', 'updated', 'model', 'pinned', 'kept')}
+
+
+def _expire(place: hub_data.Place, days: int) -> None:
+    """Chats not used for `days` go, unless pinned or kept."""
+    if days <= 0:
+        return
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec='seconds')
+    with hub_data.lock(place, INDEX):
+        index, _ = hub_data.read(place, INDEX)
+        rows = [c for c in (index or {}).get('chats') or [] if isinstance(c, dict)]
+        old = [c for c in rows if not c.get('pinned') and not c.get('kept')
+               and str(c.get('updated') or c.get('created') or '') < cutoff]
+        if not old or index is None:
+            return
+        if hub_data.write(place, INDEX, {'chats': [c for c in rows if c not in old]}):
+            return
+        for c in old:
+            if ID_RE.match(str(c.get('id'))):
+                hub_data.delete(place, _chat_file(str(c['id'])))
+
+
 @bp.get('/api/chat')
 def overview():
     """The models to choose from, and this person's chats, newest first."""
     session, refused = hub_data.need_session('chat')
     if refused:
         return refused
-    service, problem = connection()
+    hub = hub_apps.load()
+    items, problem = offered(session['user'], hub=hub)
+    days = hub['apps']['chat']['keep_days']
     place = _own(session)
     chats: List[Dict[str, Any]] = []
     if place:
+        _expire(place, days)
         index, error = hub_data.read(place, INDEX)
         if index is None:
             problem = problem or error
@@ -96,7 +154,8 @@ def overview():
     else:
         problem = problem or NO_PLACE
     chats.sort(key=lambda c: str(c.get('updated') or ''), reverse=True)
-    return jsonify({'models': models(service), 'chats': chats, 'problem': problem})
+    return jsonify({'models': [{k: i[k] for k in ('id', 'model', 'service', 'thinking')} for i in items],
+                    'chats': chats, 'problem': problem, 'keep_days': days})
 
 
 @bp.get('/api/chat/<chat_id>')
@@ -125,7 +184,7 @@ def _save(place: hub_data.Place, chat: Dict[str, Any]) -> str:
         if index is None:
             return error
         rows = [c for c in index.get('chats') or [] if isinstance(c, dict) and c.get('id') != chat['id']]
-        rows.append({k: chat.get(k) for k in ('id', 'title', 'created', 'updated', 'model')})
+        rows.append(_row(chat))
         rows.sort(key=lambda c: str(c.get('updated') or ''), reverse=True)
         return hub_data.write(place, INDEX, {'chats': rows[:MAX_CHATS]})
 
@@ -165,6 +224,61 @@ def delete(chat_id: str):
         rows = [c for c in index.get('chats') or [] if isinstance(c, dict) and c.get('id') != chat_id]
         error = hub_data.write(place, INDEX, {'chats': rows}) or hub_data.delete(place, _chat_file(chat_id))
     return (jsonify({'error': error}), 409) if error else jsonify({'success': True})
+
+
+def _flag(chat_id: str, key: str):
+    session, refused = hub_data.need_session('chat')
+    if refused:
+        return refused
+    on = bool((request.get_json(silent=True) or {}).get(key))
+    place = _own(session)
+    if not place or not ID_RE.match(chat_id):
+        return jsonify({'error': 'This chat is not there.'}), 404
+    with hub_data.lock(place, _chat_file(chat_id)):
+        chat, error = hub_data.read(place, _chat_file(chat_id))
+        if not chat:
+            return jsonify({'error': error or 'This chat is not there (any more).'}), 404
+        chat[key] = on
+        error = _save(place, chat)
+    return (jsonify({'error': error}), 409) if error else jsonify({'success': True, key: on})
+
+
+@bp.post('/api/chat/<chat_id>/pin')
+def pin(chat_id: str):
+    """Pinned: on top of the list, and never deleted by itself."""
+    return _flag(chat_id, 'pinned')
+
+
+@bp.post('/api/chat/<chat_id>/keep')
+def keep(chat_id: str):
+    """Kept: stays where it is in the list, and is never deleted by itself."""
+    return _flag(chat_id, 'kept')
+
+
+@bp.post('/api/chat/burn')
+def burn():
+    """The flame: every chat goes at once, except pinned and kept ones unless `everything`."""
+    session, refused = hub_data.need_session('chat')
+    if refused:
+        return refused
+    everything = bool((request.get_json(silent=True) or {}).get('everything'))
+    place = _own(session)
+    if not place:
+        return jsonify({'error': NO_PLACE}), 409
+    with hub_data.lock(place, INDEX):
+        index, error = hub_data.read(place, INDEX)
+        if index is None:
+            return jsonify({'error': error}), 409
+        rows = [c for c in index.get('chats') or [] if isinstance(c, dict)]
+        stay = [] if everything else [c for c in rows if c.get('pinned') or c.get('kept')]
+        gone = [c for c in rows if c not in stay]
+        error = hub_data.write(place, INDEX, {'chats': stay})
+        if not error:
+            for c in gone:
+                if ID_RE.match(str(c.get('id'))):
+                    hub_data.delete(place, _chat_file(str(c['id'])))
+    return (jsonify({'error': error}), 409) if error else jsonify({'success': True, 'deleted': len(gone),
+                                                                    'stayed': len(stay)})
 
 
 # ── Talking to the model ─────────────────────────────────────────────────────
@@ -299,9 +413,19 @@ def stream_answer(service: Dict[str, Any], model: str, history: List[Dict[str, A
         res.close()
 
 
+def _private_history(raw: Any) -> List[Dict[str, Any]]:
+    """What was said so far in a private chat, as the page sends it."""
+    out = []
+    for m in (raw if isinstance(raw, list) else [])[-MAX_CONTEXT_MESSAGES:]:
+        if isinstance(m, dict) and m.get('role') in ('user', 'assistant'):
+            out.append({'role': m['role'], 'content': str(m.get('content') or '')[:MAX_MESSAGE * 2]})
+    return out
+
+
 @bp.post('/api/chat/send')
 def send():
-    """A message into a chat (a new one without `chat`), the answer streamed."""
+    """A message into a chat (a new one without `chat`), the answer streamed.
+    With `private` nothing is kept: the page sends `history` itself."""
     session, refused = hub_data.need_session('chat')
     if refused:
         return refused
@@ -311,44 +435,55 @@ def send():
         return jsonify({'error': 'Type a message.'}), 400
     if len(text) > MAX_MESSAGE:
         return jsonify({'error': 'That message is too long.'}), 400
-    service, problem = connection()
+    ai = ai_assistant.load_settings()
+    items, problem = offered(session['user'], ai=ai)
     if problem:
         return jsonify({'error': problem}), 409
-    offered = models(service)
-    model = str(body.get('model') or (offered[0] if offered else ''))
-    if model not in offered:
+    wanted = str(body.get('model') or items[0]['id'])
+    item = next((i for i in items if i['id'] == wanted), None)
+    if item is None:
         return jsonify({'error': 'Choose one of the models.'}), 400
-    reasoning = bool(body.get('reasoning'))
+    conn = next(c for c in ai['connections'] if c['id'] == item['connection'])
+    service = {k: conn[k] for k in ('provider', 'base_url', 'api_key')}
+    model = item['model']
+    # Thinking only where the model can; how hard only where it can be told.
+    reasoning = bool(body.get('reasoning')) and item['thinking'] != 'none'
     effort = str(body.get('effort') or 'medium')
-    effort = effort if effort in EFFORTS else 'medium'
-    place = _own(session)
-    if not place:
-        return jsonify({'error': NO_PLACE}), 409
+    effort = effort if effort in EFFORTS and item['thinking'] == 'effort' else 'medium'
+    private = bool(body.get('private'))
 
-    chat_id = str(body.get('chat') or '')
-    if chat_id:
-        if not ID_RE.match(chat_id):
+    place = None if private else _own(session)
+    if not private and not place:
+        return jsonify({'error': NO_PLACE}), 409
+    chat_id = '' if private else str(body.get('chat') or '')
+    if private:
+        chat: Dict[str, Any] = {'id': '', 'title': title_for(text), 'messages': _private_history(body.get('history'))}
+    elif chat_id:
+        if not ID_RE.match(chat_id) or place is None:
             return jsonify({'error': 'This chat is not there.'}), 404
-        chat, error = hub_data.read(place, _chat_file(chat_id))
-        if chat is None:
+        found, error = hub_data.read(place, _chat_file(chat_id))
+        if found is None:
             return jsonify({'error': error}), 409
-        if not chat:
+        if not found:
             return jsonify({'error': 'This chat is not there (any more).'}), 404
+        chat = found
     else:
         chat_id = secrets.token_urlsafe(9)
         chat = {'id': chat_id, 'title': title_for(text), 'created': _stamp(), 'messages': []}
     chat['messages'] = [m for m in chat.get('messages') or [] if isinstance(m, dict)]
     chat['messages'].append({'role': 'user', 'content': text, 'at': _stamp()})
-    chat['model'], chat['updated'] = model, _stamp()
-    error = _save(place, chat)
-    if error:
-        return jsonify({'error': error}), 409
+    chat['model'], chat['updated'] = wanted, _stamp()
+    if place:
+        error = _save(place, chat)
+        if error:
+            return jsonify({'error': error}), 409
 
     def lines() -> Iterator[str]:
-        answer: Dict[str, Any] = {'role': 'assistant', 'content': '', 'reasoning': '', 'model': model}
+        answer: Dict[str, Any] = {'role': 'assistant', 'content': '', 'reasoning': '', 'model': model,
+                                  'service': item['service']}
         started = time.monotonic()
         thought_until: Optional[float] = None
-        yield json.dumps({'chat': {'id': chat_id, 'title': chat['title']}}) + '\n'
+        yield json.dumps({'chat': {'id': chat_id, 'title': chat['title'], 'private': private}}) + '\n'
         failed = ''
         try:
             for kind, piece in stream_answer(service, model, list(chat['messages']), reasoning, effort):
@@ -363,13 +498,13 @@ def send():
                     answer['content'] += piece
                 yield json.dumps({kind: piece}) + '\n'
         finally:
-            # Also when the person pressed stop: keep what came so far.
+            # Also when the person pressed stop: keep what came so far (not in a private chat).
             if answer['reasoning']:
                 answer['thought_seconds'] = round((thought_until or time.monotonic()) - started)
             if failed:
                 answer['error'] = failed
             answer['at'] = _stamp()
-            if answer['content'] or answer['reasoning'] or failed:
+            if place and (answer['content'] or answer['reasoning'] or failed):
                 chat['messages'].append(answer)
                 chat['updated'] = _stamp()
                 _save(place, chat)

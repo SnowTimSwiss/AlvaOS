@@ -123,7 +123,10 @@ def test_chat_streams_the_answer_and_keeps_the_chat(store, monkeypatch, tmp_path
         return Stream([sse(reasoning="Hmm"), sse(content="Hel"), sse(content="lo!"), "data: [DONE]"])
 
     monkeypatch.setattr("requests.post", post)
-    assert store.get("/api/chat").get_json()["models"] == ["gpt-4o-mini"]
+    # A file from before there were several services: one service "main".
+    assert [m["id"] for m in store.get("/api/chat").get_json()["models"]] == ["main/gpt-4o-mini"]
+    ai_assistant.save_settings(ai_assistant.load_settings(), {"connections": [
+        {"id": "main", "provider": "openai", "models": ["gpt-4o-mini"], "thinking": {"gpt-4o-mini": "effort"}}]})
     res = store.post("/api/chat/send", json={"message": "Hi there", "reasoning": True, "effort": "high"}, headers=H)
     lines = [json.loads(line) for line in res.data.decode().splitlines()]
     assert lines[0]["chat"]["title"] == "Hi there"
@@ -136,7 +139,7 @@ def test_chat_streams_the_answer_and_keeps_the_chat(store, monkeypatch, tmp_path
     assert chat["messages"][1]["reasoning"] == "Hmm"
     assert store.get("/api/chat").get_json()["chats"][0]["id"] == chat_id
     # Only the models the admin chose
-    assert store.post("/api/chat/send", json={"message": "x", "model": "gpt-5"}, headers=H).status_code == 400
+    assert store.post("/api/chat/send", json={"message": "x", "model": "main/gpt-5"}, headers=H).status_code == 400
     store.post(f"/api/chat/{chat_id}/rename", json={"title": "Greeting"}, headers=H)
     assert store.get("/api/chat").get_json()["chats"][0]["title"] == "Greeting"
     store.post(f"/api/chat/{chat_id}/delete", headers=H)
@@ -167,10 +170,137 @@ def test_chat_tries_again_without_thinking_when_the_model_cannot(monkeypatch):
 
 def test_the_admin_chooses_the_chat_models(tmp_path):
     path = str(tmp_path / "hub.json")
-    settings, _ = hub_apps.save({"apps": {"chat": {"models": ["llama3.1", "qwen3:8b"]}}}, [], path)
-    assert settings["apps"]["chat"]["models"] == ["llama3.1", "qwen3:8b"]
-    assert hub_apps.save({"apps": {"chat": {"models": ["bad name!"]}}}, [], path)[0] is None
-    assert hub_apps.save({"apps": {"photos": {"models": ["x"]}}}, [], path)[0] is None
+    # Before there were several services, a list of names of the one service.
+    (tmp_path / "hub.json").write_text(json.dumps({"apps": {"chat": {"models": ["llama3.1", "qwen3:8b"]}}}))
+    assert hub_apps.load(path)["apps"]["chat"]["access"] == {"mode": "only", "items": ["main/llama3.1", "main/qwen3:8b"]}
+    settings, _ = hub_apps.save({"apps": {"chat": {"access": {"mode": "except", "items": ["cloud"]},
+                                                   "people_access": {"ben": {"mode": "only", "items": ["home/llama3.1"]}},
+                                                   "keep_days": 7}}}, ["anna", "ben"], path)
+    chat = settings["apps"]["chat"]
+    assert chat["access"]["mode"] == "except" and chat["people_access"]["ben"]["items"] == ["home/llama3.1"]
+    assert chat["keep_days"] == 7 and hub_apps.load(path)["apps"]["chat"]["keep_days"] == 7
+    assert hub_apps.save({"apps": {"chat": {"people_access": {"ben": None}}}}, ["ben"], path)[0]["apps"]["chat"]["people_access"] == {}
+    assert hub_apps.save({"apps": {"chat": {"access": {"mode": "only", "items": ["bad name!"]}}}}, [], path)[0] is None
+    assert hub_apps.save({"apps": {"chat": {"people_access": {"eve": None}}}}, ["ben"], path)[0] is None
+    assert hub_apps.save({"apps": {"chat": {"keep_days": -1}}}, [], path)[0] is None
+    assert hub_apps.save({"apps": {"photos": {"access": {"mode": "all"}}}}, [], path)[0] is None
+
+
+def two_services():
+    ai_assistant.save_settings(ai_assistant.load_settings(), {"connections": [
+        {"provider": "ollama-local", "name": "Home", "base_url": "http://192.168.1.5:11434/v1",
+         "models": ["llama3.1", "qwen3:8b"]},
+        {"provider": "openai", "name": "Cloud", "api_key": "sk-1", "models": ["gpt-5", "gpt-4o-mini"]},
+        {"provider": "openai", "name": "No key", "models": ["gpt-4o"]}]})
+
+
+def test_several_services_with_several_models_and_rules_for_people():
+    two_services()
+    ids = [m["id"] for m in hub_chat.catalog()]
+    assert ids == ["home/llama3.1", "home/qwen3:8b", "cloud/gpt-5", "cloud/gpt-4o-mini"]   # without a key: not offered
+    thinking = {m["id"]: m["thinking"] for m in hub_chat.catalog()}
+    assert thinking == {"home/llama3.1": "none", "home/qwen3:8b": "on", "cloud/gpt-5": "effort", "cloud/gpt-4o-mini": "none"}
+    hub_apps.save({"apps": {"chat": {"enabled": True, "access": {"mode": "except", "items": ["cloud/gpt-5"]},
+                                     "people_access": {"ben": {"mode": "only", "items": ["home"]}}}}}, ["anna", "ben"])
+    assert [m["id"] for m in hub_chat.offered("anna")[0]] == ["home/llama3.1", "home/qwen3:8b", "cloud/gpt-4o-mini"]
+    assert [m["id"] for m in hub_chat.offered("ben")[0]] == ["home/llama3.1", "home/qwen3:8b"]
+    hub_apps.save({"apps": {"chat": {"people_access": {"ben": {"mode": "only", "items": ["cloud/gpt-5"]}}}}}, ["ben"])
+    assert hub_chat.offered("ben") == ([], "No model is open to you. Ask the person who looks after the NAS.")
+    # Keys never reach the page.
+    public = json.dumps(ai_assistant.public_settings(ai_assistant.load_settings()))
+    assert "sk-1" not in public and '"key_set": true' in public
+
+
+def test_a_service_keeps_its_key_and_gets_a_name_of_its_own():
+    two_services()
+    s = ai_assistant.load_settings()
+    sent = [{**{k: v for k, v in c.items() if k != "api_key"}, "api_key": ""} for c in s["connections"]]
+    sent.append({"provider": "openai", "name": "Cloud", "api_key": "sk-2", "models": []})
+    s, problem = ai_assistant.save_settings(s, {"connections": sent})
+    assert problem == ""
+    assert [c["id"] for c in s["connections"]] == ["home", "cloud", "no-key", "cloud-2"]
+    assert s["connections"][1]["api_key"] == "sk-1" and s["connections"][3]["api_key"] == "sk-2"
+    assert ai_assistant.save_settings(s, {"connections": [{"provider": "other", "base_url": "ftp://x"}]})[1]
+    assert ai_assistant.save_settings(s, {"connections": [{"provider": "openai", "models": ["a b"]}]})[1]
+    s, problem = ai_assistant.save_settings(s, {"assistant": {"connection": "cloud", "model": "gpt-5"}, "enabled": True})
+    assert problem == "" and (s["model"], s["base_url"], s["api_key"]) == ("gpt-5", "https://api.openai.com/v1", "sk-1")
+    assert ai_assistant.save_settings(s, {"assistant": {"connection": "cloud", "model": "nope"}})[1]
+
+
+def test_the_models_of_a_service_are_read_from_it():
+    class Res:
+        status_code = 200
+
+        def json(self):
+            return {"data": [{"id": "llama3.1"}, {"id": "qwen3:8b"}, {"id": "bad name"}]}
+    seen = []
+    found, problem = ai_assistant.list_models({"base_url": "http://x:11434/v1", "api_key": "k"},
+                                              lambda url, headers=None, timeout=None: seen.append((url, headers)) or Res())
+    assert found == ["llama3.1", "qwen3:8b"] and problem == ""
+    assert seen == [("http://x:11434/v1/models", {"Authorization": "Bearer k"})]
+
+
+def chat_ready(store, monkeypatch, answer="Hi!"):
+    sign_in(store, "anna", "anna-pass")
+    two_services()
+    hub_apps.save({"apps": {"chat": {"enabled": True}}}, ["anna", "ben"])
+    sent = []
+
+    def post(url, headers=None, json=None, stream=False, timeout=None):
+        sent.append((url, json))
+        return Stream([sse(content=answer), "data: [DONE]"])
+    monkeypatch.setattr("requests.post", post)
+    return sent
+
+
+def say(store, **body):
+    res = store.post("/api/chat/send", json=body, headers=H)
+    return [json.loads(line) for line in res.data.decode().splitlines()]
+
+
+def test_thinking_is_only_asked_for_where_the_model_can(store, monkeypatch):
+    sent = chat_ready(store, monkeypatch)
+    say(store, message="q", model="home/llama3.1", reasoning=True, effort="high")
+    say(store, message="q", model="home/qwen3:8b", reasoning=True, effort="high")
+    say(store, message="q", model="cloud/gpt-5", reasoning=True, effort="high")
+    assert sent[0][0].startswith("http://192.168.1.5:11434/v1") and sent[0][1]["reasoning_effort"] == "none"
+    assert sent[1][1]["reasoning_effort"] == "medium"     # on, but not how hard
+    assert sent[2][1]["reasoning_effort"] == "high" and sent[2][0].startswith("https://api.openai.com")
+
+
+def test_a_private_chat_is_kept_nowhere(store, monkeypatch):
+    sent = chat_ready(store, monkeypatch)
+    before = dict(store.files)
+    lines = say(store, message="And now?", model="home/llama3.1", private=True,
+                history=[{"role": "user", "content": "Secret"}, {"role": "assistant", "content": "Ok"}])
+    assert lines[0]["chat"] == {"id": "", "title": "And now?", "private": True} and lines[-1]["done"]
+    assert [m["content"] for m in sent[0][1]["messages"][1:]] == ["Secret", "Ok", "And now?"]
+    assert store.files == before and store.get("/api/chat").get_json()["chats"] == []
+
+
+def test_chats_go_after_30_days_unless_pinned_or_kept_and_the_flame_takes_the_rest(store, monkeypatch):
+    chat_ready(store, monkeypatch)
+    ids = [say(store, message=f"Chat {n}", model="home/llama3.1")[0]["chat"]["id"] for n in range(4)]
+    store.post(f"/api/chat/{ids[0]}/pin", json={"pinned": True}, headers=H)
+    store.post(f"/api/chat/{ids[1]}/keep", json={"kept": True}, headers=H)
+    rows = {c["id"]: c for c in store.get("/api/chat").get_json()["chats"]}
+    assert rows[ids[0]]["pinned"] and rows[ids[1]]["kept"] and store.get("/api/chat").get_json()["keep_days"] == 30
+    # 31 days later the two others are gone.
+    later = hub_chat.datetime.now(hub_chat.timezone.utc) + hub_chat.timedelta(days=31)
+
+    class Later(hub_chat.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return later
+    monkeypatch.setattr(hub_chat, "datetime", Later)
+    assert sorted(c["id"] for c in store.get("/api/chat").get_json()["chats"]) == sorted(ids[:2])
+    assert store.get(f"/api/chat/{ids[2]}").status_code == 404
+    monkeypatch.setattr(hub_chat, "datetime", hub_chat.datetime.__mro__[1])
+    new = say(store, message="Fresh", model="home/llama3.1")[0]["chat"]["id"]
+    burnt = store.post("/api/chat/burn", json={}, headers=H).get_json()
+    assert burnt == {"success": True, "deleted": 1, "stayed": 2} and store.get(f"/api/chat/{new}").status_code == 404
+    assert store.post("/api/chat/burn", json={"everything": True}, headers=H).get_json()["deleted"] == 2
+    assert store.get("/api/chat").get_json()["chats"] == []
 
 
 def test_app_data_files_are_replaced_whole_and_stay_inside(tmp_path):

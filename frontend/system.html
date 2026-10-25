@@ -283,7 +283,7 @@
                 <button class="tab-btn" data-tab="power"><i data-lucide="power" aria-hidden="true"></i> Power</button>
                 <button class="tab-btn" data-tab="graphics"><i data-lucide="monitor" aria-hidden="true"></i> Graphics</button>
                 <button class="tab-btn" data-tab="link"><i data-lucide="laptop" aria-hidden="true"></i> AlvaOS Link</button>
-                <button class="tab-btn" data-tab="assistant"><i data-lucide="bot" aria-hidden="true"></i> Assistant</button>
+                <button class="tab-btn" data-tab="assistant"><i data-lucide="bot" aria-hidden="true"></i> AI</button>
                 <button class="tab-btn" data-tab="logs"><i data-lucide="activity" aria-hidden="true"></i> Diagnostics</button>
                 <button class="tab-btn" data-tab="terminal"><i data-lucide="terminal" aria-hidden="true"></i> Terminal</button>
             </div>
@@ -513,25 +513,25 @@
 
             <div class="tab-panel" id="tab-assistant">
                 <section class="set-group">
+                    <div class="set-group-head">
+                        <h2 class="set-group-title">AI services</h2>
+                        <button type="button" class="btn-secondary" id="ai-add">Add a service</button>
+                    </div>
+                    <p class="set-group-desc">The AI services this NAS may use, each with the models you add: Ollama at home, OpenAI, OpenRouter or another service that speaks the OpenAI API. Chat in the AlvaOS Hub offers these models; who may use which is set on the <a href="files.html">Hub page</a>. Keys stay on this NAS.</p>
+                    <div class="ai-services" id="ai-services"></div>
+                </section>
+                <section class="set-group">
                     <h2 class="set-group-title">Assistant</h2>
                     <p class="set-group-desc">Ask about this NAS in your own words, from the button at the top of every page. The assistant looks at the real state of disks, backups, apps and updates. It only looks, unless you let it suggest changes that you confirm one by one.</p>
-                    <p class="set-group-desc">The AI service set up here also answers in Chat in the AlvaOS Hub, for the people you choose on the <a href="files.html">Hub page</a>. Chat cannot see or change anything on the NAS.</p>
                     <div class="set-row">
-                        <div class="set-text"><div class="set-label"><label for="ai-enabled">Assistant</label></div><div class="set-desc" id="ai-summary">Off. Needs an AI service, set up below.</div></div>
+                        <div class="set-text"><div class="set-label"><label for="ai-enabled">Assistant</label></div><div class="set-desc" id="ai-summary">Off. Needs an AI service, set up above.</div></div>
                         <div class="set-value"><label class="toggle"><input type="checkbox" id="ai-enabled"><span class="toggle-slider"></span></label></div>
                         <div class="set-action"></div>
                     </div>
                     <form class="pw-form ai-settings" id="ai-form" novalidate>
-                        <label class="pw-field">AI service
-                            <select id="ai-provider"></select>
-                            <small id="ai-provider-hint"></small></label>
-                        <label class="pw-field">Address
-                            <input type="url" id="ai-url" placeholder="http://192.168.1.20:11434/v1" autocomplete="off" spellcheck="false"></label>
                         <label class="pw-field">Model
-                            <input type="text" id="ai-model" placeholder="llama3.1" autocomplete="off" spellcheck="false"></label>
-                        <label class="pw-field" id="ai-key-field">API key
-                            <input type="password" id="ai-key" autocomplete="new-password" spellcheck="false">
-                            <small>Stored on this NAS only, never shown again.</small></label>
+                            <select id="ai-model"></select>
+                            <small>A model that can use tools answers best, like llama3.1, qwen3 or gpt-4o-mini.</small></label>
                         <fieldset class="ai-level">
                             <legend>What it may do</legend>
                             <label class="choice"><input type="radio" name="ai-level" value="read" checked><div><strong>Only look</strong><span>It reads how the NAS is doing, also the logs (passwords and keys masked), and explains where to change things.</span></div></label>

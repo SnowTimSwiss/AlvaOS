@@ -1,7 +1,9 @@
 // Chat in the AlvaOS Hub: talk to an AI model, like ChatGPT. Chats on the
-// left, the model top left, thinking on or off and how hard in the box.
-// Only a chat: it cannot see or change anything on the NAS
-// (backend/hub_chat.py). The answer streams in as it is written.
+// left (pinned on top; the flame deletes them all), the model top left
+// (grouped by AI service), thinking on or off and how hard in the box, but
+// only where the model can. A private chat is kept nowhere. Only a chat: it
+// cannot see or change anything on the NAS (backend/hub_chat.py). The
+// answer streams in as it is written.
 (function () {
     'use strict';
     const H = window.Hub;
@@ -16,6 +18,9 @@
         check: '<path d="M20 6 9 17l-5-5"/>',
         sparkle: '<path d="M9.94 14.06A2 2 0 0 0 8.5 12.62l-6.13-1.58a.5.5 0 0 1 0-.96L8.5 8.5A2 2 0 0 0 9.94 7.06l1.58-6.13a.5.5 0 0 1 .96 0l1.58 6.13a2 2 0 0 0 1.44 1.44l6.13 1.58a.5.5 0 0 1 0 .96L15.5 12.62a2 2 0 0 0-1.44 1.44l-1.58 6.13a.5.5 0 0 1-.96 0z"/>',
         alert: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>',
+        flame: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
+        bookmark: '<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>',
+        ghost: '<path d="M9 10h.01M15 10h.01"/><path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z"/>',
     });
 
     const store = {
@@ -32,86 +37,200 @@
     let effort = store.get('effort', 'medium');
     let chats = [];
     let problem = '';
+    let keepDays = 30;
+    let privateMode = false;  // the open chat is private: kept nowhere, gone when left
     let chat = null;          // the open chat: {id, title, messages}
     let streaming = null;     // {controller, answer}
     let stickToBottom = true;
     const $c = (sel) => root.querySelector(sel);
 
     // ── Markdown, safely: everything is escaped first ──────────────────────
+    // A small block parser (fenced code, headings, quotes, tables, nested and
+    // loose lists, task lists, maths blocks) and inline marks. Nothing the
+    // model writes becomes HTML of its own; pictures stay links.
+    const LINK = (url, label) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`;
     function inline(text) {
         const keep = [];
-        let s = esc(text).replace(/`([^`\n]+)`/g, (_, code) => { keep.push(`<code>${code}</code>`); return `\u0001${keep.length - 1}\u0001`; });
-        s = s.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, label, url) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`)
-            .replace(/(^|[\s(])(https?:\/\/[^\s<)]+[^\s<).,;:!?'"])/g, (_, pre, url) => `${pre}<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`)
-            .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
-            .replace(/(^|[^*\w])\*([^*\n]+)\*(?!\w)/g, '$1<em>$2</em>')
-            .replace(/(^|[^_\w])_([^_\n]+)_(?!\w)/g, '$1<em>$2</em>')
-            .replace(/~~([^~\n]+)~~/g, '<del>$1</del>');
-        return s.replace(/\u0001(\d+)\u0001/g, (_, i) => keep[Number(i)]);
+        const hold = (html) => { keep.push(html); return `\u0001${keep.length - 1}\u0001`; };
+        let s = String(text)
+            .replace(/\\([\\`*_{}[\]()#+\-.!|~>$])/g, (_, c) => hold(esc(c)))
+            .replace(/(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/g, (_, _t, code) => hold(`<code>${esc(code.trim() || code)}</code>`));
+        s = esc(s)
+            .replace(/!\[([^\]\n]*)\]\((https?:\/\/[^\s)]+)(?:\s+&quot;[^&]*&quot;)?\)/g, (_, alt, url) => hold(LINK(url, alt || url)))
+            .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)(?:\s+&quot;[^&]*&quot;)?\)/g, (_, label, url) => hold(LINK(url, label)))
+            .replace(/&lt;(https?:\/\/[^\s&]+)&gt;/g, (_, url) => hold(LINK(url, url)))
+            .replace(/(^|[\s(])(https?:\/\/[^\s<)\u0001]+[^\s<).,;:!?'"\u0001])/g, (_, pre, url) => pre + hold(LINK(url, url)))
+            .replace(/\*\*\*(?=\S)([^\n]*?\S)\*\*\*/g, '<strong><em>$1</em></strong>')
+            .replace(/\*\*(?=\S)([^\n]*?\S)\*\*/g, '<strong>$1</strong>')
+            .replace(/(^|[^\w])__(?=\S)([^\n]*?\S)__(?!\w)/g, '$1<strong>$2</strong>')
+            .replace(/(^|[^*\w])\*(?=[^\s*])([^*\n]*?[^\s*])\*(?![*\w])/g, '$1<em>$2</em>')
+            .replace(/(^|[^_\w])_(?=[^\s_])([^_\n]*?[^\s_])_(?![_\w])/g, '$1<em>$2</em>')
+            .replace(/~~(?=\S)([^~\n]*?\S)~~/g, '<del>$1</del>')
+            .replace(/==(?=\S)([^=\n]*?\S)==/g, '<mark>$1</mark>');
+        for (let n = 0; n < 3 && s.includes('\u0001'); n += 1) s = s.replace(/\u0001(\d+)\u0001/g, (_, i) => keep[Number(i)]);
+        return s;
     }
-    function markdown(src) {
-        const code = [];
-        const text = String(src || '').replace(/```([\w+#.-]*)[^\n]*\n?([\s\S]*?)(?:```|$)/g, (_, lang, body) => {
-            code.push(`<div class="ch-code"><div class="ch-code-head"><span>${esc(lang || 'code')}</span><button type="button" data-copy-code>Copy</button></div><pre><code>${esc(body.replace(/\n$/, ''))}</code></pre></div>`);
-            return `\n\u0000${code.length - 1}\u0000\n`;
-        });
-        const lines = text.split('\n');
+    const RE = {
+        fence: /^ {0,3}(`{3,}|~{3,})\s*([^\s`]*)/,
+        heading: /^ {0,3}(#{1,6})(?:\s+(.*?))?\s*#*\s*$/,
+        hr: /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/,
+        quote: /^ {0,3}>/,
+        item: /^(\s*)([-*+•]|\d{1,9}[.)])(\s+|$)(.*)$/,
+        sep: /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/,
+        math: /^\s*(\$\$|\\\[)/,
+    };
+    const indentOf = (l) => l.replace(/\t/g, '    ').match(/^ */)[0].length;
+    const strip = (l, n) => { let t = l.replace(/\t/g, '    '); let k = 0; while (k < n && t[k] === ' ') k += 1; return t.slice(k); };
+    function cells(line) {
+        const out = [];
+        let cur = '';
+        let tick = false;
+        const t = line.trim().replace(/^\|/, '').replace(/(?<!\\)\|$/, '');
+        for (let k = 0; k < t.length; k += 1) {
+            const c = t[k];
+            if (c === '`') tick = !tick;
+            if (c === '\\' && t[k + 1] === '|') { cur += '|'; k += 1; continue; }
+            if (c === '|' && !tick) { out.push(cur.trim()); cur = ''; continue; }
+            cur += c;
+        }
+        out.push(cur.trim());
+        return out;
+    }
+    function startsBlock(line, next) {
+        return RE.fence.test(line) || RE.heading.test(line) || RE.hr.test(line) || RE.quote.test(line) || RE.math.test(line)
+            || (/^\s*([-*+•]|1[.)])\s+\S/.test(line)) || (line.includes('|') && next !== undefined && RE.sep.test(next) && next.includes('-'));
+    }
+    function codeBlock(lang, body) {
+        return `<div class="ch-code"><div class="ch-code-head"><span>${esc(lang || 'code')}</span><button type="button" data-copy-code>Copy</button></div><pre><code>${esc(body)}</code></pre></div>`;
+    }
+    function list(lines, i) {
+        const first = RE.item.exec(lines[i]);
+        const base = indentOf(first[1]);
+        const ordered = /\d/.test(first[2]);
+        const items = [];
+        let loose = false;
+        while (i < lines.length) {
+            const m = RE.item.exec(lines[i]);
+            if (!m || indentOf(m[1]) > base + 3 || indentOf(m[1]) < base || /\d/.test(m[2]) !== ordered) break;
+            const inner = indentOf(m[1]) + m[2].length + Math.min(Math.max(m[3].length, 1), 4);
+            const body = [m[4]];
+            let gap = false;
+            i += 1;
+            while (i < lines.length) {
+                const l = lines[i];
+                if (!l.trim()) {
+                    let j = i + 1;
+                    while (j < lines.length && !lines[j].trim()) j += 1;
+                    if (j < lines.length && indentOf(lines[j]) >= Math.min(inner, base + 2) && !(RE.item.test(lines[j]) && indentOf(RE.item.exec(lines[j])[1]) <= base + 1)) {
+                        body.push('');
+                        gap = true;
+                        i += 1;
+                        continue;
+                    }
+                    break;
+                }
+                const sub = RE.item.exec(l);
+                if (sub && indentOf(sub[1]) <= base + 1) break;
+                if (indentOf(l) >= Math.min(inner, base + 2)) { body.push(strip(l, Math.min(indentOf(l), inner))); i += 1; continue; }
+                if (!gap && !startsBlock(l, lines[i + 1])) { body.push(l.trim()); i += 1; continue; }   // a lazy line of the text
+                break;
+            }
+            if (gap && body.some((b, k) => !b && k < body.length - 1)) loose = true;
+            const task = /^\[( |x|X)\]\s+/.exec(body[0]);
+            if (task) body[0] = body[0].slice(task[0].length);
+            items.push({ html: blocks(body, !gap), task: task ? task[1].trim() !== '' : null, num: ordered ? Number(/\d+/.exec(m[2])[0]) : 0 });
+            // Blank lines between items: the list goes on.
+            let j = i;
+            while (j < lines.length && !lines[j].trim()) j += 1;
+            const next = j < lines.length ? RE.item.exec(lines[j]) : null;
+            if (j > i && next && indentOf(next[1]) >= base && indentOf(next[1]) <= base + 3 && /\d/.test(next[2]) === ordered) { loose = true; i = j; }
+        }
+        const tag = ordered ? 'ol' : 'ul';
+        const start = ordered && items[0].num !== 1 ? ` start="${items[0].num}"` : '';
+        const html = `<${tag}${start}${loose ? ' class="loose"' : ''}>${items.map((it) => (it.task === null
+            ? `<li>${it.html}</li>`
+            : `<li class="ch-task"><span class="ch-tick${it.task ? ' done' : ''}" aria-label="${it.task ? 'done' : 'open'}"></span><div>${it.html}</div></li>`)).join('')}</${tag}>`;
+        return [html, i];
+    }
+    function blocks(lines, tight) {
         const out = [];
         let para = [];
-        const flush = () => { if (para.length) { out.push(`<p>${para.map(inline).join('<br>')}</p>`); para = []; } };
+        const flush = () => {
+            if (!para.length) return;
+            const html = para.map((l) => inline(l.trim())).join('<br>');
+            out.push(tight && !out.length ? html : `<p>${html}</p>`);
+            para = [];
+        };
         for (let i = 0; i < lines.length; i += 1) {
             const line = lines[i];
-            const block = /^\u0000(\d+)\u0000$/.exec(line.trim());
-            if (block) { flush(); out.push(code[Number(block[1])]); continue; }
-            if (!line.trim()) { flush(); continue; }
-            const h = /^(#{1,6})\s+(.*)$/.exec(line);
-            if (h) { flush(); const n = Math.min(4, h[1].length + 1); out.push(`<h${n}>${inline(h[2])}</h${n}>`); continue; }
-            if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) { flush(); out.push('<hr>'); continue; }
-            if (/^\s*>/.test(line)) {
+            if (!line.trim()) { flush(); tight = false; continue; }
+            const fence = RE.fence.exec(line);
+            if (fence) {
+                flush();
+                const pad = indentOf(line);
+                const body = [];
+                i += 1;
+                while (i < lines.length && !new RegExp(`^ {0,3}${fence[1][0]}{${fence[1].length},}\\s*$`).test(lines[i])) { body.push(strip(lines[i], pad)); i += 1; }
+                out.push(codeBlock(fence[2], body.join('\n')));
+                continue;
+            }
+            if (RE.math.test(line)) {
+                flush();
+                const end = /\$\$/.test(line.trim().slice(0, 2)) ? '$$' : '\\]';
+                let text = line.trim().slice(2);
+                while (!text.includes(end) && i + 1 < lines.length) { i += 1; text += `\n${lines[i]}`; }
+                out.push(`<div class="ch-math">${esc(text.replace(end, '').trim())}</div>`);
+                continue;
+            }
+            const h = RE.heading.exec(line);
+            if (h && (h[2] || '').trim()) { flush(); const n = Math.min(5, h[1].length + 1); out.push(`<h${n}>${inline(h[2])}</h${n}>`); continue; }
+            if (RE.hr.test(line) && !(para.length && /^\s*-+\s*$/.test(line))) { flush(); out.push('<hr>'); continue; }
+            if (para.length && /^\s*(=+|-+)\s*$/.test(line)) {   // a title underlined
+                const n = line.trim()[0] === '=' ? 2 : 3;
+                const text = para.pop();
+                flush();
+                out.push(`<h${n}>${inline(text.trim())}</h${n}>`);
+                continue;
+            }
+            if (RE.quote.test(line)) {
                 flush();
                 const quote = [];
-                while (i < lines.length && /^\s*>/.test(lines[i])) { quote.push(lines[i].replace(/^\s*>\s?/, '')); i += 1; }
-                i -= 1;
-                out.push(`<blockquote>${markdown(quote.join('\n'))}</blockquote>`);
-                continue;
-            }
-            if (/^\s*\|.*\|\s*$/.test(line) && i + 1 < lines.length && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1])) {
-                flush();
-                const cells = (l) => l.trim().replace(/^\||\|$/g, '').split('|').map((c) => inline(c.trim()));
-                const head = cells(line);
-                i += 2;
-                const rows = [];
-                while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) { rows.push(cells(lines[i])); i += 1; }
-                i -= 1;
-                out.push(`<div class="ch-table"><table><thead><tr>${head.map((c) => `<th>${c}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`);
-                continue;
-            }
-            const li = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/.exec(line);
-            if (li) {
-                flush();
-                const ordered = /\d/.test(li[2]);
-                const items = [];
-                while (i < lines.length) {
-                    const m = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/.exec(lines[i]);
-                    if (m && /\d/.test(m[2]) === ordered) {
-                        const task = /^\[( |x)\]\s+(.*)$/i.exec(m[3]);
-                        items.push({ indent: m[1].length, html: task ? `<span class="ch-tick">${task[1].trim() ? '☑' : '☐'}</span> ${inline(task[2])}` : inline(m[3]) });
-                        i += 1;
-                    } else if (lines[i].trim() && /^\s{2,}\S/.test(lines[i]) && items.length) {
-                        items[items.length - 1].html += `<br>${inline(lines[i].trim())}`;
-                        i += 1;
-                    } else break;
+                while (i < lines.length && lines[i].trim() && (RE.quote.test(lines[i]) || quote.length)) {
+                    if (!RE.quote.test(lines[i]) && startsBlock(lines[i], lines[i + 1])) break;
+                    quote.push(lines[i].replace(/^ {0,3}>\s?/, ''));
+                    i += 1;
                 }
                 i -= 1;
-                const start = ordered ? Number(/\d+/.exec(li[2])[0]) : 1;
-                const tag = ordered ? 'ol' : 'ul';
-                out.push(`<${tag}${ordered && start !== 1 ? ` start="${start}"` : ''}>${items.map((it) => `<li${it.indent >= 2 ? ' class="sub"' : ''}>${it.html}</li>`).join('')}</${tag}>`);
+                out.push(`<blockquote>${blocks(quote, false)}</blockquote>`);
+                continue;
+            }
+            if (line.includes('|') && i + 1 < lines.length && RE.sep.test(lines[i + 1]) && lines[i + 1].includes('-')) {
+                flush();
+                const head = cells(line);
+                const align = cells(lines[i + 1]).map((c) => (/^:-+:$/.test(c) ? 'center' : /-:$/.test(c) ? 'right' : ''));
+                const td = (tag, c, k) => `<${tag}${align[k] ? ` style="text-align:${align[k]}"` : ''}>${inline(c)}</${tag}>`;
+                i += 2;
+                const rows = [];
+                while (i < lines.length && lines[i].trim() && lines[i].includes('|')) { rows.push(cells(lines[i])); i += 1; }
+                i -= 1;
+                out.push(`<div class="ch-table"><table><thead><tr>${head.map((c, k) => td('th', c, k)).join('')}</tr></thead><tbody>${
+                    rows.map((r) => `<tr>${head.map((_, k) => td('td', r[k] || '', k)).join('')}</tr>`).join('')}</tbody></table></div>`);
+                continue;
+            }
+            if (RE.item.test(line) && RE.item.exec(line)[4].trim() !== '' && (!para.length || /^\s*([-*+•]|1[.)])\s/.test(line))) {
+                flush();
+                const [html, next] = list(lines, i);
+                out.push(html);
+                i = next - 1;
                 continue;
             }
             para.push(line);
         }
         flush();
         return out.join('');
+    }
+    function markdown(src) {
+        return blocks(String(src || '').replace(/\r\n?/g, '\n').split('\n'), false);
     }
 
     // ── Layout ─────────────────────────────────────────────────────────────
@@ -120,8 +239,10 @@
             <aside class="ch-side" id="ch-side">
                 <div class="ch-side-top">
                     <button type="button" class="ch-new" id="ch-new">${icon('new-chat')}<span>New chat</span></button>
+                    <button type="button" class="ch-burn-btn" id="ch-burn" aria-label="Delete all chats" title="Delete all chats">${icon('flame')}</button>
                 </div>
                 <nav class="ch-list" id="ch-list" aria-label="Chats"></nav>
+                <div class="ch-keep-note" id="ch-keep-note"></div>
                 ${H.foot()}
             </aside>
             <div class="ch-scrim" id="ch-scrim" hidden></div>
@@ -132,6 +253,8 @@
                         <button type="button" class="ch-model" id="ch-model" aria-haspopup="listbox" aria-expanded="false"></button>
                         <div class="ch-menu-pop" id="ch-model-menu" role="listbox" hidden></div>
                     </div>
+                    <span class="ch-grow"></span>
+                    <button type="button" class="ch-private" id="ch-private" aria-pressed="false" title="Private chat: kept nowhere, gone when you leave it">${icon('ghost')}<span>Private</span></button>
                     <button type="button" class="icon-btn ch-new-small" id="ch-new-small" aria-label="New chat" title="New chat">${icon('new-chat')}</button>
                 </header>
                 <div class="ch-scroll" id="ch-scroll"><div class="ch-thread" id="ch-thread"></div></div>
@@ -139,7 +262,7 @@
                     <form class="ch-box" id="ch-box">
                         <textarea id="ch-input" rows="1" placeholder="Message" aria-label="Message" maxlength="32000"></textarea>
                         <div class="ch-tools">
-                            <button type="button" class="ch-pill" id="ch-think" aria-pressed="false" title="Think first: slower, better for hard questions">${icon('bulb')}<span>Think</span></button>
+                            <button type="button" class="ch-pill" id="ch-think" aria-pressed="false" title="Think first: slower, better for hard questions" hidden>${icon('bulb')}<span>Think</span></button>
                             <div class="ch-effort" id="ch-effort" role="group" aria-label="How hard it thinks" hidden>
                                 ${EFFORTS.map(([v, label, hint]) => `<button type="button" data-effort="${v}" title="${hint}">${label}</button>`).join('')}
                             </div>
@@ -151,6 +274,15 @@
                 </div>
             </section>`;
         $c('#ch-new').addEventListener('click', newChat);
+        $c('#ch-burn').addEventListener('click', askBurn);
+        $c('#ch-private').addEventListener('click', () => {
+            const on = !privateMode;
+            newChat();
+            privateMode = on;
+            renderThread();
+            renderTools();
+            $c('#ch-input').focus();
+        });
         $c('#ch-new-small').addEventListener('click', newChat);
         $c('#ch-menu').addEventListener('click', () => { $c('#ch-side').classList.add('open'); $c('#ch-scrim').hidden = false; });
         $c('#ch-scrim').addEventListener('click', closeSide);
@@ -161,6 +293,7 @@
             if (!b) return;
             model = b.dataset.model;
             store.set('model', model);
+            renderTools();
             closeModels();
             renderBar();
         });
@@ -194,16 +327,25 @@
     }
 
     // ── Models ─────────────────────────────────────────────────────────────
+    // {id: 'service/model', model, service, thinking: 'none' | 'on' | 'effort'}
+    const current = () => models.find((m) => m.id === model);
+    const manyServices = () => new Set(models.map((m) => m.service)).size > 1;
     function renderBar() {
-        if (!models.includes(model)) model = models[0] || '';
-        $c('#ch-model').innerHTML = `<span>${esc(model || 'Chat')}</span>${models.length > 1 ? icon('chev-down') : ''}`;
+        if (!current()) model = (models.find((m) => m.model === model) || models[0] || {}).id || '';
+        const m = current();
+        $c('#ch-model').innerHTML = `<span>${esc(m ? m.model : 'Chat')}</span>${m && manyServices() ? `<small>${esc(m.service)}</small>` : ''}${models.length > 1 ? icon('chev-down') : ''}`;
         $c('#ch-model').disabled = models.length < 2;
         $c('#ch-model').title = models.length > 1 ? 'Choose the model' : '';
     }
     function toggleModels() {
         const menu = $c('#ch-model-menu');
         if (!menu.hidden) { closeModels(); return; }
-        menu.innerHTML = models.map((m) => `<button type="button" role="option" data-model="${esc(m)}" aria-selected="${m === model}"><span>${esc(m)}</span>${m === model ? icon('check') : ''}</button>`).join('');
+        let last = '';
+        menu.innerHTML = models.map((m) => {
+            const head = manyServices() && m.service !== last ? `<div class="ch-menu-head">${esc(m.service)}</div>` : '';
+            last = m.service;
+            return `${head}<button type="button" role="option" data-model="${esc(m.id)}" aria-selected="${m.id === model}"><span>${esc(m.model)}${m.thinking !== 'none' ? '<i>can think</i>' : ''}</span>${m.id === model ? icon('check') : ''}</button>`;
+        }).join('');
         menu.hidden = false;
         $c('#ch-model').setAttribute('aria-expanded', 'true');
     }
@@ -214,8 +356,13 @@
     }
 
     function renderTools() {
-        $c('#ch-think').setAttribute('aria-pressed', reasoning);
-        $c('#ch-effort').hidden = !reasoning;
+        // Think only where the model can think first, how hard only where it can be told.
+        const can = (current() || {}).thinking || 'none';
+        $c('#ch-think').hidden = can === 'none';
+        $c('#ch-think').setAttribute('aria-pressed', reasoning && can !== 'none');
+        $c('#ch-effort').hidden = !reasoning || can !== 'effort';
+        $c('#ch-private').setAttribute('aria-pressed', privateMode);
+        root.classList.toggle('is-private', privateMode);
         root.querySelectorAll('[data-effort]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.effort === effort));
         const empty = !$c('#ch-input').value.trim();
         const send = $c('#ch-send');
@@ -240,15 +387,24 @@
     }
     function renderList() {
         let last = '';
-        $c('#ch-list').innerHTML = chats.map((c) => {
-            const g = groupOf(c.updated || c.created);
-            const head = g !== last ? `<div class="ch-group">${esc(g)}</div>` : '';
-            last = g;
-            return `${head}<div class="ch-row${chat && chat.id === c.id ? ' active' : ''}" data-chat="${esc(c.id)}">
+        const pinned = chats.filter((c) => c.pinned);
+        const rest = chats.filter((c) => !c.pinned);
+        const row = (c) => `<div class="ch-row${chat && chat.id === c.id ? ' active' : ''}" data-chat="${esc(c.id)}">
                 <button type="button" class="ch-row-open" data-open>${esc(c.title || 'New chat')}</button>
+                ${c.kept && !c.pinned ? `<span class="ch-row-mark" title="Kept: not deleted by itself">${icon('bookmark')}</span>` : ''}
                 <button type="button" class="ch-row-more" data-row-more aria-label="More for ${esc(c.title)}">${icon('more')}</button>
             </div>`;
+        const head = pinned.length ? `<div class="ch-group">Pinned</div>${pinned.map(row).join('')}` : '';
+        $c('#ch-list').innerHTML = head + rest.map((c) => {
+            const g = groupOf(c.updated || c.created);
+            const h = g !== last ? `<div class="ch-group">${esc(g)}</div>` : '';
+            last = g;
+            return h + row(c);
         }).join('') || '<div class="ch-list-empty">Your chats show up here.</div>';
+        $c('#ch-keep-note').textContent = keepDays
+            ? `Chats unused for ${keepDays} days are deleted. Pin or keep the ones you need.`
+            : '';
+        $c('#ch-burn').disabled = !chats.some((c) => !c.pinned && !c.kept) && !chats.length;
     }
     async function onListClick(e) {
         const row = e.target.closest('[data-chat]');
@@ -259,13 +415,18 @@
             root.querySelectorAll('.ch-row-menu').forEach((m) => m.remove());
             const menu = document.createElement('div');
             menu.className = 'ch-row-menu';
-            menu.innerHTML = `<button type="button" data-act="rename">${icon('pen')}Rename</button><button type="button" data-act="delete" class="danger">${icon('trash')}Delete</button>`;
+            const c = chats.find((x) => x.id === id) || {};
+            menu.innerHTML = `<button type="button" data-act="pin">${icon('pin')}${c.pinned ? 'Unpin' : 'Pin'}</button>
+                ${c.pinned ? '' : `<button type="button" data-act="keep">${icon('bookmark')}${c.kept ? 'Do not keep' : 'Keep'}</button>`}
+                <button type="button" data-act="rename">${icon('pen')}Rename</button><button type="button" data-act="delete" class="danger">${icon('trash')}Delete</button>`;
             row.appendChild(menu);
             menu.addEventListener('click', async (ev) => {
                 const act = ev.target.closest('[data-act]');
                 if (!act) return;
                 menu.remove();
                 if (act.dataset.act === 'rename') rename(row, id);
+                else if (act.dataset.act === 'pin') flag(id, 'pin', 'pinned');
+                else if (act.dataset.act === 'keep') flag(id, 'keep', 'kept');
                 else remove(id);
             });
         }
@@ -297,6 +458,77 @@
         input.addEventListener('keydown', (e) => { if (e.key === 'Enter') finish(true); if (e.key === 'Escape') finish(false); });
         input.addEventListener('blur', () => finish(true));
     }
+    async function flag(id, what, key) {
+        const c = chats.find((x) => x.id === id);
+        const on = !c[key];
+        try {
+            await api(`chat/${encodeURIComponent(id)}/${what}`, { method: 'POST', json: { [key]: on } });
+            c[key] = on;
+            renderList();
+            if (key === 'pinned') toast(on ? `“${c.title}” is pinned and stays.` : `“${c.title}” is no longer pinned.`);
+            else toast(on ? `“${c.title}” is kept: it is not deleted by itself.` : `“${c.title}” goes after ${keepDays} days without use.`);
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
+    // ── The flame: every chat goes at once (pinned and kept ones stay, unless asked) ──
+    function askBurn() {
+        const stay = chats.filter((c) => c.pinned || c.kept).length;
+        const go = chats.length - stay;
+        root.querySelectorAll('.ch-dialog').forEach((d) => d.remove());
+        const box = document.createElement('div');
+        box.className = 'ch-dialog';
+        box.innerHTML = `<div class="ch-dialog-card" role="dialog" aria-modal="true" aria-labelledby="ch-burn-title">
+            <div class="ch-dialog-flame">${icon('flame')}</div>
+            <h3 id="ch-burn-title">Delete all chats?</h3>
+            <p>${go ? `${go} chat${go === 1 ? '' : 's'} will be deleted for good.` : 'There is nothing to delete except pinned and kept chats.'}${stay ? ` ${stay} pinned or kept chat${stay === 1 ? '' : 's'} stay${stay === 1 ? 's' : ''}.` : ''}</p>
+            ${stay ? '<label class="ch-dialog-all"><input type="checkbox" id="ch-burn-all"> Also delete pinned and kept chats</label>' : ''}
+            <div class="ch-dialog-btns"><button type="button" class="ch-dialog-cancel">Cancel</button><button type="button" class="ch-dialog-go">${icon('flame')}Delete</button></div>
+        </div>`;
+        root.appendChild(box);
+        const close = () => box.remove();
+        box.addEventListener('click', (e) => { if (e.target === box || e.target.closest('.ch-dialog-cancel')) close(); });
+        box.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+        box.querySelector('.ch-dialog-go').addEventListener('click', () => {
+            const everything = !!(box.querySelector('#ch-burn-all') || {}).checked;
+            close();
+            burn(everything);
+        });
+        box.querySelector('.ch-dialog-go').focus();
+    }
+    async function burn(everything) {
+        if (streaming) stop();
+        const fire = document.createElement('div');
+        fire.className = 'ch-fire';
+        fire.setAttribute('aria-hidden', 'true');
+        fire.innerHTML = Array.from({ length: 14 }, (_, k) => `<i style="--x:${(k * 7.3) % 100}%;--d:${(k % 5) * 0.07}s;--s:${0.8 + (k % 4) * 0.25}"></i>`).join('');
+        root.appendChild(fire);
+        const goes = (c) => everything || !(c.pinned || c.kept);
+        root.querySelectorAll('[data-chat]').forEach((row) => {
+            const c = chats.find((x) => x.id === row.dataset.chat);
+            if (c && goes(c)) row.classList.add('burn');
+        });
+        if (privateMode || (chat && (!chat.id || goes(chats.find((c) => c.id === chat.id) || {})))) $c('#ch-thread').classList.add('burn');
+        root.classList.add('burning');
+        const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const wait = new Promise((r) => setTimeout(r, still ? 0 : 1100));
+        try {
+            const got = await api('chat/burn', { method: 'POST', json: { everything } });
+            await wait;
+            chats = everything ? [] : chats.filter((c) => c.pinned || c.kept);
+            if (chat && !chats.some((c) => c.id === chat.id)) chat = null;
+            privateMode = false;
+            renderList();
+            renderThread();
+            toast(got.deleted ? `${got.deleted} chat${got.deleted === 1 ? '' : 's'} deleted.` : 'Nothing to delete.');
+        } catch (err) {
+            toast(err.message, 'error');
+        } finally {
+            root.classList.remove('burning');
+            $c('#ch-thread').classList.remove('burn');
+            setTimeout(() => fire.remove(), still ? 0 : 500);
+        }
+    }
+
     async function remove(id) {
         const c = chats.find((x) => x.id === id);
         try {
@@ -312,6 +544,7 @@
     function newChat() {
         if (streaming) stop();
         chat = null;
+        privateMode = false;
         closeSide();
         renderThread();
         renderList();
@@ -321,7 +554,9 @@
         if (streaming) stop();
         try {
             chat = await api(`chat/${encodeURIComponent(id)}`);
-            if (chat.model && models.includes(chat.model)) { model = chat.model; renderBar(); }
+            privateMode = false;
+            const used = models.find((m) => m.id === chat.model) || models.find((m) => m.model === chat.model);
+            if (used) { model = used.id; renderBar(); }
         } catch (err) {
             toast(err.message, 'error');
             return;
@@ -348,7 +583,7 @@
                 ${thinkingHtml(m, live)}
                 <div class="ch-md">${body}${live && m.content ? '<span class="ch-caret"></span>' : ''}</div>
                 ${m.error ? `<div class="ch-error">${icon('alert')}<span>${esc(m.error)}</span></div>` : ''}
-                ${live || !m.content ? '' : `<div class="ch-actions"><button type="button" class="ch-act" data-copy="${i}" title="Copy">${icon('copy')}</button>${m.model ? `<span class="ch-meta">${esc(m.model)}</span>` : ''}</div>`}
+                ${live || !m.content ? '' : `<div class="ch-actions"><button type="button" class="ch-act" data-copy="${i}" title="Copy">${icon('copy')}</button>${m.model ? `<span class="ch-meta">${esc(m.model)}${m.service && manyServices() ? ` · ${esc(m.service)}` : ''}</span>` : ''}</div>`}
             </div>
         </div>`;
     }
@@ -359,9 +594,12 @@
         if (problem) {
             thread.innerHTML = `<div class="ch-hello"><div class="ch-hello-ic">${icon('alert')}</div><h2>Chat is not ready yet</h2><p>${esc(problem)}</p></div>`;
         } else if (!messages.length) {
-            thread.innerHTML = '<div class="ch-hello"><h2>What can I help with?</h2></div>';
+            thread.innerHTML = privateMode
+                ? `<div class="ch-hello"><div class="ch-hello-ic private">${icon('ghost')}</div><h2>Private chat</h2><p>Kept nowhere: not in your chats, not on the NAS. It is gone when you start a new chat or leave. The AI service still sees what you write.</p></div>`
+                : '<div class="ch-hello"><h2>What can I help with?</h2></div>';
         } else {
-            thread.innerHTML = messages.map((m, i) => messageHtml(m, i, streaming && i === messages.length - 1 && m.role === 'assistant')).join('');
+            thread.innerHTML = (privateMode ? `<div class="ch-private-note">${icon('ghost')}Private chat: kept nowhere, gone when you leave it.</div>` : '')
+                + messages.map((m, i) => messageHtml(m, i, streaming && i === messages.length - 1 && m.role === 'assistant')).join('');
         }
         renderTools();
     }
@@ -416,8 +654,10 @@
         input.value = '';
         grow();
         if (!chat) chat = { id: '', title: '', messages: [] };
+        const history = privateMode ? chat.messages.filter((m) => !m.error).map((m) => ({ role: m.role, content: m.content })) : null;
         chat.messages.push({ role: 'user', content: text });
-        const answer = { role: 'assistant', content: '', reasoning: '', model };
+        const picked = current() || {};
+        const answer = { role: 'assistant', content: '', reasoning: '', model: picked.model, service: picked.service };
         chat.messages.push(answer);
         const controller = new AbortController();
         streaming = { controller, answer };
@@ -430,7 +670,9 @@
             const res = await fetch('/api/chat/send', {
                 method: 'POST', credentials: 'same-origin', signal: controller.signal,
                 headers: { 'Content-Type': 'application/json', 'X-AlvaOS-Files': '1' },
-                body: JSON.stringify({ chat: chat.id || null, message: text, model, reasoning, effort }),
+                body: JSON.stringify(privateMode
+                    ? { private: true, history, message: text, model, reasoning, effort }
+                    : { chat: chat.id || null, message: text, model, reasoning, effort }),
             });
             if (!res.ok) {
                 const data = await res.json().catch(() => ({}));
@@ -451,7 +693,9 @@
                     if (!line) continue;
                     let msg;
                     try { msg = JSON.parse(line); } catch (_e) { continue; }
-                    if (msg.chat) {
+                    if (msg.chat && msg.chat.private) {
+                        chat.title = msg.chat.title;
+                    } else if (msg.chat) {
                         const isNew = !chat.id;
                         chat.id = msg.chat.id;
                         chat.title = msg.chat.title;
@@ -490,6 +734,7 @@
             models = got.models || [];
             chats = got.chats || [];
             problem = got.problem || '';
+            keepDays = got.keep_days === undefined ? 30 : got.keep_days;
         } catch (err) {
             problem = err.message;
         }
@@ -503,11 +748,13 @@
         chat = null;
         chats = [];
         models = [];
+        privateMode = false;
         if (built) { renderList(); renderThread(); }
     });
 
     window.HubApps = window.HubApps || {};
     window.HubApps.chat = {
+        markdown,      // for the tests
         show(el) {
             root = el;
             if (!built) build();

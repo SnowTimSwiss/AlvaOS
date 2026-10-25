@@ -15,6 +15,18 @@ How to add an entry:
 
 ---
 
+## 2026-10-25 — beta-v0.3.5: AI update (several services, who may use which, private chats, the flame)
+
+- **Settings › AI** (was "Assistant"): as many AI services as needed, each with name, address, key and its own models. "Find models" asks the service (`/models`); models can also be typed. Each model says whether it can think first (and how hard); guessed from its name, the admin can change it. The assistant uses one of these models. `ai.json` is now `{enabled, level, connections, assistant}`; an old file (one service) is read as the service `main`, also with the Chat models chosen before.
+- **Hub page › Chat:** which models Chat offers: all, only these, all but these; whole services (also models added later) or single models. Per person a rule on top ("of those, only these / all but these"); the page shows what the person ends up with. How long unused chats stay (7/14/30/90 days, a year, never; 30 by default). `hub.json` chat: `access`, `people_access`, `keep_days`; the old `models` list is read as `only` those of `main`.
+- **Chat in the Hub:** models grouped by service; "Think" only where the model can, Low/Medium/High only where it can be told (also enforced on the NAS). **Private chat** (ghost): kept nowhere, the page sends the history itself. **Pin** (on top) and **Keep** (bookmark); others go after 30 days without use, when the person opens Chat. **The flame** deletes all others at once with a little fire (reduced motion: none); pinned and kept only when ticked.
+- **Formatting:** a new small Markdown block parser in `chat.js`: nested and loose lists, code blocks inside lists, task lists with boxes, tables with alignment and `|` in code, setext titles, `***`, `__`, `==mark==`, escapes, maths blocks, pictures as links. Still everything escaped first.
+- Demo mode (`demo.js`) plays all of it, with two services, a pinned and a kept chat and a formatted answer.
+- Tests: services with keys and names, migration, rules for everyone and per person, thinking only where the model can, private chats kept nowhere, 30 days, pin/keep, the flame.
+- Note for next time: "Find models" reads OpenAI-style `/models` (Ollama answers it too); a service without that list needs the names typed. The admin's own role uses the rule for everyone (and one for "admin" if set through the API; the page lists only people).
+
+---
+
 ## 2026-10-23 — beta-v0.3.4: the phone no longer signs itself out
 
 - **Cause on the NAS:** the sign-in of the admin was tied to a fingerprint of the *whole* `auth.json`. Anything written into that file (a 2FA secret, a setup flag, the hash upgrade) ended every admin session, also those of phones. Now only the password itself counts (`algo`, `iterations`, `salt`, `password_hash`). A file that cannot be read for a moment (a write in progress) no longer deletes a session either.

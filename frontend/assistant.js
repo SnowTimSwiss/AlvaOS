@@ -1,5 +1,5 @@
 // The AlvaOS assistant: a chat panel in the top bar, once it is turned on in
-// Settings › Assistant. It looks at this NAS; at the "ask" level it also
+// Settings › AI. It looks at this NAS; at the "ask" level it also
 // suggests changes, which run only when the person presses "Do it".
 (function () {
     const HISTORY_KEY = 'alvaos_ai_history';
@@ -237,7 +237,7 @@
         build(actions);
     }
 
-    // Settings › Assistant turns it on or off without a reload.
+    // Settings › AI turns it on or off without a reload.
     window.alvaosAssistantChanged = (enabled) => {
         const button = document.getElementById('ai-btn');
         if (enabled && !button) start();

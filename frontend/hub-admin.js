@@ -53,62 +53,111 @@
             </div>`;
     }
 
-    // Chat: the AI service it talks to (Settings › Assistant) and the models people may choose.
-    let modelsOpen = false;
-    let offered = null;   // what the AI service has, once asked
+    // Chat: the AI services it talks to (Settings › AI), which models it
+    // offers (all, only some, all but some; whole services or single models),
+    // the same for single people on top, and how long unused chats stay.
+    let chatWho = '';      // '' = everyone, else a person
+    let chatDraft = null;  // the rule being changed, before Save
+    const KEEP = [[7, '7 days'], [14, '14 days'], [30, '30 days'], [90, '90 days'], [365, 'a year'], [0, 'never']];
+    function chatModels() {
+        return ((state.chat_service || {}).services || []).filter((s) => s.ready)
+            .flatMap((s) => s.models.map((m) => ({ id: `${s.id}/${m}`, model: m, service: s.id })));
+    }
+    function applyRule(items, rule) {
+        if (!rule || rule.mode === 'all') return items;
+        const refs = new Set(rule.items || []);
+        const listed = (i) => refs.has(i.service) || refs.has(i.id);
+        return items.filter((i) => (rule.mode === 'only' ? listed(i) : !listed(i)));
+    }
+    function savedRule(app) {
+        return chatWho ? (app.people_access || {})[chatWho] || null : app.access;
+    }
     function modelsHtml(app) {
         const service = state.chat_service || {};
-        const chosen = app.models || [];
-        const service_line = service.ready
-            ? `Answers come from ${esc(service.host)}, the AI service in <a href="system.html#assistant">Settings › Assistant</a>. Its key stays on the NAS.`
-            : 'It needs an AI service first: set one up in <a href="system.html#assistant">Settings › Assistant</a> (Ollama at home, or a service with a key).';
-        const names = chosen.length ? chosen : [service.model].filter(Boolean);
-        let editor = '';
-        if (modelsOpen) {
-            const all = [...new Set([...(offered || []), ...chosen, service.model].filter(Boolean))];
-            editor = `
-                <div class="hub-models">
-                    ${offered === null ? '<p class="hub-st-note">Asking the AI service which models it has…</p>' : ''}
-                    <div class="hub-people" role="group" aria-label="Models in Chat">${all.map((m) => `
-                        <label><input type="checkbox" data-model value="${esc(m)}"${names.includes(m) ? ' checked' : ''}> ${esc(m)}</label>`).join('')}</div>
-                    <div class="hub-form">
-                        <label>Another <input type="text" id="hub-model-add" placeholder="like qwen3:8b" spellcheck="false" aria-label="Another model"></label>
-                        <button type="button" class="btn-secondary" id="hub-models-save">Save</button>
-                        <button type="button" class="btn-secondary btn-quiet" id="hub-models-cancel">Cancel</button>
-                    </div>
-                </div>`;
+        const services = (service.services || []);
+        if (!service.ready) {
+            return `<div class="hub-chat"><div>${services.length
+                ? 'The AI services have no models Chat can use yet (or need a key): add them in <a href="system.html#assistant">Settings › AI</a>.'
+                : 'It needs an AI service first: set one up in <a href="system.html#assistant">Settings › AI</a> (Ollama at home, or a service with a key).'}</div></div>`;
         }
+        const all = chatModels();
+        const rule = chatDraft || savedRule(app) || { mode: chatWho ? 'same' : 'all', items: [] };
+        const refs = new Set(rule.items || []);
+        const people = Array.isArray(app.people) ? app.people : (state.people || []);
+        const own = app.people_access || {};
+        const listing = rule.mode === 'only' || rule.mode === 'except';
+        const tree = listing ? services.filter((s) => s.ready && s.models.length).map((s) => `
+            <div class="hub-svc">
+                <label class="hub-svc-name"><input type="checkbox" data-ref="${esc(s.id)}"${refs.has(s.id) ? ' checked' : ''}> <strong>${esc(s.name)}</strong> <span>whole service, also models added later</span></label>
+                <div class="hub-people">${s.models.map((m) => `
+                    <label><input type="checkbox" data-ref="${esc(`${s.id}/${m}`)}"${refs.has(`${s.id}/${m}`) || refs.has(s.id) ? ' checked' : ''}${refs.has(s.id) ? ' disabled' : ''}> ${esc(m)}</label>`).join('')}</div>
+            </div>`).join('') : '';
+        // What it comes to, for everyone or for this person.
+        let result = applyRule(all, chatWho ? app.access : rule);
+        if (chatWho && rule.mode !== 'same') result = applyRule(result, rule);
+        const names = result.map((i) => i.model);
+        const dirty = !!chatDraft;
         return `
             <div class="hub-chat">
-                <div>${service_line}</div>
-                ${service.ready ? `<div>Models to choose from: <strong>${esc(names.join(', ') || 'none')}</strong>${chosen.length ? '' : ' (the one in Settings › Assistant)'}
-                    ${modelsOpen ? '' : '<button type="button" class="hub-link" id="hub-models-open">Change</button>'}</div>${editor}` : ''}
+                <div>${services.length} AI service${services.length === 1 ? '' : 's'} with ${all.length} model${all.length === 1 ? '' : 's'}, set up in <a href="system.html#assistant">Settings › AI</a>. Keys stay on the NAS.</div>
+                <div class="hub-models">
+                    <div class="hub-form">
+                        <label>Models for
+                            <select id="chat-who" aria-label="Models for">
+                                <option value=""${chatWho ? '' : ' selected'}>Everyone</option>
+                                ${people.map((p) => `<option value="${esc(p)}"${chatWho === p ? ' selected' : ''}>${esc(p)}${own[p] ? ' (own rule)' : ''}</option>`).join('')}
+                            </select></label>
+                        <select id="chat-mode" aria-label="Which models">
+                            ${chatWho ? `<option value="same"${rule.mode === 'same' ? ' selected' : ''}>The same as everyone</option>` : `<option value="all"${rule.mode === 'all' ? ' selected' : ''}>All models</option>`}
+                            <option value="only"${rule.mode === 'only' ? ' selected' : ''}>${chatWho ? 'Of those, only these' : 'Only these'}</option>
+                            <option value="except"${rule.mode === 'except' ? ' selected' : ''}>${chatWho ? 'Of those, all but these' : 'All but these'}</option>
+                        </select>
+                    </div>
+                    ${tree}
+                    <div>${chatWho ? `${esc(chatWho)} chooses from` : 'People choose from'}: <strong>${names.length ? esc(names.join(', ')) : 'no model'}</strong></div>
+                    ${dirty ? `<div class="hub-form"><button type="button" class="btn-primary" id="chat-rule-save">Save</button><button type="button" class="btn-secondary btn-quiet" id="chat-rule-cancel">Cancel</button></div>` : ''}
+                </div>
+                <div class="hub-form"><label>Chats nobody used for
+                    <select id="chat-keep" aria-label="Delete unused chats after">${KEEP.map(([d, label]) => `<option value="${d}"${app.keep_days === d ? ' selected' : ''}>${label}</option>`).join('')}${KEEP.some(([d]) => d === app.keep_days) ? '' : `<option value="${app.keep_days}" selected>${app.keep_days} days</option>`}</select></label>
+                    <span>are deleted, unless pinned or kept.</span></div>
             </div>`;
     }
     function bindModels() {
-        const open = $('hub-models-open');
-        if (open) open.addEventListener('click', async () => {
-            modelsOpen = true;
+        const app = (state.apps || []).find((a) => a.id === 'chat');
+        const who = $('chat-who');
+        if (!app || !who) return;
+        who.addEventListener('change', () => { chatWho = who.value; chatDraft = null; renderApps(); });
+        const current = () => chatDraft || savedRule(app) || { mode: chatWho ? 'same' : 'all', items: [] };
+        $('chat-mode').addEventListener('change', (e) => {
+            const before = current();
+            chatDraft = { mode: e.target.value, items: e.target.value === before.mode ? before.items : [] };
             renderApps();
-            try {
-                const res = await fetch(`${API_BASE}/hub/chat-models`);
-                const data = await res.json().catch(() => ({}));
-                offered = res.ok ? data.models || [] : [];
-            } catch (_e) {
-                offered = [];
-            }
-            if (modelsOpen) renderApps();
         });
-        const cancel = $('hub-models-cancel');
-        if (cancel) cancel.addEventListener('click', () => { modelsOpen = false; renderApps(); });
-        const save = $('hub-models-save');
+        document.querySelectorAll('[data-ref]').forEach((box) => box.addEventListener('change', () => {
+            const rule = current();
+            const items = new Set(rule.items || []);
+            const ref = box.dataset.ref;
+            if (box.checked) items.add(ref); else items.delete(ref);
+            if (!ref.includes('/') && box.checked) [...items].forEach((r) => { if (r.startsWith(`${ref}/`)) items.delete(r); });
+            chatDraft = { mode: rule.mode, items: [...items] };
+            renderApps();
+        }));
+        const save = $('chat-rule-save');
         if (save) save.addEventListener('click', async () => {
-            const chosen = [...document.querySelectorAll('[data-model]:checked')].map((b) => b.value);
-            const extra = $('hub-model-add').value.trim();
-            if (extra && !chosen.includes(extra)) chosen.push(extra);
-            if (!chosen.length) { window.showToast('Choose at least one model.', 'info'); return; }
-            modelsOpen = false;
-            await change('chat', { models: chosen }, chosen.length === 1 ? `Chat uses ${chosen[0]}.` : `People choose from ${chosen.length} models in Chat.`);
+            const rule = chatDraft;
+            chatDraft = null;
+            if (chatWho) {
+                await change('chat', { people_access: { [chatWho]: rule.mode === 'same' ? null : rule } },
+                    rule.mode === 'same' ? `${chatWho} has the same models as everyone.` : `Models for ${chatWho} saved.`);
+            } else {
+                await change('chat', { access: rule }, 'The models in Chat are saved.');
+            }
+        });
+        const cancel = $('chat-rule-cancel');
+        if (cancel) cancel.addEventListener('click', () => { chatDraft = null; renderApps(); });
+        $('chat-keep').addEventListener('change', (e) => {
+            const days = Number(e.target.value);
+            change('chat', { keep_days: days }, days ? `Unused chats are deleted after ${KEEP.find(([d]) => d === days)?.[1] || `${days} days`}.` : 'Chats are kept until people delete them.');
         });
     }
 
