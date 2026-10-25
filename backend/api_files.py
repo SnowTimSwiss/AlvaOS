@@ -77,32 +77,9 @@ def _hub_state(people):
 
 
 def _chat_service():
-    """The AI service Chat talks to (Settings › Assistant), without its key."""
+    """The AI services Chat can use (Settings › AI), without their keys."""
     import hub_chat
-    service, problem = hub_chat.connection()
-    from urllib.parse import urlparse
-    return {'ready': not problem, 'model': service['model'], 'host': urlparse(service['base_url']).netloc,
-            'provider': service['provider']}
-
-
-@bp.route('/api/v1/hub/chat-models', methods=['GET'])
-@require_auth(require_admin=True)
-def chat_models():
-    """The models the AI service offers, to choose from for Chat."""
-    import requests
-
-    import hub_chat
-    service, problem = hub_chat.connection()
-    if problem:
-        return jsonify({'error': problem}), 409
-    headers = {'Authorization': f"Bearer {service['api_key']}"} if service.get('api_key') else {}
-    try:
-        res = requests.get(service['base_url'].rstrip('/') + '/models', headers=headers, timeout=15)
-        data = res.json() if res.status_code < 400 else {}
-    except Exception:  # noqa: BLE001 - requests raises many kinds; the page lets the admin type names
-        data = {}
-    found = sorted({str(m.get('id')) for m in (data.get('data') or []) if isinstance(m, dict) and m.get('id')})
-    return jsonify({'models': found[:300]})
+    return hub_chat.summary()
 
 
 def _make_app_folders(app_id, people, settings):

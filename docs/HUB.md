@@ -138,31 +138,65 @@ What it should become (backup from the phone, albums, favourites): `PHOTOS.md`.
 
 ### Chat
 
-- Like the first ChatGPT: chats on the left (Today, Yesterday, ...),
-  the model top left, a box with "Think" on or off and how hard (low,
-  medium, high), the answer streaming in, thinking shown folded ("Thought
-  for 8 seconds"). Markdown with code blocks, tables and lists.
+- Like ChatGPT: chats on the left (Pinned, Today, Yesterday, ...), the
+  model top left (grouped by AI service), a box with "Think" on or off and
+  how hard (low, medium, high), the answer streaming in, thinking shown
+  folded ("Thought for 8 seconds"). Markdown: headings, bold and italic,
+  nested and numbered lists, task lists, tables with alignment, code
+  blocks with Copy, quotes, maths blocks. Nothing the model writes becomes
+  HTML of its own; pictures stay links.
+- **Think only where the model can.** When the admin saves a service, the
+  NAS asks the service what each new model can: OpenRouter and others name
+  the parameters of each model in their `/models` list (`reasoning`: Think
+  with Low/Medium/High; `include_reasoning`: Think on/off); Ollama says
+  "thinking" in `/api/show` (levels only for gpt-oss). Only where a service
+  says nothing (OpenAI, LM Studio, ...) it goes by the name. Nobody sets it
+  by hand. A model that refuses to think anyway loses "Think" until the Hub
+  restarts.
+- **Private chat** (the ghost top right): kept nowhere, not in the list,
+  not on the NAS; the page sends what was said so far with each message.
+  Gone with "New chat" or when leaving it. The AI service still sees it.
+- **Web search** (the globe, "Search"): turned on by the admin in
+  Settings › AI, no install, no account, no key. The NAS asks DuckDuckGo
+  (its plain HTML page; the lite page when that has nothing), reads the
+  first three pages found (only addresses on the internet, never this NAS
+  or the home network, also not after a redirect) and gives the model the
+  text as numbered sources. The answer shows "[1]" as small links and the
+  sources below it. A follow-up ("and tomorrow?") is first turned into a
+  query by the model. On the Hub page: everyone, or only some people.
+  Searches go to DuckDuckGo; it says so in Settings › AI.
+- **Pinned and kept chats; the rest goes by itself.** Chats nobody used for
+  30 days are deleted (the admin can choose 7, 14, 30, 90 days, a year or
+  never). Pinned chats are on top and stay; kept chats stay where they are
+  in the list (bookmark). Each chat has a flame to delete it (after asking);
+  the flame next to "New chat" deletes all others at once, pinned and kept
+  ones only when ticked.
 - **Only a chat.** It has no tools: it cannot see or change anything on the
-  NAS. The assistant in the admin pages (Settings › Assistant) is a
-  different thing for the owner.
+  NAS. The assistant in the admin pages (Settings › AI) is a different
+  thing for the owner.
 - **Where it is set up, and by whom:** the admin only.
-  - The AI service (Ollama at home, Ollama Cloud, OpenAI or another
-    OpenAI-compatible service), its address and key are set once in
-    **Settings › Assistant**, shared with the assistant. The key stays on
-    the NAS and never reaches the browser.
-  - On the **Hub page**: Chat on or off (off until the admin turns it on,
-    since it needs an AI service), who sees it, and which models people
-    may choose (ticked from the list the service offers, or typed).
-    Without a choice it is the model set in Settings › Assistant.
-  - People choose only the model (from that list), thinking and effort.
+  - **Settings › AI › AI services:** as many as needed (Ollama at home,
+    Ollama Cloud, OpenAI, OpenRouter or any OpenAI-compatible service),
+    each with a name, address, key and its models ("Find models" asks the
+    service; or typed). What each model can is asked from the service on
+    saving. Keys stay on the NAS and never reach a browser.
+    The assistant uses one of these models.
+  - On the **Hub page**: Chat on or off (off until the admin turns it on),
+    who sees it, which models it offers (all; only these; all but these;
+    a whole service or single models, a whole service also covers models
+    added later), and for single people a rule on top of that ("of those,
+    only these" / "of those, all but these"). The page shows what each
+    person ends up with. And how long unused chats stay.
+  - People choose only the model (from what is open to them), thinking and
+    effort.
 - Chats in `.alvaos/chat/` in the personal folder (or `<person>-chat`):
-  `chats.json` (the list) and `chat-<id>.json` per chat. Only that person
-  can read them, over the network too.
+  `chats.json` (the list, with `pinned` and `kept`) and `chat-<id>.json` per
+  chat. Only that person can read them, over the network too. Old chats are
+  deleted when the person opens Chat.
 - Thinking: sent as `reasoning_effort` (low/medium/high; for Ollama "none"
   when off); when the model or service does not know it, Chat asks again
   without and says so. Thinking comes from `reasoning`/`reasoning_content`
   or `<think>…</think>` in the answer.
-- Later, powerful when needed: several AI services, limits per person.
 
 ### Space limits
 
@@ -198,8 +232,8 @@ when they are created (Storage › People).
   goes into a hidden `.alvaos/<app>/` folder, as JSON, written as the person
   through the helper (`files-data-read|write|delete`, the only helper
   operations that replace a file; small files only).
-- Chat's AI service is the admin's choice, in one place (Settings ›
-  Assistant); people never see keys.
+- Chat's AI services are the admin's choice, in one place (Settings › AI);
+  people never see keys.
 
 ## Settings file
 
@@ -215,9 +249,11 @@ service account):
                "libraries": ["Family"]},
     "calendar": {"enabled": true, "people": null,
                  "location": {"mode": "personal"}, "libraries": ["Family"]},
-    "chat":   {"enabled": true, "people": ["anna"],
+    "chat":   {"enabled": true, "people": ["anna", "ben"],
                "location": {"mode": "personal"},
-               "models": ["llama3.1", "qwen3:8b"]}
+               "access": {"mode": "except", "items": ["cloud/gpt-5"]},
+               "people_access": {"ben": {"mode": "only", "items": ["home"]}},
+               "keep_days": 30}
   },
   "storage": {"cache_pool": "a1b2-..."}
 }
@@ -228,8 +264,15 @@ service account):
   "limit_gb": 500}` (limit optional).
 - `libraries`: names of shared folders the app reads for everyone who may
   read them (Photos: photo libraries; Calendar: family calendars).
-- `models` (Chat): the models people may choose; empty for the one in
-  Settings › Assistant.
+- `access` (Chat): which models it offers: `mode` `all`, `only` or
+  `except`, `items` a whole AI service (`home`) or one model of it
+  (`home/llama3.1`); the services are in `/var/lib/alvaos/ai.json`.
+  `people_access`: the same per person, applied on top. `keep_days`: unused
+  chats go after so many days (0: never). `search_people`: who may search
+  the web (null: everyone; web search itself is `search.enabled` in
+  `ai.json`). Before beta-v0.4.0 it was
+  `models: [names]` of the one service; that is read as `only` those models
+  of the service `main`.
 - `storage.cache_pool`: empty for the system disk.
 
 Without the file every app is on for everyone (Chat stays off until the

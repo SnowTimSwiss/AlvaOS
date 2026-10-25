@@ -108,8 +108,8 @@ storage healthy, one shared folder.
    one changed in the Hub reaches the phone; the Family calendar is
    read-only on the phone for someone with read-only access. Android: the
    same with DAVx5.
-9. Chat: Settings › Assistant: set up an AI service (Ollama at home is
-   enough). Hub page › Chat: turn it on, Change › tick two models. In the
+9. Chat: Settings › AI: set up an AI service (Ollama at home is
+   enough) with two models. Hub page › Chat: turn it on. In the
    Hub: a new chat, switch the model, "Think" on with "High" (a thinking
    model like qwen3 shows "Thought for … seconds"), stop an answer, rename
    and delete a chat. Ask it about the NAS: it does not know and cannot
@@ -239,7 +239,7 @@ Needs the NAS with the internet and a phone on mobile data (Wi-Fi off).
 
 ## 10. Assistant
 
-1. Settings › Assistant: Ollama on another computer (`ollama pull
+1. Settings › AI: Ollama on another computer (`ollama pull
    llama3.1`, start it with `OLLAMA_HOST=0.0.0.0`) or a cloud service.
    "Try it" answers.
 2. The robot button at the top: "How is my NAS doing?", "Why did the last
@@ -505,6 +505,49 @@ Calendar › Create › Birthday: type a name and a year; choose "And make a new
 3. Photos has no side bar and no folder button; Files has them again.
 4. Open a deep folder in Files, go to Photos, then click Files: you are in your own folder, not in the deep one.
 \n
+
+## 12u AI: several services, who may use which, private chats
+
+1. An NAS that had one AI service before: Settings › AI shows it as one
+   service with its model; the assistant still answers; Chat still offers
+   the models chosen before.
+2. Settings › AI › Add a service: Ollama Cloud (or OpenRouter as "Another
+   OpenAI-compatible service") with its key. "Find models" lists what it
+   has; click two to add them, type a third ("asked when saved"). Save:
+   the thinking models (gpt-oss, qwen3, deepseek-r1) show "thinks" (gpt-oss
+   and models OpenRouter marks with `reasoning`: "thinks · low/medium/high"),
+   asked from the service; nothing to change by hand. "Try it" answers. Edit
+   it again: the key stays ("Saved. Type to replace it.").
+3. The assistant: choose a model of the new service, Save; the robot answers.
+4. Hub page › Chat: "All but these" › untick nothing, tick one model ›
+   "People choose from" leaves it out › Save. Models for anna › "Of those,
+   only these" › tick a whole service › Save: the line says what anna gets.
+   In the Hub as anna: only those models, grouped by service; as ben: all
+   but the one.
+5. In the Hub: a model that answers at once has no "Think"; qwen3 has
+   "Think" without Low/Medium/High; gpt-oss has both.
+6. Formatting: ask for "a packing list as a table, a numbered plan with
+   sub-points, a code example and a checklist": numbered list with
+   sub-points indented, the table with lines, the code block with Copy, the
+   checklist with boxes.
+7. Private (ghost top right): ask two things in a row (it remembers the
+   first), then New chat: it is gone, not in the list, and nothing new in
+   `.alvaos/chat/` of the personal folder.
+8. Pin one chat (⋯ › Pin: on top under "Pinned"), keep another (⋯ › Keep:
+   a bookmark). Hub page: "Chats nobody used for" 7 days. A chat not used
+   for 8 days (set the date of `updated` in `chats.json` back by hand)
+   is gone the next time Chat opens; the pinned and kept ones stay.
+10. Web search: Settings › AI › "Web search in Chat" on, "Try it" shows
+    three titles. In the Hub a "Search" pill; ask "Weather in Bern
+    tomorrow?": "Searching the web for …", then an answer with small [1]
+    links and the sources below (opening in a new tab). Ask "and the day
+    after?": it searches again with a sensible query. Hub page › Web search
+    › Only some people › only ben: anna has no "Search" any more.
+9. The flame on a chat (hover; on a phone always there): "Delete this
+   chat?" › Delete: gone. The flame next to "New chat": "Delete all chats?"
+   says how many go and how many stay; Delete: the others are gone, no
+   animation. Again with "Also delete pinned and kept chats" ticked: the
+   list is empty.
 
 ## 12t The phone stays signed in
 

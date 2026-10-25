@@ -14,6 +14,11 @@ photos and videos of your phone to it. It talks to nobody else.
   only; links to other places open in your browser.
 - Scanning the QR code uses the scanner of Google Play services on the
   phone; the camera picture stays on the phone.
+- Chat in the Hub: if the person who looks after your NAS set up AI
+  services and web search, your NAS (not the app) sends what you write in
+  Chat to the AI service they chose, and with "Search" on, the search to
+  DuckDuckGo. A private chat is not kept, but is still sent to the AI
+  service.
 - Nothing is sent to the makers of AlvaOS or to any other company. The app
   has no advertising, no analytics and no crash reporting service.
 

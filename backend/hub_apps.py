@@ -52,7 +52,12 @@ APPS: List[Dict[str, Any]] = [
 CACHE_FOLDER = '.alvaos-hub'   # at the top of the cache pool, not shared
 SHARE_NAME_RE = re.compile(r'^[A-Za-z0-9_-]{1,63}$')
 MODEL_RE = re.compile(r'^[A-Za-z0-9._:/@+-]{1,120}$')
-MAX_MODELS = 20
+# A whole AI service ("home") or one model of it ("home/llama3.1"); see ai_assistant.py.
+MODEL_REF_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,31}(/[A-Za-z0-9._:/@+-]{1,120})?$')
+ACCESS_MODES = ('all', 'only', 'except')
+MAX_REFS = 500
+KEEP_DAYS = 30            # chats go after this many days without use, unless pinned or kept
+MAX_KEEP_DAYS = 3650
 APP_IDS = [a['id'] for a in APPS]
 USER_RE = re.compile(r'^[a-z_][a-z0-9_-]{0,31}$')
 STORE_ID_RE = re.compile(r'^[a-z0-9][a-z0-9_-]{0,63}$')
@@ -89,10 +94,7 @@ def load(path: Optional[str] = None) -> Dict[str, Any]:
             apps[app['id']]['libraries'] = sorted({str(n) for n in libs if SHARE_NAME_RE.match(str(n))}) \
                 if isinstance(libs, list) else []
         if app.get('models'):
-            # Models people may choose in Chat; empty: the one in Settings › Assistant.
-            models = entry.get('models')
-            apps[app['id']]['models'] = list(dict.fromkeys(str(m) for m in models if MODEL_RE.match(str(m))))[:MAX_MODELS] \
-                if isinstance(models, list) else []
+            apps[app['id']].update(_clean_models(entry))
     raw_storage = raw.get('storage') if isinstance(raw, dict) else None
     storage: Dict[str, Any] = raw_storage if isinstance(raw_storage, dict) else {}
     raw_store = raw.get('store') if isinstance(raw, dict) else None
@@ -105,6 +107,40 @@ def load(path: Optional[str] = None) -> Dict[str, Any]:
                 'people': sorted({str(p) for p in people if USER_RE.match(str(p))}) if isinstance(people, list) else None,
             }
     return {'apps': apps, 'storage': {'cache_pool': str(storage.get('cache_pool') or '')}, 'store': store}
+
+
+def _clean_rule(raw: Any) -> Optional[Dict[str, Any]]:
+    """Which models: {'mode': 'all' | 'only' | 'except', 'items': [service or service/model]}."""
+    if not isinstance(raw, dict) or raw.get('mode') not in ACCESS_MODES:
+        return None
+    found = raw.get('items')
+    items: List[Any] = found if isinstance(found, list) else []
+    return {'mode': raw['mode'],
+            'items': list(dict.fromkeys(str(i) for i in items if MODEL_REF_RE.match(str(i))))[:MAX_REFS]}
+
+
+def _clean_models(entry: Dict[str, Any]) -> Dict[str, Any]:
+    """Chat: the models for everyone, rules for single people (on top of the
+    one for everyone), and after how many days unused chats go (0: never).
+    Before beta-v0.4.0 it was a list of model names of the one AI service."""
+    access = _clean_rule(entry.get('access'))
+    if access is None:
+        legacy = [str(m) for m in entry.get('models') or [] if MODEL_RE.match(str(m))] \
+            if isinstance(entry.get('models'), list) else []
+        access = {'mode': 'only', 'items': [f'main/{m}' for m in legacy]} if legacy else {'mode': 'all', 'items': []}
+    found = entry.get('people_access')
+    raw_people: Dict[str, Any] = found if isinstance(found, dict) else {}
+    people: Dict[str, Dict[str, Any]] = {}
+    for person, raw in raw_people.items():
+        rule = _clean_rule(raw)
+        if USER_RE.match(str(person)) and rule:
+            people[str(person)] = rule
+    # Web search (when on in Settings › AI): None for everyone, or these people.
+    who = entry.get('search_people')
+    search_people = sorted({str(p) for p in who if USER_RE.match(str(p))}) if isinstance(who, list) else None
+    days = entry.get('keep_days', KEEP_DAYS)
+    days = days if isinstance(days, int) and not isinstance(days, bool) and 0 <= days <= MAX_KEEP_DAYS else KEEP_DAYS
+    return {'access': access, 'people_access': people, 'keep_days': days, 'search_people': search_people}
 
 
 def _clean_location(raw: Any) -> Dict[str, Any]:
@@ -181,15 +217,44 @@ def save(payload: Dict[str, Any], known_people: Iterable[str], path: Optional[st
             if not isinstance(libs, list) or not set(map(str, libs)) <= share_names:
                 return None, 'Choose shared folders that exist.'
             entry['libraries'] = sorted({str(n) for n in libs})
-        if 'models' in change:
-            if not app.get('models'):
-                return None, f'{app["name"]} uses no AI models.'
-            models = change['models']
-            if not isinstance(models, list) or not all(MODEL_RE.match(str(m)) for m in models):
-                return None, 'Enter model names like llama3.1 or gpt-4o-mini.'
-            if len(models) > MAX_MODELS:
-                return None, f'Choose at most {MAX_MODELS} models.'
-            entry['models'] = list(dict.fromkeys(str(m) for m in models))
+        if any(k in change for k in ('access', 'people_access', 'keep_days', 'search_people')) and not app.get('models'):
+            return None, f'{app["name"]} uses no AI models.'
+        if 'access' in change:
+            rule = _clean_rule(change['access'])
+            if rule is None or len(rule['items']) != len(set(map(str, change['access'].get('items') or []))):
+                return None, 'Choose all models, only some, or all but some.'
+            entry['access'] = rule
+        if 'people_access' in change:
+            if not isinstance(change['people_access'], dict):
+                return None, 'Choose the models for each person.'
+            rules = dict(entry.get('people_access') or {})
+            for person, raw in change['people_access'].items():
+                if str(person) not in known | {'admin'}:
+                    return None, f'There is no person called {person}.'
+                if raw is None:
+                    rules.pop(str(person), None)    # the same as everyone
+                    continue
+                rule = _clean_rule(raw)
+                if rule is None:
+                    return None, 'Choose all models, only some, or all but some.'
+                rules[str(person)] = rule
+            entry['people_access'] = rules
+        if 'search_people' in change:
+            who = change['search_people']
+            if who is None:
+                entry['search_people'] = None
+            elif isinstance(who, list):
+                unknown = sorted({str(p) for p in who} - known - {'admin'})
+                if unknown:
+                    return None, f'There is no person called {", ".join(unknown)}.'
+                entry['search_people'] = sorted({str(p) for p in who})
+            else:
+                return None, 'Choose everyone or a list of people for web search.'
+        if 'keep_days' in change:
+            days = change['keep_days']
+            if not isinstance(days, int) or isinstance(days, bool) or not 0 <= days <= MAX_KEEP_DAYS:
+                return None, 'Choose how long chats are kept.'
+            entry['keep_days'] = days
     store_changes = payload.get('store') or {}
     if not isinstance(store_changes, dict):
         return None, 'Nothing to change.'
