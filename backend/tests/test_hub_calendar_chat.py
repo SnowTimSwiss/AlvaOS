@@ -318,3 +318,67 @@ def test_app_data_files_are_replaced_whole_and_stay_inside(tmp_path):
     fo.delete_app_data(str(share), ".alvaos/chat/chats.json", str(root))
     fo.delete_app_data(str(share), ".alvaos/chat/chats.json", str(root))
     assert fo.read_app_data(str(share), ".alvaos/chat/chats.json", str(root)) == {"found": False}
+
+
+class Answer:
+    def __init__(self, data, status=200):
+        self.data, self.status_code = data, status
+
+    def json(self):
+        return self.data
+
+
+def test_what_a_model_can_comes_from_the_service():
+    # OpenRouter and others: the list names the parameters each model takes.
+    listed = {"data": [{"id": "openai/gpt-5", "supported_parameters": ["reasoning", "tools"]},
+                       {"id": "deepseek/r1", "supported_parameters": ["include_reasoning"]},
+                       {"id": "meta/llama", "supported_parameters": ["tools"]}]}
+    router = {"provider": "other", "base_url": "https://openrouter.ai/api/v1", "api_key": "k"}
+    found = ai_assistant.detect_thinking(router, ["openai/gpt-5", "deepseek/r1", "meta/llama", "qwen3:8b"],
+                                         get=lambda url, headers=None, timeout=None: Answer(listed),
+                                         post=lambda *a, **k: Answer({}, 404))
+    assert found == {"openai/gpt-5": "effort", "deepseek/r1": "on", "meta/llama": "none", "qwen3:8b": "on"}
+    # Ollama: /api/show has the capabilities; levels only for gpt-oss.
+    shows = {"qwen3:8b": {"capabilities": ["completion", "thinking"], "details": {"family": "qwen3"}},
+             "gpt-oss:20b": {"capabilities": ["completion", "tools", "thinking"], "details": {"family": "gptoss"}},
+             "qwen3-thinking-but-not:1b": {"capabilities": ["completion"], "details": {"family": "qwen3"}}}
+    asked = []
+
+    def post(url, headers=None, json=None, timeout=None):
+        asked.append(url)
+        return Answer(shows[json["model"]])
+    home = {"provider": "ollama-local", "base_url": "http://192.168.1.5:11434/v1", "api_key": ""}
+    found = ai_assistant.detect_thinking(home, list(shows), get=lambda *a, **k: Answer({"data": [{"id": "x"}]}), post=post)
+    assert found == {"qwen3:8b": "on", "gpt-oss:20b": "effort", "qwen3-thinking-but-not:1b": "none"}
+    assert asked[0] == "http://192.168.1.5:11434/api/show"
+
+
+def test_a_model_that_refuses_to_think_loses_think(store, monkeypatch):
+    chat_ready(store, monkeypatch)
+
+    class Refused:
+        status_code = 400
+        text = ""
+
+        def json(self):
+            return {"error": {"message": "this model does not support thinking"}}
+
+    def post(url, headers=None, json=None, stream=False, timeout=None):
+        return Refused() if "reasoning_effort" in json and json["reasoning_effort"] != "none" else Stream([sse(content="ok")])
+    monkeypatch.setattr("requests.post", post)
+    monkeypatch.setattr(hub_chat, "_cannot_think", set())
+    assert {m["id"]: m["thinking"] for m in store.get("/api/chat").get_json()["models"]}["home/qwen3:8b"] == "on"
+    say(store, message="q", model="home/qwen3:8b", reasoning=True)
+    assert {m["id"]: m["thinking"] for m in store.get("/api/chat").get_json()["models"]}["home/qwen3:8b"] == "none"
+
+
+def test_the_page_cannot_set_what_a_model_can(monkeypatch):
+    import api_ai
+    two_services()
+    asked = []
+    monkeypatch.setattr(ai_assistant, "detect_thinking", lambda conn, models: asked.append((conn["id"], models)) or {m: "effort" for m in models})
+    sent = [{"id": "home", "provider": "ollama-local", "base_url": "http://192.168.1.5:11434/v1",
+             "models": ["llama3.1", "new:1b"], "thinking": {"llama3.1": "effort"}}]
+    api_ai._ask_thinking(sent, ai_assistant.load_settings())
+    assert asked == [("home", ["new:1b"])]                      # only what is new is asked
+    assert sent[0]["thinking"] == {"llama3.1": "none", "new:1b": "effort"}   # the page's word does not count

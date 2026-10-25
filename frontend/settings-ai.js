@@ -9,7 +9,8 @@
         openai: 'Make a key at platform.openai.com › API keys. Use costs money per question.',
         other: 'Any service that speaks the OpenAI chat API: OpenRouter, LM Studio, LocalAI, vLLM, Mistral, Groq...',
     };
-    const THINKING = [['none', 'Answers at once'], ['on', 'Can think first'], ['effort', 'Can think, and how hard']];
+    // What a model can is asked from the service when it is saved (backend/api_ai.py), not set here.
+    const CAN = { on: 'thinks', effort: 'thinks · low/medium/high' };
     let settings = null;
     let editing = null;     // the service being edited: a copy, {id: '' } when new
     let found = null;       // the models the service listed, while editing
@@ -30,7 +31,7 @@
         const preset = settings.providers[c.provider] || {};
         const key = preset.needs_key ? (c.key_set ? 'key saved' : '<span class="ai-warn">needs a key</span>') : (c.key_set ? 'key saved' : '');
         const models = c.models.length
-            ? c.models.map((m) => `<span class="ai-chip">${esc(m)}${(c.thinking || {})[m] && c.thinking[m] !== 'none' ? '<i title="Can think first">think</i>' : ''}</span>`).join('')
+            ? c.models.map((m) => `<span class="ai-chip">${esc(m)}${CAN[(c.thinking || {})[m]] ? `<i title="The service says it can think first">${CAN[c.thinking[m]]}</i>` : ''}</span>`).join('')
             : '<span class="ai-warn">No models yet: Edit › Find models.</span>';
         return `<div class="ai-svc" data-svc="${esc(c.id)}">
             <div class="ai-svc-head">
@@ -46,7 +47,7 @@
         const preset = settings.providers[c.provider] || {};
         const rows = c.models.map((m, i) => `<div class="ai-model-row">
                 <span class="ai-model-name">${esc(m)}</span>
-                <select data-thinking="${i}" aria-label="Thinking of ${esc(m)}">${THINKING.map(([v, label]) => `<option value="${v}"${(c.thinking[m] || 'none') === v ? ' selected' : ''}>${label}</option>`).join('')}</select>
+                <span class="ai-model-can">${m in (saved ? saved.thinking || {} : {}) && saved.base_url === c.base_url ? (CAN[saved.thinking[m]] || 'answers at once') : 'asked when saved'}</span>
                 <button type="button" class="icon-btn" data-drop="${i}" aria-label="Remove ${esc(m)}" title="Remove">×</button>
             </div>`).join('');
         const offer = found === null ? '' : found.error
@@ -59,6 +60,7 @@
             <label class="pw-field"${c.provider === 'ollama-local' ? ' hidden' : ''}>API key <input type="password" id="svc-key" autocomplete="new-password" spellcheck="false" value="${esc(c.api_key || '')}" placeholder="${saved && saved.key_set ? 'Saved. Type to replace it.' : (preset.needs_key ? 'Needed' : 'Only if the service asks for one')}"><small>Stored on this NAS only, never shown again.</small></label>
             <div class="pw-field"><span>Models</span>
                 <div class="ai-models">${rows || '<p class="ai-svc-sub">No models yet.</p>'}</div>
+                <small class="ai-svc-sub">Whether a model can think first, and how hard, is asked from the service when you save.</small>
                 <div class="ai-model-add"><input type="text" id="svc-model" placeholder="Add a model, like qwen3:8b" spellcheck="false" aria-label="Add a model"><button type="button" class="btn-secondary" id="svc-model-add">Add</button><button type="button" class="btn-secondary" id="svc-find">Find models</button></div>
                 ${offer}
             </div>
@@ -83,16 +85,14 @@
         editing.name = $('svc-name').value.trim();
         editing.base_url = $('svc-url').value.trim();
         editing.api_key = $('svc-key').value.trim();
-        document.querySelectorAll('[data-thinking]').forEach((sel) => { editing.thinking[editing.models[Number(sel.dataset.thinking)]] = sel.value; });
     }
     function draft() {
         return { id: editing.id, name: editing.name, provider: editing.provider, base_url: editing.base_url, api_key: editing.api_key };
     }
-    function addModel(name, thinking) {
+    function addModel(name) {
         const m = String(name || '').trim();
         if (!m || editing.models.includes(m)) return;
         editing.models.push(m);
-        editing.thinking[m] = thinking || 'none';
     }
     function bindEditor() {
         $('svc-provider').addEventListener('change', (e) => {
@@ -109,7 +109,7 @@
             fromForm();
             const name = $('svc-model').value;
             if (!/^[A-Za-z0-9._:/@+-]{1,120}$/.test(name.trim())) { $('svc-error').textContent = 'Model names look like llama3.1 or gpt-4o-mini.'; return; }
-            addModel(name, null);
+            addModel(name);
             renderServices();
             $('svc-model').focus();
         });
@@ -118,7 +118,7 @@
             fromForm();
             try {
                 const data = await api('/ai/models', { method: 'POST', body: JSON.stringify({ connection: draft() }) });
-                found = { models: data.models || [], thinking: data.thinking || {} };
+                found = { models: data.models || [] };
             } catch (err) {
                 found = { error: err.message, models: [] };
             }
@@ -126,13 +126,12 @@
         }));
         document.querySelectorAll('[data-add]').forEach((b) => b.addEventListener('click', () => {
             fromForm();
-            addModel(b.dataset.add, (found.thinking || {})[b.dataset.add]);
+            addModel(b.dataset.add);
             renderServices();
         }));
         document.querySelectorAll('[data-drop]').forEach((b) => b.addEventListener('click', () => {
             fromForm();
-            const m = editing.models.splice(Number(b.dataset.drop), 1)[0];
-            delete editing.thinking[m];
+            editing.models.splice(Number(b.dataset.drop), 1);
             renderServices();
         }));
         $('svc-cancel').addEventListener('click', () => { editing = null; found = null; renderServices(); });
@@ -159,7 +158,7 @@
     async function saveServices(list) {
         const connections = list.map((c) => ({
             id: c.id, name: c.name, provider: c.provider, base_url: c.base_url, models: c.models,
-            thinking: c.thinking, api_key: c.api_key || '',
+            api_key: c.api_key || '',
         }));
         settings = await api('/ai/settings', { method: 'POST', body: JSON.stringify({ connections }) });
         renderAssistant();
@@ -169,7 +168,7 @@
         if (!box || editing) return;
         const c = settings.connections.find((x) => x.id === box.dataset.svc);
         if (e.target.closest('[data-edit]')) {
-            editing = { ...c, models: [...c.models], thinking: { ...(c.thinking || {}) }, api_key: '' };
+            editing = { ...c, models: [...c.models], api_key: '' };
             found = null;
             renderServices();
         } else if (e.target.closest('[data-remove]')) {
@@ -239,7 +238,7 @@
         $('ai-services').addEventListener('click', onServiceClick);
         $('ai-add').addEventListener('click', () => {
             const p = settings.providers['ollama-local'];
-            editing = { id: '', name: p.label, provider: 'ollama-local', base_url: p.base_url, models: [], thinking: {}, api_key: '' };
+            editing = { id: '', name: p.label, provider: 'ollama-local', base_url: p.base_url, models: [], api_key: '' };
             found = null;
             renderServices();
             $('svc-name').focus();

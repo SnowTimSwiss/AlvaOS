@@ -145,18 +145,23 @@ What it should become (backup from the phone, albums, favourites): `PHOTOS.md`.
   nested and numbered lists, task lists, tables with alignment, code
   blocks with Copy, quotes, maths blocks. Nothing the model writes becomes
   HTML of its own; pictures stay links.
-- **Think only where the model can.** Each model of a service is marked by
-  the admin (guessed from its name first): answers at once (no Think),
-  can think first (Think on/off), or can think and be told how hard (Think
-  with Low/Medium/High).
+- **Think only where the model can.** When the admin saves a service, the
+  NAS asks the service what each new model can: OpenRouter and others name
+  the parameters of each model in their `/models` list (`reasoning`: Think
+  with Low/Medium/High; `include_reasoning`: Think on/off); Ollama says
+  "thinking" in `/api/show` (levels only for gpt-oss). Only where a service
+  says nothing (OpenAI, LM Studio, ...) it goes by the name. Nobody sets it
+  by hand. A model that refuses to think anyway loses "Think" until the Hub
+  restarts.
 - **Private chat** (the ghost top right): kept nowhere, not in the list,
   not on the NAS; the page sends what was said so far with each message.
   Gone with "New chat" or when leaving it. The AI service still sees it.
 - **Pinned and kept chats; the rest goes by itself.** Chats nobody used for
   30 days are deleted (the admin can choose 7, 14, 30, 90 days, a year or
   never). Pinned chats are on top and stay; kept chats stay where they are
-  in the list (bookmark). The flame next to "New chat" deletes all others
-  at once, with a little fire; pinned and kept ones only when ticked.
+  in the list (bookmark). Each chat has a flame to delete it (after asking);
+  the flame next to "New chat" deletes all others at once, pinned and kept
+  ones only when ticked.
 - **Only a chat.** It has no tools: it cannot see or change anything on the
   NAS. The assistant in the admin pages (Settings › AI) is a different
   thing for the owner.
@@ -164,7 +169,8 @@ What it should become (backup from the phone, albums, favourites): `PHOTOS.md`.
   - **Settings › AI › AI services:** as many as needed (Ollama at home,
     Ollama Cloud, OpenAI, OpenRouter or any OpenAI-compatible service),
     each with a name, address, key and its models ("Find models" asks the
-    service; or typed). Keys stay on the NAS and never reach a browser.
+    service; or typed). What each model can is asked from the service on
+    saving. Keys stay on the NAS and never reach a browser.
     The assistant uses one of these models.
   - On the **Hub page**: Chat on or off (off until the admin turns it on),
     who sees it, which models it offers (all; only these; all but these;

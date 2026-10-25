@@ -52,11 +52,16 @@ def _chat_file(chat_id: str) -> str:
     return f'chat-{chat_id}.json'
 
 
+# Models that refused to think although the service said they could: no
+# "Think" for them any more (until the Hub restarts).
+_cannot_think: set = set()
+
+
 def catalog(ai: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """Every model of every AI service AlvaOS can talk to."""
     ai = ai or ai_assistant.load_settings()
     return [{'id': f"{c['id']}/{m}", 'model': m, 'service': c['name'], 'connection': c['id'],
-             'thinking': ai_assistant.thinking_of(c, m)}
+             'thinking': 'none' if f"{c['id']}/{m}" in _cannot_think else ai_assistant.thinking_of(c, m)}
             for c in ai['connections'] if ai_assistant.usable(c) for m in c['models']]
 
 
@@ -490,6 +495,8 @@ def send():
                 if kind == 'error':
                     failed = piece
                     break
+                if kind == 'note':
+                    _cannot_think.add(item['id'])
                 if kind == 'r':
                     answer['reasoning'] += piece
                 elif kind == 't':

@@ -392,6 +392,7 @@
         const row = (c) => `<div class="ch-row${chat && chat.id === c.id ? ' active' : ''}" data-chat="${esc(c.id)}">
                 <button type="button" class="ch-row-open" data-open>${esc(c.title || 'New chat')}</button>
                 ${c.kept && !c.pinned ? `<span class="ch-row-mark" title="Kept: not deleted by itself">${icon('bookmark')}</span>` : ''}
+                <button type="button" class="ch-row-more ch-row-burn" data-row-burn aria-label="Delete ${esc(c.title)}" title="Delete">${icon('flame')}</button>
                 <button type="button" class="ch-row-more" data-row-more aria-label="More for ${esc(c.title)}">${icon('more')}</button>
             </div>`;
         const head = pinned.length ? `<div class="ch-group">Pinned</div>${pinned.map(row).join('')}` : '';
@@ -411,6 +412,7 @@
         if (!row) return;
         const id = row.dataset.chat;
         if (e.target.closest('[data-open]')) { openChat(id); closeSide(); return; }
+        if (e.target.closest('[data-row-burn]')) { askRemove(id); return; }
         if (e.target.closest('[data-row-more]')) {
             root.querySelectorAll('.ch-row-menu').forEach((m) => m.remove());
             const menu = document.createElement('div');
@@ -427,7 +429,7 @@
                 if (act.dataset.act === 'rename') rename(row, id);
                 else if (act.dataset.act === 'pin') flag(id, 'pin', 'pinned');
                 else if (act.dataset.act === 'keep') flag(id, 'keep', 'kept');
-                else remove(id);
+                else askRemove(id);
             });
         }
     }
@@ -470,18 +472,16 @@
         } catch (err) { toast(err.message, 'error'); }
     }
 
-    // ── The flame: every chat goes at once (pinned and kept ones stay, unless asked) ──
-    function askBurn() {
-        const stay = chats.filter((c) => c.pinned || c.kept).length;
-        const go = chats.length - stay;
+    // ── The flame: one chat, or every chat at once (pinned and kept ones stay, unless asked) ──
+    function confirmBox({ title, text, all, go }) {
         root.querySelectorAll('.ch-dialog').forEach((d) => d.remove());
         const box = document.createElement('div');
         box.className = 'ch-dialog';
-        box.innerHTML = `<div class="ch-dialog-card" role="dialog" aria-modal="true" aria-labelledby="ch-burn-title">
+        box.innerHTML = `<div class="ch-dialog-card" role="dialog" aria-modal="true" aria-labelledby="ch-dialog-title">
             <div class="ch-dialog-flame">${icon('flame')}</div>
-            <h3 id="ch-burn-title">Delete all chats?</h3>
-            <p>${go ? `${go} chat${go === 1 ? '' : 's'} will be deleted for good.` : 'There is nothing to delete except pinned and kept chats.'}${stay ? ` ${stay} pinned or kept chat${stay === 1 ? '' : 's'} stay${stay === 1 ? 's' : ''}.` : ''}</p>
-            ${stay ? '<label class="ch-dialog-all"><input type="checkbox" id="ch-burn-all"> Also delete pinned and kept chats</label>' : ''}
+            <h3 id="ch-dialog-title">${esc(title)}</h3>
+            <p>${esc(text)}</p>
+            ${all ? `<label class="ch-dialog-all"><input type="checkbox" id="ch-burn-all"> ${esc(all)}</label>` : ''}
             <div class="ch-dialog-btns"><button type="button" class="ch-dialog-cancel">Cancel</button><button type="button" class="ch-dialog-go">${icon('flame')}Delete</button></div>
         </div>`;
         root.appendChild(box);
@@ -489,31 +489,34 @@
         box.addEventListener('click', (e) => { if (e.target === box || e.target.closest('.ch-dialog-cancel')) close(); });
         box.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
         box.querySelector('.ch-dialog-go').addEventListener('click', () => {
-            const everything = !!(box.querySelector('#ch-burn-all') || {}).checked;
+            const ticked = !!(box.querySelector('#ch-burn-all') || {}).checked;
             close();
-            burn(everything);
+            go(ticked);
         });
         box.querySelector('.ch-dialog-go').focus();
     }
+    function askBurn() {
+        const stay = chats.filter((c) => c.pinned || c.kept).length;
+        const go = chats.length - stay;
+        confirmBox({
+            title: 'Delete all chats?',
+            text: `${go ? `${go} chat${go === 1 ? '' : 's'} will be deleted for good.` : 'There is nothing to delete except pinned and kept chats.'}${stay ? ` ${stay} pinned or kept chat${stay === 1 ? '' : 's'} stay${stay === 1 ? 's' : ''}.` : ''}`,
+            all: stay ? 'Also delete pinned and kept chats' : '',
+            go: burn,
+        });
+    }
+    function askRemove(id) {
+        const c = chats.find((x) => x.id === id) || {};
+        confirmBox({
+            title: 'Delete this chat?',
+            text: `“${c.title || 'New chat'}” will be deleted for good.${c.pinned || c.kept ? ` It is ${c.pinned ? 'pinned' : 'kept'}.` : ''}`,
+            go: () => remove(id),
+        });
+    }
     async function burn(everything) {
         if (streaming) stop();
-        const fire = document.createElement('div');
-        fire.className = 'ch-fire';
-        fire.setAttribute('aria-hidden', 'true');
-        fire.innerHTML = Array.from({ length: 14 }, (_, k) => `<i style="--x:${(k * 7.3) % 100}%;--d:${(k % 5) * 0.07}s;--s:${0.8 + (k % 4) * 0.25}"></i>`).join('');
-        root.appendChild(fire);
-        const goes = (c) => everything || !(c.pinned || c.kept);
-        root.querySelectorAll('[data-chat]').forEach((row) => {
-            const c = chats.find((x) => x.id === row.dataset.chat);
-            if (c && goes(c)) row.classList.add('burn');
-        });
-        if (privateMode || (chat && (!chat.id || goes(chats.find((c) => c.id === chat.id) || {})))) $c('#ch-thread').classList.add('burn');
-        root.classList.add('burning');
-        const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        const wait = new Promise((r) => setTimeout(r, still ? 0 : 1100));
         try {
             const got = await api('chat/burn', { method: 'POST', json: { everything } });
-            await wait;
             chats = everything ? [] : chats.filter((c) => c.pinned || c.kept);
             if (chat && !chats.some((c) => c.id === chat.id)) chat = null;
             privateMode = false;
@@ -522,10 +525,6 @@
             toast(got.deleted ? `${got.deleted} chat${got.deleted === 1 ? '' : 's'} deleted.` : 'Nothing to delete.');
         } catch (err) {
             toast(err.message, 'error');
-        } finally {
-            root.classList.remove('burning');
-            $c('#ch-thread').classList.remove('burn');
-            setTimeout(() => fire.remove(), still ? 0 : 500);
         }
     }
 

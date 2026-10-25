@@ -512,7 +512,8 @@ THINKING_MODELS = re.compile(r'(qwen3(?!-coder)|deepseek-r1|deepseek-v3\.[12]|qw
 
 
 def guess_thinking(model: str) -> str:
-    """Whether a model can think first, from its name (the admin can change it)."""
+    """Whether a model can think first, from its name: only when the service
+    itself does not say (detect_thinking)."""
     if EFFORT_MODELS.search(model):
         return 'effort'
     return 'on' if THINKING_MODELS.search(model) else 'none'
@@ -755,6 +756,61 @@ def save_settings(current: Dict[str, Any], payload: Dict[str, Any],
         json.dump({k: settings[k] for k in ('enabled', 'level', 'connections', 'assistant')}, f)
     os.replace(tmp, path)
     return settings, ''
+
+
+def _is_ollama(conn: Dict[str, Any]) -> bool:
+    return conn.get('provider', '').startswith('ollama') or bool(re.search(r':11434(/|$)', conn.get('base_url', '')))
+
+
+def detect_thinking(conn: Dict[str, Any], models: List[str], get: Optional[Callable[..., Any]] = None,
+                    post: Optional[Callable[..., Any]] = None) -> Dict[str, str]:
+    """Ask the service what each model can: think first ('on'), and be told
+    how hard ('effort'), or neither ('none').
+    - Services with a rich model list (OpenRouter and others) name the
+      parameters a model takes: `reasoning` there means it can be told how hard.
+    - Ollama says it in /api/show: capability "thinking"; levels only for
+      gpt-oss (the others think on or off).
+    - Otherwise (OpenAI, LM Studio, ...): from the name."""
+    if get is None or post is None:
+        import requests
+        get, post = get or requests.get, post or requests.post
+    headers = {'Authorization': f"Bearer {conn['api_key']}"} if conn.get('api_key') else {}
+    base = conn.get('base_url', '').rstrip('/')
+    listed: Dict[str, List[str]] = {}
+    if check_url(base):
+        try:
+            res = get(base + '/models', headers=headers, timeout=10)
+            data = res.json() if res.status_code < 400 else {}
+            for m in (data.get('data') or []) if isinstance(data, dict) else []:
+                if isinstance(m, dict) and isinstance(m.get('supported_parameters'), list):
+                    listed[str(m.get('id'))] = [str(p) for p in m['supported_parameters']]
+        except Exception:  # noqa: BLE001 - a service without the list
+            pass
+    native = re.sub(r'/v1$', '', base)
+    out: Dict[str, str] = {}
+    for model in models:
+        params = listed.get(model)
+        if params is not None:
+            if 'reasoning' in params or 'reasoning_effort' in params:
+                out[model] = 'effort'
+            else:
+                out[model] = 'on' if 'include_reasoning' in params else 'none'
+            continue
+        if _is_ollama(conn) and check_url(native):
+            try:
+                res = post(native + '/api/show', headers=headers, json={'model': model}, timeout=10)
+                info = res.json() if res.status_code < 400 else None
+            except Exception:  # noqa: BLE001 - not reachable now
+                info = None
+            if isinstance(info, dict) and isinstance(info.get('capabilities'), list):
+                family = str((info.get('details') or {}).get('family') or '')
+                if 'thinking' not in info['capabilities']:
+                    out[model] = 'none'
+                else:
+                    out[model] = 'effort' if 'gptoss' in family.replace('-', '') or 'gpt-oss' in model else 'on'
+                continue
+        out[model] = guess_thinking(model)
+    return out
 
 
 def list_models(conn: Dict[str, Any], get: Optional[Callable[..., Any]] = None) -> Tuple[List[str], str]:

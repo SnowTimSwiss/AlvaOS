@@ -513,10 +513,11 @@ Calendar › Create › Birthday: type a name and a year; choose "And make a new
    the models chosen before.
 2. Settings › AI › Add a service: Ollama Cloud (or OpenRouter as "Another
    OpenAI-compatible service") with its key. "Find models" lists what it
-   has; click two to add them, type a third. The models of a thinking kind
-   (gpt-oss, qwen3, deepseek-r1) are marked "Can think" by themselves;
-   change one. "Try it" answers. Save. Edit it again: the key stays
-   ("Saved. Type to replace it.").
+   has; click two to add them, type a third ("asked when saved"). Save:
+   the thinking models (gpt-oss, qwen3, deepseek-r1) show "thinks" (gpt-oss
+   and models OpenRouter marks with `reasoning`: "thinks · low/medium/high"),
+   asked from the service; nothing to change by hand. "Try it" answers. Edit
+   it again: the key stays ("Saved. Type to replace it.").
 3. The assistant: choose a model of the new service, Save; the robot answers.
 4. Hub page › Chat: "All but these" › untick nothing, tick one model ›
    "People choose from" leaves it out › Save. Models for anna › "Of those,
@@ -536,9 +537,11 @@ Calendar › Create › Birthday: type a name and a year; choose "And make a new
    a bookmark). Hub page: "Chats nobody used for" 7 days. A chat not used
    for 8 days (set the date of `updated` in `chats.json` back by hand)
    is gone the next time Chat opens; the pinned and kept ones stay.
-9. The flame: "Delete all chats?" says how many go and how many stay;
-   Delete: a short fire, the others are gone. Again with "Also delete pinned
-   and kept chats" ticked: the list is empty.
+9. The flame on a chat (hover; on a phone always there): "Delete this
+   chat?" › Delete: gone. The flame next to "New chat": "Delete all chats?"
+   says how many go and how many stay; Delete: the others are gone, no
+   animation. Again with "Also delete pinned and kept chats" ticked: the
+   list is empty.
 
 ## 12t The phone stays signed in
 

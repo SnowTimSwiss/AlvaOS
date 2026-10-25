@@ -22,10 +22,29 @@ _proposals: Dict[str, Dict[str, Any]] = {}   # id -> {'action', 'token', 'expire
 def ai_settings():
     settings = ai_assistant.load_settings()
     if request.method == 'POST':
-        settings, problem = ai_assistant.save_settings(settings, request.get_json(silent=True) or {})
+        payload = request.get_json(silent=True) or {}
+        if isinstance(payload.get('connections'), list):
+            _ask_thinking(payload['connections'], settings)
+        settings, problem = ai_assistant.save_settings(settings, payload)
         if problem:
             return jsonify({'error': problem}), 400
     return jsonify({'success': True, **ai_assistant.public_settings(settings)})
+
+
+def _ask_thinking(sent, settings):
+    """What each model can (think, how hard) comes from the service, not from
+    the page: asked for models that are new, or when the address changed."""
+    for item in sent:
+        if not isinstance(item, dict):
+            continue
+        saved = next((c for c in settings['connections'] if c['id'] == item.get('id')), None)
+        conn = _draft({'connection': item}, settings)
+        models = [str(m) for m in item.get('models') or [] if ai_assistant.MODEL_RE.match(str(m))]
+        before = saved.get('thinking', {}) if saved and saved['base_url'] == conn['base_url'] \
+            and saved['provider'] == conn['provider'] else {}
+        known = {m: before[m] for m in models if m in before}
+        new = [m for m in models if m not in known]
+        item['thinking'] = {**known, **(ai_assistant.detect_thinking(conn, new) if new else {})}
 
 
 def _reader(token):
@@ -112,8 +131,7 @@ def ai_models():
     found, problem = ai_assistant.list_models(conn)
     if problem and not found:
         return jsonify({'error': problem}), 502
-    return jsonify({'success': True, 'models': found,
-                    'thinking': {m: ai_assistant.guess_thinking(m) for m in found}})
+    return jsonify({'success': True, 'models': found})
 
 
 @bp.route('/api/v1/ai/test', methods=['POST'])
