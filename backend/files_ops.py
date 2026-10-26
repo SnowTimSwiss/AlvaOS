@@ -176,6 +176,66 @@ def search(dir_path: str, query: str, root: str = DATA_ROOT, limit: int = SEARCH
     return {'results': found, 'complete': state['complete']}
 
 
+TREE_LIMIT = 200_000
+TREE_SECONDS = 25
+
+
+def tree(dir_path: str, root: str = DATA_ROOT, limit: int = TREE_LIMIT,
+         seconds: float = TREE_SECONDS) -> Dict[str, Any]:
+    """Every file and folder below a folder, in one answer, for the sync
+    folder of the computer app: relative path, kind, size, modification time
+    (whole seconds). Never follows symlinks; skips the trash, unfinished
+    uploads and what the person cannot open. `complete` is false when it
+    stopped early (`limit`, SEARCH_DEPTH levels, `seconds`): then the
+    computer must not take anything missing for deleted."""
+    deadline = time.monotonic() + seconds
+    found: List[Dict[str, Any]] = []
+    state = {'complete': True}
+
+    def walk(dfd: int, rel: str, depth: int) -> None:
+        try:
+            names = sorted(os.listdir(dfd))
+        except OSError:
+            state['complete'] = False
+            return
+        for name in names:
+            if len(found) >= limit or time.monotonic() > deadline:
+                state['complete'] = False
+                return
+            if name == TRASH_DIR or name.endswith(PART_SUFFIX):
+                continue
+            try:
+                st = os.lstat(name, dir_fd=dfd)
+            except OSError:
+                continue
+            is_dir = stat.S_ISDIR(st.st_mode)
+            if not is_dir and not stat.S_ISREG(st.st_mode):
+                continue
+            path = f'{rel}/{name}' if rel else name
+            found.append({'path': path, 'type': 'folder' if is_dir else 'file',
+                          'size': 0 if is_dir else st.st_size, 'mtime': int(st.st_mtime)})
+            if is_dir:
+                if depth >= SEARCH_DEPTH:
+                    state['complete'] = False
+                    continue
+                try:
+                    sub = _open_subdir(name, dfd)
+                except OSError:
+                    state['complete'] = False
+                    continue
+                try:
+                    walk(sub, path, depth + 1)
+                finally:
+                    os.close(sub)
+
+    dfd = open_dir(dir_path, root)
+    try:
+        walk(dfd, '', 0)
+    finally:
+        os.close(dfd)
+    return {'entries': found, 'complete': state['complete']}
+
+
 MEDIA_TYPES = ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif', '.avif', '.bmp',
                '.mp4', '.mov', '.m4v', '.webm', '.mkv', '.3gp')
 MEDIA_LIMIT = 5000

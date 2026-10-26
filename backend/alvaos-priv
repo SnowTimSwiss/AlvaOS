@@ -368,6 +368,7 @@ def file_size(argv):
 FILES_OPS = {
     'files-list': (1, lambda a: {'entries': files_ops.list_dir(a[0])}),
     'files-search': (2, lambda a: files_ops.search(a[0], a[1])),
+    'files-tree': (1, lambda a: files_ops.tree(a[0])),
     'files-media': (1, lambda a: files_ops.media(a[0])),
     'files-versions': (None, lambda a: {'versions': files_ops.versions(a[0], a[1:])}),
     'files-restore-version': (4, lambda a: {'name': files_ops.restore_version(a[0], a[1], a[2], a[3])}),

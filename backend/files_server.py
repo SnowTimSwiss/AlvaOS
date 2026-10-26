@@ -668,6 +668,23 @@ def list_folder():
     return jsonify({'share': share['name'], 'access': share['access'], 'path': rel, 'entries': entries})
 
 
+@app.get('/api/sync/tree')
+def sync_tree():
+    """Every file and folder below a folder in one answer, as the person: what the
+    sync folder of the computer app compares with (path, kind, size, date)."""
+    session, refused = need_session()
+    if refused:
+        return refused
+    share, path, rel, bad = target(session, request.args)
+    if bad:
+        return bad
+    result, error = files_manager.run_helper(['files-tree', path], timeout=60, user=as_user(session, share))
+    if result is None:
+        return jsonify({'error': error or 'The folder could not be read.'}), 409
+    return jsonify({'share': share['name'], 'path': rel, 'access': share['access'],
+                    'entries': result.get('entries') or [], 'complete': bool(result.get('complete'))})
+
+
 @app.get('/api/search')
 def search():
     """Names below a folder of one share, or in every share of the person

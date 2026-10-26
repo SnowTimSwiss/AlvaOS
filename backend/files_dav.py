@@ -298,7 +298,16 @@ def put(session, raw: str) -> Response:
     if result is None:
         _helper(['files-part-abort', folder, target], session)
         return Response((error or 'The file could not be saved.') + '\n', 409)
-    problem = _helper(['files-part-finish', folder, target, str(int(result.get('size') or 0))], session)
+    # The file's own date, as Nextcloud clients send it (X-OC-Mtime, seconds): the sync folder of
+    # the computer app compares by size and date, so both sides must have the same one.
+    try:
+        mtime = int(float(request.headers.get('X-OC-Mtime') or 0))
+    except ValueError:
+        mtime = 0
+    size = str(int(result.get('size') or 0))
+    finish = ['files-part-finish-dated', folder, target, size, str(mtime)] if mtime > 0 else \
+        ['files-part-finish', folder, target, size]
+    problem = _helper(finish, session)
     if problem:
         return Response(problem + '\n', 409)
     if existing:
@@ -306,7 +315,7 @@ def put(session, raw: str) -> Response:
         if problem:
             _to_trash(share, folder, target, session)
             return Response(problem + '\n', 409)
-    return Response(b'', 204 if existing else 201)
+    return Response(b'', 204 if existing else 201, {'X-OC-MTime': 'accepted'} if mtime > 0 else {})
 
 
 def mkcol(session, raw: str) -> Response:

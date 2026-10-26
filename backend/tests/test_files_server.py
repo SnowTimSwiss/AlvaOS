@@ -550,3 +550,15 @@ def test_a_phone_stays_signed_in_when_the_2fa_secret_changes_or_the_file_is_busy
     # A real password change still ends the session.
     auth.write_text(json.dumps(hash_password("new-pass")))
     assert client.get("/api/me").status_code == 401
+
+
+def test_the_sync_folder_reads_a_whole_tree_as_the_person(client, monkeypatch):
+    seen = []
+    monkeypatch.setattr(files_manager, "run_helper", lambda args, timeout=600, user=None: (
+        seen.append((args, user)) or {"entries": [{"path": "2024/a.jpg", "type": "file", "size": 3, "mtime": 1790000000}],
+                                      "complete": True}, ""))
+    sign_in(client, "ben", "ben-pass")
+    assert client.get("/api/sync/tree?share=Anna").status_code == 404
+    data = client.get("/api/sync/tree?share=Family&path=Photos").get_json()
+    assert seen == [(["files-tree", "/mnt/alvaos/main/Family/Photos"], "ben")]
+    assert data["entries"][0]["path"] == "2024/a.jpg" and data["complete"] is True and data["access"] == "read"
