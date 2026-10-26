@@ -1,0 +1,22 @@
+[package]
+name = "alvaos-desktop"
+description = "AlvaOS for your computer: your NAS from anywhere, the Hub apps, Files as a drive"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+default-run = "alvaos-desktop"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+alvaos-core = { path = "../core" }
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-opener = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+dirs = "6"

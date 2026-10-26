@@ -22,6 +22,8 @@ pub struct Config {
     pub nas_name: String,
     /// The person this computer is signed in as.
     pub user: String,
+    /// This computer in the Hub's Devices (to sign it out there too).
+    pub device_id: String,
     /// The NAS's Link address; None when Link is off on the NAS (then at home only).
     pub link: Option<String>,
     /// Where the Hub answers at home.
@@ -43,6 +45,7 @@ impl Default for Config {
         Self {
             nas_name: String::new(),
             user: String::new(),
+            device_id: String::new(),
             link: None,
             addresses: Vec::new(),
             hub_port: HUB_PORT,

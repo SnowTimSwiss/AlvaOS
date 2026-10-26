@@ -109,6 +109,11 @@ impl Hub {
         self.call(reqwest::Method::GET, "/api/me", Some(token), None).await
     }
 
+    /// Signs this computer out on the NAS too (Devices).
+    pub async fn remove_device(&self, token: &str, device: &str) -> Result<()> {
+        self.call(reqwest::Method::DELETE, &format!("/api/devices/{device}"), Some(token), None).await.map(|_| ())
+    }
+
     /// A code that works once, for a minute: the Hub opened with it (`/?handoff=`) is signed in.
     pub async fn handoff(&self, token: &str) -> Result<String> {
         let value = self.call(reqwest::Method::POST, "/api/devices/handoff", Some(token), Some(json!({}))).await?;

@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AlvaOS</title>
+    <link rel="stylesheet" href="app.css">
+</head>
+<body>
+    <main id="app">
+        <!-- 1. Connect this computer -->
+        <section class="view" id="view-connect" hidden>
+            <header class="hello">
+                <img src="logo.png" alt="" class="logo">
+                <h1>Connect this computer to your NAS</h1>
+                <p>Your files, photos, calendar and chat from AlvaOS, at home and away. In the Hub of your NAS, open <strong>Devices › Connect a computer</strong>.</p>
+            </header>
+            <div class="note warn" id="connect-note" hidden></div>
+            <nav class="tabs" role="tablist">
+                <button type="button" role="tab" data-way="link" aria-selected="true">Paste a link</button>
+                <button type="button" role="tab" data-way="code">Type the code</button>
+                <button type="button" role="tab" data-way="password">Name and password</button>
+            </nav>
+            <form class="card" id="form-link" data-form="link">
+                <label class="field">The link from the Hub
+                    <textarea id="link-text" rows="3" placeholder="alvaos://pair?c=…" spellcheck="false" autocomplete="off"></textarea>
+                </label>
+                <p class="found" id="link-found" hidden></p>
+                <div class="row">
+                    <button type="button" class="btn" id="link-paste">Paste</button>
+                    <span class="grow"></span>
+                    <button type="submit" class="btn primary">Connect</button>
+                </div>
+            </form>
+            <form class="card" id="form-code" data-form="code" hidden>
+                <label class="field">Code <input id="code-code" placeholder="QFR9-YKZK" autocomplete="off" spellcheck="false"></label>
+                <label class="field">Address of the NAS <input id="code-address" placeholder="192.168.1.20:8090" autocomplete="off" spellcheck="false">
+                    <small>As in the browser at home. Away from home use the link: it has the NAS's AlvaOS Link address.</small></label>
+                <div class="row"><span class="grow"></span><button type="submit" class="btn primary">Connect</button></div>
+            </form>
+            <form class="card" id="form-password" data-form="password" hidden>
+                <label class="field">Address of the NAS <input id="pw-address" placeholder="192.168.1.20:8090" autocomplete="off" spellcheck="false"></label>
+                <label class="field">Name <input id="pw-user" autocomplete="username" spellcheck="false"></label>
+                <label class="field">Password <input id="pw-password" type="password" autocomplete="current-password"></label>
+                <label class="field" id="pw-code-field" hidden>Two-step code <input id="pw-code" inputmode="numeric" autocomplete="one-time-code"></label>
+                <div class="row"><span class="grow"></span><button type="submit" class="btn primary">Sign in</button></div>
+            </form>
+            <p class="error" id="connect-error" role="alert"></p>
+        </section>
+
+        <!-- 2. What to use -->
+        <section class="view" id="view-choose" hidden>
+            <header class="hello">
+                <div class="done-ic">✓</div>
+                <h1 id="choose-title">Connected</h1>
+                <p>What do you want to use on this computer? You can change it later.</p>
+            </header>
+            <div class="blocks">
+                <label class="block on fixed">
+                    <input type="checkbox" checked disabled>
+                    <span class="block-text"><strong>Your NAS from anywhere</strong>
+                        <span>Always there: AlvaOS Link keeps this computer connected, at home and away, no router settings. Your browser opens the Hub at <code class="hub-url"></code>, and calendar and contacts apps reach the NAS there too.</span></span>
+                </label>
+                <label class="block">
+                    <input type="checkbox" id="pick-window" checked>
+                    <span class="block-text"><strong>The Hub apps in a window</strong>
+                        <span>Files, Photos, Calendar, Contacts and Chat, one click from the tray.</span></span>
+                </label>
+                <label class="block" id="pick-drive-row">
+                    <input type="checkbox" id="pick-drive">
+                    <span class="block-text"><strong>Files as a drive</strong>
+                        <span id="pick-drive-text">Your shared folders in the file manager, like a disk of this computer.</span></span>
+                </label>
+                <label class="block soon">
+                    <input type="checkbox" disabled>
+                    <span class="block-text"><strong>A sync folder <em>coming in AlvaOS 0.6</em></strong>
+                        <span>Chosen folders kept on this computer, also offline.</span></span>
+                </label>
+                <label class="block">
+                    <input type="checkbox" id="pick-autostart" checked>
+                    <span class="block-text"><strong>Start with the computer</strong>
+                        <span>Quietly, in the tray: the NAS is there whenever you need it.</span></span>
+                </label>
+            </div>
+            <div class="row end"><button type="button" class="btn primary" id="choose-done">Done</button></div>
+            <p class="error" id="choose-error" role="alert"></p>
+        </section>
+
+        <!-- 3. Status and settings -->
+        <section class="view" id="view-home" hidden>
+            <header class="top">
+                <img src="logo.png" alt="" class="logo small">
+                <div><h1 id="home-nas">AlvaOS</h1><small id="home-user"></small></div>
+                <span class="grow"></span>
+                <span class="pill" id="home-pill"></span>
+            </header>
+            <p class="status-line" id="home-line"></p>
+            <div class="note warn" id="home-note" hidden></div>
+            <div class="row actions">
+                <button type="button" class="btn primary big" id="home-open">Open AlvaOS</button>
+                <button type="button" class="btn big" id="home-browser">Open in the browser</button>
+            </div>
+
+            <h2>Your NAS on this computer</h2>
+            <div class="card list">
+                <div class="item">
+                    <div><strong>The Hub</strong><small>In any browser, from anywhere. Calendar and contacts apps (CalDAV, CardDAV) sign in there with your name and password.</small></div>
+                    <button type="button" class="btn copy" data-copy="hub"><code class="hub-url"></code></button>
+                </div>
+                <div class="item" id="drive-row">
+                    <div><strong>Files as a drive</strong><small id="drive-text">Your shared folders in the file manager.</small></div>
+                    <label class="switch"><input type="checkbox" id="home-drive"><span></span></label>
+                </div>
+                <div class="item">
+                    <div><strong>Connected to the NAS</strong><small>Off: the NAS cannot be reached from this computer until you switch it on.</small></div>
+                    <label class="switch"><input type="checkbox" id="home-connected"><span></span></label>
+                </div>
+            </div>
+
+            <h2>Settings</h2>
+            <div class="card list">
+                <div class="item">
+                    <div><strong>The Hub apps in a window</strong><small>Else "Open AlvaOS" opens the browser.</small></div>
+                    <label class="switch"><input type="checkbox" id="home-window"><span></span></label>
+                </div>
+                <div class="item">
+                    <div><strong>Start with the computer</strong><small>Quietly, in the tray.</small></div>
+                    <label class="switch"><input type="checkbox" id="home-autostart"><span></span></label>
+                </div>
+                <div class="item">
+                    <div><strong>Sign out this computer</strong><small>Here and on the NAS (Devices). Connect it again with a new link.</small></div>
+                    <button type="button" class="btn danger" id="home-signout">Sign out</button>
+                </div>
+            </div>
+            <p class="error" id="home-error" role="alert"></p>
+            <footer id="home-foot"></footer>
+        </section>
+    </main>
+    <div class="toast" id="toast" hidden></div>
+    <script src="app.js"></script>
+</body>
+</html>

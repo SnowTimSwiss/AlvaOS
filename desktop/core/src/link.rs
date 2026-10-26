@@ -20,6 +20,18 @@ use tokio::sync::Mutex;
 use crate::{DeviceInfo, Paired};
 
 pub const ALPN: &[u8] = b"alvaos/link/1";
+
+/// The NAS answers, but not to this computer: it was removed in the Hub (Devices), or never paired.
+#[derive(Debug)]
+pub struct NotPaired;
+
+impl std::fmt::Display for NotPaired {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "The NAS does not know this computer (any more).")
+    }
+}
+
+impl std::error::Error for NotPaired {}
 const CONNECT_SECONDS: u64 = 30;
 
 /// How the computer reaches the NAS right now.
@@ -131,9 +143,10 @@ impl Link {
         let started = Instant::now();
         let (mut send, mut recv) = self.open(nas, "ping", hints).await?;
         send.finish()?;
-        let answer = recv.read_to_end(16).await.context("The NAS did not answer.")?;
+        // The connection stands, so the NAS is there: a refused stream means it does not let this computer in.
+        let answer = recv.read_to_end(16).await.map_err(|_| NotPaired)?;
         if String::from_utf8_lossy(&answer).trim() != "pong" {
-            bail!("This computer is not connected to the NAS (any more).");
+            return Err(NotPaired.into());
         }
         let ms = started.elapsed().as_millis() as u64;
         Ok(self.route(nas).await.unwrap_or(Route { kind: "direct".into(), ms }))

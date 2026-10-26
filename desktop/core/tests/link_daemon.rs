@@ -129,7 +129,9 @@ async fn a_computer_pairs_and_then_reaches_the_hub_and_files_through_its_own_add
 
     // Not paired yet: the Hub is not open to a stranger, only pairing is.
     assert!(get(&format!("{}/api/me", hub.url())).await.is_err(), "a stranger must not reach the Hub");
-    assert!(link.ping(&nas, &hints).await.is_err());
+    // The NAS is there, but does not let this computer in: that is told apart from "not reachable".
+    let refused = link.ping(&nas, &hints).await.unwrap_err();
+    assert!(refused.is::<alvaos_core::link::NotPaired>(), "{refused}");
 
     // A wrong code pairs nothing; the right one trades for this computer's session.
     let computer = DeviceInfo { name: "Laptop".into(), model: String::new(), platform: "linux".into(), app_version: "test".into() };
