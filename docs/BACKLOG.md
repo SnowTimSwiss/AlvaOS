@@ -15,6 +15,13 @@ How to add an entry:
 
 ---
 
+## 2026-10-26 — Roadmap: desktop app without macOS, sync beta, files on demand next
+
+- `docs/ROADMAP.md`: the desktop app is planned for Windows and Linux only; macOS is not planned for now (no `.dmg`, no Keychain, no Apple notarising). The sync folder (0.6.0) is to be marked **beta** in the app's settings, and files on demand (placeholders, Windows first) are announced there as coming soon, right after 0.6.0.
+- Nothing built yet. There is no desktop app code in this repository, so the in-app notice is part of building 0.6.0, not a change that can be made today.
+
+**Note for next time:** when the desktop app starts, its settings screen for the sync folder needs the beta label and the "files on demand coming soon" note from the roadmap, and the packages list there must match this plan (two systems).
+
 ## 2026-10-26 — Roadmap: the desktop app
 
 - `docs/ROADMAP.md`: the plan for the desktop app in building blocks (remote access for the whole computer, the Hub apps in the window, a folder), how it is built (Rust core, Tauri, packages for Windows, Linux and macOS), and the steps 0.5.0 and 0.6.0. Plan only, nothing built yet.
