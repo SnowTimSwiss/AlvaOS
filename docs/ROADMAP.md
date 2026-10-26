@@ -41,7 +41,9 @@ Current version: **beta-v0.4.0**
 - [ ] iPhone app (on AlvaOS Link)
 - [ ] Desktop apps: see the plan below
 
-#### Desktop app (Windows, Linux, macOS): the plan
+#### Desktop app (Windows, Linux): the plan
+
+macOS is not planned for now.
 
 One app in building blocks. After connecting, the app asks once what to use (each can be changed later in its settings):
 
@@ -51,15 +53,15 @@ One app in building blocks. After connecting, the app asks once what to use (eac
 
 How it is built:
 - One core in Rust (iroh is Rust already; the same core can later carry the iPhone app) and Tauri for the window, the tray and autostart: a few MB, not Electron.
-- Packages: `.msi` (Windows), `.deb` and `.rpm` (own signed repository), Flatpak (Flathub), `.dmg` (macOS); built in CI for all three systems.
-- Connecting without a camera: the code or link from the Hub (Devices › Connect a computer), or name and password. The session and the keys go to the system's key store (Credential Manager, Keychain, libsecret); every computer shows under Devices and can be removed there.
+- Packages: `.msi` (Windows), `.deb` and `.rpm` (own signed repository), Flatpak (Flathub); built in CI for both systems.
+- Connecting without a camera: the code or link from the Hub (Devices › Connect a computer), or name and password. The session and the keys go to the system's key store (Credential Manager, libsecret); every computer shows under Devices and can be removed there.
 
 Steps:
-- [ ] **0.5.0** Remote access for the whole computer, the Hub in the app's window, tray, setup that asks what to use, "Connect a computer" in the Hub, a network drive button, packages for the three systems
-- [ ] **0.6.0** A real sync folder for chosen folders (also offline); conflicts keep both versions, nothing is deleted without the NAS's trash, tested against a simulated file system
-- [ ] Later: files on demand (placeholders: Cloud Files on Windows, File Provider on macOS), CalDAV/CardDAV set up in the system by itself where it can (macOS, GNOME, Thunderbird)
+- [ ] **0.5.0** Remote access for the whole computer, the Hub in the app's window, tray, setup that asks what to use, "Connect a computer" in the Hub, a network drive button, packages for both systems
+- [ ] **0.6.0** A real sync folder for chosen folders (also offline); conflicts keep both versions, nothing is deleted without the NAS's trash, tested against a simulated file system. The app marks the sync folder as **beta** in its settings and says that files on demand are coming soon.
+- [ ] **Next, right after 0.6.0:** files on demand (placeholders: Cloud Files on Windows), announced in the app as coming soon. CalDAV/CardDAV set up in the system by itself where it can (GNOME, Thunderbird)
 
-What it needs from you: Windows code signing (else SmartScreen warns) and an Apple Developer account for notarising (99 $ a year), else both systems warn at install.
+What it needs from you: Windows code signing (else SmartScreen warns at install).
 
 ### AlvaOS Link
 - [ ] An own relay as a setting
