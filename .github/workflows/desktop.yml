@@ -1,0 +1,174 @@
+name: Desktop app
+
+# AlvaOS for computers (desktop/, docs/DESKTOP.md). Every push or pull request
+# that touches it: the core is tested (also against the real Link daemon of
+# the NAS) and the app is built for Linux. An AlvaOS release, or a run by
+# hand, builds the packages for Windows (.msi, setup .exe), macOS (.dmg) and
+# Linux (.deb, .rpm, .AppImage, Flatpak) and adds them to the release.
+on:
+  push:
+    branches: [main]
+    paths: ['desktop/**', 'backend/link_daemon.py', 'VERSION', '.github/workflows/desktop.yml']
+  pull_request:
+    paths: ['desktop/**', 'backend/link_daemon.py', 'VERSION', '.github/workflows/desktop.yml']
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Add the packages to this existing release too (its tag, e.g. beta-v0.5.0), or leave empty
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  LINUX_DEPS: libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev libdbus-1-dev libsecret-1-dev patchelf
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Libraries for the window (WebKitGTK) and the tray
+        run: sudo apt-get update -q && sudo apt-get install -y -q $LINUX_DEPS
+
+      # The core's Link test talks to the real daemon of the NAS (backend/link_daemon.py).
+      - uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
+        with:
+          python-version: '3.11'
+      - name: Python with iroh, for the Link test
+        run: python3 -m pip install 'iroh==1.1.0'
+
+      - name: Lint
+        run: |
+          cargo fmt --all --check || echo "::notice::cargo fmt would change some lines"
+          cargo clippy --all-targets -- -D warnings
+
+      - name: Test the core
+        run: cargo test -p alvaos-core
+
+      - name: Build the app
+        run: cargo build -p alvaos-desktop
+
+  packages:
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    needs: test
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 22.04: the Linux packages run on older systems too (glibc of 22.04 and newer).
+          - os: ubuntu-22.04
+            args: --bundles deb,rpm,appimage
+          - os: windows-latest
+            args: --bundles msi,nsis
+          - os: macos-latest
+            args: --target universal-apple-darwin --bundles dmg
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: desktop/app
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      - name: Libraries (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q $LINUX_DEPS rpm
+
+      - name: Both kinds of Mac (Apple silicon and Intel)
+        if: runner.os == 'macOS'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      # The version of the packages: the release's (beta-v0.5.0 -> 0.5.0), else the VERSION file.
+      - name: Version
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.release }}
+        run: |
+          name="${TAG:-$(cat ../../VERSION)}"
+          echo "VERSION_NUMBER=$(echo "$name" | sed -E 's/^[a-z-]*v//; s/[^0-9.].*$//')" >> "$GITHUB_ENV"
+
+      - name: Build the packages
+        run: npx --yes @tauri-apps/cli@2.12.4 build ${{ matrix.args }} --config "{\"version\": \"$VERSION_NUMBER\"}"
+
+      - name: Collect them
+        run: |
+          mkdir -p ../out
+          find ../target -path '*/bundle/*' -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' -o -name '*.msi' -o -name '*-setup.exe' -o -name '*.dmg' \) \
+            -exec cp {} ../out/ \;
+          ls -l ../out
+
+      - uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
+        with:
+          name: alvaos-desktop-${{ runner.os }}
+          path: desktop/out/
+          retention-days: 3
+
+      - name: Add them to the release
+        if: github.event_name == 'release' || inputs.release != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.release }}
+        run: gh release upload "$TAG" ../out/* --clobber
+
+  # Flatpak, from the .deb of the Linux build (desktop/flatpak/).
+  flatpak:
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    needs: packages
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: The .deb of the Linux build, and the tray library's recipe
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download ${{ github.run_id }} --name alvaos-desktop-Linux --dir desktop/flatpak/in
+          cp desktop/flatpak/in/*.deb desktop/flatpak/alvaos.deb
+          git clone -q https://github.com/flathub/shared-modules desktop/flatpak/shared-modules
+          git -C desktop/flatpak/shared-modules checkout -q d1ab132e6480acefc5c510ee13d8d586d36cab19
+
+      - name: Flatpak tools and the GNOME runtime
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q flatpak flatpak-builder
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y --noninteractive flathub org.gnome.Platform//48 org.gnome.Sdk//48
+
+      - name: Build the Flatpak
+        working-directory: desktop/flatpak
+        run: |
+          flatpak-builder --user --force-clean --repo=repo build uk.timserver.alvaos.desktop.yml
+          flatpak build-bundle repo AlvaOS.flatpak uk.timserver.alvaos.desktop
+          ls -l AlvaOS.flatpak
+
+      - uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
+        with:
+          name: alvaos-desktop-Flatpak
+          path: desktop/flatpak/AlvaOS.flatpak
+          retention-days: 3
+
+      - name: Add it to the release
+        if: github.event_name == 'release' || inputs.release != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.release }}
+        run: gh release upload "$TAG" desktop/flatpak/AlvaOS.flatpak --clobber

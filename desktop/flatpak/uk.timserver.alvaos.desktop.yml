@@ -1,0 +1,36 @@
+# AlvaOS for Linux as a Flatpak, made from the .deb of the Tauri build (see .github/workflows/desktop.yml:
+# the job puts it here as alvaos.deb and checks out flathub/shared-modules for the tray library).
+app-id: uk.timserver.alvaos.desktop
+runtime: org.gnome.Platform
+runtime-version: '48'
+sdk: org.gnome.Sdk
+command: alvaos
+finish-args:
+  - --share=network            # AlvaOS Link and the NAS's addresses on this computer
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --talk-name=org.freedesktop.secrets          # the key store (session and Link key)
+  - --talk-name=org.kde.StatusNotifierWatcher    # the tray icon
+  - --talk-name=org.gtk.vfs.*                    # Files as a drive (gio, GNOME's gvfs on the computer)
+  - --filesystem=xdg-run/gvfs
+  - --filesystem=xdg-download                    # downloads from the Hub's window
+modules:
+  - shared-modules/libayatana-appindicator/libayatana-appindicator-gtk3.json
+  - name: alvaos
+    buildsystem: simple
+    sources:
+      - type: file
+        path: alvaos.deb
+      - type: file
+        path: uk.timserver.alvaos.desktop.metainfo.xml
+    build-commands:
+      - ar -x alvaos.deb
+      - tar -xf data.tar.gz
+      - install -Dm755 usr/bin/alvaos /app/bin/alvaos
+      - install -Dm644 usr/share/icons/hicolor/32x32/apps/alvaos.png /app/share/icons/hicolor/32x32/apps/uk.timserver.alvaos.desktop.png
+      - install -Dm644 usr/share/icons/hicolor/128x128/apps/alvaos.png /app/share/icons/hicolor/128x128/apps/uk.timserver.alvaos.desktop.png
+      - install -Dm644 usr/share/applications/AlvaOS.desktop /app/share/applications/uk.timserver.alvaos.desktop.desktop
+      - desktop-file-edit --set-icon=uk.timserver.alvaos.desktop /app/share/applications/uk.timserver.alvaos.desktop.desktop
+      - install -Dm644 uk.timserver.alvaos.desktop.metainfo.xml /app/share/metainfo/uk.timserver.alvaos.desktop.metainfo.xml

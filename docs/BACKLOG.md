@@ -15,6 +15,20 @@ How to add an entry:
 
 ---
 
+## 2026-10-26 — beta-v0.5.0: AlvaOS for computers (Windows, Linux, macOS)
+
+- **The desktop app** (`desktop/`, docs/DESKTOP.md): Rust core + Tauri 2. An icon in the tray keeps the computer connected to the NAS through AlvaOS Link, from anywhere. The NAS gets addresses on the computer (`127.0.0.1:18090` the Hub with CalDAV/CardDAV, `:18091` Files over WebDAV) for the app's window, the browser and other programs.
+- **Setup asks what to use:** remote access (always), the Hub apps in a window, Files as a drive (Linux via gio, macOS via Finder; Windows with the sync folder in 0.6), start with the computer; the sync folder is shown as coming.
+- **Connecting:** the Hub's Devices has "Connect a computer" (a link to paste, or code and address); pairing through Link like a phone; name and password work too. The app's own session and Link key go to the system's key store.
+- **Signed in without a password in the browser and the window:** a one-time code from the app (`/api/devices/handoff`, 60 s, once) that the Hub page trades for a browser session (`/api/handoff`); the app's token never reaches a page.
+- **On the NAS:** Link service `dav` (WebDAV, 8091) for phones and computers; WebDAV accepts a device's own session token as the password (only as its person; ends with the device); computers in Devices with a screen icon and their system.
+- **Signed out on the NAS** is noticed (refused twice in a row) and the app asks to connect again; Sign out in the app signs it out on the NAS too.
+- Tests: the core against the real Link daemon (pairing, wrong code, the Hub and WebDAV through the local addresses, seen from the computer's own 127.95 address, 12 at once, refused vs. not reachable); backend tests for the handoff and WebDAV with a device token; the app end to end under Xvfb with tauri-driver (connect, choose, the Hub window signed in through Link, removed on the NAS noticed after 34 s).
+- CI: `desktop.yml` tests on every change; a release builds `.msi`/setup `.exe`, universal `.dmg`, `.deb`/`.rpm`/`.AppImage` and a Flatpak (from the `.deb`) and adds them to the release.
+- Note for next time: Windows and macOS were only built by CI, never run here; check the tray, the key store and autostart there. The Flatpak was not built here (no Flathub access in the sandbox); autostart from inside a Flatpak may need the Background portal. Packages are not signed yet (SmartScreen, Gatekeeper warnings). The deb is called `alva-os` (Tauri makes it from the product name).
+
+---
+
 ## 2026-10-25 — beta-v0.4.0: AI update (several services, who may use which, web search, private chats, the flame)
 
 - **Settings › AI** (was "Assistant"): as many AI services as needed, each with name, address, key and its own models. "Find models" asks the service (`/models`); models can also be typed. What each model can (think first, and how hard) is asked from the service when the admin saves: the `/models` list where it names the parameters (OpenRouter: `reasoning`, `include_reasoning`), Ollama's `/api/show` (capability "thinking", levels only for gpt-oss), else the name. It cannot be set by hand; a model that refuses to think anyway loses "Think" until the Hub restarts. The assistant uses one of these models. `ai.json` is now `{enabled, level, connections, assistant}`; an old file (one service) is read as the service `main`, also with the Chat models chosen before.
