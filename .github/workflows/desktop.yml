@@ -106,7 +106,8 @@ jobs:
           echo "VERSION_NUMBER=$(echo "$name" | sed -E 's/^[a-z-]*v//; s/[^0-9.].*$//')" >> "$GITHUB_ENV"
 
       - name: Build the packages
-        run: npx --yes @tauri-apps/cli@2.12.4 build ${{ matrix.args }} --config "{\"version\": \"$VERSION_NUMBER\"}"
+        run: |
+          npx --yes @tauri-apps/cli@2.12.4 build ${{ matrix.args }} --config "{\"version\": \"$VERSION_NUMBER\"}"
 
       - name: Collect them
         run: |

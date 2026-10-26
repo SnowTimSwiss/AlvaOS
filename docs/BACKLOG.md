@@ -29,6 +29,12 @@ How to add an entry:
 
 ---
 
+## 2026-10-26 — Roadmap: the desktop app
+
+- `docs/ROADMAP.md`: the plan for the desktop app in building blocks (remote access for the whole computer, the Hub apps in the window, a folder), how it is built (Rust core, Tauri, packages for Windows, Linux and macOS), and the steps 0.5.0 and 0.6.0. Plan only, nothing built yet.
+
+---
+
 ## 2026-10-25 — beta-v0.4.0: AI update (several services, who may use which, web search, private chats, the flame)
 
 - **Settings › AI** (was "Assistant"): as many AI services as needed, each with name, address, key and its own models. "Find models" asks the service (`/models`); models can also be typed. What each model can (think first, and how hard) is asked from the service when the admin saves: the `/models` list where it names the parameters (OpenRouter: `reasoning`, `include_reasoning`), Ollama's `/api/show` (capability "thinking", levels only for gpt-oss), else the name. It cannot be set by hand; a model that refuses to think anyway loses "Think" until the Hub restarts. The assistant uses one of these models. `ai.json` is now `{enabled, level, connections, assistant}`; an old file (one service) is read as the service `main`, also with the Chat models chosen before.
