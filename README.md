@@ -17,6 +17,7 @@
 * **Apps**: Docker and Docker Compose, a catalog with one-click install and updates, graphics cards for apps and VMs.
 * **Virtual machines**: QEMU/KVM with the screen in the browser (Windows 11 with UEFI and TPM).
 * **Android app**: the whole Hub, photo backup in the background, share to AlvaOS.
+* **Desktop app** (Windows, Linux, macOS): the NAS from anywhere on the computer, also in its browser; the Hub apps in a window; Files as a drive.
 * **Clean web UI**: dark and light, works on a phone, API-driven.
 * **Stable base**: Debian, conservative defaults, signed updates with rollback.
 
@@ -53,6 +54,7 @@ More in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/STRUCTURE.md](doc
 | [docs/LINK.md](docs/LINK.md) | AlvaOS Link: how phones and buddies reach the NAS |
 | [docs/BUDDY_BACKUP.md](docs/BUDDY_BACKUP.md) | Buddy Backup |
 | [docs/ANDROID.md](docs/ANDROID.md) | The Android app: building, signing, Google Play |
+| [docs/DESKTOP.md](docs/DESKTOP.md) | The desktop app: what it does, packages, building |
 | [docs/PRIVACY.md](docs/PRIVACY.md) | What leaves your NAS and what does not |
 | [docs/TESTING.md](docs/TESTING.md) | Step-by-step checks for a real installation |
 | [docs/ROADMAP.md](docs/ROADMAP.md) / [docs/BACKLOG.md](docs/BACKLOG.md) | What is next / what was done |

@@ -17,7 +17,8 @@ One QUIC stream per request; the first line names a **service**:
 
 | service | who | goes to |
 |---|---|---|
-| `hub` | a paired phone | the Hub (`127.0.0.1:8090`) |
+| `hub` | a paired phone or computer | the Hub (`127.0.0.1:8090`), also CalDAV and CardDAV |
+| `dav` | a paired phone or computer | Files over WebDAV (`127.0.0.1:8091`): the drive of a computer |
 | `api`, `nbd` | a paired buddy | the backend (`:8080`) and the vault server (`:10809`) |
 | `pair` | anybody | one narrow request: trade a Hub pairing code for a session (phone) or hand over a buddy pairing code. Slowed down per key (6 per minute). |
 | `ping` | a paired peer | answers `pong` |
@@ -29,6 +30,10 @@ Everyone else is refused; a stranger cannot even reach the Hub's sign-in page. A
 ## Phones (the Android app)
 
 The QR code of the Hub (Devices) carries the pairing code and, when Link is on, the NAS's Link address (`l=`). The app pairs at home or away; away it reaches the Hub through a local forwarder (`127.0.0.1:<port>` in the app) that opens a `hub` stream per connection. See `docs/ANDROID.md`.
+
+## Computers (the desktop app)
+
+Like a phone: the Hub's Devices › Connect a computer gives a link to paste (`alvaos://pair?…&l=`); the app pairs through `pair` and from then on makes the NAS addresses on the computer (`127.0.0.1:18090` for the Hub, `:18091` for WebDAV), each connection a `hub` or `dav` stream. See `docs/DESKTOP.md`.
 
 ## Buddies
 

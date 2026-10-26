@@ -10,7 +10,7 @@ check it on a real machine is in [TESTING.md](TESTING.md).
 - [~] Done, but still needs a run on real hardware or a real phone
 - [ ] Not done yet
 
-Current version: **beta-v0.4.0**
+Current version: **beta-v0.5.0**
 
 ---
 
@@ -39,7 +39,7 @@ Current version: **beta-v0.4.0**
 ### Apps for phones and computers
 - [ ] File sync and notifications in the Android app
 - [ ] iPhone app (on AlvaOS Link)
-- [ ] Desktop apps: see the plan below
+- [~] Desktop app: 0.5.0 is there (docs/DESKTOP.md), the plan below
 
 #### Desktop app (Windows, Linux): the plan
 
@@ -57,9 +57,9 @@ How it is built:
 - Connecting without a camera: the code or link from the Hub (Devices › Connect a computer), or name and password. The session and the keys go to the system's key store (Credential Manager, libsecret); every computer shows under Devices and can be removed there.
 
 Steps:
-- [ ] **0.5.0** Remote access for the whole computer, the Hub in the app's window, tray, setup that asks what to use, "Connect a computer" in the Hub, a network drive button, packages for both systems
-- [ ] **0.6.0** A real sync folder for chosen folders (also offline); conflicts keep both versions, nothing is deleted without the NAS's trash, tested against a simulated file system. The app marks the sync folder as **beta** in its settings and says that files on demand are coming soon.
-- [ ] **Next, right after 0.6.0:** files on demand (placeholders: Cloud Files on Windows), announced in the app as coming soon. CalDAV/CardDAV set up in the system by itself where it can (GNOME, Thunderbird)
+- [~] **0.5.0** Remote access for the whole computer, the Hub in the app's window, tray, setup that asks what to use, "Connect a computer" in the Hub, Files as a drive (Linux, macOS), packages for the three systems (tested on Linux; Windows and macOS need a run on a real computer)
+- [ ] **0.6.0** A real sync folder for chosen folders (also offline); conflicts keep both versions, nothing is deleted without the NAS's trash, tested against a simulated file system
+- [ ] Later: files on demand (placeholders: Cloud Files on Windows, File Provider on macOS), CalDAV/CardDAV set up in the system by itself where it can (macOS, GNOME, Thunderbird)
 
 What it needs from you: Windows code signing (else SmartScreen warns at install).
 

@@ -506,6 +506,18 @@ Calendar › Create › Birthday: type a name and a year; choose "And make a new
 4. Open a deep folder in Files, go to Photos, then click Files: you are in your own folder, not in the deep one.
 \n
 
+## 12v The desktop app (Windows, Linux, macOS)
+
+1. Install it from the release (Windows `.msi` or setup `.exe`; Linux `.deb`, `.rpm`, `.AppImage` or the Flatpak; macOS `.dmg`). Not signed yet: Windows "More info › Run anyway", macOS System Settings › Privacy & Security › Open anyway.
+2. In the Hub: Devices › Connect a computer › Copy. In the app: Paste a link › it says "A link for anna on cygnus, works from anywhere" › Connect. A wrong or old code says so. Also try "Type the code" (at home) and "Name and password" (with two-step sign-in: it asks for the code).
+3. "What do you want to use?": keep the window, tick the drive (Linux, macOS), start with the computer › Done. The Hub opens in a window, already signed in. The Hub's Devices lists the computer with a screen icon and its system.
+4. The tray: the status line ("Connected to cygnus · direct · … ms"); Open AlvaOS; Open in the browser (signed in by itself, at `http://127.0.0.1:18090`); Show Files as a drive (Linux: GNOME Files › Other Locations; macOS: Finder); switch "Connected" off and on.
+5. Away from home (phone hotspot): everything the same; the status may say "through a relay".
+6. A download in the Hub's window lands in Downloads; a link to another site opens in the browser.
+7. Thunderbird or GNOME Calendar: CalDAV at `http://127.0.0.1:18090/` with name and password: the calendars come, also away from home.
+8. Restart the computer: the app starts in the tray (no window) and connects by itself.
+9. In the Hub sign the computer out (Devices): within a minute the app shows "This computer was signed out on the NAS. Connect it again." In the app: Sign out › it is gone from Devices too.
+
 ## 12u AI: several services, who may use which, private chats
 
 1. An NAS that had one AI service before: Settings › AI shows it as one

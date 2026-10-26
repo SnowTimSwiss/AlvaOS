@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "The app's own pages (ui/): its commands. The Hub's window gets none.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "allow-app-state", "allow-parse-link", "allow-connect", "allow-choose", "allow-open-hub",
+    "allow-open-browser", "allow-drive", "allow-set-connected", "allow-sign-out"
+  ]
+}

@@ -137,3 +137,35 @@ def test_a_phone_that_paired_at_home_registers_its_link_key(client, monkeypatch)
     r = p.post("/api/devices/link", json={"key": "CD" * 32}, headers=H)
     assert r.status_code == 200 and r.get_json() == {"success": True, "link": "ab" * 32}
     assert added == [("cd" * 32, "Pixel", "anna")]
+
+
+def test_the_computer_app_opens_the_hub_signed_in_with_a_code_that_works_once(client):  # noqa: F811
+    sign_in(client, "anna", "anna-pass")
+    computer = phone()
+    token = computer.post("/api/devices/pair", json={"code": pair_link(client)["code"],
+                                                     "device": {"name": "Laptop", "platform": "linux"}}).get_json()["token"]
+    computer.set_cookie(fs.COOKIE, token)
+    # A browser session cannot hand out codes; the app's own session can.
+    assert client.post("/api/devices/handoff", headers=H).status_code == 403
+    code = computer.post("/api/devices/handoff", headers=H).get_json()["code"]
+    browser = phone()
+    assert browser.post("/api/handoff", json={"code": code}).status_code == 403          # only from the Hub's page
+    took = browser.post("/api/handoff", json={"code": code}, headers=H)
+    assert took.status_code == 200 and "HttpOnly" in took.headers["Set-Cookie"]
+    me = browser.get("/api/me").get_json()
+    assert me["user"] == "anna"
+    # Its own session, not the app's: no device, and the code is used up.
+    assert browser.get_cookie(fs.COOKIE).value != token
+    assert phone().post("/api/handoff", json={"code": code}, headers=H).status_code == 401
+    listed = client.get("/api/devices").get_json()["devices"]
+    assert [d["platform"] for d in listed] == ["linux"]
+
+
+def test_a_handoff_code_runs_out(client, monkeypatch):  # noqa: F811
+    sign_in(client, "anna", "anna-pass")
+    computer = phone()
+    computer.set_cookie(fs.COOKIE, computer.post("/api/devices/pair", json={"code": pair_link(client)["code"]}).get_json()["token"])
+    code = computer.post("/api/devices/handoff", headers=H).get_json()["code"]
+    later = fs.time.time() + fs.HANDOFF_SECONDS + 1
+    monkeypatch.setattr(fs.time, "time", lambda: later)
+    assert phone().post("/api/handoff", json={"code": code}, headers=H).status_code == 401

@@ -1377,6 +1377,8 @@
     // Devices: connect the AlvaOS app on a phone with a QR code (or a code to
     // type), open the folders on a computer, and see, rename and sign out what is connected.
     const APP_DOWNLOAD = 'https://github.com/SnowTimSwiss/AlvaOS/releases/latest/download/alvaos-android.apk';
+    const DESKTOP_DOWNLOAD = 'https://github.com/SnowTimSwiss/AlvaOS/releases/latest';
+    const COMPUTERS = { windows: 'Windows', linux: 'Linux', macos: 'macOS' };
     // Inside the AlvaOS app the Hub leaves to the app what is the app's: signing
     // out this phone (the app's Settings) and offering the app itself.
     const IN_APP = /AlvaOSApp\//.test(navigator.userAgent);
@@ -1420,7 +1422,15 @@
             const dav = davBlock();
             const davOpen = wrap.querySelector('#dav-block')?.open;
             wrap.innerHTML = `<div class="dialog wide devices"><h2>Devices</h2>
-                ${pairing ? `<div class="pair">
+                ${pairing && pairing.computer ? `<div class="pair pc">
+                    <div class="pair-steps">
+                        <p><strong>1.</strong> Install AlvaOS on the computer (<a href="${DESKTOP_DOWNLOAD}" target="_blank" rel="noopener">Windows, Linux, macOS</a>).</p>
+                        <p><strong>2.</strong> Open it, choose <strong>Paste a link</strong> and paste this link:</p>
+                        <div class="pair-link"><input type="text" readonly value="${esc(pairing.link)}" aria-label="Link to connect a computer"><button type="button" class="btn" id="pair-copy">${icon('copy')}Copy</button></div>
+                        <p class="pair-code">Or type the code <strong>${esc(pairing.code)}</strong> in the app${pairing.addresses.length ? `, with the address <code>${esc(pairing.addresses[0])}</code>` : ''}.</p>
+                        <p class="muted">Works once, for ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} more minutes.${pairing.away ? ' Away from home the computer connects through AlvaOS Link.' : ' At home only: the admin can turn on AlvaOS Link in Settings.'}</p>
+                    </div></div>`
+                : pairing ? `<div class="pair">
                     <div class="qr">${pairing.qr ? `<img alt="QR code to connect a phone" src="${pairing.qr}">` : ''}</div>
                     <div class="pair-steps">
                         <p><strong>1.</strong> Install the AlvaOS app on the phone (<a href="${APP_DOWNLOAD}" target="_blank" rel="noopener">Android</a>).</p>
@@ -1429,18 +1439,19 @@
                         <p class="pair-code">Or type the code <strong>${esc(pairing.code)}</strong> in the app${pairing.addresses.length ? `, with the address <code>${esc(pairing.addresses[0])}</code>` : ''}.</p>
                         <p class="muted">Works once, for ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} more minutes.${pairing.away ? ' Away from home the app connects through AlvaOS Link.' : ' At home only: the admin can turn on AlvaOS Link in Settings.'}</p>
                     </div></div>`
-                : `<p>Connect a phone with the AlvaOS app: it uses every Hub app you have, backs up its photos and stays signed in, at home and away (AlvaOS Link). A QR code is all it takes, no password to type.</p>
+                : `<p>Connect a phone or a computer with the AlvaOS app: it uses every Hub app you have and stays signed in, at home and away (AlvaOS Link). A phone backs up its photos; a computer reaches the NAS from anywhere, also in its browser, and can show Files as a drive. No password to type.</p>
                     <div class="actions" style="justify-content:flex-start;margin:0 0 14px"><button type="button" class="btn primary" id="pair-btn">${icon('plus')}Connect a phone</button>
+                    <button type="button" class="btn" id="pair-pc">${icon('monitor')}Connect a computer</button>
                     ${IN_APP ? '' : `<a class="btn" href="${APP_DOWNLOAD}" target="_blank" rel="noopener">${icon('download')}Get the Android app</a>`}</div>`}
                 <div class="trash-list">${error ? esc(error) : list.length ? list.map((d) => `<div class="trash-row device">
-                    <div class="dev-ic">${icon('phone')}</div>
+                    <div class="dev-ic">${icon(COMPUTERS[d.platform] ? 'monitor' : 'phone')}</div>
                     <div><strong>${esc(d.name)}${d.this ? ' <span class="badge">This device</span>' : ''}${me?.role === 'admin' && d.user !== me.user ? ` <span class="badge">${esc(d.user)}</span>` : ''}</strong>
-                    <small>${esc([d.model && d.model !== d.name ? d.model : '', d.platform === 'android' ? 'Android' : d.platform, d.app_version ? `app ${d.app_version}` : ''].filter(Boolean).join(' · '))}</small>
+                    <small>${esc([d.model && d.model !== d.name ? d.model : '', d.platform === 'android' ? 'Android' : COMPUTERS[d.platform] || d.platform, d.app_version ? `app ${d.app_version}` : ''].filter(Boolean).join(' · '))}</small>
                     <small>Last used ${esc(ago(d.last_seen))} · connected ${esc(when(d.created_at))}</small>
                     ${d.backup ? `<small>${icon('image')} Backs up ${esc(d.backup.albums.join(', ') || 'nothing yet')} · ${d.backup.count} pictures${d.backup.last_sync ? ` · ${esc(ago(d.backup.last_sync))}` : ''}</small>` : ''}</div>
                     <div class="dev-actions"><button type="button" class="btn" data-rename="${esc(d.id)}" title="Rename">${icon('pen')}</button>
                     <button type="button" class="btn danger" data-remove="${esc(d.id)}">Sign out</button></div></div>`).join('')
-                : '<div class="empty" style="padding:24px 0">No phone is connected yet.</div>'}</div>
+                : '<div class="empty" style="padding:24px 0">No phone or computer is connected yet.</div>'}</div>
                 ${dav.html}
                 <div class="actions">${pairing ? '<button type="button" class="btn" id="pair-new">New code</button>' : ''}<button type="button" class="btn primary" data-close>Done</button></div></div>`;
             wrap.hidden = false;
@@ -1449,17 +1460,25 @@
             if (davOpen) wrap.querySelector('#dav-block').open = true;
             wrap.querySelector('[data-close]').onclick = close;
             wrap.onclick = (e) => { if (e.target === wrap) close(); };
-            const start = async () => {
+            const start = async (computer) => {
                 try {
                     const r = await api('devices/pair-code', { method: 'POST', json: { origin: location.origin } });
-                    pairing = { ...r, until: Date.now() + r.expires_in * 1000 };
+                    pairing = { ...r, until: Date.now() + r.expires_in * 1000, computer: !!computer };
                 } catch (err) { toast(err.message, 'error'); }
                 paint();
             };
             const pairBtn = wrap.querySelector('#pair-btn');
-            if (pairBtn) pairBtn.onclick = start;
+            if (pairBtn) pairBtn.onclick = () => start(false);
+            const pcBtn = wrap.querySelector('#pair-pc');
+            if (pcBtn) pcBtn.onclick = () => start(true);
             const again = wrap.querySelector('#pair-new');
-            if (again) again.onclick = start;
+            if (again) again.onclick = () => start(pairing && pairing.computer);
+            const copy = wrap.querySelector('#pair-copy');
+            if (copy) copy.onclick = async () => {
+                const field = wrap.querySelector('.pair-link input');
+                try { await navigator.clipboard.writeText(field.value); } catch (_e) { field.select(); document.execCommand('copy'); }
+                toast('Link copied. Paste it in the AlvaOS app on the computer.');
+            };
             wrap.querySelectorAll('[data-rename]').forEach((b) => { b.onclick = async () => {
                 const d = list.find((x) => x.id === b.dataset.rename);
                 clearInterval(timer);
@@ -2364,6 +2383,12 @@
     let started = false;
     let pendingApp = '';      // asked by the AlvaOS app before the Hub had started
     async function start() {
+        // Opened by the AlvaOS app on a computer: a code that works once signs this browser in.
+        const handoff = new URLSearchParams(location.search).get('handoff');
+        if (handoff) {
+            history.replaceState(null, '', location.pathname + location.hash);
+            try { await api('handoff', { method: 'POST', json: { code: handoff } }); } catch (err) { toast(err.message, 'error'); }
+        }
         try {
             me = await api('me');
         } catch (_e) {

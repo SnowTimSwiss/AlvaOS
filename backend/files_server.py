@@ -177,6 +177,22 @@ def current() -> Optional[Dict[str, Any]]:
         return {**session, 'token_key': _key(token)}
 
 
+def device_session(token: str) -> Optional[Dict[str, Any]]:
+    """The session of a phone or computer with the app, by its token (WebDAV
+    takes it as the password, so the computer's drive needs no password of
+    the person). Ends with the device: removed in Devices, or a new password."""
+    if not token or len(token) > 128:
+        return None
+    with _lock:
+        session = _load_sessions().get(_key(token))
+    if not session or not isinstance(session.get('device'), dict):
+        return None
+    tag = _password_tag(session.get('user', ''), session.get('role', ''))
+    if tag is not None and tag != session.get('tag'):
+        return None
+    return session
+
+
 def end_sessions_for(user: str) -> None:
     with _lock:
         sessions = _load_sessions()
@@ -508,6 +524,50 @@ def pair():
     token = _new_session(entry['user'], entry['role'], device=device)
     return jsonify({'success': True, 'user': entry['user'], 'token': token, 'device': device['id'],
                     'nas_name': socket.gethostname().split('.')[0]})
+
+
+HANDOFF_SECONDS = 60
+_handoffs: Dict[str, Dict[str, Any]] = {}
+
+
+@app.post('/api/devices/handoff')
+def device_handoff():
+    """The computer app opens the Hub in the browser, or in its own window,
+    already signed in: it asks for a code that works once, for a minute,
+    and opens the Hub with it (`/?handoff=<code>`). The browser gets a
+    session of its own; the app's token never reaches a page."""
+    session, refused = need_session()
+    if refused:
+        return refused
+    if not isinstance(session.get('device'), dict):
+        return jsonify({'error': 'Only the app on a phone or computer can do this.'}), 403
+    code = secrets.token_urlsafe(24)
+    with _lock:
+        for key in [k for k, v in _handoffs.items() if v['expires'] < time.time()]:
+            del _handoffs[key]
+        _handoffs[_key(code)] = {'user': session['user'], 'role': session['role'],
+                                 'expires': time.time() + HANDOFF_SECONDS}
+    return jsonify({'code': code, 'expires_in': HANDOFF_SECONDS})
+
+
+@app.post('/api/handoff')
+def take_handoff():
+    """The Hub page trades the code from the app for a browser session of the same person."""
+    if request.headers.get('X-AlvaOS-Files') != '1':
+        return jsonify({'error': 'Request refused.'}), 403
+    if _limited(request.remote_addr or ''):
+        return jsonify({'error': 'Too many attempts. Wait a few minutes.'}), 429
+    code = str((request.get_json(silent=True) or {}).get('code') or '')[:64]
+    with _lock:
+        entry = _handoffs.pop(_key(code), None) if code else None
+    if not entry or entry['expires'] < time.time():
+        return jsonify({'error': 'This link has run out. Open the Hub from the AlvaOS app again.'}), 401
+    _attempts.pop(request.remote_addr or '', None)
+    token = _new_session(entry['user'], entry['role'])
+    response = jsonify({'success': True, 'user': entry['user']})
+    response.set_cookie(COOKIE, token, max_age=SESSION_DAYS * 86400, httponly=True, samesite='Strict',
+                        secure=request.is_secure, path='/')
+    return response
 
 
 @app.post('/api/devices/link')

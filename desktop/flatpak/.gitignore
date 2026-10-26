@@ -1,0 +1,7 @@
+in/
+alvaos.deb
+shared-modules/
+build/
+repo/
+.flatpak-builder/
+*.flatpak

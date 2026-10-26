@@ -364,6 +364,9 @@ body.public { display: flex; flex-direction: column; min-height: 100%; }
 .devices .qr { background: #fff; border-radius: 10px; padding: 8px; aspect-ratio: 1; display: flex; }
 .devices .qr img { width: 100%; height: 100%; image-rendering: pixelated; }
 .devices .pair-steps p { margin: 0 0 8px; font-size: 0.9rem; }
+.devices .pair.pc { grid-template-columns: minmax(0, 1fr); }
+.devices .pair-link { display: flex; gap: 8px; margin: 0 0 12px; }
+.devices .pair-link input { flex: 1; min-width: 0; font-family: ui-monospace, monospace; font-size: 0.8rem; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--side); color: var(--text); }
 .devices .pair-code strong { font-family: ui-monospace, monospace; letter-spacing: .08em; font-size: 1rem; }
 .devices .muted { color: var(--muted); font-size: 0.8rem !important; }
 .devices .trash-row.device { grid-template-columns: 36px minmax(0, 1fr) auto; }

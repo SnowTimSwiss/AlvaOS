@@ -159,3 +159,17 @@ def test_webdav_is_part_of_files_in_the_hub(client):
     hub_apps.save({"apps": {"files": {"people": ["anna"]}}}, ["anna", "ben"])
     assert client.open("/", method="PROPFIND", headers=BEN).status_code == 403
     assert client.open("/", method="PROPFIND", headers=ANNA).status_code == 207
+
+
+def test_the_desktop_app_signs_in_with_its_own_device_token(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(fs, "SESSIONS_FILE", str(tmp_path / "sessions.json"))
+    monkeypatch.setattr(fs, "STATE_DIR", str(tmp_path))
+    token = fs._new_session("anna", "user", device={"id": "pc1", "name": "Laptop", "platform": "linux"})
+    browser = fs._new_session("anna", "user")
+    assert client.open("/", method="PROPFIND", headers=auth("anna", token)).status_code == 207
+    # Only as its own person, only a device's token (not a browser's), and not after it was signed out.
+    assert client.open("/", method="PROPFIND", headers=auth("ben", token)).status_code == 401
+    assert client.open("/", method="PROPFIND", headers=auth("anna", browser)).status_code == 401
+    sessions = json.loads((tmp_path / "sessions.json").read_text())
+    (tmp_path / "sessions.json").write_text(json.dumps({k: v for k, v in sessions.items() if not v.get("device")}))
+    assert client.open("/", method="PROPFIND", headers=auth("anna", token)).status_code == 401

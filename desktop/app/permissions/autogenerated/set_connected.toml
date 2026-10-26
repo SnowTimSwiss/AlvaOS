@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-connected"
+description = "Enables the set_connected command without any pre-configured scope."
+commands.allow = ["set_connected"]
+
+[[permission]]
+identifier = "deny-set-connected"
+description = "Denies the set_connected command without any pre-configured scope."
+commands.deny = ["set_connected"]
