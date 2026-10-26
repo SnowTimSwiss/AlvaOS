@@ -323,3 +323,24 @@ def test_files_deleted_over_the_network_are_in_the_trash(share):
             fo.restore(s, bad, root)
     assert fo.purge(s, 30, root) == 1                      # old.txt, from 1970
     assert not os.path.exists(os.path.join(smb, "old.txt"))
+
+
+def test_the_whole_tree_comes_in_one_answer_for_the_sync_folder(share):
+    root, s, outside = share
+    os.makedirs(os.path.join(s, "Films", "Summer 2024"))
+    with open(os.path.join(s, "Films", "Summer 2024", "beach.mp4"), "wb") as f:
+        f.write(b"12345")
+    os.utime(os.path.join(s, "Films", "Summer 2024", "beach.mp4"), (1790000000, 1790000000))
+    open(os.path.join(s, "Films", ".half.mp4.alvaos-upload"), "w").close()
+    os.symlink(outside, os.path.join(s, "Films", "outside-link"))
+    fo.make_dir(s, "Old", root)
+    fo.trash(s, s, "Old", root)
+    out = fo.tree(s, root)
+    assert out["complete"] is True
+    by_path = {e["path"]: e for e in out["entries"]}
+    assert sorted(by_path) == ["Films", "Films/Summer 2024", "Films/Summer 2024/beach.mp4", "notes.txt"]
+    assert by_path["Films/Summer 2024/beach.mp4"] == {"path": "Films/Summer 2024/beach.mp4", "type": "file", "size": 5, "mtime": 1790000000}
+    assert by_path["Films"]["type"] == "folder" and by_path["Films"]["size"] == 0
+    assert [e["path"] for e in fo.tree(os.path.join(s, "Films"), root)["entries"]] == ["Summer 2024", "Summer 2024/beach.mp4"]
+    stopped = fo.tree(s, root, limit=2)
+    assert len(stopped["entries"]) == 2 and stopped["complete"] is False

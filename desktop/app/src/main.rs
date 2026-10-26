@@ -9,6 +9,8 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod syncing;
+
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -58,6 +60,7 @@ struct Net {
 
 struct TrayItems {
     status: MenuItem<Wry>,
+    sync: MenuItem<Wry>,
     connected: CheckMenuItem<Wry>,
     drive: MenuItem<Wry>,
 }
@@ -69,6 +72,7 @@ struct App {
     status: Mutex<Status>,
     tray: Mutex<Option<TrayItems>>,
     refused: AtomicU32,
+    syncing: syncing::Syncing,
 }
 
 impl App {
@@ -142,6 +146,8 @@ fn paint_tray(app: &AppHandle) {
         let _ = items.connected.set_enabled(config.is_set_up());
         let _ = items.drive.set_text(if status.drive { "Remove the Files drive" } else { "Show Files as a drive" });
         let _ = items.drive.set_enabled(config.is_set_up() && status.state == "ok");
+        let sync_line = syncing::summary(app);
+        let _ = items.sync.set_text(if sync_line.is_empty() { "No sync folder yet".to_string() } else { sync_line });
     }
     if let Some(tray) = app.tray_by_id("main") {
         let _ = tray.set_tooltip(Some(format!("AlvaOS · {line}")));
@@ -275,6 +281,8 @@ async fn forget(app: &AppHandle) {
     }
     let _ = me.store.forget();
     *me.config.lock().unwrap() = me.store.load();
+    me.syncing.folders.lock().unwrap().clear();
+    syncing::watch(app);
 }
 
 // ── Windows ───────────────────────────────────────────────────────────────────
@@ -373,7 +381,7 @@ fn free_name(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
 // ── Commands of the app's own pages (ui/) ─────────────────────────────────────
 
 #[tauri::command]
-async fn app_state(state: State<'_, App>) -> Result<Value, String> {
+async fn app_state(app: AppHandle, state: State<'_, App>) -> Result<Value, String> {
     let config = state.config();
     let status = state.status.lock().unwrap().clone();
     let net = state.net.lock().await;
@@ -387,6 +395,7 @@ async fn app_state(state: State<'_, App>) -> Result<Value, String> {
         "status": status, "line": status_line(&config, &status),
         "platform": alvaos_core::platform(), "drive_supported": drive::supported(),
         "version": alvaos_core::VERSION, "computer": DeviceInfo::this_computer().name,
+        "sync": syncing::state_json(&app),
     }))
 }
 
@@ -484,7 +493,7 @@ async fn connect(app: AppHandle, state: State<'_, App>, request: Connect) -> Res
             }
         }
     }
-    app_state(state).await
+    app_state(app, state).await
 }
 
 #[derive(Deserialize)]
@@ -508,7 +517,7 @@ async fn choose(app: AppHandle, state: State<'_, App>, choice: Choice) -> Result
     if config.use_drive != mounted && state.status.lock().unwrap().state == "ok" {
         let _ = set_drive(&app, config.use_drive).await;
     }
-    app_state(state).await
+    app_state(app, state).await
 }
 
 #[tauri::command]
@@ -557,7 +566,7 @@ async fn set_connected(app: AppHandle, state: State<'_, App>, on: bool) -> Resul
         go_offline(&app).await;
         set_status(&app, "off", "", 0, "");
     }
-    app_state(state).await
+    app_state(app, state).await
 }
 
 /// Signs this computer out: on the NAS (Devices) and here.
@@ -571,13 +580,16 @@ async fn sign_out(app: AppHandle, state: State<'_, App>) -> Result<Value, String
     }
     forget(&app).await;
     set_status(&app, "setup", "", 0, "");
-    app_state(state).await
+    app_state(app, state).await
 }
 
 // ── The tray ──────────────────────────────────────────────────────────────────
 
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let status = MenuItem::with_id(app, "status", "Starting…", false, None::<&str>)?;
+    let sync = MenuItem::with_id(app, "sync-status", "No sync folder yet", false, None::<&str>)?;
+    let sync_open = MenuItem::with_id(app, "sync-open", "Open the sync folder", true, None::<&str>)?;
+    let sync_now = MenuItem::with_id(app, "sync-now", "Sync now", true, None::<&str>)?;
     let open = MenuItem::with_id(app, "open", "Open AlvaOS", true, None::<&str>)?;
     let browser = MenuItem::with_id(app, "browser", "Open in the browser", true, None::<&str>)?;
     let drive = MenuItem::with_id(app, "drive", "Show Files as a drive", false, None::<&str>)?;
@@ -585,7 +597,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit AlvaOS", true, None::<&str>)?;
     let separator = || PredefinedMenuItem::separator(app);
-    let mut items: Vec<&dyn tauri::menu::IsMenuItem<Wry>> = vec![&status, &open, &browser];
+    let mut items: Vec<&dyn tauri::menu::IsMenuItem<Wry>> = vec![&status, &sync, &open, &browser, &sync_open, &sync_now];
     if drive::supported() {
         items.push(&drive);
     }
@@ -610,7 +622,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             }
         })
         .build(app)?;
-    *app.state::<App>().tray.lock().unwrap() = Some(TrayItems { status, connected, drive });
+    *app.state::<App>().tray.lock().unwrap() = Some(TrayItems { status, sync, connected, drive });
     Ok(())
 }
 
@@ -630,6 +642,12 @@ async fn on_menu(app: &AppHandle, id: &str) {
             } else {
                 show_main(app);
             }
+        }
+        "sync-open" => {
+            let _ = syncing::open_sync(app.state::<App>(), None).await;
+        }
+        "sync-now" => {
+            syncing::round(app).await;
         }
         "drive" => {
             let on = !me.status.lock().unwrap().drive;
@@ -660,6 +678,7 @@ fn main() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(App {
             store,
             config: Mutex::new(config),
@@ -667,9 +686,12 @@ fn main() {
             status: Mutex::new(Status { state: "setup".into(), ..Status::default() }),
             tray: Mutex::new(None),
             refused: AtomicU32::new(0),
+            syncing: syncing::Syncing::default(),
         })
         .invoke_handler(tauri::generate_handler![
-            app_state, parse_link, connect, choose, open_hub, open_browser, drive, set_connected, sign_out
+            app_state, parse_link, connect, choose, open_hub, open_browser, drive, set_connected, sign_out,
+            syncing::remote_shares, syncing::remote_folders, syncing::add_sync, syncing::remove_sync, syncing::sync_now,
+            syncing::sync_answer, syncing::pause_sync, syncing::open_sync, syncing::pick_local
         ])
         .setup(move |app| {
             build_tray(app.handle())?;
@@ -678,6 +700,8 @@ fn main() {
             if !hidden || !config.is_set_up() {
                 show_main(&handle);
             }
+            syncing::watch(app.handle());
+            tauri::async_runtime::spawn(syncing::run(app.handle().clone()));
             tauri::async_runtime::spawn(async move {
                 let config = handle.state::<App>().config();
                 if config.is_set_up() && config.connected {

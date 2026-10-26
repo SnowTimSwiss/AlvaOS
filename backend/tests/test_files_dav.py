@@ -173,3 +173,10 @@ def test_the_desktop_app_signs_in_with_its_own_device_token(client, tmp_path, mo
     sessions = json.loads((tmp_path / "sessions.json").read_text())
     (tmp_path / "sessions.json").write_text(json.dumps({k: v for k, v in sessions.items() if not v.get("device")}))
     assert client.open("/", method="PROPFIND", headers=auth("anna", token)).status_code == 401
+
+
+def test_put_keeps_the_date_the_computer_sends(client):
+    fam = "/mnt/alvaos/main/Family"
+    res = client.put("/Family/new.txt", data=b"hello", headers={**ANNA, "X-OC-Mtime": "1790000000"})
+    assert res.status_code == 201 and res.headers["X-OC-MTime"] == "accepted"
+    assert client.calls[1] == (["files-part-finish-dated", fam, "new.txt", "5", "1790000000"], "anna")

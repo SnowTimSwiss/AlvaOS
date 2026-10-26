@@ -10,7 +10,7 @@ check it on a real machine is in [TESTING.md](TESTING.md).
 - [~] Done, but still needs a run on real hardware or a real phone
 - [ ] Not done yet
 
-Current version: **beta-v0.5.0**
+Current version: **beta-v0.6.0**
 
 ---
 
@@ -39,7 +39,7 @@ Current version: **beta-v0.5.0**
 ### Apps for phones and computers
 - [ ] File sync and notifications in the Android app
 - [ ] iPhone app (on AlvaOS Link)
-- [~] Desktop app: 0.5.0 is there (docs/DESKTOP.md), the plan below
+- [~] Desktop app: 0.6.0 is there (docs/DESKTOP.md), the plan below
 
 #### Desktop app (Windows, Linux): the plan
 
@@ -58,7 +58,7 @@ How it is built:
 
 Steps:
 - [~] **0.5.0** Remote access for the whole computer, the Hub in the app's window, tray, setup that asks what to use, "Connect a computer" in the Hub, Files as a drive (Linux, macOS), packages for the three systems (tested on Linux; Windows and macOS need a run on a real computer)
-- [ ] **0.6.0** A real sync folder for chosen folders (also offline); conflicts keep both versions, nothing is deleted without the NAS's trash, tested against a simulated file system
+- [~] **0.6.0** A real sync folder for chosen folders (also offline); conflicts keep both versions, nothing is deleted without the NAS's trash, tested against a simulated file system
 - [ ] Later: files on demand (placeholders: Cloud Files on Windows, File Provider on macOS), CalDAV/CardDAV set up in the system by itself where it can (macOS, GNOME, Thunderbird)
 
 What it needs from you: Windows code signing (else SmartScreen warns at install).

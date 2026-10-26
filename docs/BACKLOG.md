@@ -15,6 +15,16 @@ How to add an entry:
 
 ---
 
+## Desktop app 0.6.0: sync folder and a new setup
+
+- NAS: `files-tree` helper op and `GET /api/sync/tree` (whole tree in one answer), WebDAV PUT keeps `X-OC-Mtime`.
+- Core (`desktop/core/src/sync.rs`): three-way sync engine (conflicts keep both, trash on both sides, many deletions ask first, missing root and incomplete listing change nothing), `DavRemote`; tested in memory and against the real Hub/WebDAV/helper.
+- App (`desktop/app/src/syncing.rs`): rounds every minute and after changes (notify watcher), tray line + Sync now + Open, commands for the pages, folder dialog.
+- New look: welcome screen, computer ↔ NAS animation while connecting, building blocks as cards, a folder picker step, "All set" screen, home with a live connection orb, sync folder list with states; respects reduced motion.
+- Not tested yet: Windows/macOS, the full app end to end with sync (pages checked in preview).
+
+---
+
 ## 2026-10-26 — beta-v0.5.0: AlvaOS for computers (Windows, Linux, macOS)
 
 - **The desktop app** (`desktop/`, docs/DESKTOP.md): Rust core + Tauri 2. An icon in the tray keeps the computer connected to the NAS through AlvaOS Link, from anywhere. The NAS gets addresses on the computer (`127.0.0.1:18090` the Hub with CalDAV/CardDAV, `:18091` Files over WebDAV) for the app's window, the browser and other programs.

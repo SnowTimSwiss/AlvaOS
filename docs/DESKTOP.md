@@ -10,8 +10,8 @@ When it is set up, the app asks once what to use (everything can be changed late
 |---|---|
 | **Your NAS from anywhere** | Always there. The NAS has addresses on this computer: `http://127.0.0.1:18090` for the Hub (and CalDAV, CardDAV), `http://127.0.0.1:18091` for Files over WebDAV. Every connection to them goes through Link to the NAS: directly on the home network or through the routers, else through a relay that only passes on encrypted packets. |
 | **The Hub apps in a window** | Files, Photos, Calendar, Contacts, Chat, one click from the tray, signed in. |
-| **Files as a drive** | The shares of the person in the file manager (Linux: GNOME Files and every app using GIO; macOS: Finder). Windows: with the sync folder (0.6), see below. |
-| **A sync folder** | Coming in 0.6. |
+| **Files as a drive** | The shares of the person in the file manager (Linux: GNOME Files and every app using GIO; macOS: Finder). Windows: not yet (use a sync folder). |
+| **A sync folder** | Chosen folders of the NAS kept on this computer (by default in `~/AlvaOS/<share>/<folder>`), also offline. See below. |
 | **Start with the computer** | Quietly, in the tray. |
 
 The tray shows how the computer reaches the NAS ("Connected to cygnus · direct · 12 ms", "through a relay", "cannot be reached") and has: Open AlvaOS, Open in the browser, Show Files as a drive, the switch **Connected to the NAS**, Settings, Quit.
@@ -41,6 +41,18 @@ WebDAV through the computer's own address of the NAS (`dav` service of Link → 
 - **Linux:** `gio mount dav://<person>@127.0.0.1:18091/` (needs gvfs, as on GNOME). In GNOME Files under Other Locations.
 - **macOS:** Finder's `mount volume`.
 - **Windows:** its WebDAV client only signs in over HTTPS with a trusted certificate; the drive comes with the sync folder in 0.6. Until then Files in the app's window.
+
+## The sync folder (0.6)
+
+Chosen at setup (after "What do you want on this computer?") or later under **Sync folders › Add a folder**: a share, or a folder in it, kept in a folder of this computer. Changes go both ways.
+
+- **Rounds:** every minute, and a few seconds after a change here (the folder is watched). The NAS gives its whole tree in one answer (`GET /api/sync/tree`); files go through WebDAV (port 18091 here), with the file's date kept on the NAS (`X-OC-Mtime`).
+- **Three-way:** each folder remembers how both sides were after its last round (`sync/<id>.json` in the app's folder), so it knows what changed where.
+- **Nothing gets lost:** changed on both sides → both kept (`name (conflict <computer> <date>).ext`); replaced or deleted on the NAS → into the share's trash; deleted on the NAS → into this computer's trash. Many deletions at once (20 or more, over half the files) wait for a yes ("Delete them too" / "Bring them back"). A missing local folder (unplugged disk) changes nothing.
+- **Read-only shares** only come down.
+- The tray shows the state ("Up to date", "Syncing…") and has **Sync now** and **Open the sync folder**; the settings page can pause it. Signing out stops syncing; the files stay.
+
+Tested in memory and against the real Hub, WebDAV and helper (`scripts/dev/sync_against_nas.py`). Not tested yet: Windows and macOS.
 
 ## Building
 
