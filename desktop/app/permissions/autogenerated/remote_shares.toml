@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-remote-shares"
+description = "Enables the remote_shares command without any pre-configured scope."
+commands.allow = ["remote_shares"]
+
+[[permission]]
+identifier = "deny-remote-shares"
+description = "Denies the remote_shares command without any pre-configured scope."
+commands.deny = ["remote_shares"]

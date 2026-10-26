@@ -109,6 +109,18 @@ impl Hub {
         self.call(reqwest::Method::GET, "/api/me", Some(token), None).await
     }
 
+    /// The folders in a folder of a share (for choosing a sync folder).
+    pub async fn folders(&self, token: &str, share: &str, path: &str) -> Result<Vec<String>> {
+        let query = format!("/api/list?share={}&path={}", enc(share), enc(path));
+        let value = self.call(reqwest::Method::GET, &query, Some(token), None).await?;
+        let mut names: Vec<String> = value["entries"]
+            .as_array()
+            .map(|entries| entries.iter().filter(|e| e["type"] == "folder").filter_map(|e| e["name"].as_str().map(str::to_string)).collect())
+            .unwrap_or_default();
+        names.sort_by_key(|n| n.to_lowercase());
+        Ok(names)
+    }
+
     /// Signs this computer out on the NAS too (Devices).
     pub async fn remove_device(&self, token: &str, device: &str) -> Result<()> {
         self.call(reqwest::Method::DELETE, &format!("/api/devices/{device}"), Some(token), None).await.map(|_| ())
@@ -119,6 +131,10 @@ impl Hub {
         let value = self.call(reqwest::Method::POST, "/api/devices/handoff", Some(token), Some(json!({}))).await?;
         value.get("code").and_then(Value::as_str).map(str::to_string).ok_or_else(|| anyhow!("The NAS gave no code."))
     }
+}
+
+fn enc(text: &str) -> String {
+    percent_encoding::utf8_percent_encode(text, percent_encoding::NON_ALPHANUMERIC).to_string()
 }
 
 /// An address at home (private network, `.local`, a plain name): a certificate of its own is normal there.

@@ -15,6 +15,31 @@ const SERVICE: &str = "AlvaOS";
 const HUB_PORT: u16 = 18090;
 const DAV_PORT: u16 = 18091;
 
+/// A folder of the NAS kept on this computer (the sync folder).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SyncFolder {
+    pub id: String,
+    /// The share and the folder in it ('' for the whole share).
+    pub share: String,
+    pub folder: String,
+    /// Where it is on this computer.
+    pub local: PathBuf,
+    /// A share the person may only read: it only comes down.
+    pub read_only: bool,
+}
+
+impl SyncFolder {
+    /// `Family › Photos`
+    pub fn label(&self) -> String {
+        if self.folder.is_empty() { self.share.clone() } else { format!("{} › {}", self.share, self.folder.replace('/', " › ")) }
+    }
+}
+
+/// Where sync folders go unless chosen otherwise: `~/AlvaOS`.
+pub fn default_sync_root() -> PathBuf {
+    dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join("AlvaOS")
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Config {
@@ -38,6 +63,9 @@ pub struct Config {
     pub connected: bool,
     /// Start with the computer.
     pub autostart: bool,
+    /// The sync folders, and whether syncing is paused.
+    pub sync: Vec<SyncFolder>,
+    pub sync_paused: bool,
 }
 
 impl Default for Config {
@@ -54,6 +82,8 @@ impl Default for Config {
             use_drive: false,
             connected: true,
             autostart: true,
+            sync: Vec::new(),
+            sync_paused: false,
         }
     }
 }
@@ -93,6 +123,11 @@ impl Store {
 
     pub fn dir(&self) -> &Path {
         &self.dir
+    }
+
+    /// Where a sync folder keeps how both sides were after its last round.
+    pub fn sync_state(&self, id: &str) -> PathBuf {
+        self.dir.join("sync").join(format!("{id}.json"))
     }
 
     pub fn load(&self) -> Config {

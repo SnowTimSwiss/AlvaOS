@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sync-answer"
+description = "Enables the sync_answer command without any pre-configured scope."
+commands.allow = ["sync_answer"]
+
+[[permission]]
+identifier = "deny-sync-answer"
+description = "Denies the sync_answer command without any pre-configured scope."
+commands.deny = ["sync_answer"]
