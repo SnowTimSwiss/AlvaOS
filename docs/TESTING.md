@@ -506,6 +506,16 @@ Calendar › Create › Birthday: type a name and a year; choose "And make a new
 4. Open a deep folder in Files, go to Photos, then click Files: you are in your own folder, not in the deep one.
 \n
 
+## 12w The sync folder (desktop app 0.6)
+
+1. Set up a computer: after "Connected", keep "A sync folder" on, pick a share or a folder, "Keep it here". It appears in `~/AlvaOS/<share>/...` within a minute.
+2. Make a file in that folder: it is on the NAS a few seconds later, with the same date.
+3. Change a file on both sides before a round: both versions stay (`(conflict …)`).
+4. Delete a file on the NAS: it lands in this computer's trash. Delete one here: it lands in the share's trash on the NAS.
+5. Delete 25 files here at once: the app asks; try both "Bring them back" and "Delete them too".
+6. Pause in the settings: nothing moves; switch back: it catches up. Tray: "Sync now", "Open the sync folder".
+7. Windows and macOS: the same, once each.
+
 ## 12v The desktop app (Windows, Linux, macOS)
 
 1. Install it from the release (Windows `.msi` or setup `.exe`; Linux `.deb`, `.rpm`, `.AppImage` or the Flatpak; macOS `.dmg`). Not signed yet: Windows "More info › Run anyway", macOS System Settings › Privacy & Security › Open anyway.

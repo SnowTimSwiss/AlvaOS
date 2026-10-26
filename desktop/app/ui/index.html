@@ -7,38 +7,60 @@
     <link rel="stylesheet" href="app.css">
 </head>
 <body>
+    <div class="sky" aria-hidden="true"><i></i><i></i><i></i></div>
     <main id="app">
+        <!-- 0. Welcome -->
+        <section class="view" id="view-welcome" hidden>
+            <div class="welcome">
+                <div class="logo-wrap"><span class="halo"></span><img src="logo.png" alt="" class="logo big"></div>
+                <h1 class="in" style="--i:1">Welcome to AlvaOS</h1>
+                <p class="lead in" style="--i:2">Your NAS on this computer: files, photos, calendar and chat, at home and away. Private, end to end encrypted, no router settings.</p>
+                <ul class="perks in" style="--i:3">
+                    <li><span class="ic" data-icon="globe"></span>From anywhere</li>
+                    <li><span class="ic" data-icon="sync"></span>Sync folders</li>
+                    <li><span class="ic" data-icon="lock"></span>Only yours</li>
+                </ul>
+                <button type="button" class="btn primary big in" style="--i:4" id="welcome-go">Get started</button>
+            </div>
+        </section>
+
         <!-- 1. Connect this computer -->
         <section class="view" id="view-connect" hidden>
+            <div class="steps" aria-hidden="true"><span class="on"></span><span></span><span></span></div>
+            <div class="bridge" id="bridge" aria-hidden="true">
+                <div class="end pc"><span class="ic" data-icon="monitor"></span><small>This computer</small></div>
+                <div class="wire"><i></i><i></i><i></i><b class="lock"><span class="ic" data-icon="lock"></span></b></div>
+                <div class="end nas"><span class="ic" data-icon="server"></span><small>Your NAS</small></div>
+            </div>
             <header class="hello">
-                <img src="logo.png" alt="" class="logo">
-                <h1>Connect this computer to your NAS</h1>
-                <p>Your files, photos, calendar and chat from AlvaOS, at home and away. In the Hub of your NAS, open <strong>Devices › Connect a computer</strong>.</p>
+                <h1 class="in" style="--i:1">Connect this computer</h1>
+                <p class="in" style="--i:2">In the Hub of your NAS, open <strong>Devices › Connect a computer</strong> and copy the link.</p>
             </header>
             <div class="note warn" id="connect-note" hidden></div>
-            <nav class="tabs" role="tablist">
+            <nav class="tabs in" style="--i:3" role="tablist">
+                <span class="tab-glide" id="tab-glide"></span>
                 <button type="button" role="tab" data-way="link" aria-selected="true">Paste a link</button>
                 <button type="button" role="tab" data-way="code">Type the code</button>
                 <button type="button" role="tab" data-way="password">Name and password</button>
             </nav>
-            <form class="card" id="form-link" data-form="link">
+            <form class="card in" style="--i:4" id="form-link" data-form="link">
                 <label class="field">The link from the Hub
                     <textarea id="link-text" rows="3" placeholder="alvaos://pair?c=…" spellcheck="false" autocomplete="off"></textarea>
                 </label>
                 <p class="found" id="link-found" hidden></p>
                 <div class="row">
-                    <button type="button" class="btn" id="link-paste">Paste</button>
+                    <button type="button" class="btn" id="link-paste"><span class="ic" data-icon="paste"></span>Paste</button>
                     <span class="grow"></span>
                     <button type="submit" class="btn primary">Connect</button>
                 </div>
             </form>
-            <form class="card" id="form-code" data-form="code" hidden>
+            <form class="card in" style="--i:4" id="form-code" data-form="code" hidden>
                 <label class="field">Code <input id="code-code" placeholder="QFR9-YKZK" autocomplete="off" spellcheck="false"></label>
                 <label class="field">Address of the NAS <input id="code-address" placeholder="192.168.1.20:8090" autocomplete="off" spellcheck="false">
                     <small>As in the browser at home. Away from home use the link: it has the NAS's AlvaOS Link address.</small></label>
                 <div class="row"><span class="grow"></span><button type="submit" class="btn primary">Connect</button></div>
             </form>
-            <form class="card" id="form-password" data-form="password" hidden>
+            <form class="card in" style="--i:4" id="form-password" data-form="password" hidden>
                 <label class="field">Address of the NAS <input id="pw-address" placeholder="192.168.1.20:8090" autocomplete="off" spellcheck="false"></label>
                 <label class="field">Name <input id="pw-user" autocomplete="username" spellcheck="false"></label>
                 <label class="field">Password <input id="pw-password" type="password" autocomplete="current-password"></label>
@@ -50,68 +72,120 @@
 
         <!-- 2. What to use -->
         <section class="view" id="view-choose" hidden>
+            <div class="steps" aria-hidden="true"><span class="on"></span><span class="on"></span><span></span></div>
             <header class="hello">
-                <div class="done-ic">✓</div>
-                <h1 id="choose-title">Connected</h1>
-                <p>What do you want to use on this computer? You can change it later.</p>
+                <div class="check-burst"><svg viewBox="0 0 52 52"><circle cx="26" cy="26" r="23"/><path d="M15 27l7 7 15-16"/></svg></div>
+                <h1 id="choose-title" class="in" style="--i:1">Connected</h1>
+                <p class="in" style="--i:2">What do you want on this computer? You can change it later.</p>
             </header>
             <div class="blocks">
-                <label class="block on fixed">
-                    <input type="checkbox" checked disabled>
+                <label class="block on fixed in" style="--i:3">
+                    <span class="ic tile" data-icon="globe"></span>
                     <span class="block-text"><strong>Your NAS from anywhere</strong>
-                        <span>Always there: AlvaOS Link keeps this computer connected, at home and away, no router settings. Your browser opens the Hub at <code class="hub-url"></code>, and calendar and contacts apps reach the NAS there too.</span></span>
+                        <span>Always on: AlvaOS Link keeps this computer connected, at home and away. The Hub is at <code class="hub-url"></code> in any browser.</span></span>
+                    <input type="checkbox" checked disabled>
                 </label>
-                <label class="block">
-                    <input type="checkbox" id="pick-window" checked>
+                <label class="block in" style="--i:4">
+                    <span class="ic tile" data-icon="window"></span>
                     <span class="block-text"><strong>The Hub apps in a window</strong>
                         <span>Files, Photos, Calendar, Contacts and Chat, one click from the tray.</span></span>
+                    <input type="checkbox" id="pick-window" checked>
                 </label>
-                <label class="block" id="pick-drive-row">
-                    <input type="checkbox" id="pick-drive">
+                <label class="block in" style="--i:5">
+                    <span class="ic tile" data-icon="sync"></span>
+                    <span class="block-text"><strong>A sync folder</strong>
+                        <span>Folders of the NAS kept on this computer, also offline. Changes go both ways.</span></span>
+                    <input type="checkbox" id="pick-sync" checked>
+                </label>
+                <label class="block in" style="--i:6" id="pick-drive-row">
+                    <span class="ic tile" data-icon="drive"></span>
                     <span class="block-text"><strong>Files as a drive</strong>
-                        <span id="pick-drive-text">Your shared folders in the file manager, like a disk of this computer.</span></span>
+                        <span id="pick-drive-text">All your shared folders in the file manager, without copying them.</span></span>
+                    <input type="checkbox" id="pick-drive">
                 </label>
-                <label class="block soon">
-                    <input type="checkbox" disabled>
-                    <span class="block-text"><strong>A sync folder <em>coming in AlvaOS 0.6</em></strong>
-                        <span>Chosen folders kept on this computer, also offline.</span></span>
-                </label>
-                <label class="block">
-                    <input type="checkbox" id="pick-autostart" checked>
+                <label class="block in" style="--i:7">
+                    <span class="ic tile" data-icon="power"></span>
                     <span class="block-text"><strong>Start with the computer</strong>
                         <span>Quietly, in the tray: the NAS is there whenever you need it.</span></span>
+                    <input type="checkbox" id="pick-autostart" checked>
                 </label>
             </div>
-            <div class="row end"><button type="button" class="btn primary" id="choose-done">Done</button></div>
+            <div class="row end"><button type="button" class="btn primary" id="choose-done">Continue</button></div>
             <p class="error" id="choose-error" role="alert"></p>
         </section>
 
-        <!-- 3. Status and settings -->
-        <section class="view" id="view-home" hidden>
-            <header class="top">
-                <img src="logo.png" alt="" class="logo small">
-                <div><h1 id="home-nas">AlvaOS</h1><small id="home-user"></small></div>
-                <span class="grow"></span>
-                <span class="pill" id="home-pill"></span>
+        <!-- 3. Choose the sync folders (setup) -->
+        <section class="view" id="view-sync" hidden>
+            <div class="steps" aria-hidden="true"><span class="on"></span><span class="on"></span><span class="on"></span></div>
+            <header class="hello">
+                <span class="ic hero-ic" data-icon="sync"></span>
+                <h1 class="in" style="--i:1">What to keep on this computer?</h1>
+                <p class="in" style="--i:2">Pick a share, or a folder in it. It is kept in <code id="sync-root"></code>.</p>
             </header>
-            <p class="status-line" id="home-line"></p>
+            <div class="picker in" style="--i:3" data-picker="setup"></div>
+            <div class="row">
+                <button type="button" class="btn ghost" id="sync-skip">Not now</button>
+                <span class="grow"></span>
+                <button type="button" class="btn primary" id="sync-done">Keep it here</button>
+            </div>
+            <p class="error" id="sync-error" role="alert"></p>
+        </section>
+
+        <!-- 4. All set -->
+        <section class="view" id="view-done" hidden>
+            <div class="welcome">
+                <div class="done-rings" aria-hidden="true"><i></i><i></i><i></i>
+                    <svg viewBox="0 0 52 52"><circle cx="26" cy="26" r="23"/><path d="M15 27l7 7 15-16"/></svg></div>
+                <h1 class="in" style="--i:2">All set</h1>
+                <p class="lead in" style="--i:3" id="done-text">AlvaOS is in the tray now. Close this window any time: it stays connected.</p>
+                <ul class="summary in" style="--i:4" id="done-list"></ul>
+                <button type="button" class="btn primary big in" style="--i:5" id="done-go">Open AlvaOS</button>
+                <button type="button" class="btn ghost in" style="--i:6" id="done-home">Show the settings</button>
+            </div>
+        </section>
+
+        <!-- 5. Status and settings -->
+        <section class="view" id="view-home" hidden>
+            <div class="hero" id="hero">
+                <div class="orb" id="orb" aria-hidden="true"><span></span><span></span><img src="logo.png" alt=""></div>
+                <div class="hero-text">
+                    <h1 id="home-nas">AlvaOS</h1>
+                    <p id="home-line"></p>
+                    <small id="home-user"></small>
+                </div>
+            </div>
             <div class="note warn" id="home-note" hidden></div>
             <div class="row actions">
-                <button type="button" class="btn primary big" id="home-open">Open AlvaOS</button>
-                <button type="button" class="btn big" id="home-browser">Open in the browser</button>
+                <button type="button" class="btn primary big" id="home-open"><span class="ic" data-icon="window"></span>Open AlvaOS</button>
+                <button type="button" class="btn big" id="home-browser"><span class="ic" data-icon="globe"></span>In the browser</button>
+            </div>
+
+            <div class="section-head"><h2>Sync folders</h2><span class="grow"></span>
+                <span class="sync-line" id="sync-line"></span>
+                <button type="button" class="btn small ghost" id="sync-now" title="Sync now"><span class="ic" data-icon="refresh"></span></button>
+            </div>
+            <div class="card list" id="sync-list"></div>
+            <div class="row">
+                <button type="button" class="btn" id="sync-add"><span class="ic" data-icon="plus"></span>Add a folder</button>
+                <button type="button" class="btn ghost" id="sync-open"><span class="ic" data-icon="folder"></span>Open</button>
+                <span class="grow"></span>
+                <label class="mini-switch">Pause <span class="switch"><input type="checkbox" id="sync-pause"><span></span></span></label>
             </div>
 
             <h2>Your NAS on this computer</h2>
             <div class="card list">
                 <div class="item">
+                    <span class="ic tile" data-icon="globe"></span>
                     <div><strong>The Hub</strong><small>In any browser, from anywhere. Calendar and contacts apps (CalDAV, CardDAV) sign in there with your name and password.</small></div>
                     <button type="button" class="btn copy" data-copy="hub"><code class="hub-url"></code></button>
                 </div>
                 <div class="item" id="drive-row">
+                    <span class="ic tile" data-icon="drive"></span>
                     <div><strong>Files as a drive</strong><small id="drive-text">Your shared folders in the file manager.</small></div>
                     <label class="switch"><input type="checkbox" id="home-drive"><span></span></label>
                 </div>
                 <div class="item">
+                    <span class="ic tile" data-icon="link"></span>
                     <div><strong>Connected to the NAS</strong><small>Off: the NAS cannot be reached from this computer until you switch it on.</small></div>
                     <label class="switch"><input type="checkbox" id="home-connected"><span></span></label>
                 </div>
@@ -120,15 +194,18 @@
             <h2>Settings</h2>
             <div class="card list">
                 <div class="item">
+                    <span class="ic tile" data-icon="window"></span>
                     <div><strong>The Hub apps in a window</strong><small>Else "Open AlvaOS" opens the browser.</small></div>
                     <label class="switch"><input type="checkbox" id="home-window"><span></span></label>
                 </div>
                 <div class="item">
+                    <span class="ic tile" data-icon="power"></span>
                     <div><strong>Start with the computer</strong><small>Quietly, in the tray.</small></div>
                     <label class="switch"><input type="checkbox" id="home-autostart"><span></span></label>
                 </div>
                 <div class="item">
-                    <div><strong>Sign out this computer</strong><small>Here and on the NAS (Devices). Connect it again with a new link.</small></div>
+                    <span class="ic tile danger" data-icon="logout"></span>
+                    <div><strong>Sign out this computer</strong><small>Here and on the NAS (Devices). Sync folders stay here, they just stop syncing.</small></div>
                     <button type="button" class="btn danger" id="home-signout">Sign out</button>
                 </div>
             </div>
@@ -136,6 +213,21 @@
             <footer id="home-foot"></footer>
         </section>
     </main>
+
+    <!-- Adding a sync folder from the settings -->
+    <div class="sheet" id="sheet" hidden>
+        <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+            <h2 id="sheet-title" class="sheet-title">Add a sync folder</h2>
+            <div class="picker" data-picker="sheet"></div>
+            <p class="error" id="sheet-error" role="alert"></p>
+            <div class="row">
+                <button type="button" class="btn ghost" id="sheet-cancel">Cancel</button>
+                <span class="grow"></span>
+                <button type="button" class="btn primary" id="sheet-done">Keep it here</button>
+            </div>
+        </div>
+    </div>
+
     <div class="toast" id="toast" hidden></div>
     <script src="app.js"></script>
 </body>
