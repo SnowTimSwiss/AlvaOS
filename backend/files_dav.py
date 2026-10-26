@@ -89,6 +89,9 @@ def signed_in(app_id: str = 'files') -> Tuple[Optional[Dict[str, Any]], Optional
         return _admit(known[0], 'user', app_id)   # a changed password ends this at once
     if name == 'admin':
         return None, _challenge('The admin account cannot be used here. Sign in as a person from Storage › Users.')
+    device = fs.device_session(password)     # the desktop app: its own token instead of the password
+    if device and device.get('user') == name and device.get('role') != 'admin':
+        return _admit(name, 'user', app_id)
     ip = request.remote_addr or ''
     if _too_many_failures(ip, now):
         return None, Response('Too many wrong passwords. Wait a few minutes.\n', 429)

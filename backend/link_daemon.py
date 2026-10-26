@@ -13,7 +13,8 @@ ordinary TCP on the loopback network.
 
     Incoming (a peer connects to this NAS), one QUIC stream per request, its first line names a service:
 
-        hub    a phone         -> the Hub (127.0.0.1:8090)
+        hub    a phone         -> the Hub (127.0.0.1:8090), also CalDAV and CardDAV
+        dav    a phone         -> Files over WebDAV (127.0.0.1:8091), the drive of a computer
         api    a buddy         -> this NAS's backend (127.0.0.1:8080), for the buddy API
         nbd    a buddy         -> the backup vault server (127.0.0.1:10809)
         pair   anybody         -> one narrow request: pair a phone with a code from the Hub, or
@@ -53,9 +54,11 @@ STATE_DIR = os.environ.get('ALVAOS_LINK_DIR', '/var/lib/alvaos/link')
 CONTROL_ADDRESS = ('127.0.0.1', 8095)
 
 # What an incoming service connects to on this NAS.
-SERVICES = {'hub': ('127.0.0.1', 8090), 'api': ('127.0.0.1', 8080), 'nbd': ('127.0.0.1', 10809)}
+SERVICES = {'hub': ('127.0.0.1', 8090), 'dav': ('127.0.0.1', 8091), 'api': ('127.0.0.1', 8080),
+            'nbd': ('127.0.0.1', 10809)}
 # Which services each kind of peer may use.
-ALLOWED = {'phone': {'hub'}, 'buddy': {'api', 'nbd'}}
+# A "phone" is any device with the app: phones and computers (Files as a drive is `dav`).
+ALLOWED = {'phone': {'hub', 'dav'}, 'buddy': {'api', 'nbd'}}
 # Where the backup code connects to reach a buddy's service (at the buddy's own address).
 LOCAL_PORTS = {'nbd': 10809, 'api': 18080}
 
