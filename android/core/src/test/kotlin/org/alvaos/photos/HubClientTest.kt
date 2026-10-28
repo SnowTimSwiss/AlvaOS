@@ -145,4 +145,48 @@ class HubClientTest {
         server.enqueue(json("""{"user": "tim", "shares": [{"name": "Family", "access": "write"}, {"name": "Work", "access": "read", "limited": true}]}"""))
         assertEquals(listOf("Family" to "write", "Work" to "read"), client.me().shares.map { it.name to it.access })
     }
+
+    @Test
+    fun aFolderIsListedAndAFileComesThroughItsLink() {
+        server.enqueue(json("""{"access": "write", "entries": [
+            {"name": "Docs", "type": "folder", "size_bytes": 0, "modified_at": "2026-10-28T12:00:00+00:00"},
+            {"name": "a b.txt", "type": "file", "size_bytes": 5, "modified_at": "2026-10-28T12:00:00+02:00"},
+            {"name": "odd", "type": "link", "size_bytes": 0, "modified_at": ""}]}"""))
+        val entries = client.list("Family", "Photos")
+        assertEquals(listOf("Docs", "a b.txt"), entries.map { it.name })
+        assertTrue(entries[0].isFolder && !entries[1].isFolder)
+        assertEquals(1_793_188_800_000L, entries[0].modified)
+        assertEquals(1_793_181_600_000L, entries[1].modified)
+        assertTrue(server.takeRequest().path!!.contains("share=Family&path=Photos"))
+
+        server.enqueue(json("""{"url": "/api/get/tok"}"""))
+        server.enqueue(MockResponse().setBody("hello"))
+        val file = java.io.File.createTempFile("alvaos", ".txt")
+        client.download("Family", "Photos/a b.txt", file)
+        assertEquals("hello", file.readText())
+        server.takeRequest()
+        assertEquals("/api/get/tok", server.takeRequest().path)
+        file.delete()
+    }
+
+    @Test
+    fun changesGoToTheNasAsTheHubWantsThem() {
+        repeat(3) { server.enqueue(json("""{"success": true}""")) }
+        client.delete("Family", "Docs", "old.txt")
+        client.rename("Family", "Docs", "a.txt", "b.txt")
+        client.move("Family", "Docs", "b.txt", "Archive")
+        assertEquals("""{"share":"Family","path":"Docs","names":["old.txt"]}""", server.takeRequest().body.readUtf8())
+        assertEquals("""{"share":"Family","path":"Docs","old":"a.txt","new":"b.txt"}""", server.takeRequest().body.readUtf8())
+        assertEquals("""{"share":"Family","path":"Docs","names":["b.txt"],"to":"Archive"}""", server.takeRequest().body.readUtf8())
+    }
+
+    @Test
+    fun aReplacingUploadSaysSoWhenItFinishes() {
+        server.enqueue(json("{}"))
+        server.enqueue(json("""{"size": 3}"""))
+        server.enqueue(json("{}"))
+        client.upload(Upload("x", "Family", "Docs", "a.txt"), 3, 1000, true) { java.io.ByteArrayInputStream(ByteArray(3)) }
+        repeat(2) { server.takeRequest() }
+        assertTrue(server.takeRequest().body.readUtf8().contains(""""replace":true"""))
+    }
 }

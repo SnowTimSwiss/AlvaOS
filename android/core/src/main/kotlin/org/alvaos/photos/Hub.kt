@@ -56,6 +56,17 @@ data class StoreTile(val id: String = "", val name: String = "", val port: Int =
 @Serializable
 data class HubInfo(val apps: List<HubApp> = emptyList(), val store: List<StoreTile> = emptyList())
 
+/** One thing in a folder, as the NAS lists it. */
+@Serializable
+data class FileEntry(
+    val name: String = "", val type: String = "file", val size_bytes: Long = 0, val modified_at: String = "",
+) {
+    val isFolder: Boolean get() = type == "folder"
+
+    /** When it changed, in milliseconds since 1970 (0 if the NAS did not say). */
+    val modified: Long get() = try { java.time.OffsetDateTime.parse(modified_at).toInstant().toEpochMilli() } catch (e: Exception) { 0L }
+}
+
 /** A shared folder the person may open: `access` is "write" or "read". */
 @Serializable
 data class ShareInfo(val name: String, val access: String = "read")
@@ -246,6 +257,53 @@ class HubClient(
         post("/api/mkdir", Mkdir(share, path, name))
     }
 
+    // ── Files: what the system's file app needs (a folder's content, a file, changes) ──
+
+    @Serializable
+    private data class Listed(val entries: List<FileEntry> = emptyList(), val access: String = "read")
+
+    /** What is in a folder of a share ("" is its top): folders and files only. */
+    fun list(share: String, path: String): List<FileEntry> =
+        json.decodeFromString<Listed>(send(request("/api/list?share=${enc(share)}&path=${enc(path)}")))
+            .entries.filter { it.type == "folder" || it.type == "file" }
+
+    @Serializable
+    private data class Linked(val url: String = "")
+
+    /** The file, from [from] bytes on (0: all of it), into [to]. */
+    fun download(share: String, path: String, to: java.io.File, from: Long = 0) {
+        val url = json.decodeFromString<Linked>(post("/api/link", mapOf("share" to share, "path" to path))).url
+        val call = request(url).apply { if (from > 0) header("Range", "bytes=$from-") }
+        http.newCall(call.build()).execute().use { res ->
+            if (!res.isSuccessful) throw HubException(errorOf(res.body?.string().orEmpty()) ?: "The NAS answered ${res.code}.", res.code)
+            val body = res.body ?: throw HubException("The NAS sent nothing.")
+            java.io.FileOutputStream(to, from > 0).use { out -> body.byteStream().copyTo(out, 64 * 1024) }
+        }
+    }
+
+    @Serializable
+    private data class Deleting(val share: String, val path: String, val names: List<String>)
+
+    /** Into the NAS's trash (it can come back from there). */
+    fun delete(share: String, path: String, name: String) {
+        post("/api/delete", Deleting(share, path, listOf(name)))
+    }
+
+    @Serializable
+    private data class Renaming(val share: String, val path: String, val old: String, val new: String)
+
+    fun rename(share: String, path: String, old: String, new: String) {
+        post("/api/rename", Renaming(share, path, old, new))
+    }
+
+    @Serializable
+    private data class Moving(val share: String, val path: String, val names: List<String>, val to: String)
+
+    /** Into another folder of the same share. */
+    fun move(share: String, path: String, name: String, to: String) {
+        post("/api/move", Moving(share, path, listOf(name), to))
+    }
+
     @Serializable
     private data class Added(val phone: Phone)
 
@@ -282,7 +340,11 @@ class HubClient(
      * the NAS says how much it has and it goes on from there. `open(offset)`
      * gives the file from that byte on.
      */
-    override fun upload(target: Upload, size: Long, modified: Long, open: (offset: Long) -> InputStream) {
+    override fun upload(target: Upload, size: Long, modified: Long, open: (offset: Long) -> InputStream) =
+        upload(target, size, modified, false, open)
+
+    /** [replace]: a file of that name is there, the new one takes its place (the old one goes to the NAS's trash). */
+    fun upload(target: Upload, size: Long, modified: Long, replace: Boolean, open: (offset: Long) -> InputStream) {
         post("/api/upload/abort", mapOf("share" to target.share, "path" to target.path, "name" to target.name))
         var offset = 0L
         var first = true
@@ -320,7 +382,7 @@ class HubClient(
             }
         }
         @Serializable
-        data class Finish(val share: String, val path: String, val name: String, val size: Long, val modified: Long)
-        post("/api/upload/finish", Finish(target.share, target.path, target.name, size, modified))
+        data class Finish(val share: String, val path: String, val name: String, val size: Long, val modified: Long, val replace: Boolean)
+        post("/api/upload/finish", Finish(target.share, target.path, target.name, size, modified, replace))
     }
 }
