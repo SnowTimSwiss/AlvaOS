@@ -39,7 +39,6 @@ except ImportError:  # not on Linux
 VIDEO_TYPES = ('.mp4', '.m4v', '.mov', '.mkv', '.webm', '.3gp', '.3g2', '.avi', '.wmv', '.mpg', '.mpeg',
                '.ogv', '.flv', '.ts', '.mts', '.m2ts')
 # What a browser plays by itself (the viewer tries these first).
-NATIVE_TYPES = ('.mp4', '.m4v', '.mov', '.webm', '.mkv', '.ogv', '.3gp')
 HEIF_TYPES = ('.heic', '.heif')
 PREVIEW_TYPES = HEIF_TYPES + ('.tif', '.tiff')
 

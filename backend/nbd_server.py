@@ -47,7 +47,6 @@ OPT_GO = 7
 REP_ACK = 1
 REP_INFO = 3
 REP_ERR_UNSUP = (1 << 31) + 1
-REP_ERR_POLICY = (1 << 31) + 2
 REP_ERR_INVALID = (1 << 31) + 3
 REP_ERR_UNKNOWN = (1 << 31) + 6
 

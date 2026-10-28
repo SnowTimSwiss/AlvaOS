@@ -88,9 +88,6 @@ DEBIAN_RELEASES = [
 DEBIAN_CODENAME_TO_VERSION = {r["codename"]: r["version"] for r in DEBIAN_RELEASES}
 DEBIAN_VERSION_TO_CODENAME = {r["version"]: r["codename"] for r in DEBIAN_RELEASES}
 DEFAULT_DEBIAN_TARGET_CODENAME = "trixie"
-DEFAULT_DEBIAN_TARGET_VERSION = DEBIAN_CODENAME_TO_VERSION.get(DEFAULT_DEBIAN_TARGET_CODENAME, "13")
-
-
 class UpdateManager:
     def __init__(self, repo="SnowTimSwiss/AlvaOS"):
         self.repo = repo

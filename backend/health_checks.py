@@ -266,19 +266,6 @@ def smart_mode() -> str:
     return str(get_settings()['smart'])
 
 
-def save_smart_mode(mode: str) -> str:
-    if mode not in SMART_MODES:
-        raise ValueError('Choose standard, short or off.')
-    with _lock:
-        data = _load()
-        stored = data.get('settings')
-        settings: dict[str, Any] = stored if isinstance(stored, dict) else {}
-        settings['smart'] = mode
-        data['settings'] = settings
-        _save(data)
-    return mode
-
-
 def smart_records() -> dict[str, dict[str, Any]]:
     """What the last self-tests and SMART readings said, per disk."""
     records = _load().get('smart')

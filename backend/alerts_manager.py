@@ -524,56 +524,6 @@ def _critical_fingerprint(alerts):
     return hashlib.sha256(digest_input.encode('utf-8')).hexdigest()
 
 
-def _maybe_send_telegram_critical_alerts(alerts, state):
-    telegram = state.get('telegram', {})
-    delivery = state.get('delivery', {})
-    token = str(telegram.get('bot_token', '')).strip()
-    chat_id = str(telegram.get('paired_chat_id', '')).strip()
-    enabled = bool(telegram.get('enabled', False))
-    if not enabled or not token or not chat_id:
-        return
-
-    fingerprint = _critical_fingerprint(alerts)
-    if not fingerprint:
-        if delivery.get('last_critical_fingerprint'):
-            state['delivery']['last_critical_fingerprint'] = ''
-            save_alerts_state(state)
-        return
-
-    if fingerprint == str(delivery.get('last_critical_fingerprint', '')).strip():
-        return
-
-    critical_alerts = [item for item in alerts if str(item.get('severity', '')).lower() == 'critical']
-    if not critical_alerts:
-        return
-
-    lines = ['AlvaOS critical alerts detected:']
-    for item in critical_alerts[:8]:
-        lines.append(f"- {item.get('title')}: {item.get('message')}")
-    if len(critical_alerts) > 8:
-        lines.append(f"- ... and {len(critical_alerts) - 8} more")
-    lines.append('')
-    lines.append(f"Generated at {_utc_now().strftime('%Y-%m-%d %H:%M:%S UTC')}")
-
-    ok, error, _result = _telegram_api_call(
-        token,
-        'sendMessage',
-        payload={
-            'chat_id': chat_id,
-            'text': '\n'.join(lines),
-            'disable_web_page_preview': True,
-        },
-        timeout_sec=12
-    )
-    if not ok:
-        print(f"Telegram critical alert delivery failed: {error}")
-        return
-
-    state['delivery']['last_critical_fingerprint'] = fingerprint
-    state['delivery']['last_critical_sent_at'] = _now_iso()
-    save_alerts_state(state)
-
-
 # ── Notification feed ──────────────────────────────────────────────────────────
 
 def _load_notifications_raw():

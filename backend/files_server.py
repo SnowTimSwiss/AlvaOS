@@ -197,12 +197,6 @@ def device_session(token: str) -> dict[str, Any] | None:
     return session
 
 
-def end_sessions_for(user: str) -> None:
-    with _lock:
-        sessions = _load_sessions()
-        _save_sessions({k: v for k, v in sessions.items() if v.get('user') != user})
-
-
 # ── Who may do what ──────────────────────────────────────────────────────────
 
 def shares_for(session: dict[str, Any], grants: bool = True) -> dict[str, dict[str, Any]]:
