@@ -312,6 +312,14 @@ Needs the NAS with the internet and a phone on mobile data (Wi-Fi off).
    NVIDIA's driver was installed before this version, Settings › Graphics
    offers "Install what apps need" (the container toolkit) first.
 
+## 12zzk. Security fixes: sign-in file, two-factor codes, web files
+
+1. Update from the previous version to this one: `ls -l /var/lib/alvaos/auth.json` shows `-rw-------` owned by `alvaos`, and the Web UI still signs in.
+2. Settings › Security › two-factor (with an app): sign in with the password, enter a wrong code five times: the sign-in asks for the password again. The right code works on a new sign-in.
+3. Open the Web UI and a page (`/index.html`, `/app.js`): they load. `curl --path-as-is 'https://NAS:8080/..%2Fetc%2Fhostname'` answers 404.
+4. Apps: install an app from the store (compose check): it still installs and starts. Only a hand-written compose file with `include`, `env_file`, `network_mode: host` or `build` is refused.
+5. Storage: attach a second disk to a pool (the policy's device checks) and check that the system disk is still refused.
+
 ## 12zzj. Installer and pages after the cleanup
 
 Not run anywhere yet: the installer changes (`read -ra` for the disk and pool lists, removed colour variables) and the removed CSS rules.
