@@ -79,7 +79,7 @@ def jwt_decode(token: str, secret: str, now: float | None = None) -> dict[str, A
         return None
     try:
         head = json.loads(_unb64(parts[0]))
-        if head.get('alg') != 'HS256':
+        if not isinstance(head, dict) or head.get('alg') != 'HS256':
             return None
         want = hmac.new(secret.encode(), f'{parts[0]}.{parts[1]}'.encode(), hashlib.sha256).digest()
         if not hmac.compare_digest(want, _unb64(parts[2])):
