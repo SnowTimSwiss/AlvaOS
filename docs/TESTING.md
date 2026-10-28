@@ -318,7 +318,8 @@ Needs the NAS with the internet and a phone on mobile data (Wi-Fi off).
 2. An app that forbids frames (Pi-hole, Vaultwarden) shows inside the window too. Choose "A new tab" for it: it opens in a tab again.
 3. On the Hub over https (port 9443) the same app opens in a new tab, with a note.
 4. "Customize" (foot of the bar): turn Contacts off, Jellyfin on, move Jellyfin up; Save. The bar changes at once; sign in as the same person on the phone: the same bar. "Back to the default" restores it. Another person has their own.
-5. Hide the app again on the Hub page: its proxy port (app port + 20000) stops answering within a few seconds (`ss -ltn`).
+5. Computer app (Windows, Linux) and the Android app, away from home (Link): the app opens in the Hub's window there too. `127.0.0.1:28096` (app port + 20000) answers on the computer while the app is shown; hiding it in the Hub page closes the port within a minute.
+6. Hide the app again on the Hub page: its proxy port (app port + 20000) stops answering within a few seconds (`ss -ltn`).
 
 ## 12zzg. Graphics cards: one per app, and the load
 

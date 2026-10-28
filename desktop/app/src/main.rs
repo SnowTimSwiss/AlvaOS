@@ -58,6 +58,8 @@ struct Net {
     dav: Option<Proxy>,
     /// Files over HTTPS (Windows' network drive), handing on to `dav`.
     tls: Option<alvaos_core::tls::Front>,
+    /// The apps that open in the Hub's window, each on its own port here (the same as on the NAS).
+    apps: alvaos_core::proxy::AppPorts,
 }
 
 struct TrayItems {
@@ -170,6 +172,7 @@ async fn go_online(app: &AppHandle) -> Result<(), String> {
     let mut net = me.net.lock().await;
     net.hub = None;
     net.dav = None;
+    net.apps = Default::default();
     let (hub_way, dav_way) = if let Some(nas) = config.link.clone() {
         let link = match net.link.clone() {
             Some(link) => link,
@@ -213,9 +216,27 @@ async fn go_offline(app: &AppHandle) {
     net.hub = None;
     net.dav = None;
     net.tls = None;
+    net.apps = Default::default();
     if let Some(link) = net.link.take() {
         link.close().await;
     }
+}
+
+/// The apps that open in the Hub's window get their ports on this computer, the way the Hub's own does
+/// (through Link as the service `app:<port>`, or straight to the NAS at home).
+async fn sync_apps(app: &AppHandle, hub_me: &serde_json::Value) {
+    let me = app.state::<App>();
+    let config = me.config();
+    let wanted = alvaos_core::proxy::embed_ports(hub_me);
+    let mut net = me.net.lock().await;
+    let link = net.link.clone();
+    let host = config.home().and_then(|h| h.rsplit_once(':').map(|(h, _)| h.to_string()));
+    let way = |port: u16| match (&link, &config.link, &host) {
+        (Some(link), Some(nas), _) => Way::Link { link: link.clone(), nas: nas.clone(), service: format!("app:{port}"), hints: hints() },
+        (_, _, Some(host)) => Way::Direct(format!("{host}:{port}")),
+        _ => Way::Direct(format!("127.0.0.1:{port}")),
+    };
+    net.apps.sync(&wanted, way).await;
 }
 
 /// Is the NAS there, which way, and does it still know this computer?
@@ -251,7 +272,11 @@ async fn check(app: &AppHandle) {
     match reached {
         Ok((route, ms)) => {
             // Signed out on the NAS (a new password ends the session, Link may still know the key)?
-            let out = matches!(Hub::new(&url).me(&token).await, Err(ref e) if e.is::<SignedOut>());
+            let answer = Hub::new(&url).me(&token).await;
+            let out = matches!(answer, Err(ref e) if e.is::<SignedOut>());
+            if let Ok(hub_me) = &answer {
+                sync_apps(app, hub_me).await;
+            }
             if out {
                 refused(app).await;
             } else {

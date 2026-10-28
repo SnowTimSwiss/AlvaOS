@@ -59,6 +59,10 @@ SERVICES = {'hub': ('127.0.0.1', 8090), 'dav': ('127.0.0.1', 8091), 'api': ('127
 # Which services each kind of peer may use.
 # A "phone" is any device with the app: phones and computers (Files as a drive is `dav`).
 ALLOWED = {'phone': {'hub', 'dav'}, 'buddy': {'api', 'nbd'}}
+# Apps shown in the Hub's window (embed_proxy.py): a phone or computer may also open "app:<port>" for the ports of
+# the proxies the Hub lists in this file. Nothing else: never an arbitrary port.
+EMBED_PORTS_FILE = os.environ.get('ALVAOS_EMBED_PORTS', '/var/lib/alvaos/embed_ports.json')
+APP_SERVICE_RE = re.compile(r'^app:([0-9]{4,5})$')
 # Where the backup code connects to reach a buddy's service (at the buddy's own address).
 LOCAL_PORTS = {'nbd': 10809, 'api': 18080}
 
@@ -294,6 +298,21 @@ class Link:
         line, _, rest = buf.partition(b'\n')
         return line.decode('utf-8', 'replace').strip(), rest
 
+    def _embed_ports(self) -> set:
+        """The proxy ports apps may be reached on (read again every few seconds)."""
+        now = time.monotonic()
+        cached = getattr(self, '_embed_cache', None)
+        if cached and now - cached[0] < 3:
+            return cached[1]
+        try:
+            with open(getattr(self, 'embed_ports_file', EMBED_PORTS_FILE)) as f:
+                data = json.load(f)
+            ports = {int(p) for p in data.get('ports', []) if isinstance(p, int) and 1024 < p <= 65535}
+        except (OSError, ValueError, AttributeError):
+            ports = set()
+        self._embed_cache = (now, ports)
+        return ports
+
     async def _stream(self, remote: str, bi: Any) -> None:
         recv, send = bi.recv(), bi.send()
         self.streams[remote] = self.streams.get(remote, 0) + 1
@@ -315,6 +334,12 @@ class Link:
             elif peer and service in ALLOWED.get(str(peer.get('kind')), ()) and service in self.services:
                 host, port = self.services[service]
                 reader, writer = await asyncio.open_connection(host, port, local_addr=(peer['alias'], 0))
+                if rest:
+                    writer.write(rest)
+                await self._pipe(reader, writer, recv, send)
+            elif peer and peer.get('kind') == 'phone' and (m := APP_SERVICE_RE.match(service)) \
+                    and int(m.group(1)) in self._embed_ports():
+                reader, writer = await asyncio.open_connection('127.0.0.1', int(m.group(1)), local_addr=(peer['alias'], 0))
                 if rest:
                     writer.write(rest)
                 await self._pipe(reader, writer, recv, send)

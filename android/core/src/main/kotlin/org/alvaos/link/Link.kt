@@ -179,7 +179,11 @@ class LinkClient(secretKey: ByteArray? = null, private val directOnly: Boolean =
  * is carried through Link to the Hub. The WebView and the sync use it like any other address of the
  * NAS; the port is kept between starts so the Hub's cookies stay valid.
  */
-class LinkProxy(private val link: LinkClient, private val nas: String, private val hints: List<String> = emptyList()) {
+class LinkProxy(
+    private val link: LinkClient, private val nas: String, private val hints: List<String> = emptyList(),
+    /** What the NAS's daemon is asked for: "hub", or "app:<port>" for an app in the Hub's window. */
+    private val service: String = "hub",
+) {
     private var server: ServerSocket? = null
     private var job: Job? = null
 
@@ -191,13 +195,25 @@ class LinkProxy(private val link: LinkClient, private val nas: String, private v
         if (server != null) return baseUrl
         val loopback = InetAddress.getByName("127.0.0.1")
         val s = try { ServerSocket(preferred, 64, loopback) } catch (e: IOException) { ServerSocket(0, 64, loopback) }
+        return serve(scope, s)
+    }
+
+    /** Exactly this port (the Hub builds an app's address from it), or false when it is taken. */
+    fun startExact(scope: CoroutineScope, port: Int): Boolean {
+        if (server != null) return true
+        val s = try { ServerSocket(port, 64, InetAddress.getByName("127.0.0.1")) } catch (e: IOException) { return false }
+        serve(scope, s)
+        return true
+    }
+
+    private fun serve(scope: CoroutineScope, s: ServerSocket): String {
         server = s
         job = scope.launch(Dispatchers.IO) {
             while (isActive) {
                 val socket = try { s.accept() } catch (e: IOException) { break }
                 launch {
                     try {
-                        val bi = link.open(nas, "hub", hints)
+                        val bi = link.open(nas, service, hints)
                         LinkClient.pipe(socket, bi.recv(), bi.send())
                     } catch (e: CancellationException) {
                         socket.close()
@@ -215,6 +231,41 @@ class LinkProxy(private val link: LinkClient, private val nas: String, private v
         job?.cancel()
         runCatching { server?.close() }
         server = null
+    }
+}
+
+/**
+ * The apps that open in the Hub's window, each on a port of its own on this phone, the same number as the NAS's
+ * proxy for it (`embed_port` in the Hub's `me`): the Hub builds the app's address from it. Every connection is
+ * carried through Link as the service `app:<port>`. Only needed away from home: at home the Hub's page reaches
+ * the NAS's proxy directly.
+ */
+class AppPorts(private val link: LinkClient, private val nas: String, private val hints: List<String> = emptyList()) {
+    private val proxies = HashMap<Int, LinkProxy>()
+
+    /** Listen on exactly `wanted`: new ones start, those no longer wanted stop. A taken port is left out. */
+    @Synchronized
+    fun sync(scope: CoroutineScope, wanted: Set<Int>) {
+        proxies.keys.filter { it !in wanted }.forEach { proxies.remove(it)?.stop() }
+        for (port in wanted.filter { it in FIRST..65535 }.sorted().take(MAX)) {
+            if (port in proxies) continue
+            val proxy = LinkProxy(link, nas, hints, "app:$port")
+            if (proxy.startExact(scope, port)) proxies[port] = proxy
+        }
+    }
+
+    @Synchronized
+    fun ports(): Set<Int> = proxies.keys.toSet()
+
+    @Synchronized
+    fun stop() {
+        proxies.values.forEach { it.stop() }
+        proxies.clear()
+    }
+
+    companion object {
+        const val FIRST = 20001
+        const val MAX = 32
     }
 }
 

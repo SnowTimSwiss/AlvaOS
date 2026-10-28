@@ -151,3 +151,7 @@ last one and keeps the sign-in.
 - Make the AlvaOS release as always: the app is added to it and goes to
   Play's internal testing. Check it on a phone from Play, then promote it
   in the Play Console (internal › closed › production).
+
+## Apps in the Hub's window, away from home
+
+When the app reaches the Hub through Link (the local address `127.0.0.1:<port>`), the apps the admin lets open in the Hub's window get a port of their own on the phone, the same number as the NAS's proxy for them (`AppPorts` in `core/.../Link.kt`, started by `LinkService.syncApps` whenever the Hub page loads), carried through Link as `app:<port>`. At home the Hub's page reaches the NAS's proxy directly.

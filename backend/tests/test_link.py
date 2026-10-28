@@ -326,3 +326,34 @@ def test_two_nas_pair_and_ping_each_other_and_a_new_install_takes_over_the_key(t
             await a.stop()
             await b.stop()
     asyncio.run(scenario())
+
+
+def test_a_paired_phone_may_open_the_ports_of_apps_in_the_hubs_window_and_nothing_else(tmp_path):
+    hub = FakeHub()
+
+    async def scenario():
+        echo = Echo()
+        await echo.start()
+        other = Echo()
+        await other.start()
+        nas = await node(tmp_path, "nas", {"hub": ("127.0.0.1", hub.server_address[1])})
+        nas.embed_ports_file = str(tmp_path / "embed_ports.json")
+        try:
+            _, conn = await stranger(nas)
+            # Not before pairing, and not while the list is empty.
+            assert isinstance(await ask(conn, f"app:{echo.port}", b"x"), Exception)
+            await ask(conn, "pair", json.dumps({"op": "device", "code": "ABCD1234", "device": {"name": "PC"}}).encode() + b"\n")
+            (peer,) = nas.state.peers.values()
+            assert isinstance(await ask(conn, f"app:{echo.port}", b"x"), Exception)
+            (tmp_path / "embed_ports.json").write_text(json.dumps({"ports": [echo.port]}))
+            nas._embed_cache = None
+            got = await ask(conn, f"app:{echo.port}", b"hello")
+            assert got == f"{peer['alias']} says: hello".encode()           # from the phone's own address, like the Hub
+            # A port that is not on the list, and things that look like it, are refused.
+            for service in (f"app:{other.port}", "app:22", "app:80", "app:abc", f"app:{echo.port}0", "app:"):
+                assert isinstance(await ask(conn, service, b"x"), Exception), service
+        finally:
+            await nas.stop()
+            echo.server.close()
+            other.server.close()
+    asyncio.run(scenario())
