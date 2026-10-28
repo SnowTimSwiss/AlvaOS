@@ -1474,7 +1474,7 @@
                         <p><strong>2.</strong> Open it, choose <strong>Paste a link</strong> and paste this link:</p>
                         <div class="pair-link"><input type="text" readonly value="${esc(pairing.link)}" aria-label="Link to connect a computer"><button type="button" class="btn" id="pair-copy">${icon('copy')}Copy</button></div>
                         <p class="pair-code">Or type the code <strong>${esc(pairing.code)}</strong> in the app${pairing.addresses.length ? `, with the address <code>${esc(pairing.addresses[0])}</code>` : ''}.</p>
-                        <p class="muted">Works once, for ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} more minutes.${pairing.away ? ' Away from home the computer connects through AlvaOS Link.' : ' At home only: the admin can turn on AlvaOS Link in Settings.'}</p>
+                        <p class="muted">Works once, for <span data-left>${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}</span> more minutes.${pairing.away ? ' Away from home the computer connects through AlvaOS Link.' : ' At home only: the admin can turn on AlvaOS Link in Settings.'}</p>
                     </div></div>`
                 : pairing ? `<div class="pair">
                     <div class="qr">${pairing.qr ? `<img alt="QR code to connect a phone" src="${pairing.qr}">` : ''}</div>
@@ -1483,7 +1483,7 @@
                         <p><strong>2.</strong> Open it and tap <strong>Scan QR code</strong>.</p>
                         <p><strong>3.</strong> Point the phone at this code. That's it: no password needed.</p>
                         <p class="pair-code">Or type the code <strong>${esc(pairing.code)}</strong> in the app${pairing.addresses.length ? `, with the address <code>${esc(pairing.addresses[0])}</code>` : ''}.</p>
-                        <p class="muted">Works once, for ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} more minutes.${pairing.away ? ' Away from home the app connects through AlvaOS Link.' : ' At home only: the admin can turn on AlvaOS Link in Settings.'}</p>
+                        <p class="muted">Works once, for <span data-left>${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}</span> more minutes.${pairing.away ? ' Away from home the app connects through AlvaOS Link.' : ' At home only: the admin can turn on AlvaOS Link in Settings.'}</p>
                     </div></div>`
                 : `<p>Connect a phone or a computer with the AlvaOS app: it uses every Hub app you have and stays signed in, at home and away (AlvaOS Link). A phone backs up its photos; a computer reaches the NAS from anywhere, also in its browser, and can show Files as a drive. No password to type.</p>
                     <div class="actions" style="justify-content:flex-start;margin:0 0 14px"><button type="button" class="btn primary" id="pair-btn">${icon('plus')}Connect a phone</button>
@@ -1547,7 +1547,21 @@
         };
         await paint();
         // While a code is shown: the countdown, and a phone that connects shows up by itself.
-        timer = setInterval(() => { if (wrap.querySelector('.devices')) { if (pairing) paint(); } else clearInterval(timer); }, 3000);
+        // Only the numbers change while the code is on the screen: the dialog (and the QR code) is not drawn again.
+        let beat = 0;
+        timer = setInterval(async () => {
+            if (!wrap.querySelector('.devices')) { clearInterval(timer); return; }
+            if (!pairing) return;
+            const left = Math.max(0, Math.round((pairing.until - Date.now()) / 1000));
+            if (!left) { pairing = null; paint(); return; }
+            const label = wrap.querySelector('[data-left]');
+            if (label) label.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+            beat += 1;
+            if (beat % 3) return;
+            let list;
+            try { list = (await api('devices')).devices || []; } catch (_e) { return; }
+            if (known && (list.length !== known.size || list.some((d) => !known.has(d.id)))) paint();   // a phone connected
+        }, 1000);
     }
 
     // Photos, a Hub app of its own (opened from the app bar): every picture

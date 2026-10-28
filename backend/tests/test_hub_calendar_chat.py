@@ -382,3 +382,13 @@ def test_the_page_cannot_set_what_a_model_can(monkeypatch):
     api_ai._ask_thinking(sent, ai_assistant.load_settings())
     assert asked == [("home", ["new:1b"])]                      # only what is new is asked
     assert sent[0]["thinking"] == {"llama3.1": "none", "new:1b": "effort"}   # the page's word does not count
+
+
+def test_umlauts_in_a_streamed_answer_stay_umlauts():
+    # The service sends bytes (UTF-8, "text/event-stream" without a charset): they are decoded as UTF-8.
+    lines = [("data: " + json.dumps({"choices": [{"delta": {"content": text}}]}, ensure_ascii=False)).encode("utf-8")
+             for text in ("Gr", "üße aus Köln: ", "Maß, Äpfel, Öl")] + [b"data: [DONE]"]
+    service = {"provider": "openai", "base_url": "http://x/v1", "api_key": ""}
+    got = "".join(t for kind, t in hub_chat.stream_answer(
+        service, "m", [{"role": "user", "content": "Hallo"}], False, "low", post=lambda *a, **k: Stream(lines)) if kind == "t")
+    assert got == "Grüße aus Köln: Maß, Äpfel, Öl"
