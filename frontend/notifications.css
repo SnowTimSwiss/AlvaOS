@@ -204,18 +204,32 @@ html.modal-open { overflow: hidden; }
 }
 
 .modal-close-x {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    margin: -4px -6px -4px 0;
     background: transparent;
     border: none;
+    border-radius: 50%;
     color: var(--text-secondary);
     cursor: pointer;
-    font-size: 1.3rem;
+    font-size: 1.5rem;
     line-height: 1;
-    padding: 0;
+    padding: 0 0 2px;
     flex-shrink: 0;
+    transition: background-color 0.15s, color 0.15s;
 }
 
 .modal-close-x:hover {
+    background: var(--bg-hover);
     color: var(--text-primary);
+}
+
+.modal-close-x:focus-visible {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: 1px;
 }
 
 .modal-body {

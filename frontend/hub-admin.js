@@ -8,6 +8,15 @@
     const svg = (name) => (window.alvaIcon ? window.alvaIcon(name, '', 'aria-hidden="true"') : '');
     let state = null;
 
+    // "Everyone | Only some people", and the people as chips to switch on and off.
+    const seg = (attr, id, some, name, noPeople) => `
+        <div class="seg" role="group" aria-label="Who sees ${esc(name)}">
+            <button type="button" ${attr}="${esc(id)}" data-v="all" aria-pressed="${!some}">Everyone</button>
+            <button type="button" ${attr}="${esc(id)}" data-v="some" aria-pressed="${some}"${noPeople ? ' disabled' : ''}>Only some people</button>
+        </div>`;
+    const chip = (attr, id, person, on) => `
+        <label class="chip"><input type="checkbox" ${attr}="${esc(id)}" value="${esc(person)}"${on ? ' checked' : ''}><span class="chip-av" aria-hidden="true">${esc(person.charAt(0).toUpperCase())}</span>${esc(person)}</label>`;
+
     async function call(options = {}) {
         const res = await fetch(`${API_BASE}/hub`, { ...options, headers: { 'Content-Type': 'application/json' } });
         const data = await res.json().catch(() => ({}));
@@ -23,7 +32,7 @@
                 <a class="btn-primary" href="${esc(url)}" target="_blank" rel="noopener">Open the Hub</a>
                 <span class="fl-addr">${esc(url.replace(/^https?:\/\//, '').replace(/\/$/, ''))}</span>
                 <button type="button" class="btn-secondary btn-quiet" id="fl-turn-off">Turn off</button>
-                ${state.running ? '' : '<span class="fl-addr">Starting…</span>'}`;
+                ${state.running ? '' : '<span class="fl-addr" id="fl-starting">Starting…</span>'}`;
             $('fl-turn-off').onclick = () => turn(false);
         } else {
             actions.innerHTML = `<button type="button" class="btn-primary" id="fl-turn-on">Turn on</button><span class="fl-addr">Opens port ${esc(state.port)} on this NAS.</span>`;
@@ -34,6 +43,7 @@
         $('fl-note').innerHTML = waiting.length
             ? `${esc(waiting.join(', '))} ${waiting.length === 1 ? 'needs' : 'need'} their password set once more before signing in to the Hub (passwords from before the Hub are not stored in a form it can check): <a href="storage.html#users">Storage › Users</a>.`
             : '';
+        watchStart();
     }
 
     function whoHtml(app) {
@@ -42,14 +52,9 @@
         const people = state.people || [];
         return `
             <div class="hub-who">
-                <label>Who sees it
-                    <select data-who="${esc(app.id)}" aria-label="Who sees ${esc(app.name)}">
-                        <option value="all"${some ? '' : ' selected'}>Everyone</option>
-                        <option value="some"${some ? ' selected' : ''}${people.length ? '' : ' disabled'}>Only some people</option>
-                    </select>
-                </label>
-                ${some ? `<div class="hub-people" role="group" aria-label="People who see ${esc(app.name)}">${people.map((p) => `
-                    <label><input type="checkbox" data-person="${esc(app.id)}" value="${esc(p)}"${app.people.includes(p) ? ' checked' : ''}> ${esc(p)}</label>`).join('')}</div>` : ''}
+                <span class="hub-who-label">Who sees it</span>
+                ${seg('data-who', app.id, some, app.name, !people.length)}
+                ${some ? `<div class="hub-people chips" role="group" aria-label="People who see ${esc(app.name)}">${people.map((p) => chip('data-person', app.id, p, app.people.includes(p))).join('')}</div>` : ''}
             </div>`;
     }
 
@@ -134,8 +139,7 @@
                     <option value="all"${some ? '' : ' selected'}>Everyone</option>
                     <option value="some"${some ? ' selected' : ''}>Only some people</option>
                 </select></label></div>
-            ${some ? `<div class="hub-people" role="group" aria-label="People who may search the web">${people.map((p) => `
-                <label><input type="checkbox" data-search-person value="${esc(p)}"${app.search_people.includes(p) ? ' checked' : ''}> ${esc(p)}</label>`).join('')}</div>` : ''}`;
+            ${some ? `<div class="hub-people chips" role="group" aria-label="People who may search the web">${people.map((p) => chip('data-search-person', 'search', p, app.search_people.includes(p))).join('')}</div>` : ''}`;
     }
     function bindModels() {
         const app = (state.apps || []).find((a) => a.id === 'chat');
@@ -172,7 +176,7 @@
         if (cancel) cancel.addEventListener('click', () => { chatDraft = null; renderApps(); });
         const search = $('chat-search');
         if (search) search.addEventListener('change', () => change('chat', { search_people: search.value === 'all' ? null : [] },
-            search.value === 'all' ? 'Everyone may search the web in Chat.' : 'Tick who may search the web.'));
+            search.value === 'all' ? 'Everyone may search the web in Chat.' : 'Switch on who may search the web.'));
         document.querySelectorAll('[data-search-person]').forEach((box) => box.addEventListener('change', () => {
             const who = [...document.querySelectorAll('[data-search-person]:checked')].map((b) => b.value);
             change('chat', { search_people: who }, '');
@@ -183,8 +187,22 @@
         });
     }
 
+    // Who the Hub's people are, and the way to the place where they are made (Storage › Users).
+    function renderPeople() {
+        const bar = $('hub-people-bar');
+        if (!bar) return;
+        const people = state.people || [];
+        bar.innerHTML = people.length
+            ? `<span><strong>${people.length === 1 ? '1 person' : `${people.length} people`}</strong> can sign in:</span>
+               <div class="hub-people chips">${people.map((p) => `<span class="chip"><span class="chip-av" aria-hidden="true">${esc(p.charAt(0).toUpperCase())}</span>${esc(p)}</span>`).join('')}</div>
+               <a class="btn-secondary" href="storage.html#users">Manage people</a>`
+            : `<span>Nobody can sign in to the Hub yet. Everyone has their own name and password.</span>
+               <a class="btn-primary" href="storage.html#users" style="margin-left:auto;text-decoration:none">Add people</a>`;
+    }
+
     function renderApps() {
         $('hub-apps').hidden = !state.enabled;
+        renderPeople();
         const names = Object.fromEntries((state.apps || []).map((a) => [a.id, a.name]));
         $('hub-app-list').innerHTML = (state.apps || []).map((app) => `
             <div class="hub-app">
@@ -200,18 +218,20 @@
             </div>`).join('');
         document.querySelectorAll('[data-app]').forEach((box) => box.addEventListener('change', () =>
             change(box.dataset.app, { enabled: box.checked }, `${names[box.dataset.app]} is ${box.checked ? 'on' : 'off'} in the Hub.`)));
-        document.querySelectorAll('[data-who]').forEach((sel) => sel.addEventListener('change', () => {
-            const id = sel.dataset.who;
-            // "Only some people" starts with everyone ticked; the admin then unticks.
-            change(id, { people: sel.value === 'all' ? null : [...(state.people || [])] },
-                sel.value === 'all' ? `Everyone sees ${names[id]}.` : `Untick who should not see ${names[id]}.`);
+        document.querySelectorAll('[data-who]').forEach((btn) => btn.addEventListener('click', () => {
+            const id = btn.dataset.who;
+            const all = btn.dataset.v === 'all';
+            if (all === !Array.isArray(((state.apps || []).find((a) => a.id === id) || {}).people)) return;
+            // "Only some people" starts with everyone on; the admin then switches people off.
+            change(id, { people: all ? null : [...(state.people || [])] },
+                all ? `Everyone sees ${names[id]}.` : `Switch off who should not see ${names[id]}.`);
         }));
         document.querySelectorAll('[data-person]').forEach((box) => box.addEventListener('change', () => {
             const id = box.dataset.person;
             const chosen = [...document.querySelectorAll(`[data-person="${id}"]:checked`)].map((b) => b.value);
             if (!chosen.length) {
                 box.checked = true;
-                window.showToast('Leave at least one person, or choose everyone.', 'info');
+                window.showToast('Leave at least one person, or choose Everyone.', 'info');
                 return;
             }
             change(id, { people: chosen }, '');
@@ -240,13 +260,10 @@
                 <div>
                     <strong>${esc(app.name)}</strong>
                     <div class="hub-desc">Opens ${esc(window.location.hostname)}:${esc(app.port)}${esc(app.path === '/' ? '' : app.path)} in a new tab, with its own sign-in.</div>
-                    ${app.shown ? `<div class="hub-who"><label>Who sees it
-                        <select data-store-who="${esc(app.id)}" aria-label="Who sees ${esc(app.name)}">
-                            <option value="all"${some ? '' : ' selected'}>Everyone</option>
-                            <option value="some"${some ? ' selected' : ''}${people.length ? '' : ' disabled'}>Only some people</option>
-                        </select></label>
-                        ${some ? `<div class="hub-people" role="group" aria-label="People who see ${esc(app.name)}">${people.map((p) => `
-                            <label><input type="checkbox" data-store-person="${esc(app.id)}" value="${esc(p)}"${app.people.includes(p) ? ' checked' : ''}> ${esc(p)}</label>`).join('')}</div>` : ''}
+                    ${app.shown ? `<div class="hub-who">
+                        <span class="hub-who-label">Who sees it</span>
+                        ${seg('data-store-who', app.id, some, app.name, !people.length)}
+                        ${some ? `<div class="hub-people chips" role="group" aria-label="People who see ${esc(app.name)}">${people.map((p) => chip('data-store-person', app.id, p, app.people.includes(p))).join('')}</div>` : ''}
                     </div>` : ''}
                 </div>
                 <label class="toggle" title="${app.shown ? 'Shown' : 'Not shown'}"><input type="checkbox" data-store="${esc(app.id)}"${app.shown ? ' checked' : ''} aria-label="${esc(app.name)} in the Hub"><span class="toggle-slider"></span></label>
@@ -256,17 +273,19 @@
         const changeStore = (id, body, message) => post({ store: { [id]: body } }, message);
         box.querySelectorAll('[data-store]').forEach((b) => b.addEventListener('change', () =>
             changeStore(b.dataset.store, { shown: b.checked }, `${names[b.dataset.store]} is ${b.checked ? 'now' : 'no longer'} a tile in the Hub.`)));
-        box.querySelectorAll('[data-store-who]').forEach((sel) => sel.addEventListener('change', () => {
-            const id = sel.dataset.storeWho;
-            changeStore(id, { people: sel.value === 'all' ? null : [...people] },
-                sel.value === 'all' ? `Everyone sees ${names[id]}.` : `Untick who should not see ${names[id]}.`);
+        box.querySelectorAll('[data-store-who]').forEach((btn) => btn.addEventListener('click', () => {
+            const id = btn.dataset.storeWho;
+            const all = btn.dataset.v === 'all';
+            if (all === !Array.isArray((apps.find((a) => a.id === id) || {}).people)) return;
+            changeStore(id, { people: all ? null : [...people] },
+                all ? `Everyone sees ${names[id]}.` : `Switch off who should not see ${names[id]}.`);
         }));
         box.querySelectorAll('[data-store-person]').forEach((b) => b.addEventListener('change', () => {
             const id = b.dataset.storePerson;
             const chosen = [...box.querySelectorAll(`[data-store-person="${id}"]:checked`)].map((x) => x.value);
             if (!chosen.length) {
                 b.checked = true;
-                window.showToast('Leave at least one person, or choose everyone.', 'info');
+                window.showToast('Leave at least one person, or choose Everyone.', 'info');
                 return;
             }
             changeStore(id, { people: chosen }, '');
@@ -454,6 +473,28 @@
 
     function change(id, values, message) {
         return post({ apps: { [id]: values } }, message);
+    }
+
+    // Turned on but not up yet (just after an update, or just turned on): ask again until it is, and
+    // offer a restart when it does not come up.
+    let waiting = null;
+    function watchStart() {
+        clearTimeout(waiting);
+        if (!state || !state.enabled || state.running) return;
+        const began = Date.now();
+        const look = async () => {
+            try { state = await call(); } catch (e) { /* the backend is restarting too: ask again */ }
+            if (state && state.running) { render(); return; }
+            if (Date.now() - began > 60000) {
+                const note = $('fl-starting');
+                if (note) note.outerHTML = '<span class="fl-addr">Not responding.</span> <button type="button" class="btn-secondary" id="fl-restart">Restart it</button>';
+                const again = $('fl-restart');
+                if (again) again.onclick = async () => { await turn(false); await turn(true); };
+                return;
+            }
+            waiting = setTimeout(look, 2000);
+        };
+        waiting = setTimeout(look, 2000);
     }
 
     async function turn(on) {

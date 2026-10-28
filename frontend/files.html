@@ -30,10 +30,28 @@
         .hub-letter { font-weight: 700; font-size: 1.1rem; }
         .hub-app strong { display: block; }
         .hub-app .hub-desc { color: var(--text-secondary); font-size: 0.88rem; line-height: 1.4; }
-        .hub-who { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: 0.88rem; }
+        .hub-who { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; font-size: 0.88rem; }
+        .hub-who-label { color: var(--text-secondary); font-weight: 600; }
         .hub-who select { padding: 6px 8px; }
+        .seg { display: inline-flex; padding: 3px; gap: 2px; border: 1px solid var(--border-default); border-radius: 10px; background: var(--bg-body); }
+        .seg button { border: 0; background: transparent; color: var(--text-secondary); font: inherit; font-weight: 600; font-size: 0.85rem; padding: 6px 14px; border-radius: 7px; cursor: pointer; transition: background-color .15s, color .15s; }
+        .seg button:hover:not(:disabled):not([aria-pressed="true"]) { background: var(--bg-hover); color: var(--text-primary); }
+        .seg button[aria-pressed="true"] { background: var(--accent-primary-soft); color: var(--accent-primary); box-shadow: inset 0 0 0 1px var(--accent-primary); }
+        .seg button:disabled { opacity: .45; cursor: not-allowed; }
         .hub-people { display: flex; flex-wrap: wrap; gap: 6px 14px; width: 100%; }
         .hub-people label { display: inline-flex; gap: 6px; align-items: center; }
+        .hub-people.chips { gap: 8px; }
+        .chip { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px 4px 4px; border: 1px solid var(--border-default); border-radius: 999px; background: var(--bg-card); color: var(--text-secondary); cursor: pointer; transition: background-color .15s, border-color .15s, color .15s; }
+        .chip input { position: absolute; opacity: 0; pointer-events: none; }
+        .chip-av { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: .75rem; font-weight: 700; background: var(--bg-hover); color: var(--text-secondary); }
+        .chip:hover { border-color: var(--text-secondary); }
+        .chip:has(input:checked) { background: var(--accent-primary-soft); border-color: var(--accent-primary); color: var(--text-primary); }
+        .chip:has(input:checked) .chip-av { background: var(--accent-primary); color: #fff; }
+        .chip:has(input:focus-visible) { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
+        .hub-people-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 14px; margin: 4px 0 10px; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--bg-body); font-size: 0.88rem; color: var(--text-secondary); }
+        .hub-people-bar .chips { flex: 1 1 auto; width: auto; }
+        .hub-people-bar .chip { cursor: default; padding-right: 12px; }
+        .hub-people-bar .btn-secondary { margin-left: auto; text-decoration: none; }
         .hub-needs { color: var(--text-tertiary); font-size: 0.82rem; margin-top: 4px; }
         .hub-chat { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; font-size: 0.88rem; color: var(--text-secondary); line-height: 1.45; }
         .hub-chat strong { display: inline; color: var(--text-primary); }
@@ -150,6 +168,7 @@
             <section class="hub-apps" id="hub-apps" aria-labelledby="hub-apps-title" hidden>
                 <h2 id="hub-apps-title">Apps in the Hub</h2>
                 <p>Turn on what your household uses. An app that is off is not shown and does not run.</p>
+                <div class="hub-people-bar" id="hub-people-bar"></div>
                 <div id="hub-app-list"></div>
             </section>
             <section class="hub-apps" id="hub-store" aria-labelledby="hub-store-title" hidden>

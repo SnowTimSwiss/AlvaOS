@@ -194,7 +194,7 @@ function renderAvailableApps() {
         setStoreMeta('No apps available in the catalog.');
         container.innerHTML = `
             <div class="empty-state" style="grid-column: 1/-1;">
-                <div class="empty-state-icon">${window.alvaIcon ? window.alvaIcon('loader-circle', '', 'aria-hidden="true"') : '...'}</div>
+                <div class="empty-state-icon">${window.alvaIcon ? window.alvaIcon('package', '', 'aria-hidden="true"') : '...'}</div>
                 <div>No apps available</div>
             </div>
         `;
@@ -578,7 +578,7 @@ async function renderInspector() {
         inspector.innerHTML = `
             <div class="inspector-card">
                 <div class="empty-state">
-                    <div class="empty-state-icon">${window.alvaIcon ? window.alvaIcon('loader-circle', '', 'aria-hidden="true"') : '...'}</div>
+                    <div class="empty-state-icon">${window.alvaIcon ? window.alvaIcon('package', '', 'aria-hidden="true"') : '...'}</div>
                     <div>Select an app to see details.</div>
                 </div>
             </div>
@@ -818,7 +818,7 @@ async function loadInstalledWorkspace(preserveSelection = true) {
             containersCache = [];
             container.innerHTML = `
                 <div class="empty-state">
-                    <div class="empty-state-icon">${window.alvaIcon ? window.alvaIcon('loader-circle', '', 'aria-hidden="true"') : '...'}</div>
+                    <div class="empty-state-icon">${window.alvaIcon ? window.alvaIcon('package', '', 'aria-hidden="true"') : '...'}</div>
                     <div>No apps installed yet</div>
                     <p style="font-size: 0.9rem; margin-top: 8px;">Install your first app from the store.</p>
                     <button id="open-store-btn" class="btn-link" style="margin-top: 12px;">Open App Store</button>

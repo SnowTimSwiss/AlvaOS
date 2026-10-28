@@ -1002,7 +1002,7 @@ async function setup2fa() {
                 <img src="${escapeHtml(String(data.qr_code || ''))}" style="width: 200px; height: 200px; margin: 0 auto 1.5rem; display: block; background: white; padding: 10px; border-radius: 8px;" onerror="this.style.display='none';">
                 <div class="setting-group" style="text-align: left;">
                     <label class="setting-label" for="tfa-verify-code">Verification Code</label>
-                    <input type="text" id="tfa-verify-code" placeholder="6-digit code" style="width: 100%;">
+                    <input type="text" id="tfa-verify-code" data-paste placeholder="6-digit code" style="width: 100%;">
                 </div>
             `,
             onConfirm: async ({ confirmBtn }) => {
