@@ -26,6 +26,10 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 fuser = { version = "0.15", default-features = false }
 libc = "0.2"
 
+[target.'cfg(windows)'.dependencies]
+cloud-filter = "0.0.6"
+nt-time = "0.8"
+
 [dev-dependencies]
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }

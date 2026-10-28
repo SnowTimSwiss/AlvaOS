@@ -323,6 +323,21 @@ impl<R: Remote + Send + Sync + 'static> Volume<R> {
         self.remote.read_only()
     }
 
+    /// The NAS itself (for a system that keeps the files itself: Windows' cloud files).
+    pub fn remote(&self) -> &Arc<R> {
+        &self.remote
+    }
+
+    /// Everything the catalog has, parents before their children.
+    pub fn items(&self) -> Vec<(String, Item)> {
+        self.cat.lock().unwrap().items.iter().map(|(p, i)| (p.clone(), i.clone())).collect()
+    }
+
+    /// Something is on the NAS now (a file this computer just sent, a folder it made).
+    pub fn note(&self, path: &str, item: Item) {
+        self.cat.lock().unwrap().insert(path, item);
+    }
+
     fn lock_for(&self, path: &str) -> Arc<tokio::sync::Mutex<()>> {
         self.busy.lock().unwrap().entry(path.to_string()).or_default().clone()
     }
@@ -589,6 +604,38 @@ impl<R: Remote + Send + Sync + 'static> Volume<R> {
     }
 }
 
+// ── Helpers for systems that keep the files themselves (Windows' cloud files) ───
+
+/// The path of `path` below `root` as the catalog writes it (`a/b.txt`), or None outside it.
+pub fn rel_path(root: &Path, path: &Path) -> Option<String> {
+    let rest = path.strip_prefix(root).ok()?;
+    let parts: Vec<String> = rest.components().filter_map(|c| match c {
+        std::path::Component::Normal(n) => Some(n.to_string_lossy().to_string()),
+        _ => None,
+    }).collect();
+    Some(parts.join("/"))
+}
+
+/// Windows' own time: 100 ns steps since 1601.
+pub fn nt_ticks(unix_secs: i64) -> u64 {
+    ((unix_secs.max(0) as u64) + 11_644_473_600) * 10_000_000
+}
+
+/// What to fetch when a program asks for `want` of a file of `size` bytes: at least a block
+/// (a film read from the start is not asked for 4 KB at a time), starting and ending on the
+/// 4 KB steps the system requires (or at the end of the file).
+pub fn widen(want: std::ops::Range<u64>, size: u64) -> std::ops::Range<u64> {
+    const STEP: u64 = 4096;
+    const BLOCK: u64 = 1024 * 1024;
+    if size <= 8 * BLOCK {
+        return 0..size;
+    }
+    let start = want.start / STEP * STEP;
+    let end = want.end.max(start + BLOCK).min(size);
+    let end = if end == size { size } else { end.div_ceil(STEP) * STEP };
+    start..end.min(size)
+}
+
 /// An error that is a plain sentence (for the app's status line).
 pub fn explain(e: &anyhow::Error) -> String {
     e.chain().map(|c| c.to_string()).next().unwrap_or_else(|| anyhow!("unknown").to_string())
@@ -757,5 +804,21 @@ mod tests {
         assert!(v.stat("a.txt").is_none() && v.cache.held("a.txt").is_none());
         let _ = std::fs::remove_dir_all(dir);
         let _ = std::fs::remove_dir_all(dir2);
+    }
+
+    #[test]
+    fn paths_times_and_ranges_for_the_system_that_keeps_the_files() {
+        let root = Path::new("/sync/AlvaOS");
+        assert_eq!(rel_path(root, Path::new("/sync/AlvaOS/Docs/a.txt")).as_deref(), Some("Docs/a.txt"));
+        assert_eq!(rel_path(root, Path::new("/sync/AlvaOS")).as_deref(), Some(""));
+        assert_eq!(rel_path(root, Path::new("/elsewhere/a.txt")), None);
+        assert_eq!(nt_ticks(0), 116_444_736_000_000_000);
+        assert_eq!(nt_ticks(1_790_000_000), (1_790_000_000u64 + 11_644_473_600) * 10_000_000);
+        // A small file is fetched whole; a big one in blocks on 4 KB steps, never past its end.
+        assert_eq!(widen(0..10, 100), 0..100);
+        let big = 100 * 1024 * 1024;
+        assert_eq!(widen(5000..5100, big), 4096..4096 + 1024 * 1024);
+        assert_eq!(widen(big - 10..big, big), (big - 10) / 4096 * 4096..big);
+        assert_eq!(widen(0..3 * 1024 * 1024, big), 0..3 * 1024 * 1024);
     }
 }
