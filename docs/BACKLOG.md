@@ -20,7 +20,7 @@ How to add an entry:
 - `core/src/ondemand.rs`: the cache (fetched files with an index, the oldest freed over a limit, never the ones to keep or those waiting to go up), the catalog of the NAS's tree, and the `Volume` (open, read in pieces over WebDAV Range, save when closed, create, rename (WebDAV MOVE), delete, mkdir, keep ahead). 7 tests with a NAS in memory.
 - `core/src/fusefs.rs`: the volume as a folder through FUSE (`fuser`, no libfuse needed to build; `fusermount3` to run). A real-mount test, and `ondemand_nas.rs` against the real Hub, WebDAV and helper (read, date kept, create, replace with trash, rename, delete, a Range read, a change on the NAS) run by `scripts/dev/sync_against_nas.py`.
 - App: "Only download what you open" at adding, "Always keep" and "Free up space" per folder, status "N files · X here". `add_sync` is now declared `rename_all = "snake_case"`: before, the page's `read_only` was not understood by Tauri (it expects camelCase), so adding a folder from the page would have failed.
-- Not yet: Windows (Cloud Files), switching an existing folder to on demand (remove it and add it again).
+- Not yet: Windows (the Cloud Files API is not written blind: it needs a Windows machine; until then the network drive), switching an existing folder to on demand (remove it and add it again).
 
 ---
 

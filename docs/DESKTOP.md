@@ -66,7 +66,7 @@ When adding a sync folder, **Only download what you open** shows the whole folde
 - **Open** a file: it is fetched and kept (a file over 64 MB that is not kept here is read in pieces where it is, so a film starts at once). **Save**: the file goes back to the NAS when the program closes it, and an older file of that name goes to the share's trash. **Make, rename, move, delete** work as in any folder and happen on the NAS (delete: into its trash).
 - **Always keep on this computer** (the folder's "…" window): patterns like Don't sync (`Documents/`, `*.pdf`); those files are fetched ahead and stay, also without a connection. **Free up space** frees every other copy at once; the oldest copies also go by themselves when the folder holds more than 5 GB.
 - What was saved but could not go up yet (no connection) stays marked in the cache, also after a restart, and is sent in the next round. The NAS's folder is looked at again every minute.
-- A share you may only read cannot be changed. Windows: files on demand come with the Cloud Files API (not yet); the Flatpak cannot mount (its sandbox has no FUSE).
+- A share you may only read cannot be changed. Windows: the way to files on demand today is **Files as a drive** (a network drive that fetches what you open, up to 50 MB per file, nothing offline). Real placeholders in Explorer (the Cloud Files API, also for big files and offline) need a Windows machine to build and test on, so they are not made yet. The Flatpak cannot mount (its sandbox has no FUSE).
 
 ## Building
 
