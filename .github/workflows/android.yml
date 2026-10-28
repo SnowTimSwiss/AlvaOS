@@ -24,6 +24,10 @@ on:
         description: As a draft (needed while the app was never published on Play)
         type: boolean
         default: false
+      screens:
+        description: Take pictures of every screen (to the app-screens branch)
+        type: boolean
+        default: false
       release:
         description: Add the app to this existing release too (its tag, e.g. beta-v0.2.0), or leave empty
         type: string
@@ -89,14 +93,18 @@ jobs:
             -t arm64-v8a build --release
           ls -l "$GITHUB_WORKSPACE"/android/app/src/main/jniLibs/*/
 
+      # Every screen is opened on every run (a crash fails it). Pictures of them
+      # only for a run by hand with "screens" ticked.
       - name: Open every screen of the app
-        run: ./gradlew --no-daemon :app:testDebugUnitTest
+        env:
+          SCREENS: ${{ github.event_name == 'workflow_dispatch' && inputs.screens && '-Pscreens' || '' }}
+        run: ./gradlew --no-daemon :app:testDebugUnitTest $SCREENS
 
       # The pictures of every screen, on a branch of their own (the artifact
       # storage of the account is small): `git fetch origin app-screens` and
       # look at the .jpg files. One commit, replaced by every run.
       - name: Put the pictures of the screens on the app-screens branch
-        if: always() && github.event_name == 'push'
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.screens
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
@@ -118,7 +126,7 @@ jobs:
           git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" app-screens
 
       - name: Keep the pictures of the screens
-        if: failure()
+        if: failure() && github.event_name == 'workflow_dispatch' && inputs.screens
         continue-on-error: true
         uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
         with:

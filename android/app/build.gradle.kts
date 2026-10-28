@@ -59,12 +59,14 @@ android {
     sourceSets.getByName("main").assets.srcDir(hubAssets)
     lint { abortOnError = false }
     // Every screen opened on the JVM (Robolectric) with pictures of it (Roborazzi):
-    // app/build/outputs/roborazzi/*.png, kept by CI.
+    // app/build/outputs/roborazzi/*.png when asked for: ./gradlew :app:testDebugUnitTest -Pscreens
+    // (CI does that only for a run by hand with "screens" ticked). Without it the screens are
+    // still opened and checked, there are just no pictures.
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
             all {
-                it.systemProperty("roborazzi.test.record", "true")
+                it.systemProperty("roborazzi.test.record", providers.gradleProperty("screens").isPresent.toString())
                 it.testLogging {
                     events("failed")
                     exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
