@@ -42,6 +42,14 @@ class AlvaDocuments : DocumentsProvider() {
         private const val CACHE_LIMIT = 300L * 1024 * 1024
         private const val FRESH_MS = 60_000L
 
+        /** For the common endings, when the system's own list does not know them. */
+        private val COMMON_TYPES = mapOf(
+            "txt" to "text/plain", "md" to "text/markdown", "csv" to "text/csv", "html" to "text/html", "json" to "application/json",
+            "pdf" to "application/pdf", "zip" to "application/zip", "jpg" to "image/jpeg", "jpeg" to "image/jpeg", "png" to "image/png",
+            "gif" to "image/gif", "webp" to "image/webp", "heic" to "image/heic", "mp4" to "video/mp4", "mkv" to "video/x-matroska",
+            "mov" to "video/quicktime", "mp3" to "audio/mpeg", "m4a" to "audio/mp4", "flac" to "audio/flac", "ogg" to "audio/ogg",
+        )
+
         private val ROOT_COLUMNS = arrayOf(Root.COLUMN_ROOT_ID, Root.COLUMN_FLAGS, Root.COLUMN_ICON, Root.COLUMN_TITLE,
             Root.COLUMN_SUMMARY, Root.COLUMN_DOCUMENT_ID)
         private val DOC_COLUMNS = arrayOf(Document.COLUMN_DOCUMENT_ID, Document.COLUMN_MIME_TYPE, Document.COLUMN_DISPLAY_NAME,
@@ -136,9 +144,10 @@ class AlvaDocuments : DocumentsProvider() {
         return cursor
     }
 
-    private fun mimeOf(name: String): String =
-        MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase())
-            ?: "application/octet-stream"
+    private fun mimeOf(name: String): String {
+        val ext = name.substringAfterLast('.', "").lowercase()
+        return MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: COMMON_TYPES[ext] ?: "application/octet-stream"
+    }
 
     private fun addRow(cursor: MatrixCursor, place: Place, entry: FileEntry?) {
         val folder = place.top || place.path.isEmpty() || entry?.isFolder == true
