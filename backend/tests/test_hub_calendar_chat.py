@@ -286,7 +286,7 @@ def test_chats_go_after_30_days_unless_pinned_or_kept_and_the_flame_takes_the_re
     rows = {c["id"]: c for c in store.get("/api/chat").get_json()["chats"]}
     assert rows[ids[0]]["pinned"] and rows[ids[1]]["kept"] and store.get("/api/chat").get_json()["keep_days"] == 30
     # 31 days later the two others are gone.
-    later = hub_chat.datetime.now(hub_chat.timezone.utc) + hub_chat.timedelta(days=31)
+    later = hub_chat.datetime.now(hub_chat.UTC) + hub_chat.timedelta(days=31)
 
     class Later(hub_chat.datetime):
         @classmethod
