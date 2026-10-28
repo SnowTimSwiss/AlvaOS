@@ -11,7 +11,10 @@
 pub mod config;
 pub mod drive;
 pub mod hub;
+#[cfg(target_os = "linux")]
+pub mod fusefs;
 pub mod link;
+pub mod ondemand;
 pub mod pairlink;
 pub mod proxy;
 pub mod sync;

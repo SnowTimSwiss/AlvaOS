@@ -59,6 +59,15 @@ Chosen at setup (after "What do you want on this computer?") or later under **Sy
 
 Tested in memory and against the real Hub, WebDAV and helper (`scripts/dev/sync_against_nas.py`). Not tested yet: Windows and macOS.
 
+## Files on demand (Linux)
+
+When adding a sync folder, **Only download what you open** shows the whole folder of the NAS on this computer at once, but holds only what was opened. It is a folder of its own (a FUSE mount through `fusermount3`, package `fuse3`, which the .deb and .rpm depend on; no root, no kernel module of ours): the folder must be empty, and it shows the NAS's files until the app quits or the sync folder is removed.
+
+- **Open** a file: it is fetched and kept (a file over 64 MB that is not kept here is read in pieces where it is, so a film starts at once). **Save**: the file goes back to the NAS when the program closes it, and an older file of that name goes to the share's trash. **Make, rename, move, delete** work as in any folder and happen on the NAS (delete: into its trash).
+- **Always keep on this computer** (the folder's "…" window): patterns like Don't sync (`Documents/`, `*.pdf`); those files are fetched ahead and stay, also without a connection. **Free up space** frees every other copy at once; the oldest copies also go by themselves when the folder holds more than 5 GB.
+- What was saved but could not go up yet (no connection) stays marked in the cache, also after a restart, and is sent in the next round. The NAS's folder is looked at again every minute.
+- A share you may only read cannot be changed. Windows: files on demand come with the Cloud Files API (not yet); the Flatpak cannot mount (its sandbox has no FUSE).
+
 ## Building
 
 The app is in `desktop/`: a Rust workspace with `core` (no window: pairing link, Link client with iroh 1.x, the local proxy, settings and key store, the drive, the Hub calls) and `app` (Tauri 2: the tray, the windows, the commands of the app's own pages in `app/ui/`). Only the app's own pages may call its commands (`app/capabilities/main.json`); the Hub's window may call nothing.

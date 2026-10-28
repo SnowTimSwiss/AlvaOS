@@ -54,6 +54,14 @@ pub trait Remote: Sync {
     fn mkdir(&self, path: &str) -> impl Future<Output = Result<()>> + Send;
     /// To the share's trash on the NAS.
     fn delete(&self, path: &str) -> impl Future<Output = Result<()>> + Send;
+    /// A piece of a file (files on demand: a big file is read where it is, not fetched whole).
+    fn read_range(&self, _path: &str, _offset: u64, _len: usize) -> impl Future<Output = Result<Vec<u8>>> + Send {
+        async { bail!("reading a piece of a file is not possible here") }
+    }
+    /// Moves or renames a file or folder on the NAS (an existing target is replaced).
+    fn rename(&self, _from: &str, _to: &str) -> impl Future<Output = Result<()>> + Send {
+        async { bail!("renaming is not possible here") }
+    }
     /// A share the person may only read: nothing goes up, nothing is deleted there.
     fn read_only(&self) -> bool;
 }
@@ -780,27 +788,53 @@ impl Remote for DavRemote {
         .await
     }
 
+    async fn read_range(&self, path: &str, offset: u64, len: usize) -> Result<Vec<u8>> {
+        retrying(&RETRY_AFTER, || async {
+            let end = offset + len as u64 - 1;
+            let res = self.dav_request("GET", path).header("Range", format!("bytes={offset}-{end}")).send().await?;
+            let status = res.status().as_u16();
+            if status == 416 {
+                return Ok(Vec::new()); // past the end
+            }
+            let res = checked(res, &[]).await?;
+            let bytes = res.bytes().await?;
+            // A NAS that ignored the range sends everything: cut out what was asked for.
+            let piece = if status == 206 { bytes.to_vec() } else { bytes.iter().skip(offset as usize).take(len).copied().collect() };
+            Ok(piece)
+        })
+        .await
+    }
+
+    async fn rename(&self, from: &str, to: &str) -> Result<()> {
+        retrying(&RETRY_AFTER, || async {
+            let req = self.dav_request("MOVE", from).header("Destination", self.url(to)).header("Overwrite", "T");
+            checked(req.send().await?, &[]).await?;
+            Ok(())
+        })
+        .await
+    }
+
     fn read_only(&self) -> bool {
         self.read_only
     }
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::sync::Mutex;
 
     /// A NAS folder in memory.
     #[derive(Default)]
-    struct Mem {
-        files: Mutex<BTreeMap<String, (Item, Vec<u8>)>>,
-        incomplete: bool,
-        read_only: bool,
-        deleted: Mutex<Vec<String>>,
+    pub(crate) struct Mem {
+        pub(crate) files: Mutex<BTreeMap<String, (Item, Vec<u8>)>>,
+        pub(crate) incomplete: bool,
+        pub(crate) read_only: bool,
+        pub(crate) deleted: Mutex<Vec<String>>,
     }
 
     impl Mem {
-        fn put(&self, path: &str, body: &str, mtime: i64) {
+        pub(crate) fn put(&self, path: &str, body: &str, mtime: i64) {
             let mut files = self.files.lock().unwrap();
             let mut parent = String::new();
             for part in path.split('/').collect::<Vec<_>>().split_last().unwrap().1 {
@@ -809,10 +843,10 @@ mod tests {
             }
             files.insert(path.into(), (Item::file(body.len() as u64, mtime), body.as_bytes().to_vec()));
         }
-        fn body(&self, path: &str) -> Option<String> {
+        pub(crate) fn body(&self, path: &str) -> Option<String> {
             self.files.lock().unwrap().get(path).map(|(_, b)| String::from_utf8_lossy(b).to_string())
         }
-        fn has(&self, path: &str) -> bool {
+        pub(crate) fn has(&self, path: &str) -> bool {
             self.files.lock().unwrap().contains_key(path)
         }
     }
@@ -833,6 +867,23 @@ mod tests {
         }
         async fn mkdir(&self, path: &str) -> Result<()> {
             self.files.lock().unwrap().insert(path.into(), (Item::folder(), Vec::new()));
+            Ok(())
+        }
+        async fn read_range(&self, path: &str, offset: u64, len: usize) -> Result<Vec<u8>> {
+            let files = self.files.lock().unwrap();
+            let body = &files.get(path).ok_or_else(|| anyhow!("404"))?.1;
+            Ok(body.iter().skip(offset as usize).take(len).copied().collect())
+        }
+        async fn rename(&self, from: &str, to: &str) -> Result<()> {
+            let mut files = self.files.lock().unwrap();
+            let moved: Vec<String> = files.keys().filter(|k| *k == from || under(k, from)).cloned().collect();
+            if moved.is_empty() {
+                bail!("404");
+            }
+            for key in moved {
+                let value = files.remove(&key).unwrap();
+                files.insert(format!("{to}{}", &key[from.len()..]), value);
+            }
             Ok(())
         }
         async fn delete(&self, path: &str) -> Result<()> {
