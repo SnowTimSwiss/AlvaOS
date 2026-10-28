@@ -73,7 +73,28 @@ def _hub_state(people):
         'personal_folders': personal, 'needs_personal_folder': needs_personal,
         'chat_service': _chat_service(),
         'store_apps': hub_apps.store_overview(settings),
+        'office': _office_state(settings),
     }
+
+
+def _office_state(settings):
+    """Office (the editor in Files): off, installing (with progress), starting or ready."""
+    import office_admin
+    from app_services import app_store
+    return office_admin.state(app_store, settings['apps']['office']['enabled'])
+
+
+def _start_office(settings):
+    """Install the editor on the Hub's cache pool, else on the first pool. A sentence if that cannot be done."""
+    import office_admin
+    from app_services import app_store
+    pools = _data_pools()
+    if not pools:
+        return 'Office needs a storage pool for its editor (about 2 GB): set up storage first.'
+    chosen = settings['storage'].get('cache_pool')
+    pool = pools.get(chosen) or next(iter(pools.values()))
+    ok, error = office_admin.ensure_installed(app_store, str(pool.get('mount_point')))
+    return '' if ok else error
 
 
 def _chat_service():
@@ -156,6 +177,10 @@ def hub():
                                               store_ids=[a['id'] for a in hub_apps.store_apps()])
             if problem or settings is None:
                 return jsonify({'error': problem}), 400
+            if (data.get('apps') or {}).get('office', {}).get('enabled') is True and settings['apps']['office']['enabled']:
+                problem = _start_office(settings)
+                if problem:
+                    return jsonify({'error': problem, **_hub_state(people), **files_app_state()}), 409
             for app_id, change in (data.get('apps') or {}).items():
                 if isinstance(change, dict) and ('location' in change or 'people' in change or 'enabled' in change) \
                         and settings['apps'][app_id].get('location', {}).get('mode') == 'pool':

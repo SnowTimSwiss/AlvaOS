@@ -15,6 +15,15 @@ How to add an entry:
 
 ---
 
+## Office built into the Hub (EuroOffice)
+
+- Turning Office on (Hub page) installs the Document Server by itself as the internal catalog app `hub-office` (127.0.0.1:8082, not in the App Store, `app_store.py` skips `internal`), with progress and "Try again" in the row (`office_admin.py`, `hub-admin.js`). It is reached through the proxy for apps (port 28082), so Link and both apps carry it.
+- `hub_office.py`: signed editor settings (JWT HS256), Hub file tokens with their own secret, `GET /api/office/file`, `POST /api/office/callback` (new version fetched from 127.0.0.1:<Document Server port> only, using just the URL path), new documents from generated OOXML templates. Saving goes through the new `files-replace` helper as the person.
+- Files: documents, spreadsheets and presentations open in an editor window, "Open in Office" in the menu, Document/Spreadsheet/Presentation in "New".
+- Tested with fakes (JWT, tokens, rights, callback, templates, routes). **Note for next time**: no Docker or real Document Server was at hand: the container's environment flags (private addresses, `host.docker.internal`), the callback JWT format and whether the generated pptx opens must be checked on a real NAS (TESTING 12zzi).
+
+---
+
 ## Apps in the Hub's window, and your own side bar
 
 - `backend/embed_proxy.py`: a proxy per app (port + 20000) that takes X-Frame-Options and CSP `frame-ancestors` out of the answers and passes everything else on, WebSockets included (h11 for the framing). Fixed target 127.0.0.1:<app port>. Tested with a real HTTP server: header cleaning, keep-alive, POST bodies, chunks, a WebSocket tunnel, ports following the settings, a busy port skipped.

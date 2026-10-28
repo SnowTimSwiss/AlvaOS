@@ -1,5 +1,6 @@
 """AlvaOS Files as its own app (backend/files_server.py)."""
 
+import io
 import json
 
 import pytest
@@ -613,3 +614,132 @@ def test_each_person_keeps_their_own_side_bar(client, monkeypatch, tmp_path):
     assert client.get("/api/prefs").get_json()["bar"] is None
     sign_in(client, "anna", "anna-pass")
     assert client.post("/api/prefs", json={"bar": None}, headers=H).get_json()["bar"] is None
+
+
+# ── Office: documents in the editor ─────────────────────────────────────────────────────────
+
+class _Raw:
+    def __init__(self, data):
+        self.raw = io.BytesIO(data)
+        self.status_code = 200
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+@pytest.fixture
+def office(client, monkeypatch, tmp_path):
+    import hub_apps
+    import hub_office
+    state = tmp_path / "apps_state.json"
+    state.write_text(json.dumps({hub_office.DS_APP_ID: {"environment_vars": {"JWT_SECRET": "ds-secret"}}}))
+    monkeypatch.setattr(hub_apps, "STORE_STATE_FILE", str(state))
+    hub_apps.save({"apps": {"office": {"enabled": True}}}, ["anna", "ben", "old"])
+    monkeypatch.setattr(fs, "_editor_up", lambda: True)
+    entry = {"name": "plan.docx", "type": "file", "size_bytes": 5, "modified_at": "2026-01-02T10:00:00+00:00"}
+    monkeypatch.setattr(files_manager, "list_entries", lambda path, user=None: ([entry], ""))
+    return client
+
+
+def _config(c, share="Anna", path="plan.docx"):
+    return c.post("/api/office/config", json={"share": share, "path": path}, headers=H)
+
+
+def test_office_is_for_people_who_have_it_and_the_editor_is_found_in_me(office, monkeypatch):
+    sign_in(office, "anna", "anna-pass")
+    got = office.get("/api/me").get_json()
+    assert got["office"]["on"] and got["office"]["ready"] and got["office"]["embed_port"] == 8082 + 20000
+    assert got["office"]["formats"]["docx"] is True and got["office"]["formats"]["doc"] is False
+    import hub_apps
+    hub_apps.save({"apps": {"office": {"people": ["ben"]}}}, ["anna", "ben", "old"])
+    assert office.get("/api/me").get_json()["office"] == {"on": False}
+    assert _config(office).status_code == 403                              # not for Anna now
+    hub_apps.save({"apps": {"office": {"enabled": False}}}, ["anna", "ben", "old"])
+    sign_in(office, "ben", "ben-pass")
+    assert office.get("/api/me").get_json()["office"] == {"on": False}
+
+
+def test_the_editors_settings_hold_links_with_their_own_token_and_a_signature(office):
+    import hub_office
+    sign_in(office, "anna", "anna-pass")
+    got = _config(office).get_json()
+    config = got["config"]
+    assert got["edit"] is True and got["editor_port"] == 28082
+    assert hub_office.jwt_decode(config["token"], "ds-secret")["document"]["title"] == "plan.docx"     # signed for the editor
+    assert config["editorConfig"]["mode"] == "edit" and config["document"]["fileType"] == "docx"
+    link = config["document"]["url"]
+    assert "/api/office/file?t=" in link and config["editorConfig"]["callbackUrl"].count("/api/office/callback?t=") == 1
+    # The same token is no session, and it is for this file only.
+    claims = hub_office.read_file_token(fs._secret().hex(), link.split("t=")[1])
+    assert claims["u"] == "anna" and claims["s"] == "Anna" and claims["r"] == "plan.docx" and claims["edit"] is True
+    assert office.post("/api/office/config", json={"share": "Anna", "path": "plan.docx"}).status_code == 403   # needs the header
+    assert _config(office, path="photo.jpg").status_code == 400
+    assert _config(office, share="Nobody").status_code == 404
+
+
+def test_a_person_who_may_only_look_gets_the_editor_in_view_mode(office):
+    sign_in(office, "ben", "ben-pass")               # Family is read only for ben
+    got = _config(office, share="Family", path="plan.docx").get_json()
+    assert got["edit"] is False and got["config"]["editorConfig"]["mode"] == "view"
+
+
+def test_the_document_server_fetches_the_file_as_the_person_with_the_link_only(office, monkeypatch):
+    sign_in(office, "anna", "anna-pass")
+    link = _config(office).get_json()["config"]["document"]["url"]
+    token = link.split("t=")[1]
+    seen = []
+    monkeypatch.setattr(files_manager, "file_size", lambda path, user=None: 5)
+    monkeypatch.setattr(files_manager, "open_stream",
+                        lambda path, part=None, user=None: (seen.append((path, user)) or iter([b"hello"]), ""))
+    office.post("/api/logout", headers=H)                                    # no session: only the link
+    got = office.get(f"/api/office/file?t={token}")
+    assert got.status_code == 200 and got.data == b"hello" and got.headers["Content-Length"] == "5"
+    assert seen == [("/mnt/alvaos/main/Anna/plan.docx", "anna")]
+    assert office.get("/api/office/file?t=nonsense").status_code == 403
+    assert office.get("/api/office/file").status_code == 403
+
+
+def test_a_saved_version_from_the_document_server_replaces_the_file_as_the_person(office, monkeypatch):
+    import hub_office
+    sign_in(office, "anna", "anna-pass")
+    link = _config(office).get_json()["config"]["document"]["url"]
+    cb = "/api/office/callback?t=" + link.split("t=")[1]
+    saved = []
+    monkeypatch.setattr(files_manager, "pipe_helper",
+                        lambda args, stream, chunk=0, user=None: (saved.append((args, stream.read(), user)) or {"written": 3}, ""))
+    fetched = []
+    import requests
+    monkeypatch.setattr(requests, "get", lambda url, **kw: (fetched.append(url) or _Raw(b"new")))
+    body = {"status": 2, "url": "http://some-other-host:9/cache/files/data/k/output.docx?md5=a", "key": "k"}
+    signed = {"Authorization": "Bearer " + hub_office.jwt_encode({"payload": body}, "ds-secret")}
+    got = office.post(cb, json=body, headers=signed)
+    assert got.get_json() == {"error": 0}
+    assert saved == [(["files-replace", "/mnt/alvaos/main/Anna", "plan.docx"], b"new", "anna")]
+    assert fetched == ["http://127.0.0.1:8082/cache/files/data/k/output.docx?md5=a"]       # the editor itself, whatever the host says
+    # Not signed by the editor: refused, nothing saved. Still being edited: nothing to do.
+    assert office.post(cb, json=body).status_code == 403
+    assert office.post(cb, json=body, headers={"Authorization": "Bearer " + hub_office.jwt_encode({"payload": body}, "wrong")}).status_code == 403
+    editing = {"status": 1}
+    assert office.post(cb, json=editing, headers={"Authorization": "Bearer " + hub_office.jwt_encode({"payload": editing}, "ds-secret")}).get_json() == {"error": 0}
+    assert len(saved) == 1
+    # A link for looking only never saves.
+    sign_in(office, "ben", "ben-pass")
+    view = _config(office, share="Family", path="plan.docx").get_json()["config"]["document"]["url"]
+    saved.clear()
+    assert office.post("/api/office/callback?t=" + view.split("t=")[1], json=body, headers=signed).get_json() == {"error": 1}
+    assert not saved
+
+
+def test_new_documents_are_made_next_to_nothing_that_is_there(office, monkeypatch):
+    made = []
+    monkeypatch.setattr(files_manager, "upload", lambda path, name, stream, chunk=0, user=None: (made.append((path, name, user, stream.read()[:2])) or {"written": 1}, ""))
+    sign_in(office, "anna", "anna-pass")
+    got = office.post("/api/office/new", json={"share": "Anna", "path": "", "kind": "docx"}, headers=H).get_json()
+    assert got["name"] == "Untitled document.docx" and made[0][:3] == ("/mnt/alvaos/main/Anna", "Untitled document.docx", "anna")
+    assert made[0][3] == b"PK"                                                # a real package
+    assert office.post("/api/office/new", json={"share": "Anna", "path": "", "kind": "exe"}, headers=H).status_code == 400
+    sign_in(office, "ben", "ben-pass")
+    assert office.post("/api/office/new", json={"share": "Family", "path": "", "kind": "docx"}, headers=H).status_code == 403

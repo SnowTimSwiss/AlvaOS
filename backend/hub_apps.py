@@ -48,6 +48,10 @@ APPS: List[Dict[str, Any]] = [
     {'id': 'chat', 'name': 'Chat', 'icon': 'message-circle',
      'description': 'Chat with an AI model, like ChatGPT. It cannot see or change anything on the NAS.',
      'needs': [], 'personal': '.alvaos/chat', 'libraries': False, 'models': True, 'off_at_first': True},
+    # Edit documents, spreadsheets and presentations in Files (hub_office.py). No page of its own: a feature of Files.
+    {'id': 'office', 'name': 'Office', 'icon': 'file-text', 'feature': True,
+     'description': 'Edit documents, spreadsheets and presentations in the browser, right in Files. AlvaOS installs the editor (EuroOffice) by itself.',
+     'needs': ['files'], 'personal': None, 'libraries': False, 'off_at_first': True},
 ]
 CACHE_FOLDER = '.alvaos-hub'   # at the top of the cache pool, not shared
 SHARE_NAME_RE = re.compile(r'^[A-Za-z0-9_-]{1,63}$')
@@ -307,7 +311,7 @@ def allowed(app_id: str, user: str, role: str = 'user', settings: Optional[Dict[
 def visible(user: str, role: str = 'user', settings: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """The apps this person sees in the Hub, in bar order."""
     settings = settings or load()
-    return [{'id': a['id'], 'name': a['name'], 'icon': a['icon']}
+    return [{'id': a['id'], 'name': a['name'], 'icon': a['icon'], 'feature': bool(a.get('feature'))}
             for a in APPS if allowed(a['id'], user, role, settings)]
 
 
@@ -315,7 +319,7 @@ def overview(settings: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """Every app with its settings, for the admin pages."""
     settings = settings or load()
     return [{**{k: a[k] for k in ('id', 'name', 'icon', 'description', 'needs', 'personal', 'libraries')},
-             'models_choice': bool(a.get('models')),
+             'models_choice': bool(a.get('models')), 'feature': bool(a.get('feature')),
              **settings['apps'][a['id']]} for a in APPS]
 
 
@@ -375,7 +379,8 @@ def store_apps(apps_state: Optional[Dict[str, Any]] = None, catalog: Optional[Di
     found = []
     for app_id, state in sorted((apps_state or {}).items()):
         entry = catalog.get(app_id) if isinstance(catalog, dict) else None
-        if not STORE_ID_RE.match(str(app_id)) or not isinstance(entry, dict) or not isinstance(state, dict):
+        if not STORE_ID_RE.match(str(app_id)) or not isinstance(entry, dict) or not isinstance(state, dict) \
+                or entry.get('internal'):
             continue
         raw_schema = entry.get('config_schema')
         schema: Dict[str, Any] = raw_schema if isinstance(raw_schema, dict) else {}
@@ -428,4 +433,20 @@ def embed_targets(settings: Optional[Dict[str, Any]] = None, apps: Optional[List
         port = embed_proxy.embed_port(app['port'])
         if app['shown'] and app.get('embed') and port:
             out[port] = app['port']
+    # The editor of Office is an app of its own that people reach only through this proxy.
+    ds = office_port(settings)
+    ds_embed = embed_proxy.embed_port(ds) if ds else None
+    if ds and ds_embed:
+        out[ds_embed] = ds
     return out
+
+
+def office_port(settings: Optional[Dict[str, Any]] = None, apps_state: Optional[Dict[str, Any]] = None) -> Optional[int]:
+    """The port of the Document Server, when Office is on and the editor is installed, else None."""
+    import hub_office
+    settings = settings or load()
+    entry = settings['apps'].get('office')
+    if not entry or not entry['enabled']:
+        return None
+    state = (apps_state if apps_state is not None else _read_json(STORE_STATE_FILE)).get(hub_office.DS_APP_ID)
+    return hub_office.DS_PORT if isinstance(state, dict) else None

@@ -978,5 +978,77 @@
         }
       ]
     }
+  },
+  "hub-office": {
+    "name": "Office (Euro-Office Document Server)",
+    "internal": true,
+    "description": "The editor behind Office in the AlvaOS Hub: installed by AlvaOS when Office is turned on. Reachable only through the Hub.",
+    "icon": "/apps/icons/eurooffice.png",
+    "category": "Productivity",
+    "version": "latest",
+    "docker_compose": {
+      "version": "3",
+      "services": {
+        "documentserver": {
+          "image": "ghcr.io/euro-office/documentserver:latest",
+          "restart": "unless-stopped",
+          "ports": [
+            "127.0.0.1:8082:80"
+          ],
+          "extra_hosts": [
+            "host.docker.internal:host-gateway"
+          ],
+          "volumes": [
+            "${POOL_PATH}/data:/var/www/onlyoffice/Data",
+            "${POOL_PATH}/log:/var/log/onlyoffice",
+            "${POOL_PATH}/db:/var/lib/onlyoffice"
+          ],
+          "environment": {
+            "JWT_ENABLED": "true",
+            "JWT_SECRET": "CHANGEME",
+            "EXAMPLE_ENABLED": "false",
+            "ALLOW_PRIVATE_IP_ADDRESS": "true",
+            "ALLOW_META_IP_ADDRESS": "true"
+          }
+        }
+      }
+    },
+    "config_schema": {
+      "ports": [
+        {
+          "internal": 80,
+          "external": 8082,
+          "protocol": "tcp",
+          "description": "Document Server (the Hub's proxy)"
+        }
+      ],
+      "volumes": [
+        {
+          "container_path": "/var/www/onlyoffice/Data",
+          "description": "Document Server data",
+          "required": true
+        },
+        {
+          "container_path": "/var/log/onlyoffice",
+          "description": "Log files",
+          "required": false
+        },
+        {
+          "container_path": "/var/lib/onlyoffice",
+          "description": "Internal database and cache",
+          "required": true
+        }
+      ],
+      "environment": [
+        {
+          "key": "JWT_SECRET",
+          "default": "",
+          "description": "Secret the Hub and the editor sign with",
+          "required": true,
+          "secret": true,
+          "generate": true
+        }
+      ]
+    }
   }
 }

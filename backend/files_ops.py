@@ -323,6 +323,64 @@ def write_file(dir_path: str, name: str, src: BinaryIO, root: str = DATA_ROOT) -
         os.close(dfd)
 
 
+OFFICE_SAVE_LIMIT = 2 * 1024 ** 3
+
+
+def replace_file(dir_path: str, name: str, src: BinaryIO, root: str = DATA_ROOT) -> int:
+    """A saved office document replaces the file it was opened from, as a whole: written next to it, then
+    renamed over it, so a failed save leaves the old file. The file must be there already (a save never makes
+    a new one, nor follows a link), and keeps its owner, group and mode. Only for the editor in the Hub."""
+    check_name(name)
+    dfd = open_dir(dir_path, root)
+    tmp = f'.{name[:120]}.alvaos-save'
+    try:
+        try:
+            st = os.lstat(name, dir_fd=dfd)
+        except FileNotFoundError:
+            raise FileOpError(f'"{name}" is not there any more.') from None
+        if not stat.S_ISREG(st.st_mode):
+            raise FileOpError('Only a file can be saved over.')
+        try:
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=dfd)
+        except FileExistsError:
+            raise FileOpError('Another save of this file is running.') from None
+        written = 0
+        try:
+            with os.fdopen(fd, 'wb', closefd=False) as out:
+                while True:
+                    chunk = src.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    written += len(chunk)
+                    if written > OFFICE_SAVE_LIMIT:
+                        raise FileOpError('That document is too big to save.')
+                    out.write(chunk)
+                out.flush()
+                os.fsync(fd)
+            if not written:
+                raise FileOpError('Nothing to save.')
+            try:
+                os.fchown(fd, st.st_uid, st.st_gid)
+            except PermissionError:
+                pass
+            try:
+                os.fchmod(fd, stat.S_IMODE(st.st_mode))
+            except PermissionError:
+                pass
+            os.rename(tmp, name, src_dir_fd=dfd, dst_dir_fd=dfd)
+        except BaseException:
+            try:
+                os.unlink(tmp, dir_fd=dfd)
+            except OSError:
+                pass
+            raise
+        finally:
+            os.close(fd)
+        return written
+    finally:
+        os.close(dfd)
+
+
 # Data of Hub apps (Calendar, Chat): small JSON files below a hidden folder
 # of a share, like ".alvaos/calendar/calendar.json". Unlike everything else
 # here they are replaced as a whole (written next to it, then renamed over

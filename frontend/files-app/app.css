@@ -559,3 +559,12 @@ details.dav > summary svg { width: 18px; height: 18px; flex: none; }
 .re-switch input:checked + .re-slider::after { transform: translateX(18px); }
 .re-switch input:focus-visible + .re-slider { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (max-width: 760px) { .rail-custom { margin-top: 0; } .app.in-view.with-rail .appwin { height: calc(100% - 0px); } }
+
+/* The editor of Office, over the whole Hub. */
+.office { position: fixed; inset: 0; z-index: 400; display: flex; flex-direction: column; background: var(--panel); }
+.office-bar { display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-bottom: 1px solid var(--line); flex: none; }
+.office-note { color: var(--muted); font-size: 0.85rem; }
+.office-spacer { flex: 1; }
+.office-host { flex: 1; min-height: 0; }
+.office-host iframe, .office-host > div { width: 100%; height: 100%; border: 0; }
+.menu hr.office-sep { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
