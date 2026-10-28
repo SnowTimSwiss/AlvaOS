@@ -760,6 +760,8 @@
         .app-gpu-title svg { width: 16px; height: 16px; color: var(--text-secondary); }
         .app-gpu-sub { color: var(--text-secondary); font-size: 0.86rem; margin-top: 3px; }
         .app-gpu .toggle { flex: none; }
+        .app-gpu-pick { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 0.86rem; color: var(--text-secondary); }
+        .app-gpu-pick select { min-width: 0; max-width: 100%; }
 
         details.disc {
             border: 1px solid var(--border-default);
@@ -880,8 +882,8 @@
 
             <!-- Tab Navigation -->
             <div class="tab-bar">
-                <button class="tab-btn active" data-tab="installed">Installed</button>
-                <button class="tab-btn" data-tab="store">App Store</button>
+                <button class="tab-btn active" data-tab="installed"><i data-lucide="package" aria-hidden="true"></i> Installed</button>
+                <button class="tab-btn" data-tab="store"><i data-lucide="download" aria-hidden="true"></i> App Store</button>
             </div>
 
             <!-- Installed Tab -->
@@ -985,8 +987,7 @@
             <div class="modal-header"
                 style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-shrink: 0;">
                 <h2 style="font-size: 1.25rem; font-weight: 600; margin: 0;">Install Application</h2>
-                <button class="close-modal-btn"
-                    style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">&times;</button>
+                <button class="close-modal-btn modal-close-x" type="button" aria-label="Close">&times;</button>
             </div>
 
             <div style="overflow-y: auto; min-height: 0; flex: 1 1 auto;">
@@ -1108,6 +1109,7 @@
     <script src="nav.js"></script>
     <script src="assistant.js"></script>
     <script src="password-toggle.js"></script>
+    <script src="fields.js"></script>
     <script src="apps.js"></script>
 </body>
 

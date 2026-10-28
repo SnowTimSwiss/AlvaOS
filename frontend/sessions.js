@@ -20,6 +20,9 @@
         return new Date(t).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
     }
 
+    const SHOWN = 6;
+    let showAll = false;
+
     async function load() {
         let data = null;
         try {
@@ -33,7 +36,8 @@
             return;
         }
         othersButton.hidden = sessions.filter((s) => !s.current).length === 0;
-        list.innerHTML = sessions.map((s) => {
+        const shown = showAll ? sessions : sessions.slice(0, SHOWN);
+        list.innerHTML = shown.map((s) => {
             const mobile = /iPhone|Android|iPad/.test(s.device || '');
             const where = [s.ip, s.current ? 'active now' : `last used ${ago(s.last_seen_at)}`].filter(Boolean).join(' · ');
             return `
@@ -42,7 +46,10 @@
                     <span class="session-main"><strong>${esc(s.device)}${s.current ? '<span class="session-here">This browser</span>' : ''}</strong><small>${esc(where)}${s.created_at ? ` · signed in ${esc(ago(s.created_at))}` : ''}</small></span>
                     ${s.current ? '' : `<button type="button" class="btn-secondary" data-session="${esc(s.id)}">Sign out</button>`}
                 </div>`;
-        }).join('');
+        }).join('') + (sessions.length > SHOWN
+            ? `<button type="button" class="btn-secondary btn-quiet" data-more>${showAll ? 'Show fewer' : `Show all ${sessions.length}`}</button>` : '');
+        const more = list.querySelector('[data-more]');
+        if (more) more.addEventListener('click', () => { showAll = !showAll; load(); });
         list.querySelectorAll('[data-session]').forEach((button) => button.addEventListener('click', () => signOut(button)));
     }
 

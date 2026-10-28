@@ -206,3 +206,11 @@
 .ch-sources a b { display: inline-grid; place-items: center; min-width: 18px; height: 18px; border-radius: 50%; background: var(--hover); font-size: 0.7rem; }
 .ch-md a.ch-cite { display: inline-grid; place-items: center; min-width: 17px; height: 17px; padding: 0 4px; margin: 0 1px; border-radius: 9px; background: var(--hover); color: var(--muted); font-size: 0.68rem; font-weight: 600; text-decoration: none; vertical-align: 2px; }
 .ch-md a.ch-cite:hover { background: var(--accent); color: #fff; }
+
+.ch-new { justify-content: center; }
+
+.ch-config { display: flex; align-items: center; gap: 10px; margin: 0 8px 6px; padding: 8px 10px; border-radius: 10px; color: var(--muted); text-decoration: none; font-size: 0.88rem; }
+.ch-config:hover { background: var(--hover); color: var(--text); }
+.ch-config svg { width: 18px; height: 18px; }
+.ch-hello .btn { margin-top: 16px; display: inline-flex; text-decoration: none; }
+.ch-ask { margin-top: 12px; color: var(--muted); font-size: 0.9rem; }

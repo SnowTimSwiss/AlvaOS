@@ -437,7 +437,10 @@ def stream_answer(service: Dict[str, Any], model: str, history: List[Dict[str, A
         yield 'note', 'This model answers without thinking first.'
     splitter = ThinkSplitter()
     try:
-        for line in res.iter_lines(decode_unicode=True):
+        # Bytes, decoded as UTF-8 by us: with decode_unicode the answer came out as Latin-1 when the service
+        # sent "text/event-stream" without a charset, and every umlaut turned into two odd characters.
+        for raw in res.iter_lines():
+            line = raw.decode('utf-8', 'replace') if isinstance(raw, bytes) else raw
             if not line or not line.startswith('data:'):
                 continue
             payload = line[5:].strip()

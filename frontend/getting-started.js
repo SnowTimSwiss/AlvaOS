@@ -25,9 +25,9 @@
 
     async function load() {
         if (hiddenByUser()) return;
-        const [pools, shares, backup, email, telegram] = await Promise.all([
+        const [pools, shares, backup, email, telegram, hub] = await Promise.all([
             getJson('/storage/pools'), getJson('/storage/shares'), getJson('/backup/settings'),
-            getJson('/alerts/email'), getJson('/alerts/settings'),
+            getJson('/alerts/email'), getJson('/alerts/settings'), getJson('/hub'),
         ]);
         if (!pools) return;   // not an admin, or the NAS is not answering: show nothing
 
@@ -41,6 +41,8 @@
         const steps = [
             { done: own.length > 0, title: 'Storage for your files', text: 'Combine one or more disks into a pool.', link: 'storage.html', action: 'Create a pool' },
             { done: sharesList.length > 0, title: 'A shared folder', text: 'Open it from your computers and phones.', link: 'storage.html#shares', action: 'Share a folder' },
+            { done: (hub?.people || []).length > 0, title: 'People who use it', text: 'Everyone gets their own name, password and folder.', link: 'storage.html#users', action: 'Add people' },
+            { done: !!hub?.enabled, title: 'The AlvaOS Hub', text: 'Files, photos, calendar and more for everyone, also on the phone.', link: 'files.html', action: 'Turn on' },
             { done: !!(pb.enabled && (pb.sources || []).length), title: 'Automatic restore points', text: 'Get back files you deleted or changed by mistake.', link: 'backup.html', action: 'Turn on' },
             { done: protectedPool, title: 'Protection against a failing disk', text: 'With a second disk, every file is kept twice.', link: own.length ? `storage.html#pool=${encodeURIComponent(own[0].id)}` : 'storage.html', action: 'Add a disk' },
             { done: notifies, title: 'Hear about problems', text: 'Get an email or a Telegram message when a disk fails.', link: 'system.html#alerts', action: 'Set up' },
@@ -51,6 +53,10 @@
             return;
         }
         const next = steps.find((s) => !s.done);
+        // The next three are enough to see at once: the dashboard should fit on the screen. The rest is one click away.
+        const SHOWN = 3;
+        const render = (all) => {
+        const list = all ? steps : steps.filter((s) => !s.done).slice(0, SHOWN);
         box.innerHTML = `
             <div class="gs-head">
                 <div>
@@ -61,19 +67,23 @@
             </div>
             <div class="gs-bar" role="progressbar" aria-label="Getting started: ${doneCount} of ${steps.length} done" aria-valuemin="0" aria-valuemax="${steps.length}" aria-valuenow="${doneCount}"><span style="width: ${Math.round(doneCount * 100 / steps.length)}%"></span></div>
             <ol class="gs-steps">
-                ${steps.map((s) => `
+                ${list.map((s) => `
                     <li class="gs-step${s.done ? ' done' : ''}${s === next ? ' next' : ''}">
                         <span class="gs-mark">${s.done ? icon('circle-check') : ''}</span>
                         <span class="gs-text"><strong>${s.title}</strong><span>${s.text}</span></span>
                         ${s.done ? '' : `<a class="${s === next ? 'btn-primary' : 'btn-secondary'}" href="${s.link}">${s.action}</a>`}
                     </li>`).join('')}
-            </ol>`;
+            </ol>
+            ${steps.length > list.length || all ? `<button type="button" class="gs-more">${all ? 'Show fewer' : `Show all ${steps.length} steps`}</button>` : ''}`;
         box.hidden = false;
+        box.querySelector('.gs-more')?.addEventListener('click', () => render(!all));
         box.querySelector('.gs-hide').addEventListener('click', () => {
             try { localStorage.setItem(HIDE_KEY, '1'); } catch (_e) { /* storage off: hide for now */ }
             box.hidden = true;
             if (window.showToast) window.showToast('Hidden. Everything is still in Storage, Backup and Settings.', 'info');
         });
+        };
+        render(false);
     }
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);

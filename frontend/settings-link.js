@@ -32,19 +32,27 @@
                     : state.online ? 'On. This NAS is reachable from outside.' : 'On, looking for a way out to the internet…';
         $('link-summary').textContent = summary;
         const body = $('link-body');
-        if (!state.running) { body.innerHTML = ''; return; }
+        if (!state.running) { setBody(''); return; }
         const phones = state.peers.filter((p) => p.kind === 'phone');
         const buddies = state.peers.filter((p) => p.kind === 'buddy');
         const row = (p) => `<div class="set-row"><div class="set-text"><div class="set-label">${esc(p.name || 'Unnamed')}${p.user ? ` <span class="set-desc">(${esc(p.user)})</span>` : ''}</div>
             <div class="set-desc">${p.connected ? 'Connected now' : `Last seen ${esc(ago(p.last_seen))}`}</div></div><div class="set-value"></div><div class="set-action"></div></div>`;
-        body.innerHTML = `
+        setBody(`
             <div class="set-row"><div class="set-text"><div class="set-label">This NAS's Link address</div>
                 <div class="set-desc">The app and your buddies find this NAS by it. It is in the QR code of the Hub (Devices) and in the Buddy pairing code, so you rarely need it.</div></div>
                 <div class="set-value mono-text" title="${esc(state.node_id)}">${esc(state.node_id.slice(0, 8))}…${esc(state.node_id.slice(-4))}</div><div class="set-action"></div></div>
             <h3 class="set-group-subtitle">Phones</h3>
             ${phones.length ? phones.map(row).join('') : '<p class="set-desc">No phone is paired yet. Show the QR code in the Hub (Devices) while the phone is at home or away.</p>'}
             <h3 class="set-group-subtitle">Buddies</h3>
-            ${buddies.length ? buddies.map(row).join('') : '<p class="set-desc">No buddy NAS is paired. See Backup › Buddy.</p>'}`;
+            ${buddies.length ? buddies.map(row).join('') : '<p class="set-desc">No buddy NAS is paired. See Backup › Buddy.</p>'}`);
+    }
+
+    // Drawn again only when something changed, so the page does not flicker every few seconds.
+    let lastBody = null;
+    function setBody(html) {
+        if (html === lastBody) return;
+        lastBody = html;
+        $('link-body').innerHTML = html;
     }
 
     async function load() {

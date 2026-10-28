@@ -195,6 +195,47 @@ window.openDialog = function (options = {}) {
     return dlg;
 };
 
+// A flow in steps in one dialog: a choice first, then the page for what was chosen.
+//
+//   openFlow({ title: 'Pair a buddy', start: 'choose', screens: {
+//       choose: ({ go }) => ({ body: '<button data-go="make">…</button>', mount(dlg) { … } }),
+//       make: ({ go, close, data }) => ({ title: 'Send a code', body: '…', actions: '<button class="btn-primary" data-act="x">' }) } })
+//
+// A screen gets { go(id, data), close(value), data, dlg } and returns { title, body, actions, mount(dlg) }.
+// Elements with data-go="id" move on, with data-back go to where they came from; a back link is added
+// to every screen but the first.
+window.openFlow = function (options = {}) {
+    const history = [];
+    const dlg = window.openDialog({ title: options.title || '', body: '', actions: ' ', size: options.size || 'narrow',
+        className: 'flow', onClose: options.onClose });
+    const actionsEl = dlg.dialog.querySelector('.modal-actions');
+    const titleEl = dlg.dialog.querySelector('.modal-title span');
+    let current = null;
+    const api = {
+        dlg,
+        close: (value) => dlg.close(value),
+        go: (id, data) => { if (current) history.push(current); show(id, data); },
+        back: () => { const last = history.pop(); if (last) show(last.id, last.data); },
+    };
+    function show(id, data) {
+        current = { id, data };
+        const screen = options.screens[id]({ ...api, data });
+        titleEl.textContent = screen.title || options.title || '';
+        dlg.body.innerHTML = screen.body || '';
+        actionsEl.innerHTML = `${history.length ? '<button type="button" class="btn-secondary btn-quiet" data-back>Back</button>' : ''}<span class="flow-spacer"></span>${screen.actions || ''}`;
+        actionsEl.hidden = !(history.length || screen.actions);
+        if (window.renderAlvaIcons) window.renderAlvaIcons(dlg.dialog);
+        dlg.body.querySelectorAll('[data-go]').forEach((el) => el.addEventListener('click', () => api.go(el.dataset.go)));
+        const back = actionsEl.querySelector('[data-back]');
+        if (back) back.addEventListener('click', api.back);
+        if (screen.mount) screen.mount(dlg);
+        const first = dlg.body.querySelector('[autofocus], textarea, input:not([type=hidden]), select');
+        if (first) first.focus();
+    }
+    show(options.start, undefined);
+    return { ...api, show: (id, data) => show(id, data) };
+};
+
 window.confirmModal = function (message, optionsOrOnConfirm, onCancel) {
     const options = (optionsOrOnConfirm && typeof optionsOrOnConfirm === 'object') ? optionsOrOnConfirm : {};
     const onConfirm = (typeof optionsOrOnConfirm === 'function') ? optionsOrOnConfirm : options.onConfirm;
@@ -373,6 +414,12 @@ function renderUpdateBanner(versionLabel, versionKey) {
         existing.dataset.version = versionKey;
         return;
     }
+
+    // Once a session is enough: after that the sidebar says it (the dot under the name, the number on Updates).
+    try {
+        if (sessionStorage.getItem('alvaos_update_banner_seen') === versionKey) return;
+        sessionStorage.setItem('alvaos_update_banner_seen', versionKey);
+    } catch (e) { /* no storage: the banner shows on every page, as before */ }
 
     const banner = document.createElement('div');
     banner.id = 'update-banner';

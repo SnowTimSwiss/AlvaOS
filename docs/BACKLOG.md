@@ -1,4 +1,4 @@
-Der NVIDIA-Test läuft wieder. Fehlen die Kernel-Header für den laufenden Kernel, erscheint eine klare Meldung statt endloser Fehlschläge.# Work log
+# Work log
 
 What has been done to AlvaOS, newest first. One short entry per work session
 or pull request: what changed, why, and anything the next person should know.
@@ -12,6 +12,35 @@ How to add an entry:
   needs a real device to verify).
 - If a PR is rejected, leave its entry and add "(rejected)" so nobody tries
   the same thing again without a new reason.
+
+---
+
+## Version beta-v0.7.0
+
+- `VERSION` is `beta-v0.7.0` (the package becomes `0.7.0~beta`); the desktop app's crates and its Flatpak release list say 0.7.0 too. What is in it: the release preparation, the steps dialogs, the calendar, ZIP files, the graphics cards, and the fixes of the PRs before it (Android Files entry, Windows drive and cloud files, files on demand).
+
+---
+
+## Graphics cards: choose one per app, and see how busy they are
+
+- Apps (Jellyfin, Immich, Ollama): with more than one card that fits (say the processor's graphics and a dedicated card), the app's graphics block has "Use: the best fit / <card>". The best fit is still the card the catalog prefers (Jellyfin: Intel, then AMD, then NVIDIA; Ollama: NVIDIA, then AMD). The choice is kept in the app's state and survives updates and settings changes.
+- With several cards an app gets only its own: its render node and card node are mapped to `renderD128` and `card0` inside the container (Jellyfin's default device works without a setting), NVIDIA cards by their number (`device_ids`, found with nvidia-smi from the PCI slot). With one card nothing changes (`/dev/dri`).
+- Dashboard: a row per card under the live strip, load, video memory, temperature and power as far as the card says (AMD from /sys, NVIDIA from nvidia-smi, Intel only the clock: the processor's graphics report no load without root and share the NAS's memory). `GET /api/v1/system/gpu/stats`.
+- **Note for next time**: no card of each kind was at hand: the AMD and Intel reads are tested against a fake /sys tree, the NVIDIA ones against nvidia-smi's output format. Check on real hardware (TESTING 12zzg).
+
+---
+
+## Release preparation: the Hub's look, the calendar, ZIP files, and a few bugs
+
+- Hub page (admin): "Who sees it" is a two-way switch (Everyone, Only some people) with the people as chips instead of a drop-down and tick boxes; a bar with the people and "Manage people" (Storage › Users); the Contacts icon was missing.
+- Fields: `fields.js` puts a Paste, Copy or Clear button inside a field (`data-paste`, `data-copy`, search fields); drop-downs have one arrow in all browsers; the close button of dialogs is a round button with a hover.
+- Calendar: draw an event across days in the month and in the week's all-day row; grab the ends of a bar to change its days; bars move by the day they were grabbed on; a timed event's end can be dragged into a later day.
+- Files: several items as one ZIP (`files-zip` takes names; a download link like the file links), "Unpack here" (`files-unzip`: never outside its folder, no links, size capped while writing, nothing half unpacked is left), "How big is it?" (`files-size`). "You use X of Y" in the sidebar of Calendar, Contacts and Chat and in the Photos header.
+- Bugs: after an update the Hub stayed on "Starting…" (the old package's prerm stops it and postinst only did `try-restart`, which leaves a stopped service stopped; now it restarts when enabled, `prerm` leaves it alone on upgrade, and the page asks again until it is up, with a "Restart it" after a minute); Chat answers showed umlauts wrongly (streamed bytes were decoded as Latin-1 when the service sent no charset); the Devices dialog with the QR code redrew everything every 3 seconds (now only the countdown changes, and a connected phone redraws once); Link settings and VMs redraw only when something changed.
+- Second round: pairing in steps. "Pair a buddy" is a button that opens a dialog (`openFlow` in notifications.js): choose "I send a code" or "I got a code", then the page for it (make the code with a validity and copy it, the dialog notices when the buddy has pasted it; or paste the code), then "Paired". "Use a recovery kit" works the same (file or text, then the password). The old hidden "Add a buddy" and "Setting up a replacement NAS?" folds are gone.
+- Look: the round and pill backgrounds of the calendar (today's number, mini calendar, bars) hold their text in the middle, bars keep a gap to the next one, short events are centred; links without a class use the accent colour; the settings cards use the full width; the SSH password switch is a toggle like the others; the update banner shows once per session (the sidebar keeps saying it); GitHub's release notes read "Title (#35)"; long session lists show six and "Show all".
+- README now leads with AlvaOS Link, Buddy Backup and the Hub; RELEASE.md says what to check before a public beta.
+- **Note for next time**: Calendar reminders need a way to reach the person (the Android app's notifications first). An online office (EuroOffice, WOPI) is left for after the first beta.
 
 ---
 

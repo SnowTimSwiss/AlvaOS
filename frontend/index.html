@@ -84,51 +84,6 @@
             <ul class="status-more" id="status-more" hidden></ul>
             <section class="getting-started" id="getting-started" aria-label="Getting started" hidden></section>
 
-            <div class="overview-grid">
-                <a class="overview-card" id="card-storage" href="storage.html" data-state="loading">
-                    <div class="overview-head">
-                        <span class="overview-icon"><i data-lucide="hard-drive" aria-hidden="true"></i></span>
-                        <span class="overview-title">Storage</span>
-                        <span class="overview-state" id="card-storage-state">Loading</span>
-                    </div>
-                    <div class="overview-value" id="card-storage-value">&nbsp;</div>
-                    <div class="overview-list" id="card-storage-list"></div>
-                    <div class="overview-sub" id="card-storage-sub">&nbsp;</div>
-                </a>
-
-                <a class="overview-card" id="card-backup" href="backup.html" data-state="loading">
-                    <div class="overview-head">
-                        <span class="overview-icon"><i data-lucide="shield-check" aria-hidden="true"></i></span>
-                        <span class="overview-title">Backup</span>
-                        <span class="overview-state" id="card-backup-state">Loading</span>
-                    </div>
-                    <div class="overview-value" id="card-backup-value">&nbsp;</div>
-                    <div class="overview-list" id="card-backup-list"></div>
-                    <div class="overview-sub" id="card-backup-sub">&nbsp;</div>
-                </a>
-
-                <a class="overview-card" id="card-apps" href="apps.html" data-state="loading">
-                    <div class="overview-head">
-                        <span class="overview-icon"><i data-lucide="blocks" aria-hidden="true"></i></span>
-                        <span class="overview-title">Apps</span>
-                        <span class="overview-state" id="card-apps-state">Loading</span>
-                    </div>
-                    <div class="overview-value" id="card-apps-value">&nbsp;</div>
-                    <div class="overview-list" id="card-apps-list"></div>
-                    <div class="overview-sub" id="card-apps-sub">&nbsp;</div>
-                </a>
-
-                <a class="overview-card" id="card-updates" href="updates.html" data-state="loading">
-                    <div class="overview-head">
-                        <span class="overview-icon"><i data-lucide="rotate-cw" aria-hidden="true"></i></span>
-                        <span class="overview-title">Updates</span>
-                        <span class="overview-state" id="card-updates-state">Loading</span>
-                    </div>
-                    <div class="overview-value" id="card-updates-value">&nbsp;</div>
-                    <div class="overview-sub" id="card-updates-sub">&nbsp;</div>
-                </a>
-            </div>
-
             <!-- Live resources: small and quiet. Details (history, hardware) on request. -->
             <details class="live" id="live-resources">
                 <summary class="live-strip">
@@ -191,6 +146,74 @@
                     </dl>
                 </div>
             </details>
+
+            <!-- Graphics cards (several are fine): only there when the NAS has one. -->
+            <section class="gpu-live" id="live-gpus" aria-label="Graphics cards" hidden></section>
+
+            <div class="overview-grid">
+                <a class="overview-card" id="card-storage" href="storage.html" data-state="loading">
+                    <div class="overview-head">
+                        <span class="overview-icon"><i data-lucide="hard-drive" aria-hidden="true"></i></span>
+                        <span class="overview-title">Storage</span>
+                        <span class="overview-state" id="card-storage-state">Loading</span>
+                    </div>
+                    <div class="overview-value" id="card-storage-value">&nbsp;</div>
+                    <div class="overview-list" id="card-storage-list"></div>
+                    <div class="overview-sub" id="card-storage-sub">&nbsp;</div>
+                </a>
+
+                <a class="overview-card" id="card-backup" href="backup.html" data-state="loading">
+                    <div class="overview-head">
+                        <span class="overview-icon"><i data-lucide="shield-check" aria-hidden="true"></i></span>
+                        <span class="overview-title">Backup</span>
+                        <span class="overview-state" id="card-backup-state">Loading</span>
+                    </div>
+                    <div class="overview-value" id="card-backup-value">&nbsp;</div>
+                    <div class="overview-list" id="card-backup-list"></div>
+                    <div class="overview-sub" id="card-backup-sub">&nbsp;</div>
+                </a>
+
+                <a class="overview-card" id="card-hub" href="files.html" data-state="loading">
+                    <div class="overview-head">
+                        <span class="overview-icon"><i data-lucide="layers" aria-hidden="true"></i></span>
+                        <span class="overview-title">Hub</span>
+                        <span class="overview-state" id="card-hub-state">Loading</span>
+                    </div>
+                    <div class="overview-value" id="card-hub-value">&nbsp;</div>
+                    <div class="overview-sub" id="card-hub-sub">&nbsp;</div>
+                </a>
+
+                <a class="overview-card" id="card-apps" href="apps.html" data-state="loading">
+                    <div class="overview-head">
+                        <span class="overview-icon"><i data-lucide="blocks" aria-hidden="true"></i></span>
+                        <span class="overview-title">Apps</span>
+                        <span class="overview-state" id="card-apps-state">Loading</span>
+                    </div>
+                    <div class="overview-value" id="card-apps-value">&nbsp;</div>
+                    <div class="overview-list" id="card-apps-list"></div>
+                    <div class="overview-sub" id="card-apps-sub">&nbsp;</div>
+                </a>
+
+                <a class="overview-card" id="card-link" href="system.html#link" data-state="loading">
+                    <div class="overview-head">
+                        <span class="overview-icon"><i data-lucide="laptop" aria-hidden="true"></i></span>
+                        <span class="overview-title">Away from home</span>
+                        <span class="overview-state" id="card-link-state">Loading</span>
+                    </div>
+                    <div class="overview-value" id="card-link-value">&nbsp;</div>
+                    <div class="overview-sub" id="card-link-sub">&nbsp;</div>
+                </a>
+
+                <a class="overview-card" id="card-updates" href="updates.html" data-state="loading">
+                    <div class="overview-head">
+                        <span class="overview-icon"><i data-lucide="rotate-cw" aria-hidden="true"></i></span>
+                        <span class="overview-title">Updates</span>
+                        <span class="overview-state" id="card-updates-state">Loading</span>
+                    </div>
+                    <div class="overview-value" id="card-updates-value">&nbsp;</div>
+                    <div class="overview-sub" id="card-updates-sub">&nbsp;</div>
+                </a>
+            </div>
 
             <footer class="dash-footer">
                 <div>AlvaOS {{VERSION}} &bull; <a href="https://github.com/SnowTimSwiss/AlvaOS" target="_blank" rel="noopener">GitHub</a></div>

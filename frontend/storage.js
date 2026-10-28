@@ -480,10 +480,14 @@ async function loadEmptyDisks() {
     const empty = disks.filter((d) => d.usage && d.usage.can_add_to_pool);
     if (!empty.length) {
         const withData = disks.filter((d) => d.usage && d.usage.can_erase).length;
-        showNotification(withData
-            ? `No empty disk. ${withData} disk(s) still have old data; erase one on the Disks tab to use it.`
-            : 'No empty disk. Connect a new disk to create or grow a pool.', 'warning');
-        showStorageTab('disks');
+        const dlg = window.openDialog({
+            title: 'No empty disk yet',
+            body: withData
+                ? `<p>${withData} ${withData === 1 ? 'disk still has' : 'disks still have'} old data on ${withData === 1 ? 'it' : 'them'}. AlvaOS never uses a disk with data on it without asking: erase one on the Disks tab to use it, or connect another disk.</p>`
+                : '<p>A pool needs a disk that is empty. Connect a new disk to this NAS, wait a moment, and look at the Disks tab.</p>',
+            actions: '<button type="button" class="btn-secondary" data-close>Close</button><button type="button" class="btn-primary" id="no-disk-show">Show the disks</button>',
+        });
+        dlg.$('#no-disk-show').addEventListener('click', () => { dlg.close(); showStorageTab('disks'); });
         return null;
     }
     return { empty, withData: disks.filter((d) => d.usage && d.usage.can_erase).length };

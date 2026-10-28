@@ -14,6 +14,7 @@ the privilege helper, with package names from the fixed lists below only.
 
 import glob
 import os
+import subprocess
 import threading
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -45,6 +46,7 @@ NVIDIA_SOURCE = ('# NVIDIA container toolkit, for apps on NVIDIA cards (AlvaOS S
 # cards for a screen, but apps cannot use it to convert video or run models.
 GOOD_DRIVERS = {'intel': {'i915', 'xe'}, 'amd': {'amdgpu'}, 'nvidia': {'nvidia'}}
 RESTART_FLAG = '/var/lib/alvaos/gpu_restart_needed'
+NVIDIA_SMI = '/usr/bin/nvidia-smi'      # reads the cards' load, runs without the helper
 DPKG_QUERY = '/usr/bin/dpkg-query'   # reads the package list, runs without the helper
 APT_CACHE = '/usr/bin/apt-cache'     # asks the package lists, runs without the helper
 
@@ -99,6 +101,7 @@ def detect(sys_root: str = '/sys', pci_ids=PCI_IDS) -> List[Dict[str, Any]]:
         driver_link = os.path.join(dev, 'driver')
         driver = os.path.basename(os.path.realpath(driver_link)) if os.path.islink(driver_link) else ''
         render = sorted(os.path.basename(p) for p in glob.glob(os.path.join(dev, 'drm/renderD*')))
+        nodes = sorted(os.path.basename(p) for p in glob.glob(os.path.join(dev, 'drm/card*')) if '-' not in os.path.basename(p))
         vendor_name, model = _pci_names(vendor_id, device_id, pci_ids)
         cards.append({
             'slot': os.path.basename(dev),
@@ -107,6 +110,9 @@ def detect(sys_root: str = '/sys', pci_ids=PCI_IDS) -> List[Dict[str, Any]]:
             'model': model or f'Graphics card {device_id.removeprefix("0x")}',
             'driver': driver,
             'render_node': f'/dev/dri/{render[0]}' if render else '',
+            'card_node': f'/dev/dri/{nodes[0]}' if nodes else '',
+            # Intel's graphics inside the processor always sits at 00:02.0; it shares the memory.
+            'integrated': vendor == 'intel' and os.path.basename(dev).endswith(':00:02.0'),
             'screen': _read(os.path.join(dev, 'boot_vga')) == '1',   # the one the console shows on
         })
     return cards
@@ -269,41 +275,166 @@ def _usable(card: Dict[str, Any], have: Dict[str, bool]) -> bool:
     return card['driver'] in GOOD_DRIVERS.get(card['vendor'], set()) and bool(card['render_node'])
 
 
+def card_label(card: Dict[str, Any]) -> str:
+    return f"{card['vendor_name']} {card['model']}".strip() + (' (in the processor)' if card.get('integrated') else '')
+
+
+def fitting_cards(spec: Any, cards: Optional[List[Dict[str, Any]]] = None,
+                  installed: Optional[Callable[[List[str]], Dict[str, bool]]] = None) -> List[Dict[str, Any]]:
+    """The cards an app can use, the one it prefers first (the order of the
+    catalog's `vendors`, then the order they were found)."""
+    if not isinstance(spec, dict):
+        return []
+    vendors = [v for v in spec.get('vendors') or [] if v in GOOD_DRIVERS]
+    cards = detect() if cards is None else cards
+    have = (installed or _installed)([TOOLKIT]) if any(c['vendor'] == 'nvidia' for c in cards) else {}
+    return sorted((c for c in cards if c['vendor'] in vendors and _usable(c, have)), key=lambda c: vendors.index(c['vendor']))
+
+
+def _nvidia_index(slot: str, smi: Optional[Callable[[], str]] = None) -> Optional[str]:
+    """The number nvidia-smi gives the card in this PCI slot."""
+    for line in (smi or _smi_index)().splitlines():
+        parts = [p.strip() for p in line.split(',')]
+        if len(parts) == 2 and parts[1].lower()[-7:] == slot.lower()[-7:]:
+            return parts[0]
+    return None
+
+
+def _smi_index() -> str:
+    return _smi(['--query-gpu=index,pci.bus_id', '--format=csv,noheader'])
+
+
+def _smi(args: List[str]) -> str:
+    try:
+        res = subprocess.run([NVIDIA_SMI, *args], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return ''
+    return res.stdout if res.returncode == 0 else ''
+
+
 def app_plan(spec: Any, cards: Optional[List[Dict[str, Any]]] = None, groups: Optional[Dict[str, int]] = None,
-             installed: Optional[Callable[[List[str]], Dict[str, bool]]] = None
+             installed: Optional[Callable[[List[str]], Dict[str, bool]]] = None, slot: str = '',
+             nvidia_index: Optional[Callable[[str], Optional[str]]] = None
              ) -> Tuple[Optional[Dict[str, Any]], str]:
-    """(how the app gets a card, or None and why not)."""
+    """(how the app gets a card, or None and why not). `slot` is the card the
+    person chose (its PCI slot); without one the app takes the card it prefers.
+    With more than one card, the app gets only its own, and sees it where it
+    looks for the first one (renderD128), so no setting inside the app is needed."""
     if not isinstance(spec, dict) or not isinstance(spec.get('service'), str):
         return None, 'This app cannot use a graphics card.'
     vendors = [v for v in spec.get('vendors') or [] if v in GOOD_DRIVERS]
     cards = detect() if cards is None else cards
-    have = (installed or _installed)([TOOLKIT]) if any(c['vendor'] == 'nvidia' for c in cards) else {}
-    fitting = [c for c in cards if c['vendor'] in vendors]
-    usable = sorted((c for c in fitting if _usable(c, have)), key=lambda c: vendors.index(c['vendor']))
+    usable = fitting_cards(spec, cards, installed)
     if not usable:
         names = ', '.join(VENDOR_NAMES[v] for v in vendors)
+        fitting = [c for c in cards if c['vendor'] in vendors]
         if fitting:
             return None, (f'The {VENDOR_NAMES[fitting[0]["vendor"]]} card is not ready for apps yet. '
                           'Settings › Graphics shows what is missing.')
         return None, f'This NAS has no graphics card this app can use ({names}).'
-    card = usable[0]
-    plan: Dict[str, Any] = {'service': spec['service'], 'vendor': card['vendor'],
-                            'card': f"{card['vendor_name']} {card['model']}".strip()}
+    if slot:
+        chosen = [c for c in usable if c.get('slot') == slot]
+        if not chosen:
+            return None, 'The graphics card you chose is not available (any more). Choose another one.'
+        card = chosen[0]
+    else:
+        card = usable[0]
+    plan: Dict[str, Any] = {'service': spec['service'], 'vendor': card['vendor'], 'slot': card.get('slot', ''),
+                            'card': card_label(card)}
     image = (spec.get('images') or {}).get(card['vendor'])
     if isinstance(image, str) and image:
         plan['image'] = image
     if card['vendor'] == 'nvidia':
-        plan['deploy'] = {'resources': {'reservations': {'devices': [
-            {'driver': 'nvidia', 'count': 'all', 'capabilities': ['gpu']}]}}}
-        plan['environment'] = {'NVIDIA_VISIBLE_DEVICES': 'all',
+        index = None
+        if slot or sum(1 for c in cards if c['vendor'] == 'nvidia') > 1:
+            index = (nvidia_index or _nvidia_index)(card['slot'])
+        device: Dict[str, Any] = {'driver': 'nvidia', 'capabilities': ['gpu']}
+        device.update({'device_ids': [index]} if index is not None else {'count': 'all'})
+        plan['deploy'] = {'resources': {'reservations': {'devices': [device]}}}
+        plan['environment'] = {'NVIDIA_VISIBLE_DEVICES': index if index is not None else 'all',
                                'NVIDIA_DRIVER_CAPABILITIES': 'compute,video,utility'}
         return plan, ''
     groups = _group_ids() if groups is None else groups
-    plan['devices'] = ['/dev/dri:/dev/dri'] + (['/dev/kfd:/dev/kfd'] if card['vendor'] == 'amd' and spec.get('kfd')
-                                               else [])
+    several = sum(1 for c in cards if c['render_node']) > 1
+    if (slot or several) and card['render_node']:
+        plan['devices'] = [f"{card['render_node']}:/dev/dri/renderD128"]
+        if card.get('card_node'):
+            plan['devices'].append(f"{card['card_node']}:/dev/dri/card0")
+    else:
+        plan['devices'] = ['/dev/dri:/dev/dri']
+    if card['vendor'] == 'amd' and spec.get('kfd'):
+        plan['devices'].append('/dev/kfd:/dev/kfd')
     # Numbers, not names: the group names inside the container differ.
     plan['group_add'] = [str(groups[g]) for g in ('render', 'video') if g in groups]
     return plan, ''
+
+
+# ── How busy the cards are (the dashboard) ────────────────────────────────────
+
+def _num(text: str) -> Optional[float]:
+    try:
+        return float(text.strip())
+    except ValueError:
+        return None
+
+
+def gpu_stats(cards: Optional[List[Dict[str, Any]]] = None, sys_root: str = '/sys',
+              smi: Optional[Callable[[], str]] = None) -> List[Dict[str, Any]]:
+    """Load, video memory, temperature and power of each card, as far as the
+    card tells: AMD through /sys, NVIDIA through nvidia-smi, Intel only its
+    clock (the processor's graphics share the NAS's memory and report no load
+    without root). A number the card does not give is None."""
+    cards = detect(sys_root) if cards is None else cards
+    smi_rows: Dict[str, List[str]] = {}
+    if any(c['vendor'] == 'nvidia' for c in cards):
+        text = (smi or (lambda: _smi(['--query-gpu=pci.bus_id,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw',
+                                       '--format=csv,noheader,nounits'])))()
+        for line in text.splitlines():
+            parts = [p.strip() for p in line.split(',')]
+            if len(parts) == 6:
+                smi_rows[parts[0].lower()[-7:]] = parts[1:]
+    out = []
+    for card in cards:
+        dev = os.path.join(sys_root, 'bus/pci/devices', card['slot'])
+        # Ready as Settings › Graphics counts it: the right kernel driver is running (and, but for NVIDIA,
+        # the card has a render node). Otherwise the dashboard says it still needs a driver.
+        ready = (card['driver'] == 'nvidia' if card['vendor'] == 'nvidia'
+                 else card['driver'] in GOOD_DRIVERS.get(card['vendor'], set()) and bool(card.get('render_node')))
+        row: Dict[str, Any] = {'slot': card.get('slot', ''), 'name': card_label(card), 'vendor': card['vendor'], 'ready': ready,
+                               'integrated': bool(card.get('integrated')), 'usage': None, 'vram_used': None,
+                               'vram_total': None, 'temp_c': None, 'power_w': None, 'freq_mhz': None}
+        if card['vendor'] == 'amd' and card['driver'] == 'amdgpu':
+            row['usage'] = _num(_read(os.path.join(dev, 'gpu_busy_percent')))
+            used = _num(_read(os.path.join(dev, 'mem_info_vram_used')))
+            total = _num(_read(os.path.join(dev, 'mem_info_vram_total')))
+            row['vram_used'] = int(used) if used is not None else None
+            row['vram_total'] = int(total) if total is not None else None
+            for hw in sorted(glob.glob(os.path.join(dev, 'hwmon/hwmon*'))):
+                temp = _num(_read(os.path.join(hw, 'temp1_input')))
+                power = _num(_read(os.path.join(hw, 'power1_average')) or _read(os.path.join(hw, 'power1_input')))
+                if temp is not None:
+                    row['temp_c'] = round(temp / 1000, 1)
+                if power is not None:
+                    row['power_w'] = round(power / 1e6, 1)
+                break
+        elif card['vendor'] == 'nvidia' and card['driver'] == 'nvidia':
+            got = smi_rows.get(card['slot'].lower()[-7:])
+            if got:
+                usage, used, total, temp, power = (_num(v) for v in got)
+                row['usage'] = usage
+                row['vram_used'] = int(used * 1024 ** 2) if used is not None else None
+                row['vram_total'] = int(total * 1024 ** 2) if total is not None else None
+                row['temp_c'] = temp
+                row['power_w'] = power
+        elif card['vendor'] == 'intel' and card['driver'] in GOOD_DRIVERS['intel']:
+            for rel in ('drm/%s/gt_cur_freq_mhz' % os.path.basename(card.get('card_node') or ''),
+                        'drm/%s/gt/gt0/rps_cur_freq_mhz' % os.path.basename(card.get('card_node') or '')):
+                freq = _num(_read(os.path.join(dev, rel)))
+                if freq is not None:
+                    row['freq_mhz'] = int(freq)
+                    break
+        out.append(row)
+    return out
 
 
 def apply_plan(compose: Dict[str, Any], plan: Optional[Dict[str, Any]]) -> Dict[str, Any]:

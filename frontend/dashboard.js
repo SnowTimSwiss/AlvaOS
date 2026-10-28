@@ -311,6 +311,45 @@
         return String(container?.Names || '').split(',').some((n) => n.trim().includes(`alvaos-${appId}`));
     }
 
+    // The Hub and AlvaOS Link: the two things people ask for first, so the dashboard says where they stand.
+    function renderHub(hub) {
+        if (!hub || hub.error) {
+            setCard('hub', { state: 'unknown', label: 'Unknown', value: 'Could not check the Hub', sub: 'Open the Hub page to see details.' });
+            return;
+        }
+        if (!hub.enabled) {
+            setCard('hub', { state: 'setup', label: 'Off', value: 'Not turned on',
+                sub: 'Files, photos, calendar and more for everyone at home, in the browser and on the phone. One click to turn on.' });
+            return;
+        }
+        const apps = (hub.apps || []).filter((a) => a.enabled).length;
+        const people = (hub.people || []).length;
+        setCard('hub', hub.running
+            ? { state: 'ok', label: 'On', value: `${apps} ${apps === 1 ? 'app' : 'apps'} for ${people} ${people === 1 ? 'person' : 'people'}`,
+                sub: people ? 'Open it from the Hub page.' : 'Add the people who will use it: Storage › Users.' }
+            : { state: 'warn', label: 'Starting', value: 'The Hub is starting', sub: 'This takes a few seconds.' });
+    }
+
+    function renderLink(link) {
+        if (!link || link.error) {
+            setCard('link', { state: 'unknown', label: 'Unknown', value: 'Could not check AlvaOS Link', sub: 'Open Settings › AlvaOS Link.' });
+            return;
+        }
+        if (!link.available) {
+            setCard('link', { state: 'warn', label: 'Not running', value: 'AlvaOS Link is not running', sub: 'Phones and buddies cannot reach this NAS away from home. Restart the NAS or reinstall the update.' });
+            return;
+        }
+        if (!link.enabled) {
+            setCard('link', { state: 'neutral', label: 'Off', value: 'Only at home',
+                sub: 'Turn it on so phones, computers and buddies reach this NAS from anywhere.' });
+            return;
+        }
+        const peers = (link.peers || []).length;
+        setCard('link', link.online
+            ? { state: 'ok', label: 'On', value: 'Reachable from anywhere', sub: peers ? `${peers} ${peers === 1 ? 'phone or buddy' : 'phones and buddies'} paired.` : 'Nothing is paired yet: connect a phone from the Hub.' }
+            : { state: 'warn', label: 'Connecting', value: 'Looking for a way out', sub: 'AlvaOS Link is on and looking for the internet.' });
+    }
+
     function renderApps(appsPayload, containersPayload) {
         const apps = Array.isArray(appsPayload?.apps) ? appsPayload.apps : null;
         if (apps === null) {
@@ -661,18 +700,22 @@
         if (slowBusy) return;
         slowBusy = true;
         try {
-            const [alerts, backup, buddy, apps, containers] = await Promise.all([
+            const [alerts, backup, buddy, apps, containers, hub, link] = await Promise.all([
                 getJson('/alerts'),
                 getJson('/backup/status'),
                 getJson('/backup/pairing/status'),
                 getJson('/apps/installed'),
                 getJson('/containers'),
+                getJson('/hub'),
+                getJson('/link'),
             ]);
             lastAlerts = alerts;
             setIssues('alerts', alertsToIssues(alerts));
             if (lastSystem) renderStorage(lastSystem, alerts);
             renderBackup(backup, buddy);
             renderApps(apps, containers);
+            renderHub(hub);
+            renderLink(link);
             slowLoaded = true;
             renderStatusLine();
         } finally {
@@ -696,6 +739,50 @@
             await pollSlow();
             scheduleSlow();
         }, delay ?? (hidden() ? SLOW_POLL_HIDDEN_MS : SLOW_POLL_MS));
+    }
+
+    // Graphics cards: load, video memory and temperature of each, as far as the card says. Asked every few
+    // seconds while the page is open, and rarely when the NAS has none.
+    let gpuTimer = 0;
+    const gib = (bytes) => { const v = bytes / 1024 ** 3; return v >= 10 ? v.toFixed(0) : v.toFixed(1); };
+    function gpuCell(name, value, part) {
+        return `<div class="gpu-cell"><span class="gpu-k">${esc(name)}</span><b class="gpu-v">${esc(value)}</b>${part === null ? ''
+            : `<span class="live-bar"><span style="width:${Math.min(100, Math.max(0, part)).toFixed(0)}%"></span></span>`}</div>`;
+    }
+
+    function renderGpus(cards) {
+        const box = $('live-gpus');
+        if (!box) return;
+        if (!cards.length) { box.hidden = true; box.innerHTML = ''; return; }
+        box.hidden = false;
+        box.innerHTML = cards.map((c) => {
+            if (c.ready === false) {
+                return `<div class="gpu-row needs"><div class="gpu-name">${icon('cpu')}<span>${esc(c.name)}</span></div>
+                    <div class="gpu-note"><span>This card needs a driver before apps can use it.</span>
+                    <a class="btn-secondary" href="system.html#graphics">Install the driver</a></div></div>`;
+            }
+            const cells = [];
+            if (c.usage !== null) cells.push(gpuCell('Load', `${c.usage.toFixed(0)}%`, c.usage));
+            if (c.vram_total) {
+                cells.push(gpuCell('Video memory', `${gib(c.vram_used || 0)} of ${gib(c.vram_total)} GB`, ((c.vram_used || 0) / c.vram_total) * 100));
+            } else if (c.integrated) {
+                cells.push(gpuCell('Memory', 'shared with the NAS', null));
+            }
+            if (c.freq_mhz !== null) cells.push(gpuCell('Clock', `${c.freq_mhz} MHz`, null));
+            if (c.temp_c !== null) cells.push(gpuCell('Temperature', `${c.temp_c.toFixed(0)} °C`, null));
+            if (c.power_w !== null) cells.push(gpuCell('Power', `${c.power_w.toFixed(0)} W`, null));
+            if (!cells.length) cells.push(gpuCell('Load', 'not reported by this card', null));
+            return `<div class="gpu-row"><div class="gpu-name">${icon('cpu')}<span>${esc(c.name)}</span></div>${cells.join('')}</div>`;
+        }).join('');
+        renderIcons(box);
+    }
+
+    async function pollGpu() {
+        clearTimeout(gpuTimer);
+        const got = await getJson('/system/gpu/stats');
+        const cards = Array.isArray(got?.cards) ? got.cards : [];
+        renderGpus(cards);
+        gpuTimer = setTimeout(pollGpu, cards.length ? (hidden() ? 30000 : 5000) : 60000);
     }
 
     async function refresh() {
@@ -729,6 +816,7 @@
         renderUpdates(localStorage.getItem('alvaos_update_available') === 'true',
             localStorage.getItem('alvaos_update_version') || '');
         await pollSlow();
+        pollGpu();
         openFromHash();
         scheduleSystem();
         scheduleSlow();

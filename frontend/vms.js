@@ -426,10 +426,14 @@
     }
 
     // ── Keep the page alive ────────────────────────────────────────────────
+    let lastState = '';
     async function refresh() {
         try {
-            state = await call();
-            render();
+            const next = await call();
+            const same = JSON.stringify(next) === lastState;
+            lastState = JSON.stringify(next);
+            state = next;
+            if (!same) render();   // not again when nothing changed: the page would flicker
         } catch (e) {
             $('vm-setup').innerHTML = `<div class="vm-note bad">${esc(e.message)}</div>`;
         }

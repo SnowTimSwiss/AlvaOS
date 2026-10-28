@@ -312,6 +312,24 @@ Needs the NAS with the internet and a phone on mobile data (Wi-Fi off).
    NVIDIA's driver was installed before this version, Settings › Graphics
    offers "Install what apps need" (the container toolkit) first.
 
+## 12zzg. Graphics cards: one per app, and the load
+
+1. Dashboard, below the live strip: a row for each card (name, load, video memory, temperature, power). Run something on the card (a Jellyfin transcode, `ollama run`): the numbers move. An Intel card in the processor shows only the clock, and "shared with the NAS".
+2. With an Intel card in the processor and a dedicated card: Apps › Jellyfin › Graphics card: "Use" offers both. Choose the dedicated one with the switch on: the app restarts; in Jellyfin (Dashboard › Playback › Transcoding) the hardware acceleration works with the default device. `docker inspect` shows only `renderD128` and `card0` inside the container.
+3. Ollama with a dedicated card: `nvidia-smi` (or `rocm-smi`) shows the model loaded on that card, not on the other one.
+4. Remove the chosen card (or turn off its driver): the app page says which one it falls back to, and the app still starts.
+
+## 12zz. Release preparation: the Hub's new look, calendar, ZIP files
+
+1. Hub page (admin): the Files, Photos, Calendar, Contacts and Chat rows have "Everyone | Only some people"; with "Only some people" the people show as chips, switch one off and sign in as that person: the app is gone. "Manage people" leads to Storage › Users.
+2. Calendar (month): drag over three days on empty cells: the card says the three days; save, the bar covers them. Grab the right end of the bar and drag two days further: the bar grows. Drag its middle by one day: it moves by one day, not to the day under the grab. The same in the week's all-day row.
+3. Calendar (week): drag the bottom edge of a timed event into the next day's column: the label says "Fri 14:00" and the event ends there.
+4. Files: select three items, right click, "Download all as one ZIP": one ZIP with just those. A ZIP in a folder: "Unpack here" makes a new folder (never overwrites; "Name 2" when taken). "How big is it?" on a folder says size, files and folders.
+5. "You use X of Y": in the sidebar of Calendar, Contacts and Chat and in the Photos header (only for people with a limit on their folder).
+6. Update: install a new package while the Hub is on. The Hub page shows "Starting…" for a moment and then "Open the Hub"; it comes back without turning it off and on. With the Hub off, an update leaves it off.
+7. Chat: ask for "Grüße aus Köln, Maß und Äpfel": the answer shows the umlauts (with a service that streams, like OpenAI or Ollama).
+8. Hub › Devices › Connect a phone: the QR code does not flicker; the minutes count down.
+
 ## 12z. The Android app: AlvaOS in the Files app
 
 1. Open the phone's Files app: the side menu has "AlvaOS – <NAS name>". Open it: the shared folders.

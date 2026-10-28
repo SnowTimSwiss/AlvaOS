@@ -100,7 +100,10 @@ function renderNotes(markdown) {
             para = [];
         }
     };
-    const strip = (text) => text.replace(/\*\*|__|`/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').trim();
+    // GitHub's generated notes: "Title by @someone in https://github.com/…/pull/35" becomes "Title (#35)";
+    // the "Full Changelog" link line is left out.
+    const strip = (text) => text.replace(/\*\*|__|`/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+        .replace(/\s+by @[\w-]+ in https?:\/\/\S+\/pull\/(\d+)/g, ' (#$1)').trim();
     lines.forEach((raw) => {
         const line = raw.trim();
         const heading = line.match(/^#{1,6}\s+(.*)$/);
@@ -123,6 +126,9 @@ function renderNotes(markdown) {
             const li = document.createElement('li');
             li.textContent = strip(item[1]);
             list.appendChild(li);
+        } else if (/^full changelog\b/i.test(strip(line))) {
+            flushPara();
+            list = null;
         } else {
             list = null;
             para.push(strip(line));

@@ -279,8 +279,12 @@ systemctl enable --now alvaos-watchdog.timer || true
 # AlvaOS Link: phones and buddies reach this NAS without a router setting.
 systemctl enable --now alvaos-link.service || true
 systemctl try-restart alvaos-link.service || true
-# AlvaOS Files keeps running after an update when it was on (it stays off otherwise).
-systemctl try-restart alvaos-files.service || true
+# AlvaOS Files (the Hub) keeps running after an update when it was on, and stays off otherwise.
+# "try-restart" is not enough: the old package's prerm has just stopped it, and try-restart
+# leaves a stopped service stopped, so the Hub stayed "starting" until it was turned off and on.
+if systemctl is-enabled --quiet alvaos-files.service 2>/dev/null; then
+    systemctl restart alvaos-files.service || true
+fi
 
 echo "AlvaOS system package installed successfully!"
 echo "To start services: sudo systemctl start alvaos"
@@ -293,6 +297,11 @@ log "Creating pre-remove script..."
 cat > "${PKG_DIR}/DEBIAN/prerm" << 'EOF'
 #!/bin/bash
 set -e
+
+# An update (upgrade) stops and starts them itself; only a removal needs them stopped here.
+case "$1" in
+    upgrade|deconfigure|failed-upgrade) exit 0 ;;
+esac
 
 echo "Stopping AlvaOS services..."
 systemctl stop alvaos.service || true

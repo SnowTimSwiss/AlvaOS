@@ -84,7 +84,7 @@
                         <button type="button" class="btn-secondary" id="copy-new">Erase and use as backup disk</button>
                     </div>
                     <p class="metric-sub">${usable.length ? 'Or a new, empty disk: it' : 'A new, empty disk was found. It'} is erased and gets the copies of your restore points.</p>`
-                : (usable.length ? '' : '<p class="metric-sub"><strong>Connect a USB disk</strong> and press Look again. It is erased and then keeps a copy of your restore points.</p><button type="button" class="btn-secondary" id="copy-look">Look again</button>')}`;
+                : (usable.length ? '' : '<div class="kit-replace"><div><strong>Connect a USB disk</strong><span>Then press Look again. The disk is erased and then keeps a copy of your restore points.</span></div><button type="button" class="btn-secondary" id="copy-look">Look again</button></div>')}`;
             $('copy-new')?.addEventListener('click', () => useNewDisk($('copy-disk').value));
             $('copy-look')?.addEventListener('click', () => load());
             $('copy-on')?.addEventListener('click', () => act(() => api('/backup/copy', { method: 'POST', json: { pool_id: $('copy-pool').value } }), 'The backup disk is set. Copying starts when it is connected.'));

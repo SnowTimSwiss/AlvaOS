@@ -426,6 +426,15 @@
         });
     }
 
+    // The handles at the ends of a bar to change the days it covers. Only where the bar really
+    // starts or ends in this row (not where it runs on into the next week).
+    function grips(p, rowStart, n) {
+        if (p.x.kind !== 'event' || !p.x.place.writable) return '';
+        const left = daysBetween(rowStart, p.x.start) >= 0;
+        const right = daysBetween(rowStart, addMin(p.x.end, -1)) <= n - 1;
+        return `${left ? '<span class="grip l" data-grip="start" aria-hidden="true"></span>' : ''}${right ? '<span class="grip r" data-grip="end" aria-hidden="true"></span>' : ''}`;
+    }
+
     let shownItems = new Map();
     let scrollTop = null;   // kept while moving through weeks
     function remember(list) { list.forEach((x) => shownItems.set(x.key, x)); }
@@ -448,7 +457,7 @@
                 <button type="button" class="dnum" data-goto="${ymd(d)}" aria-label="${esc(longDay(d))}">${d.getDate()}</button></div>`;
         }).join('');
         const allDayHtml = placed.map((p) => `<button type="button" class="chip solid${p.x.done ? ' done' : ''}" data-key="${esc(p.x.key)}"
-            style="grid-column:${p.from + 1} / ${p.to + 2};grid-row:${p.lane + 1};--c:${esc(p.x.color)}">${chipText(p.x, false)}</button>`).join('');
+            style="grid-column:${p.from + 1} / ${p.to + 2};grid-row:${p.lane + 1};--c:${esc(p.x.color)}">${chipText(p.x, false)}${grips(p, start, n)}</button>`).join('');
         const cols = Array.from({ length: n }, (_, i) => {
             const d = addDays(start, i);
             const dayStart = day0(d);
@@ -547,7 +556,7 @@
             const chips = cells.map((p) => {
                 const solid = spanning.includes(p.x);
                 return `<button type="button" class="chip${solid ? ' solid' : ''}${p.x.done ? ' done' : ''}" data-key="${esc(p.x.key)}"
-                    style="grid-column:${p.from + 1} / ${p.to + 2};grid-row:${p.lane + 2};--c:${esc(p.x.color)}">${solid ? '' : '<span class="dot"></span>'}${chipText(p.x, !solid)}</button>`;
+                    style="grid-column:${p.from + 1} / ${p.to + 2};grid-row:${p.lane + 2};--c:${esc(p.x.color)}">${solid ? '' : '<span class="dot"></span>'}${chipText(p.x, !solid)}${solid ? grips(p, ws, 7) : ''}</button>`;
             }).join('');
             const more = hiddenPerDay.map((c, d) => (c ? `<button type="button" class="more" data-goto="${ymd(addDays(ws, d))}" style="grid-column:${d + 1};grid-row:${fit + 1}">${c} more</button>` : '')).join('');
             const cellsBg = Array.from({ length: 7 }, (_, d) => {
@@ -612,6 +621,32 @@
         const rect = col.getBoundingClientRect();
         return Math.max(0, Math.min(1440, Math.round((((y - rect.top) / HOUR) * 60) / SNAP) * SNAP));
     }
+    // The day under the pointer in the month, or in the week's all-day row.
+    function dayAtPoint(x, y) {
+        if (view === 'month') {
+            const el = document.elementFromPoint(x, y);
+            if (!el || !el.closest) return null;
+            const cell = el.closest('.mo-cell');
+            if (cell) return parse(cell.dataset.date);
+            const week = el.closest('.mo-week');
+            if (!week) return null;
+            const rect = week.getBoundingClientRect();
+            const cells = week.querySelectorAll('.mo-cell');
+            return parse(cells[Math.min(6, Math.max(0, Math.floor(((x - rect.left) / rect.width) * 7)))].dataset.date);
+        }
+        const grid = $c('.wk-allday-grid');
+        if (!grid) return null;
+        const rect = grid.getBoundingClientRect();
+        const n = days();
+        return addDays(parse(grid.dataset.allday), Math.min(n - 1, Math.max(0, Math.floor(((x - rect.left) / rect.width) * n))));
+    }
+    // The first day of a month row or of the all-day row, and how many days it has.
+    function rowSpan(row) {
+        if (row.classList.contains('mo-week')) return [parse(row.querySelector('.mo-cell').dataset.date), 7];
+        return [parse(row.dataset.allday), days()];
+    }
+    const clampDay = (v, n) => Math.min(n - 1, Math.max(0, v));
+
     function colAt(x, y) {
         const el = document.elementFromPoint(x, y);
         return el && el.closest ? el.closest('.wk-col') : null;
@@ -621,7 +656,10 @@
         if (e.button !== 0) return;
         const evEl = e.target.closest('.ev');
         const col = e.target.closest('.wk-col');
-        const chip = e.target.closest('.mo-week .chip');
+        const chip = e.target.closest('.mo-week .chip, .wk-allday-grid .chip');
+        const grip = chip && e.target.closest('[data-grip]');
+        const cell = !chip && !evEl && e.target.closest('.mo-cell');
+        const allday = !chip && !evEl && e.target === $c('.wk-allday-grid') ? e.target : null;
         if (evEl) {
             const x = shownItems.get(evEl.dataset.key);
             if (!x) return;
@@ -630,7 +668,13 @@
         } else if (chip) {
             const x = shownItems.get(chip.dataset.key);
             if (!x) return;
-            drag = { kind: 'month', x, el: chip, startX: e.clientX, startY: e.clientY, moved: false, from: chip.closest('.mo-week') };
+            drag = { kind: grip ? 'grip' : 'month', side: grip ? grip.dataset.grip : '', x, el: chip, startX: e.clientX, startY: e.clientY, moved: false,
+                grab: dayAtPoint(e.clientX, e.clientY), row: chip.closest('.mo-week, .wk-allday-grid') };
+        } else if (cell || allday) {
+            if (!writable().length) return;
+            const anchor = dayAtPoint(e.clientX, e.clientY);
+            if (!anchor) return;
+            drag = { kind: 'span', anchor, startX: e.clientX, startY: e.clientY, moved: false };
         } else if (col) {
             if (!writable().length) return;
             const m = minutesAt(col, e.clientY);
@@ -656,12 +700,12 @@
         if (!drag.moved) {
             drag.moved = true;
             closePop();
-            if (drag.kind !== 'new' && !drag.x.place.writable) { toast(`You can only look at "${drag.x.place.name}".`, 'error'); drag = null; return; }
+            if (drag.x && !drag.x.place.writable) { toast(`You can only look at "${drag.x.place.name}".`, 'error'); drag = null; return; }
             if (drag.kind === 'new') {
                 drag.ghost = document.createElement('div');
                 drag.ghost.className = 'ev ghost';
                 drag.col.appendChild(drag.ghost);
-            } else if (drag.kind !== 'month') {
+            } else if (drag.kind !== 'month' && drag.kind !== 'span' && drag.kind !== 'grip') {
                 drag.el.classList.add('dragging');
             }
         }
@@ -687,27 +731,59 @@
             const t = drag.el.querySelector('.ev-time');
             if (t) t.textContent = `${hm(s)} – ${hm(addMin(drag.x.end, drag.shift))}`;
         } else if (drag.kind === 'resize') {
-            const m = minutesAt(drag.col, e.clientY);
-            const startMin = (drag.x.start - day0(drag.x.start)) / 60000;
-            const endMin = sameDay(drag.x.start, drag.x.end) ? Math.max(startMin + SNAP, m) : m;
-            drag.newEnd = new Date(day0(drag.x.start).getTime() + endMin * 60000);
+            // The end may be in a later day: the column under the pointer says which.
+            const col = colAt(e.clientX, e.clientY) || drag.col;
+            const colDay = parse(col.dataset.date);
+            drag.newEnd = addMin(colDay, minutesAt(col, e.clientY));
             if (drag.newEnd <= drag.x.start) drag.newEnd = addMin(drag.x.start, SNAP);
-            drag.el.style.height = `${((drag.newEnd - drag.x.start) / 3600000) * HOUR - 2}px`;
+            const segDay = parse(drag.col.dataset.date);
+            const segStart = Math.max(drag.x.start, segDay);
+            const segEnd = Math.min(drag.newEnd, addDays(segDay, 1));
+            drag.el.style.height = `${Math.max(18, ((segEnd - segStart) / 3600000) * HOUR - 2)}px`;
             const t = drag.el.querySelector('.ev-time');
-            if (t) t.textContent = `${hm(drag.x.start)} – ${hm(drag.newEnd)}`;
+            if (t) t.textContent = `${hm(drag.x.start)} – ${sameDay(drag.x.start, drag.newEnd) ? '' : `${fmt(drag.newEnd, { weekday: 'short' })} `}${hm(drag.newEnd)}`;
         } else if (drag.kind === 'month') {
-            const el = document.elementFromPoint(e.clientX, e.clientY);
-            const cell = el && el.closest ? (el.closest('[data-date]') || el.closest('.mo-week')) : null;
-            root.querySelectorAll('.mo-cell.drop').forEach((c) => c.classList.remove('drop'));
-            let target = cell && cell.classList.contains('mo-cell') ? cell : null;
-            if (!target && cell) {
-                // Over another chip: the day under the pointer in that week.
-                const week = cell.closest('.mo-week');
-                const rect = week.getBoundingClientRect();
-                target = week.querySelectorAll('.mo-cell')[Math.min(6, Math.floor(((e.clientX - rect.left) / rect.width) * 7))];
-            }
-            if (target) { target.classList.add('drop'); drag.target = target.dataset.date; }
+            const day = dayAtPoint(e.clientX, e.clientY);
+            drag.target = day ? ymd(day) : null;
             drag.el.classList.add('dragging');
+            if (view === 'month') {
+                root.querySelectorAll('.mo-cell.drop').forEach((c) => c.classList.remove('drop'));
+                const over = day && root.querySelector(`.mo-cell[data-date="${ymd(day)}"]`);
+                if (over) over.classList.add('drop');
+            } else if (day && drag.grab) {
+                // In the week's all-day row the bar slides along.
+                const [, n] = rowSpan(drag.row);
+                drag.el.style.transform = `translateX(${daysBetween(drag.grab, day) * (drag.row.getBoundingClientRect().width / n)}px)`;
+            }
+        } else if (drag.kind === 'grip') {
+            const day = dayAtPoint(e.clientX, e.clientY);
+            if (!day) return;
+            const first0 = day0(drag.x.start);
+            const last0 = day0(addMin(drag.x.end, -1));
+            drag.first = drag.side === 'start' ? (day > last0 ? last0 : day) : first0;
+            drag.last = drag.side === 'end' ? (day < first0 ? first0 : day) : last0;
+            const [rowStart, n] = rowSpan(drag.row);
+            drag.el.classList.add('dragging');
+            drag.el.style.gridColumn = `${clampDay(daysBetween(rowStart, drag.first), n) + 1} / ${clampDay(daysBetween(rowStart, drag.last), n) + 2}`;
+        } else if (drag.kind === 'span') {
+            const day = dayAtPoint(e.clientX, e.clientY);
+            if (!day) return;
+            const a = day < drag.anchor ? day : drag.anchor;
+            const b = day < drag.anchor ? drag.anchor : day;
+            drag.range = [a, b];
+            if (view === 'month') {
+                root.querySelectorAll('.mo-cell').forEach((c) => { const d = c.dataset.date; c.classList.toggle('drop', d >= ymd(a) && d <= ymd(b)); });
+            } else {
+                const grid = $c('.wk-allday-grid');
+                const [rowStart, n] = rowSpan(grid);
+                if (!drag.ghost) {
+                    drag.ghost = document.createElement('div');
+                    drag.ghost.className = 'chip solid ghost';
+                    grid.appendChild(drag.ghost);
+                }
+                drag.ghost.style.gridColumn = `${clampDay(daysBetween(rowStart, a), n) + 1} / ${clampDay(daysBetween(rowStart, b), n) + 2}`;
+                drag.ghost.style.gridRow = '1';
+            }
         }
     }
 
@@ -716,6 +792,7 @@
         drag = null;
         if (!d) return;
         if (!d.moved) {
+            if (d.kind === 'span' || d.kind === 'grip') return;   // a click: the click handler does it
             if (d.kind === 'new') {
                 const day = parse(d.col.dataset.date);
                 const start = addMin(day, d.a);
@@ -731,10 +808,30 @@
                 quickCreate(null, addMin(day, a), addMin(day, b), false, { x: e.clientX, y: e.clientY, ghost: d.ghost });
                 return;
             }
+            if (d.kind === 'span') {
+                root.querySelectorAll('.mo-cell.drop').forEach((c) => c.classList.remove('drop'));
+                if (d.ghost) d.ghost.remove();
+                if (!d.range) return;
+                quickCreate(null, d.range[0], addDays(d.range[1], 1), true, { x: e.clientX, y: e.clientY });
+                return;
+            }
+            if (d.kind === 'grip') {
+                const ev = d.x.item;
+                if (!d.first || !d.last) { renderBody(); return; }
+                const delta = d.side === 'start' ? daysBetween(day0(d.x.start), d.first) : daysBetween(day0(addMin(d.x.end, -1)), d.last);
+                if (!delta) { renderBody(); return; }
+                const write = (v) => (ev.all_day ? ymd(v) : stamp(v));
+                const next = { ...ev };
+                if (d.side === 'start') next.start = write(addDays(parse(ev.start), delta));
+                else next.end = write(addDays(parse(ev.end), delta));
+                if (!ev.all_day && parse(next.end) <= parse(next.start)) next.end = stamp(addMin(parse(next.start), 60));
+                await save(d.x.place.id, 'event', next);
+                return;
+            }
             if (d.kind === 'month') {
                 root.querySelectorAll('.mo-cell.drop').forEach((c) => c.classList.remove('drop'));
                 if (!d.target) { renderBody(); return; }
-                const shift = daysBetween(day0(d.x.start), parse(d.target));
+                const shift = daysBetween(d.grab || day0(d.x.start), parse(d.target));
                 if (shift) await shiftItem(d.x, shift * 1440); else renderBody();
                 return;
             }
