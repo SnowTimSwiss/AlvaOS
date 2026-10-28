@@ -27,7 +27,7 @@ import org.robolectric.annotation.GraphicsMode
 
 /**
  * Every screen of the app opens without a crash, and leaves a picture of itself in
- * app/build/outputs/roborazzi (light and dark) to look at. CI puts them on the branch app-screens.
+ * app/build/outputs/roborazzi (light and dark) to look at. CI puts them in the zip of a run by hand (screens ticked).
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
