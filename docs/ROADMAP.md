@@ -17,12 +17,13 @@ Current version: **beta-v0.6.0**
 ## Next
 
 ### Files
-- [ ] "You use 42 of 100 GB" everywhere (Files has it; Photos and Calendar do not yet)
+- [x] "You use 42 of 100 GB" everywhere (Files, Photos, Calendar, Contacts and Chat)
 - [ ] Recent and Starred kept on the NAS, so every device sees the same
 - [ ] Search inside documents (text in PDFs and office files)
 - [ ] Activity: who changed, deleted or shared what
 - [ ] Links: download limit, how often opened, "end all my links"
-- [ ] Unpack ZIP files, download several files as one ZIP, folder sizes, rename many files
+- [x] Unpack ZIP files, download several files as one ZIP, folder sizes
+- [ ] Rename many files at once
 - [ ] Edit Office documents with the EuroOffice app (WOPI)
 - [ ] Share links for people without the app, done differently from the old Remote access
 
@@ -32,7 +33,8 @@ Current version: **beta-v0.6.0**
 - [ ] Photos on contacts
 
 ### Calendar and Contacts
-- [ ] Reminders
+- [x] Events over several days: draw them across days, grab the ends of a bar to change its days (month and week)
+- [ ] Reminders (needs a way to reach the person: the Android app's notifications first)
 - [ ] Shared address books
 - [ ] Sync that works away from home for other apps than ours
 

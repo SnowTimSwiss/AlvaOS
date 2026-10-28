@@ -1,4 +1,4 @@
-Der NVIDIA-Test läuft wieder. Fehlen die Kernel-Header für den laufenden Kernel, erscheint eine klare Meldung statt endloser Fehlschläge.# Work log
+# Work log
 
 What has been done to AlvaOS, newest first. One short entry per work session
 or pull request: what changed, why, and anything the next person should know.
@@ -12,6 +12,18 @@ How to add an entry:
   needs a real device to verify).
 - If a PR is rejected, leave its entry and add "(rejected)" so nobody tries
   the same thing again without a new reason.
+
+---
+
+## Release preparation: the Hub's look, the calendar, ZIP files, and a few bugs
+
+- Hub page (admin): "Who sees it" is a two-way switch (Everyone, Only some people) with the people as chips instead of a drop-down and tick boxes; a bar with the people and "Manage people" (Storage › Users); the Contacts icon was missing.
+- Fields: `fields.js` puts a Paste, Copy or Clear button inside a field (`data-paste`, `data-copy`, search fields); drop-downs have one arrow in all browsers; the close button of dialogs is a round button with a hover.
+- Calendar: draw an event across days in the month and in the week's all-day row; grab the ends of a bar to change its days; bars move by the day they were grabbed on; a timed event's end can be dragged into a later day.
+- Files: several items as one ZIP (`files-zip` takes names; a download link like the file links), "Unpack here" (`files-unzip`: never outside its folder, no links, size capped while writing, nothing half unpacked is left), "How big is it?" (`files-size`). "You use X of Y" in the sidebar of Calendar, Contacts and Chat and in the Photos header.
+- Bugs: after an update the Hub stayed on "Starting…" (the old package's prerm stops it and postinst only did `try-restart`, which leaves a stopped service stopped; now it restarts when enabled, `prerm` leaves it alone on upgrade, and the page asks again until it is up, with a "Restart it" after a minute); Chat answers showed umlauts wrongly (streamed bytes were decoded as Latin-1 when the service sent no charset); the Devices dialog with the QR code redrew everything every 3 seconds (now only the countdown changes, and a connected phone redraws once); Link settings and VMs redraw only when something changed.
+- README now leads with AlvaOS Link, Buddy Backup and the Hub; RELEASE.md says what to check before a public beta.
+- **Note for next time**: Calendar reminders need a way to reach the person (the Android app's notifications first). An online office (EuroOffice, WOPI) is left for after the first beta.
 
 ---
 

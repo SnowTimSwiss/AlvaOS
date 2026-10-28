@@ -5,12 +5,18 @@ Predictable, well-tested, and easy-to-upgrade releases.
 ## Versioning & Channels
 - **SemVer**: `vMAJOR.MINOR.PATCH` (e.g., `v1.0.0`).
 - **Stable**: Production-ready (default).
-- **Beta**: Feature previews. The current version is `beta-v0.5.0` (the `VERSION` file, also the release tag). Builds between releases carry the `VERSION` file's version too. The package becomes `0.2.0~beta` (Debian sorts it before `0.2.0`), and updates read it as `0.2.0b`, so `beta-v0.3.0` and `v0.2.0` count as newer.
+- **Beta**: Feature previews. The current version is in the `VERSION` file (also the release tag). Builds between releases carry the `VERSION` file's version too. The package becomes `0.2.0~beta` (Debian sorts it before `0.2.0`), and updates read it as `0.2.0b`, so `beta-v0.3.0` and `v0.2.0` count as newer.
 
 ## Artifacts
 1. **Installer**: `alvaos-installer-{version}.iso` (~500MB) for fresh installs.
 2. **Package**: `alvaos-system_{version}_amd64.deb` (~100MB) for updates.
 3. **Hashes**: `checksums.txt` for SHA256 verification.
+
+## Before a public beta
+- Click through every page of the Hub and the admin pages at desktop and phone width (dialogs close with the round button, Esc and a click outside; nothing is cut off).
+- Install from the ISO in a VM and go the whole way: setup, first person, Hub, phone connected, a backup, an update.
+- Run the checks in [TESTING.md](TESTING.md) for what is marked as not yet run on real hardware (Windows desktop sync and drive, the Android Files entry) and mark what does not work as experimental in the README.
+- `VERSION`, the release notes and this file say the same version.
 
 ## Procedures
 - **Hotfixes**: Branch from tag → fix bug → release `vX.X.(X+1)` → merge back.

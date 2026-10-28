@@ -4,20 +4,37 @@
 
 ---
 
-## What it does
+## What sets it apart
+
+Three things come built in, with nothing to install, no account and no router setting:
+
+### AlvaOS Link: your NAS from anywhere
+
+Phones, computers and a second NAS reach your NAS from anywhere, even behind a strict router or a mobile network. No port forwarding, no VPN to set up, no account with us. Every device you paired is proven by its own key, the connection is end-to-end encrypted, direct where possible and through a relay (that only passes on encrypted packets) otherwise. On by default, one switch to turn it off. Built on [iroh](https://www.iroh.computer).
+
+### Buddy Backup: a copy that survives a fire
+
+An encrypted, incremental copy of your data on a friend's or family member's AlvaOS, over AlvaOS Link: nothing to open in either router, and only you can read it. If your NAS is lost, a fresh install gets everything back with the recovery kit. No cloud bill, nobody else's servers.
+
+### The Hub: what the household uses every day
+
+One address, one sign-in per person, in the browser, in the Android app and in the desktop app. You choose which apps are on and who sees each one.
+
+* **Files**: shared folders in the browser, links, trash, previous versions, several files as one ZIP, WebDAV.
+* **Photos**: backup from the phone, albums, favourites, a timeline.
+* **Calendar and Contacts**: week, month and schedule, events over several days, CalDAV/CardDAV so phones sync on their own.
+* **Chat**: a simple page in front of a local or cloud model.
+* Installed catalog apps show up as tiles.
+
+---
+
+## And the NAS underneath
 
 * **Storage**: Btrfs pools that grow disk by disk, shared folders (SMB, NFS), people with their own folders and limits, restore points, health monitoring.
-* **AlvaOS Hub**: one address for what people use every day, in the browser and in the Android app.
-  * **Files**: a lightweight file cloud (sharing, links, trash, previous versions, WebDAV).
-  * **Photos**: backup from the phone, albums, favourites.
-  * **Calendar and Contacts**: with CalDAV/CardDAV, so phones sync on their own; birthdays included.
-  * **Chat**: a simple page in front of a local or cloud model.
-* **AlvaOS Link**: the app and a second NAS reach your NAS from anywhere, with no router setting and no account. Built on [iroh](https://www.iroh.computer); end-to-end encrypted, direct where possible, through a relay otherwise. On by default, one switch to turn it off.
-* **Buddy Backup**: an encrypted, incremental copy of your data on a friend's or family member's AlvaOS, over AlvaOS Link. Only you can read it. Restore everything on a fresh install with the recovery kit.
 * **Apps**: Docker and Docker Compose, a catalog with one-click install and updates, graphics cards for apps and VMs.
 * **Virtual machines**: QEMU/KVM with the screen in the browser (Windows 11 with UEFI and TPM).
-* **Android app**: the whole Hub, photo backup in the background, share to AlvaOS.
-* **Desktop app** (Windows, Linux, macOS): the NAS from anywhere on the computer, also in its browser; the Hub apps in a window; Files as a drive.
+* **Android app**: the whole Hub, photo backup in the background, your shared folders in the system's Files app.
+* **Desktop app** (Windows, Linux): the NAS from anywhere on the computer, also in its browser; the Hub apps in a window; a sync folder that only downloads what you open (Windows: experimental).
 * **Clean web UI**: dark and light, works on a phone, API-driven.
 * **Stable base**: Debian, conservative defaults, signed updates with rollback.
 
@@ -72,6 +89,8 @@ AlvaOS is licensed under the **GPLv3**. You are free to use, modify and distribu
 ## Project status
 
 AlvaOS is in active development and heading for a first public beta. APIs, formats and behavior may still change before a stable release. Please test on a spare machine first and keep a backup.
+
+Not yet tested on real hardware, so treat as **experimental**: the Windows desktop app's sync folder and network drive, and the Android app's entry in the system's Files app. [docs/TESTING.md](docs/TESTING.md) says how to check them.
 
 ---
 
