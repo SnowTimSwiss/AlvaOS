@@ -504,7 +504,7 @@ class UpdateManager:
         try:
             return Version(self.normalize_version(latest)) > Version(self.normalize_version(current))
         except InvalidVersion:
-            # If parsing fails, do NOT assume it's an update. 
+            # If parsing fails, do NOT assume it's an update.
             # Only return True if we are sure.
             print(f"Version check warning: Could not parse versions '{current}' or '{latest}'")
             return False
@@ -542,12 +542,12 @@ class UpdateManager:
         self.set_update_state("checking", f"Checking {channel} channel")
         base_url = f"https://api.github.com/repos/{self.repo}"
         current_version = self.get_current_version()
-        
+
         # 1. Check local cache first
         cache = self.load_json(self.github_cache_file, {})
         cache_key = f"{self.repo}/{channel}"
         cached_entry = cache.get(cache_key)
-        
+
         now = datetime.now(timezone.utc)
         # Cache for 1 hour to stay safe with rate limits.
         # Manual checks may request force_refresh=True to bypass this.
@@ -565,7 +565,7 @@ class UpdateManager:
         release = None
         error = None
         rate_limit_hit = False
-        
+
         try:
             if channel == "stable":
                 url = f"{base_url}/releases/latest"
@@ -609,7 +609,7 @@ class UpdateManager:
 
         if error and not rate_limit_hit:
             self.set_update_state("error", "Update check failed", {"error": error})
-        
+
         # 3. Save to cache if successful
         if release is not None:
             cache[cache_key] = {
@@ -646,7 +646,7 @@ class UpdateManager:
         if not url or not url.startswith("https://"):
             raise ValueError("Invalid download URL")
         self.ensure_dirs()
-        self.cleanup_cache() 
+        self.cleanup_cache()
         self.update_progress("downloading", f"Downloading {version}", 0, {"version": version})
 
         parsed = urlparse(url)
@@ -1096,9 +1096,9 @@ class UpdateManager:
 
     def scan_offline_packages(self, root_path=None):
 
-      
+
         packages = []
-        
+
         # 1. Scan explicit path if provided
         if root_path:
             return self._scan_path(root_path)
@@ -1124,14 +1124,14 @@ class UpdateManager:
                             if not children:
                                 # Sometimes USB sticks have no partition table, just /dev/sdb
                                 children = [device]
-                                
+
                             for part in children:
                                 # Accept 'part' or 'disk' if it has no mountpoint
                                 if not part.get('mountpoint'):
                                     # Candidate for temporary mount
                                     part_name = part.get('name')
                                     # Relax fstype check completely -> let mount auto-detect or fail
-                                    # But filter out linux_raid_member etc if needed. 
+                                    # But filter out linux_raid_member etc if needed.
                                     # For now, just try to mount.
                                     pkgs = self._temp_mount_and_scan(part_name)
                                     packages.extend(pkgs)
@@ -1151,14 +1151,14 @@ class UpdateManager:
         packages = []
         if not os.path.exists(path):
             return {"packages": []}
-            
+
         for dirpath, dirnames, filenames in os.walk(path):
             # Limit depth to avoid scanning entire OS if someone points to /
             depth = dirpath.count(os.sep) - path.count(os.sep)
             if depth > 3:
                 del dirnames[:] # Don't go deeper
                 continue
-                
+
             for name in filenames:
                 if name.endswith(".deb"):
                     full_path = os.path.join(dirpath, name)
@@ -1200,7 +1200,7 @@ class UpdateManager:
                     self.run_command([CMD['UMOUNT'], mount_point], timeout=10)
         except Exception as e:
             print(f"Failed to temp mount {dev_path}: {e}")
-            
+
         return packages
 
     def _cache_offline_package(self, src_path):

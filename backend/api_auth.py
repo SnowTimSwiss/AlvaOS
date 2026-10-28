@@ -155,19 +155,19 @@ def complete_setup():
 
     try:
         data = request.get_json()
-        
+
         if not data or 'password' not in data:
             return jsonify({'error': 'Password is required'}), 400
-        
+
         password = data['password']
-        
+
         if len(password) < 8:
             return jsonify({'error': 'Password must be at least 8 characters'}), 400
 
         timezone_name = data.get('timezone')
         if timezone_name is not None and not is_valid_timezone(timezone_name):
             return jsonify({'error': 'Unknown time zone'}), 400
-        
+
         # Change root password using subprocess with sudo
         try:
             process = subprocess.Popen(
@@ -179,15 +179,15 @@ def complete_setup():
                 env={'LC_ALL': 'C'}
             )
             stdout, stderr = process.communicate(input=f'root:{password}\n', timeout=5)
-            
+
             if process.returncode != 0:
                 return jsonify({'error': f'Failed to set password: {stderr}'}), 500
-                
+
         except subprocess.TimeoutExpired:
             return jsonify({'error': 'Password change timed out'}), 500
         except Exception as e:
             return jsonify({'error': f'Password change failed: {str(e)}'}), 500
-        
+
         # SSH root login stays disabled after setup. It is opt-in through
         # System → Remote Access (/api/v1/system/ssh), so a fresh box never ends
         # up reachable over SSH without the admin explicitly asking for it.
@@ -201,7 +201,7 @@ def complete_setup():
                 run_sudo_command([CMD['TIMEDATECTL'], 'set-timezone', data['timezone']])
             except Exception as e:
                 print(f"Warning: Could not set timezone during setup: {e}")
-        
+
         # Mark setup as complete
         mark_setup_complete(password, VERSION)
 
@@ -211,14 +211,14 @@ def complete_setup():
 
         # Auto-login for the setup session
         token = _create_session('root', role='admin')
-        
+
         return jsonify({
             'success': True,
             'message': 'Setup completed successfully',
             'token': token,
             'csrf_token': SESSIONS.get(token, {}).get('csrf_token', '')
         })
-        
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

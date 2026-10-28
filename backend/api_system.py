@@ -77,7 +77,7 @@ def _io_counters():
 @require_auth
 def get_system_info():
     """Get comprehensive system information"""
-    
+
     # CPU Information
     cpu_freq = psutil.cpu_freq()
     cpu_model = platform.processor() or "Unknown"
@@ -114,7 +114,7 @@ def get_system_info():
         'model': cpu_model,
         'temperature_c': round(cpu_temp, 1) if isinstance(cpu_temp, (int, float)) else None,
     }
-    
+
     # Memory Information
     mem = psutil.virtual_memory()
     memory_info = {
@@ -123,7 +123,7 @@ def get_system_info():
         'available_gb': round(mem.available / (1024**3), 2),
         'percent': mem.percent,
     }
-    
+
     # Disk Information
     disk = psutil.disk_usage('/')
     disk_info = {
@@ -173,7 +173,7 @@ def get_system_info():
             pool_storage_info.append(pool_entry)
     except Exception:
         pass
-    
+
     # Network Information
     hostname = 'unknown'
     try:
@@ -187,9 +187,9 @@ def get_system_info():
             hostname = socket.gethostname() or 'unknown'
     except Exception:
         hostname = 'unknown'
-        
+
     ip_address = '127.0.0.1'
-    
+
     try:
         # Better IP detection: find first non-loopback IPv4
         addrs = psutil.net_if_addrs()
@@ -204,7 +204,7 @@ def get_system_info():
                 break
     except Exception:
         pass
-    
+
     network_info = {
         'hostname': hostname,
         'ip_address': ip_address,
@@ -213,11 +213,11 @@ def get_system_info():
     # Cumulative counters; the dashboard turns two samples into a rate, so the
     # backend never has to sleep or keep state between requests.
     io_info = _io_counters()
-    
+
     # System Information
     boot_time = datetime.fromtimestamp(psutil.boot_time())
     uptime_seconds = (datetime.now() - boot_time).total_seconds()
-    
+
     system_info = {
         'os': platform.system(),
         'os_version': platform.release(),
@@ -228,7 +228,7 @@ def get_system_info():
         'effective_user': os.getenv('USER') or os.getenv('USERNAME') or 'unknown',
         'is_root': is_root_user(),
     }
-    
+
     return jsonify({
         'version': VERSION,
         'timestamp': datetime.now().isoformat(),
@@ -584,28 +584,28 @@ def system_time():
     if request.method == 'GET':
         timezone = 'UTC'
         ntp_enabled = True
-        
+
         if platform.system() == 'Linux':
             try:
-                tz_result = subprocess.run([CMD['TIMEDATECTL'], 'show', '--property=Timezone', '--value'], 
+                tz_result = subprocess.run([CMD['TIMEDATECTL'], 'show', '--property=Timezone', '--value'],
                                          capture_output=True, text=True)
                 if tz_result.returncode == 0:
                     timezone = tz_result.stdout.strip()
-                
+
                 # Get NTP status
-                ntp_result = subprocess.run([CMD['TIMEDATECTL'], 'show', '--property=NTP', '--value'], 
+                ntp_result = subprocess.run([CMD['TIMEDATECTL'], 'show', '--property=NTP', '--value'],
                                           capture_output=True, text=True)
                 if ntp_result.returncode == 0:
                     ntp_enabled = ntp_result.stdout.strip() == 'yes'
             except Exception:
                 pass
-                
+
         return jsonify({
             'timezone': timezone,
             'ntp_enabled': ntp_enabled,
             'current_time': datetime.now().isoformat()
         })
-    
+
     if request.method == 'POST':
         data = request.get_json(silent=True) or {}
         if platform.system() == 'Linux':
@@ -827,23 +827,23 @@ def get_network_details():
             hostname = socket.gethostname() or "unknown"
     except Exception:
         pass
-        
+
     ip_address = "127.0.0.1"
     interface = "lo"
     subnet_mask = "255.255.255.0"
     gateway = "N/A"
     dns_servers = []
-    
+
     # Try to get real network information
     try:
         import psutil
         net_if_addrs = psutil.net_if_addrs()
-        
+
         # Find the first non-loopback interface with an IPv4 address
         for iface_name, iface_addresses in net_if_addrs.items():
             if iface_name.startswith(('lo', 'docker', 'veth', 'br-')):
                 continue
-            
+
             for addr in iface_addresses:
                 if addr.family == socket.AF_INET:  # IPv4
                     ip_address = addr.address
@@ -851,14 +851,14 @@ def get_network_details():
                     if addr.netmask:
                         subnet_mask = addr.netmask
                     break
-            
+
             if ip_address != "127.0.0.1":
                 break
-        
+
         # Try to get gateway on Linux
         if platform.system() == 'Linux':
             try:
-                result = subprocess.run([CMD['IP'], 'route', 'show', 'default'], 
+                result = subprocess.run([CMD['IP'], 'route', 'show', 'default'],
                                       capture_output=True, text=True, timeout=2)
                 if result.returncode == 0 and result.stdout:
                     parts = result.stdout.split()
@@ -866,7 +866,7 @@ def get_network_details():
                         gateway = parts[2]
             except Exception:
                 pass
-            
+
             # Try to get DNS servers
             try:
                 if os.path.exists('/etc/resolv.conf'):
@@ -878,11 +878,11 @@ def get_network_details():
                                     dns_servers.append(dns)
             except Exception:
                 pass
-        
+
         # Fallback DNS if none found
         if not dns_servers:
             dns_servers = ['1.1.1.1', '8.8.8.8']
-            
+
     except Exception as e:
         print(f"Error getting network details: {e}")
         # Use fallback values
@@ -1071,9 +1071,9 @@ def set_hostname():
     data = request.get_json()
     if not data or 'hostname' not in data:
         return jsonify({'error': 'Hostname required'}), 400
-    
+
     new_hostname = data['hostname']
-    
+
     # Validation: allow letters, digits, hyphens, and dots (for FQDNs like nas.home.local)
     if not re.match(r'^[a-zA-Z0-9]([a-zA-Z0-9\-.]*[a-zA-Z0-9])?$', new_hostname) or '..' in new_hostname or len(new_hostname) > 253:
         return jsonify({'error': 'Invalid hostname format'}), 400
@@ -1081,42 +1081,42 @@ def set_hostname():
     if platform.system() == 'Linux':
         # 0. Capture old hostname BEFORE changing it
         old_hostname = socket.gethostname()
-        
+
         # 1. Update hostname via hostnamectl
         res, err = run_sudo_command([CMD['HOSTNAMECTL'], 'set-hostname', new_hostname])
         if err:
              return jsonify({'error': f'Failed to set hostname: {err}'}), 500
-             
+
         # 2. Update /etc/hosts to prevent "unable to resolve host" errors
         try:
             hosts_file = '/etc/hosts'
-            
+
             res, err = run_sudo_command([CMD['CAT'], hosts_file])
             if res and res.returncode == 0:
                 content = res.stdout
-                
+
                 # More robust replacement
                 lines = content.splitlines()
                 new_lines = []
                 found_local_ip = False
-                
+
                 for line in lines:
                     if line.strip().startswith('127.0.1.1'):
                         new_lines.append(f'127.0.1.1\t{new_hostname}')
                         found_local_ip = True
                     else:
                         new_lines.append(replace_host_name(line, old_hostname, new_hostname))
-                
+
                 if not found_local_ip:
                     new_lines.append(f'127.0.1.1\t{new_hostname}')
-                
+
                 new_content = "\n".join(new_lines) + "\n"
-                
+
                 process = subprocess.Popen(
-                    build_privileged_cmd([CMD['TEE'], hosts_file]), 
-                    stdin=subprocess.PIPE, 
-                    stdout=subprocess.PIPE, 
-                    stderr=subprocess.PIPE, 
+                    build_privileged_cmd([CMD['TEE'], hosts_file]),
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                     text=True,
                     env={'LC_ALL': 'C'}
                 )
@@ -1133,7 +1133,7 @@ def set_hostname():
 def get_system_logs():
     """Get system logs"""
     logs = []
-    
+
     try:
         # Strategy 1: Read syslog file (traditional Linux)
         log_file = '/var/log/syslog'
@@ -1146,7 +1146,7 @@ def get_system_logs():
                     return jsonify({'logs': logs})
             except Exception as e:
                 print(f"Reading syslog failed: {e}")
-                
+
         # Strategy 2: Use journalctl (systemd systems)
         try:
             cmd = [CMD['JOURNALCTL'], '-n', '50', '--no-pager', '--output=short']
@@ -1156,7 +1156,7 @@ def get_system_logs():
                 return jsonify({'logs': logs})
         except Exception:
             pass
-            
+
         logs = [f"[{datetime.now().isoformat()}] Could not read system logs (no syslog or journal available)"]
 
     except Exception as e:

@@ -190,7 +190,7 @@ def update_share_quota():
 @require_auth(require_admin=True)
 def manage_shares():
     """Manage network shares (NFS and SMB)"""
-    
+
     if request.method == 'GET':
         shares_state = load_shares_state()
         shares = [dict(s) for s in shares_state.values() if isinstance(s, dict)]
@@ -201,7 +201,7 @@ def manage_shares():
                     if usage:
                         share['used_bytes'] = usage['used_bytes']
         return jsonify({'shares': shares})
-    
+
     elif request.method == 'POST':
         from api_auth import load_users_state  # avoids an import cycle at module load
         payload, status = create_share(request.get_json(silent=True), set(load_users_state()))
@@ -210,21 +210,21 @@ def manage_shares():
     elif request.method == 'DELETE':
         data = request.get_json()
         share_id = data.get('share_id')
-        
+
         if not share_id:
             return jsonify({'error': 'Share ID is required'}), 400
-        
+
         try:
             shares_state = load_shares_state()
-            
+
             if share_id not in shares_state:
                 return jsonify({'error': 'Share not found'}), 404
-            
+
             share_info = shares_state[share_id]
             protocol = share_info['protocol']
             share_name = share_info['name']
             share_path = share_info['path']
-            
+
             if platform.system() == 'Linux':
                 if protocol == 'nfs':
                     # Remove from /etc/exports using sudo
@@ -232,9 +232,9 @@ def manage_shares():
                         res, err = run_sudo_command([CMD['CAT'], '/etc/exports'])
                         if err or not res:
                             raise Exception(f"Could not read /etc/exports: {err}")
-                        
+
                         lines = res.stdout.splitlines()
-                        
+
                         # Filter out the share (comment line and the siguiente line)
                         new_lines = []
                         skip_next = False
@@ -249,35 +249,35 @@ def manage_shares():
                         content = "\n".join(new_lines)
                         if content and not content.endswith('\n'):
                             content += '\n'
-                        
+
                         process = subprocess.Popen(build_privileged_cmd([CMD['TEE'], '/etc/exports']), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env={'LC_ALL': 'C'})
                         _, tee_err = process.communicate(input=content)
                         if process.returncode != 0:
                             raise Exception(f"Could not write /etc/exports: {tee_err}")
-                        
+
                         # Reload NFS exports
                         run_sudo_command([CMD['EXPORTFS'], '-ra'])
                     except Exception as e:
                         print(f"Error removing NFS export: {e}")
-                
+
                 elif protocol == 'smb':
                     # Remove from /etc/samba/smb.conf using sudo
                     try:
                         res, err = run_sudo_command([CMD['CAT'], '/etc/samba/smb.conf'])
                         if err or not res:
                             raise Exception(f"Could not read /etc/samba/smb.conf: {err}")
-                        
+
                         content = res.stdout
-                        
+
                         import re
                         pattern = rf'# AlvaOS Share: {re.escape(share_name)}\n\[{re.escape(share_name)}\].*?(?=\n\[|\n# AlvaOS Share:|\Z)'
                         content = re.sub(pattern, '', content, flags=re.DOTALL)
-                        
+
                         process = subprocess.Popen(build_privileged_cmd([CMD['TEE'], '/etc/samba/smb.conf']), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env={'LC_ALL': 'C'})
                         _, tee_err = process.communicate(input=content)
                         if process.returncode != 0:
                             raise Exception(f"Could not write /etc/samba/smb.conf: {tee_err}")
-                        
+
                         # Restart Samba
                         run_sudo_command([CMD['SYSTEMCTL'], 'restart', 'smbd'])
                     except Exception as e:
@@ -288,14 +288,14 @@ def manage_shares():
                             run_sudo_command([CMD['GROUPDEL'], group_name])
                     except Exception as e:
                         print(f"Error removing SMB group: {e}")
-            
+
             del shares_state[share_id]
             save_shares_state(shares_state)
             if platform.system() == 'Linux':
                 reconcile_samba_guest_settings(shares_state)
-            
+
             return jsonify({'success': True, 'message': f'Share "{share_name}" deleted successfully'})
-        
+
         except Exception as e:
             return jsonify({'error': f'Failed to delete share: {str(e)}'}), 500
 

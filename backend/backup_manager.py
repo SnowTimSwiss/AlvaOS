@@ -91,12 +91,12 @@ DEFAULT_STATUS: Dict[str, Any] = {
     "pool_next_run_at": None,
     "pool_last_status": "idle",
     "pool_last_error": "",
-    
+
     "system_last_run_at": None,
     "system_next_run_at": None,
     "system_last_status": "idle",
     "system_last_error": "",
-    
+
     "system_last_snapshot_at": None,
     "system_last_rollback_at": None,
     "system_pending_reboot": False,
@@ -437,7 +437,7 @@ class BackupManager:
 
     def _normalize_settings(self, payload: Dict) -> Dict:
         merged = copy.deepcopy(DEFAULT_SETTINGS)
-        
+
         # Migration from old flat structure if needed
         # Check if payload has old keys and missing new keys
         if "pool_backup" not in payload and "auto_enabled" in payload:
@@ -477,14 +477,14 @@ class BackupManager:
             pb["interval_minutes"] = max(15, min(43200, int(pb.get("interval_minutes", 1440))))
         except Exception:
             pb["interval_minutes"] = 1440
-            
+
         try:
             pb["keep_last"] = max(1, min(200, int(pb.get("keep_last", 30))))
         except Exception:
             pb["keep_last"] = 30
         if pb.get("retention") not in RETENTION_MODES:
             pb["retention"] = "smart"
-            
+
         raw_sources = pb.get("sources", [])
         if not isinstance(raw_sources, list):
             raw_sources = []
@@ -511,12 +511,12 @@ class BackupManager:
             sb["interval_minutes"] = max(15, min(43200, int(sb.get("interval_minutes", 10080))))
         except Exception:
             sb["interval_minutes"] = 10080
-            
+
         try:
             sb["keep_last"] = max(1, min(100, int(sb.get("keep_last", 10))))
         except Exception:
             sb["keep_last"] = 10
-            
+
         sb["target_path"] = self._normalize_path(sb.get("target_path"))
         if not sb["target_path"]:
             sb["target_path"] = self._normalize_path(DEFAULT_SETTINGS["system_backup"]["target_path"])
@@ -558,7 +558,7 @@ class BackupManager:
             cfg = settings or self.get_settings()
             updates: Dict[str, Any] = {}
             now = datetime.now(timezone.utc)
-            
+
             # Pool Backup
             pb = cfg.get("pool_backup", {})
             if pb.get("enabled") and pb.get("sources"):
@@ -672,8 +672,8 @@ class BackupManager:
             st_b = os.stat(path_b)
             if st_a.st_dev == st_b.st_dev:
                 return True
-            
-            # Btrfs check: Even if mounted separately (different st_dev), 
+
+            # Btrfs check: Even if mounted separately (different st_dev),
             # they could be on the same Btrfs UUID.
             uuid_a = self._get_btrfs_uuid(path_a)
             if uuid_a:
@@ -1176,7 +1176,7 @@ class BackupManager:
         # New Settings Structure
         pb = settings.get("pool_backup", {})
         selected_target = self._normalize_path(target_path or pb.get("target_path"))
-        
+
         if selected_target:
             target_root = self._build_selected_data_target_root(source, selected_target)
         else:
@@ -1337,16 +1337,16 @@ class BackupManager:
     ) -> Dict:
         with self._job_lock:
             settings = self.get_settings()
-            
+
             created = []
             failed = []
-            
+
             if backup_type == "pool":
                 # Pool Backup Logic
                 current_settings = settings.get("pool_backup", {})
                 selected = sources if isinstance(sources, list) and sources else current_settings.get("sources", [])
                 selected = [self._normalize_path(s) for s in selected if self._normalize_path(s)]
-                
+
                 if not selected:
                     error = "No backup sources configured"
                     self._save_status({"pool_last_status": "error", "pool_last_error": error})
@@ -1366,7 +1366,7 @@ class BackupManager:
                                                 current_settings.get("retention", "count"))
                      else:
                          failed.append({"source_path": source, "error": payload.get("error", "unknown error")})
-                
+
                 status_payload: Dict[str, Any] = {
                     "pool_last_run_at": self._now_iso(),
                     "pool_last_status": "success" if not failed else ("partial" if created else "error"),
@@ -1719,7 +1719,7 @@ class BackupManager:
     def _schedule_tick(self):
         settings = self.get_settings()
         now = datetime.now(timezone.utc)
-        
+
         # Check Pool Backup
         pb = settings.get("pool_backup", {})
         if pb.get("enabled") and pb.get("sources"):
@@ -1748,6 +1748,6 @@ class BackupManager:
                      self._refresh_next_run(settings)
                  elif now >= next_run:
                      should_run = True
-            
+
              if should_run:
                  threading.Thread(target=self.run_backup_now, kwargs={"backup_type": "system", "trigger": "schedule"}).start()

@@ -117,7 +117,7 @@ def get_disk_smart(disk_name):
     """Get detailed SMART health attributes for a specific disk"""
     if not disk_name.isalnum() and not all(c in '._-' for c in disk_name if not c.isalnum()):
         return jsonify({'error': 'Invalid disk name'}), 400
-        
+
     try:
         if platform.system() == 'Linux':
             data, unsupported_reason, read_error = _collect_smart_report(
@@ -149,7 +149,7 @@ def wipe_disk(disk_name):
     """Wipe disk signatures and partition table to make it available for pools"""
     if not disk_name.isalnum() and not all(c in '._-' for c in disk_name if not c.isalnum()):
         return jsonify({'error': 'Invalid disk name'}), 400
-    
+
     if platform.system() != 'Linux':
         return jsonify({'error': NOT_ON_NAS}), 501
 
@@ -202,7 +202,7 @@ def manage_pools():
                 return jsonify({'pools': _mark_backup_disk(STORAGE_CACHE['pools']['data'])})
 
         pools = []
-        
+
         try:
             if platform.system() == 'Linux':
                 pools, _ = detect_btrfs_pools()
@@ -378,21 +378,21 @@ def manage_pools():
 
     elif request.method == 'POST':
         data = request.get_json()
-        
+
         if not data:
             return jsonify({'error': 'No data provided'}), 400
-        
+
         pool_name = data.get('name', '').strip()
         devices = data.get('devices', [])
         raid_level = data.get('raid_level', 'single')
-        
+
         # Validation
         if not pool_name:
             return jsonify({'error': 'Pool name is required'}), 400
-        
+
         if not devices or len(devices) == 0:
             return jsonify({'error': 'At least one device is required'}), 400
-        
+
         if raid_level not in POOL_PROFILES:
             return jsonify({'error': 'Unknown protection level'}), 400
         if raid_level in ('raid0', 'raid10') and len(devices) < 2:
@@ -401,7 +401,7 @@ def manage_pools():
         # Validate RAID level requirements
         if raid_level == 'raid1' and len(devices) < 2:
             return jsonify({'error': 'RAID1 requires at least 2 devices'}), 400
-        
+
         if raid_level == 'raid5' and len(devices) < 3:
             return jsonify({'error': 'RAID5 requires at least 3 devices'}), 400
 
@@ -416,7 +416,7 @@ def manage_pools():
 
         if raid_level == 'raid10' and len(devices) < 4:
             return jsonify({'error': 'RAID10 requires at least 4 devices'}), 400
-        
+
         if not POOL_NAME_RE.match(pool_name):
             return jsonify({'error': 'Pool names use lowercase letters, numbers, "-" and "_" (up to 63 characters).'}), 400
         if any(isinstance(p, dict) and p.get('mount_point') == f'/mnt/alvaos/{pool_name}'
@@ -432,31 +432,31 @@ def manage_pools():
 
                 # Build mkfs.btrfs command
                 cmd = [CMD['MKFS_BTRFS'], '-f', '-L', pool_name]
-                
+
                 # Add RAID level (parity profiles keep metadata mirrored)
                 cmd.extend(mkfs_profile_args(raid_level))
-                
+
                 cmd.extend(devices)
-                
+
                 # Execute pool creation
                 res, err = run_sudo_command(cmd, timeout=60)
-                
+
                 if err:
                     return jsonify({'error': f'Failed to create pool: {err}'}), 500
-                
+
                 mount_point = f'/mnt/alvaos/{pool_name}'
                 # Use sudo to create directory as we might not have permission in /mnt/alvaos
                 res, err = run_sudo_command([CMD['MKDIR'], '-p', mount_point])
                 if err:
                      return jsonify({'error': f'Failed to create mount point: {err}'}), 500
-                
+
                 # Mount the pool
                 res, err = run_sudo_command([CMD['MOUNT'], devices[0], mount_point])
                 if err:
                     return jsonify({'error': f'Pool created but failed to mount: {err}'}), 500
-                
+
                 pools_state = load_pools_state()
-                
+
                 # Get real BTRFS UUID to use as ID (matches get_pools logic)
                 import uuid
                 pool_id = str(uuid.uuid4()) # Fallback
@@ -479,7 +479,7 @@ def manage_pools():
                 }
                 save_pools_state(pools_state)
                 invalidate_storage_cache('pools', 'disks')
-                
+
                 return jsonify({
                     'success': True,
                     'message': f'Pool "{pool_name}" created successfully',
@@ -494,12 +494,12 @@ def manage_pools():
                              '(Linux with btrfs). This system is not supported.',
                     'unsupported_platform': True,
                 }), 400
-        
+
         except subprocess.TimeoutExpired:
             return jsonify({'error': 'Pool creation timed out'}), 500
         except Exception as e:
             return jsonify({'error': f'Pool creation failed: {str(e)}'}), 500
-    
+
     elif request.method == 'DELETE':
         return _remove_pool(request.get_json(silent=True) or {})
 
@@ -675,24 +675,24 @@ def import_pool():
 @require_auth(require_admin=True)
 def manage_subvolumes(pool_id):
     """Manage subvolumes in a pool"""
-    
+
     pools_state = load_pools_state()
-    
+
     if pool_id not in pools_state:
         return jsonify({'error': 'Pool not found'}), 404
-    
+
     pool_info = pools_state[pool_id]
     mount_point = pool_info.get('mount_point')
-    
+
     if request.method == 'GET':
         # List subvolumes
         subvolumes = []
-        
+
         try:
             if platform.system() == 'Linux' and mount_point:
                 # Use run_sudo_command instead of direct subprocess.run with 'sudo -n' string
                 res, err = run_sudo_command([CMD['BTRFS'], 'subvolume', 'list', mount_point], timeout=5)
-                
+
                 if res and res.returncode == 0:
                     for line in res.stdout.split('\n'):
                         if line.strip():
@@ -708,28 +708,28 @@ def manage_subvolumes(pool_id):
                                     })
             else:
                 return jsonify({'subvolumes': [], 'error': NOT_ON_NAS})
-        
+
         except Exception as e:
             print(f"Error listing subvolumes: {e}")
-        
+
         return jsonify({'subvolumes': subvolumes})
-    
+
     elif request.method == 'POST':
         data = request.get_json()
         subvol_name = data.get('name', '').strip()
-        
+
         if not subvol_name:
             return jsonify({'error': 'Subvolume name is required'}), 400
-        
+
         try:
             if platform.system() == 'Linux' and mount_point:
                 subvol_path = f'{mount_point}/{subvol_name}'
-                
+
                 res, err = run_sudo_command([CMD['BTRFS'], 'subvolume', 'create', subvol_path])
-                
+
                 if err:
                     return jsonify({'error': f'Failed to create subvolume: {err}'}), 500
-                
+
                 return jsonify({
                     'success': True,
                     'message': f'Subvolume "{subvol_name}" created',
@@ -737,23 +737,23 @@ def manage_subvolumes(pool_id):
                 })
             else:
                 return jsonify({'error': NOT_ON_NAS}), 501
-        
+
         except Exception as e:
             return jsonify({'error': f'Failed to create subvolume: {str(e)}'}), 500
-    
+
     elif request.method == 'DELETE':
         data = request.get_json()
         subvol_name = data.get('name', '').strip()
-        
+
         if not subvol_name:
             return jsonify({'error': 'Subvolume name is required'}), 400
-        
+
         try:
             if platform.system() == 'Linux' and mount_point:
                 subvol_path = f'{mount_point}/{subvol_name}'
-                
+
                 res, err = run_sudo_command([CMD['BTRFS'], 'subvolume', 'delete', subvol_path])
-                
+
                 if err:
                     err_text = str(err)
                     if 'not deleting default subvolume id' in err_text.lower():
@@ -815,14 +815,14 @@ def manage_subvolumes(pool_id):
 
                 if err:
                     return jsonify({'error': f'Failed to delete subvolume: {err}'}), 500
-                
+
                 return jsonify({
                     'success': True,
                     'message': f'Subvolume "{subvol_name}" deleted'
                 })
             else:
                 return jsonify({'error': NOT_ON_NAS}), 501
-        
+
         except Exception as e:
             return jsonify({'error': f'Failed to delete subvolume: {str(e)}'}), 500
 
