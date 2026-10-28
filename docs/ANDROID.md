@@ -16,9 +16,8 @@ it; nothing needs Android Studio.
 - **Actions › Android app › Run workflow**: builds the app including the Link
   library and keeps the APK with the run for a day (Actions › the run ›
   Artifacts), to test between releases. Run it once by hand before a release.
-  Tick **screens** to also get pictures of every screen on the `app-screens`
-  branch (`git fetch origin app-screens`, look at the .jpg files); without it
-  there are none.
+  Tick **screens** to also get pictures of every screen: they are in the
+  same zip (folder `screens/`, .jpg files). Without it there are none.
   With a track (internal, alpha, beta, production) it also uploads to that
   track on Google Play (the default is none).
   With a release tag in "Add the app to this existing release", the app is
