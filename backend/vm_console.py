@@ -112,7 +112,7 @@ async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
     try:
         try:
             head = await asyncio.wait_for(reader.readuntil(b'\r\n\r\n'), 10)
-        except (asyncio.TimeoutError, asyncio.IncompleteReadError, asyncio.LimitOverrunError, ConnectionError):
+        except (TimeoutError, asyncio.IncompleteReadError, asyncio.LimitOverrunError, ConnectionError):
             writer.close()
             return
         if len(head) > HEAD_LIMIT:

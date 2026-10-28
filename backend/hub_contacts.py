@@ -16,7 +16,7 @@ the page never shows them. vCard files can be imported and exported
 
 import re
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from typing import Any, Callable
 
 from flask import Blueprint, Response, jsonify, request
@@ -81,7 +81,7 @@ def _place(session: dict[str, Any]) -> hub_data.Place | None:
 
 
 def _stamp() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec='seconds')
+    return datetime.now(UTC).isoformat(timespec='seconds')
 
 
 def upsert(items: list[dict[str, Any]], item: dict[str, Any]) -> str:

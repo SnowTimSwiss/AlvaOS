@@ -371,7 +371,7 @@ def build_action(name: str, args: dict[str, Any], read: Callable[[str], tuple[in
                 'method': 'POST', 'path': '/api/v1/storage/shares',
                 'body': {'name': folder, 'protocol': 'smb', 'pool_id': pool.get('id'), 'folder': folder,
                          'new_folder': True, 'guest_access': everyone,
-                         'smb_permissions': {p: 'write' for p in people}}}
+                         'smb_permissions': dict.fromkeys(people, 'write')}}
     if name == 'set_folder_access':
         share = _share(args.get('folder'), read)
         person = (_people([args.get('person')], read) or [''])[0]
@@ -612,7 +612,7 @@ def public_settings(settings: dict[str, Any]) -> dict[str, Any]:
     out['key_set'] = bool(settings.get('api_key'))
     out['connections'] = [{**{k: v for k, v in c.items() if k != 'api_key'}, 'key_set': bool(c['api_key'])}
                           for c in settings['connections']]
-    out['providers'] = {k: {kk: vv for kk, vv in v.items()} for k, v in PROVIDERS.items()}
+    out['providers'] = {k: dict(v) for k, v in PROVIDERS.items()}
     return out
 
 

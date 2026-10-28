@@ -11,7 +11,7 @@ import platform
 import re
 import shutil
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from pathlib import Path
 from typing import Any, Callable
 
@@ -38,7 +38,7 @@ def parse_find_listing(text: str) -> list[dict[str, Any]]:
         kind, size, mtime, name = parts
         try:
             size_bytes = int(size)
-            modified = datetime.fromtimestamp(float(mtime), timezone.utc).isoformat()
+            modified = datetime.fromtimestamp(float(mtime), UTC).isoformat()
         except (ValueError, OverflowError, OSError):
             continue
         entries.append({"name": name, "type": FIND_TYPES.get(kind, "other"),
@@ -117,7 +117,7 @@ def _parse_created(value: Any) -> datetime | None:
         stamp = datetime.fromisoformat(str(value))
     except (TypeError, ValueError):
         return None
-    return stamp if stamp.tzinfo else stamp.replace(tzinfo=timezone.utc)
+    return stamp if stamp.tzinfo else stamp.replace(tzinfo=UTC)
 
 
 def smart_keep(entries: list[dict], now: datetime) -> list[dict]:
@@ -202,7 +202,7 @@ class BackupManager:
     def _load_json(self, path: str, default):
         try:
             if os.path.exists(path):
-                with open(path, "r") as f:
+                with open(path) as f:
                     return json.load(f)
         except Exception:
             pass
@@ -243,7 +243,7 @@ class BackupManager:
             return None
 
     def _now_iso(self) -> str:
-        return datetime.now(timezone.utc).isoformat()
+        return datetime.now(UTC).isoformat()
 
     def _detect_cmd(self, candidates: list[str | None], which_name: str) -> str | None:
         for candidate in candidates:
@@ -557,7 +557,7 @@ class BackupManager:
         with self._schedule_lock:
             cfg = settings or self.get_settings()
             updates: dict[str, Any] = {}
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Pool Backup
             pb = cfg.get("pool_backup", {})
@@ -769,7 +769,7 @@ class BackupManager:
         best_len = -1
 
         try:
-            with open("/proc/self/mountinfo", "r", encoding="utf-8", errors="replace") as f:
+            with open("/proc/self/mountinfo", encoding="utf-8", errors="replace") as f:
                 for raw_line in f:
                     line = raw_line.strip()
                     if " - " not in line:
@@ -1008,11 +1008,7 @@ class BackupManager:
             )
             for index, dev in enumerate(devices):
                 lines.append(
-                    "POOL_DEVICE|{pool_id}|{index}|{device}".format(
-                        pool_id=self._plan_escape(pool_id),
-                        index=index,
-                        device=self._plan_escape(dev),
-                    )
+                    f"POOL_DEVICE|{self._plan_escape(pool_id)}|{index}|{self._plan_escape(dev)}"
                 )
 
         for item in data_snapshot_entries:
@@ -1034,10 +1030,7 @@ class BackupManager:
             if not err or not source_path:
                 continue
             lines.append(
-                "FAILURE|{source_path}|{error}".format(
-                    source_path=self._plan_escape(source_path),
-                    error=self._plan_escape(err),
-                )
+                f"FAILURE|{self._plan_escape(source_path)}|{self._plan_escape(err)}"
             )
 
         fallback_manifest_dir = os.path.join(self.state_dir, "full-system-manifests-local")
@@ -1090,7 +1083,7 @@ class BackupManager:
         if not btrfs_cmd:
             return False, "btrfs command not found"
         source_parent = self._best_temp_snapshot_parent(source_path)
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
         temp_name = f".alvaos-send-{self._slugify(name)}-{stamp}-{os.getpid()}"
         temp_source_snapshot = os.path.join(source_parent, temp_name)
 
@@ -1111,7 +1104,7 @@ class BackupManager:
 
         stream_file = os.path.join(
             self.state_dir,
-            f"btrfs-send-{int(datetime.now(timezone.utc).timestamp())}-{os.getpid()}.stream"
+            f"btrfs-send-{int(datetime.now(UTC).timestamp())}-{os.getpid()}.stream"
         )
 
         try:
@@ -1184,7 +1177,7 @@ class BackupManager:
         if platform.system() == "Linux" and self._path_on_system_disk(target_root):
             return False, {"error": f"Target path is on the system disk and is not allowed: {target_root}"}
 
-        snapshot_time = datetime.now(timezone.utc)
+        snapshot_time = datetime.now(UTC)
         name = f"{snapshot_time.strftime('%Y%m%d-%H%M%S')}-{self._slugify(label or trigger or 'snapshot')}"
         snapshot_path = os.path.join(target_root, name)
 
@@ -1266,7 +1259,7 @@ class BackupManager:
             if not target_ok:
                 return False, {"error": target_err or "Failed to validate system snapshot target path"}
 
-        snapshot_time = datetime.now(timezone.utc)
+        snapshot_time = datetime.now(UTC)
         name = f"{snapshot_time.strftime('%Y%m%d-%H%M%S')}-{self._slugify(label or trigger or 'system')}"
         snapshot_path = os.path.join(target_base, name)
 
@@ -1307,7 +1300,7 @@ class BackupManager:
         source = self._normalize_path(source_path)
         entries = self.list_snapshots(source_path=source, snapshot_class=snapshot_class)
         if mode == "smart":
-            kept = {id(item) for item in smart_keep(entries, datetime.now(timezone.utc))}
+            kept = {id(item) for item in smart_keep(entries, datetime.now(UTC))}
             dropped = [item for item in entries if id(item) not in kept]
         else:
             dropped = entries[max(1, int(keep_last)):]
@@ -1373,7 +1366,7 @@ class BackupManager:
                     "pool_last_error": "; ".join([f["error"] for f in failed]) if failed else "",
                 }
                 if current_settings.get("enabled") and current_settings.get("sources"):
-                     next_run = datetime.now(timezone.utc) + timedelta(minutes=current_settings.get("interval_minutes", 1440))
+                     next_run = datetime.now(UTC) + timedelta(minutes=current_settings.get("interval_minutes", 1440))
                      status_payload["pool_next_run_at"] = next_run.isoformat()
                 else:
                      status_payload["pool_next_run_at"] = None
@@ -1449,7 +1442,7 @@ class BackupManager:
                     "system_last_error": "; ".join([f["error"] for f in failed]) if failed else "",
                 }
                 if current_settings.get("enabled"):
-                     next_run = datetime.now(timezone.utc) + timedelta(minutes=current_settings.get("interval_minutes", 10080))
+                     next_run = datetime.now(UTC) + timedelta(minutes=current_settings.get("interval_minutes", 10080))
                      status_payload["system_next_run_at"] = next_run.isoformat()
                 else:
                      status_payload["system_next_run_at"] = None
@@ -1527,7 +1520,7 @@ class BackupManager:
         taken = {e["name"] for e in current}
         target_name = name
         if target_name in taken:
-            when = self._parse_iso(entry.get("created_at")) or datetime.now(timezone.utc)
+            when = self._parse_iso(entry.get("created_at")) or datetime.now(UTC)
             target_name = restored_name(name, when.astimezone(), item["type"] == "folder")
             if target_name in taken:
                 return False, {"error": f'"{target_name}" is already there.'}
@@ -1608,7 +1601,7 @@ class BackupManager:
         if not self._path_exists_or_is_subvolume(snapshot):
             return False, {"error": f"Snapshot not found: {snapshot}"}
 
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
         previous_path = f"{target_source}.pre-restore-{stamp}"
         moved_old = False
         btrfs_cmd = self._btrfs_cmd()
@@ -1718,7 +1711,7 @@ class BackupManager:
 
     def _schedule_tick(self):
         settings = self.get_settings()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Check Pool Backup
         pb = settings.get("pool_backup", {})

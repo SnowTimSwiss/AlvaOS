@@ -30,7 +30,7 @@ import subprocess
 import tempfile
 import threading
 from contextlib import contextmanager
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, UTC
 from typing import TYPE_CHECKING, Any, Callable, Iterator
 
 import requests
@@ -130,7 +130,7 @@ def snapshot_time(name: str) -> datetime | None:
     if not match:
         return None
     try:
-        return datetime.strptime(match.group(1), "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc)
+        return datetime.strptime(match.group(1), "%Y%m%d-%H%M%S").replace(tzinfo=UTC)
     except ValueError:
         return None
 
@@ -448,7 +448,7 @@ class VaultReplicator:
         The newest snapshot of each source is never deleted: it is the base
         for the next sync. Neither are names in `protected`.
         """
-        now = now or datetime.now(timezone.utc)
+        now = now or datetime.now(UTC)
         snapshots = self.list_snapshots(mountpoint)
         by_source: dict[str, list[dict[str, Any]]] = {}
         for item in snapshots:
@@ -505,8 +505,7 @@ class VaultReplicator:
     @staticmethod
     def _stream_output(proc, stderr, what: str) -> Iterator[bytes]:
         assert proc.stdout is not None
-        for block in iter(lambda: proc.stdout.read(1024 * 1024), b""):
-            yield block
+        yield from iter(lambda: proc.stdout.read(1024 * 1024), b"")
         if proc.wait() != 0:
             raise TransferError(f"{what} failed: {read_stderr(stderr) or f'exit code {proc.returncode}'}")
 

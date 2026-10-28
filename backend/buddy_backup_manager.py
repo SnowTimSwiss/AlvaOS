@@ -18,7 +18,7 @@ import shutil
 import tempfile
 import threading
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from pathlib import Path
 from typing import Any, Callable, Iterator, Optional
 
@@ -112,7 +112,7 @@ class BuddyBackupManager:
     def _load_json(self, path: str, default):
         try:
             if os.path.exists(path):
-                with open(path, "r", encoding="utf-8") as f:
+                with open(path, encoding="utf-8") as f:
                     return json.load(f)
         except Exception:
             pass
@@ -160,7 +160,7 @@ class BuddyBackupManager:
             self._save_json(self.settings_file, merged)
 
     def _now(self) -> datetime:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
     def _now_iso(self) -> str:
         return self._now().isoformat()
@@ -809,7 +809,7 @@ class BuddyBackupManager:
             name = os.path.basename(rel_path.rstrip("/"))
             if name:
                 names.append(name)
-        return sorted(list(set(names)))
+        return sorted(set(names))
 
     def _path_is_within_parent(self, path: str, parent: str) -> bool:
         target = os.path.normpath(str(path or "").strip())
@@ -2369,7 +2369,7 @@ class BuddyBackupManager:
                 received_path = expected_path
 
         after_names = set(self._list_btrfs_subvolume_names_under(target_parent))
-        new_names = sorted(list(after_names - before_names))
+        new_names = sorted(after_names - before_names)
 
         if not received_path:
             name_candidates: list[str] = []
@@ -2414,7 +2414,7 @@ class BuddyBackupManager:
                 ),
             }
 
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
         previous_path = f"{target_source}.pre-restore-{stamp}"
         moved_old = False
 

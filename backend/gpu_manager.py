@@ -16,7 +16,7 @@ import glob
 import os
 import subprocess
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from typing import Any, Callable
 
 from common import CMD
@@ -427,8 +427,8 @@ def gpu_stats(cards: list[dict[str, Any]] | None = None, sys_root: str = '/sys',
                 row['temp_c'] = temp
                 row['power_w'] = power
         elif card['vendor'] == 'intel' and card['driver'] in GOOD_DRIVERS['intel']:
-            for rel in ('drm/%s/gt_cur_freq_mhz' % os.path.basename(card.get('card_node') or ''),
-                        'drm/%s/gt/gt0/rps_cur_freq_mhz' % os.path.basename(card.get('card_node') or '')):
+            node = os.path.basename(card.get('card_node') or '')
+            for rel in (f'drm/{node}/gt_cur_freq_mhz', f'drm/{node}/gt/gt0/rps_cur_freq_mhz'):
                 freq = _num(_read(os.path.join(dev, rel)))
                 if freq is not None:
                     row['freq_mhz'] = int(freq)
@@ -530,7 +530,7 @@ def _available(package: str) -> bool:
 def _installed(packages: list[str]) -> dict[str, bool]:
     """Which packages are installed (dpkg-query needs no privileges)."""
     import subprocess
-    out: dict[str, bool] = {p: False for p in packages}
+    out: dict[str, bool] = dict.fromkeys(packages, False)
     try:
         res = subprocess.run([DPKG_QUERY, '-W', '-f', '${Package} ${db:Status-Status}\\n'] + packages,
                              capture_output=True, text=True, timeout=20, env={'LC_ALL': 'C'})
@@ -552,4 +552,4 @@ def _touch(path: str) -> None:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()

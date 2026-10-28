@@ -92,7 +92,7 @@ def test_the_authority_can_only_sign_for_home_names_and_private_addresses(tmp_pa
     ca_key = serialization.load_pem_private_key(open(p["ca.key"], "rb").read(), password=None)
     ca = x509.load_pem_x509_certificate(open(p["ca.crt"], "rb").read())
     key = ec.generate_private_key(ec.SECP256R1())
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
     forged = (x509.CertificateBuilder().subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "bank.example")]))
               .issuer_name(ca.subject).public_key(key.public_key()).serial_number(1)
               .not_valid_before(now - datetime.timedelta(minutes=1)).not_valid_after(now + datetime.timedelta(days=1))

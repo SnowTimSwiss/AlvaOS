@@ -102,7 +102,7 @@ def _load_sessions():
     try:
         if not os.path.exists(SESSIONS_FILE):
             return
-        with open(SESSIONS_FILE, 'r') as f:
+        with open(SESSIONS_FILE) as f:
             data = json.load(f)
         stored = data.get('sessions') if isinstance(data, dict) else None
         if not isinstance(stored, dict):

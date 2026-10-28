@@ -19,7 +19,7 @@ import os
 import re
 import subprocess
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from typing import Any, Callable
 
 from common import CMD
@@ -36,7 +36,7 @@ _lock = threading.Lock()
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def load_settings(path: str | None = None) -> dict[str, Any]:

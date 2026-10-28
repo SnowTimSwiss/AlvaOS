@@ -32,7 +32,7 @@ _lock = threading.Lock()
 
 def _load() -> dict[str, Any]:
     try:
-        with open(STATE_FILE, 'r') as f:
+        with open(STATE_FILE) as f:
             data = json.load(f)
         return data if isinstance(data, dict) else {}
     except (OSError, ValueError):

@@ -128,7 +128,7 @@ class AppStore:
             if not os.path.exists(self.catalog_file):
                 return {}, None
 
-            with open(self.catalog_file, 'r') as f:
+            with open(self.catalog_file) as f:
                 catalog = json.load(f)
             return catalog, None
         except json.JSONDecodeError as e:
@@ -141,7 +141,7 @@ class AppStore:
         with self._update_cache_lock:
             try:
                 if os.path.exists(self.update_cache_file):
-                    with open(self.update_cache_file, 'r') as f:
+                    with open(self.update_cache_file) as f:
                         data = json.load(f)
                     return data if isinstance(data, dict) else {}
             except Exception as e:
@@ -377,7 +377,7 @@ class AppStore:
         """Load installed apps state"""
         try:
             if os.path.exists(self.apps_state_file):
-                with open(self.apps_state_file, 'r') as f:
+                with open(self.apps_state_file) as f:
                     return json.load(f)
         except Exception as e:
             print(f"Error loading apps state: {e}")
@@ -399,7 +399,7 @@ class AppStore:
 
         try:
             if os.path.exists(self.install_status_file):
-                with open(self.install_status_file, 'r') as f:
+                with open(self.install_status_file) as f:
                     return json.load(f)
         except Exception as e:
             print(f"Error loading install status: {e}")
@@ -419,7 +419,7 @@ class AppStore:
                     current: dict[str, Any] = {}
                     try:
                         if os.path.exists(self.install_status_file):
-                            with open(self.install_status_file, 'r') as f:
+                            with open(self.install_status_file) as f:
                                 current = json.load(f) or {}
                     except Exception:
                         current = {}

@@ -60,7 +60,7 @@ for _module in (api_auth, api_system, api_updates, api_storage, api_shares, api_
 def serve_frontend(filename):
     try:
         if filename.endswith(('.html', '.css', '.js')):
-            with open(os.path.join(WEBUI_ROOT, filename), 'r') as f:
+            with open(os.path.join(WEBUI_ROOT, filename)) as f:
                 content = f.read()
             clean_version = VERSION.strip('() ')
             content = content.replace('{{VERSION}}', clean_version)

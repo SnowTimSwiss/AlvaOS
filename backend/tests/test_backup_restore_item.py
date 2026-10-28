@@ -54,7 +54,7 @@ def setup(tmp_path, monkeypatch):
     })
     monkeypatch.setattr(bm.BackupManager, "_resolve_state_dir", lambda self: str(tmp_path))
     monkeypatch.setattr(bm.BackupManager, "_schedule_loop", lambda self: None)
-    manager = bm.BackupManager(files, lambda: {})
+    manager = bm.BackupManager(files, dict)
     manager._save_snapshots([{"snapshot_path": SNAP, "source_path": SOURCE, "snapshot_class": "data",
                               "created_at": "2026-10-01T03:00:00+00:00"}])
     return manager, files

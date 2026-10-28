@@ -84,7 +84,7 @@ def get_system_info():
     cpu_temp = None
     try:
         if platform.system() == 'Linux' and os.path.exists('/proc/cpuinfo'):
-            with open('/proc/cpuinfo', 'r') as f:
+            with open('/proc/cpuinfo') as f:
                 for line in f:
                     if line.lower().startswith('model name'):
                         cpu_model = line.split(':', 1)[1].strip()
@@ -870,7 +870,7 @@ def get_network_details():
             # Try to get DNS servers
             try:
                 if os.path.exists('/etc/resolv.conf'):
-                    with open('/etc/resolv.conf', 'r') as f:
+                    with open('/etc/resolv.conf') as f:
                         for line in f:
                             if line.strip().startswith('nameserver'):
                                 dns = line.split()[1]
@@ -1006,7 +1006,7 @@ def system_ssh_access():
     if not isinstance(keys, list) or len(keys) > 32 or any(
             not isinstance(k, str) or not _ED25519_KEY.fullmatch(k.strip()) for k in keys):
         return jsonify({'error': 'Add valid Ed25519 public keys, one per line.'}), 400
-    keys = sorted(set(k.strip() for k in keys if k.strip()))
+    keys = sorted({k.strip() for k in keys if k.strip()})
     # Root signs in with the admin password or an admin key; without both
     # nobody could sign in over SSH any more.
     if enabled and not password_login and not keys:

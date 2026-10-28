@@ -29,7 +29,7 @@ import hashlib
 import json
 import re
 import xml.etree.ElementTree as ET
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, UTC
 from typing import Any
 from urllib.parse import quote, unquote, urlsplit
 from xml.sax.saxutils import escape
@@ -119,7 +119,7 @@ def _local(params: dict[str, str], value: str) -> tuple[date | None, datetime | 
     except ValueError:
         return None, None
     if value.endswith('Z'):
-        moment = moment.replace(tzinfo=timezone.utc).astimezone().replace(tzinfo=None)
+        moment = moment.replace(tzinfo=UTC).astimezone().replace(tzinfo=None)
     elif params.get('TZID'):
         try:
             from zoneinfo import ZoneInfo
@@ -246,9 +246,9 @@ def _fold(line: str) -> str:
 
 def _stamp(item: dict[str, Any]) -> str:
     try:
-        moment = datetime.fromisoformat(str(item.get('updated') or '')).astimezone(timezone.utc)
+        moment = datetime.fromisoformat(str(item.get('updated') or '')).astimezone(UTC)
     except ValueError:
-        moment = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        moment = datetime(2026, 1, 1, tzinfo=UTC)
     return moment.strftime('%Y%m%dT%H%M%SZ')
 
 
@@ -670,7 +670,7 @@ def proppatch(session: dict[str, Any], parts: list[str]) -> Response:
         if name or color:
             _write(coll, change)
     href = request.path
-    return _multistatus([_response(href, {k: '' for k in asked}, asked)])
+    return _multistatus([_response(href, dict.fromkeys(asked, ''), asked)])
 
 
 def _nearest(color: str) -> str:

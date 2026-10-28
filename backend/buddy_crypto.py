@@ -77,7 +77,7 @@ class KeyMaterial:
         }
 
     @classmethod
-    def from_json(cls, data: dict) -> "KeyMaterial":
+    def from_json(cls, data: dict) -> KeyMaterial:
         try:
             return cls(
                 master_key=base64.b64decode(data["key"]),
@@ -305,7 +305,7 @@ def decrypt_file(encrypted_path: str, plain_path: str,
 # decrypted with that machine's old settings.
 
 def legacy_v1_key(encryption_hash: str, encryption_salt: str) -> bytes:
-    return hashlib.sha256(f"{encryption_hash}|{encryption_salt}|alvaos-buddy-v1".encode("utf-8")).digest()
+    return hashlib.sha256(f"{encryption_hash}|{encryption_salt}|alvaos-buddy-v1".encode()).digest()
 
 
 def _legacy_keystream_xor(data: bytes, key: bytes, nonce: bytes, counter: int):

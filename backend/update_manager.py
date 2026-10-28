@@ -7,7 +7,7 @@ import subprocess
 import secrets
 import shutil
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -221,7 +221,7 @@ class UpdateManager:
     def load_json(self, path, default):
         try:
             if os.path.exists(path):
-                with open(path, "r") as f:
+                with open(path) as f:
                     return json.load(f)
         except Exception:
             pass
@@ -271,7 +271,7 @@ class UpdateManager:
             "status": status,
             "message": message or "",
             "details": details or {},
-            "updated_at": datetime.now(timezone.utc).isoformat()
+            "updated_at": datetime.now(UTC).isoformat()
         }
         self.save_json(self.state_file, payload)
         return payload
@@ -284,7 +284,7 @@ class UpdateManager:
                 "percent": max(0, min(100, int(percent)))
             },
             "details": details or {},
-            "updated_at": datetime.now(timezone.utc).isoformat()
+            "updated_at": datetime.now(UTC).isoformat()
         }
         self.save_json(self.state_file, payload)
         return payload
@@ -305,7 +305,7 @@ class UpdateManager:
         data = {}
         path = "/etc/os-release"
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 for raw_line in f:
                     line = raw_line.strip()
                     if not line or line.startswith("#") or "=" not in line:
@@ -399,11 +399,7 @@ class UpdateManager:
         elif current_idx >= 0 and stable_idx >= 0 and current_idx > stable_idx:
             # Current release is newer than known stable (or mixed sources). Do not downgrade automatically.
             reason = "current_newer_than_stable"
-        elif stable_codename and current_codename and current_codename != stable_codename:
-            target_codename = stable_codename
-            target_version = stable_version
-            reason = "stable_upgrade_available"
-        elif not current_codename and stable_codename:
+        elif stable_codename and current_codename and current_codename != stable_codename or not current_codename and stable_codename:
             target_codename = stable_codename
             target_version = stable_version
             reason = "stable_upgrade_available"
@@ -463,7 +459,7 @@ class UpdateManager:
         for path in (prod_path, dev_path):
             if os.path.exists(path):
                 try:
-                    with open(path, "r") as f:
+                    with open(path) as f:
                         return f.read().strip()
                 except Exception:
                     continue
@@ -548,7 +544,7 @@ class UpdateManager:
         cache_key = f"{self.repo}/{channel}"
         cached_entry = cache.get(cache_key)
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         # Cache for 1 hour to stay safe with rate limits.
         # Manual checks may request force_refresh=True to bypass this.
         if cached_entry and not force_refresh:
@@ -820,7 +816,7 @@ class UpdateManager:
             candidates.setdefault(version, {
                 "version": version,
                 "file": name,
-                "downloaded_at": datetime.fromtimestamp(os.path.getmtime(path), timezone.utc).isoformat(),
+                "downloaded_at": datetime.fromtimestamp(os.path.getmtime(path), UTC).isoformat(),
             })
 
         def sort_key(item):
@@ -869,7 +865,7 @@ class UpdateManager:
         entry = {
             "type": "offline-system",
             "package": package_path,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "stdout": res.stdout[-2000:] if res and res.stdout else ""
         }
         self.append_history(entry)
@@ -956,7 +952,7 @@ class UpdateManager:
         entry = {
             "type": "debian",
             "packages": selected_packages,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "stdout": res.stdout[-2000:] if res.stdout else ""
         }
         self.append_history(entry)
@@ -1068,7 +1064,7 @@ class UpdateManager:
             final_info = self.get_debian_os_info()
             entry = {
                 "type": "debian-os",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "from": plan.get("current"),
                 "to": final_info,
                 "target": final_target

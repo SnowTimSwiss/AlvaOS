@@ -76,7 +76,7 @@ def _write_public(path: str, data: bytes) -> None:
 
 
 def _now() -> datetime.datetime:
-    return datetime.datetime.now(datetime.timezone.utc)
+    return datetime.datetime.now(datetime.UTC)
 
 
 def _make_ca(p: dict[str, str], host: str):
@@ -129,7 +129,7 @@ def _cert_names(cert) -> tuple[list[str], list[str]]:
 
 def _not_after(cert) -> datetime.datetime:
     value = getattr(cert, 'not_valid_after_utc', None)
-    return value if value is not None else cert.not_valid_after.replace(tzinfo=datetime.timezone.utc)
+    return value if value is not None else cert.not_valid_after.replace(tzinfo=datetime.UTC)
 
 
 def permitted(ca, names: list[str], ips: list[str]) -> tuple[list[str], list[str]]:

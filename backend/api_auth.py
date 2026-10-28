@@ -58,7 +58,7 @@ USERS_STATE_FILE = '/var/lib/alvaos/users.json'
 def load_users_state():
     try:
         if os.path.exists(USERS_STATE_FILE):
-            with open(USERS_STATE_FILE, 'r') as f:
+            with open(USERS_STATE_FILE) as f:
                 return json.load(f)
     except Exception as e:
         print(f"Error loading users state: {e}")
@@ -75,7 +75,7 @@ def save_users_state(state):
 # ── 2FA helpers ───────────────────────────────────────────────────────────────
 def _load_totp_secret():
     try:
-        with open(AUTH_FILE, 'r') as f:
+        with open(AUTH_FILE) as f:
             data = json.load(f)
         return data.get('totp_secret') or None
     except Exception:
@@ -83,7 +83,7 @@ def _load_totp_secret():
 
 def _save_totp_secret(secret):
     try:
-        with open(AUTH_FILE, 'r') as f:
+        with open(AUTH_FILE) as f:
             data = json.load(f)
         if secret is None:
             data.pop('totp_secret', None)
@@ -247,7 +247,7 @@ def login():
     password = data['password']
 
     try:
-        with open(AUTH_FILE, 'r') as f:
+        with open(AUTH_FILE) as f:
             auth_data = json.load(f)
 
         is_valid, needs_rehash = verify_password(password, auth_data)
@@ -351,7 +351,7 @@ def change_admin_password():
         return jsonify({'error': 'The new password is the same as the current one.'}), 400
 
     try:
-        with open(AUTH_FILE, 'r') as f:
+        with open(AUTH_FILE) as f:
             auth_data = json.load(f)
     except (OSError, ValueError):
         return jsonify({'error': 'The password file could not be read.'}), 500
@@ -521,7 +521,7 @@ def disable_2fa():
     if not password:
         return jsonify({'error': 'Current password is required'}), 400
     try:
-        with open(AUTH_FILE, 'r') as f:
+        with open(AUTH_FILE) as f:
             auth_data = json.load(f)
         is_valid, _ = verify_password(password, auth_data)
         if not is_valid:

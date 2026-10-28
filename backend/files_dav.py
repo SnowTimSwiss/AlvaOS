@@ -20,7 +20,7 @@ import os
 import secrets
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from email.utils import format_datetime
 from typing import Any
 from urllib.parse import quote, unquote, urlsplit
@@ -166,8 +166,8 @@ def _http_date(iso: str | None) -> str:
     try:
         when = datetime.fromisoformat(str(iso))
     except (TypeError, ValueError):
-        when = datetime.now(timezone.utc)
-    return format_datetime(when.astimezone(timezone.utc), usegmt=True)
+        when = datetime.now(UTC)
+    return format_datetime(when.astimezone(UTC), usegmt=True)
 
 
 def _response_xml(href: str, name: str, folder: bool, size: int = 0, modified: str | None = None) -> str:

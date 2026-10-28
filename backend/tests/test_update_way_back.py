@@ -91,7 +91,7 @@ def test_nothing_is_kept_without_a_signature_or_offline(manager):
 
     assert manager.ensure_way_back(get=offline).startswith("offline")
     assert manager.ensure_way_back(get=lambda url, **kw: Res(status=404)) == "no release for this version"
-    assert [n for n in os.listdir(manager.cache_dir)] == []
+    assert os.listdir(manager.cache_dir) == []
 
 
 def test_a_broken_download_leaves_nothing_behind(manager):

@@ -18,7 +18,7 @@ enough), and change one list per call.
 
 import re
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from typing import Any
 
 from flask import Blueprint, jsonify, request
@@ -39,7 +39,7 @@ MAX_REF = 1024
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec='seconds')
+    return datetime.now(UTC).isoformat(timespec='seconds')
 
 
 def album_name(name: Any) -> str:

@@ -21,7 +21,7 @@ import re
 import secrets
 import shutil
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from typing import Any, Callable
 
 import files_manager
@@ -42,7 +42,7 @@ _job: dict[str, Any] = {'running': False, 'started_at': '', 'finished_at': '', '
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def host_info(cpuinfo: str = '/proc/cpuinfo', kvm: str = '/dev/kvm') -> dict[str, Any]:

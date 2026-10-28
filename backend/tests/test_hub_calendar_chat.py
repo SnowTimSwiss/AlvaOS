@@ -376,7 +376,7 @@ def test_the_page_cannot_set_what_a_model_can(monkeypatch):
     import api_ai
     two_services()
     asked = []
-    monkeypatch.setattr(ai_assistant, "detect_thinking", lambda conn, models: asked.append((conn["id"], models)) or {m: "effort" for m in models})
+    monkeypatch.setattr(ai_assistant, "detect_thinking", lambda conn, models: asked.append((conn["id"], models)) or dict.fromkeys(models, "effort"))
     sent = [{"id": "home", "provider": "ollama-local", "base_url": "http://192.168.1.5:11434/v1",
              "models": ["llama3.1", "new:1b"], "thinking": {"llama3.1": "effort"}}]
     api_ai._ask_thinking(sent, ai_assistant.load_settings())

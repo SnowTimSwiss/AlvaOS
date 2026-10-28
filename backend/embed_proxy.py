@@ -75,7 +75,7 @@ async def _pipe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> N
                 break
             writer.write(data)
             await writer.drain()
-    except (asyncio.TimeoutError, ConnectionError, OSError):
+    except (TimeoutError, ConnectionError, OSError):
         pass
     finally:
         try:
@@ -88,7 +88,7 @@ async def handle(client_reader: asyncio.StreamReader, client_writer: asyncio.Str
     """One browser connection: any number of requests, one upstream connection."""
     try:
         up_reader, up_writer = await asyncio.wait_for(asyncio.open_connection('127.0.0.1', target_port), CONNECT_SECONDS)
-    except (asyncio.TimeoutError, OSError):
+    except (TimeoutError, OSError):
         client_writer.close()
         return
     try:
@@ -168,7 +168,7 @@ async def _relay(client_reader: asyncio.StreamReader, client_writer: asyncio.Str
                 return
             browser.start_next_cycle()
             app.start_next_cycle()
-    except (h11.ProtocolError, asyncio.TimeoutError, ConnectionError, OSError):
+    except (TimeoutError, h11.ProtocolError, ConnectionError, OSError):
         # A message that is not HTTP, a silent connection or a closed one: end it.
         return
 

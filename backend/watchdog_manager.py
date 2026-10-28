@@ -8,7 +8,7 @@ import subprocess
 import os
 import json
 import platform
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 LOG_FILE = '/var/log/alvaos/watchdog.log'
 STATE_FILE = '/var/lib/alvaos/watchdog_state.json'
@@ -27,12 +27,12 @@ class WatchdogManager:
         pass
 
     def _utc_now_iso(self):
-        return datetime.now(timezone.utc).isoformat()
+        return datetime.now(UTC).isoformat()
 
     def _load_state(self):
         try:
             if os.path.exists(STATE_FILE):
-                with open(STATE_FILE, 'r') as f:
+                with open(STATE_FILE) as f:
                     return json.load(f)
         except Exception:
             pass

@@ -109,7 +109,7 @@ def _normalize_alerts_state(payload):
 def load_alerts_state():
     try:
         if os.path.exists(ALERTS_STATE_FILE):
-            with open(ALERTS_STATE_FILE, 'r') as f:
+            with open(ALERTS_STATE_FILE) as f:
                 loaded = json.load(f)
                 normalized = _normalize_alerts_state(loaded)
                 if normalized != loaded:
@@ -579,7 +579,7 @@ def _maybe_send_telegram_critical_alerts(alerts, state):
 def _load_notifications_raw():
     try:
         if os.path.exists(NOTIFICATIONS_STATE_FILE):
-            with open(NOTIFICATIONS_STATE_FILE, 'r') as f:
+            with open(NOTIFICATIONS_STATE_FILE) as f:
                 data = json.load(f)
                 if isinstance(data, list):
                     return data

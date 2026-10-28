@@ -10,7 +10,7 @@ import io
 import json
 import os
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 
 import pytest
 
@@ -102,7 +102,7 @@ def world(tmp_path, monkeypatch):
 
     fs = FakeBtrfs()
     helper_calls = []
-    today = datetime.now(timezone.utc).replace(hour=2, minute=0, second=0, microsecond=0)
+    today = datetime.now(UTC).replace(hour=2, minute=0, second=0, microsecond=0)
     # Snapshots are taken once a day, starting ten days ago (tests may move this).
     clock = {"day": 0, "base": today - timedelta(days=10)}
 
@@ -266,8 +266,8 @@ def days_ago(now, *days):
 
 
 def test_retention_keeps_daily_weekly_monthly():
-    now = datetime(2026, 6, 30, 12, tzinfo=timezone.utc)
-    snaps = days_ago(now, *range(0, 400))
+    now = datetime(2026, 6, 30, 12, tzinfo=UTC)
+    snaps = days_ago(now, *range(400))
     keep = bv.retention_keep(snaps, keep_daily=7, keep_weekly=4, keep_monthly=6, now=now)
     assert {f"s{d}" for d in range(7)} <= keep                 # every day of the last week
     assert "s10" not in keep and "s200" not in keep
@@ -276,7 +276,7 @@ def test_retention_keeps_daily_weekly_monthly():
 
 
 def test_retention_always_keeps_the_newest():
-    now = datetime(2026, 6, 30, tzinfo=timezone.utc)
+    now = datetime(2026, 6, 30, tzinfo=UTC)
     assert bv.retention_keep(days_ago(now, 900, 1000), 0, 0, 0, now) == {"s900"}
 
 
@@ -285,7 +285,7 @@ def test_sync_applies_retention(world):
     names = [world.sync()["snapshot_name"] for _ in range(30)]   # the last 30 days, one per day
     kept = world.fs.dirs[world.vault_dir]
     expected = bv.retention_keep([(n, bv.snapshot_time(n)) for n in names], 14, 8, 12,
-                                 datetime.now(timezone.utc))
+                                 datetime.now(UTC))
     assert kept == expected
     assert names[-1] in kept and len(kept) < 30
 

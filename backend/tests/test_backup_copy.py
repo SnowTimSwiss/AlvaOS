@@ -3,7 +3,7 @@
 import io
 import os
 import subprocess
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 
 import pytest
 
@@ -133,7 +133,7 @@ def test_a_week_without_a_copy_is_noticed(setup):
     copier.configure({"pool_id": "usb-uuid-0000000000000000000000"})
     assert copier.status()["stale"] is False
     settings = copier.settings()
-    settings["enabled_at"] = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
+    settings["enabled_at"] = (datetime.now(UTC) - timedelta(days=8)).isoformat()
     bc.save_settings(settings, copier.settings_path)
     assert copier.status()["stale"] is True
 

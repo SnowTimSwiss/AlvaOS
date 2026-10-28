@@ -8,7 +8,7 @@ it reports the exclusive size: about what deleting that one would free.
 
 import os
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from typing import Any, Callable
 
 from backup_manager import CMD as BACKUP_CMD, FIND_LIST_FORMAT, parse_find_listing
@@ -59,7 +59,7 @@ class SpaceScanner:
                 return False, "A space check is already running. Try again when it is done."
             self._running = pool_id
             previous = self._reports.get(pool_id) or {}
-            self._reports[pool_id] = {**previous, "started_at": datetime.now(timezone.utc).isoformat()}
+            self._reports[pool_id] = {**previous, "started_at": datetime.now(UTC).isoformat()}
         if background:
             threading.Thread(target=self._scan, args=(pool_id, mount_point), daemon=True,
                              name=f"space-{pool_id}").start()
@@ -138,5 +138,5 @@ class SpaceScanner:
             if update["state"] == "error" and previous.get("result"):
                 update["result"] = previous["result"]   # keep showing the last good one
             self._reports[pool_id] = {**previous, **update,
-                                      "finished_at": datetime.now(timezone.utc).isoformat()}
+                                      "finished_at": datetime.now(UTC).isoformat()}
             self._running = None

@@ -20,7 +20,7 @@ import secrets
 import socket
 import threading
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from typing import Any
 from urllib.parse import quote
 
@@ -78,7 +78,7 @@ def _read_json(path: str) -> dict[str, Any]:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 # ── Sessions ─────────────────────────────────────────────────────────────────
@@ -2150,7 +2150,7 @@ def _count_file(token: str) -> None:
         links = _load_links()
         if token in links:
             links[token]['new_files'] = int(links[token].get('new_files') or 0) + 1
-            links[token]['last_upload'] = datetime.now(timezone.utc).isoformat(timespec='seconds')
+            links[token]['last_upload'] = datetime.now(UTC).isoformat(timespec='seconds')
             _save_links(links)
 
 

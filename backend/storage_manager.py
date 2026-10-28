@@ -11,7 +11,7 @@ import platform
 import re
 import subprocess
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 from common import CMD, run_sudo_command, ensure_directories, parse_size_to_bytes
 
@@ -49,7 +49,7 @@ def is_secure_system_device(device_name):
 
     try:
         root_device = None
-        with open('/proc/mounts', 'r') as f:
+        with open('/proc/mounts') as f:
             for line in f:
                 parts = line.split()
                 if len(parts) >= 2 and parts[1] == '/':
@@ -97,9 +97,7 @@ def _is_safe_path(path):
         if normalized.startswith(root) or normalized == root.rstrip('/'):
             return True
     # Special case: allow root for probing
-    if normalized == '/':
-        return True
-    return False
+    return normalized == '/'
 
 
 def _existing_probe_path(path):
@@ -221,9 +219,7 @@ def _smartctl_has_payload(payload):
         return True
     if payload.get('scsi_error_counter_log'):
         return True
-    if payload.get('power_on_time'):
-        return True
-    return False
+    return bool(payload.get('power_on_time'))
 
 
 def _compact_smart_error(error_text):
@@ -289,7 +285,7 @@ def load_pools_state():
     """Load pools state from file"""
     try:
         if os.path.exists(POOLS_STATE_FILE):
-            with open(POOLS_STATE_FILE, 'r') as f:
+            with open(POOLS_STATE_FILE) as f:
                 return json.load(f)
     except Exception:
         pass
@@ -771,7 +767,7 @@ def _mount_degraded(pool_id: str, pool_info: dict[str, Any], mount_point: str) -
     if err or res is None or res.returncode != 0:
         print(f"Degraded mount of {pool_info.get('name')} failed: {err}")
         return False
-    pool_info['mounted_degraded_at'] = datetime.now(timezone.utc).isoformat()
+    pool_info['mounted_degraded_at'] = datetime.now(UTC).isoformat()
     save_pools_state({**load_pools_state(), pool_id: pool_info})
     print(f"Mounted {pool_info.get('name')} without its missing disk. Replace the disk soon.")
     return True

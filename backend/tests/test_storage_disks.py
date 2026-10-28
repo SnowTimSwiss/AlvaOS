@@ -134,7 +134,7 @@ def api(tmp_path, monkeypatch):
     monkeypatch.setattr(api_storage, 'run_sudo_command', runner)
     monkeypatch.setattr(api_storage, '_is_mounted', lambda path: path in mounted)
     monkeypatch.setattr(api_storage, 'detect_btrfs_pools', lambda: ([], None))
-    monkeypatch.setattr(api_storage, 'load_shares_state', lambda: {})
+    monkeypatch.setattr(api_storage, 'load_shares_state', dict)
 
     inventory = [
         disk('sda', [part('sda2', mountpoint='/', fstype='btrfs')]),

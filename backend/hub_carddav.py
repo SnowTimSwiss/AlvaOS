@@ -257,4 +257,4 @@ def proppatch(parts: list[str]) -> Response:
                 m = re.match(r'\{(.*)\}(.*)', child.tag)
                 if m and m.group(1) in dav.PREFIX:
                     asked.append((m.group(1), m.group(2)))
-    return dav._multistatus([dav._response(request.path, {k: '' for k in asked}, asked)])
+    return dav._multistatus([dav._response(request.path, dict.fromkeys(asked, ''), asked)])

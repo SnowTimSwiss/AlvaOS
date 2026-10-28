@@ -18,7 +18,7 @@ repeated by the page for the days it shows.
 
 import re
 import secrets
-from datetime import date, datetime, timezone
+from datetime import date, datetime, UTC
 from typing import Any, Callable
 
 from flask import Blueprint, jsonify, request
@@ -144,7 +144,7 @@ def _places(session: dict[str, Any]) -> tuple[list[hub_data.Place], bool]:
 
 
 def _stamp() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec='seconds')
+    return datetime.now(UTC).isoformat(timespec='seconds')
 
 
 def birthdays(session: dict[str, Any]) -> dict[str, Any] | None:

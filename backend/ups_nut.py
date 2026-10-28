@@ -29,7 +29,7 @@ import secrets
 import subprocess
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from typing import Any, Callable
 
 from common import CMD
@@ -72,7 +72,7 @@ _job: dict[str, Any] = {'running': False, 'step': '', 'error': '', 'finished_at'
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _read(path: str) -> str:
@@ -231,7 +231,7 @@ class NutUps:
             'settings': public,
             'detected': detect(self.sys_root),
             'live': live,
-            'on_battery_since': datetime.fromtimestamp(self.on_battery_since, timezone.utc).isoformat()
+            'on_battery_since': datetime.fromtimestamp(self.on_battery_since, UTC).isoformat()
             if self.on_battery_since else None,
             'job': job,
             'shutdown_choices': list(SHUTDOWN_CHOICES),

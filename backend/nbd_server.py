@@ -168,7 +168,7 @@ class NbdServer:
                 return
             try:
                 conn, addr = sock.accept()
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except OSError:
                 return

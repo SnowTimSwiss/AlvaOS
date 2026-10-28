@@ -1,6 +1,6 @@
 """Tests for the pure helper functions in backend/common.py."""
 
-from datetime import timezone
+from datetime import UTC
 
 import common
 
@@ -45,7 +45,7 @@ def test_parse_iso_handles_z_suffix_and_offset():
     dt = common._parse_iso("2026-06-26T12:00:00Z")
     assert dt is not None
     assert dt.tzinfo is not None
-    assert dt.utcoffset() == timezone.utc.utcoffset(None)
+    assert dt.utcoffset() == UTC.utcoffset(None)
 
 
 def test_parse_iso_invalid_returns_none():

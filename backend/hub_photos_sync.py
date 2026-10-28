@@ -29,7 +29,7 @@ own date; afterwards the phone reports them (`done`).
 import os
 import re
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from typing import Any
 
 from flask import Blueprint, jsonify, request
@@ -48,7 +48,7 @@ MAX_BATCH = 5000
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec='seconds')
+    return datetime.now(UTC).isoformat(timespec='seconds')
 
 
 def folder_name(name: Any, fallback: str = 'Phone') -> str:

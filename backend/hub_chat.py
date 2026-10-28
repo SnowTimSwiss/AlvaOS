@@ -23,7 +23,7 @@ import json
 import re
 import secrets
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from typing import Any, Callable, Iterator
 
 from flask import Blueprint, Response, jsonify, request
@@ -46,7 +46,7 @@ SYSTEM_PROMPT = ('You are a helpful assistant. Answer in the language of the que
 
 
 def _stamp() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec='seconds')
+    return datetime.now(UTC).isoformat(timespec='seconds')
 
 
 def _chat_file(chat_id: str) -> str:
@@ -162,7 +162,7 @@ def _expire(place: hub_data.Place, days: int) -> None:
     """Chats not used for `days` go, unless pinned or kept."""
     if days <= 0:
         return
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec='seconds')
+    cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat(timespec='seconds')
     with hub_data.lock(place, INDEX):
         index, _ = hub_data.read(place, INDEX)
         rows = [c for c in (index or {}).get('chats') or [] if isinstance(c, dict)]
