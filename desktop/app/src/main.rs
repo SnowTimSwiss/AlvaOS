@@ -287,6 +287,17 @@ async fn forget(app: &AppHandle) {
 
 // ── Windows ───────────────────────────────────────────────────────────────────
 
+/// What opening AlvaOS means: the Hub apps in their window; the small window when that is
+/// not possible (not set up, the window switched off, the NAS not reached).
+async fn open_interface(app: &AppHandle) {
+    let me = app.state::<App>();
+    let config = me.config();
+    if config.is_set_up() && config.use_window && config.connected && show_hub(app).await.is_ok() {
+        return;
+    }
+    show_main(app);
+}
+
 fn show_main(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
@@ -676,7 +687,11 @@ fn main() {
     let store = Store::open();
     let config = store.load();
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // Started again (from the launcher, a menu, a shortcut): the interface, not just the tray.
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move { open_interface(&app).await });
+        }))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -698,7 +713,9 @@ fn main() {
             build_tray(app.handle())?;
             let handle = app.handle().clone();
             let config = app.state::<App>().config();
-            if !hidden || !config.is_set_up() {
+            // Started by the person (not quietly at login): the interface opens once the NAS is there.
+            let open_now = !hidden && config.is_set_up() && config.use_window && config.connected;
+            if !hidden && !open_now || !config.is_set_up() {
                 show_main(&handle);
             }
             syncing::watch(app.handle());
@@ -706,7 +723,11 @@ fn main() {
             tauri::async_runtime::spawn(async move {
                 let config = handle.state::<App>().config();
                 if config.is_set_up() && config.connected {
-                    if go_online(&handle).await.is_ok() && config.use_drive && handle.state::<App>().status.lock().unwrap().state == "ok" {
+                    let online = go_online(&handle).await.is_ok();
+                    if open_now {
+                        open_interface(&handle).await;
+                    }
+                    if online && config.use_drive && handle.state::<App>().status.lock().unwrap().state == "ok" {
                         let _ = set_drive(&handle, true).await;
                     }
                 } else {
