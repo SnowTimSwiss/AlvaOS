@@ -52,6 +52,9 @@ Chosen at setup (after "What do you want on this computer?") or later under **Sy
 - **Three-way:** each folder remembers how both sides were after its last round (`sync/<id>.json` in the app's folder), so it knows what changed where.
 - **Nothing gets lost:** changed on both sides → both kept (`name (conflict <computer> <date>).ext`); replaced or deleted on the NAS → into the share's trash; deleted on the NAS → into this computer's trash. Many deletions at once (20 or more, over half the files) wait for a yes ("Delete them too" / "Bring them back"). A missing local folder (unplugged disk) changes nothing.
 - **Read-only shares** only come down.
+- **Don't sync:** under a folder's "…" button: names (`*.mov`, `node_modules`) in any folder, or paths from the folder's top (`Videos/`). What is left out is not sent, not fetched and not deleted on either side; what was synced before is just forgotten and stays where it is.
+- **What is going on:** the row shows the file and how far the round is (3 of 12) with a bar; the "…" window lists what happened lately (sent, received, deleted, kept twice) and the conflict copies that are still there.
+- **Network hiccups:** a file is tried three times (after 2 and 8 seconds) when the NAS is busy or the connection drops; a stalled connection ends after 90 seconds without data.
 - The tray shows the state ("Up to date", "Syncing…") and has **Sync now** and **Open the sync folder**; the settings page can pause it. Signing out stops syncing; the files stay.
 
 Tested in memory and against the real Hub, WebDAV and helper (`scripts/dev/sync_against_nas.py`). Not tested yet: Windows and macOS.

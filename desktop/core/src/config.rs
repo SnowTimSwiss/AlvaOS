@@ -26,6 +26,9 @@ pub struct SyncFolder {
     pub local: PathBuf,
     /// A share the person may only read: it only comes down.
     pub read_only: bool,
+    /// What is left out, one pattern per line ("Don't sync", see sync::Filter).
+    #[serde(default)]
+    pub exclude: Vec<String>,
 }
 
 impl SyncFolder {

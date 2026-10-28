@@ -523,7 +523,9 @@ Calendar › Create › Birthday: type a name and a year; choose "And make a new
 4. Delete a file on the NAS: it lands in this computer's trash. Delete one here: it lands in the share's trash on the NAS.
 5. Delete 25 files here at once: the app asks; try both "Bring them back" and "Delete them too".
 6. Pause in the settings: nothing moves; switch back: it catches up. Tray: "Sync now", "Open the sync folder".
-7. Windows and macOS: the same, once each.
+7. Windows (and Linux): the same, once each.
+8. Sync folder "…" › Don't sync: add `*.mov`, save; a .mov in the folder is not sent, one on the NAS is not fetched, one synced before stays on both sides.
+9. Copy a big folder in: the row shows "4 of 12 · name" and a bar; the "…" window lists what was sent. Pull the network cable in the middle: the file is tried again, no error shows for a short break.
 
 ## 12v The desktop app (Windows, Linux, macOS)
 

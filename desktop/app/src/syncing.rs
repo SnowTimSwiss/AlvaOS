@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use alvaos_core::config::{default_sync_root, SyncFolder};
@@ -33,7 +33,21 @@ pub struct FolderStatus {
     pub ask: usize,
     pub problems: Vec<String>,
     pub changed: usize,
+    /// While a round runs: which file, and how far.
+    pub progress: Option<sync::Progress>,
+    /// Conflict copies made here (shown while they are still there).
+    pub conflicts: Vec<String>,
+    /// What was done lately, the newest first.
+    pub recent: Vec<Activity>,
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Activity {
+    pub at: i64,
+    pub text: String,
+}
+
+const RECENT: usize = 40;
 
 #[derive(Default)]
 pub struct Syncing {
@@ -95,7 +109,9 @@ pub fn state_json(app: &AppHandle) -> Value {
         .iter()
         .map(|f| {
             let status = folders.get(&f.id).cloned().unwrap_or(FolderStatus { state: "waiting".into(), ..Default::default() });
+            let conflicts: Vec<&String> = status.conflicts.iter().filter(|c| f.local.join(c.as_str()).exists()).collect();
             json!({"id": f.id, "label": f.label(), "share": f.share, "folder": f.folder, "local": f.local, "read_only": f.read_only,
+                   "exclude": f.exclude, "conflicts": conflicts,
                    "status": status, "ago": status.last.map(|at| ago(now() - at))})
         })
         .collect();
@@ -148,13 +164,23 @@ pub async fn round(app: &AppHandle) {
     let (Some(hub), Some(dav), Some(token)) = (hub, dav, me.token()) else { return };
     let computer = DeviceInfo::this_computer().name;
     for folder in &config.sync {
-        set(app, &folder.id, |s| s.state = "syncing".into());
+        set(app, &folder.id, |s| { s.state = "syncing".into(); s.progress = None; });
         let remote = DavRemote::new(&hub, &dav, &folder.share, &folder.folder, &config.user, &token, folder.read_only);
         let allow = me.syncing.allow_once.lock().unwrap().remove(&folder.id);
-        let options = Options { computer: computer.clone(), allow_many_deletions: allow, trash: None };
+        let tell = {
+            let (handle, id) = (app.clone(), folder.id.clone());
+            Arc::new(move |p: sync::Progress| set(&handle, &id, |s| s.progress = Some(p)))
+        };
+        let options = Options { computer: computer.clone(), allow_many_deletions: allow, trash: None,
+                                exclude: folder.exclude.clone(), progress: Some(tell) };
         let result = sync::sync_once(&folder.local, &remote, &me.store.sync_state(&folder.id), &options).await;
         set(app, &folder.id, |s| match result {
             Ok(report) => {
+                let mut recent: Vec<Activity> = report.log.iter().rev().map(|text| Activity { at: now(), text: text.clone() }).collect();
+                recent.extend(std::mem::take(&mut s.recent));
+                recent.truncate(RECENT);
+                let mut conflicts = std::mem::take(&mut s.conflicts);
+                conflicts.extend(report.conflict_files.iter().cloned());
                 *s = FolderStatus {
                     state: if report.problems.is_empty() { "ok" } else { "problem" }.into(),
                     last: Some(now()),
@@ -162,14 +188,19 @@ pub async fn round(app: &AppHandle) {
                     ask: 0,
                     changed: report.changed(),
                     problems: report.problems.into_iter().take(20).collect(),
+                    progress: None,
+                    conflicts,
+                    recent,
                 };
             }
             Err(err) if err.is::<ManyDeletions>() => {
+                s.progress = None;
                 s.state = "ask".into();
                 s.ask = err.downcast_ref::<ManyDeletions>().map(|m| m.count).unwrap_or(0);
                 s.message = err.to_string();
             }
             Err(err) => {
+                s.progress = None;
                 s.state = "problem".into();
                 s.message = format!("{err:#}");
             }
@@ -248,9 +279,20 @@ pub async fn add_sync(app: AppHandle, state: State<'_, App>, share: String, fold
     }
     // Files there already are fine: the first round puts both together (a conflict keeps both).
     let id = link::hex(&link::new_key()[..5]);
-    config.sync.push(SyncFolder { id: id.clone(), share, folder, local: place, read_only });
+    config.sync.push(SyncFolder { id: id.clone(), share, folder, local: place, read_only, exclude: Vec::new() });
     state.save(config)?;
     watch(&app);
+    state.syncing.kick.notify_one();
+    Ok(state_json(&app))
+}
+
+/// What a sync folder leaves out ("Don't sync"), one pattern per line.
+#[tauri::command]
+pub async fn set_exclude(app: AppHandle, state: State<'_, App>, id: String, text: String) -> Result<Value, String> {
+    let mut config = state.config();
+    let folder = config.sync.iter_mut().find(|f| f.id == id).ok_or("This sync folder is not there any more.")?;
+    folder.exclude = text.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_string).collect();
+    state.save(config)?;
     state.syncing.kick.notify_one();
     Ok(state_json(&app))
 }
