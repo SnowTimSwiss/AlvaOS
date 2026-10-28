@@ -63,6 +63,14 @@ def clean_response_headers(headers: list[tuple[bytes, bytes]]) -> list[tuple[byt
     return out
 
 
+def _wire(connection: h11.Connection, event: h11.Event) -> bytes:
+    # h11 returns None only for a ConnectionClosed event, which is never sent here.
+    data = connection.send(event)
+    if data is None:
+        raise RuntimeError(f'nothing to send for {type(event).__name__}')
+    return data
+
+
 async def _read(reader: asyncio.StreamReader) -> bytes:
     return await asyncio.wait_for(reader.read(CHUNK), IDLE_SECONDS)
 
@@ -119,11 +127,11 @@ async def _relay(client_reader: asyncio.StreamReader, client_writer: asyncio.Str
                     return
                 if isinstance(event, h11.Request):
                     request = event
-                    up_writer.write(app.send(h11.Request(method=event.method, target=event.target, headers=event.headers)))
+                    up_writer.write(_wire(app, h11.Request(method=event.method, target=event.target, headers=event.headers)))
                 elif isinstance(event, h11.Data):
-                    up_writer.write(app.send(h11.Data(data=event.data)))
+                    up_writer.write(_wire(app, h11.Data(data=event.data)))
                 elif isinstance(event, h11.EndOfMessage):
-                    up_writer.write(app.send(h11.EndOfMessage(headers=event.headers)))
+                    up_writer.write(_wire(app, h11.EndOfMessage(headers=event.headers)))
                     await up_writer.drain()
                     break
                 elif browser.their_state is h11.MIGHT_SWITCH_PROTOCOL or event is h11.PAUSED:
@@ -141,15 +149,15 @@ async def _relay(client_reader: asyncio.StreamReader, client_writer: asyncio.Str
                 if isinstance(event, (h11.Response, h11.InformationalResponse)):
                     headers = clean_response_headers(list(event.headers))
                     cls = h11.InformationalResponse if isinstance(event, h11.InformationalResponse) else h11.Response
-                    client_writer.write(browser.send(cls(status_code=event.status_code, headers=headers, reason=event.reason)))
+                    client_writer.write(_wire(browser, cls(status_code=event.status_code, headers=headers, reason=event.reason)))
                     if event.status_code == 101:
                         switched = True
                         break
                 elif isinstance(event, h11.Data):
-                    client_writer.write(browser.send(h11.Data(data=event.data)))
+                    client_writer.write(_wire(browser, h11.Data(data=event.data)))
                     await client_writer.drain()
                 elif isinstance(event, h11.EndOfMessage):
-                    client_writer.write(browser.send(h11.EndOfMessage(headers=event.headers)))
+                    client_writer.write(_wire(browser, h11.EndOfMessage(headers=event.headers)))
                     await client_writer.drain()
                     break
                 elif isinstance(event, h11.ConnectionClosed):

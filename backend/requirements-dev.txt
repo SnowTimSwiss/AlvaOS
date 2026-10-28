@@ -1,3 +1,12 @@
 # Development / test dependencies (not needed at runtime).
 -r requirements.txt
 pytest==8.3.3
+# The linters CI runs (see .github/workflows/test.yml).
+ruff==0.15.8
+mypy==2.3.1
+# Type stubs for mypy; the runtime libraries ship none of their own.
+types-psutil==7.2.2.20260906
+types-PyYAML==6.0.12.20260906
+types-qrcode==8.2.0.20260518
+types-requests==2.33.0.20261006
+types-waitress==3.0.1.20260724
