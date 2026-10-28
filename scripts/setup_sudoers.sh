@@ -20,11 +20,13 @@ if [ ! -f "$SUDOERS_SOURCE" ]; then
     exit 1
 fi
 
-cp "$SUDOERS_SOURCE" "$SUDOERS_FILE"
-
-chown root:root "$SUDOERS_FILE"
-chmod 440 "$SUDOERS_FILE"
-visudo -c -f "$SUDOERS_FILE" >/dev/null
+# Check the new rules before they replace the file: a broken sudoers file
+# locks everyone out of sudo, and set -e stops the script before the install.
+checked="$(mktemp)"
+trap 'rm -f "$checked"' EXIT
+cp "$SUDOERS_SOURCE" "$checked"
+visudo -c -f "$checked" >/dev/null
+install -o root -g root -m 0440 "$checked" "$SUDOERS_FILE"
 
 echo "Success! Sudo permissions configured."
 echo "You can now run updates and management tasks."
