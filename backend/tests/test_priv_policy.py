@@ -794,3 +794,55 @@ def test_the_share_sections_alvaos_writes_pass_the_smb_conf_check():
     for bad in (b'[x]\n vfs objects = /tmp/evil.so\n', b'[x]\n vfs objects = recycle full_audit\n'):
         with pytest.raises(p.PolicyError):
             p.check_smb_conf(DEBIAN_SMB_CONF + bad, DEBIAN_SMB_CONF)
+
+
+# ── Escapes found in the security review ─────────────────────────────────────
+
+def test_btrfs_receive_and_default_follow_symlinks_to_the_real_target():
+    # The backend can make a symlink under its own data directory. btrfs follows it,
+    # so the check must look where the target really is, not at the string.
+    links = {'/var/lib/alvaos/restore': '/etc'}
+    system = FakeSystem(links=links)
+    denied('/usr/bin/btrfs', 'receive', '/var/lib/alvaos/restore', system=system)
+    denied('/usr/bin/btrfs', 'receive', '-f', '/var/lib/alvaos/x.stream', '/var/lib/alvaos/restore', system=system)
+    denied('/usr/bin/btrfs', 'subvolume', 'set-default', '256', '/var/lib/alvaos/restore', system=system)
+
+
+def test_mount_by_uuid_never_takes_the_system_disk():
+    # The UUID is only a name; the device it points to decides. Mounting the
+    # system disk under /mnt/alvaos would let the backend read its files.
+    uuid = '0b6c7d3e-1234-4d5e-8f90-abcdef012345'
+    system = FakeSystem(links={f'/dev/disk/by-uuid/{uuid}': '/dev/sda2'}, system_disks=('sda',))
+    denied('/usr/bin/mount', '-U', uuid, '/mnt/alvaos/main', system=system)
+    pool = FakeSystem(links={f'/dev/disk/by-uuid/{uuid}': '/dev/sdb1'}, system_disks=('sda',))
+    allowed('/usr/bin/mount', '-U', uuid, '/mnt/alvaos/main', system=pool)
+
+
+def test_samba_wins_hook_runs_a_program_and_is_denied():
+    with pytest.raises(p.PolicyError):
+        p.check_smb_conf(b'[media]\n    path = /mnt/alvaos/main/media\n    wins hook = /var/lib/alvaos/evil.sh\n')
+
+
+@pytest.mark.parametrize('service', [
+    {'image': 'alpine', 'devices': ['/dev/dri/../sda:/dev/sda']},
+    {'image': 'alpine', 'network_mode': 'host'},
+    {'image': 'alpine', 'device_cgroup_rules': ['b 8:0 rwm']},
+    {'image': 'alpine', 'env_file': '/etc/shadow'},
+    {'image': 'alpine', 'build': {'context': '/'}},
+    {'image': 'alpine', 'extends': {'file': '/etc/evil.yml', 'service': 'x'}},
+    {'image': 'alpine', 'secrets': ['host_shadow']},
+])
+def test_compose_host_access_through_other_keys_is_denied(service):
+    import yaml
+
+    with pytest.raises(p.PolicyError):
+        p.check_compose(yaml.safe_dump({'services': {'x': service}}).encode())
+
+
+def test_compose_include_and_top_level_secrets_are_denied():
+    import yaml
+
+    base = {'services': {'x': {'image': 'alpine'}}}
+    for extra in ({'include': ['/root/evil.yml']}, {'secrets': {'shadow': {'file': '/etc/shadow'}}}):
+        with pytest.raises(p.PolicyError):
+            p.check_compose(yaml.safe_dump({**base, **extra}).encode())
