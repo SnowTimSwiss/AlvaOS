@@ -1082,15 +1082,6 @@ async function deployComposeApp() {
     }
 }
 
-// Keep compatibility for existing calls
-async function loadInstalledApps() {
-    await loadInstalledWorkspace(true);
-}
-
-async function loadContainers() {
-    await loadInstalledWorkspace(true);
-}
-
 // Show installation wizard instead of prompt
 // ── Install: where files go, and ports ──────────────────────────────────────
 
@@ -2088,13 +2079,6 @@ async function loadContainerLogs(containerId, scrollToBottom = false) {
 
 function viewLogs(containerId) {
     openLogsModal(containerId);
-}
-
-function manageApp(appId) {
-    setActiveTab('installed');
-    if (installedAppsCache.some((app) => app.app_id === appId)) {
-        selectInstalledApp(appId);
-    }
 }
 
 document.getElementById('refresh-apps-btn')?.addEventListener('click', async () => {

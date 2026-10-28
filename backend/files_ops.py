@@ -21,7 +21,7 @@ import shutil
 import stat
 import time
 from datetime import datetime, timedelta
-from typing import Any, BinaryIO, Dict, List, Optional
+from typing import Any, BinaryIO
 
 DATA_ROOT = '/mnt/alvaos'
 TRASH_DIR = '.alvaos-trash'
@@ -92,7 +92,7 @@ def _like_parent(fd: int, parent_fd: int, is_dir: bool) -> None:
         pass
 
 
-def list_dir(dir_path: str, root: str = DATA_ROOT) -> List[Dict[str, Any]]:
+def list_dir(dir_path: str, root: str = DATA_ROOT) -> list[dict[str, Any]]:
     """What is in a folder: name, type, size, modified. Run as the person, the
     kernel decides what they may see."""
     dfd = open_dir(dir_path, root)
@@ -124,7 +124,7 @@ SEARCH_DEPTH = 40
 
 
 def search(dir_path: str, query: str, root: str = DATA_ROOT, limit: int = SEARCH_LIMIT,
-           seconds: float = SEARCH_SECONDS) -> Dict[str, Any]:
+           seconds: float = SEARCH_SECONDS) -> dict[str, Any]:
     """Files and folders below a folder whose name holds every word of the
     query (any case). Never follows symlinks; folders the person cannot open
     are skipped. Stops at `limit` results, SEARCH_DEPTH levels or after
@@ -133,7 +133,7 @@ def search(dir_path: str, query: str, root: str = DATA_ROOT, limit: int = SEARCH
     if not words or len(query) > 200:
         raise FileOpError('Type what to look for.')
     deadline = time.monotonic() + seconds
-    found: List[Dict[str, Any]] = []
+    found: list[dict[str, Any]] = []
     state = {'complete': True}
 
     def walk(dfd: int, rel: str, depth: int) -> None:
@@ -181,7 +181,7 @@ TREE_SECONDS = 25
 
 
 def tree(dir_path: str, root: str = DATA_ROOT, limit: int = TREE_LIMIT,
-         seconds: float = TREE_SECONDS) -> Dict[str, Any]:
+         seconds: float = TREE_SECONDS) -> dict[str, Any]:
     """Every file and folder below a folder, in one answer, for the sync
     folder of the computer app: relative path, kind, size, modification time
     (whole seconds). Never follows symlinks; skips the trash, unfinished
@@ -189,7 +189,7 @@ def tree(dir_path: str, root: str = DATA_ROOT, limit: int = TREE_LIMIT,
     stopped early (`limit`, SEARCH_DEPTH levels, `seconds`): then the
     computer must not take anything missing for deleted."""
     deadline = time.monotonic() + seconds
-    found: List[Dict[str, Any]] = []
+    found: list[dict[str, Any]] = []
     state = {'complete': True}
 
     def walk(dfd: int, rel: str, depth: int) -> None:
@@ -242,12 +242,12 @@ MEDIA_LIMIT = 5000
 
 
 def media(dir_path: str, root: str = DATA_ROOT, limit: int = MEDIA_LIMIT,
-          seconds: float = SEARCH_SECONDS) -> Dict[str, Any]:
+          seconds: float = SEARCH_SECONDS) -> dict[str, Any]:
     """Photos and videos below a folder, newest first, for the Photos view.
     Like search: no symlinks, skips what the person cannot open, hidden
     folders, the trash and unfinished uploads; stops at `limit` or `seconds`."""
     deadline = time.monotonic() + seconds
-    found: List[Dict[str, Any]] = []
+    found: list[dict[str, Any]] = []
     state = {'complete': True}
 
     def walk(dfd: int, rel: str, depth: int) -> None:
@@ -389,7 +389,7 @@ APP_DATA_LIMIT = 16 * 1024 * 1024
 APP_DATA_NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$')
 
 
-def _app_data_parts(rel: str) -> List[str]:
+def _app_data_parts(rel: str) -> list[str]:
     parts = rel.split('/') if isinstance(rel, str) else []
     if not 1 <= len(parts) <= 4 or not all(p == '.alvaos' or APP_DATA_NAME.match(p) for p in parts) \
             or parts[-1] == '.alvaos':
@@ -397,7 +397,7 @@ def _app_data_parts(rel: str) -> List[str]:
     return parts
 
 
-def _app_data_dir(dir_path: str, parts: List[str], root: str, create: bool) -> Optional[int]:
+def _app_data_dir(dir_path: str, parts: list[str], root: str, create: bool) -> int | None:
     """The folder of an app data file, made on the way when `create`; None
     when it is not there and need not be."""
     fd = open_dir(dir_path, root)
@@ -420,7 +420,7 @@ def _app_data_dir(dir_path: str, parts: List[str], root: str, create: bool) -> O
     return fd
 
 
-def read_app_data(dir_path: str, rel: str, root: str = DATA_ROOT) -> Dict[str, Any]:
+def read_app_data(dir_path: str, rel: str, root: str = DATA_ROOT) -> dict[str, Any]:
     """{'found': False} or {'found': True, 'text': ...}."""
     parts = _app_data_parts(rel)
     dfd = _app_data_dir(dir_path, parts, root, create=False)
@@ -545,7 +545,7 @@ def part_write(dir_path: str, name: str, offset: int, src: BinaryIO, root: str =
 EARLIEST_MTIME = 315532800   # 1980-01-01: older dates from a browser are not real
 
 
-def part_finish(dir_path: str, name: str, size: int, root: str = DATA_ROOT, mtime: Optional[int] = None) -> None:
+def part_finish(dir_path: str, name: str, size: int, root: str = DATA_ROOT, mtime: int | None = None) -> None:
     """The last piece arrived: give the file its name, never over another.
     With `mtime` (seconds), the file keeps the date it had on the device it
     came from, so a photo lands in the right month in the Photos view."""
@@ -680,11 +680,11 @@ def _copy_file_at(src_dir_fd: int, name: str, dst_dir_fd: int, new_name: str) ->
         os.close(sfd)
 
 
-def versions(name: str, dirs: List[str], root: str = DATA_ROOT) -> List[Optional[Dict[str, Any]]]:
+def versions(name: str, dirs: list[str], root: str = DATA_ROOT) -> list[dict[str, Any] | None]:
     """For each folder (a restore point's copy of one folder), whether it
     holds a regular file `name`: its size and modification time, or None."""
     check_name(name)
-    out: List[Optional[Dict[str, Any]]] = []
+    out: list[dict[str, Any] | None] = []
     for dir_path in dirs:
         try:
             dfd = open_dir(dir_path, root)
@@ -802,7 +802,7 @@ def copy(src_dir: str, name: str, dst_dir: str, root: str = DATA_ROOT) -> str:
 ZIP_NAMES_MAX = 200
 
 
-def zip_folder(dir_path: str, out: BinaryIO, root: str = DATA_ROOT, names: Optional[List[str]] = None) -> int:
+def zip_folder(dir_path: str, out: BinaryIO, root: str = DATA_ROOT, names: list[str] | None = None) -> int:
     """Write a folder as a ZIP stream (no temporary file), or only the listed
     files and folders in it. Walks with descriptors and never follows
     symlinks; files that cannot be read (no access) are left out. Returns the
@@ -874,7 +874,7 @@ UNZIP_ENTRIES_MAX = 50000
 UNZIP_BYTES_MAX = 50 * 1024 ** 3
 
 
-def unzip(dir_path: str, name: str, root: str = DATA_ROOT) -> Dict[str, Any]:
+def unzip(dir_path: str, name: str, root: str = DATA_ROOT) -> dict[str, Any]:
     """Unpack a ZIP file of a folder into a new folder next to it, named like
     the ZIP. Nothing is overwritten; paths that climb out ("../", absolute),
     links and passworded files are refused or skipped, and the size is capped
@@ -973,7 +973,7 @@ def unzip(dir_path: str, name: str, root: str = DATA_ROOT) -> Dict[str, Any]:
 SIZE_SECONDS = 25
 
 
-def folder_size(dir_path: str, name: str, root: str = DATA_ROOT, seconds: float = SIZE_SECONDS) -> Dict[str, Any]:
+def folder_size(dir_path: str, name: str, root: str = DATA_ROOT, seconds: float = SIZE_SECONDS) -> dict[str, Any]:
     """How much a file or folder holds: bytes, files and folders. Looks at
     everything the person may open (the trash left out) and stops after
     `seconds`, saying that the answer is not complete then."""
@@ -1045,7 +1045,7 @@ def _inside(child: str, parent: str) -> bool:
     return child == parent or child.startswith(parent.rstrip('/') + '/')
 
 
-def _open_trash(share_fd: int, create: bool) -> Optional[int]:
+def _open_trash(share_fd: int, create: bool) -> int | None:
     if create:
         try:
             os.mkdir(TRASH_DIR, 0o700, dir_fd=share_fd)
@@ -1063,7 +1063,7 @@ def _open_trash(share_fd: int, create: bool) -> Optional[int]:
 
 
 def trash(share_root: str, dir_path: str, name: str, root: str = DATA_ROOT,
-          now: Optional[datetime] = None) -> str:
+          now: datetime | None = None) -> str:
     """Move one item into the share's trash. Returns its trash id."""
     check_name(name)
     sfd = open_dir(share_root, root)
@@ -1110,7 +1110,7 @@ def trash(share_root: str, dir_path: str, name: str, root: str = DATA_ROOT,
         os.close(sfd)
 
 
-def _read_origin(ifd: int) -> Dict[str, str]:
+def _read_origin(ifd: int) -> dict[str, str]:
     try:
         fd = os.open(ORIGIN_FILE, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=ifd)
         with os.fdopen(fd) as f:
@@ -1120,14 +1120,14 @@ def _read_origin(ifd: int) -> Dict[str, str]:
         return {'folder': '', 'name': ''}
 
 
-def _stamp_time(stamp: str) -> Optional[datetime]:
+def _stamp_time(stamp: str) -> datetime | None:
     try:
         return datetime.strptime(stamp[:15], STAMP_FORMAT)
     except ValueError:
         return None
 
 
-def list_trash(share_root: str, root: str = DATA_ROOT) -> List[Dict[str, Any]]:
+def list_trash(share_root: str, root: str = DATA_ROOT) -> list[dict[str, Any]]:
     sfd = open_dir(share_root, root)
     try:
         tfd = _open_trash(sfd, create=False)
@@ -1175,12 +1175,12 @@ SMB_TRASH_LIMIT = 2000
 _SMB_COPY = re.compile(r'^Copy #\d+ of (.+)$')
 
 
-def _smb_trash_items(tfd: int) -> List[Dict[str, Any]]:
+def _smb_trash_items(tfd: int) -> list[dict[str, Any]]:
     try:
         rfd = _open_subdir(SMB_TRASH, tfd)
     except OSError:
         return []
-    items: List[Dict[str, Any]] = []
+    items: list[dict[str, Any]] = []
 
     def walk(dfd: int, rel: str, depth: int) -> None:
         try:
@@ -1217,14 +1217,14 @@ def _smb_trash_items(tfd: int) -> List[Dict[str, Any]]:
     return items
 
 
-def _smb_parts(item_id: str) -> List[str]:
+def _smb_parts(item_id: str) -> list[str]:
     parts = item_id[len('smb:'):].split('/')
     for part in parts:
         check_name(part)
     return parts
 
 
-def _restore_smb(sfd: int, tfd: int, item_id: str, root: str) -> Dict[str, str]:
+def _restore_smb(sfd: int, tfd: int, item_id: str, root: str) -> dict[str, str]:
     parts = _smb_parts(item_id)
     fds = []
     try:
@@ -1321,7 +1321,7 @@ def _check_stamp(stamp: str) -> str:
     return stamp
 
 
-def restore(share_root: str, stamp: str, root: str = DATA_ROOT) -> Dict[str, str]:
+def restore(share_root: str, stamp: str, root: str = DATA_ROOT) -> dict[str, str]:
     """Put an item back where it was. If the name is taken there, it comes back
     as "name (restored)"; if its folder is gone, it comes back to the share."""
     if isinstance(stamp, str) and stamp.startswith('smb:'):
@@ -1389,7 +1389,7 @@ def restore(share_root: str, stamp: str, root: str = DATA_ROOT) -> Dict[str, str
         os.close(sfd)
 
 
-def purge(share_root: str, days: int, root: str = DATA_ROOT, now: Optional[datetime] = None) -> int:
+def purge(share_root: str, days: int, root: str = DATA_ROOT, now: datetime | None = None) -> int:
     """Remove trash items older than `days` (0: everything). Returns how many."""
     sfd = open_dir(share_root, root)
     try:

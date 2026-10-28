@@ -12,13 +12,13 @@ import re
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 import requests
 from common import run_sudo_command
 from docker_manager import DockerManager
 
 
-def summarize_app_needs(app_data: Dict) -> Dict:
+def summarize_app_needs(app_data: dict) -> dict:
     """What an app needs from the NAS, for the store card before installing:
     the ports it opens and how many folders it keeps on your storage."""
     schema = app_data.get('config_schema') if isinstance(app_data, dict) else None
@@ -39,13 +39,13 @@ def summarize_app_needs(app_data: Dict) -> Dict:
     return {'ports': ports, 'folders': folders}
 
 
-def normalize_port_mappings(port_mappings) -> Tuple[Optional[Dict[int, int]], Optional[str]]:
+def normalize_port_mappings(port_mappings) -> tuple[dict[int, int] | None, str | None]:
     """{inside port: port on the NAS} as numbers, or a sentence saying why not."""
     if not port_mappings:
         return {}, None
     if not isinstance(port_mappings, dict):
         return None, 'port_mappings must be an object of source:target ports'
-    normalized: Dict[int, int] = {}
+    normalized: dict[int, int] = {}
     try:
         for key, value in port_mappings.items():
             src = int(str(key).strip())
@@ -58,7 +58,7 @@ def normalize_port_mappings(port_mappings) -> Tuple[Optional[Dict[int, int]], Op
     return normalized, None
 
 
-def validate_install_paths(pool_path, volume_mappings, port_mappings, pools_state) -> Optional[str]:
+def validate_install_paths(pool_path, volume_mappings, port_mappings, pools_state) -> str | None:
     """Where an app may keep its files: on a managed pool, and any folder of
     yours it uses must be inside a pool too. Returns a sentence, or None.
 
@@ -92,43 +92,43 @@ def validate_install_paths(pool_path, volume_mappings, port_mappings, pools_stat
 
 class AppStore:
     """Manages the AlvaOS app catalog and installation"""
-    
+
     def __init__(self):
         self.docker_manager = DockerManager()
-        
+
         # Paths
         self.catalog_file = self._get_catalog_path()
         self.apps_state_file = '/var/lib/alvaos/apps_state.json'
         self.install_status_file = '/var/lib/alvaos/app_install_status.json'
         self.update_cache_file = '/var/lib/alvaos/app_update_cache.json'
         self.update_cache_ttl_seconds = 1800
-        
+
         # Status tracking
         import threading
         self._status_lock = threading.RLock()
         self._update_cache_lock = threading.RLock()
         self._active_install_status = None
         self._last_status_write = 0.0
-        
+
         # Ensure directories exist
         Path('/var/lib/alvaos').mkdir(parents=True, exist_ok=True)
-    
+
     def _get_catalog_path(self) -> str:
         """Get the app catalog path (production or development)"""
         prod_path = '/opt/alvaos/apps/catalog.json'
         dev_path = os.path.join(os.path.dirname(__file__), '..', 'apps', 'catalog.json')
-        
+
         if os.path.exists(prod_path):
             return prod_path
         return dev_path
-    
-    def _load_catalog(self) -> Tuple[Optional[Dict], Optional[str]]:
+
+    def _load_catalog(self) -> tuple[dict | None, str | None]:
         """Load the app catalog from disk"""
         try:
             if not os.path.exists(self.catalog_file):
                 return {}, None
-            
-            with open(self.catalog_file, 'r') as f:
+
+            with open(self.catalog_file) as f:
                 catalog = json.load(f)
             return catalog, None
         except json.JSONDecodeError as e:
@@ -136,19 +136,19 @@ class AppStore:
         except Exception as e:
             return None, str(e)
 
-    def _load_update_cache(self) -> Dict:
+    def _load_update_cache(self) -> dict:
         """Load cached app update probe results from disk."""
         with self._update_cache_lock:
             try:
                 if os.path.exists(self.update_cache_file):
-                    with open(self.update_cache_file, 'r') as f:
+                    with open(self.update_cache_file) as f:
                         data = json.load(f)
                     return data if isinstance(data, dict) else {}
             except Exception as e:
                 print(f"Error loading app update cache: {e}")
         return {}
 
-    def _save_update_cache(self, cache: Dict) -> None:
+    def _save_update_cache(self, cache: dict) -> None:
         """Persist cached app update probe results to disk."""
         with self._update_cache_lock:
             try:
@@ -157,7 +157,7 @@ class AppStore:
             except Exception as e:
                 print(f"Error saving app update cache: {e}")
 
-    def _read_cached_update_status(self, app_id: str, allow_stale: bool = False) -> Optional[Dict]:
+    def _read_cached_update_status(self, app_id: str, allow_stale: bool = False) -> dict | None:
         """Return cached update status for an app if present and fresh enough."""
         cache = self._load_update_cache()
         entry = cache.get(str(app_id)) if isinstance(cache, dict) else None
@@ -171,13 +171,13 @@ class AppStore:
 
         return dict(entry)
 
-    def _write_cached_update_status(self, app_id: str, payload: Dict) -> None:
+    def _write_cached_update_status(self, app_id: str, payload: dict) -> None:
         """Store update status metadata for a single app."""
         cache = self._load_update_cache()
         cache[str(app_id)] = dict(payload or {})
         self._save_update_cache(cache)
 
-    def _is_operation_in_progress(self) -> Tuple[bool, Optional[str]]:
+    def _is_operation_in_progress(self) -> tuple[bool, str | None]:
         """Check whether an app install/update operation is active."""
         current_status = self.get_install_status()
         if current_status.get('status') in ('starting', 'installing', 'updating'):
@@ -186,12 +186,12 @@ class AppStore:
 
     def _build_compose_config(
         self,
-        app_details: Dict,
-        port_mappings: Optional[Dict[int, int]] = None,
-        volume_mappings: Optional[Dict[str, str]] = None,
-        environment_vars: Optional[Dict[str, str]] = None,
-        gpu_plan: Optional[Dict] = None
-    ) -> Dict:
+        app_details: dict,
+        port_mappings: dict[int, int] | None = None,
+        volume_mappings: dict[str, str] | None = None,
+        environment_vars: dict[str, str] | None = None,
+        gpu_plan: dict | None = None
+    ) -> dict:
         """Build a mutable compose config with user mappings applied."""
         compose_config = copy.deepcopy(app_details.get('docker_compose', {}) or {})
         if gpu_plan:
@@ -277,9 +277,9 @@ class AppStore:
 
     def _validate_required_environment(
         self,
-        app_details: Dict,
-        environment_vars: Optional[Dict[str, str]]
-    ) -> Optional[str]:
+        app_details: dict,
+        environment_vars: dict[str, str] | None
+    ) -> str | None:
         """Return an error message if a required env field is missing or still a placeholder.
 
         Apps used to ship with a literal CHANGEME as their database and admin
@@ -308,7 +308,7 @@ class AppStore:
             )
         return None
 
-    def _find_placeholder_secrets(self, compose_config: Dict) -> list:
+    def _find_placeholder_secrets(self, compose_config: dict) -> list:
         """List env keys in a built compose config that still hold a placeholder."""
         found = []
         for service_name, service_config in (compose_config.get('services') or {}).items():
@@ -331,7 +331,7 @@ class AppStore:
             normalized = normalized[:64].rstrip('-_.')
         return normalized
 
-    def _infer_environment_vars_from_running_containers(self, app_id: str, app_details: Dict) -> Dict[str, str]:
+    def _infer_environment_vars_from_running_containers(self, app_id: str, app_details: dict) -> dict[str, str]:
         """
         Infer configured environment values from currently running/stopped containers.
         Only schema-defined keys are extracted.
@@ -343,7 +343,7 @@ class AppStore:
             return {}
 
         key_set = set(keys)
-        inferred: Dict[str, str] = {}
+        inferred: dict[str, str] = {}
         project_name = f"alvaos-{app_id}"
 
         containers, error = self.docker_manager.list_containers(all_containers=True)
@@ -372,18 +372,18 @@ class AppStore:
                 break
 
         return inferred
-    
-    def _load_apps_state(self) -> Dict:
+
+    def _load_apps_state(self) -> dict:
         """Load installed apps state"""
         try:
             if os.path.exists(self.apps_state_file):
-                with open(self.apps_state_file, 'r') as f:
+                with open(self.apps_state_file) as f:
                     return json.load(f)
         except Exception as e:
             print(f"Error loading apps state: {e}")
         return {}
-    
-    def _save_apps_state(self, state: Dict) -> None:
+
+    def _save_apps_state(self, state: dict) -> None:
         """Save installed apps state"""
         try:
             with open(self.apps_state_file, 'w') as f:
@@ -391,24 +391,24 @@ class AppStore:
         except Exception as e:
             print(f"Error saving apps state: {e}")
 
-    def get_install_status(self) -> Dict:
+    def get_install_status(self) -> dict:
         """Get the current installation status (from memory if active, else from disk)"""
         with self._status_lock:
             if self._active_install_status:
                 return self._active_install_status.copy()
-            
+
         try:
             if os.path.exists(self.install_status_file):
-                with open(self.install_status_file, 'r') as f:
+                with open(self.install_status_file) as f:
                     return json.load(f)
         except Exception as e:
             print(f"Error loading install status: {e}")
         return {"status": "idle"}
 
-    def _update_install_status(self, app_id: str, status: str, progress: int = 0, message: str = "", logs: Optional[List[str]] = None, force_write: bool = False, action: str = "install"):
+    def _update_install_status(self, app_id: str, status: str, progress: int = 0, message: str = "", logs: list[str] | None = None, force_write: bool = False, action: str = "install"):
         """Update app operation status with in-memory tracking and throttled disk writes"""
         import time
-        
+
         with self._status_lock:
             if logs is None:
                 if self._active_install_status:
@@ -416,15 +416,15 @@ class AppStore:
                 else:
                     # Try to get from last known status if we just started.
                     # Read from disk directly here to avoid nested lock acquisition.
-                    current: Dict[str, Any] = {}
+                    current: dict[str, Any] = {}
                     try:
                         if os.path.exists(self.install_status_file):
-                            with open(self.install_status_file, 'r') as f:
+                            with open(self.install_status_file) as f:
                                 current = json.load(f) or {}
                     except Exception:
                         current = {}
                     logs = current.get('logs', [])
-            
+
             # Keep only last 100 log lines
             if len(logs) > 100:
                 logs = logs[-100:]
@@ -438,13 +438,13 @@ class AppStore:
                 "logs": logs,
                 "updated_at": datetime.now().isoformat()
             }
-            
+
             self._active_install_status = payload
-            
+
             # Determine if we should write to disk
             now = time.time()
             should_write = force_write or (now - self._last_status_write > 1.5) or status in ('success', 'error', 'idle')
-            
+
             if should_write:
                 try:
                     with open(self.install_status_file, 'w') as f:
@@ -452,17 +452,17 @@ class AppStore:
                     self._last_status_write = now
                 except Exception as e:
                     print(f"Error saving install status: {e}")
-            
-            # If finished, we can eventually clear the active status, 
+
+            # If finished, we can eventually clear the active status,
             # but maybe keep it for a while so polling can pick up the final state.
             # For now, we keep it in memory until the next install starts.
-    
-    def get_available_apps(self) -> Tuple[Optional[List[Dict]], Optional[str]]:
+
+    def get_available_apps(self) -> tuple[list[dict] | None, str | None]:
         """Get list of available apps from catalog"""
         catalog, error = self._load_catalog()
         if error or catalog is None:
             return None, error or "App catalog is unavailable"
-        
+
         apps = []
         for app_id, app_data in catalog.items():
             if app_data.get('internal'):        # parts of AlvaOS (the Hub's Office editor), not for the store
@@ -476,27 +476,27 @@ class AppStore:
                 'version': app_data.get('version', 'latest'),
                 'needs': summarize_app_needs(app_data),
             })
-        
+
         return apps, None
-    
-    def get_app_details(self, app_id: str) -> Tuple[Optional[Dict], Optional[str]]:
+
+    def get_app_details(self, app_id: str) -> tuple[dict | None, str | None]:
         """Get detailed information about an app"""
         catalog, error = self._load_catalog()
         if error or catalog is None:
             return None, error or "App catalog is unavailable"
-        
+
         if app_id not in catalog:
             return None, f"App '{app_id}' not found in catalog"
-        
+
         return catalog[app_id], None
 
-    def _tokenize_version(self, value: str) -> List[Any]:
+    def _tokenize_version(self, value: str) -> list[Any]:
         """Split a version string into comparable numeric/text tokens."""
         cleaned = re.sub(r'^[^0-9a-zA-Z]+', '', str(value or '').strip().lower())
         if not cleaned:
             return []
 
-        tokens: List[object] = []
+        tokens: list[object] = []
         for part in re.findall(r'[0-9]+|[a-z]+', cleaned):
             if part.isdigit():
                 tokens.append(int(part))
@@ -504,7 +504,7 @@ class AppStore:
                 tokens.append(part)
         return tokens
 
-    def _compare_versions(self, left: str, right: str) -> Optional[int]:
+    def _compare_versions(self, left: str, right: str) -> int | None:
         """Compare two catalog version strings."""
         left_value = str(left or '').strip()
         right_value = str(right or '').strip()
@@ -543,9 +543,9 @@ class AppStore:
 
         return 0
 
-    def _extract_compose_images(self, app_details: Dict) -> List[str]:
+    def _extract_compose_images(self, app_details: dict) -> list[str]:
         """Return unique image references used by an app's compose definition."""
-        images: List[str] = []
+        images: list[str] = []
         seen = set()
         services = ((app_details or {}).get('docker_compose') or {}).get('services') or {}
         if not isinstance(services, dict):
@@ -559,7 +559,7 @@ class AppStore:
             images.append(image)
         return images
 
-    def _parse_image_reference(self, image: str) -> Optional[Dict]:
+    def _parse_image_reference(self, image: str) -> dict | None:
         """Normalize an image reference into registry/repository/reference parts."""
         value = str(image or '').strip()
         if not value:
@@ -595,18 +595,18 @@ class AppStore:
             'reference': reference or 'latest'
         }
 
-    def _parse_www_authenticate(self, header_value: str) -> Dict[str, str]:
+    def _parse_www_authenticate(self, header_value: str) -> dict[str, str]:
         """Parse a WWW-Authenticate bearer challenge into key/value pairs."""
         value = str(header_value or '').strip()
         if not value.lower().startswith('bearer '):
             return {}
 
-        attrs: Dict[str, str] = {}
+        attrs: dict[str, str] = {}
         for key, attr_value in re.findall(r'([A-Za-z_]+)="([^"]*)"', value):
             attrs[key.lower()] = attr_value
         return attrs
 
-    def _registry_request(self, method: str, url: str, headers: Dict[str, str], timeout: int, repository: str) -> requests.Response:
+    def _registry_request(self, method: str, url: str, headers: dict[str, str], timeout: int, repository: str) -> requests.Response:
         """Perform a registry request, following bearer auth challenges when needed."""
         response = requests.request(method, url, headers=headers, timeout=timeout)
         if response.status_code != 401:
@@ -635,7 +635,7 @@ class AppStore:
         authorized_headers['Authorization'] = f'Bearer {token}'
         return requests.request(method, url, headers=authorized_headers, timeout=timeout)
 
-    def _get_remote_manifest_digest(self, image: str, timeout: int = 15) -> Tuple[Optional[str], Optional[str]]:
+    def _get_remote_manifest_digest(self, image: str, timeout: int = 15) -> tuple[str | None, str | None]:
         """Fetch the current registry manifest digest for an image reference."""
         image_ref = self._parse_image_reference(image)
         if not image_ref:
@@ -672,7 +672,7 @@ class AppStore:
         except Exception as e:
             return None, f"Failed to inspect registry manifest for {image}: {e}"
 
-    def _probe_registry_update_status(self, app_id: str, app_details: Dict) -> Dict:
+    def _probe_registry_update_status(self, app_id: str, app_details: dict) -> dict:
         """Check whether any compose image has a newer remote manifest digest."""
         images = self._extract_compose_images(app_details)
         if not images:
@@ -685,7 +685,7 @@ class AppStore:
                 'images': []
             }
 
-        image_results: List[Dict] = []
+        image_results: list[dict] = []
         any_update_available = False
         any_known = False
 
@@ -745,7 +745,7 @@ class AppStore:
             'images': image_results
         }
 
-    def _build_update_metadata(self, app_id: str, app_state: Dict) -> Dict:
+    def _build_update_metadata(self, app_id: str, app_state: dict) -> dict:
         """Derive installed/catalog version metadata for an installed app."""
         source = str(app_state.get('source') or 'catalog').strip() or 'catalog'
         installed_version = str(
@@ -754,7 +754,7 @@ class AppStore:
             or ''
         ).strip()
 
-        metadata: Dict[str, Any] = {
+        metadata: dict[str, Any] = {
             'source': source,
             'installed_version': installed_version,
             'catalog_version': '',
@@ -792,13 +792,13 @@ class AppStore:
                 'update_check_error': cached_status.get('update_check_error')
             })
         return metadata
-    
-    def _create_subvolume(self, path: str) -> Tuple[bool, Optional[str]]:
+
+    def _create_subvolume(self, path: str) -> tuple[bool, str | None]:
         """Create a Btrfs subvolume"""
         _, err = run_sudo_command(['/usr/bin/btrfs', 'subvolume', 'create', path], timeout=30)
         return (err is None), err
 
-    def _delete_subvolume(self, path: str) -> Tuple[bool, Optional[str]]:
+    def _delete_subvolume(self, path: str) -> tuple[bool, str | None]:
         """Delete a Btrfs subvolume"""
         _, err = run_sudo_command(['/usr/bin/btrfs', 'subvolume', 'delete', path], timeout=30)
         return (err is None), err
@@ -806,50 +806,50 @@ class AppStore:
     def _prepare_app_storage(
         self,
         pool_path: str,
-        parent_subvolume: Optional[str],
+        parent_subvolume: str | None,
         app_id: str
-    ) -> Tuple[Optional[str], Optional[str]]:
+    ) -> tuple[str | None, str | None]:
         """Prepare storage for an app with nested subvolumes"""
         try:
             if parent_subvolume:
                 base_path = os.path.join(pool_path, parent_subvolume)
             else:
                 base_path = pool_path
-            
+
             # Ensure base path exists
             if not os.path.exists(base_path):
                 return None, f"Base path does not exist: {base_path}"
-            
+
             # Create apps/ subvolume if it doesn't exist
             apps_path = os.path.join(base_path, 'apps')
             if not os.path.exists(apps_path):
                 success, error = self._create_subvolume(apps_path)
                 if not success:
                     return None, f"Failed to create apps subvolume: {error}"
-            
+
             # Create app-specific subvolume
             app_path = os.path.join(apps_path, app_id)
             if os.path.exists(app_path):
                 return None, f"App storage already exists: {app_path}"
-            
+
             success, error = self._create_subvolume(app_path)
             if not success:
                 return None, f"Failed to create app subvolume: {error}"
-            
+
             return app_path, None
-            
+
         except Exception as e:
             return None, str(e)
-    
+
     def install_app(
         self,
         app_id: str,
         pool_path: str,
-        parent_subvolume: Optional[str] = None,
-        port_mappings: Optional[Dict[int, int]] = None,
-        volume_mappings: Optional[Dict[str, str]] = None,
-        environment_vars: Optional[Dict[str, str]] = None
-    ) -> Tuple[bool, Optional[str]]:
+        parent_subvolume: str | None = None,
+        port_mappings: dict[int, int] | None = None,
+        volume_mappings: dict[str, str] | None = None,
+        environment_vars: dict[str, str] | None = None
+    ) -> tuple[bool, str | None]:
         """Start app installation in the background"""
         app_details, error = self.get_app_details(app_id)
         if error or app_details is None:
@@ -877,7 +877,7 @@ class AppStore:
             args=(app_id, pool_path, parent_subvolume, port_mappings, volume_mappings, environment_vars)
         )
         thread.daemon = True
-        
+
         # Reset memory status for new install
         with self._status_lock:
             self._active_install_status = {
@@ -890,19 +890,19 @@ class AppStore:
                 "updated_at": datetime.now().isoformat()
             }
         self._update_install_status(app_id, "starting", 0, "Initializing...", [], force_write=True, action="install")
-        
+
         thread.start()
-        
+
         return True, None
 
     def install_compose_app(
         self,
         app_name: str,
         pool_path: str,
-        compose_config: Dict,
-        parent_subvolume: Optional[str] = None,
-        app_id: Optional[str] = None
-    ) -> Tuple[bool, Optional[str], Optional[str]]:
+        compose_config: dict,
+        parent_subvolume: str | None = None,
+        app_id: str | None = None
+    ) -> tuple[bool, str | None, str | None]:
         """Start installation for a custom app defined via Docker Compose."""
         display_name = str(app_name or '').strip()
         if not display_name:
@@ -968,27 +968,27 @@ class AppStore:
         self,
         app_id: str,
         pool_path: str,
-        parent_subvolume: Optional[str],
-        port_mappings: Optional[Dict[int, int]],
-        volume_mappings: Optional[Dict[str, str]],
-        environment_vars: Optional[Dict[str, str]]
+        parent_subvolume: str | None,
+        port_mappings: dict[int, int] | None,
+        volume_mappings: dict[str, str] | None,
+        environment_vars: dict[str, str] | None
     ):
         """Worker thread for app installation"""
         try:
             self._update_install_status(app_id, "installing", 5, f"Starting installation of {app_id}...", [], action="install")
-            
+
             app_details, details_error = self.get_app_details(app_id)
             if details_error or app_details is None:
                 self._update_install_status(app_id, "error", 0, f"Failed to read catalog entry: {details_error or 'not found'}", action="install")
                 return
-            
+
             # Prepare storage
             self._update_install_status(app_id, "installing", 10, "Preparing storage...", action="install")
             app_storage_path, error = self._prepare_app_storage(pool_path, parent_subvolume, app_id)
             if error or not app_storage_path:
                 self._update_install_status(app_id, "error", 0, f"Storage preparation failed: {error or 'no storage path'}", action="install")
                 return
-            
+
             compose_config = self._build_compose_config(
                 app_details=app_details,
                 port_mappings=port_mappings,
@@ -1002,7 +1002,7 @@ class AppStore:
                 # Smarter progress messaging based on docker output
                 msg = "Running Docker Compose..."
                 progress = 50
-                
+
                 lower_line = line.lower()
                 if "pulling" in lower_line or "downloading" in lower_line:
                     msg = f"Pulling images: {line}"
@@ -1013,7 +1013,7 @@ class AppStore:
                 elif "creating" in lower_line or "started" in lower_line:
                     msg = f"Creating containers: {line}"
                     progress = 70
-                
+
                 logs.append(line)
                 self._update_install_status(app_id, "installing", progress, msg, logs, action="install")
 
@@ -1025,13 +1025,13 @@ class AppStore:
                 project_name=f"alvaos-{app_id}",
                 callback=docker_callback
             )
-            
+
             if not success:
                 # Cleanup: remove subvolume
                 self._delete_subvolume(app_storage_path)
                 self._update_install_status(app_id, "error", 0, f"Failed to create containers: {error}", logs, action="install")
                 return
-            
+
             self._update_install_status(app_id, "installing", 95, "Finalizing installation...", action="install")
             apps_state = self._load_apps_state()
             apps_state[app_id] = {
@@ -1049,9 +1049,9 @@ class AppStore:
                 'updated_at': datetime.now().isoformat()
             }
             self._save_apps_state(apps_state)
-            
+
             self._update_install_status(app_id, "success", 100, "Installation completed successfully", force_write=True, action="install")
-            
+
         except Exception as e:
             self._update_install_status(app_id, "error", 0, f"Unexpected error during installation: {str(e)}", force_write=True, action="install")
 
@@ -1060,12 +1060,12 @@ class AppStore:
         app_id: str,
         app_name: str,
         pool_path: str,
-        parent_subvolume: Optional[str],
-        compose_config: Dict
+        parent_subvolume: str | None,
+        compose_config: dict
     ) -> None:
         """Worker thread for custom compose app installation."""
-        logs: List[str] = []
-        app_storage_path: Optional[str] = None
+        logs: list[str] = []
+        app_storage_path: str | None = None
         try:
             self._update_install_status(
                 app_id,
@@ -1153,7 +1153,7 @@ class AppStore:
                 action="install"
             )
 
-    def update_app(self, app_id: str) -> Tuple[bool, Optional[str]]:
+    def update_app(self, app_id: str) -> tuple[bool, str | None]:
         """Update an installed app by pulling latest images and recreating containers."""
         apps_state = self._load_apps_state()
         if app_id not in apps_state:
@@ -1217,26 +1217,26 @@ class AppStore:
         thread.start()
         return True, None
 
-    def _stored_settings(self, app_id: str, app_state: Dict, app_details: Dict
-                         ) -> Tuple[Dict[int, int], Dict[str, str], Dict[str, str]]:
+    def _stored_settings(self, app_id: str, app_state: dict, app_details: dict
+                         ) -> tuple[dict[int, int], dict[str, str], dict[str, str]]:
         """Ports, folders and environment an installed app runs with."""
         stored_port_mappings = app_state.get('port_mappings') if isinstance(app_state.get('port_mappings'), dict) else {}
         stored_volume_mappings = app_state.get('volume_mappings') if isinstance(app_state.get('volume_mappings'), dict) else {}
         stored_environment_vars = app_state.get('environment_vars') if isinstance(app_state.get('environment_vars'), dict) else {}
         inferred_environment_vars = self._infer_environment_vars_from_running_containers(app_id, app_details)
 
-        port_mappings: Dict[int, int] = {}
+        port_mappings: dict[int, int] = {}
         for key, value in (stored_port_mappings or {}).items():
             try:
                 port_mappings[int(key)] = int(value)
             except Exception:
                 continue
 
-        volume_mappings: Dict[str, str] = {
+        volume_mappings: dict[str, str] = {
             str(k): str(v) for k, v in (stored_volume_mappings or {}).items()
             if str(k).strip() and str(v).strip()
         }
-        environment_vars: Dict[str, str] = {
+        environment_vars: dict[str, str] = {
             str(k): str(v) for k, v in (inferred_environment_vars or {}).items()
             if str(k).strip()
         }
@@ -1246,8 +1246,8 @@ class AppStore:
         })
         return port_mappings, volume_mappings, environment_vars
 
-    def reconfigure_app(self, app_id: str, port_mappings: Optional[Dict[int, int]],
-                        volume_mappings: Optional[Dict[str, str]]) -> Tuple[bool, Optional[str]]:
+    def reconfigure_app(self, app_id: str, port_mappings: dict[int, int] | None,
+                        volume_mappings: dict[str, str] | None) -> tuple[bool, str | None]:
         """Change the ports and folders of an installed app. The containers are
         recreated with the same images; the app's own data stays where it is."""
         apps_state = self._load_apps_state()
@@ -1300,7 +1300,7 @@ class AppStore:
         thread.start()
         return True, None
 
-    def set_gpu(self, app_id: str, on: bool, card: str = '') -> Tuple[bool, Optional[str]]:
+    def set_gpu(self, app_id: str, on: bool, card: str = '') -> tuple[bool, str | None]:
         """Give an installed app the graphics card, or take it away. `card` is the
         PCI slot of the one it should use ('' = the one it prefers). The
         containers are recreated with the same images and settings."""
@@ -1350,7 +1350,7 @@ class AppStore:
         thread.start()
         return True, None
 
-    def gpu_overview(self, app_id: str, app_state: Dict) -> Dict:
+    def gpu_overview(self, app_id: str, app_state: dict) -> dict:
         """For the app page: can this app use a card, does it, and if not why."""
         if str(app_state.get('source') or 'catalog') == 'custom_compose':
             return {'possible': False}
@@ -1370,7 +1370,7 @@ class AppStore:
                 'choices': choices if len(choices) > 1 else [], 'chosen': chosen,
                 'auto': gpu_manager.card_label(gpu_manager.fitting_cards(spec)[0]) if choices else ''}
 
-    def get_app_update_status(self, app_id: str, force_refresh: bool = False) -> Tuple[Optional[Dict], Optional[str]]:
+    def get_app_update_status(self, app_id: str, force_refresh: bool = False) -> tuple[dict | None, str | None]:
         """Return update availability for an installed app, using cached registry probes when possible."""
         apps_state = self._load_apps_state()
         if app_id not in apps_state:
@@ -1422,17 +1422,17 @@ class AppStore:
         self,
         app_id: str,
         storage_path: str,
-        port_mappings: Optional[Dict[int, int]],
-        volume_mappings: Optional[Dict[str, str]],
-        environment_vars: Optional[Dict[str, str]],
+        port_mappings: dict[int, int] | None,
+        volume_mappings: dict[str, str] | None,
+        environment_vars: dict[str, str] | None,
         action: str = "update",
         pull: bool = True,
-        gpu: Optional[bool] = None,
-        gpu_card: Optional[str] = None
+        gpu: bool | None = None,
+        gpu_card: str | None = None
     ) -> None:
         """Worker thread for app updates and settings changes (no pull).
         `gpu` turns the graphics card on or off; None keeps how it was."""
-        logs: List[str] = []
+        logs: list[str] = []
         try:
             self._update_install_status(app_id, "updating", 5, f"Starting update of {app_id}..." if pull else "Applying the new settings...", logs, action=action)
             app_details, error = self.get_app_details(app_id)
@@ -1527,20 +1527,20 @@ class AppStore:
         except Exception as e:
             self._update_install_status(app_id, "error", 0, f"Unexpected error during update: {str(e)}", logs, force_write=True, action=action)
 
-    def uninstall_app(self, app_id: str, keep_data: bool = False) -> Tuple[bool, Optional[str]]:
+    def uninstall_app(self, app_id: str, keep_data: bool = False) -> tuple[bool, str | None]:
         """Uninstall an app"""
         apps_state = self._load_apps_state()
-        
+
         if app_id not in apps_state:
             return False, f"App '{app_id}' is not installed"
-        
+
         app_state = apps_state[app_id]
         storage_path = app_state.get('storage_path')
-        
+
         containers, error = self.docker_manager.list_containers(all_containers=True)
         if error or containers is None:
             return False, f"Failed to list containers: {error or 'no response from Docker'}"
-        
+
         project_name = f"alvaos-{app_id}"
         for container in containers:
             labels = container.get('Labels', '')
@@ -1549,20 +1549,20 @@ class AppStore:
                 success, error = self.docker_manager.remove_container(container_id, force=True)
                 if not success:
                     print(f"Warning: Failed to remove container {container_id}: {error}")
-        
+
         if not keep_data and storage_path:
             success, error = self._delete_subvolume(storage_path)
             if not success:
                 print(f"Warning: Failed to delete subvolume {storage_path}: {error}")
-        
+
         del apps_state[app_id]
         self._save_apps_state(apps_state)
-        
+
         return True, None
-    
-    def get_installed_apps(self) -> List[Dict]:
+
+    def get_installed_apps(self) -> list[dict]:
         """Get list of installed apps"""
-        installed_apps: List[Dict] = []
+        installed_apps: list[dict] = []
         for app_id, app_state in self._load_apps_state().items():
             enriched_state = dict(app_state or {})
             enriched_state['app_id'] = app_id

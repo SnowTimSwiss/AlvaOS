@@ -10,7 +10,7 @@ import json
 import re
 import secrets
 import functools
-from typing import Any, Dict
+from typing import Any
 import time
 from datetime import datetime, timedelta
 
@@ -28,16 +28,16 @@ FAILED_KEPT = 50
 
 # ── Session state ─────────────────────────────────────────────────────────────
 # token -> {username, role, expires_at, csrf_token}
-SESSIONS: Dict[str, Dict[str, Any]] = {}
+SESSIONS: dict[str, dict[str, Any]] = {}
 SESSION_TTL_HOURS = 24
 
 # Temporary tokens used during 2FA two-step login: temp_token -> {username, role, expires_at}
-TEMP_2FA_TOKENS: Dict[str, Dict[str, Any]] = {}
+TEMP_2FA_TOKENS: dict[str, dict[str, Any]] = {}
 TEMP_2FA_TTL_SECONDS = 300  # 5 minutes
 
 # ── Rate limiting ─────────────────────────────────────────────────────────────
 # ip -> {count, window_start}
-LOGIN_RATE_LIMIT: Dict[str, Dict[str, Any]] = {}
+LOGIN_RATE_LIMIT: dict[str, dict[str, Any]] = {}
 LOGIN_MAX_ATTEMPTS = 10
 LOGIN_WINDOW_SECONDS = 900  # 15 minutes
 
@@ -102,7 +102,7 @@ def _load_sessions():
     try:
         if not os.path.exists(SESSIONS_FILE):
             return
-        with open(SESSIONS_FILE, 'r') as f:
+        with open(SESSIONS_FILE) as f:
             data = json.load(f)
         stored = data.get('sessions') if isinstance(data, dict) else None
         if not isinstance(stored, dict):

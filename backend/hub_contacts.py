@@ -16,8 +16,8 @@ the page never shows them. vCard files can be imported and exported
 
 import re
 import secrets
-from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from datetime import datetime, UTC
+from typing import Any, Callable
 
 from flask import Blueprint, Response, jsonify, request
 
@@ -38,8 +38,8 @@ def _text(value: Any, limit: int) -> str:
     return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', str(value or '')).strip()[:limit]
 
 
-def _entries(raw: Any, kinds: Tuple[str, ...], limit: int, one_line: bool) -> List[Dict[str, str]]:
-    out: List[Dict[str, str]] = []
+def _entries(raw: Any, kinds: tuple[str, ...], limit: int, one_line: bool) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
     for e in (raw if isinstance(raw, list) else [])[:20]:
         if not isinstance(e, dict):
             continue
@@ -52,8 +52,8 @@ def _entries(raw: Any, kinds: Tuple[str, ...], limit: int, one_line: bool) -> Li
     return out
 
 
-def check_contact(raw: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], str]:
-    item: Dict[str, Any] = {k: _text(raw.get(k), n) for k, n in LIMITS.items()}
+def check_contact(raw: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
+    item: dict[str, Any] = {k: _text(raw.get(k), n) for k, n in LIMITS.items()}
     for key in ('first', 'last', 'org', 'title', 'nickname', 'url'):
         item[key] = re.sub(r'\s+', ' ', item[key])
     item['phones'] = _entries(raw.get('phones'), hub_vcard.PHONE_TYPES, 40, True)
@@ -70,21 +70,21 @@ def check_contact(raw: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], str]:
     return item, ''
 
 
-def clean(data: Dict[str, Any]) -> Dict[str, Any]:
+def clean(data: dict[str, Any]) -> dict[str, Any]:
     contacts = data.get('contacts')
     return {'contacts': [c for c in contacts if isinstance(c, dict) and c.get('id')]
             if isinstance(contacts, list) else []}
 
 
-def _place(session: Dict[str, Any]) -> Optional[hub_data.Place]:
+def _place(session: dict[str, Any]) -> hub_data.Place | None:
     return hub_data.own_place('contacts', session, hub_apps.load())
 
 
 def _stamp() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec='seconds')
+    return datetime.now(UTC).isoformat(timespec='seconds')
 
 
-def upsert(items: List[Dict[str, Any]], item: Dict[str, Any]) -> str:
+def upsert(items: list[dict[str, Any]], item: dict[str, Any]) -> str:
     item['updated'] = _stamp()
     for i, old in enumerate(items):
         if old.get('id') == item['id']:
@@ -114,7 +114,7 @@ def everything():
     return jsonify({'contacts': contacts, 'has_own': True, 'writable': place.writable})
 
 
-def change(session: Dict[str, Any], work: Callable[[Dict[str, Any]], Tuple[Any, str]]):
+def change(session: dict[str, Any], work: Callable[[dict[str, Any]], tuple[Any, str]]):
     place = _place(session)
     if not place:
         return jsonify({'error': 'You have no place for contacts yet. Ask whoever runs this NAS for a '
@@ -145,7 +145,7 @@ def save_item():
     if not isinstance(raw, dict):
         return jsonify({'error': 'Nothing to save.'}), 400
 
-    def work(data: Dict[str, Any]) -> Tuple[Any, str]:
+    def work(data: dict[str, Any]) -> tuple[Any, str]:
         item, problem = check_contact(raw)
         if item is None:
             return None, problem
@@ -165,7 +165,7 @@ def delete_item():
         return jsonify({'error': 'Nothing to delete.'}), 400
     gone = {str(i) for i in ids}
 
-    def work(data: Dict[str, Any]) -> Tuple[Any, str]:
+    def work(data: dict[str, Any]) -> tuple[Any, str]:
         before = len(data['contacts'])
         data['contacts'] = [c for c in data['contacts'] if c['id'] not in gone]
         return {'deleted': before - len(data['contacts'])}, ''
@@ -188,7 +188,7 @@ def import_cards():
         return jsonify({'error': 'There are no contacts in this file.'}), 400
     counts = {'added': 0, 'skipped': 0}
 
-    def work(data: Dict[str, Any]) -> Tuple[Any, str]:
+    def work(data: dict[str, Any]) -> tuple[Any, str]:
         have_uid = {c.get('uid') for c in data['contacts'] if c.get('uid')}
         have_key = {_key(c) for c in data['contacts']}
         for card in cards:
@@ -209,7 +209,7 @@ def import_cards():
     return change(session, work)
 
 
-def _key(c: Dict[str, Any]) -> str:
+def _key(c: dict[str, Any]) -> str:
     phone = re.sub(r'\D', '', (c.get('phones') or [{}])[0].get('value', ''))
     email = ((c.get('emails') or [{}])[0].get('value', '')).lower()
     return f"{(c.get('first') or '').lower()}|{(c.get('last') or '').lower()}|{phone}|{email}"

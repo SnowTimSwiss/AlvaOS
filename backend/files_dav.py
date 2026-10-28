@@ -20,9 +20,9 @@ import os
 import secrets
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from email.utils import format_datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from urllib.parse import quote, unquote, urlsplit
 from xml.sax.saxutils import escape
 
@@ -39,7 +39,7 @@ PART_SUFFIX = '.alvaos-upload'
 app = Flask(__name__)
 _cred_lock = threading.Lock()
 # sha256(name:password) -> (name, until, the stored hash it was checked against)
-_good_credentials: Dict[str, Tuple[str, float, str]] = {}
+_good_credentials: dict[str, tuple[str, float, str]] = {}
 
 
 # ── Signing in (HTTP Basic, checked like the Files app) ─────────────────────
@@ -53,7 +53,7 @@ def _challenge(message: str = 'Sign in with your name and password for the share
 # and several devices at home share one address.
 FAILURE_WINDOW = 15 * 60
 MAX_FAILURES = 10
-_failures: Dict[str, List[float]] = {}
+_failures: dict[str, list[float]] = {}
 
 
 def _too_many_failures(ip: str, now: float) -> bool:
@@ -73,7 +73,7 @@ def _stored_hash(user: str) -> str:
     return str(entry.get('files_auth')) if isinstance(entry, dict) else ''
 
 
-def signed_in(app_id: str = 'files') -> Tuple[Optional[Dict[str, Any]], Optional[Response]]:
+def signed_in(app_id: str = 'files') -> tuple[dict[str, Any] | None, Response | None]:
     """The person signing in with HTTP Basic, if they may use this Hub app
     (Files for WebDAV, Calendar for CalDAV in hub_caldav.py)."""
     auth = request.authorization
@@ -117,7 +117,7 @@ def _admit(user: str, role: str, app_id: str = 'files'):
 
 # ── Paths: /<share>/<folder>/<name> ─────────────────────────────────────────
 
-def _split(raw: str) -> Tuple[str, str]:
+def _split(raw: str) -> tuple[str, str]:
     """('Share', 'a/b') from '/Share/a/b/' (already URL-decoded)."""
     parts = [p for p in raw.split('/') if p not in ('', '.')]
     return (parts[0], '/'.join(parts[1:])) if parts else ('', '')
@@ -144,14 +144,14 @@ def _href(share: str, rel: str, folder: bool) -> str:
     return '/' + quote(path) + ('/' if folder and path else '')
 
 
-def _entries(path: str, user: Optional[str]) -> Optional[List[Dict[str, Any]]]:
+def _entries(path: str, user: str | None) -> list[dict[str, Any]] | None:
     entries, _ = files_manager.list_entries(path, user=user)
     if entries is None:
         return None
     return [e for e in entries if e.get('type') in ('file', 'folder') and not str(e['name']).endswith(PART_SUFFIX)]
 
 
-def _stat(path: str, user: Optional[str]) -> Optional[Dict[str, Any]]:
+def _stat(path: str, user: str | None) -> dict[str, Any] | None:
     """The entry for one file or folder (from its parent's listing)."""
     parent, name = os.path.split(path.rstrip('/'))
     for entry in _entries(parent, user) or []:
@@ -162,15 +162,15 @@ def _stat(path: str, user: Optional[str]) -> Optional[Dict[str, Any]]:
 
 # ── PROPFIND ─────────────────────────────────────────────────────────────────
 
-def _http_date(iso: Optional[str]) -> str:
+def _http_date(iso: str | None) -> str:
     try:
         when = datetime.fromisoformat(str(iso))
     except (TypeError, ValueError):
-        when = datetime.now(timezone.utc)
-    return format_datetime(when.astimezone(timezone.utc), usegmt=True)
+        when = datetime.now(UTC)
+    return format_datetime(when.astimezone(UTC), usegmt=True)
 
 
-def _response_xml(href: str, name: str, folder: bool, size: int = 0, modified: Optional[str] = None) -> str:
+def _response_xml(href: str, name: str, folder: bool, size: int = 0, modified: str | None = None) -> str:
     props = [f'<D:displayname>{escape(name)}</D:displayname>',
              f'<D:getlastmodified>{_http_date(modified)}</D:getlastmodified>',
              '<D:supportedlock><D:lockentry><D:lockscope><D:exclusive/></D:lockscope>'
@@ -186,7 +186,7 @@ def _response_xml(href: str, name: str, folder: bool, size: int = 0, modified: O
             '<D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>')
 
 
-def _multistatus(parts: List[str]) -> Response:
+def _multistatus(parts: list[str]) -> Response:
     body = '<?xml version="1.0" encoding="utf-8"?>\n<D:multistatus xmlns:D="DAV:">' + ''.join(parts) + \
            '</D:multistatus>'
     return Response(body, 207, {'Content-Type': 'application/xml; charset=utf-8'})
@@ -205,7 +205,7 @@ def propfind(session, raw: str) -> Response:
                       for name in sorted(fs.shares_for(session))]
         return _multistatus(parts)
     if not rel:
-        entry: Optional[Dict[str, Any]] = {'name': share['name'], 'type': 'folder'}
+        entry: dict[str, Any] | None = {'name': share['name'], 'type': 'folder'}
     else:
         entry = _stat(path, user)
     if entry is None:
@@ -272,13 +272,13 @@ def _writable(session, raw: str):
     return share, folder, name, None
 
 
-def _helper(args: List[str], session, timeout: int = 600) -> Optional[str]:
+def _helper(args: list[str], session, timeout: int = 600) -> str | None:
     """Runs one helper operation as the person; None when it worked."""
     result, error = files_manager.run_helper(args, timeout=timeout, user=fs.as_user(session))
     return None if result is not None else (error or 'That did not work.')
 
 
-def _to_trash(share, folder: str, name: str, session) -> Optional[str]:
+def _to_trash(share, folder: str, name: str, session) -> str | None:
     return _helper(['files-trash', share.get('root', share['path']), folder, name], session)
 
 
@@ -457,7 +457,7 @@ def dav(raw):
     return proppatch(raw)
 
 
-def serve_in_background(host: str = '0.0.0.0', port: int = PORT) -> Optional[threading.Thread]:
+def serve_in_background(host: str = '0.0.0.0', port: int = PORT) -> threading.Thread | None:
     """Starts the WebDAV server next to the Files app. Werkzeug's threaded
     server streams request bodies (chunked too) straight to the helper."""
     from werkzeug.serving import make_server

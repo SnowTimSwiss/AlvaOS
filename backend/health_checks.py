@@ -17,7 +17,7 @@ import os
 import threading
 import time
 from datetime import datetime, timedelta
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Optional
 
 STATE_FILE = '/var/lib/alvaos/health_checks.json'
 FREQUENCIES = {'off': None, 'weekly': 7, 'monthly': 30}
@@ -30,16 +30,16 @@ _lock = threading.Lock()
 
 # ── State ─────────────────────────────────────────────────────────────────────
 
-def _load() -> Dict[str, Any]:
+def _load() -> dict[str, Any]:
     try:
-        with open(STATE_FILE, 'r') as f:
+        with open(STATE_FILE) as f:
             data = json.load(f)
         return data if isinstance(data, dict) else {}
     except (OSError, ValueError):
         return {}
 
 
-def _save(data: Dict[str, Any]) -> None:
+def _save(data: dict[str, Any]) -> None:
     os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
     tmp = STATE_FILE + '.tmp'
     with open(tmp, 'w') as f:
@@ -47,7 +47,7 @@ def _save(data: Dict[str, Any]) -> None:
     os.replace(tmp, STATE_FILE)
 
 
-def get_settings() -> Dict[str, Any]:
+def get_settings() -> dict[str, Any]:
     settings = dict(DEFAULT_SETTINGS)
     stored = _load().get('settings')
     if isinstance(stored, dict):
@@ -61,7 +61,7 @@ def get_settings() -> Dict[str, Any]:
     return settings
 
 
-def save_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
+def save_settings(payload: dict[str, Any]) -> dict[str, Any]:
     """Validate and store. Raises ValueError with a sentence for the UI."""
     settings = get_settings()
     if 'scrub' in payload:
@@ -85,13 +85,13 @@ def save_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
     return get_settings()
 
 
-def last_results() -> Dict[str, Dict[str, Any]]:
+def last_results() -> dict[str, dict[str, Any]]:
     """The last data check seen per pool id."""
     seen = _load().get('pools')
     return seen if isinstance(seen, dict) else {}
 
 
-def _we_started(pool_id: str) -> Optional[datetime]:
+def _we_started(pool_id: str) -> datetime | None:
     value = (_load().get('started_by_scheduler') or {}).get(pool_id)
     try:
         return datetime.fromisoformat(value) if value else None
@@ -109,11 +109,11 @@ def _remember_start(pool_id: str, when: datetime) -> None:
         _save(data)
 
 
-def _record(pool_id: str, result: Dict[str, Any]) -> None:
+def _record(pool_id: str, result: dict[str, Any]) -> None:
     with _lock:
         data = _load()
         stored = data.get('pools')
-        pools: Dict[str, Any] = stored if isinstance(stored, dict) else {}
+        pools: dict[str, Any] = stored if isinstance(stored, dict) else {}
         if pools.get(pool_id) == result:
             return  # unchanged: do not wake the system disk every pass
         pools[pool_id] = result
@@ -123,7 +123,7 @@ def _record(pool_id: str, result: Dict[str, Any]) -> None:
 
 # ── Decisions (pure, tested) ──────────────────────────────────────────────────
 
-def parse_btrfs_time(text: str) -> Optional[datetime]:
+def parse_btrfs_time(text: str) -> datetime | None:
     """'Wed Oct  1 03:00:01 2026' as btrfs prints it (local time)."""
     cleaned = ' '.join(str(text or '').split())
     for fmt in ('%a %b %d %H:%M:%S %Y', '%Y-%m-%d %H:%M:%S'):
@@ -139,8 +139,8 @@ def in_window(now: datetime, start_hour: int) -> bool:
     return (now.hour - start_hour) % 24 < WINDOW_HOURS
 
 
-def is_due(scrub: Dict[str, Any], now: datetime, frequency: str,
-           we_started: Optional[datetime] = None) -> bool:
+def is_due(scrub: dict[str, Any], now: datetime, frequency: str,
+           we_started: datetime | None = None) -> bool:
     """Whether a pool needs a data check now, given `btrfs scrub status`.
 
     `we_started` is when this scheduler last started one. It counts too, so a
@@ -161,7 +161,7 @@ def is_due(scrub: Dict[str, Any], now: datetime, frequency: str,
     return now - started >= timedelta(days=days) - timedelta(hours=WINDOW_HOURS)
 
 
-def summarize(scrub: Dict[str, Any]) -> Dict[str, Any]:
+def summarize(scrub: dict[str, Any]) -> dict[str, Any]:
     """What the dashboard and the alerts need from one scrub status."""
     started = parse_btrfs_time(scrub.get('started', ''))
     return {
@@ -187,9 +187,9 @@ class HealthScheduler:
       start_scrub(mount) -> '' or an error
     """
 
-    def __init__(self, pools: Callable[[], Dict[str, Dict[str, Any]]],
-                 activity: Callable[[str], Dict[str, Any]],
-                 busy: Callable[[Dict[str, Any]], str],
+    def __init__(self, pools: Callable[[], dict[str, dict[str, Any]]],
+                 activity: Callable[[str], dict[str, Any]],
+                 busy: Callable[[dict[str, Any]], str],
                  start_scrub: Callable[[str], str],
                  log: Callable[[str], None] = print):
         self.pools = pools
@@ -198,12 +198,12 @@ class HealthScheduler:
         self.start_scrub = start_scrub
         self.log = log
 
-    def run_once(self, now: Optional[datetime] = None) -> Dict[str, str]:
+    def run_once(self, now: datetime | None = None) -> dict[str, str]:
         """One pass: record results, start at most one due check. Returns
         what happened per pool (for tests and the log)."""
         now = now or datetime.now()
         settings = get_settings()
-        outcome: Dict[str, str] = {}
+        outcome: dict[str, str] = {}
         started_one = False
         for pool_id, pool in sorted(self.pools().items()):
             mount = str(pool.get('mount_point') or '')
@@ -266,30 +266,17 @@ def smart_mode() -> str:
     return str(get_settings()['smart'])
 
 
-def save_smart_mode(mode: str) -> str:
-    if mode not in SMART_MODES:
-        raise ValueError('Choose standard, short or off.')
-    with _lock:
-        data = _load()
-        stored = data.get('settings')
-        settings: Dict[str, Any] = stored if isinstance(stored, dict) else {}
-        settings['smart'] = mode
-        data['settings'] = settings
-        _save(data)
-    return mode
-
-
-def smart_records() -> Dict[str, Dict[str, Any]]:
+def smart_records() -> dict[str, dict[str, Any]]:
     """What the last self-tests and SMART readings said, per disk."""
     records = _load().get('smart')
     return records if isinstance(records, dict) else {}
 
 
-def _update_smart(key: str, changes: Dict[str, Any]) -> None:
+def _update_smart(key: str, changes: dict[str, Any]) -> None:
     with _lock:
         data = _load()
         stored = data.get('smart')
-        records: Dict[str, Any] = stored if isinstance(stored, dict) else {}
+        records: dict[str, Any] = stored if isinstance(stored, dict) else {}
         record = dict(records.get(key) or {})
         merged = {**record, **changes}
         if merged == record:
@@ -299,7 +286,7 @@ def _update_smart(key: str, changes: Dict[str, Any]) -> None:
         _save(data)
 
 
-def _raw(table: Any, attr_id: int) -> Optional[int]:
+def _raw(table: Any, attr_id: int) -> int | None:
     for attr in table or []:
         if isinstance(attr, dict) and attr.get('id') == attr_id:
             value = (attr.get('raw') or {}).get('value')
@@ -307,7 +294,7 @@ def _raw(table: Any, attr_id: int) -> Optional[int]:
     return None
 
 
-def parse_smart(payload: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def parse_smart(payload: dict[str, Any] | None) -> dict[str, Any] | None:
     """The parts of `smartctl -H -A -l selftest -j` that matter, for ATA and
     NVMe disks. None when the disk was asleep or did not answer."""
     if not isinstance(payload, dict):
@@ -323,7 +310,7 @@ def parse_smart(payload: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
 
     table = (payload.get('ata_smart_attributes') or {}).get('table')
     nvme = payload.get('nvme_smart_health_information_log') or {}
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         'health': health,
         'reallocated': _raw(table, 5),
         'pending': _raw(table, 197),
@@ -361,7 +348,7 @@ def parse_smart(payload: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     return result
 
 
-def smart_test_due(last_iso: Optional[str], now: datetime, days: int) -> bool:
+def smart_test_due(last_iso: str | None, now: datetime, days: int) -> bool:
     if not last_iso:
         return True
     try:
@@ -371,7 +358,7 @@ def smart_test_due(last_iso: Optional[str], now: datetime, days: int) -> bool:
     return now - last >= timedelta(days=days) - timedelta(hours=WINDOW_HOURS)
 
 
-def smart_problems(record: Dict[str, Any]) -> Optional[Dict[str, str]]:
+def smart_problems(record: dict[str, Any]) -> dict[str, str] | None:
     """'critical' or 'warning' with a sentence for one disk, or None."""
     reading = record.get('reading') or {}
     test = reading.get('last_test') or {}
@@ -401,16 +388,16 @@ class SmartScheduler:
     """
 
     def __init__(self, disks: Callable[[], Any], start_test: Callable[[str, str], str],
-                 read: Callable[[str], Optional[Dict[str, Any]]], log: Callable[[str], None] = print):
+                 read: Callable[[str], dict[str, Any] | None], log: Callable[[str], None] = print):
         self.disks = disks
         self.start_test = start_test
         self.read = read
         self.log = log
 
-    def run_once(self, now: Optional[datetime] = None) -> Dict[str, str]:
+    def run_once(self, now: datetime | None = None) -> dict[str, str]:
         now = now or datetime.now()
         mode = smart_mode()
-        outcome: Dict[str, str] = {}
+        outcome: dict[str, str] = {}
         if mode == 'off' or not in_window(now, get_settings()['start_hour']):
             return outcome
         records = smart_records()
@@ -429,7 +416,7 @@ class SmartScheduler:
             if not str(record.get('read_at') or '').startswith(today):
                 reading = parse_smart(self.read(disk['path']))
                 if reading is not None:
-                    changes: Dict[str, Any] = {'reading': reading, 'read_at': now.isoformat()}
+                    changes: dict[str, Any] = {'reading': reading, 'read_at': now.isoformat()}
                     if record.get('reallocated_baseline') is None and isinstance(reading.get('reallocated'), int):
                         changes['reallocated_baseline'] = reading['reallocated']
                     _update_smart(key, changes)

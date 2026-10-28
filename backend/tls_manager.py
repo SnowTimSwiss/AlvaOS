@@ -18,7 +18,7 @@ import os
 import socket
 import ssl
 import threading
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 TLS_DIR = '/var/lib/alvaos/tls'
 CA_DAYS = 3650
@@ -38,12 +38,12 @@ PERMITTED_NETWORKS = ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '127.0.0.
                       '169.254.0.0/16')
 
 
-def paths(tls_dir: Optional[str] = None) -> Dict[str, str]:
+def paths(tls_dir: str | None = None) -> dict[str, str]:
     base = tls_dir or TLS_DIR
     return {name: os.path.join(base, name) for name in ('ca.crt', 'ca.key', 'server.crt', 'server.key')}
 
 
-def local_names() -> Tuple[List[str], List[str]]:
+def local_names() -> tuple[list[str], list[str]]:
     """(DNS names, IP addresses) the NAS is reached by on the network."""
     host = socket.gethostname().split('.')[0] or 'alvaos'
     names = sorted({host, f'{host}.local', 'localhost'})
@@ -76,10 +76,10 @@ def _write_public(path: str, data: bytes) -> None:
 
 
 def _now() -> datetime.datetime:
-    return datetime.datetime.now(datetime.timezone.utc)
+    return datetime.datetime.now(datetime.UTC)
 
 
-def _make_ca(p: Dict[str, str], host: str):
+def _make_ca(p: dict[str, str], host: str):
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import ec
@@ -117,7 +117,7 @@ def _load_cert(path: str):
         return None
 
 
-def _cert_names(cert) -> Tuple[List[str], List[str]]:
+def _cert_names(cert) -> tuple[list[str], list[str]]:
     from cryptography import x509
     try:
         san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
@@ -129,10 +129,10 @@ def _cert_names(cert) -> Tuple[List[str], List[str]]:
 
 def _not_after(cert) -> datetime.datetime:
     value = getattr(cert, 'not_valid_after_utc', None)
-    return value if value is not None else cert.not_valid_after.replace(tzinfo=datetime.timezone.utc)
+    return value if value is not None else cert.not_valid_after.replace(tzinfo=datetime.UTC)
 
 
-def permitted(ca, names: List[str], ips: List[str]) -> Tuple[List[str], List[str]]:
+def permitted(ca, names: list[str], ips: list[str]) -> tuple[list[str], list[str]]:
     """The names and addresses the authority may sign for (all of them for an
     authority made before name constraints)."""
     from cryptography import x509
@@ -149,7 +149,7 @@ def permitted(ca, names: List[str], ips: List[str]) -> Tuple[List[str], List[str
     return ok_names, ok_ips
 
 
-def _make_server_cert(p: Dict[str, str], names: List[str], ips: List[str]) -> None:
+def _make_server_cert(p: dict[str, str], names: list[str], ips: list[str]) -> None:
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import ec
@@ -180,8 +180,8 @@ def _make_server_cert(p: Dict[str, str], names: List[str], ips: List[str]) -> No
     _write_public(p['server.crt'], cert.public_bytes(serialization.Encoding.PEM))
 
 
-def ensure_certificates(tls_dir: Optional[str] = None, names: Optional[List[str]] = None,
-                        ips: Optional[List[str]] = None) -> Dict[str, str]:
+def ensure_certificates(tls_dir: str | None = None, names: list[str] | None = None,
+                        ips: list[str] | None = None) -> dict[str, str]:
     """Make the authority once, and a server certificate whenever it is
     missing, ends within RENEW_DAYS, or does not cover the current names and
     addresses. Returns the file paths."""
@@ -210,7 +210,7 @@ def ensure_certificates(tls_dir: Optional[str] = None, names: Optional[List[str]
     return p
 
 
-def info(tls_dir: Optional[str] = None) -> Dict[str, Any]:
+def info(tls_dir: str | None = None) -> dict[str, Any]:
     """What the settings page shows: fingerprint of the authority, names and
     addresses covered, and when the server certificate ends."""
     from cryptography.hazmat.primitives import hashes
@@ -228,7 +228,7 @@ def info(tls_dir: Optional[str] = None) -> Dict[str, Any]:
             'authority_valid_until': _not_after(ca).isoformat()}
 
 
-def ssl_context(tls_dir: Optional[str] = None) -> ssl.SSLContext:
+def ssl_context(tls_dir: str | None = None) -> ssl.SSLContext:
     p = paths(tls_dir)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
@@ -236,7 +236,7 @@ def ssl_context(tls_dir: Optional[str] = None) -> ssl.SSLContext:
     return context
 
 
-def refresh(context: ssl.SSLContext, tls_dir: Optional[str] = None, seen: Optional[float] = None) -> Optional[float]:
+def refresh(context: ssl.SSLContext, tls_dir: str | None = None, seen: float | None = None) -> float | None:
     """Renew the server certificate when the addresses changed (a new DHCP
     lease, the remote access tunnel) or it ends soon, and hand the new one to
     the running server: new connections get it, open ones keep theirs.
@@ -253,14 +253,14 @@ def refresh(context: ssl.SSLContext, tls_dir: Optional[str] = None, seen: Option
         return seen
 
 
-def keep_fresh(context: ssl.SSLContext, tls_dir: Optional[str] = None, stop: Optional[threading.Event] = None) -> None:
+def keep_fresh(context: ssl.SSLContext, tls_dir: str | None = None, stop: threading.Event | None = None) -> None:
     stop = stop or threading.Event()
     seen = refresh(context, tls_dir)
     while not stop.wait(RECHECK_SECONDS):
         seen = refresh(context, tls_dir, seen)
 
 
-def serve_in_background(app, port: int, name: str, tls_dir: Optional[str] = None) -> Optional[threading.Thread]:
+def serve_in_background(app, port: int, name: str, tls_dir: str | None = None) -> threading.Thread | None:
     """HTTPS for a WSGI app on `port`, next to its plain HTTP port."""
     try:
         from werkzeug.serving import WSGIRequestHandler, make_server
@@ -289,10 +289,10 @@ def serve_in_background(app, port: int, name: str, tls_dir: Optional[str] = None
 # that has not trusted the authority yet would only see a warning page.
 
 SETTINGS_FILE = '/var/lib/alvaos/https.json'
-_settings_cache: Dict[str, Any] = {'mtime': None, 'only': False}
+_settings_cache: dict[str, Any] = {'mtime': None, 'only': False}
 
 
-def https_only(path: Optional[str] = None) -> bool:
+def https_only(path: str | None = None) -> bool:
     path = path or SETTINGS_FILE
     try:
         mtime = os.stat(path).st_mtime
@@ -309,7 +309,7 @@ def https_only(path: Optional[str] = None) -> bool:
     return bool(_settings_cache['only'])
 
 
-def set_https_only(only: bool, path: Optional[str] = None) -> None:
+def set_https_only(only: bool, path: str | None = None) -> None:
     import json
     path = path or SETTINGS_FILE
     tmp = f'{path}.tmp'
@@ -318,7 +318,7 @@ def set_https_only(only: bool, path: Optional[str] = None) -> None:
     os.replace(tmp, path)
 
 
-def redirect_to_https(request, port: int, keep: Tuple[str, ...] = ()):
+def redirect_to_https(request, port: int, keep: tuple[str, ...] = ()):
     """For a plain-HTTP request while "HTTPS only" is on: where to send it,
     or None to let it through (HTTPS already, or one of `keep`)."""
     if request.is_secure or not https_only() or request.path in keep:

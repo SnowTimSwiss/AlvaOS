@@ -1,12 +1,12 @@
 """Smart retention of local snapshots and how it is switched on (backend/backup_manager.py)."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 
 import pytest
 
 import backup_manager as bm
 
-NOW = datetime(2026, 10, 2, 12, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 10, 2, 12, 0, tzinfo=UTC)
 
 
 def snaps(*ages):
@@ -51,7 +51,7 @@ def manager(tmp_path, monkeypatch):
     monkeypatch.setattr(bm.BackupManager, "_schedule_loop", lambda self: None)
     monkeypatch.setattr(bm.BackupManager, "_path_on_system_disk", lambda self, p: False)
     monkeypatch.setattr(bm.BackupManager, "_same_filesystem", lambda self, a, b: True)
-    return bm.BackupManager(lambda *a, **k: (True, ""), lambda: {})
+    return bm.BackupManager(lambda *a, **k: (True, ""), dict)
 
 
 def test_new_installs_use_smart_retention(manager):

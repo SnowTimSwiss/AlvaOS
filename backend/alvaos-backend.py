@@ -60,7 +60,7 @@ for _module in (api_auth, api_system, api_updates, api_storage, api_shares, api_
 def serve_frontend(filename):
     try:
         if filename.endswith(('.html', '.css', '.js')):
-            with open(os.path.join(WEBUI_ROOT, filename), 'r') as f:
+            with open(os.path.join(WEBUI_ROOT, filename)) as f:
                 content = f.read()
             clean_version = VERSION.strip('() ')
             content = content.replace('{{VERSION}}', clean_version)
@@ -211,7 +211,7 @@ if __name__ == '__main__':
     print(f"Starting AlvaOS Backend v{VERSION}...")
     print("Web UI: http://0.0.0.0:8080")
     print("API:    http://0.0.0.0:8080/api/v1/system/info")
-    
+
     # Ensure directories exist
     ensure_directories()
 
@@ -223,7 +223,7 @@ if __name__ == '__main__':
         atexit.register(power_ups_manager.stop)
     except Exception as e:
         print(f"Warning: Battery UPS monitor startup failed: {e}")
-    
+
     # Mount existing pools on startup (persistence)
     mount_existing_pools()
 
@@ -320,7 +320,7 @@ if __name__ == '__main__':
     # Serves the encrypted vaults buddies keep here, on the tunnel address only.
     threading.Thread(target=buddy_backup_manager.vault_store.serve_forever, name='buddy-vaults',
                      daemon=True).start()
-    
+
     if not is_setup_complete():
         print("\n⚠️  SETUP REQUIRED: Access the Web UI to complete initial setup")
 

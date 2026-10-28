@@ -82,7 +82,6 @@ svg { display: block; }
 .side-item .ic { color: var(--folder); display: inline-flex; }
 .side-item .new-badge { background: var(--accent); color: var(--accent-text); border-radius: 999px; padding: 1px 7px; font-weight: 600; }
 .side-item .ro { margin-left: auto; color: var(--faint); font-size: 0.72rem; }
-.side-sep { height: 1px; background: var(--line); margin: 10px 8px; }
 #trash-nav .ic { color: var(--muted); }
 .space { margin: 4px 8px 10px; font-size: 0.8rem; color: var(--muted); }
 /* Shared links, Trash, … at the bottom of the side bar, above the person. */

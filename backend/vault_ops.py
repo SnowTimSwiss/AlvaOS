@@ -25,7 +25,7 @@ import shutil
 import subprocess
 import sys
 import time
-from typing import Callable, List, Optional
+from typing import Callable
 
 NAME_RE = re.compile(r"^[a-z0-9]{4,32}$")
 EXPORT_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
@@ -62,7 +62,7 @@ class VaultError(Exception):
 Runner = Callable[..., subprocess.CompletedProcess]
 
 
-def _default_run(argv: List[str], input: Optional[bytes] = None) -> subprocess.CompletedProcess:
+def _default_run(argv: list[str], input: bytes | None = None) -> subprocess.CompletedProcess:
     binary = shutil.which(argv[0], path=SYSTEM_PATH)
     if binary is None:
         raise VaultError(f"{argv[0]} is not installed")
@@ -149,7 +149,7 @@ def _device_free(host: Host, index: int) -> bool:
         return False
 
 
-def _free_nbd_devices(host: Host) -> List[str]:
+def _free_nbd_devices(host: Host) -> list[str]:
     if not host.exists("/sys/block/nbd0"):
         _check(host.run([MODPROBE, "nbd", f"nbds_max={NBD_DEVICES}"]), "Loading the nbd module")
     devices = [f"/dev/nbd{i}" for i in range(NBD_DEVICES) if _device_free(host, i)]
@@ -260,7 +260,7 @@ def open_vault(name: str, remote: str, export: str, mode: str, key: str, host: H
     return {"mountpoint": mountpoint, "device": device, "formatted": formatted}
 
 
-def main(argv: List[str], stdin: bytes, host: Optional[Host] = None) -> int:
+def main(argv: list[str], stdin: bytes, host: Host | None = None) -> int:
     host = host or Host()
     try:
         if argv[:1] == ["vault-close"] and len(argv) == 2:

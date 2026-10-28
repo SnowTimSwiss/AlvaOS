@@ -41,23 +41,23 @@ def get_app_details_endpoint(app_id):
 def install_app():
     """Install an app"""
     data = request.get_json() or {}
-    
+
     app_id = data.get('app_id')
     pool_path = data.get('pool_path')
     parent_subvolume = data.get('parent_subvolume')
     port_mappings = data.get('port_mappings', {})
     volume_mappings = data.get('volume_mappings', {})
     environment_vars = data.get('environment_vars', {})
-    
+
     if not app_id:
         return jsonify({'error': 'app_id is required'}), 400
     if not pool_path:
         return jsonify({'error': 'pool_path is required'}), 400
-    
+
     port_mappings, port_error = normalize_port_mappings(port_mappings)
     if port_error:
         return jsonify({'error': port_error}), 400
-    
+
     from storage_manager import load_pools_state
     problem = validate_install_paths(pool_path, volume_mappings, port_mappings, load_pools_state())
     if problem:
@@ -71,10 +71,10 @@ def install_app():
         volume_mappings=volume_mappings,
         environment_vars=environment_vars
     )
-    
+
     if not success:
         return jsonify({'error': error}), 500
-    
+
     return jsonify({'success': True, 'message': f'Installation of "{app_id}" started'})
 
 @bp.route('/api/v1/apps/install/compose', methods=['POST'])
@@ -200,11 +200,11 @@ def uninstall_app(app_id):
     """Uninstall an app"""
     data = request.get_json() or {}
     keep_data = data.get('keep_data', False)
-    
+
     success, error = app_store.uninstall_app(app_id, keep_data=keep_data)
     if not success:
         return jsonify({'error': error}), 500
-    
+
     return jsonify({'success': True, 'message': f'App "{app_id}" uninstalled successfully'})
 
 @bp.route('/api/v1/apps/installed', methods=['GET'])

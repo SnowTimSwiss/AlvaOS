@@ -16,7 +16,7 @@ Nothing here needs a library: vCard is a simple line format.
 """
 
 import re
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 PHONE_TYPES = ('mobile', 'home', 'work', 'other')
 EMAIL_TYPES = ('home', 'work', 'other')
@@ -24,8 +24,8 @@ ADDRESS_TYPES = ('home', 'work', 'other')
 BIRTHDAY_RE = re.compile(r'^(\d{4}-\d{2}-\d{2}|--\d{2}-\d{2})$')   # the year may be unknown: --03-09
 
 
-def unfold(text: str) -> List[str]:
-    lines: List[str] = []
+def unfold(text: str) -> list[str]:
+    lines: list[str] = []
     for raw in text.replace('\r\n', '\n').replace('\r', '\n').split('\n'):
         if raw[:1] in (' ', '\t') and lines:
             lines[-1] += raw[1:]
@@ -34,7 +34,7 @@ def unfold(text: str) -> List[str]:
     return lines
 
 
-def split_line(line: str) -> Tuple[str, str, Dict[str, List[str]], str]:
+def split_line(line: str) -> tuple[str, str, dict[str, list[str]], str]:
     """('item1', 'TEL', {'TYPE': ['CELL', 'VOICE']}, '+41 79 123 45 67'); group may be ''."""
     head, value, quoted = '', '', False
     for i, ch in enumerate(line):
@@ -47,7 +47,7 @@ def split_line(line: str) -> Tuple[str, str, Dict[str, List[str]], str]:
         return '', '', {}, ''
     parts = head.split(';')
     group, _, name = parts[0].rpartition('.')
-    params: Dict[str, List[str]] = {}
+    params: dict[str, list[str]] = {}
     for part in parts[1:]:
         key, eq, val = part.partition('=')
         if not eq:                       # vCard 2.1: ";CELL" stands for TYPE=CELL
@@ -61,7 +61,7 @@ def unescape(value: str) -> str:
     return re.sub(r'\\([\\;,nN])', lambda m: '\n' if m.group(1) in 'nN' else m.group(1), value)
 
 
-def _split_semicolons(value: str) -> List[str]:
+def _split_semicolons(value: str) -> list[str]:
     """Fields of a structured value; "\\;" stays inside a field."""
     out, cur, i = [], '', 0
     while i < len(value):
@@ -80,7 +80,7 @@ def _split_semicolons(value: str) -> List[str]:
     return [unescape(p).strip() for p in out]
 
 
-def _decode(params: Dict[str, List[str]], value: str) -> str:
+def _decode(params: dict[str, list[str]], value: str) -> str:
     """vCard 2.1 from old phones: QUOTED-PRINTABLE values."""
     if 'QUOTED-PRINTABLE' in [e.upper() for e in params.get('ENCODING', [])]:
         import quopri
@@ -92,10 +92,10 @@ def _decode(params: Dict[str, List[str]], value: str) -> str:
     return value
 
 
-def cards(text: str) -> List[Dict[str, Any]]:
+def cards(text: str) -> list[dict[str, Any]]:
     """Every VCARD in the text, as the Hub keeps contacts (not yet checked)."""
-    out: List[Dict[str, Any]] = []
-    current: List[Tuple[str, str, Dict[str, List[str]], str]] = []
+    out: list[dict[str, Any]] = []
+    current: list[tuple[str, str, dict[str, list[str]], str]] = []
     inside = False
     for line in unfold(text):
         group, name, params, value = split_line(line)
@@ -112,16 +112,16 @@ def cards(text: str) -> List[Dict[str, Any]]:
     return out
 
 
-def _types(params: Dict[str, List[str]], labels: List[str]) -> List[str]:
+def _types(params: dict[str, list[str]], labels: list[str]) -> list[str]:
     return [t.upper() for t in params.get('TYPE', [])] + [lab.upper() for lab in labels]
 
 
-def _card(lines: List[Tuple[str, str, Dict[str, List[str]], str]]) -> Dict[str, Any]:
-    labels: Dict[str, List[str]] = {}
+def _card(lines: list[tuple[str, str, dict[str, list[str]], str]]) -> dict[str, Any]:
+    labels: dict[str, list[str]] = {}
     for group, name, _p, value in lines:                  # Apple: item1.X-ABLabel:_$!<Mobile>!$_
         if group and name == 'X-ABLABEL':
             labels.setdefault(group, []).append(re.sub(r'[_$!<>]', '', value))
-    item: Dict[str, Any] = {'first': '', 'last': '', 'org': '', 'title': '', 'nickname': '', 'phones': [],
+    item: dict[str, Any] = {'first': '', 'last': '', 'org': '', 'title': '', 'nickname': '', 'phones': [],
                             'emails': [], 'addresses': [], 'birthday': '', 'url': '', 'notes': '', 'uid': ''}
     full = ''
     for group, name, params, value in lines:
@@ -191,7 +191,7 @@ def fold(line: str) -> str:
     raw = line.encode('utf-8')
     if len(raw) <= 75:
         return line
-    parts: List[str] = []
+    parts: list[str] = []
     cur, size = '', 0
     for ch in line:
         n = len(ch.encode('utf-8'))
@@ -204,13 +204,13 @@ def fold(line: str) -> str:
     return '\r\n '.join(parts)
 
 
-def display_name(item: Dict[str, Any]) -> str:
+def display_name(item: dict[str, Any]) -> str:
     name = ' '.join(p for p in (item.get('first'), item.get('last')) if p).strip()
     return name or str(item.get('org') or '') or next((e['value'] for e in item.get('emails', [])), '') \
         or next((p['value'] for p in item.get('phones', [])), '') or 'No name'
 
 
-def vcard_of(item: Dict[str, Any], uid: str) -> str:
+def vcard_of(item: dict[str, Any], uid: str) -> str:
     lines = ['BEGIN:VCARD', 'VERSION:3.0', f'UID:{uid}', f'FN:{escape(display_name(item))}',
              f"N:{escape(item.get('last') or '')};{escape(item.get('first') or '')};;;"]
     if item.get('nickname'):

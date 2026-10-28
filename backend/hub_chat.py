@@ -23,8 +23,8 @@ import json
 import re
 import secrets
 import time
-from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
+from datetime import datetime, timedelta, UTC
+from typing import Any, Callable, Iterator
 
 from flask import Blueprint, Response, jsonify, request
 
@@ -46,7 +46,7 @@ SYSTEM_PROMPT = ('You are a helpful assistant. Answer in the language of the que
 
 
 def _stamp() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec='seconds')
+    return datetime.now(UTC).isoformat(timespec='seconds')
 
 
 def _chat_file(chat_id: str) -> str:
@@ -58,7 +58,7 @@ def _chat_file(chat_id: str) -> str:
 _cannot_think: set = set()
 
 
-def catalog(ai: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+def catalog(ai: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Every model of every AI service AlvaOS can talk to."""
     ai = ai or ai_assistant.load_settings()
     return [{'id': f"{c['id']}/{m}", 'model': m, 'service': c['name'], 'connection': c['id'],
@@ -66,10 +66,10 @@ def catalog(ai: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
             for c in ai['connections'] if ai_assistant.usable(c) for m in c['models']]
 
 
-def _apply(items: List[Dict[str, Any]], rule: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _apply(items: list[dict[str, Any]], rule: dict[str, Any]) -> list[dict[str, Any]]:
     refs = set(rule.get('items') or [])
 
-    def listed(item: Dict[str, Any]) -> bool:
+    def listed(item: dict[str, Any]) -> bool:
         return item['connection'] in refs or item['id'] in refs
     if rule.get('mode') == 'only':
         return [i for i in items if listed(i)]
@@ -78,8 +78,8 @@ def _apply(items: List[Dict[str, Any]], rule: Dict[str, Any]) -> List[Dict[str, 
     return items
 
 
-def offered(user: str, ai: Optional[Dict[str, Any]] = None,
-            hub: Optional[Dict[str, Any]] = None) -> Tuple[List[Dict[str, Any]], str]:
+def offered(user: str, ai: dict[str, Any] | None = None,
+            hub: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], str]:
     """The models this person may choose, and why there are none ('' when there are)."""
     ai = ai or ai_assistant.load_settings()
     entry = (hub or hub_apps.load())['apps']['chat']
@@ -94,7 +94,7 @@ def offered(user: str, ai: Optional[Dict[str, Any]] = None,
     return items, '' if items else 'No model is open to you. Ask the person who looks after the NAS.'
 
 
-def may_search(user: str, ai: Optional[Dict[str, Any]] = None, hub: Optional[Dict[str, Any]] = None) -> bool:
+def may_search(user: str, ai: dict[str, Any] | None = None, hub: dict[str, Any] | None = None) -> bool:
     """Web search is on (Settings › AI) and open to this person (Hub page)."""
     ai = ai or ai_assistant.load_settings()
     if not ai.get('search', {}).get('enabled'):
@@ -103,8 +103,8 @@ def may_search(user: str, ai: Optional[Dict[str, Any]] = None, hub: Optional[Dic
     return people is None or user in people
 
 
-def search_query(service: Dict[str, Any], model: str, history: List[Dict[str, Any]], text: str,
-                 post: Optional[Callable[..., Any]] = None) -> str:
+def search_query(service: dict[str, Any], model: str, history: list[dict[str, Any]], text: str,
+                 post: Callable[..., Any] | None = None) -> str:
     """What to search for. A follow-up ("and tomorrow?") needs the chat
     before it: then the model writes the query; else the question is it."""
     if not any(m.get('role') == 'assistant' for m in history):
@@ -132,7 +132,7 @@ def search_query(service: Dict[str, Any], model: str, history: List[Dict[str, An
     return (lines[0].strip() if lines and lines[0].strip() else text)[:web_search.MAX_QUERY]
 
 
-def summary() -> Dict[str, Any]:
+def summary() -> dict[str, Any]:
     """For the admin's Hub page: the services and their models, without keys."""
     from urllib.parse import urlparse
     ai = ai_assistant.load_settings()
@@ -146,7 +146,7 @@ def title_for(message: str) -> str:
     return words if len(words) <= 60 else words[:57].rsplit(' ', 1)[0] + '…'
 
 
-def _own(session: Dict[str, Any]) -> Optional[hub_data.Place]:
+def _own(session: dict[str, Any]) -> hub_data.Place | None:
     return hub_data.own_place('chat', session)
 
 
@@ -154,7 +154,7 @@ NO_PLACE = ('You have no personal folder yet, so your chats have nowhere to go. 
             'Ask the person who looks after the NAS to make you one.')
 
 
-def _row(chat: Dict[str, Any]) -> Dict[str, Any]:
+def _row(chat: dict[str, Any]) -> dict[str, Any]:
     return {k: chat.get(k) for k in ('id', 'title', 'created', 'updated', 'model', 'pinned', 'kept')}
 
 
@@ -162,7 +162,7 @@ def _expire(place: hub_data.Place, days: int) -> None:
     """Chats not used for `days` go, unless pinned or kept."""
     if days <= 0:
         return
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec='seconds')
+    cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat(timespec='seconds')
     with hub_data.lock(place, INDEX):
         index, _ = hub_data.read(place, INDEX)
         rows = [c for c in (index or {}).get('chats') or [] if isinstance(c, dict)]
@@ -187,7 +187,7 @@ def overview():
     items, problem = offered(session['user'], hub=hub)
     days = hub['apps']['chat']['keep_days']
     place = _own(session)
-    chats: List[Dict[str, Any]] = []
+    chats: list[dict[str, Any]] = []
     if place:
         _expire(place, days)
         index, error = hub_data.read(place, INDEX)
@@ -219,7 +219,7 @@ def one(chat_id: str):
     return jsonify(chat)
 
 
-def _save(place: hub_data.Place, chat: Dict[str, Any]) -> str:
+def _save(place: hub_data.Place, chat: dict[str, Any]) -> str:
     """The chat's file, and its line in the list."""
     error = hub_data.write(place, _chat_file(chat['id']), chat)
     if error:
@@ -338,9 +338,9 @@ class ThinkSplitter:
         self.state = 'start'   # start → (think →) answer
         self.buffer = ''
 
-    def feed(self, text: str) -> List[Tuple[str, str]]:
+    def feed(self, text: str) -> list[tuple[str, str]]:
         self.buffer += text
-        out: List[Tuple[str, str]] = []
+        out: list[tuple[str, str]] = []
         if self.state == 'start':
             head = self.buffer.lstrip()
             if head.startswith(self.OPEN):
@@ -365,12 +365,12 @@ class ThinkSplitter:
             self.buffer = ''
         return out
 
-    def flush(self) -> List[Tuple[str, str]]:
+    def flush(self) -> list[tuple[str, str]]:
         rest, self.buffer = self.buffer, ''
         return [('r' if self.state == 'think' else 't', rest)] if rest else []
 
 
-def _error_text(res: Any, service: Dict[str, Any], model: str) -> str:
+def _error_text(res: Any, service: dict[str, Any], model: str) -> str:
     detail = ''
     try:
         body = res.json()
@@ -385,14 +385,14 @@ def _error_text(res: Any, service: Dict[str, Any], model: str) -> str:
     return f'The AI service answered {res.status_code}{": " + detail if detail else ""}'
 
 
-def _open(service: Dict[str, Any], model: str, messages: List[Dict[str, str]], reasoning: bool, effort: str,
-          post: Callable[..., Any]) -> Tuple[Any, str, bool]:
+def _open(service: dict[str, Any], model: str, messages: list[dict[str, str]], reasoning: bool, effort: str,
+          post: Callable[..., Any]) -> tuple[Any, str, bool]:
     """The streaming answer, or why not. Tries again without the thinking
     setting when the service or model does not know it."""
     headers = {'Content-Type': 'application/json'}
     if service.get('api_key'):
         headers['Authorization'] = f"Bearer {service['api_key']}"
-    body: Dict[str, Any] = {'model': model, 'messages': messages, 'stream': True}
+    body: dict[str, Any] = {'model': model, 'messages': messages, 'stream': True}
     if reasoning:
         body['reasoning_effort'] = effort
     elif service['provider'].startswith('ollama'):
@@ -416,9 +416,9 @@ def _open(service: Dict[str, Any], model: str, messages: List[Dict[str, str]], r
     return None, 'The AI service did not answer.', False
 
 
-def stream_answer(service: Dict[str, Any], model: str, history: List[Dict[str, Any]], reasoning: bool,
-                  effort: str, post: Optional[Callable[..., Any]] = None,
-                  found: str = '') -> Iterator[Tuple[str, str]]:
+def stream_answer(service: dict[str, Any], model: str, history: list[dict[str, Any]], reasoning: bool,
+                  effort: str, post: Callable[..., Any] | None = None,
+                  found: str = '') -> Iterator[tuple[str, str]]:
     """('r' | 't' | 'note' | 'error', text) as the model answers. `found`:
     web search results, given just before the last question."""
     if post is None:
@@ -465,7 +465,7 @@ def stream_answer(service: Dict[str, Any], model: str, history: List[Dict[str, A
         res.close()
 
 
-def _private_history(raw: Any) -> List[Dict[str, Any]]:
+def _private_history(raw: Any) -> list[dict[str, Any]]:
     """What was said so far in a private chat, as the page sends it."""
     out = []
     for m in (raw if isinstance(raw, list) else [])[-MAX_CONTEXT_MESSAGES:]:
@@ -510,7 +510,7 @@ def send():
         return jsonify({'error': NO_PLACE}), 409
     chat_id = '' if private else str(body.get('chat') or '')
     if private:
-        chat: Dict[str, Any] = {'id': '', 'title': title_for(text), 'messages': _private_history(body.get('history'))}
+        chat: dict[str, Any] = {'id': '', 'title': title_for(text), 'messages': _private_history(body.get('history'))}
     elif chat_id:
         if not ID_RE.match(chat_id) or place is None:
             return jsonify({'error': 'This chat is not there.'}), 404
@@ -532,10 +532,10 @@ def send():
             return jsonify({'error': error}), 409
 
     def lines() -> Iterator[str]:
-        answer: Dict[str, Any] = {'role': 'assistant', 'content': '', 'reasoning': '', 'model': model,
+        answer: dict[str, Any] = {'role': 'assistant', 'content': '', 'reasoning': '', 'model': model,
                                   'service': item['service']}
         started = time.monotonic()
-        thought_until: Optional[float] = None
+        thought_until: float | None = None
         yield json.dumps({'chat': {'id': chat_id, 'title': chat['title'], 'private': private}}) + '\n'
         failed = ''
         found = ''

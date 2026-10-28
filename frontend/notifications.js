@@ -646,10 +646,6 @@ function mergedNotificationFeed() {
     return [...local, ...server].sort((a, b) => new Date(b.ts) - new Date(a.ts));
 }
 
-function notifUnreadCount() {
-    return mergedNotificationFeed().filter((n) => !n.read).length;
-}
-
 function notifMarkRead(id, isLocal) {
     if (isLocal) {
         markLocalRead(id);

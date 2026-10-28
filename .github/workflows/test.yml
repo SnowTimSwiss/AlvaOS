@@ -32,7 +32,7 @@ jobs:
           python -m pip install --upgrade pip
           # Enough to import the whole backend (API tests load every blueprint);
           # docker, waitress and the 2FA libraries are not needed for the suite.
-          pip install pytest flask pyyaml cryptography psutil requests pillow qrcode iroh
+          pip install pytest flask pyyaml cryptography psutil requests pillow qrcode iroh h11
 
       # The backend keeps its state in /var/lib/alvaos, owned by the service
       # user on a NAS. Give the CI user the same layout.
@@ -41,8 +41,10 @@ jobs:
           sudo mkdir -p /var/lib/alvaos /var/log/alvaos
           sudo chown -R "$USER" /var/lib/alvaos /var/log/alvaos
 
-      - name: Install libnbd tools (NBD server interoperability test)
-        run: sudo apt-get install -y --no-install-recommends libnbd-bin
+      # libnbd: the NBD server interoperability test. btrfs-progs: the backup
+      # tests look for the btrfs command (their runner is faked, the binary is not).
+      - name: Install the tools the tests call
+        run: sudo apt-get install -y --no-install-recommends libnbd-bin btrfs-progs
 
       - name: Run unit tests
         run: pytest
@@ -101,15 +103,21 @@ jobs:
         with:
           python-version: '3.11'
 
-      # Pinned so a new linter release cannot turn CI red on an unrelated change.
+      # ruff, mypy and the type stubs are pinned in requirements-dev.txt, so a
+      # new release cannot turn CI red on an unrelated change.
       - name: Install linters
-        run: pip install ruff==0.15.8 mypy==2.3.1 types-requests types-PyYAML types-waitress
+        run: pip install -r backend/requirements-dev.txt
 
       - name: ruff (see ruff.toml)
         run: ruff check backend scripts
 
       - name: mypy (see mypy.ini)
         run: mypy
+
+      - name: shellcheck (warnings and worse)
+        run: |
+          sudo apt-get install -y --no-install-recommends shellcheck
+          git ls-files -z '*.sh' | xargs -0 shellcheck --severity=warning
 
   guardrails:
     runs-on: ubuntu-latest
@@ -132,3 +140,6 @@ jobs:
 
       - name: Check catalog apps ship no placeholder secrets
         run: python3 scripts/ci/check_catalog_secrets.py
+
+      - name: Check tracked files for keys and tokens
+        run: python3 scripts/ci/check_secrets.py

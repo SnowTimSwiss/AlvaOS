@@ -5,13 +5,13 @@ Disk detection, SMART data, Btrfs pool management, path security, and caching.
 """
 
 import json
-from typing import AbstractSet, Any, Dict, List, Optional, Set
+from typing import AbstractSet, Any
 import os
 import platform
 import re
 import subprocess
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 from common import CMD, run_sudo_command, ensure_directories, parse_size_to_bytes
 
@@ -19,7 +19,7 @@ from common import CMD, run_sudo_command, ensure_directories, parse_size_to_byte
 POOLS_STATE_FILE = '/var/lib/alvaos/pools.json'
 
 # ── Storage cache ─────────────────────────────────────────────────────────────
-STORAGE_CACHE: Dict[str, Dict[str, Any]] = {
+STORAGE_CACHE: dict[str, dict[str, Any]] = {
     'disks': {'data': None, 'expires': 0},
     'pools': {'data': None, 'expires': 0}
 }
@@ -49,7 +49,7 @@ def is_secure_system_device(device_name):
 
     try:
         root_device = None
-        with open('/proc/mounts', 'r') as f:
+        with open('/proc/mounts') as f:
             for line in f:
                 parts = line.split()
                 if len(parts) >= 2 and parts[1] == '/':
@@ -97,9 +97,7 @@ def _is_safe_path(path):
         if normalized.startswith(root) or normalized == root.rstrip('/'):
             return True
     # Special case: allow root for probing
-    if normalized == '/':
-        return True
-    return False
+    return normalized == '/'
 
 
 def _existing_probe_path(path):
@@ -143,28 +141,6 @@ def _base_disk_name_from_partition(path_or_name):
     if match:
         return match.group(1)
     return name
-
-
-def get_system_disk_names():
-    """Return the set of base disk names (e.g. {'sda', 'sdb'}) backing the system btrfs
-    pool. Covers multi-device system installs (RAID1/mirror) where /proc/mounts only
-    exposes the single device the kernel mounted root from, so checks based purely on
-    the active root device miss the other mirror leg."""
-    names: Set[str] = set()
-    try:
-        pools, root_btrfs_uuid = detect_btrfs_pools()
-        if not root_btrfs_uuid:
-            return names
-        for pool in pools:
-            if not pool.get('is_system_pool'):
-                continue
-            for device_path in pool.get('devices', []):
-                base = _base_disk_name_from_partition(device_path)
-                if base:
-                    names.add(base)
-    except Exception as e:
-        print(f"Error resolving system disk names: {e}")
-    return names
 
 
 def is_path_on_system_disk(path):
@@ -221,9 +197,7 @@ def _smartctl_has_payload(payload):
         return True
     if payload.get('scsi_error_counter_log'):
         return True
-    if payload.get('power_on_time'):
-        return True
-    return False
+    return bool(payload.get('power_on_time'))
 
 
 def _compact_smart_error(error_text):
@@ -289,7 +263,7 @@ def load_pools_state():
     """Load pools state from file"""
     try:
         if os.path.exists(POOLS_STATE_FILE):
-            with open(POOLS_STATE_FILE, 'r') as f:
+            with open(POOLS_STATE_FILE) as f:
                 return json.load(f)
     except Exception:
         pass
@@ -316,7 +290,7 @@ def sanitize_pool_name(name: str, fallback: str = "") -> str:
 
 
 def detect_btrfs_pools():
-    pools: List[Dict[str, Any]] = []
+    pools: list[dict[str, Any]] = []
     root_btrfs_uuid = None
     if platform.system() != 'Linux':
         return pools, root_btrfs_uuid
@@ -352,7 +326,7 @@ def detect_btrfs_pools():
             if label == 'none':
                 label = 'Unlabeled'
 
-        pool: Dict[str, Any] = {
+        pool: dict[str, Any] = {
             'id': uuid_val,
             'name': label,
             'uuid': uuid_val,
@@ -394,7 +368,7 @@ _MEMBER_RE = re.compile(
     r"devid\s+(\d+)\s+size\s+(\S+)\s+used\s+(\S+)\s+path\s+(.+?)(\s+MISSING)?\s*$", re.MULTILINE)
 
 
-def parse_show_members(block: str) -> List[Dict[str, Any]]:
+def parse_show_members(block: str) -> list[dict[str, Any]]:
     """Members of one filesystem in `btrfs filesystem show` output.
 
     A disk that is gone shows as "path <missing disk> MISSING" while the pool
@@ -421,7 +395,7 @@ def _percent(text: str):
 GROW_THRESHOLD_BYTES = 1024 ** 3   # ignore rounding; only offer at least 1 GiB
 
 
-def growable_members(members: List[Dict[str, Any]], disks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def growable_members(members: list[dict[str, Any]], disks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Pool members whose disk is bigger than the part the pool uses, e.g.
     after replacing a disk with a larger one. [{devid, path, extra_bytes}]."""
     by_path = {d.get('path'): d for d in disks if isinstance(d, dict)}
@@ -448,9 +422,9 @@ PROFILE_STRENGTH = {'SINGLE': 0, 'DUP': 0, 'RAID0': 0, 'RAID1': 1, 'RAID10': 1, 
 REDUNDANT_PROFILES = {'raid1', 'raid1c3', 'raid1c4', 'raid10', 'raid5', 'raid6'}
 
 
-def parse_usage_profile_sets(text: str) -> Dict[str, List[str]]:
+def parse_usage_profile_sets(text: str) -> dict[str, list[str]]:
     """Every profile per kind: {'data': ['RAID1', 'SINGLE'], ...}."""
-    sets: Dict[str, List[str]] = {}
+    sets: dict[str, list[str]] = {}
     for kind, profile in _PROFILE_RE.findall(text or ''):
         bucket = sets.setdefault(kind.lower(), [])
         if profile.upper() not in bucket:
@@ -458,7 +432,7 @@ def parse_usage_profile_sets(text: str) -> Dict[str, List[str]]:
     return sets
 
 
-def parse_usage_profiles(text: str) -> Dict[str, str]:
+def parse_usage_profiles(text: str) -> dict[str, str]:
     """`btrfs filesystem usage POOL` → {'data': 'RAID5', 'metadata': 'RAID1', ...}.
 
     Data and metadata can use different profiles (parity pools keep their
@@ -470,7 +444,7 @@ def parse_usage_profiles(text: str) -> Dict[str, str]:
             for kind, found in parse_usage_profile_sets(text).items()}
 
 
-def unprotected_profiles(text: str) -> Dict[str, str]:
+def unprotected_profiles(text: str) -> dict[str, str]:
     """Kinds with some chunks weaker than the pool's profile, and the profile
     to convert them to: {'data': 'raid1'}. System chunks are left out (they
     follow metadata and converting them needs force)."""
@@ -491,7 +465,7 @@ def degraded_mount_allowed(raid_level: Any, missing_count: int) -> bool:
     return str(raid_level or '').strip().lower() in REDUNDANT_PROFILES and missing_count == 1
 
 
-def parse_scrub_status(text: str) -> Dict[str, Any]:
+def parse_scrub_status(text: str) -> dict[str, Any]:
     """`btrfs scrub status POOL` → state, progress and what was found."""
     text = text or ''
     fields = {}
@@ -503,7 +477,7 @@ def parse_scrub_status(text: str) -> Dict[str, Any]:
         return {'state': 'never'}
     state = fields['status'].split()[0].lower() if fields['status'] else 'unknown'
     summary = fields.get('error summary', '')
-    errors: Optional[int] = 0
+    errors: int | None = 0
     if summary and 'no errors' not in summary:
         errors = sum(int(n) for n in re.findall(r"=(\d+)", summary)) or None
     uncorrectable = re.search(r"Uncorrectable:\s*(\d+)", text)
@@ -519,12 +493,12 @@ def parse_scrub_status(text: str) -> Dict[str, Any]:
     }
 
 
-def parse_replace_status(text: str) -> Dict[str, Any]:
+def parse_replace_status(text: str) -> dict[str, Any]:
     """`btrfs replace status -1 POOL` → never / running / finished / canceled."""
     text = (text or '').strip()
     lower = text.lower()
     errors = re.search(r"(\d+) write errs?, (\d+) uncorr\. read errs?", text)
-    result: Dict[str, Any] = {'errors': int(errors.group(1)) + int(errors.group(2)) if errors else 0}
+    result: dict[str, Any] = {'errors': int(errors.group(1)) + int(errors.group(2)) if errors else 0}
     if not text or 'never started' in lower:
         result['state'] = 'never'
     elif 'cancel' in lower:
@@ -541,7 +515,7 @@ def parse_replace_status(text: str) -> Dict[str, Any]:
     return result
 
 
-def parse_balance_status(text: str) -> Dict[str, Any]:
+def parse_balance_status(text: str) -> dict[str, Any]:
     """`btrfs balance status POOL` → none / running / paused, with progress."""
     text = text or ''
     lower = text.lower()
@@ -552,10 +526,10 @@ def parse_balance_status(text: str) -> Dict[str, Any]:
     return {'state': state, 'percent': round(100 - float(left.group(1)), 1) if left else None}
 
 
-def parse_device_stats(text: str) -> Dict[str, Dict[str, int]]:
+def parse_device_stats(text: str) -> dict[str, dict[str, int]]:
     """`btrfs device stats POOL` → {device: {counter: value}}; any non-zero
     counter means the disk returned bad data or failed an I/O at some point."""
-    stats: Dict[str, Dict[str, int]] = {}
+    stats: dict[str, dict[str, int]] = {}
     for dev, counter, value in re.findall(r"^\[(.+?)\]\.(\w+)\s+(\d+)\s*$", text or '', re.MULTILINE):
         stats.setdefault(dev, {})[counter] = int(value)
     return stats
@@ -578,10 +552,7 @@ VIRTUAL_DISK_PREFIXES = ('loop', 'sr', 'zram', 'ram', 'fd', 'nbd')
 # Mount points that mean "this disk runs the operating system".
 SYSTEM_MOUNTPOINTS = {'/', '/boot', '/boot/efi', '/usr', '/var'}
 
-DISK_ROLES = ('system', 'pool', 'in_use', 'other_pool', 'has_data', 'empty')
-
-
-def read_block_devices() -> List[Dict[str, Any]]:
+def read_block_devices() -> list[dict[str, Any]]:
     """Top-level block devices from lsblk, with their partitions as children."""
     result = subprocess.run(
         ['env', 'LC_ALL=C', CMD['LSBLK'], '-J', '-b', '-o', LSBLK_COLUMNS],
@@ -616,18 +587,18 @@ def _size_bytes(value) -> int:
     return parse_size_to_bytes(f'{text}iB' if text[-1:] in 'KMGTP' and text else text) or 0
 
 
-def _walk(node: Dict[str, Any]):
+def _walk(node: dict[str, Any]):
     yield node
     for child in node.get('children') or []:
         yield from _walk(child)
 
 
-def _pool_member_names(pool: Dict[str, Any]) -> Set[str]:
+def _pool_member_names(pool: dict[str, Any]) -> set[str]:
     return {_base_disk_name_from_partition(d) for d in pool.get('devices') or [] if d}
 
 
-def describe_disks(blockdevices: List[Dict[str, Any]], pools: List[Dict[str, Any]],
-                   system_disk_names: AbstractSet[str] = frozenset()) -> List[Dict[str, Any]]:
+def describe_disks(blockdevices: list[dict[str, Any]], pools: list[dict[str, Any]],
+                   system_disk_names: AbstractSet[str] = frozenset()) -> list[dict[str, Any]]:
     """Turn lsblk output into the disk list the Storage page shows.
 
     pools are the known Btrfs pools (detect_btrfs_pools() entries, with
@@ -635,7 +606,7 @@ def describe_disks(blockdevices: List[Dict[str, Any]], pools: List[Dict[str, Any
     'usage' entry: its role, one plain sentence, and what may be done with it.
     """
     disks = []
-    mounted_disks: Set[str] = set()
+    mounted_disks: set[str] = set()
     for device in blockdevices:
         if device.get('type') == 'disk' and any((n.get('mountpoint') or '') for n in _walk(device)):
             mounted_disks.add(device.get('name') or '')
@@ -650,7 +621,7 @@ def describe_disks(blockdevices: List[Dict[str, Any]], pools: List[Dict[str, Any
         filesystems = sorted({str(n['fstype']) for n in nodes if n.get('fstype')})
 
         pool = next((p for p in pools if name in _pool_member_names(p)), None)
-        usage: Dict[str, Any] = {'mountpoints': mountpoints, 'filesystems': filesystems}
+        usage: dict[str, Any] = {'mountpoints': mountpoints, 'filesystems': filesystems}
         if (name in system_disk_names or any(m in SYSTEM_MOUNTPOINTS for m in mountpoints)
                 or (pool and pool.get('is_system_pool'))):
             usage.update(role='system', summary='Runs AlvaOS. It cannot be erased or added to a pool.')
@@ -702,7 +673,7 @@ def describe_disks(blockdevices: List[Dict[str, Any]], pools: List[Dict[str, Any
     return disks
 
 
-def known_pools() -> List[Dict[str, Any]]:
+def known_pools() -> list[dict[str, Any]]:
     """Detected Btrfs pools, marked managed when AlvaOS has them in pools.json,
     plus managed pools whose disks are currently missing."""
     detected, _ = detect_btrfs_pools()
@@ -724,7 +695,7 @@ def known_pools() -> List[Dict[str, Any]]:
     return detected
 
 
-def disk_inventory() -> List[Dict[str, Any]]:
+def disk_inventory() -> list[dict[str, Any]]:
     """The live disk list with roles (no SMART data; that is slow and added by the API)."""
     pools = known_pools()
     system_names = {
@@ -735,7 +706,7 @@ def disk_inventory() -> List[Dict[str, Any]]:
     return describe_disks(devices, pools, system_names)
 
 
-def find_disk(disks: List[Dict[str, Any]], device: str):
+def find_disk(disks: list[dict[str, Any]], device: str):
     """The inventory entry for a name or /dev path, or None."""
     name = os.path.basename(str(device or '').strip())
     return next((d for d in disks if d['name'] == name), None)
@@ -760,7 +731,7 @@ def check_disks_for_pool(devices) -> str:
 
 # ── Startup ───────────────────────────────────────────────────────────────────
 
-def _mount_degraded(pool_id: str, pool_info: Dict[str, Any], mount_point: str) -> bool:
+def _mount_degraded(pool_id: str, pool_info: dict[str, Any], mount_point: str) -> bool:
     live = next((p for p in detect_btrfs_pools()[0] if str(p.get('id', '')).lower() == str(pool_id).lower()), None)
     missing = int((live or {}).get('missing_count') or 0)
     if not live or not degraded_mount_allowed(pool_info.get('raid_level'), missing):
@@ -771,7 +742,7 @@ def _mount_degraded(pool_id: str, pool_info: Dict[str, Any], mount_point: str) -
     if err or res is None or res.returncode != 0:
         print(f"Degraded mount of {pool_info.get('name')} failed: {err}")
         return False
-    pool_info['mounted_degraded_at'] = datetime.now(timezone.utc).isoformat()
+    pool_info['mounted_degraded_at'] = datetime.now(UTC).isoformat()
     save_pools_state({**load_pools_state(), pool_id: pool_info})
     print(f"Mounted {pool_info.get('name')} without its missing disk. Replace the disk soon.")
     return True

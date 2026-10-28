@@ -18,7 +18,7 @@ import secrets
 import ssl
 import threading
 import time
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable
 from urllib.parse import parse_qs, urlsplit
 
 PORT = 8085
@@ -28,7 +28,7 @@ HEAD_LIMIT = 16 * 1024
 MAX_CONNECTIONS = 16
 VNC_WEBSOCKET_BASE = 5700   # vm_ops.VNC_WEBSOCKET_BASE
 
-_tickets: Dict[str, Tuple[str, int, float]] = {}
+_tickets: dict[str, tuple[str, int, float]] = {}
 _lock = threading.Lock()
 _open = 0
 
@@ -44,7 +44,7 @@ def issue(vm_id: str, slot: int) -> str:
     return ticket
 
 
-def redeem(ticket: str) -> Optional[Tuple[str, int]]:
+def redeem(ticket: str) -> tuple[str, int] | None:
     """(machine, screen number) once, or None."""
     with _lock:
         found = _tickets.pop(ticket, None)
@@ -57,7 +57,7 @@ def _refuse(status: str) -> bytes:
     return f'HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'.encode()
 
 
-def check_request(head: bytes) -> Tuple[Optional[int], str]:
+def check_request(head: bytes) -> tuple[int | None, str]:
     """(screen number, '') for a good request, else (None, status line)."""
     try:
         lines = head.decode('latin-1').split('\r\n')
@@ -101,7 +101,7 @@ async def _pipe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> N
 
 
 async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
-                 target: Callable[[int], Tuple[str, int]] = lambda slot: ('127.0.0.1', VNC_WEBSOCKET_BASE + slot)
+                 target: Callable[[int], tuple[str, int]] = lambda slot: ('127.0.0.1', VNC_WEBSOCKET_BASE + slot)
                  ) -> None:
     global _open
     if _open >= MAX_CONNECTIONS:
@@ -112,7 +112,7 @@ async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
     try:
         try:
             head = await asyncio.wait_for(reader.readuntil(b'\r\n\r\n'), 10)
-        except (asyncio.TimeoutError, asyncio.IncompleteReadError, asyncio.LimitOverrunError, ConnectionError):
+        except (TimeoutError, asyncio.IncompleteReadError, asyncio.LimitOverrunError, ConnectionError):
             writer.close()
             return
         if len(head) > HEAD_LIMIT:
@@ -138,8 +138,8 @@ async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
         _open -= 1
 
 
-async def serve(port: int = PORT, tls_port: Optional[int] = TLS_PORT, host: str = '0.0.0.0',
-                context: Optional[ssl.SSLContext] = None, target=None) -> None:
+async def serve(port: int = PORT, tls_port: int | None = TLS_PORT, host: str = '0.0.0.0',
+                context: ssl.SSLContext | None = None, target=None) -> None:
     def client(r, w):
         return handle(r, w, target) if target else handle(r, w)
     servers = [await asyncio.start_server(client, host, port, limit=HEAD_LIMIT)]
@@ -148,7 +148,7 @@ async def serve(port: int = PORT, tls_port: Optional[int] = TLS_PORT, host: str 
     await asyncio.gather(*(s.serve_forever() for s in servers))
 
 
-def serve_in_background() -> Optional[threading.Thread]:
+def serve_in_background() -> threading.Thread | None:
     """Start the door next to the web page (alvaos-backend.py)."""
     context = None
     try:

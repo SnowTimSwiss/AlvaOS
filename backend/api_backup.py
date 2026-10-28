@@ -282,7 +282,7 @@ def backup_run_now():
     backup_type = data.get('backup_type', 'pool')
     sources = data.get('sources')
     target_path = (data.get('target_path') or '').strip() or None
-    
+
     result = backup_manager.run_backup_now(
         backup_type=backup_type,
         sources=sources,

@@ -8,7 +8,7 @@ at every start (disks forget it when they lose power). SSDs are left alone.
 
 import json
 import os
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable
 
 from common import CMD, ensure_directories
 
@@ -19,7 +19,7 @@ HDPARM = CMD.get('HDPARM', '/usr/sbin/hdparm')
 SPINDOWN_VALUES = {0: 0, 10: 120, 20: 240, 30: 241, 60: 242}
 
 
-def load_settings(path: str = SETTINGS_FILE) -> Dict[str, Any]:
+def load_settings(path: str = SETTINGS_FILE) -> dict[str, Any]:
     try:
         with open(path) as f:
             raw = json.load(f)
@@ -29,7 +29,7 @@ def load_settings(path: str = SETTINGS_FILE) -> Dict[str, Any]:
     return {'spindown_minutes': minutes if minutes in SPINDOWN_VALUES else 0}
 
 
-def save_settings(minutes: int, path: str = SETTINGS_FILE) -> Dict[str, Any]:
+def save_settings(minutes: int, path: str = SETTINGS_FILE) -> dict[str, Any]:
     if minutes not in SPINDOWN_VALUES:
         raise ValueError('Choose never, 10, 20, 30 or 60 minutes.')
     ensure_directories()
@@ -41,13 +41,13 @@ def save_settings(minutes: int, path: str = SETTINGS_FILE) -> Dict[str, Any]:
     return settings
 
 
-def sleepable_disks(disks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def sleepable_disks(disks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Spinning data disks: not the system disk, not USB sticks."""
     return [d for d in disks if d.get('rotational') and not d.get('is_system_disk')
             and not d.get('is_removable') and str(d.get('path', '')).startswith('/dev/')]
 
 
-def apply(minutes: int, disks: List[Dict[str, Any]], run: Callable) -> List[Dict[str, Any]]:
+def apply(minutes: int, disks: list[dict[str, Any]], run: Callable) -> list[dict[str, Any]]:
     """Set the sleep timer on every sleepable disk. Returns per disk whether it worked."""
     value = str(SPINDOWN_VALUES[minutes])
     results = []
@@ -58,7 +58,7 @@ def apply(minutes: int, disks: List[Dict[str, Any]], run: Callable) -> List[Dict
     return results
 
 
-def apply_saved(disks_reader: Callable[[], List[Dict[str, Any]]], run: Callable) -> None:
+def apply_saved(disks_reader: Callable[[], list[dict[str, Any]]], run: Callable) -> None:
     """At startup: disks lose the timer when they lose power."""
     minutes = load_settings()['spindown_minutes']
     if minutes:

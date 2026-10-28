@@ -31,7 +31,7 @@ def sudoers_rules(path: Path):
     rules = []
     for raw in path.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
-        if not line or line.startswith("#") or line.startswith("Defaults"):
+        if not line or line.startswith(("#", "Defaults")):
             continue
         rules.append(line)
     return rules

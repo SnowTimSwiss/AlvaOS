@@ -30,8 +30,8 @@ import subprocess
 import tempfile
 import threading
 from contextlib import contextmanager
-from datetime import date, datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Callable, Dict, Iterator, List, Optional, Set, Tuple
+from datetime import date, datetime, timedelta, UTC
+from typing import TYPE_CHECKING, Any, Callable, Iterator
 
 import requests
 
@@ -60,7 +60,7 @@ class TransferError(Exception):
 
 # ── Streaming root commands ──────────────────────────────────────────────────
 
-def spawn_privileged(cmd: List[str], stdin_pipe: bool = False) -> Tuple[subprocess.Popen, Any]:
+def spawn_privileged(cmd: list[str], stdin_pipe: bool = False) -> tuple[subprocess.Popen, Any]:
     """Start a root command that streams: (process, stderr file).
 
     By default its stdout is a pipe to read from (btrfs send); with
@@ -114,7 +114,7 @@ def source_dir_name(source_path: str) -> str:
     return f"src-{encoded}"
 
 
-def source_from_dir(name: str) -> Optional[str]:
+def source_from_dir(name: str) -> str | None:
     if not SOURCE_DIR_RE.match(name or ""):
         return None
     body = name[4:]
@@ -125,18 +125,18 @@ def source_from_dir(name: str) -> Optional[str]:
     return path if path.startswith("/") else None
 
 
-def snapshot_time(name: str) -> Optional[datetime]:
+def snapshot_time(name: str) -> datetime | None:
     match = SNAPSHOT_RE.match(name or "")
     if not match:
         return None
     try:
-        return datetime.strptime(match.group(1), "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc)
+        return datetime.strptime(match.group(1), "%Y%m%d-%H%M%S").replace(tzinfo=UTC)
     except ValueError:
         return None
 
 
-def retention_keep(snapshots: List[Tuple[str, datetime]], keep_daily: int, keep_weekly: int,
-                   keep_monthly: int, now: datetime) -> Set[str]:
+def retention_keep(snapshots: list[tuple[str, datetime]], keep_daily: int, keep_weekly: int,
+                   keep_monthly: int, now: datetime) -> set[str]:
     """Which snapshots to keep: the newest one of each of the last N days,
     weeks and months (like TrueNAS/Time Machine), and always the newest."""
     if not snapshots:
@@ -148,7 +148,7 @@ def retention_keep(snapshots: List[Tuple[str, datetime]], keep_daily: int, keep_
     def weeks_between(a: date, b: date) -> int:
         return (a - timedelta(days=a.weekday()) - (b - timedelta(days=b.weekday()))).days // 7
 
-    buckets: List[Tuple[int, Callable[[date], Any], Callable[[date], int]]] = [
+    buckets: list[tuple[int, Callable[[date], Any], Callable[[date], int]]] = [
         (keep_daily, lambda d: d, lambda d: (today - d).days),
         (keep_weekly, lambda d: d.isocalendar()[:2], lambda d: weeks_between(today, d)),
         (keep_monthly, lambda d: (d.year, d.month), lambda d: (today.year - d.year) * 12 + today.month - d.month),
@@ -165,7 +165,7 @@ def retention_keep(snapshots: List[Tuple[str, datetime]], keep_daily: int, keep_
     return keep
 
 
-def parse_usage(text: str) -> Tuple[int, int]:
+def parse_usage(text: str) -> tuple[int, int]:
     """(device size, estimated free) in bytes from `btrfs filesystem usage -b`."""
     size = free = 0
     for line in (text or "").splitlines():
@@ -188,19 +188,19 @@ class VaultStore:
 
     def __init__(self, manager: "BuddyBackupManager"):
         self.m = manager
-        self.server: Optional[nbd_server.NbdServer] = None
+        self.server: nbd_server.NbdServer | None = None
         self._lock = threading.Lock()
 
-    def _paths(self, owner: str) -> Tuple[str, str, str]:
+    def _paths(self, owner: str) -> tuple[str, str, str]:
         root, owner_dir, err = self.m._select_writable_stream_owner_dir(owner)
         if not root or not owner_dir:
             raise VaultError(err or "No place to keep the buddy's vault")
         return owner_dir, os.path.join(owner_dir, self.IMAGE_NAME), os.path.join(owner_dir, self.KEY_NAME)
 
-    def info(self, owner: str) -> Dict[str, Any]:
+    def info(self, owner: str) -> dict[str, Any]:
         owner_dir, image, key_file = self._paths(owner)
         quota = self.m._owner_quota_bytes(owner)
-        result: Dict[str, Any] = {"exists": os.path.exists(image), "quota_bytes": quota,
+        result: dict[str, Any] = {"exists": os.path.exists(image), "quota_bytes": quota,
                                   "size_bytes": 0, "used_bytes": 0, "key_blob": ""}
         if result["exists"]:
             st = os.stat(image)
@@ -211,7 +211,7 @@ class VaultStore:
                 result["key_blob"] = f.read(4096).strip()
         return result
 
-    def ensure(self, owner: str) -> Dict[str, Any]:
+    def ensure(self, owner: str) -> dict[str, Any]:
         """Create the owner's image, or grow it to a raised quota (never shrink)."""
         owner_dir, image, _ = self._paths(owner)
         quota = self.m._owner_quota_bytes(owner)
@@ -248,7 +248,7 @@ class VaultStore:
                 pass
         return existed
 
-    def resolve(self, remote_ip: str, export_name: str) -> Optional[nbd_server.Export]:
+    def resolve(self, remote_ip: str, export_name: str) -> nbd_server.Export | None:
         """NBD access check: a buddy may only open its own vault, from its tunnel address."""
         peer = self.m.peer_for_tunnel_ip(remote_ip)
         if peer is None or str(peer.get("node_id") or "") != export_name:
@@ -264,7 +264,7 @@ class VaultStore:
                 return False
         return nbd_server.Export(key=export_name, path=image, space_ok=space_ok)
 
-    def serve_forever(self, interval: float = 30.0, stop: Optional[threading.Event] = None) -> None:
+    def serve_forever(self, interval: float = 30.0, stop: threading.Event | None = None) -> None:
         """Keep the NBD server listening, on the loopback network only: AlvaOS Link connects to it
         from the buddy's own address (127.95.x.y), which is how `resolve` knows who is asking."""
         stop = stop or threading.Event()
@@ -291,7 +291,7 @@ class VaultStore:
 
 class VaultReplicator:
     def __init__(self, manager: "BuddyBackupManager",
-                 helper: Optional[Callable[[List[str], bytes], Tuple[bool, Any]]] = None):
+                 helper: Callable[[list[str], bytes], tuple[bool, Any]] | None = None):
         self.m = manager
         self.helper = helper or self._run_helper
         self.keys_file = os.path.join(manager.state_dir, "buddy_vault_keys.json")
@@ -299,7 +299,7 @@ class VaultReplicator:
     # Root operations ------------------------------------------------------
 
     @staticmethod
-    def _run_helper(args: List[str], stdin: bytes) -> Tuple[bool, Any]:
+    def _run_helper(args: list[str], stdin: bytes) -> tuple[bool, Any]:
         cmd = [PRIV_HELPER] + args
         if not is_root_user():
             cmd = ["sudo", "-n"] + cmd
@@ -318,11 +318,11 @@ class VaultReplicator:
 
     # Keys -----------------------------------------------------------------
 
-    def _load_keys(self) -> Dict[str, Dict[str, str]]:
+    def _load_keys(self) -> dict[str, dict[str, str]]:
         data = self.m._load_json(self.keys_file, {})
         return data if isinstance(data, dict) else {}
 
-    def _save_keys(self, keys: Dict[str, Dict[str, str]]) -> None:
+    def _save_keys(self, keys: dict[str, dict[str, str]]) -> None:
         fd = os.open(self.keys_file + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(keys, f)
@@ -336,7 +336,7 @@ class VaultReplicator:
         if keys.pop(peer_id, None) is not None:
             self._save_keys(keys)
 
-    def _remote(self, peer: Dict, method: str, path: str = "", **kwargs) -> Dict:
+    def _remote(self, peer: dict, method: str, path: str = "", **kwargs) -> dict:
         try:
             status, body = self.m._peer_request(peer, method, VAULT_API + path, **kwargs)
         except (requests.RequestException, TransferError) as exc:
@@ -345,7 +345,7 @@ class VaultReplicator:
             raise VaultError(body.get("error") or f"Buddy answered HTTP {status}")
         return body
 
-    def _seal_and_store(self, peer: Dict, key: bytes, material: "buddy_crypto.KeyMaterial") -> None:
+    def _seal_and_store(self, peer: dict, key: bytes, material: "buddy_crypto.KeyMaterial") -> None:
         blob = buddy_crypto.seal_vault_key(key, material)
         self._remote(peer, "PUT", "/key", json={"key_blob": blob})
         keys = self._load_keys()
@@ -353,7 +353,7 @@ class VaultReplicator:
                                       "sealed_salt": base64.b64encode(material.kdf_salt).decode("ascii")}
         self._save_keys(keys)
 
-    def _key_for(self, peer: Dict, info: Dict, create: bool, passphrase: str) -> str:
+    def _key_for(self, peer: dict, info: dict, create: bool, passphrase: str) -> str:
         peer_id = str(peer["node_id"])
         material = self.m._encryption_material()
         local = self._load_keys().get(peer_id)
@@ -387,7 +387,7 @@ class VaultReplicator:
     # Sessions -------------------------------------------------------------
 
     @contextmanager
-    def session(self, peer: Dict, mode: str = "rw", passphrase: str = "") -> Iterator[str]:
+    def session(self, peer: dict, mode: str = "rw", passphrase: str = "") -> Iterator[str]:
         """Attach, unlock and mount the vault on `peer`; yields the mount point."""
         info = self._remote(peer, "POST")
         key = self._key_for(peer, info, create=(mode == "rw"), passphrase=passphrase)
@@ -410,7 +410,7 @@ class VaultReplicator:
             raise VaultError("btrfs command not found")
         return btrfs
 
-    def list_snapshots(self, mountpoint: str) -> List[Dict[str, Any]]:
+    def list_snapshots(self, mountpoint: str) -> list[dict[str, Any]]:
         res, err = self.m.run_command([self._btrfs(), "subvolume", "list", mountpoint], timeout=60)
         if err or not res or res.returncode != 0:
             raise VaultError(err or "Could not list the vault")
@@ -430,7 +430,7 @@ class VaultReplicator:
                           "created_at": stamp.isoformat(), "kind": "vault"})
         return sorted(items, key=lambda item: item["created_at"], reverse=True)
 
-    def usage(self, mountpoint: str) -> Tuple[int, int]:
+    def usage(self, mountpoint: str) -> tuple[int, int]:
         res, err = self.m.run_command([self._btrfs(), "filesystem", "usage", "-b", mountpoint], timeout=60)
         if err or not res or res.returncode != 0:
             return 0, 0
@@ -441,21 +441,21 @@ class VaultReplicator:
         if err or not res or res.returncode != 0:
             raise VaultError(err or f"Could not delete {os.path.basename(path)}")
 
-    def prune(self, mountpoint: str, retention: Dict[str, int], protected: Set[str],
-              now: Optional[datetime] = None) -> List[str]:
+    def prune(self, mountpoint: str, retention: dict[str, int], protected: set[str],
+              now: datetime | None = None) -> list[str]:
         """Apply retention per source, then free space if the vault is nearly full.
 
         The newest snapshot of each source is never deleted: it is the base
         for the next sync. Neither are names in `protected`.
         """
-        now = now or datetime.now(timezone.utc)
+        now = now or datetime.now(UTC)
         snapshots = self.list_snapshots(mountpoint)
-        by_source: Dict[str, List[Dict[str, Any]]] = {}
+        by_source: dict[str, list[dict[str, Any]]] = {}
         for item in snapshots:
             by_source.setdefault(item["id"].split("/")[0], []).append(item)
 
         deleted = []
-        keep_all: Set[str] = set(protected)
+        keep_all: set[str] = set(protected)
         for items in by_source.values():
             pairs = [(item["snapshot_name"], datetime.fromisoformat(item["created_at"])) for item in items]
             keep = retention_keep(pairs, retention["keep_daily"], retention["keep_weekly"],
@@ -484,7 +484,7 @@ class VaultReplicator:
 
     # Transfers ------------------------------------------------------------
 
-    def _send_receive(self, snapshot: Dict, base: Optional[Dict], target_dir: str) -> Tuple[bool, str]:
+    def _send_receive(self, snapshot: dict, base: dict | None, target_dir: str) -> tuple[bool, str]:
         """Pipe `btrfs send [-p base] snapshot` into `btrfs receive target_dir`."""
         btrfs = self._btrfs()
         before = set(self.m._list_btrfs_subvolume_names_under(target_dir))
@@ -505,12 +505,11 @@ class VaultReplicator:
     @staticmethod
     def _stream_output(proc, stderr, what: str) -> Iterator[bytes]:
         assert proc.stdout is not None
-        for block in iter(lambda: proc.stdout.read(1024 * 1024), b""):
-            yield block
+        yield from iter(lambda: proc.stdout.read(1024 * 1024), b"")
         if proc.wait() != 0:
             raise TransferError(f"{what} failed: {read_stderr(stderr) or f'exit code {proc.returncode}'}")
 
-    def replicate_source(self, peer: Dict, mountpoint: str, source_path: str) -> Dict[str, Any]:
+    def replicate_source(self, peer: dict, mountpoint: str, source_path: str) -> dict[str, Any]:
         """Send one source: only the changes if the vault has our last snapshot."""
         peer_id = str(peer["node_id"])
         target_dir = os.path.join(mountpoint, source_dir_name(source_path))
@@ -542,7 +541,7 @@ class VaultReplicator:
         return {"source_path": source_path, "snapshot_name": snapshot["snapshot_name"],
                 "incremental": base is not None, "encrypted": True}
 
-    def restore_stream(self, mountpoint: str, snapshot_id: str) -> Tuple[Iterator[bytes], Callable[[], None]]:
+    def restore_stream(self, mountpoint: str, snapshot_id: str) -> tuple[Iterator[bytes], Callable[[], None]]:
         """`btrfs send` of a vault snapshot, as a byte stream, plus a cleanup callback."""
         folder, _, name = snapshot_id.partition("/")
         if source_from_dir(folder) is None or snapshot_time(name) is None:

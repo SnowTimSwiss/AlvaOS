@@ -25,7 +25,7 @@ class Box:
         self.configs = tmp_path / "vms"
         self.ran, self.helped, self.units = [], [], {}
         self.host = dict(HOST)
-        self.have = {p: True for p in vmm.PACKAGES}
+        self.have = dict.fromkeys(vmm.PACKAGES, True)
         self.journal = ""
         self.account = True
         self.manager = vmm.VmManager(self.run, str(self.state), str(self.configs), str(self.root), self.help,

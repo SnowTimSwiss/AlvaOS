@@ -20,6 +20,15 @@ How to add an entry:
 - `VERSION` is `beta-v0.8.1` (the package becomes `0.8.1~beta`); the desktop app's crates, its demo and its Flatpak release list say 0.8.1 too. What is in it: Office built into the Hub (EuroOffice), apps in the Hub's window with your own side bar, and AlvaOS Link carrying the apps to the computer and phone apps.
 
 ---
+## Lint, type and shell checks, and dead code out (2026-10-28, [PR 51](https://github.com/SnowTimSwiss/AlvaOS/pull/51))
+
+- ruff checks pyflakes, pycodestyle, bugbear, simplify, pyupgrade and commented-out code (`ruff.toml`). The annotations use built-in generics and `X | None`. E501 stays off: 287 lines are longer than 120 characters, and wrapping them would be pure churn.
+- mypy runs without `ignore_missing_imports`. The stubs for psutil and qrcode, and ruff and mypy themselves, are pinned in `backend/requirements-dev.txt`, which CI installs for the lint job.
+- shellcheck (warning and worse) runs on every `.sh` file in CI. The installer splits its lists with `read -ra`, which does not expand file name patterns.
+- Dead code removed: unused Python functions and constants (among them the Telegram sender in `alerts_manager.py`, which `alert_delivery.py` replaces), four JavaScript functions, 75 CSS rules whose classes nothing uses, and the `docker` package (the backend runs the docker command, it does not import the library).
+- `scripts/ci/check_secrets.py` looks for private keys and common token shapes in tracked files.
+- CI: the test job installs `btrfs-progs` (the backup tests look for the btrfs command) and `h11` (the embed proxy test).
+- **Note for next time**: `except Exception` without a reason (ruff's BLE001) is not enforced yet; 256 places need one. That is the next stage's work. Two questions for the owner are in the PR, not changed here.
 
 ## Office built into the Hub (EuroOffice)
 

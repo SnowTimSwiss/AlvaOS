@@ -312,7 +312,7 @@ def render_smb_share_config(share_name, share_path, read_only, guest_access, per
 
     # Determine read only behavior
     if use_permissions:
-        read_only = True if (read_only or has_read_only) else False
+        read_only = bool(read_only or has_read_only)
 
     lines = [
         f'# AlvaOS Share: {share_name}',
@@ -452,7 +452,7 @@ def load_shares_state():
     """Load shares state from file"""
     try:
         if os.path.exists(SHARES_STATE_FILE):
-            with open(SHARES_STATE_FILE, 'r') as f:
+            with open(SHARES_STATE_FILE) as f:
                 return json.load(f)
     except Exception:
         pass

@@ -10,7 +10,7 @@ of read-only endpoints without secrets. It cannot change anything yet.
 import json
 import os
 import re
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable
 
 from common import ensure_directories
 
@@ -19,7 +19,7 @@ MAX_ROUNDS = 6
 MAX_TOOL_CHARS = 8000
 MAX_HISTORY = 30
 
-PROVIDERS: Dict[str, Dict[str, Any]] = {
+PROVIDERS: dict[str, dict[str, Any]] = {
     'ollama-local': {'label': 'Ollama on your network', 'base_url': 'http://localhost:11434/v1', 'needs_key': False,
                      'model': 'llama3.1'},
     'ollama-cloud': {'label': 'Ollama Cloud', 'base_url': 'https://ollama.com/v1', 'needs_key': True,
@@ -30,7 +30,7 @@ PROVIDERS: Dict[str, Dict[str, Any]] = {
 
 # What the assistant may read: (name, endpoint, what it is). Only GET, only
 # what the page shows, nothing secret (no tokens, keys, recovery kits, logs).
-TOOLS: List[Tuple[str, str, str]] = [
+TOOLS: list[tuple[str, str, str]] = [
     ('system_overview', '/api/v1/system/info', 'CPU, memory, uptime, network, AlvaOS version and pool usage'),
     ('problems', '/api/v1/alerts', 'Current alerts: what needs attention right now'),
     ('notifications', '/api/v1/notifications', 'Recent notifications (the bell)'),
@@ -70,7 +70,7 @@ TOOL_PATHS = {name: path for name, path, _ in TOOLS}
 
 # Read tools that need one argument: name -> (description, argument, what it is,
 # allowed values, path). The value is checked before it goes into the path.
-PARAM_TOOLS: Dict[str, Tuple[str, str, str, 're.Pattern[str]', str]] = {
+PARAM_TOOLS: dict[str, tuple[str, str, str, 're.Pattern[str]', str]] = {
     'app_log': ('The last lines of one app\'s log (secrets masked), to find out why it misbehaves',
                 'container', 'Name or id of the container from app_containers',
                 re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$'), '/api/v1/containers/{}/logs?lines=60'),
@@ -90,7 +90,7 @@ SERVICE_RE = re.compile(r'^(smbd|nmbd|nfs-kernel-server|docker|ssh|alvaos|alvaos
                         r'nut-monitor|NetworkManager|systemd-timesyncd|systemd-resolved|alvaos-vm@[0-9a-f]{8})'
                         r'(\.service)?$')
 HOST_RE = re.compile(r'^(?!-)[A-Za-z0-9.-]{1,253}$')
-COMMANDS: Dict[str, Tuple[str, List[str], Optional[Tuple[str, str, 're.Pattern[str]']]]] = {
+COMMANDS: dict[str, tuple[str, list[str], tuple[str, str, 're.Pattern[str]'] | None]] = {
     'disk_space': ('Free space of every mounted file system (df -h)',
                    ['/usr/bin/df', '-h', '-x', 'tmpfs', '-x', 'devtmpfs', '-x', 'overlay', '-x', 'squashfs'], None),
     'memory': ('Memory and swap in use (free -h)', ['/usr/bin/free', '-h'], None),
@@ -132,7 +132,7 @@ COMMAND_LINES = 60
 COMMAND_SECONDS = 20
 
 
-def command_line(name: str, value: str = '') -> Optional[List[str]]:
+def command_line(name: str, value: str = '') -> list[str] | None:
     """The argv for a catalog command, or None when it or its value is not allowed."""
     entry = COMMANDS.get(name)
     if not entry:
@@ -145,7 +145,7 @@ def command_line(name: str, value: str = '') -> Optional[List[str]]:
     return list(argv)
 
 
-def _run_command(argv: List[str]) -> Tuple[int, str]:
+def _run_command(argv: list[str]) -> tuple[int, str]:
     import subprocess
     try:
         res = subprocess.run(argv, capture_output=True, text=True, timeout=COMMAND_SECONDS, stdin=subprocess.DEVNULL,
@@ -157,7 +157,7 @@ def _run_command(argv: List[str]) -> Tuple[int, str]:
     return res.returncode, (res.stdout or '') + (res.stderr or '')
 
 
-def run_command_tool(args: Dict[str, Any], run: Callable[[List[str]], Tuple[int, str]]) -> Tuple[str, str]:
+def run_command_tool(args: dict[str, Any], run: Callable[[list[str]], tuple[int, str]]) -> tuple[str, str]:
     """(what ran, the answer for the model)."""
     name = str(args.get('name') or '')
     value = str(args.get('value') or '').strip()
@@ -181,7 +181,7 @@ LEVELS = ('read', 'ask')   # only look / propose changes the person confirms
 # only the person's click runs it, through the normal endpoint with their
 # session and CSRF token (api_ai.py). Each builder checks its arguments
 # against the real state and returns (title, detail, method, path, body).
-ACTION_SPECS: Dict[str, Dict[str, Any]] = {
+ACTION_SPECS: dict[str, dict[str, Any]] = {
     'backup_now': {
         'description': 'Make restore points of the shared folders now (a backup on this NAS).',
         'parameters': {},
@@ -258,7 +258,7 @@ ACTION_SPECS: Dict[str, Dict[str, Any]] = {
 }
 
 
-def _find(items: Any, *keys: str) -> List[Dict[str, Any]]:
+def _find(items: Any, *keys: str) -> list[dict[str, Any]]:
     if isinstance(items, dict):
         for key in keys:
             if isinstance(items.get(key), list):
@@ -267,7 +267,7 @@ def _find(items: Any, *keys: str) -> List[Dict[str, Any]]:
     return [i for i in items if isinstance(i, dict)] if isinstance(items, list) else []
 
 
-def build_action(name: str, args: Dict[str, Any], read: Callable[[str], Tuple[int, Any]]) -> Dict[str, Any]:
+def build_action(name: str, args: dict[str, Any], read: Callable[[str], tuple[int, Any]]) -> dict[str, Any]:
     """A proposal the person can confirm, or ValueError with why not."""
     if name == 'backup_now':
         return {'title': 'Make a backup now',
@@ -371,7 +371,7 @@ def build_action(name: str, args: Dict[str, Any], read: Callable[[str], Tuple[in
                 'method': 'POST', 'path': '/api/v1/storage/shares',
                 'body': {'name': folder, 'protocol': 'smb', 'pool_id': pool.get('id'), 'folder': folder,
                          'new_folder': True, 'guest_access': everyone,
-                         'smb_permissions': {p: 'write' for p in people}}}
+                         'smb_permissions': dict.fromkeys(people, 'write')}}
     if name == 'set_folder_access':
         share = _share(args.get('folder'), read)
         person = (_people([args.get('person')], read) or [''])[0]
@@ -428,7 +428,7 @@ def build_action(name: str, args: Dict[str, Any], read: Callable[[str], Tuple[in
     raise ValueError(f'There is no action called {name}.')
 
 
-def _pool(wanted: Any, read: Callable[[str], Tuple[int, Any]]) -> Dict[str, Any]:
+def _pool(wanted: Any, read: Callable[[str], tuple[int, Any]]) -> dict[str, Any]:
     wanted = str(wanted or '').strip()
     _, data = read('/api/v1/storage/pools')
     pool = next((p for p in _find(data, 'pools') if wanted and wanted in (str(p.get('id')), str(p.get('name')))),
@@ -438,7 +438,7 @@ def _pool(wanted: Any, read: Callable[[str], Tuple[int, Any]]) -> Dict[str, Any]
     return pool
 
 
-def _share(wanted: Any, read: Callable[[str], Tuple[int, Any]]) -> Dict[str, Any]:
+def _share(wanted: Any, read: Callable[[str], tuple[int, Any]]) -> dict[str, Any]:
     wanted = str(wanted or '').strip().lower()
     _, data = read('/api/v1/storage/shares')
     share = next((s for s in _find(data, 'shares') if wanted and wanted in
@@ -448,7 +448,7 @@ def _share(wanted: Any, read: Callable[[str], Tuple[int, Any]]) -> Dict[str, Any
     return share
 
 
-def _people(wanted: Any, read: Callable[[str], Tuple[int, Any]]) -> List[str]:
+def _people(wanted: Any, read: Callable[[str], tuple[int, Any]]) -> list[str]:
     names = [str(n).strip() for n in (wanted if isinstance(wanted, list) else []) if str(n or '').strip()]
     if not names:
         return []
@@ -520,7 +520,7 @@ def guess_thinking(model: str) -> str:
     return 'on' if THINKING_MODELS.search(model) else 'none'
 
 
-def _clean_connection(raw: Any) -> Optional[Dict[str, Any]]:
+def _clean_connection(raw: Any) -> dict[str, Any] | None:
     if not isinstance(raw, dict) or not CONNECTION_ID_RE.match(str(raw.get('id') or '')):
         return None
     provider = str(raw.get('provider') or '')
@@ -529,7 +529,7 @@ def _clean_connection(raw: Any) -> Optional[Dict[str, Any]]:
     models = list(dict.fromkeys(str(m) for m in (listed if isinstance(listed, list) else [])
                                 if MODEL_RE.match(str(m))))[:MAX_MODELS]
     marked = raw.get('thinking')
-    thinking: Dict[str, Any] = marked if isinstance(marked, dict) else {}
+    thinking: dict[str, Any] = marked if isinstance(marked, dict) else {}
     return {
         'id': str(raw['id']),
         'name': str(raw.get('name') or '').strip()[:40] or PROVIDERS[provider]['label'],
@@ -542,7 +542,7 @@ def _clean_connection(raw: Any) -> Optional[Dict[str, Any]]:
     }
 
 
-def _legacy_chat_models() -> List[str]:
+def _legacy_chat_models() -> list[str]:
     """The models the admin chose for Chat before there were connections."""
     try:
         import hub_apps
@@ -554,7 +554,7 @@ def _legacy_chat_models() -> List[str]:
         return []
 
 
-def _resolve(settings: Dict[str, Any]) -> Dict[str, Any]:
+def _resolve(settings: dict[str, Any]) -> dict[str, Any]:
     """The flat fields the assistant talks with: its connection and model."""
     connections = settings['connections']
     wanted = settings['assistant'].get('connection')
@@ -571,7 +571,7 @@ def _resolve(settings: Dict[str, Any]) -> Dict[str, Any]:
     return settings
 
 
-def load_settings(path: Optional[str] = None) -> Dict[str, Any]:
+def load_settings(path: str | None = None) -> dict[str, Any]:
     path = path or SETTINGS_FILE
     try:
         with open(path) as f:
@@ -580,13 +580,13 @@ def load_settings(path: Optional[str] = None) -> Dict[str, Any]:
         raw = {}
     raw = raw if isinstance(raw, dict) else {}
     if isinstance(raw.get('connections'), list):
-        connections: List[Dict[str, Any]] = []
+        connections: list[dict[str, Any]] = []
         for item in raw['connections']:
             conn = _clean_connection(item)
             if conn and all(c['id'] != conn['id'] for c in connections):
                 connections.append(conn)
         found = raw.get('assistant')
-        assistant: Dict[str, Any] = found if isinstance(found, dict) else {}
+        assistant: dict[str, Any] = found if isinstance(found, dict) else {}
     elif raw.get('provider') or raw.get('base_url') or raw.get('model'):
         provider = str(raw.get('provider') or '')
         provider = provider if provider in PROVIDERS else 'ollama-local'
@@ -606,13 +606,13 @@ def load_settings(path: Optional[str] = None) -> Dict[str, Any]:
     })
 
 
-def public_settings(settings: Dict[str, Any]) -> Dict[str, Any]:
+def public_settings(settings: dict[str, Any]) -> dict[str, Any]:
     """For the page: no keys, only whether one is there."""
     out = {k: v for k, v in settings.items() if k not in ('api_key', 'connections')}
     out['key_set'] = bool(settings.get('api_key'))
     out['connections'] = [{**{k: v for k, v in c.items() if k != 'api_key'}, 'key_set': bool(c['api_key'])}
                           for c in settings['connections']]
-    out['providers'] = {k: {kk: vv for kk, vv in v.items()} for k, v in PROVIDERS.items()}
+    out['providers'] = {k: dict(v) for k, v in PROVIDERS.items()}
     return out
 
 
@@ -620,16 +620,16 @@ def check_url(url: str) -> bool:
     return bool(re.match(r'^https?://[A-Za-z0-9.\-\[\]:]+(/[A-Za-z0-9._~/-]*)?$', url or ''))
 
 
-def thinking_of(conn: Dict[str, Any], model: str) -> str:
+def thinking_of(conn: dict[str, Any], model: str) -> str:
     return conn.get('thinking', {}).get(model) or guess_thinking(model)
 
 
-def usable(conn: Dict[str, Any]) -> bool:
+def usable(conn: dict[str, Any]) -> bool:
     """Can AlvaOS talk to this connection (an address, and a key when it needs one)?"""
     return check_url(conn.get('base_url', '')) and (not PROVIDERS[conn['provider']]['needs_key'] or bool(conn['api_key']))
 
 
-def _new_id(name: str, taken: List[str]) -> str:
+def _new_id(name: str, taken: list[str]) -> str:
     base = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')[:24] or 'service'
     base = base if CONNECTION_ID_RE.match(base) else 'service'
     cid, n = base, 2
@@ -638,14 +638,14 @@ def _new_id(name: str, taken: List[str]) -> str:
     return cid
 
 
-def _connections_from(payload: Any, current: List[Dict[str, Any]]) -> Tuple[Optional[List[Dict[str, Any]]], str]:
+def _connections_from(payload: Any, current: list[dict[str, Any]]) -> tuple[list[dict[str, Any]] | None, str]:
     """The list the page sends. A key left empty stays as it was."""
     if not isinstance(payload, list):
         return None, 'Nothing to save.'
     if len(payload) > MAX_CONNECTIONS:
         return None, f'At most {MAX_CONNECTIONS} AI services.'
     old = {c['id']: c for c in current}
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     for item in payload:
         if not isinstance(item, dict):
             return None, 'Nothing to save.'
@@ -656,7 +656,7 @@ def _connections_from(payload: Any, current: List[Dict[str, Any]]) -> Tuple[Opti
         if cid not in old or any(c['id'] == cid for c in out):
             cid = _new_id(str(item.get('name') or provider), [c['id'] for c in out] + list(old))
         listed = item.get('models')
-        models: List[Any] = listed if isinstance(listed, list) else []
+        models: list[Any] = listed if isinstance(listed, list) else []
         bad = [str(m) for m in models if not MODEL_RE.match(str(m))]
         if bad:
             return None, f'"{bad[0]}" is not a model name. Model names look like llama3.1 or gpt-4o-mini.'
@@ -674,14 +674,14 @@ def _connections_from(payload: Any, current: List[Dict[str, Any]]) -> Tuple[Opti
     return out, ''
 
 
-def _check_connection(conn: Dict[str, Any]) -> str:
+def _check_connection(conn: dict[str, Any]) -> str:
     if not check_url(conn['base_url']):
         return f'{conn["name"]}: enter the address of the service, like http://192.168.1.20:11434/v1.'
     return ''
 
 
-def save_settings(current: Dict[str, Any], payload: Dict[str, Any],
-                  path: Optional[str] = None) -> Tuple[Dict[str, Any], str]:
+def save_settings(current: dict[str, Any], payload: dict[str, Any],
+                  path: str | None = None) -> tuple[dict[str, Any], str]:
     """Change the settings. `connections` replaces the list of AI services;
     `assistant` ({connection, model}) chooses the assistant's model. The
     fields of the time with one service (provider, base_url, model, api_key,
@@ -762,12 +762,12 @@ def save_settings(current: Dict[str, Any], payload: Dict[str, Any],
     return settings, ''
 
 
-def _is_ollama(conn: Dict[str, Any]) -> bool:
+def _is_ollama(conn: dict[str, Any]) -> bool:
     return conn.get('provider', '').startswith('ollama') or bool(re.search(r':11434(/|$)', conn.get('base_url', '')))
 
 
-def detect_thinking(conn: Dict[str, Any], models: List[str], get: Optional[Callable[..., Any]] = None,
-                    post: Optional[Callable[..., Any]] = None) -> Dict[str, str]:
+def detect_thinking(conn: dict[str, Any], models: list[str], get: Callable[..., Any] | None = None,
+                    post: Callable[..., Any] | None = None) -> dict[str, str]:
     """Ask the service what each model can: think first ('on'), and be told
     how hard ('effort'), or neither ('none').
     - Services with a rich model list (OpenRouter and others) name the
@@ -780,7 +780,7 @@ def detect_thinking(conn: Dict[str, Any], models: List[str], get: Optional[Calla
         get, post = get or requests.get, post or requests.post
     headers = {'Authorization': f"Bearer {conn['api_key']}"} if conn.get('api_key') else {}
     base = conn.get('base_url', '').rstrip('/')
-    listed: Dict[str, List[str]] = {}
+    listed: dict[str, list[str]] = {}
     if check_url(base):
         try:
             res = get(base + '/models', headers=headers, timeout=10)
@@ -791,7 +791,7 @@ def detect_thinking(conn: Dict[str, Any], models: List[str], get: Optional[Calla
         except Exception:  # noqa: BLE001 - a service without the list
             pass
     native = re.sub(r'/v1$', '', base)
-    out: Dict[str, str] = {}
+    out: dict[str, str] = {}
     for model in models:
         params = listed.get(model)
         if params is not None:
@@ -817,7 +817,7 @@ def detect_thinking(conn: Dict[str, Any], models: List[str], get: Optional[Calla
     return out
 
 
-def list_models(conn: Dict[str, Any], get: Optional[Callable[..., Any]] = None) -> Tuple[List[str], str]:
+def list_models(conn: dict[str, Any], get: Callable[..., Any] | None = None) -> tuple[list[str], str]:
     """The models the service offers (its /models list), or why not."""
     if get is None:
         import requests
@@ -847,7 +847,7 @@ def list_models(conn: Dict[str, Any], get: Optional[Callable[..., Any]] = None) 
 
 # ── Talking to the model ─────────────────────────────────────────────────────
 
-def tool_specs(level: str = 'read') -> List[Dict[str, Any]]:
+def tool_specs(level: str = 'read') -> list[dict[str, Any]]:
     specs = [{'type': 'function', 'function': {'name': name, 'description': description,
                                                'parameters': {'type': 'object', 'properties': {}}}}
              for name, _, description in TOOLS]
@@ -874,8 +874,8 @@ def tool_specs(level: str = 'read') -> List[Dict[str, Any]]:
     return specs
 
 
-def call_model(settings: Dict[str, Any], messages: List[Dict[str, Any]], post: Optional[Callable] = None,
-               use_tools: bool = True) -> Dict[str, Any]:
+def call_model(settings: dict[str, Any], messages: list[dict[str, Any]], post: Callable | None = None,
+               use_tools: bool = True) -> dict[str, Any]:
     """One chat completion. Returns the assistant message."""
     if post is None:
         import requests
@@ -883,7 +883,7 @@ def call_model(settings: Dict[str, Any], messages: List[Dict[str, Any]], post: O
     headers = {'Content-Type': 'application/json'}
     if settings.get('api_key'):
         headers['Authorization'] = f"Bearer {settings['api_key']}"
-    body: Dict[str, Any] = {'model': settings['model'], 'messages': messages, 'temperature': 0.2}
+    body: dict[str, Any] = {'model': settings['model'], 'messages': messages, 'temperature': 0.2}
     if use_tools:
         body['tools'] = tool_specs(settings.get('level', 'read'))
     url = settings['base_url'].rstrip('/') + '/chat/completions'
@@ -950,7 +950,7 @@ def mask_text(data: Any) -> Any:
     return data
 
 
-def run_tool(name: str, read: Callable[[str], Tuple[int, Any]], args: Optional[Dict[str, Any]] = None) -> str:
+def run_tool(name: str, read: Callable[[str], tuple[int, Any]], args: dict[str, Any] | None = None) -> str:
     path = TOOL_PATHS.get(name)
     if name in PARAM_TOOLS:
         _, arg, _, allowed, template = PARAM_TOOLS[name]
@@ -970,7 +970,7 @@ def run_tool(name: str, read: Callable[[str], Tuple[int, Any]], args: Optional[D
     return text if len(text) <= MAX_TOOL_CHARS else text[:MAX_TOOL_CHARS] + ' …(cut)'
 
 
-def clean_history(history: Any) -> List[Dict[str, str]]:
+def clean_history(history: Any) -> list[dict[str, str]]:
     out = []
     for item in history if isinstance(history, list) else []:
         if isinstance(item, dict) and item.get('role') in ('user', 'assistant') and isinstance(item.get('content'), str):
@@ -978,7 +978,7 @@ def clean_history(history: Any) -> List[Dict[str, str]]:
     return out[-MAX_HISTORY:]
 
 
-def _args(function: Dict[str, Any]) -> Dict[str, Any]:
+def _args(function: dict[str, Any]) -> dict[str, Any]:
     raw = function.get('arguments') or '{}'
     try:
         args = json.loads(raw) if isinstance(raw, str) else dict(raw)
@@ -987,7 +987,7 @@ def _args(function: Dict[str, Any]) -> Dict[str, Any]:
     return args if isinstance(args, dict) else {}
 
 
-def calls_in_text(content: Any) -> List[Dict[str, Any]]:
+def calls_in_text(content: Any) -> list[dict[str, Any]]:
     """Small local models sometimes write a tool call as JSON text instead of
     making one. Read it as a call when it names one of the tools."""
     text = str(content or '').strip()
@@ -1005,7 +1005,7 @@ def calls_in_text(content: Any) -> List[Dict[str, Any]]:
         if not isinstance(item, dict):
             continue
         inner = item.get('function')
-        call: Dict[str, Any] = inner if isinstance(inner, dict) else item
+        call: dict[str, Any] = inner if isinstance(inner, dict) else item
         name = str(call.get('name') or '')
         args = call.get('arguments', call.get('parameters', {}))
         if name in known:
@@ -1029,23 +1029,23 @@ LINK_PROMPT = (
 )
 
 
-def chat(settings: Dict[str, Any], history: Any, read: Callable[[str], Tuple[int, Any]],
-         post: Optional[Callable] = None, page: str = '',
-         run: Optional[Callable[[List[str]], Tuple[int, str]]] = None) -> Dict[str, Any]:
+def chat(settings: dict[str, Any], history: Any, read: Callable[[str], tuple[int, Any]],
+         post: Callable | None = None, page: str = '',
+         run: Callable[[list[str]], tuple[int, str]] | None = None) -> dict[str, Any]:
     """Answer the last question. Returns {'reply', 'looked_at', 'proposals'};
     proposals (at the "ask" level) are changes the person still has to confirm."""
     level = settings.get('level', 'read')
     prompt = SYSTEM_PROMPT + (ASK_PROMPT if level == 'ask' else READ_PROMPT) + LINK_PROMPT
     if page in PAGES:
         prompt += f' The person has the {PAGES[page]} page open.'
-    messages: List[Dict[str, Any]] = [{'role': 'system', 'content': prompt}] + clean_history(history)
+    messages: list[dict[str, Any]] = [{'role': 'system', 'content': prompt}] + clean_history(history)
     if len(messages) < 2 or messages[-1]['role'] != 'user':
         raise ValueError('Ask something first.')
-    looked_at: List[str] = []
-    ran: List[str] = []
-    proposals: List[Dict[str, Any]] = []
+    looked_at: list[str] = []
+    ran: list[str] = []
+    proposals: list[dict[str, Any]] = []
 
-    def answer(message: Dict[str, Any]) -> Dict[str, Any]:
+    def answer(message: dict[str, Any]) -> dict[str, Any]:
         return {'reply': str(message.get('content') or '').strip() or '(No answer.)', 'looked_at': looked_at,
                 'ran': ran, 'proposals': proposals}
 
