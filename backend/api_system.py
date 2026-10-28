@@ -4,7 +4,7 @@
 # ── Standard library ──────────────────────────────────────────────────────────
 import os
 import pwd
-from typing import Any, Dict
+from typing import Any
 import platform
 import re
 import socket
@@ -661,7 +661,7 @@ def system_power():
 @require_auth(require_admin=True)
 def system_permissions_check():
     """Run a focused diagnostics check for backend privileged command execution."""
-    report: Dict[str, Any] = {
+    report: dict[str, Any] = {
         'success': True,
         'platform': platform.system(),
         'sudoers': {},
@@ -671,7 +671,7 @@ def system_permissions_check():
     }
 
     sudoers_path = '/etc/sudoers.d/alvaos'
-    sudoers_info: Dict[str, Any] = {
+    sudoers_info: dict[str, Any] = {
         'path': sudoers_path,
         'exists': False,
         'owner_uid': None,
@@ -699,7 +699,7 @@ def system_permissions_check():
         report['errors'].append('Permission diagnostics are only supported on Linux.')
         return jsonify(report), 400
 
-    sudo_list: Dict[str, Any] = {'ok': False, 'required_rules': {}, 'error': ''}
+    sudo_list: dict[str, Any] = {'ok': False, 'required_rules': {}, 'error': ''}
     # The backend's only sudo rule is the privilege helper; everything else is
     # decided by priv_policy.py inside the helper.
     required_rules = [PRIV_HELPER]
@@ -775,7 +775,7 @@ def system_power_ups():
         })
 
     data = request.get_json(silent=True) or {}
-    payload: Dict[str, Any] = {}
+    payload: dict[str, Any] = {}
 
     if 'enabled' in data:
         payload['enabled'] = bool(data.get('enabled'))

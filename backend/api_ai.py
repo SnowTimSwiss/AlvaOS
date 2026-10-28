@@ -3,7 +3,7 @@
 import secrets
 import threading
 import time
-from typing import Any, Dict
+from typing import Any
 
 from flask import Blueprint, current_app, jsonify, request
 
@@ -14,7 +14,7 @@ bp = Blueprint('ai', __name__)
 
 PROPOSAL_SECONDS = 600
 _lock = threading.Lock()
-_proposals: Dict[str, Dict[str, Any]] = {}   # id -> {'action', 'token', 'expires'}: changes waiting for the person's click
+_proposals: dict[str, dict[str, Any]] = {}   # id -> {'action', 'token', 'expires'}: changes waiting for the person's click
 
 
 @bp.route('/api/v1/ai/settings', methods=['GET', 'POST'])
@@ -110,10 +110,10 @@ def ai_action(proposal_id):
                     'message': str(data.get('message') or f'Done: {action["title"]}.')})
 
 
-def _draft(payload: Dict[str, Any], settings: Dict[str, Any]) -> Dict[str, Any]:
+def _draft(payload: dict[str, Any], settings: dict[str, Any]) -> dict[str, Any]:
     """A connection as the form has it now: a key left empty is the saved one."""
     found = payload.get('connection')
-    raw: Dict[str, Any] = found if isinstance(found, dict) else {}
+    raw: dict[str, Any] = found if isinstance(found, dict) else {}
     saved = next((c for c in settings['connections'] if c['id'] == raw.get('id')), None)
     provider = str(raw.get('provider') or (saved or {}).get('provider') or 'other')
     provider = provider if provider in ai_assistant.PROVIDERS else 'other'

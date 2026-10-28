@@ -29,7 +29,7 @@ import tempfile
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
-from typing import Any, Callable, Dict, Iterable, Optional
+from typing import Any, Callable, Iterable
 
 try:
     import resource
@@ -63,11 +63,11 @@ MAX_PREVIEW_SIDE = 2400
 _run_lock = threading.Lock()
 
 
-def ffmpeg() -> Optional[str]:
+def ffmpeg() -> str | None:
     return shutil.which('ffmpeg')
 
 
-def ffprobe() -> Optional[str]:
+def ffprobe() -> str | None:
     return shutil.which('ffprobe')
 
 
@@ -80,7 +80,7 @@ def heif_support() -> bool:
         return shutil.which('heif-convert') is not None
 
 
-def features() -> Dict[str, bool]:
+def features() -> dict[str, bool]:
     return {'ffmpeg': ffmpeg() is not None, 'heif': heif_support()}
 
 
@@ -88,7 +88,7 @@ def is_video(name: str) -> bool:
     return name.lower().endswith(VIDEO_TYPES)
 
 
-def demuxer(name: str) -> Optional[str]:
+def demuxer(name: str) -> str | None:
     return DEMUXERS.get(os.path.splitext(name)[1].lower())
 
 
@@ -111,8 +111,8 @@ def _base_command(binary: str, name: str, source: str) -> list:
 
 # ── A still of a video ──────────────────────────────────────────────────────
 
-def video_still(name: str, size: int, read: Callable[[int, int], Optional[bytes]],
-                workdir: Optional[str] = None) -> Optional[bytes]:
+def video_still(name: str, size: int, read: Callable[[int, int], bytes | None],
+                workdir: str | None = None) -> bytes | None:
     """A JPEG of a picture in the video, or None. `read(start, length)` gives bytes of the
     file (as the signed-in person). Only the start and the end are read: the middle is a
     hole in a sparse temporary file, which is all ffmpeg needs to find the first pictures
@@ -185,7 +185,7 @@ def open_image(data: bytes, name: str):
             return None
 
 
-def jpeg(data: bytes, name: str, side: int, quality: int = 80) -> Optional[bytes]:
+def jpeg(data: bytes, name: str, side: int, quality: int = 80) -> bytes | None:
     """A JPEG of the picture, at most `side` pixels on its long side (the EXIF turn applied)."""
     try:
         from PIL import ImageOps
@@ -215,18 +215,18 @@ class Converter:
 
     def __init__(self, cache_dir: Callable[[], str]):
         self._cache_dir = cache_dir
-        self._jobs: Dict[str, Dict[str, Any]] = {}
+        self._jobs: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
-        self._pool: Optional[ThreadPoolExecutor] = None
+        self._pool: ThreadPoolExecutor | None = None
 
     @staticmethod
-    def key(user: Optional[str], path: str, size: int, stamp: str) -> str:
+    def key(user: str | None, path: str, size: int, stamp: str) -> str:
         return hashlib.sha256(f'{user}|{path}|{size}|{stamp}'.encode()).hexdigest()
 
     def output(self, key: str) -> str:
         return os.path.join(self._cache_dir(), 'video', key[:2], key + '.mp4')
 
-    def status(self, key: str) -> Dict[str, Any]:
+    def status(self, key: str) -> dict[str, Any]:
         out = self.output(key)
         if os.path.isfile(out):
             os.utime(out, None)           # used: stays longest in the cache
@@ -236,7 +236,7 @@ class Converter:
             return {'state': job['state'], 'percent': job['percent'], 'error': job.get('error', '')} if job \
                 else {'state': 'idle', 'percent': 0}
 
-    def start(self, key: str, name: str, size: int, open_source: Callable[[], Iterable[bytes]]) -> Dict[str, Any]:
+    def start(self, key: str, name: str, size: int, open_source: Callable[[], Iterable[bytes]]) -> dict[str, Any]:
         """Queues the conversion unless there is one or a finished copy."""
         current = self.status(key)
         if current['state'] in ('ready', 'working', 'queued'):

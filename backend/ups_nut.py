@@ -30,7 +30,7 @@ import subprocess
 import threading
 import time
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable
 
 from common import CMD
 
@@ -68,7 +68,7 @@ VENDORS = {
 HEX4 = re.compile(r'^[0-9a-f]{4}$')
 
 _lock = threading.Lock()
-_job: Dict[str, Any] = {'running': False, 'step': '', 'error': '', 'finished_at': ''}
+_job: dict[str, Any] = {'running': False, 'step': '', 'error': '', 'finished_at': ''}
 
 
 def _now() -> str:
@@ -88,7 +88,7 @@ def _clean_text(text: str, limit: int = 60) -> str:
     return re.sub(r'[^A-Za-z0-9 ._()-]', '', text or '').strip()[:limit]
 
 
-def detect(sys_root: str = '/sys') -> List[Dict[str, str]]:
+def detect(sys_root: str = '/sys') -> list[dict[str, str]]:
     """UPSs connected by USB: a known maker, or a device that says it is one."""
     found = []
     for dev in sorted(glob.glob(os.path.join(sys_root, 'bus/usb/devices/*'))):
@@ -113,7 +113,7 @@ def detect(sys_root: str = '/sys') -> List[Dict[str, str]]:
     return found
 
 
-def render_files(device: Dict[str, str], password: str) -> Dict[str, str]:
+def render_files(device: dict[str, str], password: str) -> dict[str, str]:
     """The four NUT files for one UPS on USB, in standalone mode."""
     desc = _clean_text(device.get('name', ''))
     return {
@@ -145,12 +145,12 @@ def render_files(device: Dict[str, str], password: str) -> Dict[str, str]:
     }
 
 
-def off_files() -> Dict[str, str]:
+def off_files() -> dict[str, str]:
     """Turning the UPS off: NUT stays installed but does nothing."""
     return {NUT_FILES['nut']: '# Managed by AlvaOS - Settings > Power\nMODE=none\n'}
 
 
-def parse_upsc(text: str) -> Dict[str, str]:
+def parse_upsc(text: str) -> dict[str, str]:
     values = {}
     for line in (text or '').splitlines():
         key, sep, value = line.partition(':')
@@ -159,7 +159,7 @@ def parse_upsc(text: str) -> Dict[str, str]:
     return values
 
 
-def describe(values: Dict[str, str]) -> Dict[str, Any]:
+def describe(values: dict[str, str]) -> dict[str, Any]:
     """What the page shows, from upsc's values."""
     flags = set(values.get('ups.status', '').split())
 
@@ -189,8 +189,8 @@ def describe(values: Dict[str, str]) -> Dict[str, Any]:
 
 class NutUps:
     def __init__(self, run_command: Callable, state_file: str = STATE_FILE, sys_root: str = '/sys',
-                 read_values: Optional[Callable[[], Dict[str, str]]] = None,
-                 notify: Optional[Callable[..., Any]] = None, installed: Optional[Callable[[], bool]] = None,
+                 read_values: Callable[[], dict[str, str]] | None = None,
+                 notify: Callable[..., Any] | None = None, installed: Callable[[], bool] | None = None,
                  clock: Callable[[], float] = time.time):
         self.run = run_command
         self.state_file = state_file
@@ -199,12 +199,12 @@ class NutUps:
         self.notify = notify or _notify
         self.installed = installed or _nut_installed
         self.clock = clock
-        self.on_battery_since: Optional[float] = None
+        self.on_battery_since: float | None = None
         self.shutdown_asked = False
-        self.last: Dict[str, Any] = {}
+        self.last: dict[str, Any] = {}
 
     # ── Settings ───────────────────────────────────────────────────────────
-    def settings(self) -> Dict[str, Any]:
+    def settings(self) -> dict[str, Any]:
         try:
             with open(self.state_file) as f:
                 data = json.load(f)
@@ -214,14 +214,14 @@ class NutUps:
             pass
         return {'enabled': False}
 
-    def _save(self, data: Dict[str, Any]) -> None:
+    def _save(self, data: dict[str, Any]) -> None:
         os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
         tmp = self.state_file + '.tmp'
         with open(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w') as f:
             json.dump(data, f, indent=2)
         os.replace(tmp, self.state_file)
 
-    def status(self) -> Dict[str, Any]:
+    def status(self) -> dict[str, Any]:
         settings = self.settings()
         live = describe(self.read_values()) if settings.get('enabled') else {}
         with _lock:
@@ -238,7 +238,7 @@ class NutUps:
         }
 
     # ── Set up, change, turn off ───────────────────────────────────────────
-    def set_up(self, vendorid: str, productid: str, shutdown_after_minutes: int = 0) -> Tuple[bool, str]:
+    def set_up(self, vendorid: str, productid: str, shutdown_after_minutes: int = 0) -> tuple[bool, str]:
         if shutdown_after_minutes not in SHUTDOWN_CHOICES:
             return False, 'Choose when the NAS shuts down.'
         device = next((d for d in detect(self.sys_root)
@@ -253,7 +253,7 @@ class NutUps:
                          daemon=True).start()
         return True, f'Setting up {device["name"]}.'
 
-    def _set_up(self, device: Dict[str, str], minutes: int) -> None:
+    def _set_up(self, device: dict[str, str], minutes: int) -> None:
         error = ''
         try:
             if not self.installed():
@@ -276,7 +276,7 @@ class NutUps:
         with _lock:
             _job.update({'running': False, 'step': '', 'error': error, 'finished_at': _now()})
 
-    def change(self, shutdown_after_minutes: int) -> Tuple[bool, str]:
+    def change(self, shutdown_after_minutes: int) -> tuple[bool, str]:
         settings = self.settings()
         if not settings.get('enabled'):
             return False, 'Set up the UPS first.'
@@ -286,7 +286,7 @@ class NutUps:
         self._save(settings)
         return True, 'Saved.'
 
-    def turn_off(self) -> Tuple[bool, str]:
+    def turn_off(self) -> tuple[bool, str]:
         settings = self.settings()
         if not settings.get('enabled'):
             return True, 'The UPS is off.'
@@ -352,7 +352,7 @@ class NutUps:
                         link='system.html#power', fingerprint=f'ups-shutdown-{int(now)}')
             self.run([CMD['UPSMON'], '-c', 'fsd'], timeout=30)
 
-    def alert(self) -> Optional[Dict[str, str]]:
+    def alert(self) -> dict[str, str] | None:
         """A line for the alerts list while something needs attention."""
         if not self.settings().get('enabled'):
             return None
@@ -371,7 +371,7 @@ class NutUps:
         return None
 
 
-def _read_upsc() -> Dict[str, str]:
+def _read_upsc() -> dict[str, str]:
     try:
         res = subprocess.run([UPSC, f'{UPS_NAME}@localhost'], capture_output=True, text=True, timeout=10,
                              env={'LC_ALL': 'C'})

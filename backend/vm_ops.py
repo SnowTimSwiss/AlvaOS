@@ -32,7 +32,7 @@ import socket
 import subprocess
 import sys
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable
 
 STATE_FILE = '/var/lib/alvaos/vms.json'      # {"store": "/mnt/alvaos/main/VMs"}
 CONFIG_DIR = '/var/lib/alvaos/vms'           # ID.json, one per virtual machine
@@ -63,7 +63,7 @@ UNIT_FMT = 'alvaos-vm@{}.service'
 # What each kind of guest needs. Windows has no driver for fast virtual disks
 # and network cards on its installer, so it gets ones it knows (SATA, Intel);
 # Linux gets the fast ones (virtio).
-OS_TYPES: Dict[str, Dict[str, Any]] = {
+OS_TYPES: dict[str, dict[str, Any]] = {
     'linux':     {'name': 'Linux', 'uefi': True, 'tpm': False, 'secure': False, 'disk': 'virtio',
                   'nic': 'virtio-net-pci', 'localtime': False},
     'windows11': {'name': 'Windows 11', 'uefi': True, 'tpm': True, 'secure': True, 'disk': 'sata',
@@ -106,7 +106,7 @@ def clean_path(path: str, root: str = DATA_ROOT) -> str:
     return norm
 
 
-def check_config(raw: Any, root: str = DATA_ROOT, store: Optional[str] = None) -> Dict[str, Any]:
+def check_config(raw: Any, root: str = DATA_ROOT, store: str | None = None) -> dict[str, Any]:
     """The description with every field checked; raises VmError. With `store`,
     the installer image has to be in its "ISOs" folder."""
     if not isinstance(raw, dict):
@@ -199,7 +199,7 @@ def read_store(state_file: str = STATE_FILE, root: str = DATA_ROOT) -> str:
 
 
 def load_config(vm_id: str, config_dir: str = CONFIG_DIR, root: str = DATA_ROOT,
-                state_file: Optional[str] = STATE_FILE) -> Dict[str, Any]:
+                state_file: str | None = STATE_FILE) -> dict[str, Any]:
     if not ID_RE.match(str(vm_id)):
         raise VmError('That is not a virtual machine.')
     try:
@@ -219,12 +219,12 @@ def vm_dir(store: str, vm_id: str) -> str:
 
 # ── The QEMU command ─────────────────────────────────────────────────────────
 
-def find_firmware(secure: bool, dirs: Optional[Tuple[str, ...]] = None) -> Tuple[str, str]:
+def find_firmware(secure: bool, dirs: tuple[str, ...] | None = None) -> tuple[str, str]:
     """(code, variables template) of the UEFI firmware (package ovmf)."""
     codes = ['OVMF_CODE_4M.secboot.fd', 'OVMF_CODE.secboot.fd'] if secure else ['OVMF_CODE_4M.fd', 'OVMF_CODE.fd']
     stores = ['OVMF_VARS_4M.ms.fd', 'OVMF_VARS.ms.fd'] if secure else ['OVMF_VARS_4M.fd', 'OVMF_VARS.fd']
 
-    def first(names: List[str]) -> str:
+    def first(names: list[str]) -> str:
         for d in dirs or FIRMWARE_DIRS:
             for n in names:
                 if os.path.isfile(os.path.join(d, n)):
@@ -233,8 +233,8 @@ def find_firmware(secure: bool, dirs: Optional[Tuple[str, ...]] = None) -> Tuple
     return first(codes), first(stores)
 
 
-def qemu_args(cfg: Dict[str, Any], store: str, run_dir: str = RUN_DIR, firmware: Optional[Tuple[str, str]] = None,
-              kvm: bool = True, tap_fd: Optional[int] = None, vfio: Optional[List[str]] = None) -> List[str]:
+def qemu_args(cfg: dict[str, Any], store: str, run_dir: str = RUN_DIR, firmware: tuple[str, str] | None = None,
+              kvm: bool = True, tap_fd: int | None = None, vfio: list[str] | None = None) -> list[str]:
     """The whole QEMU command line for one virtual machine."""
     kind = OS_TYPES[cfg['os']]
     base = vm_dir(store, cfg['id'])
@@ -287,7 +287,7 @@ def qemu_args(cfg: Dict[str, Any], store: str, run_dir: str = RUN_DIR, firmware:
     return args
 
 
-def swtpm_args(cfg: Dict[str, Any], store: str, run_dir: str = RUN_DIR) -> List[str]:
+def swtpm_args(cfg: dict[str, Any], store: str, run_dir: str = RUN_DIR) -> list[str]:
     state = os.path.join(vm_dir(store, cfg['id']), 'tpm')
     return [SWTPM, 'socket', '--tpm2', '--tpmstate', f'dir={state}',
             '--ctrl', f'type=unixio,path={os.path.join(run_dir, cfg["id"] + ".tpm")}']
@@ -338,7 +338,7 @@ def default_interface(route_file: str = '/proc/net/route') -> str:
     raise VmError('The NAS has no network port with a router.')
 
 
-def usb_devices(sys_root: str = SYS) -> List[Dict[str, Any]]:
+def usb_devices(sys_root: str = SYS) -> list[dict[str, Any]]:
     """USB devices plugged into the NAS (without hubs)."""
     out = []
     base = os.path.join(sys_root, 'bus/usb/devices')
@@ -363,7 +363,7 @@ def iommu_on(sys_root: str = SYS) -> bool:
         return False
 
 
-def group_members(slot: str, sys_root: str = SYS) -> List[str]:
+def group_members(slot: str, sys_root: str = SYS) -> list[str]:
     """The PCI devices that go with this one (its IOMMU group), without bridges."""
     folder = os.path.join(sys_root, 'bus/pci/devices', slot, 'iommu_group/devices')
     try:
@@ -374,7 +374,7 @@ def group_members(slot: str, sys_root: str = SYS) -> List[str]:
             and not _read_sys(os.path.join(sys_root, 'bus/pci/devices', n, 'class')).startswith('0x0604')]
 
 
-def graphics_cards(sys_root: str = SYS) -> List[Dict[str, Any]]:
+def graphics_cards(sys_root: str = SYS) -> list[dict[str, Any]]:
     """Graphics cards with whether a machine can have them, and why not."""
     out = []
     base = os.path.join(sys_root, 'bus/pci/devices')
@@ -400,7 +400,7 @@ def graphics_cards(sys_root: str = SYS) -> List[Dict[str, Any]]:
     return out
 
 
-def bind_vfio(members: List[str], sys_root: str = SYS) -> None:
+def bind_vfio(members: list[str], sys_root: str = SYS) -> None:
     subprocess.run(['/usr/sbin/modprobe', 'vfio-pci'], capture_output=True, timeout=30, env={'LC_ALL': 'C'})
     for slot in members:
         dev = os.path.join(sys_root, 'bus/pci/devices', slot)
@@ -412,7 +412,7 @@ def bind_vfio(members: List[str], sys_root: str = SYS) -> None:
             _write_sys(os.path.join(sys_root, 'bus/pci/drivers_probe'), slot)
 
 
-def unbind_vfio(members: List[str], sys_root: str = SYS) -> None:
+def unbind_vfio(members: list[str], sys_root: str = SYS) -> None:
     """Give the devices back to their own drivers."""
     for slot in members:
         dev = os.path.join(sys_root, 'bus/pci/devices', slot)
@@ -440,8 +440,8 @@ def _ip(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run([IP, *args], capture_output=True, text=True, timeout=30, env={'LC_ALL': 'C'})
 
 
-def devices_ready(cfg: Dict[str, Any], sys_root: str = SYS, dev_root: str = DEV,
-                  uid: Optional[int] = None) -> None:
+def devices_ready(cfg: dict[str, Any], sys_root: str = SYS, dev_root: str = DEV,
+                  uid: int | None = None) -> None:
     """As root, before a start: hand the machine its devices."""
     if not (cfg.get('usb') or cfg.get('gpu') or cfg.get('network') == 'bridge'):
         return
@@ -483,7 +483,7 @@ def devices_ready(cfg: Dict[str, Any], sys_root: str = SYS, dev_root: str = DEV,
         _give(node, uid)
 
 
-def devices_back(cfg: Dict[str, Any], sys_root: str = SYS) -> None:
+def devices_back(cfg: dict[str, Any], sys_root: str = SYS) -> None:
     """As root, after it stopped: the network port goes, the card goes back."""
     if cfg.get('network') == 'bridge':
         _ip('link', 'delete', tap_name(cfg['id']))
@@ -493,7 +493,7 @@ def devices_back(cfg: Dict[str, Any], sys_root: str = SYS) -> None:
 
 # ── Talking to a running machine (QMP) ───────────────────────────────────────
 
-def qmp(path: str, command: str, timeout: float = 5.0) -> Dict[str, Any]:
+def qmp(path: str, command: str, timeout: float = 5.0) -> dict[str, Any]:
     """One QMP command; returns its answer. Raises VmError when it is not running."""
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.settimeout(timeout)
@@ -501,7 +501,7 @@ def qmp(path: str, command: str, timeout: float = 5.0) -> Dict[str, Any]:
         s.connect(path)
         f = s.makefile('rw', encoding='utf-8')
 
-        def read() -> Dict[str, Any]:
+        def read() -> dict[str, Any]:
             while True:
                 line = f.readline()
                 if not line:
@@ -604,7 +604,7 @@ def _chown_tree(path: str) -> None:
 
 
 def prepare(vm_id: str, state_file: str = STATE_FILE, config_dir: str = CONFIG_DIR, root: str = DATA_ROOT,
-            chown: Callable[[str], None] = _chown_tree) -> Dict[str, Any]:
+            chown: Callable[[str], None] = _chown_tree) -> dict[str, Any]:
     """The folder, the disk and the UEFI variables of a new virtual machine."""
     cfg = load_config(vm_id, config_dir, root, state_file)
     store = read_store(state_file, root)
@@ -646,8 +646,8 @@ def disk_size(path: str) -> int:
 
 
 def grow(vm_id: str, state_file: str = STATE_FILE, config_dir: str = CONFIG_DIR, root: str = DATA_ROOT,
-         is_active: Optional[Callable[[str], bool]] = None, size_of: Callable[[str], int] = disk_size,
-         chown: Optional[Callable[[str], None]] = None) -> Dict[str, Any]:
+         is_active: Callable[[str], bool] | None = None, size_of: Callable[[str], int] = disk_size,
+         chown: Callable[[str], None] | None = None) -> dict[str, Any]:
     """Make a stopped machine's disks as large as its description says, and
     its second disk when it has none yet. Only larger: shrinking would cut
     off what the guest keeps at the end."""
@@ -705,7 +705,7 @@ def cleanup(vm_id: str, state_file: str = STATE_FILE, config_dir: str = CONFIG_D
     devices_back(load_config(vm_id, config_dir, root, state_file))
 
 
-def setup_store(state_file: str = STATE_FILE, root: str = DATA_ROOT) -> Dict[str, Any]:
+def setup_store(state_file: str = STATE_FILE, root: str = DATA_ROOT) -> dict[str, Any]:
     """The VMs folder after it was made: "ISOs" in it, and the way in for `alvaos-vm`."""
     store = read_store(state_file, root)
     _let_in(store)
@@ -719,7 +719,7 @@ def setup_store(state_file: str = STATE_FILE, root: str = DATA_ROOT) -> Dict[str
 
 
 def delete(vm_id: str, state_file: str = STATE_FILE, root: str = DATA_ROOT,
-           is_active: Optional[Callable[[str], bool]] = None) -> Dict[str, Any]:
+           is_active: Callable[[str], bool] | None = None) -> dict[str, Any]:
     """Remove a virtual machine's folder with its disk, for good."""
     if not ID_RE.match(vm_id):
         raise VmError('That is not a virtual machine.')
@@ -741,10 +741,10 @@ def _unit_active(vm_id: str) -> bool:
     return res.stdout.strip() in ('active', 'activating', 'deactivating')
 
 
-def list_isos(state_file: str = STATE_FILE, root: str = DATA_ROOT, limit: int = 300) -> Dict[str, Any]:
+def list_isos(state_file: str = STATE_FILE, root: str = DATA_ROOT, limit: int = 300) -> dict[str, Any]:
     """Installer images: the .iso files in the "ISOs" folder of the VMs folder
     (and one level of folders in it)."""
-    found: List[Dict[str, Any]] = []
+    found: list[dict[str, Any]] = []
     try:
         isos = os.path.join(read_store(state_file, root), ISO_FOLDER)
     except VmError:
@@ -771,7 +771,7 @@ def list_isos(state_file: str = STATE_FILE, root: str = DATA_ROOT, limit: int = 
 HELPER_OPS = {'vm-prepare', 'vm-grow', 'vm-delete', 'vm-isos', 'vm-setup'}
 
 
-def helper_main(argv: List[str]) -> int:
+def helper_main(argv: list[str]) -> int:
     """The `vm-*` operations of alvaos-priv; JSON on stdout."""
     try:
         if argv[:1] == ['vm-isos'] and len(argv) == 1:
@@ -793,7 +793,7 @@ def helper_main(argv: List[str]) -> int:
     return 0
 
 
-def main(argv: List[str]) -> int:
+def main(argv: list[str]) -> int:
     """The systemd unit: `ready ID` (as root), `run ID` and `stop ID`."""
     try:
         if len(argv) == 2 and argv[0] == 'run':

@@ -9,7 +9,7 @@ pool a little slower, which is why they stay off until someone wants one.
 
 import os
 import re
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable
 
 GB = 1024 ** 3
 MAX_LIMIT_BYTES = 10 ** 16      # 10 PB: anything above is a typo
@@ -23,7 +23,7 @@ def is_subvolume(path: str) -> bool:
         return False
 
 
-def parse_qgroup_show(text: str) -> Optional[Dict[str, Optional[int]]]:
+def parse_qgroup_show(text: str) -> dict[str, int | None] | None:
     """`btrfs qgroup show -reF --raw PATH`: the first 0/<id> line, i.e. the
     subvolume's own group. Returns used bytes and the limit (None = none)."""
     for line in (text or '').splitlines():
@@ -34,7 +34,7 @@ def parse_qgroup_show(text: str) -> Optional[Dict[str, Optional[int]]]:
     return None
 
 
-def limit_from_gb(value) -> Tuple[Optional[int], str]:
+def limit_from_gb(value) -> tuple[int | None, str]:
     """None/''/0 = no limit."""
     if value in (None, '', 0, '0'):
         return None, ''
@@ -47,7 +47,7 @@ def limit_from_gb(value) -> Tuple[Optional[int], str]:
     return int(gb * GB), ''
 
 
-def apply_limit(path: str, mount_point: str, limit_bytes: Optional[int],
+def apply_limit(path: str, mount_point: str, limit_bytes: int | None,
                 run: Callable, btrfs: str = 'btrfs') -> str:
     """Set (or clear) the limit. Returns '' or what went wrong."""
     if not is_subvolume(path):
@@ -65,7 +65,7 @@ def apply_limit(path: str, mount_point: str, limit_bytes: Optional[int],
     return ''
 
 
-def read_usage(path: str, run: Callable, btrfs: str = 'btrfs') -> Optional[Dict[str, Optional[int]]]:
+def read_usage(path: str, run: Callable, btrfs: str = 'btrfs') -> dict[str, int | None] | None:
     res, err = run([btrfs, 'qgroup', 'show', '-reF', '--raw', path], timeout=30)
     if err or res is None or res.returncode != 0:
         return None
@@ -76,7 +76,7 @@ NEARLY_FULL = 0.90
 FULL = 0.99
 
 
-def limit_alerts(shares, usage: Callable[[str], Optional[Dict[str, Optional[int]]]]):
+def limit_alerts(shares, usage: Callable[[str], dict[str, int | None] | None]):
     """(alert id, severity, title, message, route) for shares close to their
     limit. `usage(path)` reads what a share holds now."""
     out = []

@@ -13,9 +13,9 @@ import shutil
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable
 
-CMD: Dict[str, str] = {
+CMD: dict[str, str] = {
     "BTRFS": "/usr/bin/btrfs",
     "MKDIR": "/usr/bin/mkdir",
     "MV": "/usr/bin/mv",
@@ -28,7 +28,7 @@ FIND_LIST_FORMAT = "%y\\t%s\\t%T@\\t%f\\0"
 FIND_TYPES = {"d": "folder", "f": "file", "l": "link"}
 
 
-def parse_find_listing(text: str) -> List[Dict[str, Any]]:
+def parse_find_listing(text: str) -> list[dict[str, Any]]:
     """Entries from `find DIR -mindepth 1 -maxdepth 1 -printf FIND_LIST_FORMAT`."""
     entries = []
     for record in (text or "").split("\0"):
@@ -47,7 +47,7 @@ def parse_find_listing(text: str) -> List[Dict[str, Any]]:
     return entries
 
 
-def clean_relative_path(path: Optional[str]) -> Optional[str]:
+def clean_relative_path(path: str | None) -> str | None:
     """A path inside a restore point: relative, no '..'. '' is the top."""
     text = str(path or "").strip().strip("/")
     if "\x00" in text or "\n" in text:
@@ -65,7 +65,7 @@ def restored_name(name: str, when: datetime, is_folder: bool = False) -> str:
         stem, ext = name, ""
     return f"{stem} (restored {when.strftime('%Y-%m-%d %H%M')}){ext}"
 
-DEFAULT_SETTINGS: Dict[str, Dict[str, Any]] = {
+DEFAULT_SETTINGS: dict[str, dict[str, Any]] = {
     # Pool Backup Settings
     "pool_backup": {
         "enabled": False,
@@ -86,7 +86,7 @@ DEFAULT_SETTINGS: Dict[str, Dict[str, Any]] = {
     }
 }
 
-DEFAULT_STATUS: Dict[str, Any] = {
+DEFAULT_STATUS: dict[str, Any] = {
     "pool_last_run_at": None,
     "pool_next_run_at": None,
     "pool_last_status": "idle",
@@ -112,7 +112,7 @@ RETENTION_MODES = ("smart", "count")
 SMART_RETENTION = {"all_hours": 24, "daily": 30, "weekly": 12, "monthly": 12}
 
 
-def _parse_created(value: Any) -> Optional[datetime]:
+def _parse_created(value: Any) -> datetime | None:
     try:
         stamp = datetime.fromisoformat(str(value))
     except (TypeError, ValueError):
@@ -120,7 +120,7 @@ def _parse_created(value: Any) -> Optional[datetime]:
     return stamp if stamp.tzinfo else stamp.replace(tzinfo=timezone.utc)
 
 
-def smart_keep(entries: List[Dict], now: datetime) -> List[Dict]:
+def smart_keep(entries: list[dict], now: datetime) -> list[dict]:
     """The snapshots smart retention keeps. Always the newest one; entries
     without a readable time are kept too, never deleted by guessing."""
     dated = []
@@ -223,7 +223,7 @@ class BackupManager:
             snapshots = []
             self._save_json(self.snapshots_file, snapshots)
 
-    def _normalize_path(self, path: Optional[str]) -> str:
+    def _normalize_path(self, path: str | None) -> str:
         if not path:
             return ""
         return os.path.normpath(str(path).strip())
@@ -234,7 +234,7 @@ class BackupManager:
         value = value.strip("-")
         return value or "snapshot"
 
-    def _parse_iso(self, value: Optional[str]) -> Optional[datetime]:
+    def _parse_iso(self, value: str | None) -> datetime | None:
         if not value:
             return None
         try:
@@ -245,32 +245,32 @@ class BackupManager:
     def _now_iso(self) -> str:
         return datetime.now(timezone.utc).isoformat()
 
-    def _detect_cmd(self, candidates: List[Optional[str]], which_name: str) -> Optional[str]:
+    def _detect_cmd(self, candidates: list[str | None], which_name: str) -> str | None:
         for candidate in candidates:
             if candidate and os.path.exists(candidate):
                 return candidate
         found = shutil.which(which_name)
         return found if found else None
 
-    def _btrfs_cmd(self) -> Optional[str]:
+    def _btrfs_cmd(self) -> str | None:
         return self._detect_cmd(
             ["/usr/bin/btrfs", "/bin/btrfs", "/usr/sbin/btrfs", "/sbin/btrfs", CMD.get("BTRFS")],
             "btrfs",
         )
 
-    def _mkdir_cmd(self) -> Optional[str]:
+    def _mkdir_cmd(self) -> str | None:
         return self._detect_cmd(
             ["/usr/bin/mkdir", "/bin/mkdir", CMD.get("MKDIR")],
             "mkdir",
         )
 
-    def _mv_cmd(self) -> Optional[str]:
+    def _mv_cmd(self) -> str | None:
         return self._detect_cmd(
             ["/usr/bin/mv", "/bin/mv", CMD.get("MV")],
             "mv",
         )
 
-    def _move_path_best_effort(self, source: str, destination: str, timeout: int = 60) -> Tuple[bool, str]:
+    def _move_path_best_effort(self, source: str, destination: str, timeout: int = 60) -> tuple[bool, str]:
         src = self._normalize_path(source)
         dst = self._normalize_path(destination)
         if not src or not dst:
@@ -292,7 +292,7 @@ class BackupManager:
 
         return False, last_error or f"Failed to move {src} -> {dst}"
 
-    def _list_pool_mounts(self) -> List[Tuple[str, str]]:
+    def _list_pool_mounts(self) -> list[tuple[str, str]]:
         pools = self.load_pools_state() or {}
         mounts = []
         for pool_id, data in pools.items():
@@ -302,15 +302,15 @@ class BackupManager:
         mounts.sort(key=lambda item: len(item[1]), reverse=True)
         return mounts
 
-    def _find_pool_for_path(self, source_path: str) -> Tuple[Optional[str], Optional[str]]:
+    def _find_pool_for_path(self, source_path: str) -> tuple[str | None, str | None]:
         source_norm = self._normalize_path(source_path)
         for pool_id, mount_point in self._list_pool_mounts():
             if source_norm == mount_point or source_norm.startswith(mount_point + os.sep):
                 return pool_id, mount_point
         return None, None
 
-    def _list_subvolumes(self, mount_point: str) -> List[Dict]:
-        subvolumes: List[Dict] = []
+    def _list_subvolumes(self, mount_point: str) -> list[dict]:
+        subvolumes: list[dict] = []
         if platform.system() != "Linux":
             return subvolumes
         btrfs_cmd = self._btrfs_cmd()
@@ -337,7 +337,7 @@ class BackupManager:
             )
         return subvolumes
 
-    def get_sources(self) -> List[Dict]:
+    def get_sources(self) -> list[dict]:
         sources = []
         seen_paths = set()
         mounts = self._list_pool_mounts()
@@ -379,7 +379,7 @@ class BackupManager:
 
         return sorted(sources, key=lambda item: item["name"].lower())
 
-    def get_target_locations(self) -> List[Dict]:
+    def get_target_locations(self) -> list[dict]:
         targets = []
         seen = set()
         pools = self.load_pools_state() or {}
@@ -428,14 +428,14 @@ class BackupManager:
 
         return targets
 
-    def get_settings(self) -> Dict:
+    def get_settings(self) -> dict:
         # Load raw settings without defaults first to allow migration detection
         settings = self._load_json(self.settings_file, {})
         if not isinstance(settings, dict):
             settings = {}
         return self._normalize_settings(settings)
 
-    def _normalize_settings(self, payload: Dict) -> Dict:
+    def _normalize_settings(self, payload: dict) -> dict:
         merged = copy.deepcopy(DEFAULT_SETTINGS)
 
         # Migration from old flat structure if needed
@@ -525,7 +525,7 @@ class BackupManager:
 
         return merged
 
-    def save_settings(self, payload: Dict) -> Dict:
+    def save_settings(self, payload: dict) -> dict:
         payload = payload or {}
         current = self.get_settings()
         for key, value in payload.items():
@@ -539,7 +539,7 @@ class BackupManager:
         self._refresh_next_run(normalized)
         return normalized
 
-    def get_status(self) -> Dict:
+    def get_status(self) -> dict:
         status = self._load_json(self.status_file, DEFAULT_STATUS.copy())
         if not isinstance(status, dict):
             status = {}
@@ -547,16 +547,16 @@ class BackupManager:
         merged.update(status)
         return merged
 
-    def _save_status(self, updates: Dict) -> Dict:
+    def _save_status(self, updates: dict) -> dict:
         status = self.get_status()
         status.update(updates or {})
         self._save_json(self.status_file, status)
         return status
 
-    def _refresh_next_run(self, settings: Optional[Dict] = None):
+    def _refresh_next_run(self, settings: dict | None = None):
         with self._schedule_lock:
             cfg = settings or self.get_settings()
-            updates: Dict[str, Any] = {}
+            updates: dict[str, Any] = {}
             now = datetime.now(timezone.utc)
 
             # Pool Backup
@@ -577,7 +577,7 @@ class BackupManager:
 
             self._save_status(updates)
 
-    def list_snapshots(self, source_path: Optional[str] = None, snapshot_class: Optional[str] = None) -> List[Dict]:
+    def list_snapshots(self, source_path: str | None = None, snapshot_class: str | None = None) -> list[dict]:
         entries = self._load_json(self.snapshots_file, [])
         if not isinstance(entries, list):
             entries = []
@@ -589,10 +589,10 @@ class BackupManager:
         entries.sort(key=lambda item: item.get("created_at", ""), reverse=True)
         return entries
 
-    def list_system_snapshots(self) -> List[Dict]:
+    def list_system_snapshots(self) -> list[dict]:
         return self.list_snapshots(snapshot_class="system")
 
-    def delete_snapshot(self, snapshot_path: str) -> Tuple[bool, Dict]:
+    def delete_snapshot(self, snapshot_path: str) -> tuple[bool, dict]:
         snapshot = self._normalize_path(snapshot_path)
         if not snapshot:
             return False, {"error": "snapshot_path is required"}
@@ -636,12 +636,12 @@ class BackupManager:
                 "deleted_metadata": bool(matching),
             }
 
-    def _save_snapshots(self, entries: List[Dict]) -> None:
+    def _save_snapshots(self, entries: list[dict]) -> None:
         if len(entries) > 1000:
             entries = entries[-1000:]
         self._save_json(self.snapshots_file, entries)
 
-    def _append_snapshot(self, entry: Dict) -> None:
+    def _append_snapshot(self, entry: dict) -> None:
         with self._job_lock:
             entries = self._load_json(self.snapshots_file, [])
             if not isinstance(entries, list):
@@ -649,7 +649,7 @@ class BackupManager:
             entries.append(entry)
             self._save_snapshots(entries)
 
-    def _get_btrfs_uuid(self, path: str) -> Optional[str]:
+    def _get_btrfs_uuid(self, path: str) -> str | None:
         if platform.system() != "Linux":
             return None
         btrfs_cmd = self._btrfs_cmd()
@@ -683,7 +683,7 @@ class BackupManager:
             pass
         return False
 
-    def _device_id_for_path(self, path: str) -> Optional[int]:
+    def _device_id_for_path(self, path: str) -> int | None:
         target = self._normalize_path(path)
         if not target:
             return None
@@ -760,7 +760,7 @@ class BackupManager:
         except Exception:
             return False
 
-    def _filesystem_type_for_path(self, path: str) -> Optional[str]:
+    def _filesystem_type_for_path(self, path: str) -> str | None:
         probe = self._existing_probe_path(path)
         if not probe:
             return None
@@ -824,7 +824,7 @@ class BackupManager:
         res, err = self.run_command([btrfs_cmd, "filesystem", "show", probe], timeout=20)
         return bool(res and res.returncode == 0 and not err)
 
-    def _ensure_snapshot_container(self, path: str, force_subvolume: bool = False) -> Tuple[bool, str, str]:
+    def _ensure_snapshot_container(self, path: str, force_subvolume: bool = False) -> tuple[bool, str, str]:
         container = self._normalize_path(path)
         if not container:
             return False, "Invalid snapshot target path", ""
@@ -870,7 +870,7 @@ class BackupManager:
             return False, mk_err or "Failed to prepare snapshot target path", ""
         return True, "", container
 
-    def _get_subvolume_id(self, path: str) -> Optional[int]:
+    def _get_subvolume_id(self, path: str) -> int | None:
         btrfs_cmd = self._btrfs_cmd()
         if not btrfs_cmd:
             return None
@@ -885,7 +885,7 @@ class BackupManager:
                     return None
         return None
 
-    def _get_default_subvolume_id(self, path: str = "/") -> Optional[int]:
+    def _get_default_subvolume_id(self, path: str = "/") -> int | None:
         btrfs_cmd = self._btrfs_cmd()
         if not btrfs_cmd:
             return None
@@ -900,7 +900,7 @@ class BackupManager:
         except Exception:
             return None
 
-    def get_system_state(self) -> Dict:
+    def get_system_state(self) -> dict:
         if platform.system() != "Linux":
             return {"supported": False, "reason": "System snapshots are supported on Linux only"}
         if not self._path_is_btrfs_subvolume("/"):
@@ -930,7 +930,7 @@ class BackupManager:
             safe_rel = "__root__"
         return os.path.join(base, ".alvaos-snapshots", safe_rel)
 
-    def _plan_escape(self, value: Optional[str]) -> str:
+    def _plan_escape(self, value: str | None) -> str:
         text = str(value or "")
         return (
             text
@@ -940,8 +940,8 @@ class BackupManager:
             .replace("\r", "")
         )
 
-    def _collect_full_backup_sources(self) -> List[Dict]:
-        grouped: Dict[str, Dict[str, List[Dict]]] = {}
+    def _collect_full_backup_sources(self) -> list[dict]:
+        grouped: dict[str, dict[str, list[dict]]] = {}
         for item in self.get_sources():
             pool_id = str(item.get("pool_id") or "")
             source_path = self._normalize_path(item.get("path"))
@@ -958,7 +958,7 @@ class BackupManager:
                 "path": source_path,
             })
 
-        selected: List[Dict] = []
+        selected: list[dict] = []
         for pool_id in sorted(grouped.keys()):
             group = grouped[pool_id]
             candidates = group.get("subvolume") or group.get("pool") or []
@@ -968,10 +968,10 @@ class BackupManager:
 
     def _write_full_backup_manifest(
         self,
-        system_snapshot_entry: Dict,
-        data_snapshot_entries: List[Dict],
-        failures: Optional[List[Dict]] = None,
-    ) -> Tuple[Optional[str], Optional[str]]:
+        system_snapshot_entry: dict,
+        data_snapshot_entries: list[dict],
+        failures: list[dict] | None = None,
+    ) -> tuple[str | None, str | None]:
         manifest_dir = os.path.join(self.state_dir, "full-system-manifests")
 
         snapshot_name = str(system_snapshot_entry.get("snapshot_name") or "").strip()
@@ -1061,7 +1061,7 @@ class BackupManager:
 
         return None, last_error or "Failed to write full-backup manifest"
 
-    def _snapshot_direct(self, source_path: str, snapshot_path: str) -> Tuple[bool, str]:
+    def _snapshot_direct(self, source_path: str, snapshot_path: str) -> tuple[bool, str]:
         target_parent = os.path.dirname(snapshot_path)
         mkdir_cmd = self._mkdir_cmd()
         btrfs_cmd = self._btrfs_cmd()
@@ -1080,7 +1080,7 @@ class BackupManager:
             return False, snap_err or "Failed to create snapshot"
         return True, ""
 
-    def _snapshot_via_send_receive(self, source_path: str, snapshot_path: str) -> Tuple[bool, str]:
+    def _snapshot_via_send_receive(self, source_path: str, snapshot_path: str) -> tuple[bool, str]:
         target_parent = os.path.dirname(snapshot_path)
         name = os.path.basename(snapshot_path)
         mkdir_cmd = self._mkdir_cmd()
@@ -1146,11 +1146,11 @@ class BackupManager:
     def create_snapshot(
         self,
         source_path: str,
-        label: Optional[str] = None,
+        label: str | None = None,
         trigger: str = "manual",
-        target_path: Optional[str] = None,
+        target_path: str | None = None,
         snapshot_class: str = "data",
-    ) -> Tuple[bool, Dict]:
+    ) -> tuple[bool, dict]:
         source = self._normalize_path(source_path)
         if not source:
             return False, {"error": "source_path is required"}
@@ -1228,10 +1228,10 @@ class BackupManager:
 
     def create_system_snapshot(
         self,
-        label: Optional[str] = None,
+        label: str | None = None,
         trigger: str = "manual",
-        target_path: Optional[str] = None,
-    ) -> Tuple[bool, Dict]:
+        target_path: str | None = None,
+    ) -> tuple[bool, dict]:
         settings = self.get_settings()
         sb = settings.get("system_backup", {})
         explicit_target = self._normalize_path(target_path)
@@ -1242,7 +1242,7 @@ class BackupManager:
             if not self._path_is_btrfs_subvolume("/"):
                 return False, {"error": "Full system snapshots require Btrfs root"}
 
-            def _validate_target(path: str) -> Tuple[bool, str]:
+            def _validate_target(path: str) -> tuple[bool, str]:
                 mkdir_cmd = self._mkdir_cmd()
                 if not mkdir_cmd:
                     return False, "mkdir command not found"
@@ -1331,10 +1331,10 @@ class BackupManager:
     def run_backup_now(
         self,
         backup_type: str = "pool",
-        sources: Optional[List[str]] = None,
+        sources: list[str] | None = None,
         trigger: str = "manual",
-        target_path: Optional[str] = None,
-    ) -> Dict:
+        target_path: str | None = None,
+    ) -> dict:
         with self._job_lock:
             settings = self.get_settings()
 
@@ -1367,7 +1367,7 @@ class BackupManager:
                      else:
                          failed.append({"source_path": source, "error": payload.get("error", "unknown error")})
 
-                status_payload: Dict[str, Any] = {
+                status_payload: dict[str, Any] = {
                     "pool_last_run_at": self._now_iso(),
                     "pool_last_status": "success" if not failed else ("partial" if created else "error"),
                     "pool_last_error": "; ".join([f["error"] for f in failed]) if failed else "",
@@ -1382,7 +1382,7 @@ class BackupManager:
             elif backup_type == "system":
                 # System Backup Logic
                 current_settings = settings.get("system_backup", {})
-                full_data_target_path: Optional[str] = self._normalize_path(target_path)
+                full_data_target_path: str | None = self._normalize_path(target_path)
                 if not full_data_target_path:
                     full_data_target_path = self._normalize_path(
                         settings.get("pool_backup", {}).get("target_path")
@@ -1467,7 +1467,7 @@ class BackupManager:
 
     # ── Single files from a restore point ────────────────────────────────
 
-    def _known_data_snapshot(self, snapshot_path: str) -> Optional[Dict]:
+    def _known_data_snapshot(self, snapshot_path: str) -> dict | None:
         wanted = self._normalize_path(snapshot_path)
         for entry in self.list_snapshots():
             if (entry.get("snapshot_class") or "data") in ("data", "full_data", "copy") \
@@ -1475,14 +1475,14 @@ class BackupManager:
                 return entry
         return None
 
-    def _list_dir(self, path: str) -> Tuple[Optional[List[Dict[str, Any]]], str]:
+    def _list_dir(self, path: str) -> tuple[list[dict[str, Any]] | None, str]:
         res, err = self.run_command(
             [CMD["FIND"], path, "-mindepth", "1", "-maxdepth", "1", "-printf", FIND_LIST_FORMAT], timeout=30)
         if err or res is None or res.returncode != 0:
             return None, err or "The folder could not be read."
         return parse_find_listing(res.stdout), ""
 
-    def browse_snapshot(self, snapshot_path: str, rel_path: str = "") -> Tuple[bool, Dict]:
+    def browse_snapshot(self, snapshot_path: str, rel_path: str = "") -> tuple[bool, dict]:
         """What a folder looked like in a restore point, and which of its
         entries are not in the folder any more."""
         entry = self._known_data_snapshot(snapshot_path)
@@ -1502,7 +1502,7 @@ class BackupManager:
             item["exists_now"] = item["name"] in current if now is not None else None
         return True, {"path": rel, "entries": then, "snapshot": entry, "folder_exists_now": now is not None}
 
-    def restore_item(self, snapshot_path: str, rel_path: str) -> Tuple[bool, Dict]:
+    def restore_item(self, snapshot_path: str, rel_path: str) -> tuple[bool, dict]:
         """Copy one file or folder from a restore point back to where it was.
         Nothing is overwritten: if the name is taken, the copy gets
         '(restored <date>)' in its name."""
@@ -1539,7 +1539,7 @@ class BackupManager:
         return True, {"restored_as": os.path.join(parent_rel, target_name) if parent_rel else target_name,
                       "renamed": target_name != name}
 
-    def restore_snapshot(self, snapshot_path: str, source_path: Optional[str] = None) -> Tuple[bool, Dict]:
+    def restore_snapshot(self, snapshot_path: str, source_path: str | None = None) -> tuple[bool, dict]:
         snapshot = self._normalize_path(snapshot_path)
         if not snapshot:
             return False, {"error": "snapshot_path is required"}
@@ -1636,7 +1636,7 @@ class BackupManager:
             "message": "Restore completed",
         }
 
-    def rollback_system_snapshot(self, snapshot_path: str) -> Tuple[bool, Dict]:
+    def rollback_system_snapshot(self, snapshot_path: str) -> tuple[bool, dict]:
         snapshot = self._normalize_path(snapshot_path)
         if not snapshot:
             return False, {"error": "snapshot_path is required"}

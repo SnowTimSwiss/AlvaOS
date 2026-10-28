@@ -11,7 +11,7 @@ import json
 import os
 import re
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 PREFS_FILE = '/var/lib/alvaos/hub_prefs.json'
 ITEM_RE = re.compile(r'^(?:[a-z][a-z0-9_-]{0,31}|store:[a-z0-9][a-z0-9_-]{0,63})$')
@@ -19,7 +19,7 @@ MAX_ITEMS = 64
 _lock = threading.Lock()
 
 
-def _read(path: str) -> Dict[str, Any]:
+def _read(path: str) -> dict[str, Any]:
     try:
         with open(path) as f:
             data = json.load(f)
@@ -28,7 +28,7 @@ def _read(path: str) -> Dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def get(user: str, path: Optional[str] = None) -> Dict[str, Any]:
+def get(user: str, path: str | None = None) -> dict[str, Any]:
     entry = _read(path or PREFS_FILE).get(user)
     bar = entry.get('bar') if isinstance(entry, dict) else None
     if isinstance(bar, list):
@@ -36,7 +36,7 @@ def get(user: str, path: Optional[str] = None) -> Dict[str, Any]:
     return {'bar': None}
 
 
-def save(user: str, bar: Optional[List[str]], available: List[str], path: Optional[str] = None) -> Dict[str, Any]:
+def save(user: str, bar: list[str] | None, available: list[str], path: str | None = None) -> dict[str, Any]:
     """Keep this person's side bar: `bar` is the list in order (only what is `available` to them), or
     None to go back to the default. Raises ValueError with a sentence."""
     path = path or PREFS_FILE

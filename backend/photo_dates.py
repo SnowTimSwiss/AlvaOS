@@ -21,7 +21,7 @@ import os
 import re
 import threading
 from io import BytesIO
-from typing import Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Callable, Iterable
 
 HEAD_BYTES = 128 * 1024
 EXIF_TYPES = ('.jpg', '.jpeg', '.tif', '.tiff', '.webp')
@@ -60,10 +60,10 @@ class DateCache:
 
     def __init__(self, folder_for: Callable[[], str]):
         self.folder_for = folder_for
-        self._data: Optional[Dict[str, str]] = None
+        self._data: dict[str, str] | None = None
         self._file = ''
 
-    def _load(self) -> Dict[str, str]:
+    def _load(self) -> dict[str, str]:
         file = os.path.join(self.folder_for(), 'photo-dates.json')
         if self._data is None or file != self._file:
             self._file = file
@@ -75,11 +75,11 @@ class DateCache:
                 self._data = {}
         return self._data
 
-    def get(self, k: str) -> Optional[str]:
+    def get(self, k: str) -> str | None:
         with _lock:
             return self._load().get(k)
 
-    def put(self, found: Dict[str, str]) -> None:
+    def put(self, found: dict[str, str]) -> None:
         if not found:
             return
         with _lock:
@@ -97,10 +97,10 @@ class DateCache:
                 pass
 
 
-def fill(items: List[Dict], base: str, cache: DateCache) -> List[Tuple[str, str]]:
+def fill(items: list[dict], base: str, cache: DateCache) -> list[tuple[str, str]]:
     """Add 'taken_at' to the items whose date is known; return those still to look up.
     `base` is the folder on disk the items' 'folder' is relative to."""
-    todo: List[Tuple[str, str]] = []
+    todo: list[tuple[str, str]] = []
     for item in items:
         if not str(item.get('name', '')).lower().endswith(EXIF_TYPES):
             continue
@@ -114,10 +114,10 @@ def fill(items: List[Dict], base: str, cache: DateCache) -> List[Tuple[str, str]
     return todo
 
 
-def look_up(todo: Iterable[Tuple[str, str]], read_head: Callable[[str], Optional[bytes]], cache: DateCache,
+def look_up(todo: Iterable[tuple[str, str]], read_head: Callable[[str], bytes | None], cache: DateCache,
             submit: Callable[[Callable], object]) -> None:
     """Read the dates of up to BATCH photos in the background."""
-    batch: List[Tuple[str, str]] = []
+    batch: list[tuple[str, str]] = []
     with _lock:
         for k, path in todo:
             if k not in _busy and len(batch) < BATCH:

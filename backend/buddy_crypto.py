@@ -38,7 +38,7 @@ import os
 import secrets
 import struct
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 MAGIC_V2 = b"ALVAENC2"
 MAGIC_V1 = b"ALVAENC1"
@@ -217,7 +217,7 @@ class StreamDecryptor:
     def __init__(self, master_key_for: Callable[[StreamHeader], bytes]):
         self._master_key_for = master_key_for
         self._buffer = bytearray()
-        self._header: Optional[StreamHeader] = None
+        self._header: StreamHeader | None = None
         self._aead: Any = None
         self._counter = 0
         self._finished = False
@@ -384,7 +384,7 @@ def encrypt_legacy_v1_file(plain_path: str, encrypted_path: str, key: bytes) -> 
         dst.write(mac.digest())
 
 
-def is_encrypted_stream(path: str) -> Optional[str]:
+def is_encrypted_stream(path: str) -> str | None:
     magic = read_magic(path)
     if magic == MAGIC_V2:
         return "v2"
@@ -497,7 +497,7 @@ def _vault_blob_bytes(blob: str) -> bytes:
     return raw
 
 
-def open_vault_key(blob: str, passphrase: str = "", material: Optional[KeyMaterial] = None) -> bytes:
+def open_vault_key(blob: str, passphrase: str = "", material: KeyMaterial | None = None) -> bytes:
     """Unseal with the stored key material (same machine) or the password (any machine)."""
     from cryptography.exceptions import InvalidTag
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM

@@ -23,7 +23,7 @@ import json
 import os
 import re
 import threading
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import h11
 
@@ -35,7 +35,7 @@ CONNECT_SECONDS = 10
 CHUNK = 64 * 1024
 
 
-def embed_port(app_port: int) -> Optional[int]:
+def embed_port(app_port: int) -> int | None:
     """The proxy's port for an app on `app_port`, or None when it would be above 65535."""
     port = app_port + EMBED_OFFSET
     return port if 1 <= app_port <= 65535 and port <= 65535 else None
@@ -47,7 +47,7 @@ def _clean_csp(value: str) -> str:
     return '; '.join(p for p in parts if p and not re.match(r'(?i)^frame-ancestors\b', p))
 
 
-def clean_response_headers(headers: List[Tuple[bytes, bytes]]) -> List[Tuple[bytes, bytes]]:
+def clean_response_headers(headers: list[tuple[bytes, bytes]]) -> list[tuple[bytes, bytes]]:
     """The answer's headers without what keeps the app out of a frame."""
     out = []
     for name, value in headers:
@@ -108,7 +108,7 @@ async def _relay(client_reader: asyncio.StreamReader, client_writer: asyncio.Str
         app = h11.Connection(h11.CLIENT, max_incomplete_event_size=MAX_HEAD)
         while True:
             # The request: head, then body, from the browser to the app.
-            request: Optional[h11.Request] = None
+            request: h11.Request | None = None
             while True:
                 event = browser.next_event()
                 if event is h11.NEED_DATA:
@@ -179,10 +179,10 @@ class EmbedProxies:
     def __init__(self, ports_file: str = EMBED_PORTS_FILE, bind: str = '0.0.0.0') -> None:
         self.ports_file = ports_file
         self.bind = bind
-        self.servers: Dict[int, Tuple[int, Any]] = {}    # listening port -> (app port, server)
-        self.loop: Optional[asyncio.AbstractEventLoop] = None
-        self.thread: Optional[threading.Thread] = None
-        self.failed: Dict[int, str] = {}
+        self.servers: dict[int, tuple[int, Any]] = {}    # listening port -> (app port, server)
+        self.loop: asyncio.AbstractEventLoop | None = None
+        self.thread: threading.Thread | None = None
+        self.failed: dict[int, str] = {}
 
     def start(self) -> None:
         if self.thread:
@@ -199,14 +199,14 @@ class EmbedProxies:
         self.thread.start()
         ready.wait(5)
 
-    def sync(self, wanted: Dict[int, int]) -> None:
+    def sync(self, wanted: dict[int, int]) -> None:
         """Listen on exactly these ports: {listening port: the app's port}."""
         self.start()
         assert self.loop is not None
         asyncio.run_coroutine_threadsafe(self._sync(dict(wanted)), self.loop).result(15)
         self._write_ports()
 
-    async def _sync(self, wanted: Dict[int, int]) -> None:
+    async def _sync(self, wanted: dict[int, int]) -> None:
         for port, (target, server) in list(self.servers.items()):
             if wanted.get(port) != target:
                 server.close()

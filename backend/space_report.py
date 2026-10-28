@@ -9,7 +9,7 @@ it reports the exclusive size: about what deleting that one would free.
 import os
 import threading
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable
 
 from backup_manager import CMD as BACKUP_CMD, FIND_LIST_FORMAT, parse_find_listing
 
@@ -18,9 +18,9 @@ DU_BATCH = 50          # paths per btrfs call (the helper allows up to 64)
 DU_TIMEOUT = 3 * 3600  # one batch; big media folders take a while
 
 
-def parse_fs_du(text: str) -> Dict[str, Dict[str, int]]:
+def parse_fs_du(text: str) -> dict[str, dict[str, int]]:
     """{path: {total, exclusive, shared}} from `btrfs filesystem du -s --raw`."""
-    result: Dict[str, Dict[str, int]] = {}
+    result: dict[str, dict[str, int]] = {}
     for line in (text or "").splitlines():
         parts = line.strip().split(None, 3)
         if len(parts) != 4 or not parts[0].isdigit():
@@ -39,21 +39,21 @@ def _within(path: str, root: str) -> bool:
 
 
 class SpaceScanner:
-    def __init__(self, run_command: Callable, list_snapshots: Callable[[], List[Dict]]):
+    def __init__(self, run_command: Callable, list_snapshots: Callable[[], list[dict]]):
         self.run = run_command
         self.list_snapshots = list_snapshots
         self._lock = threading.Lock()
-        self._reports: Dict[str, Dict[str, Any]] = {}
-        self._running: Optional[str] = None
+        self._reports: dict[str, dict[str, Any]] = {}
+        self._running: str | None = None
 
-    def report(self, pool_id: str) -> Dict[str, Any]:
+    def report(self, pool_id: str) -> dict[str, Any]:
         with self._lock:
             report = dict(self._reports.get(pool_id) or {"state": "never"})
             if self._running == pool_id:
                 report["state"] = "running"
             return report
 
-    def start(self, pool_id: str, mount_point: str, background: bool = True) -> Tuple[bool, str]:
+    def start(self, pool_id: str, mount_point: str, background: bool = True) -> tuple[bool, str]:
         with self._lock:
             if self._running:
                 return False, "A space check is already running. Try again when it is done."
@@ -69,15 +69,15 @@ class SpaceScanner:
 
     # ── Scan ─────────────────────────────────────────────────────────────
 
-    def _list(self, path: str) -> Optional[List[Dict[str, Any]]]:
+    def _list(self, path: str) -> list[dict[str, Any]] | None:
         res, err = self.run([BACKUP_CMD["FIND"], path, "-mindepth", "1", "-maxdepth", "1",
                              "-printf", FIND_LIST_FORMAT], timeout=60)
         if err or res is None or res.returncode != 0:
             return None
         return parse_find_listing(res.stdout)
 
-    def _du(self, paths: List[str]) -> Dict[str, Dict[str, int]]:
-        sizes: Dict[str, Dict[str, int]] = {}
+    def _du(self, paths: list[str]) -> dict[str, dict[str, int]]:
+        sizes: dict[str, dict[str, int]] = {}
         for i in range(0, len(paths), DU_BATCH):
             batch = paths[i:i + DU_BATCH]
             res, _err = self.run([BTRFS, "filesystem", "du", "-s", "--raw", *batch], timeout=DU_TIMEOUT)
@@ -109,7 +109,7 @@ class SpaceScanner:
                         for path, name in zip(paths, names, strict=True) if path in sizes]
                 return sorted(rows, key=lambda r: r["bytes"], reverse=True)
 
-            restore_points: List[Dict[str, Any]] = []
+            restore_points: list[dict[str, Any]] = []
             for snap, path in zip(snapshots, snap_paths, strict=True):
                 if path not in sizes:
                     continue

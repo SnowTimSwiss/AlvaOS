@@ -33,7 +33,7 @@ import subprocess
 import termios
 import threading
 import time
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable
 from urllib.parse import parse_qs, urlsplit
 
 PORT = 8086
@@ -48,7 +48,7 @@ READ_CHUNK = 32 * 1024      # what the shell's output is sent in
 SHELL = '/bin/bash'
 GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 
-_tickets: Dict[str, Tuple[str, float]] = {}
+_tickets: dict[str, tuple[str, float]] = {}
 _lock = threading.Lock()
 _open = 0
 # Answers whether the sign-in a ticket was made for is still valid
@@ -76,7 +76,7 @@ def issue(session_token: str) -> str:
     return ticket
 
 
-def redeem(ticket: str) -> Optional[str]:
+def redeem(ticket: str) -> str | None:
     with _lock:
         found = _tickets.pop(ticket, None)
     if not found or found[1] < time.monotonic():
@@ -88,7 +88,7 @@ def _refuse(status: str) -> bytes:
     return f'HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'.encode()
 
 
-def check_request(head: bytes) -> Tuple[Optional[Tuple[str, str]], str]:
+def check_request(head: bytes) -> tuple[tuple[str, str] | None, str]:
     """((sign-in token, websocket key), '') for a good request, else (None, status line)."""
     try:
         lines = head.decode('latin-1').split('\r\n')
@@ -138,7 +138,7 @@ class Closed(Exception):
     pass
 
 
-async def read_message(reader: asyncio.StreamReader) -> Tuple[int, bytes]:
+async def read_message(reader: asyncio.StreamReader) -> tuple[int, bytes]:
     """(opcode, payload) of one whole message; pings are (9, ...)."""
     opcode, parts, size = None, [], 0
     while True:
@@ -166,7 +166,7 @@ async def read_message(reader: asyncio.StreamReader) -> Tuple[int, bytes]:
 
 # ── The shell ───────────────────────────────────────────────────────────────
 
-def _clean_env() -> Dict[str, str]:
+def _clean_env() -> dict[str, str]:
     """The shell gets a plain environment, not the web server's."""
     me = pwd.getpwuid(os.getuid())
     return {'TERM': 'xterm-256color', 'LANG': 'C.UTF-8', 'HOME': me.pw_dir, 'USER': me.pw_name,
@@ -174,7 +174,7 @@ def _clean_env() -> Dict[str, str]:
             'PATH': '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'}
 
 
-def start_shell(cols: int = 100, rows: int = 30, argv=None) -> Tuple[subprocess.Popen, int]:
+def start_shell(cols: int = 100, rows: int = 30, argv=None) -> tuple[subprocess.Popen, int]:
     master, slave = os.openpty()
     resize(master, cols, rows)
     env = _clean_env()
@@ -325,15 +325,15 @@ async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, arg
         _open -= 1
 
 
-async def serve(port: int = PORT, tls_port: Optional[int] = TLS_PORT, host: str = '0.0.0.0',
-                context: Optional[ssl.SSLContext] = None) -> None:
+async def serve(port: int = PORT, tls_port: int | None = TLS_PORT, host: str = '0.0.0.0',
+                context: ssl.SSLContext | None = None) -> None:
     servers = [await asyncio.start_server(handle, host, port, limit=HEAD_LIMIT)]
     if tls_port and context:
         servers.append(await asyncio.start_server(handle, host, tls_port, ssl=context, limit=HEAD_LIMIT))
     await asyncio.gather(*(s.serve_forever() for s in servers))
 
 
-def serve_in_background() -> Optional[threading.Thread]:
+def serve_in_background() -> threading.Thread | None:
     """Start the terminal door next to the web page (alvaos-backend.py)."""
     context = None
     try:

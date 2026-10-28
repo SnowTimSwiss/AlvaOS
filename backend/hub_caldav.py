@@ -30,7 +30,7 @@ import json
 import re
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from urllib.parse import quote, unquote, urlsplit
 from xml.sax.saxutils import escape
 
@@ -54,8 +54,8 @@ TASKS = '~tasks'
 
 # ── iCalendar: reading ──────────────────────────────────────────────────────
 
-def _unfold(text: str) -> List[str]:
-    lines: List[str] = []
+def _unfold(text: str) -> list[str]:
+    lines: list[str] = []
     for raw in text.replace('\r\n', '\n').replace('\r', '\n').split('\n'):
         if raw[:1] in (' ', '\t') and lines:
             lines[-1] += raw[1:]
@@ -64,7 +64,7 @@ def _unfold(text: str) -> List[str]:
     return lines
 
 
-def _split_line(line: str) -> Tuple[str, Dict[str, str], str]:
+def _split_line(line: str) -> tuple[str, dict[str, str], str]:
     """('DTSTART', {'TZID': 'Europe/Zurich'}, '20261004T093000')."""
     head, value, quoted = '', '', False
     for i, ch in enumerate(line):
@@ -87,11 +87,11 @@ def _unescape(value: str) -> str:
     return re.sub(r'\\([\\;,nN])', lambda m: '\n' if m.group(1) in 'nN' else m.group(1), value)
 
 
-def components(text: str) -> List[Tuple[str, Dict[str, Tuple[Dict[str, str], str]]]]:
+def components(text: str) -> list[tuple[str, dict[str, tuple[dict[str, str], str]]]]:
     """The VEVENTs and VTODOs of a calendar: [(kind, {NAME: (params, value)})].
     Nested parts (alarms, time zones) are skipped."""
     found, stack = [], []
-    current: Dict[str, Tuple[Dict[str, str], str]] = {}
+    current: dict[str, tuple[dict[str, str], str]] = {}
     for line in _unfold(text):
         name, params, value = _split_line(line)
         if name == 'BEGIN':
@@ -109,7 +109,7 @@ def components(text: str) -> List[Tuple[str, Dict[str, Tuple[Dict[str, str], str
     return found
 
 
-def _local(params: Dict[str, str], value: str) -> Tuple[Optional[date], Optional[datetime]]:
+def _local(params: dict[str, str], value: str) -> tuple[date | None, datetime | None]:
     """(a whole day, or a local time of the NAS)."""
     value = value.strip()
     try:
@@ -129,7 +129,7 @@ def _local(params: Dict[str, str], value: str) -> Tuple[Optional[date], Optional
     return None, moment
 
 
-def _duration(value: str) -> Optional[timedelta]:
+def _duration(value: str) -> timedelta | None:
     m = re.fullmatch(r'([+-])?P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?', value.strip())
     if not m:
         return None
@@ -150,7 +150,7 @@ def _add_months(day: date, months: int) -> date:
     return date(year, month, min(day.day, 28))
 
 
-def _repeat(rule: str, first: date) -> Tuple[str, str]:
+def _repeat(rule: str, first: date) -> tuple[str, str]:
     """('weekly', '2026-12-31') from an RRULE; what the page cannot show is simplified."""
     parts = dict(p.partition('=')[::2] for p in rule.upper().split(';') if '=' in p)
     freq = parts.get('FREQ', '')
@@ -183,18 +183,18 @@ def _repeat(rule: str, first: date) -> Tuple[str, str]:
     return repeat, until
 
 
-def _text_of(props: Dict[str, Tuple[Dict[str, str], str]], name: str) -> str:
+def _text_of(props: dict[str, tuple[dict[str, str], str]], name: str) -> str:
     return _unescape(props[name][1]) if name in props else ''
 
 
-def event_from(props: Dict[str, Tuple[Dict[str, str], str]]) -> Tuple[Optional[Dict[str, Any]], str]:
+def event_from(props: dict[str, tuple[dict[str, str], str]]) -> tuple[dict[str, Any] | None, str]:
     """An event of the page from a VEVENT (not yet checked)."""
     if 'DTSTART' not in props:
         return None, 'The event has no start.'
     day, moment = _local(*props['DTSTART'])
     end_day, end_moment = _local(*props['DTEND']) if 'DTEND' in props else (None, None)
     length = _duration(props['DURATION'][1]) if 'DURATION' in props else None
-    item: Dict[str, Any] = {'title': _text_of(props, 'SUMMARY'), 'location': _text_of(props, 'LOCATION'),
+    item: dict[str, Any] = {'title': _text_of(props, 'SUMMARY'), 'location': _text_of(props, 'LOCATION'),
                             'notes': _text_of(props, 'DESCRIPTION')}
     if day:
         last = end_day - timedelta(days=1) if end_day else (day + length - timedelta(days=1) if length else day)
@@ -213,8 +213,8 @@ def event_from(props: Dict[str, Tuple[Dict[str, str], str]]) -> Tuple[Optional[D
     return item, ''
 
 
-def task_from(props: Dict[str, Tuple[Dict[str, str], str]]) -> Dict[str, Any]:
-    item: Dict[str, Any] = {'title': _text_of(props, 'SUMMARY') or 'Task', 'notes': _text_of(props, 'DESCRIPTION'),
+def task_from(props: dict[str, tuple[dict[str, str], str]]) -> dict[str, Any]:
+    item: dict[str, Any] = {'title': _text_of(props, 'SUMMARY') or 'Task', 'notes': _text_of(props, 'DESCRIPTION'),
                             'done': props.get('STATUS', ({}, ''))[1].upper() == 'COMPLETED' or 'COMPLETED' in props}
     if 'DUE' in props:
         day, moment = _local(*props['DUE'])
@@ -232,7 +232,7 @@ def _escape(value: str) -> str:
 
 
 def _fold(line: str) -> str:
-    out: List[str] = []
+    out: list[str] = []
     data = line.encode('utf-8')
     while len(data) > 75:
         cut = 75 if not out else 74
@@ -244,7 +244,7 @@ def _fold(line: str) -> str:
     return '\r\n '.join(out)
 
 
-def _stamp(item: Dict[str, Any]) -> str:
+def _stamp(item: dict[str, Any]) -> str:
     try:
         moment = datetime.fromisoformat(str(item.get('updated') or '')).astimezone(timezone.utc)
     except ValueError:
@@ -252,11 +252,11 @@ def _stamp(item: Dict[str, Any]) -> str:
     return moment.strftime('%Y%m%dT%H%M%SZ')
 
 
-def _uid(item: Dict[str, Any]) -> str:
+def _uid(item: dict[str, Any]) -> str:
     return str(item.get('uid') or f"{item['id']}@alvaos")
 
 
-def ics_of(item: Dict[str, Any], kind: str) -> str:
+def ics_of(item: dict[str, Any], kind: str) -> str:
     lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//AlvaOS//Hub Calendar//EN', 'CALSCALE:GREGORIAN']
     if kind == 'event':
         lines += ['BEGIN:VEVENT', f'UID:{_uid(item)}', f'DTSTAMP:{_stamp(item)}']
@@ -298,7 +298,7 @@ def ics_of(item: Dict[str, Any], kind: str) -> str:
     return '\r\n'.join(_fold(line) for line in lines) + '\r\n'
 
 
-def etag(item: Dict[str, Any]) -> str:
+def etag(item: dict[str, Any]) -> str:
     return '"' + hashlib.sha1(json.dumps(item, sort_keys=True).encode()).hexdigest() + '"'
 
 
@@ -308,7 +308,7 @@ def _slug(place: hub_data.Place) -> str:
     return 'own' if place.own else f'shared-{place.share}'
 
 
-def collections(session: Dict[str, Any]) -> List[Dict[str, Any]]:
+def collections(session: dict[str, Any]) -> list[dict[str, Any]]:
     """Every calendar and task list this person syncs, with what is in it."""
     places, _ = cal._places(session)
     out = []
@@ -328,11 +328,11 @@ def collections(session: Dict[str, Any]) -> List[Dict[str, Any]]:
     return out
 
 
-def href_of(item: Dict[str, Any]) -> str:
+def href_of(item: dict[str, Any]) -> str:
     return str(item.get('href') or f"{item['id']}.ics")
 
 
-def ctag(coll: Dict[str, Any]) -> str:
+def ctag(coll: dict[str, Any]) -> str:
     return hashlib.sha1(''.join(etag(i) for i in coll['items']).encode()).hexdigest()
 
 
@@ -342,14 +342,14 @@ def _tag(ns: str, name: str) -> str:
     return f'{PREFIX[ns]}:{name}'
 
 
-def _multistatus(responses: List[str]) -> Response:
+def _multistatus(responses: list[str]) -> Response:
     body = ('<?xml version="1.0" encoding="utf-8"?>\n<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"'
             ' xmlns:CS="http://calendarserver.org/ns/" xmlns:A="http://apple.com/ns/ical/" xmlns:CR="urn:ietf:params:xml:ns:carddav">'
             + ''.join(responses) + '</D:multistatus>')
     return Response(body, 207, {'Content-Type': 'application/xml; charset=utf-8'})
 
 
-def _response(href: str, props: Dict[Tuple[str, str], str], wanted: Optional[List[Tuple[str, str]]]) -> str:
+def _response(href: str, props: dict[tuple[str, str], str], wanted: list[tuple[str, str]] | None) -> str:
     keys = list(props) if wanted is None else wanted
     found = [k for k in keys if k in props]
     missing = [k for k in keys if k not in props and k[0] in PREFIX]
@@ -363,7 +363,7 @@ def _response(href: str, props: Dict[Tuple[str, str], str], wanted: Optional[Lis
     return out + '</D:response>'
 
 
-def _wanted(root: Optional[ET.Element]) -> Optional[List[Tuple[str, str]]]:
+def _wanted(root: ET.Element | None) -> list[tuple[str, str]] | None:
     """The properties asked for, or None for all of them."""
     if root is None:
         return None
@@ -378,7 +378,7 @@ def _wanted(root: Optional[ET.Element]) -> Optional[List[Tuple[str, str]]]:
     return out
 
 
-def _body_xml() -> Tuple[Optional[ET.Element], Optional[Response]]:
+def _body_xml() -> tuple[ET.Element | None, Response | None]:
     data = request.get_data(cache=False) if (request.content_length or 0) <= MAX_BODY else None
     if data is None:
         return None, Response('Too large\n', 413)
@@ -396,7 +396,7 @@ def _home(user: str) -> str:
     return f'/dav/{quote(user)}/'
 
 
-def _principal_props(user: str) -> Dict[Tuple[str, str], str]:
+def _principal_props(user: str) -> dict[tuple[str, str], str]:
     home = escape(_home(user))
     return {
         (DAV, 'resourcetype'): '<D:collection/><D:principal/>',
@@ -412,7 +412,7 @@ def _principal_props(user: str) -> Dict[Tuple[str, str], str]:
     }
 
 
-def _collection_props(user: str, coll: Dict[str, Any]) -> Dict[Tuple[str, str], str]:
+def _collection_props(user: str, coll: dict[str, Any]) -> dict[tuple[str, str], str]:
     writable = coll['place'].writable
     privileges = '<D:privilege><D:read/></D:privilege>' + (
         '<D:privilege><D:write/></D:privilege><D:privilege><D:write-content/></D:privilege>'
@@ -434,7 +434,7 @@ def _collection_props(user: str, coll: Dict[str, Any]) -> Dict[Tuple[str, str], 
     }
 
 
-def _item_props(coll: Dict[str, Any], item: Dict[str, Any], with_data: bool) -> Dict[Tuple[str, str], str]:
+def _item_props(coll: dict[str, Any], item: dict[str, Any], with_data: bool) -> dict[tuple[str, str], str]:
     props = {(DAV, 'resourcetype'): '', (DAV, 'getetag'): escape(etag(item)),
              (DAV, 'getcontenttype'): 'text/calendar; charset=utf-8; component=' +
              ('VEVENT' if coll['kind'] == 'event' else 'VTODO')}
@@ -443,15 +443,15 @@ def _item_props(coll: Dict[str, Any], item: Dict[str, Any], with_data: bool) -> 
     return props
 
 
-def _find(session: Dict[str, Any], name: str) -> Optional[Dict[str, Any]]:
+def _find(session: dict[str, Any], name: str) -> dict[str, Any] | None:
     return next((c for c in collections(session) if c['name'] == name), None)
 
 
-def _item_href(user: str, coll: Dict[str, Any], item: Dict[str, Any]) -> str:
+def _item_href(user: str, coll: dict[str, Any], item: dict[str, Any]) -> str:
     return f"{_home(user)}{coll['name']}/{quote(href_of(item))}"
 
 
-def propfind(session: Dict[str, Any], parts: List[str]) -> Response:
+def propfind(session: dict[str, Any], parts: list[str]) -> Response:
     root, bad = _body_xml()
     if bad:
         return bad
@@ -495,7 +495,7 @@ def propfind(session: Dict[str, Any], parts: List[str]) -> Response:
                                    wanted)])
 
 
-def report(session: Dict[str, Any], parts: List[str]) -> Response:
+def report(session: dict[str, Any], parts: list[str]) -> Response:
     root, bad = _body_xml()
     if bad:
         return bad
@@ -524,7 +524,7 @@ def report(session: Dict[str, Any], parts: List[str]) -> Response:
                     403, {'Content-Type': 'application/xml; charset=utf-8'})
 
 
-def get(session: Dict[str, Any], parts: List[str], head: bool) -> Response:
+def get(session: dict[str, Any], parts: list[str], head: bool) -> Response:
     coll = _find(session, parts[1]) if len(parts) == 3 else None
     item = next((i for i in coll['items'] if href_of(i) == parts[2]), None) if coll else None
     if not item or not coll:
@@ -534,7 +534,7 @@ def get(session: Dict[str, Any], parts: List[str], head: bool) -> Response:
                     {'Content-Type': 'text/calendar; charset=utf-8', 'ETag': etag(item)})
 
 
-def _precondition(existing: Optional[Dict[str, Any]]) -> Optional[Response]:
+def _precondition(existing: dict[str, Any] | None) -> Response | None:
     match, none_match = request.headers.get('If-Match'), request.headers.get('If-None-Match')
     if none_match == '*' and existing:
         return Response('It is there already.\n', 412)
@@ -543,7 +543,7 @@ def _precondition(existing: Optional[Dict[str, Any]]) -> Optional[Response]:
     return None
 
 
-def _write(coll: Dict[str, Any], change) -> Tuple[Any, Optional[Response]]:
+def _write(coll: dict[str, Any], change) -> tuple[Any, Response | None]:
     """Read the place's file, change it, write it back; one change at a time."""
     place = coll['place']
     if not place.writable:
@@ -562,7 +562,7 @@ def _write(coll: Dict[str, Any], change) -> Tuple[Any, Optional[Response]]:
     return result, None
 
 
-def put(session: Dict[str, Any], parts: List[str]) -> Response:
+def put(session: dict[str, Any], parts: list[str]) -> Response:
     if len(parts) != 3 or not NAME_RE.match(parts[2]):
         return Response('Not allowed here\n', 403)
     coll = _find(session, parts[1])
@@ -578,7 +578,7 @@ def put(session: Dict[str, Any], parts: List[str]) -> Response:
         return Response(f'Only a {want} belongs in this calendar.\n', 415)
     uid = props.get('UID', ({}, ''))[1].strip()[:255]
 
-    def change(data: Dict[str, Any]):
+    def change(data: dict[str, Any]):
         key = 'events' if coll['kind'] == 'event' else 'tasks'
         old = next((i for i in data[key] if href_of(i) == parts[2]
                     and (coll['kind'] == 'task' or i.get('calendar') == coll['calendar'])), None)
@@ -614,14 +614,14 @@ def put(session: Dict[str, Any], parts: List[str]) -> Response:
     return Response(b'', 201 if created else 204, {'ETag': etag(item)})
 
 
-def delete(session: Dict[str, Any], parts: List[str]) -> Response:
+def delete(session: dict[str, Any], parts: list[str]) -> Response:
     if len(parts) != 3:
         return Response('Calendars are made and deleted on the Calendar page.\n', 403)
     coll = _find(session, parts[1])
     if not coll:
         return Response('Not found\n', 404)
 
-    def change(data: Dict[str, Any]):
+    def change(data: dict[str, Any]):
         key = 'events' if coll['kind'] == 'event' else 'tasks'
         old = next((i for i in data[key] if href_of(i) == parts[2]
                     and (coll['kind'] == 'task' or i.get('calendar') == coll['calendar'])), None)
@@ -637,15 +637,15 @@ def delete(session: Dict[str, Any], parts: List[str]) -> Response:
     return refused or Response(b'', 204)
 
 
-def proppatch(session: Dict[str, Any], parts: List[str]) -> Response:
+def proppatch(session: dict[str, Any], parts: list[str]) -> Response:
     """Phones set a colour, a name and an order. The name and colour are
     kept (the colour as the nearest one of the page); the rest is accepted
     and forgotten, so the phone does not complain."""
     root, bad = _body_xml()
     if bad:
         return bad
-    asked: List[Tuple[str, str]] = []
-    values: Dict[Tuple[str, str], str] = {}
+    asked: list[tuple[str, str]] = []
+    values: dict[tuple[str, str], str] = {}
     if root is not None:
         for prop in root.iter(f'{{{DAV}}}prop'):
             for child in prop:
@@ -658,7 +658,7 @@ def proppatch(session: Dict[str, Any], parts: List[str]) -> Response:
         name = values.get((DAV, 'displayname'))
         color = values.get((APPLE, 'calendar-color'))
 
-        def change(data: Dict[str, Any]):
+        def change(data: dict[str, Any]):
             for c in data['calendars']:
                 if c['id'] == coll['calendar']:
                     if name and coll['place'].own:
@@ -674,7 +674,7 @@ def proppatch(session: Dict[str, Any], parts: List[str]) -> Response:
 
 
 def _nearest(color: str) -> str:
-    def rgb(c: str) -> Tuple[int, int, int]:
+    def rgb(c: str) -> tuple[int, int, int]:
         return int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16)
     want = rgb(color)
     return min(cal.COLORS, key=lambda c: sum((a - b) ** 2 for a, b in zip(rgb(c), want, strict=True)))
@@ -682,7 +682,7 @@ def _nearest(color: str) -> str:
 
 # ── Routes ──────────────────────────────────────────────────────────────────
 
-def _allowed(app_id: str, session: Dict[str, Any]) -> bool:
+def _allowed(app_id: str, session: dict[str, Any]) -> bool:
     import hub_apps
     return hub_apps.allowed(app_id, session['user'], session.get('role', 'user'))
 

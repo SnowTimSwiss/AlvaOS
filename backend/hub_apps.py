@@ -20,7 +20,7 @@ the system disk, which is how Files behaved before the Hub.
 import json
 import os
 import re
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Iterable
 
 SETTINGS_FILE = '/var/lib/alvaos/hub.json'
 NAME = 'AlvaOS Hub'
@@ -32,7 +32,7 @@ NAME = 'AlvaOS Hub'
 # folders the admin marks; `models`: the admin chooses AI models for it;
 # `off_at_first`: off until the admin turns it on (Chat needs an AI service
 # first). Order = order in the bar.
-APPS: List[Dict[str, Any]] = [
+APPS: list[dict[str, Any]] = [
     {'id': 'files', 'name': 'Files', 'icon': 'folder',
      'description': 'The shared folders in the browser: open, upload, share links, trash and previous versions.',
      'needs': [], 'personal': None, 'libraries': False},
@@ -73,7 +73,7 @@ CATALOG_FILES = ('/opt/alvaos/apps/catalog.json',
                  os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'apps', 'catalog.json'))
 
 
-def load(path: Optional[str] = None) -> Dict[str, Any]:
+def load(path: str | None = None) -> dict[str, Any]:
     """{'apps': {id: {'enabled': bool, 'people': None or [names]}}}; None = everyone."""
     try:
         with open(path or SETTINGS_FILE) as f:
@@ -81,11 +81,11 @@ def load(path: Optional[str] = None) -> Dict[str, Any]:
     except (OSError, ValueError):
         raw = {}
     found = raw.get('apps') if isinstance(raw, dict) else None
-    raw_apps: Dict[str, Any] = found if isinstance(found, dict) else {}
-    apps: Dict[str, Dict[str, Any]] = {}
+    raw_apps: dict[str, Any] = found if isinstance(found, dict) else {}
+    apps: dict[str, dict[str, Any]] = {}
     for app in APPS:
         item = raw_apps.get(app['id'])
-        entry: Dict[str, Any] = item if isinstance(item, dict) else {}
+        entry: dict[str, Any] = item if isinstance(item, dict) else {}
         people = entry.get('people')
         apps[app['id']] = {
             'enabled': bool(entry.get('enabled', not app.get('off_at_first'))),
@@ -100,9 +100,9 @@ def load(path: Optional[str] = None) -> Dict[str, Any]:
         if app.get('models'):
             apps[app['id']].update(_clean_models(entry))
     raw_storage = raw.get('storage') if isinstance(raw, dict) else None
-    storage: Dict[str, Any] = raw_storage if isinstance(raw_storage, dict) else {}
+    storage: dict[str, Any] = raw_storage if isinstance(raw_storage, dict) else {}
     raw_store = raw.get('store') if isinstance(raw, dict) else None
-    store: Dict[str, Dict[str, Any]] = {}
+    store: dict[str, dict[str, Any]] = {}
     for app_id, entry in (raw_store.items() if isinstance(raw_store, dict) else []):
         if STORE_ID_RE.match(str(app_id)) and isinstance(entry, dict):
             people = entry.get('people')
@@ -114,17 +114,17 @@ def load(path: Optional[str] = None) -> Dict[str, Any]:
     return {'apps': apps, 'storage': {'cache_pool': str(storage.get('cache_pool') or '')}, 'store': store}
 
 
-def _clean_rule(raw: Any) -> Optional[Dict[str, Any]]:
+def _clean_rule(raw: Any) -> dict[str, Any] | None:
     """Which models: {'mode': 'all' | 'only' | 'except', 'items': [service or service/model]}."""
     if not isinstance(raw, dict) or raw.get('mode') not in ACCESS_MODES:
         return None
     found = raw.get('items')
-    items: List[Any] = found if isinstance(found, list) else []
+    items: list[Any] = found if isinstance(found, list) else []
     return {'mode': raw['mode'],
             'items': list(dict.fromkeys(str(i) for i in items if MODEL_REF_RE.match(str(i))))[:MAX_REFS]}
 
 
-def _clean_models(entry: Dict[str, Any]) -> Dict[str, Any]:
+def _clean_models(entry: dict[str, Any]) -> dict[str, Any]:
     """Chat: the models for everyone, rules for single people (on top of the
     one for everyone), and after how many days unused chats go (0: never).
     Before beta-v0.4.0 it was a list of model names of the one AI service."""
@@ -134,8 +134,8 @@ def _clean_models(entry: Dict[str, Any]) -> Dict[str, Any]:
             if isinstance(entry.get('models'), list) else []
         access = {'mode': 'only', 'items': [f'main/{m}' for m in legacy]} if legacy else {'mode': 'all', 'items': []}
     found = entry.get('people_access')
-    raw_people: Dict[str, Any] = found if isinstance(found, dict) else {}
-    people: Dict[str, Dict[str, Any]] = {}
+    raw_people: dict[str, Any] = found if isinstance(found, dict) else {}
+    people: dict[str, dict[str, Any]] = {}
     for person, raw in raw_people.items():
         rule = _clean_rule(raw)
         if USER_RE.match(str(person)) and rule:
@@ -148,7 +148,7 @@ def _clean_models(entry: Dict[str, Any]) -> Dict[str, Any]:
     return {'access': access, 'people_access': people, 'keep_days': days, 'search_people': search_people}
 
 
-def _clean_location(raw: Any) -> Dict[str, Any]:
+def _clean_location(raw: Any) -> dict[str, Any]:
     if isinstance(raw, dict) and raw.get('mode') == 'pool' and raw.get('pool_id'):
         limit = raw.get('limit_gb')
         return {'mode': 'pool', 'pool_id': str(raw['pool_id']),
@@ -156,9 +156,9 @@ def _clean_location(raw: Any) -> Dict[str, Any]:
     return {'mode': 'personal'}
 
 
-def save(payload: Dict[str, Any], known_people: Iterable[str], path: Optional[str] = None,
-         pools: Optional[Dict[str, Any]] = None, shares: Optional[Iterable[str]] = None,
-         store_ids: Optional[Iterable[str]] = None) -> Tuple[Optional[Dict[str, Any]], str]:
+def save(payload: dict[str, Any], known_people: Iterable[str], path: str | None = None,
+         pools: dict[str, Any] | None = None, shares: Iterable[str] | None = None,
+         store_ids: Iterable[str] | None = None) -> tuple[dict[str, Any] | None, str]:
     """Change apps and where they keep things:
     {'apps': {id: {'enabled', 'people', 'location', 'libraries', 'models'}}, 'storage': {'cache_pool'},
      'store': {app id: {'shown', 'people'}}}.
@@ -296,7 +296,7 @@ def save(payload: Dict[str, Any], known_people: Iterable[str], path: Optional[st
     return settings, ''
 
 
-def allowed(app_id: str, user: str, role: str = 'user', settings: Optional[Dict[str, Any]] = None) -> bool:
+def allowed(app_id: str, user: str, role: str = 'user', settings: dict[str, Any] | None = None) -> bool:
     """May this person use this app? The admin account may use every app that is on."""
     settings = settings or load()
     entry = settings['apps'].get(app_id)
@@ -308,14 +308,14 @@ def allowed(app_id: str, user: str, role: str = 'user', settings: Optional[Dict[
     return role == 'admin' or entry['people'] is None or user in entry['people']
 
 
-def visible(user: str, role: str = 'user', settings: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+def visible(user: str, role: str = 'user', settings: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """The apps this person sees in the Hub, in bar order."""
     settings = settings or load()
     return [{'id': a['id'], 'name': a['name'], 'icon': a['icon'], 'feature': bool(a.get('feature'))}
             for a in APPS if allowed(a['id'], user, role, settings)]
 
 
-def overview(settings: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+def overview(settings: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Every app with its settings, for the admin pages."""
     settings = settings or load()
     return [{**{k: a[k] for k in ('id', 'name', 'icon', 'description', 'needs', 'personal', 'libraries')},
@@ -330,8 +330,8 @@ def app_share_name(app_id: str, user: str) -> str:
     return f'{user}-{app_id}'
 
 
-def own_folder(app_id: str, user: str, shares_state: Dict[str, Any],
-               settings: Optional[Dict[str, Any]] = None) -> Optional[Tuple[str, str]]:
+def own_folder(app_id: str, user: str, shares_state: dict[str, Any],
+               settings: dict[str, Any] | None = None) -> tuple[str, str] | None:
     """(share name, folder in it) where an app keeps this person's own data,
     or None when there is no such place yet (no personal folder)."""
     settings = settings or load()
@@ -347,7 +347,7 @@ def own_folder(app_id: str, user: str, shares_state: Dict[str, Any],
     return (str(personal['name']), app['personal']) if personal else None
 
 
-def cache_dir(pools_state: Dict[str, Any], settings: Optional[Dict[str, Any]] = None) -> Optional[str]:
+def cache_dir(pools_state: dict[str, Any], settings: dict[str, Any] | None = None) -> str | None:
     """The folder for caches on the chosen pool, or None for the system disk."""
     settings = settings or load()
     pool = pools_state.get(settings['storage']['cache_pool']) if settings['storage']['cache_pool'] else None
@@ -367,8 +367,8 @@ def _read_json(path: str) -> Any:
         return None
 
 
-def store_apps(apps_state: Optional[Dict[str, Any]] = None, catalog: Optional[Dict[str, Any]] = None
-               ) -> List[Dict[str, Any]]:
+def store_apps(apps_state: dict[str, Any] | None = None, catalog: dict[str, Any] | None = None
+               ) -> list[dict[str, Any]]:
     """Installed App Store apps that have a page in the browser: id, name,
     the port it is on (the one chosen at install, else the catalog's) and
     the path to open. Apps added as a compose file have no known page."""
@@ -383,13 +383,13 @@ def store_apps(apps_state: Optional[Dict[str, Any]] = None, catalog: Optional[Di
                 or entry.get('internal'):
             continue
         raw_schema = entry.get('config_schema')
-        schema: Dict[str, Any] = raw_schema if isinstance(raw_schema, dict) else {}
+        schema: dict[str, Any] = raw_schema if isinstance(raw_schema, dict) else {}
         web = next((p for p in schema.get('ports') or [] if isinstance(p, dict)
                     and re.search(r'\b(web|ui)\b', str(p.get('description', '')).lower())), None)
         if not web:
             continue
         raw_chosen = state.get('port_mappings')
-        chosen: Dict[Any, Any] = raw_chosen if isinstance(raw_chosen, dict) else {}
+        chosen: dict[Any, Any] = raw_chosen if isinstance(raw_chosen, dict) else {}
         try:
             port = int(str(chosen.get(str(web.get('internal')), chosen.get(web.get('internal'), web.get('external')))))
         except (TypeError, ValueError):
@@ -402,16 +402,16 @@ def store_apps(apps_state: Optional[Dict[str, Any]] = None, catalog: Optional[Di
     return found
 
 
-def store_overview(settings: Optional[Dict[str, Any]] = None, apps: Optional[List[Dict[str, Any]]] = None
-                   ) -> List[Dict[str, Any]]:
+def store_overview(settings: dict[str, Any] | None = None, apps: list[dict[str, Any]] | None = None
+                   ) -> list[dict[str, Any]]:
     """Every installed app with a page, and whether the Hub shows it to whom."""
     settings = settings or load()
     apps = store_apps() if apps is None else apps
     return [{**a, 'embed': False, **settings['store'].get(a['id'], {'shown': False, 'people': None})} for a in apps]
 
 
-def store_tiles(user: str, role: str = 'user', settings: Optional[Dict[str, Any]] = None,
-                apps: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+def store_tiles(user: str, role: str = 'user', settings: dict[str, Any] | None = None,
+                apps: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """The App Store apps this person sees as tiles in the Hub."""
     out = []
     for app in store_overview(settings, apps):
@@ -425,7 +425,7 @@ def store_tiles(user: str, role: str = 'user', settings: Optional[Dict[str, Any]
     return out
 
 
-def embed_targets(settings: Optional[Dict[str, Any]] = None, apps: Optional[List[Dict[str, Any]]] = None) -> Dict[int, int]:
+def embed_targets(settings: dict[str, Any] | None = None, apps: list[dict[str, Any]] | None = None) -> dict[int, int]:
     """{port of the proxy: port of the app} for the apps shown in the Hub's window."""
     import embed_proxy
     out = {}
@@ -441,7 +441,7 @@ def embed_targets(settings: Optional[Dict[str, Any]] = None, apps: Optional[List
     return out
 
 
-def office_port(settings: Optional[Dict[str, Any]] = None, apps_state: Optional[Dict[str, Any]] = None) -> Optional[int]:
+def office_port(settings: dict[str, Any] | None = None, apps_state: dict[str, Any] | None = None) -> int | None:
     """The port of the Document Server, when Office is on and the editor is installed, else None."""
     import hub_office
     settings = settings or load()

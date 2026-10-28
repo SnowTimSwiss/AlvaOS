@@ -22,7 +22,7 @@ import secrets
 import shutil
 import threading
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable
 
 import files_manager
 import gpu_manager
@@ -38,14 +38,14 @@ MEMORY_OVERHEAD_MB = 512      # what QEMU itself needs next to the guest's memor
 KEEP_FREE_MB = 1024           # what the NAS keeps for itself
 
 _lock = threading.Lock()
-_job: Dict[str, Any] = {'running': False, 'started_at': '', 'finished_at': '', 'error': ''}
+_job: dict[str, Any] = {'running': False, 'started_at': '', 'finished_at': '', 'error': ''}
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def host_info(cpuinfo: str = '/proc/cpuinfo', kvm: str = '/dev/kvm') -> Dict[str, Any]:
+def host_info(cpuinfo: str = '/proc/cpuinfo', kvm: str = '/dev/kvm') -> dict[str, Any]:
     """What this machine can do for virtual machines."""
     flags = ''
     try:
@@ -99,7 +99,7 @@ def _systemctl_state(vm_id: str) -> str:
     return res.stdout.strip()
 
 
-def _blocker(host: Dict[str, Any], account: bool) -> str:
+def _blocker(host: dict[str, Any], account: bool) -> str:
     """What stops machines from running although everything is installed."""
     if not account:
         return 'The account for virtual machines is missing. Update AlvaOS and try again.'
@@ -111,10 +111,10 @@ def _blocker(host: Dict[str, Any], account: bool) -> str:
 class VmManager:
     def __init__(self, run_command: Callable, state_file: str = vm_ops.STATE_FILE,
                  config_dir: str = vm_ops.CONFIG_DIR, root: str = vm_ops.DATA_ROOT,
-                 helper: Optional[Callable] = None, unit_state: Optional[Callable[[str], str]] = None,
-                 installed: Optional[Callable[[List[str]], Dict[str, bool]]] = None,
-                 host: Optional[Callable[[], Dict[str, Any]]] = None, account: Optional[Callable[[], bool]] = None,
-                 free_bytes: Optional[Callable[[str], int]] = None):
+                 helper: Callable | None = None, unit_state: Callable[[str], str] | None = None,
+                 installed: Callable[[list[str]], dict[str, bool]] | None = None,
+                 host: Callable[[], dict[str, Any]] | None = None, account: Callable[[], bool] | None = None,
+                 free_bytes: Callable[[str], int] | None = None):
         self.run = run_command
         self.state_file = state_file
         self.config_dir = config_dir
@@ -134,8 +134,8 @@ class VmManager:
         except vm_ops.VmError:
             return ''
 
-    def _read_configs(self) -> List[Dict[str, Any]]:
-        out: List[Dict[str, Any]] = []
+    def _read_configs(self) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
         try:
             names = sorted(os.listdir(self.config_dir))
         except OSError:
@@ -151,7 +151,7 @@ class VmManager:
                 continue   # a damaged description is left alone, not shown
         return sorted(out, key=lambda c: (c['name'].lower(), c['id']))
 
-    def _write_config(self, cfg: Dict[str, Any]) -> None:
+    def _write_config(self, cfg: dict[str, Any]) -> None:
         os.makedirs(self.config_dir, mode=0o750, exist_ok=True)
         path = os.path.join(self.config_dir, f'{cfg["id"]}.json')
         tmp = f'{path}.tmp'
@@ -160,7 +160,7 @@ class VmManager:
             json.dump(cfg, f, indent=1)
         os.replace(tmp, path)
 
-    def _find(self, vm_id: str) -> Optional[Dict[str, Any]]:
+    def _find(self, vm_id: str) -> dict[str, Any] | None:
         return next((c for c in self._read_configs() if c['id'] == vm_id), None)
 
     def _write_state(self, store: str) -> None:
@@ -172,7 +172,7 @@ class VmManager:
 
     # ── What the page shows ──────────────────────────────────────────────────
 
-    def status(self) -> Dict[str, Any]:
+    def status(self) -> dict[str, Any]:
         host = self.host()
         have = self.installed(PACKAGES)
         missing = [p for p in PACKAGES if not have.get(p)]
@@ -190,7 +190,7 @@ class VmManager:
             'vms': [self._describe(c) for c in self._read_configs()] if store else [],
         }
 
-    def _describe(self, cfg: Dict[str, Any]) -> Dict[str, Any]:
+    def _describe(self, cfg: dict[str, Any]) -> dict[str, Any]:
         state = STATES.get(self.unit_state(cfg['id']), 'stopped')
         out = {**cfg, 'os_name': vm_ops.OS_TYPES[cfg['os']]['name'], 'state': state,
                'iso_name': os.path.basename(cfg['iso']) if cfg['iso'] else '',
@@ -217,7 +217,7 @@ class VmManager:
 
     # ── Setting up ───────────────────────────────────────────────────────────
 
-    def setup(self, make_store: Callable[[], Tuple[str, str]]) -> Tuple[bool, str]:
+    def setup(self, make_store: Callable[[], tuple[str, str]]) -> tuple[bool, str]:
         """The VMs folder first (quick), then the packages in the background."""
         host = self.host()
         if not host['supported']:
@@ -243,7 +243,7 @@ class VmManager:
         threading.Thread(target=self._install, args=(missing,), name='vm-setup', daemon=True).start()
         return True, 'Installing what virtual machines need. This takes a few minutes.'
 
-    def _install(self, packages: List[str]) -> None:
+    def _install(self, packages: list[str]) -> None:
         error = ''
         try:
             _res, _err = self.run([CMD['APT_GET'], 'update'], timeout=600)
@@ -267,10 +267,10 @@ class VmManager:
             return 'Set up virtual machines first.'
         return _blocker(host, self.account())
 
-    def _free_slot(self, taken: List[int]) -> int:
+    def _free_slot(self, taken: list[int]) -> int:
         return next(i for i in range(100) if i not in taken)
 
-    def create(self, data: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], str]:
+    def create(self, data: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
         problem = self._checked()
         if problem:
             return None, problem
@@ -308,7 +308,7 @@ class VmManager:
             self.run([CMD['SYSTEMCTL'], 'enable', _unit(cfg['id'])], timeout=30)
         return self._describe(cfg), ''
 
-    def update(self, vm_id: str, data: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], str]:
+    def update(self, vm_id: str, data: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
         """Change a stopped machine: name, cores, memory, disk size (only larger),
         installer image, ports, start with the NAS."""
         cfg = self._find(vm_id)
@@ -316,7 +316,7 @@ class VmManager:
             return None, 'That virtual machine is not there.'
         if STATES.get(self.unit_state(vm_id), 'stopped') in ('running', 'starting', 'stopping'):
             return None, 'Shut it down first, then change it.'
-        merged: Dict[str, Any] = dict(cfg)
+        merged: dict[str, Any] = dict(cfg)
         merged.update({k: data[k] for k in ('name', 'cpus', 'memory_mb', 'disk_gb', 'iso', 'ports', 'autostart',
                                             'data_gb', 'iso2', 'fast', 'network', 'usb', 'gpu', 'priority')
                        if k in data})
@@ -357,7 +357,7 @@ class VmManager:
             self.run([CMD['SYSTEMCTL'], 'enable' if new['autostart'] else 'disable', _unit(vm_id)], timeout=30)
         return self._describe(new), ''
 
-    def _device_problem(self, cfg: Dict[str, Any]) -> str:
+    def _device_problem(self, cfg: dict[str, Any]) -> str:
         """'' when the NAS can give the machine the graphics card it asks for."""
         if not cfg['gpu']:
             return ''
@@ -366,11 +366,11 @@ class VmManager:
             return 'That graphics card is not in this NAS.'
         return card['why_not']
 
-    def devices(self) -> Dict[str, Any]:
+    def devices(self) -> dict[str, Any]:
         """What can be handed to a machine: USB devices and graphics cards."""
         return {'usb': vm_ops.usb_devices(), 'gpus': self.cards(), 'iommu': vm_ops.iommu_on()}
 
-    def cards(self) -> List[Dict[str, Any]]:
+    def cards(self) -> list[dict[str, Any]]:
         names = {c['slot']: f"{c['vendor_name']} {c['model']}" for c in gpu_manager.detect()}
         return [{**c, 'name': names.get(c['slot'], c['slot'])} for c in vm_ops.graphics_cards()]
 
@@ -380,7 +380,7 @@ class VmManager:
         except OSError:
             pass
 
-    def delete(self, vm_id: str) -> Tuple[bool, str]:
+    def delete(self, vm_id: str) -> tuple[bool, str]:
         cfg = self._find(vm_id)
         if not cfg:
             return False, 'That virtual machine is not there.'
@@ -393,7 +393,7 @@ class VmManager:
         self._remove_config(vm_id)
         return True, f'"{cfg["name"]}" and its disk are deleted.'
 
-    def action(self, vm_id: str, what: str) -> Tuple[bool, str]:
+    def action(self, vm_id: str, what: str) -> tuple[bool, str]:
         cfg = self._find(vm_id)
         if not cfg:
             return False, 'That virtual machine is not there.'
@@ -428,7 +428,7 @@ class VmManager:
             return (False, error) if error else (True, f'"{cfg["name"]}" is switched off.')
         return False, 'That is not something a virtual machine can do.'
 
-    def _memory_problem(self, cfg: Dict[str, Any]) -> str:
+    def _memory_problem(self, cfg: dict[str, Any]) -> str:
         need = cfg['memory_mb'] + MEMORY_OVERHEAD_MB
         free = self.host()['available_mb']
         if free and need > free:
@@ -436,13 +436,13 @@ class VmManager:
                     'Shut another machine down or give it less memory.')
         return ''
 
-    def isos(self) -> Tuple[List[Dict[str, Any]], str]:
+    def isos(self) -> tuple[list[dict[str, Any]], str]:
         result, error = self.helper(['vm-isos'], 60)
         if result is None:
             return [], error or 'The installer images could not be listed.'
         return list(result.get('isos') or []), ''
 
-    def console(self, vm_id: str) -> Tuple[Optional[Dict[str, Any]], str]:
+    def console(self, vm_id: str) -> tuple[dict[str, Any] | None, str]:
         """A ticket for the screen; the machine has to be running."""
         cfg = self._find(vm_id)
         if not cfg:

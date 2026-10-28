@@ -17,13 +17,13 @@ modules (hub_calendar.py, hub_chat.py) need not import it.
 import io
 import json
 import threading
-from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple
+from typing import Any, Callable, NamedTuple
 
 import files_manager
 import hub_apps
 
-_hooks: Dict[str, Callable[..., Any]] = {}
-_locks: Dict[str, threading.Lock] = {}
+_hooks: dict[str, Callable[..., Any]] = {}
+_locks: dict[str, threading.Lock] = {}
 _locks_lock = threading.Lock()
 
 
@@ -44,10 +44,10 @@ class Place(NamedTuple):
     folder: str      # where in the share the app keeps its files
     writable: bool
     own: bool
-    user: Optional[str]   # who the helper acts as (None: root, for the admin)
+    user: str | None   # who the helper acts as (None: root, for the admin)
 
 
-def own_place(app_id: str, session: Dict[str, Any], settings: Optional[Dict[str, Any]] = None) -> Optional[Place]:
+def own_place(app_id: str, session: dict[str, Any], settings: dict[str, Any] | None = None) -> Place | None:
     """Where this app keeps this person's own data, or None (no personal folder yet)."""
     settings = settings or hub_apps.load()
     shares_state = _hooks['read_json'](_hooks['shares_file']())
@@ -60,7 +60,7 @@ def own_place(app_id: str, session: Dict[str, Any], settings: Optional[Dict[str,
                  share['access'] == 'write', True, _hooks['as_user'](session))
 
 
-def shared_places(app_id: str, session: Dict[str, Any], settings: Optional[Dict[str, Any]] = None) -> List[Place]:
+def shared_places(app_id: str, session: dict[str, Any], settings: dict[str, Any] | None = None) -> list[Place]:
     """The shared folders the admin marked for this app that this person may open."""
     settings = settings or hub_apps.load()
     app = next(a for a in hub_apps.APPS if a['id'] == app_id)
@@ -85,7 +85,7 @@ def lock(place: Place, name: str) -> threading.Lock:
         return _locks.setdefault(key, threading.Lock())
 
 
-def read(place: Place, name: str) -> Tuple[Optional[Dict[str, Any]], str]:
+def read(place: Place, name: str) -> tuple[dict[str, Any] | None, str]:
     """The file's JSON, {} when it is not there yet, or (None, why not)."""
     result, error = files_manager.run_helper(['files-data-read', place.root, _rel(place, name)], timeout=60,
                                              user=place.user)
@@ -100,7 +100,7 @@ def read(place: Place, name: str) -> Tuple[Optional[Dict[str, Any]], str]:
     return (data if isinstance(data, dict) else {}), ''
 
 
-def write(place: Place, name: str, data: Dict[str, Any]) -> str:
+def write(place: Place, name: str, data: dict[str, Any]) -> str:
     """Replace the file with `data`; '' or why not."""
     if not place.writable:
         return f'You can only look at "{place.share}", not change it.'

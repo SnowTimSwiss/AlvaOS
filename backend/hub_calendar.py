@@ -19,7 +19,7 @@ repeated by the page for the days it shows.
 import re
 import secrets
 from datetime import date, datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable
 
 from flask import Blueprint, jsonify, request
 
@@ -47,33 +47,33 @@ def _text(value: Any, limit: int) -> str:
     return str(value or '').strip()[:limit]
 
 
-def _day(value: Any) -> Optional[str]:
+def _day(value: Any) -> str | None:
     try:
         return date.fromisoformat(str(value)).isoformat()
     except ValueError:
         return None
 
 
-def _moment(value: Any) -> Optional[str]:
+def _moment(value: Any) -> str | None:
     try:
         return datetime.strptime(str(value), '%Y-%m-%dT%H:%M').strftime('%Y-%m-%dT%H:%M')
     except ValueError:
         return None
 
 
-def _color(value: Any, empty_ok: bool = True) -> Optional[str]:
+def _color(value: Any, empty_ok: bool = True) -> str | None:
     value = str(value or '').lower()
     if value in COLORS or (empty_ok and not value):
         return value
     return None
 
 
-def defaults(place: hub_data.Place) -> Dict[str, Any]:
+def defaults(place: hub_data.Place) -> dict[str, Any]:
     return {'calendars': [{'id': 'main', 'name': place.name, 'color': COLORS[0] if place.own else COLORS[2]}],
             'events': [], 'tasks': []}
 
 
-def clean(data: Dict[str, Any], place: hub_data.Place) -> Dict[str, Any]:
+def clean(data: dict[str, Any], place: hub_data.Place) -> dict[str, Any]:
     """What a calendar file holds, with anything odd left out."""
     out = defaults(place)
     cals = [c for c in data.get('calendars') or [] if isinstance(c, dict) and ID_RE.match(str(c.get('id')))]
@@ -85,9 +85,9 @@ def clean(data: Dict[str, Any], place: hub_data.Place) -> Dict[str, Any]:
     return out
 
 
-def check_event(item: Dict[str, Any], calendars: List[str]) -> Tuple[Optional[Dict[str, Any]], str]:
+def check_event(item: dict[str, Any], calendars: list[str]) -> tuple[dict[str, Any] | None, str]:
     all_day = bool(item.get('all_day'))
-    parse: Callable[[Any], Optional[str]] = _day if all_day else _moment
+    parse: Callable[[Any], str | None] = _day if all_day else _moment
     start, end = parse(item.get('start')), parse(item.get('end') or item.get('start'))
     if not start or not end:
         return None, 'Choose when it starts and ends.'
@@ -111,7 +111,7 @@ def check_event(item: Dict[str, Any], calendars: List[str]) -> Tuple[Optional[Di
             'notes': _text(item.get('notes'), 8000), 'repeat': repeat, 'until': until or ''}, ''
 
 
-def check_task(item: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], str]:
+def check_task(item: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
     title = _text(item.get('title'), 300)
     if not title:
         return None, 'Give the task a title.'
@@ -126,7 +126,7 @@ def check_task(item: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], str]:
             'done': bool(item.get('done'))}, ''
 
 
-def check_calendar(item: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], str]:
+def check_calendar(item: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
     name = _text(item.get('name'), 80)
     if not name:
         return None, 'Give the calendar a name.'
@@ -137,7 +137,7 @@ def check_calendar(item: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], str]
             'name': name, 'color': color}, ''
 
 
-def _places(session: Dict[str, Any]) -> Tuple[List[hub_data.Place], bool]:
+def _places(session: dict[str, Any]) -> tuple[list[hub_data.Place], bool]:
     settings = hub_apps.load()
     own = hub_data.own_place('calendar', session, settings)
     return ([own] if own else []) + hub_data.shared_places('calendar', session, settings), own is not None
@@ -147,7 +147,7 @@ def _stamp() -> str:
     return datetime.now(timezone.utc).isoformat(timespec='seconds')
 
 
-def birthdays(session: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def birthdays(session: dict[str, Any]) -> dict[str, Any] | None:
     """The birthdays of the person's contacts as a calendar of its own, read only
     (Contacts, hub_contacts.py). None when there are none or Contacts is not theirs."""
     import hub_contacts
@@ -197,7 +197,7 @@ def everything():
                     'today': date.today().isoformat()})
 
 
-def _change(session: Dict[str, Any], place_id: str, work: Callable[[Dict[str, Any]], Tuple[Any, str]]):
+def _change(session: dict[str, Any], place_id: str, work: Callable[[dict[str, Any]], tuple[Any, str]]):
     places, _ = _places(session)
     place = next((p for p in places if p.id == place_id), None)
     if not place:
@@ -218,7 +218,7 @@ def _change(session: Dict[str, Any], place_id: str, work: Callable[[Dict[str, An
     return jsonify({'success': True, 'item': result, 'calendars': data['calendars']})
 
 
-def _upsert(items: List[Dict[str, Any]], item: Dict[str, Any], limit: int) -> str:
+def _upsert(items: list[dict[str, Any]], item: dict[str, Any], limit: int) -> str:
     item['updated'] = _stamp()
     for i, old in enumerate(items):
         if old.get('id') == item['id']:
@@ -244,7 +244,7 @@ def save_item():
     if kind not in ('event', 'task', 'calendar') or not isinstance(raw, dict):
         return jsonify({'error': 'Nothing to save.'}), 400
 
-    def work(data: Dict[str, Any]) -> Tuple[Any, str]:
+    def work(data: dict[str, Any]) -> tuple[Any, str]:
         if kind == 'event':
             item, problem = check_event(raw, [c['id'] for c in data['calendars']])
             return (item, problem or _upsert(data['events'], item, MAX_EVENTS)) if item else (None, problem)
@@ -268,7 +268,7 @@ def delete_item():
     if kind not in ('event', 'task', 'calendar'):
         return jsonify({'error': 'Nothing to delete.'}), 400
 
-    def work(data: Dict[str, Any]) -> Tuple[Any, str]:
+    def work(data: dict[str, Any]) -> tuple[Any, str]:
         if kind == 'calendar':
             if len(data['calendars']) < 2:
                 return None, 'Keep at least one calendar here.'

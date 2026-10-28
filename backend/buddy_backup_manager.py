@@ -20,7 +20,7 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, Union
+from typing import Any, Callable, Iterator, Optional
 
 import requests
 
@@ -41,7 +41,7 @@ IPV4_RE = re.compile(r"^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d))
 # than a data subvolume replace.
 SYSTEM_SOURCE_PATH = "/"
 
-DEFAULT_BUDDY_SETTINGS: Dict[str, Any] = {
+DEFAULT_BUDDY_SETTINGS: dict[str, Any] = {
     "enabled": False,
     "incoming_path": "",
     "incoming_quota_gb": 200,
@@ -55,7 +55,7 @@ DEFAULT_BUDDY_SETTINGS: Dict[str, Any] = {
     "encryption_hash": "",
 }
 
-DEFAULT_BUDDY_RUNTIME: Dict[str, Any] = {
+DEFAULT_BUDDY_RUNTIME: dict[str, Any] = {
     "last_sync_at": "",
     "last_sync_status": "idle",
     "last_sync_error": "",
@@ -165,7 +165,7 @@ class BuddyBackupManager:
     def _now_iso(self) -> str:
         return self._now().isoformat()
 
-    def _parse_iso(self, value: Optional[str]) -> Optional[datetime]:
+    def _parse_iso(self, value: str | None) -> datetime | None:
         if not value:
             return None
         try:
@@ -173,7 +173,7 @@ class BuddyBackupManager:
         except Exception:
             return None
 
-    def _normalize_path(self, path: Optional[str]) -> str:
+    def _normalize_path(self, path: str | None) -> str:
         if not path:
             return ""
         return os.path.normpath(str(path).strip())
@@ -202,7 +202,7 @@ class BuddyBackupManager:
         except Exception:
             return False
 
-    def _sanitize_non_system_path(self, path: Optional[str]) -> str:
+    def _sanitize_non_system_path(self, path: str | None) -> str:
         normalized = self._normalize_path(path)
         if not normalized.startswith("/"):
             return ""
@@ -216,44 +216,44 @@ class BuddyBackupManager:
         except Exception:
             return "alvaos"
 
-    def _detect_cmd(self, candidates: List[str], which_name: str) -> Optional[str]:
+    def _detect_cmd(self, candidates: list[str], which_name: str) -> str | None:
         for candidate in candidates:
             if os.path.exists(candidate):
                 return candidate
         found = shutil.which(which_name)
         return found if found else None
 
-    def _btrfs_cmd(self) -> Optional[str]:
+    def _btrfs_cmd(self) -> str | None:
         return self._detect_cmd(
             ["/usr/bin/btrfs", "/bin/btrfs", "/usr/sbin/btrfs", "/sbin/btrfs"],
             "btrfs"
         )
 
-    def _mkdir_cmd(self) -> Optional[str]:
+    def _mkdir_cmd(self) -> str | None:
         return self._detect_cmd(
             ["/usr/bin/mkdir", "/bin/mkdir"],
             "mkdir"
         )
 
-    def _mv_cmd(self) -> Optional[str]:
+    def _mv_cmd(self) -> str | None:
         return self._detect_cmd(
             ["/usr/bin/mv", "/bin/mv"],
             "mv"
         )
 
-    def _chown_cmd(self) -> Optional[str]:
+    def _chown_cmd(self) -> str | None:
         return self._detect_cmd(
             ["/usr/bin/chown", "/bin/chown", "/usr/sbin/chown", "/sbin/chown"],
             "chown"
         )
 
-    def _chmod_cmd(self) -> Optional[str]:
+    def _chmod_cmd(self) -> str | None:
         return self._detect_cmd(
             ["/usr/bin/chmod", "/bin/chmod", "/usr/sbin/chmod", "/sbin/chmod"],
             "chmod"
         )
 
-    def _create_identity(self) -> Dict:
+    def _create_identity(self) -> dict:
         """This NAS as a buddy: a node id, a name and the secret every buddy gets in the pairing code.
         Its address is the key of AlvaOS Link (link_daemon.py), which the daemon keeps."""
         return {
@@ -264,17 +264,17 @@ class BuddyBackupManager:
             "updated_at": self._now_iso(),
         }
 
-    def _load_identity(self) -> Dict:
+    def _load_identity(self) -> dict:
         raw = self._load_json(self.identity_file, {})
         if not isinstance(raw, dict):
             return {}
         return raw
 
-    def _save_identity(self, identity: Dict) -> None:
+    def _save_identity(self, identity: dict) -> None:
         identity["updated_at"] = self._now_iso()
         self._save_json(self.identity_file, identity)
 
-    def _identity_public(self) -> Dict:
+    def _identity_public(self) -> dict:
         identity = self._load_identity()
         if not identity:
             identity = self._create_identity()
@@ -295,11 +295,11 @@ class BuddyBackupManager:
             "key_source": "link",
         }
 
-    def _token_encode(self, payload: Dict) -> str:
+    def _token_encode(self, payload: dict) -> str:
         raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
         return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
-    def _token_decode(self, token: str) -> Tuple[Optional[Dict], Optional[str]]:
+    def _token_decode(self, token: str) -> tuple[dict | None, str | None]:
         text = str(token or "").strip()
         if not text:
             return None, "Pairing token is required"
@@ -313,14 +313,14 @@ class BuddyBackupManager:
         except Exception:
             return None, "Invalid pairing token format"
 
-    def _load_peers(self) -> Dict[str, Dict]:
+    def _load_peers(self) -> dict[str, dict]:
         data = self._load_json(self.peers_file, {})
         return data if isinstance(data, dict) else {}
 
-    def _save_peers(self, peers: Dict[str, Dict]) -> None:
+    def _save_peers(self, peers: dict[str, dict]) -> None:
         self._save_json(self.peers_file, peers if isinstance(peers, dict) else {})
 
-    def _hash_passphrase(self, passphrase: str, salt: Optional[str] = None) -> Tuple[str, str]:
+    def _hash_passphrase(self, passphrase: str, salt: str | None = None) -> tuple[str, str]:
         if salt:
             salt_bytes = base64.b64decode(salt.encode("ascii"))
         else:
@@ -345,9 +345,9 @@ class BuddyBackupManager:
             return default
         return f"{hh:02d}:{mm:02d}"
 
-    def _normalize_peer_policies(self, raw: Optional[Dict]) -> Dict[str, Dict]:
+    def _normalize_peer_policies(self, raw: dict | None) -> dict[str, dict]:
         policies = raw if isinstance(raw, dict) else {}
-        normalized: Dict[str, Dict] = {}
+        normalized: dict[str, dict] = {}
         for node_id, payload in policies.items():
             nid = str(node_id or "").strip()
             if not nid:
@@ -389,7 +389,7 @@ class BuddyBackupManager:
         return normalized
 
     @staticmethod
-    def _normalize_retention(item: Dict) -> Dict[str, int]:
+    def _normalize_retention(item: dict) -> dict[str, int]:
         """How many daily/weekly/monthly snapshots the buddy's vault keeps."""
         from buddy_vault import DEFAULT_RETENTION
         limits = {"keep_daily": 366, "keep_weekly": 260, "keep_monthly": 240}
@@ -402,7 +402,7 @@ class BuddyBackupManager:
             result[key] = max(0, min(limits[key], value))
         return result
 
-    def _merge_settings(self, raw: Optional[Dict]) -> Dict:
+    def _merge_settings(self, raw: dict | None) -> dict:
         source = raw if isinstance(raw, dict) else {}
         merged = dict(DEFAULT_BUDDY_SETTINGS)
 
@@ -453,7 +453,7 @@ class BuddyBackupManager:
         merged["updated_at"] = updated_at or self._now_iso()
         return merged
 
-    def _public_settings(self, settings: Dict) -> Dict:
+    def _public_settings(self, settings: dict) -> dict:
         result = dict(settings or {})
         result.pop("encryption_hash", None)
         result.pop("encryption_salt", None)
@@ -462,14 +462,14 @@ class BuddyBackupManager:
         )
         return result
 
-    def get_settings(self, include_secret: bool = False) -> Dict:
+    def get_settings(self, include_secret: bool = False) -> dict:
         settings = self._load_json(self.settings_file, {})
         merged = self._merge_settings(settings)
         if merged != settings:
             self._save_json(self.settings_file, merged)
         return merged if include_secret else self._public_settings(merged)
 
-    def _load_runtime(self) -> Dict:
+    def _load_runtime(self) -> dict:
         runtime = self._load_json(self.runtime_file, {})
         if not isinstance(runtime, dict):
             runtime = {}
@@ -479,7 +479,7 @@ class BuddyBackupManager:
             merged["per_peer"] = {}
         return merged
 
-    def _save_runtime(self, runtime: Dict) -> Dict:
+    def _save_runtime(self, runtime: dict) -> dict:
         payload = dict(DEFAULT_BUDDY_RUNTIME)
         if isinstance(runtime, dict):
             payload.update(runtime)
@@ -488,7 +488,7 @@ class BuddyBackupManager:
         self._save_json(self.runtime_file, payload)
         return payload
 
-    def _update_runtime(self, updates: Dict, node_id: str = "") -> Dict:
+    def _update_runtime(self, updates: dict, node_id: str = "") -> dict:
         runtime = self._load_runtime()
         runtime.update(updates or {})
         if node_id:
@@ -505,17 +505,17 @@ class BuddyBackupManager:
             runtime["per_peer"] = per_peer
         return self._save_runtime(runtime)
 
-    def _load_stream_entries(self) -> List[Dict]:
+    def _load_stream_entries(self) -> list[dict]:
         entries = self._load_json(self.streams_file, [])
         return entries if isinstance(entries, list) else []
 
-    def _save_stream_entries(self, entries: List[Dict]) -> None:
+    def _save_stream_entries(self, entries: list[dict]) -> None:
         payload = entries if isinstance(entries, list) else []
         if len(payload) > 4000:
             payload = payload[-4000:]
         self._save_json(self.streams_file, payload)
 
-    def save_settings(self, payload: Dict) -> Tuple[bool, Dict]:
+    def save_settings(self, payload: dict) -> tuple[bool, dict]:
         if payload is None:
             payload = {}
         if not isinstance(payload, dict):
@@ -573,11 +573,11 @@ class BuddyBackupManager:
 
     # ── Encryption key material ─────────────────────────────────────────────
 
-    def _load_key_file(self) -> Dict:
+    def _load_key_file(self) -> dict:
         data = self._load_json(self.encryption_key_file, {})
         return data if isinstance(data, dict) else {}
 
-    def _write_key_file(self, data: Dict) -> None:
+    def _write_key_file(self, data: dict) -> None:
         tmp = self.encryption_key_file + ".tmp"
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -620,7 +620,7 @@ class BuddyBackupManager:
             print(f"Buddy backup: could not create encryption key material: {exc}")
 
     def _decrypt_stream_with_passphrase(self, encrypted_path: str, plain_path: str,
-                                        passphrase: str) -> Tuple[bool, str]:
+                                        passphrase: str) -> tuple[bool, str]:
         """Decrypt a downloaded stream using only the passphrase.
 
         ALVAENC2 streams carry their key-derivation salt, so this works on a
@@ -656,7 +656,7 @@ class BuddyBackupManager:
         except Exception as exc:
             return False, f"Failed to decrypt snapshot: {exc}"
 
-    def save_peer_policy(self, node_id: str, payload: Dict) -> Tuple[bool, Dict]:
+    def save_peer_policy(self, node_id: str, payload: dict) -> tuple[bool, dict]:
         nid = str(node_id or "").strip()
         if not nid:
             return False, {"error": "node_id is required"}
@@ -692,7 +692,7 @@ class BuddyBackupManager:
         self._save_json(self.settings_file, merged)
         return True, merged["peer_policies"].get(nid, {})
 
-    def get_peer_policy(self, node_id: str) -> Tuple[bool, Dict]:
+    def get_peer_policy(self, node_id: str) -> tuple[bool, dict]:
         nid = str(node_id or "").strip()
         if not nid:
             return False, {"error": "node_id is required"}
@@ -728,7 +728,7 @@ class BuddyBackupManager:
             self._ensure_encryption_material(passphrase)
         return ok
 
-    def _identity_private(self) -> Dict:
+    def _identity_private(self) -> dict:
         identity = self._load_identity()
         if not identity:
             identity = self._create_identity()
@@ -782,7 +782,7 @@ class BuddyBackupManager:
         res, err = self.run_command([btrfs_cmd, "subvolume", "show", target], timeout=20)
         return bool(res and res.returncode == 0 and not err)
 
-    def _list_btrfs_subvolume_names_under(self, path: str) -> List[str]:
+    def _list_btrfs_subvolume_names_under(self, path: str) -> list[str]:
         base = str(path or "").strip()
         if platform.system() != "Linux" or not base:
             return []
@@ -794,7 +794,7 @@ class BuddyBackupManager:
         if err or not res or res.returncode != 0:
             return []
 
-        names: List[str] = []
+        names: list[str] = []
         for raw in (res.stdout or "").splitlines():
             line = str(raw or "").strip()
             if not line:
@@ -833,7 +833,7 @@ class BuddyBackupManager:
             return ""
         return name
 
-    def _delete_subvolume_if_exists(self, subvolume_path: str, btrfs_cmd: str) -> Tuple[bool, str, bool]:
+    def _delete_subvolume_if_exists(self, subvolume_path: str, btrfs_cmd: str) -> tuple[bool, str, bool]:
         target = os.path.normpath(str(subvolume_path or "").strip())
         if not target:
             return False, "Invalid subvolume path", False
@@ -855,7 +855,7 @@ class BuddyBackupManager:
         collision_path: str,
         mount_root: str,
         btrfs_cmd: str,
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         target = os.path.normpath(str(collision_path or "").strip())
         root = os.path.normpath(str(mount_root or "").strip())
         if not target or not root:
@@ -889,7 +889,7 @@ class BuddyBackupManager:
             return False, set_err or "Failed to switch default subvolume before cleanup"
         return True, ""
 
-    def _cleanup_temp_subvolume(self, subvolume_path: str, btrfs_cmd: str, attempts: int = 3) -> Tuple[bool, str]:
+    def _cleanup_temp_subvolume(self, subvolume_path: str, btrfs_cmd: str, attempts: int = 3) -> tuple[bool, str]:
         target = os.path.normpath(str(subvolume_path or "").strip())
         if not target:
             return False, "Invalid subvolume path"
@@ -928,7 +928,7 @@ class BuddyBackupManager:
                 continue
             self._cleanup_temp_subvolume(path, btrfs_cmd, attempts=2)
 
-    def _device_id_for_path(self, path: str) -> Optional[int]:
+    def _device_id_for_path(self, path: str) -> int | None:
         target = str(path or "").strip()
         if not target:
             return None
@@ -958,7 +958,7 @@ class BuddyBackupManager:
         # place temp snapshot inside source to keep snapshot operation on one filesystem.
         return source
 
-    def _mkdir_p(self, path: str) -> Tuple[bool, str]:
+    def _mkdir_p(self, path: str) -> tuple[bool, str]:
         target = str(path or "").strip()
         if not target:
             return False, "Invalid directory path"
@@ -977,7 +977,7 @@ class BuddyBackupManager:
             return False, err or f"Failed to create directory: {target}"
         return True, ""
 
-    def _move_path_best_effort(self, source: str, destination: str, timeout: int = 120) -> Tuple[bool, str]:
+    def _move_path_best_effort(self, source: str, destination: str, timeout: int = 120) -> tuple[bool, str]:
         src = os.path.normpath(str(source or "").strip())
         dst = os.path.normpath(str(destination or "").strip())
         if not src or not dst:
@@ -1008,7 +1008,7 @@ class BuddyBackupManager:
         except Exception:
             return False
 
-    def _get_subvolume_id(self, path: str) -> Optional[int]:
+    def _get_subvolume_id(self, path: str) -> int | None:
         target = os.path.normpath(str(path or "").strip())
         if not target:
             return None
@@ -1026,7 +1026,7 @@ class BuddyBackupManager:
                     return None
         return None
 
-    def _get_default_subvolume_id(self, path: str) -> Optional[int]:
+    def _get_default_subvolume_id(self, path: str) -> int | None:
         target = os.path.normpath(str(path or "").strip())
         if not target:
             return None
@@ -1055,7 +1055,7 @@ class BuddyBackupManager:
         # Persistent service-owned fallback when selected incoming path is not writable.
         return os.path.join(self.state_dir, "buddy-streams")
 
-    def _select_writable_stream_owner_dir(self, owner_node_id: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    def _select_writable_stream_owner_dir(self, owner_node_id: str) -> tuple[str | None, str | None, str | None]:
         owner = str(owner_node_id or "").strip()
         if not owner:
             return None, None, "owner_node_id is required"
@@ -1088,7 +1088,7 @@ class BuddyBackupManager:
                 last_error = f"Failed to prepare owner stream path: {owner_dir} ({exc})"
                 continue
 
-            def _probe_write(path: str) -> Tuple[bool, str]:
+            def _probe_write(path: str) -> tuple[bool, str]:
                 probe = os.path.join(path, f".write-probe-{secrets.token_hex(4)}")
                 try:
                     with open(probe, "wb") as f:
@@ -1140,7 +1140,7 @@ class BuddyBackupManager:
 
         return None, None, last_error
 
-    def _notify_remote_peer_removed(self, peer: Dict) -> Dict:
+    def _notify_remote_peer_removed(self, peer: dict) -> dict:
         if not isinstance(peer, dict):
             return {"attempted": False, "success": False, "error": "Invalid peer payload"}
 
@@ -1171,7 +1171,7 @@ class BuddyBackupManager:
                     timeout=8,
                     verify=False,  # buddy nodes use self-signed certs
                 )
-                body: Dict[str, Any] = {}
+                body: dict[str, Any] = {}
                 try:
                     body = response.json() if response.text else {}
                 except Exception:
@@ -1194,7 +1194,7 @@ class BuddyBackupManager:
             "error": last_error,
         }
 
-    def _probe_peer_api(self, peer: Dict) -> Dict:
+    def _probe_peer_api(self, peer: dict) -> dict:
         remote_secret = str(peer.get("api_secret") or "").strip()
         if not remote_secret:
             return {
@@ -1259,7 +1259,7 @@ class BuddyBackupManager:
             "error": last_error,
         }
 
-    def _public_stream_entry(self, item: Dict) -> Dict:
+    def _public_stream_entry(self, item: dict) -> dict:
         return {
             "id": str(item.get("id") or ""),
             "owner_node_id": str(item.get("owner_node_id") or ""),
@@ -1274,7 +1274,7 @@ class BuddyBackupManager:
             "parent_id": str(item.get("parent_id") or ""),
         }
 
-    def _remove_stream_entries(self, remove_ids: set) -> List[Dict]:
+    def _remove_stream_entries(self, remove_ids: set) -> list[dict]:
         """Delete these snapshots and their payload files; returns the removed entries."""
         entries = self._load_stream_entries()
         kept, removed = [], []
@@ -1295,7 +1295,7 @@ class BuddyBackupManager:
     # Where Link carries a buddy's API on this NAS (link_daemon.LOCAL_PORTS); the buddy's backend itself is on 8080.
     PEER_API_PORT = link_daemon.LOCAL_PORTS['api']
 
-    def _peer_api_urls(self, peer: Dict, path: str) -> List[str]:
+    def _peer_api_urls(self, peer: dict, path: str) -> list[str]:
         """URLs for talking to a paired buddy: only ever through AlvaOS Link.
 
         Link gives every buddy an address of its own on this NAS's loopback network (peer
@@ -1310,7 +1310,7 @@ class BuddyBackupManager:
             return []
         return [f"http://{address}:{self.PEER_API_PORT}{path_part}"]
 
-    def peer_for_tunnel_ip(self, remote_ip: str) -> Optional[Dict]:
+    def peer_for_tunnel_ip(self, remote_ip: str) -> dict | None:
         """The paired buddy that owns this address, if any.
 
         Link connects to this NAS's services from the buddy's own address (127.95.x.y), and only
@@ -1368,13 +1368,13 @@ class BuddyBackupManager:
         }, sort_keys=True)
         return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
-    def export_recovery_kit(self, passphrase: str) -> Tuple[bool, Dict]:
+    def export_recovery_kit(self, passphrase: str) -> tuple[bool, dict]:
         if len(passphrase or "") < 8:
             return False, {"error": "Choose a recovery kit password with at least 8 characters"}
         self._identity_public()   # make sure a complete identity exists
         identity = self._identity_private()
         peers = self._load_peers()
-        kit: Dict[str, Any] = {
+        kit: dict[str, Any] = {
             "kind": self.RECOVERY_KIT_KIND,
             "v": 2,
             "created_at": self._now_iso(),
@@ -1402,7 +1402,7 @@ class BuddyBackupManager:
             "peer_count": len(peers),
         }
 
-    def recovery_kit_status(self) -> Dict:
+    def recovery_kit_status(self) -> dict:
         runtime = self._load_runtime()
         exported_at = str(runtime.get("recovery_kit_exported_at") or "")
         return {
@@ -1413,7 +1413,7 @@ class BuddyBackupManager:
             and runtime.get("recovery_kit_fingerprint") == self._recovery_kit_fingerprint(),
         }
 
-    def _validated_kit_identity(self, raw: Any) -> Dict:
+    def _validated_kit_identity(self, raw: Any) -> dict:
         if not isinstance(raw, dict):
             raise ValueError("identity is missing")
         node_id = str(raw.get("node_id") or "")
@@ -1428,10 +1428,10 @@ class BuddyBackupManager:
         name = re.sub(r"[^\w .-]+", "", str(raw.get("name") or ""))[:64] or self._hostname()
         return {"node_id": node_id, "name": name, "api_secret": api_secret, "link_secret": link_secret}
 
-    def _validated_kit_peers(self, raw: Any) -> Dict[str, Dict]:
+    def _validated_kit_peers(self, raw: Any) -> dict[str, dict]:
         if not isinstance(raw, dict):
             raise ValueError("buddy list is missing")
-        peers: Dict[str, Dict] = {}
+        peers: dict[str, dict] = {}
         for node_id, peer in raw.items():
             if not isinstance(peer, dict) or not re.fullmatch(r"[0-9a-f]{8,64}", str(node_id)):
                 raise ValueError("invalid buddy entry")
@@ -1461,7 +1461,7 @@ class BuddyBackupManager:
         return (f"Identity restored with {buddies}. Your snapshots on them now appear under "
                 "\"Restore from a buddy\".")
 
-    def import_recovery_kit(self, kit: str, passphrase: str, replace: bool = False) -> Tuple[bool, Dict]:
+    def import_recovery_kit(self, kit: str, passphrase: str, replace: bool = False) -> tuple[bool, dict]:
         try:
             data = buddy_crypto.open_json(kit, passphrase)
         except buddy_crypto.BuddyCryptoError as exc:
@@ -1512,7 +1512,7 @@ class BuddyBackupManager:
             "message": message,
         }
 
-    def _own_token(self, minutes: int) -> Tuple[Optional[str], Dict, Optional[Dict]]:
+    def _own_token(self, minutes: int) -> tuple[str | None, dict, dict | None]:
         """A pairing code of this NAS: (code, its fields, an error)."""
         identity = self._identity_public()
         if not identity.get("public_key"):
@@ -1531,7 +1531,7 @@ class BuddyBackupManager:
         }
         return self._token_encode(payload), payload, None
 
-    def generate_pairing_token(self, expires_minutes: int = 20) -> Tuple[bool, Dict]:
+    def generate_pairing_token(self, expires_minutes: int = 20) -> tuple[bool, dict]:
         try:
             ttl = int(expires_minutes)
         except Exception:
@@ -1549,7 +1549,7 @@ class BuddyBackupManager:
             "identity": self._identity_public(),
         }
 
-    def _token_to_peer(self, payload: Dict, name_override: str = "") -> Tuple[Optional[Dict], Optional[str]]:
+    def _token_to_peer(self, payload: dict, name_override: str = "") -> tuple[dict | None, str | None]:
         if payload.get("v") != 2:
             return None, ("This pairing code comes from an older AlvaOS (before 0.3, with WireGuard). "
                           "Make a new one on the other NAS after it was updated.")
@@ -1587,7 +1587,7 @@ class BuddyBackupManager:
         }
         return peer, None
 
-    def sync_link(self) -> Tuple[bool, Dict]:
+    def sync_link(self) -> tuple[bool, dict]:
         """Tell AlvaOS Link which buddies may connect, and learn the address each has on this NAS."""
         peers = self._load_peers()
         buddies = [{"id": str(p.get("public_key") or ""), "name": str(p.get("name") or nid)}
@@ -1608,7 +1608,7 @@ class BuddyBackupManager:
             self._save_peers(peers)
         return True, {"message": "Buddies are connected through AlvaOS Link", "buddies": len(buddies)}
 
-    def _runtime_status(self) -> Dict:
+    def _runtime_status(self) -> dict:
         """What AlvaOS Link says: running or not, and per buddy whether it is reachable now."""
         status = link_client.status()
         if status is None:
@@ -1621,7 +1621,7 @@ class BuddyBackupManager:
                  for p in status.get("peers", []) if p.get("kind") == "buddy"]
         return {"state": "up", "message": "Link is up", "online": bool(status.get("relay")), "peers": peers}
 
-    def _attempt_reciprocal_pair(self, peer: Dict) -> Tuple[bool, Dict]:
+    def _attempt_reciprocal_pair(self, peer: dict) -> tuple[bool, dict]:
         """Give the buddy our own pairing code through Link, with the secret from its code as proof."""
         token, _payload, error = self._own_token(20)
         if token is None:
@@ -1637,7 +1637,7 @@ class BuddyBackupManager:
         token: str,
         name_override: str = "",
         auto_reciprocal: bool = False,
-    ) -> Tuple[bool, Dict]:
+    ) -> tuple[bool, dict]:
         payload, decode_err = self._token_decode(token)
         if decode_err or payload is None:
             return False, {"error": decode_err or "Invalid pairing token"}
@@ -1685,7 +1685,7 @@ class BuddyBackupManager:
         self._save_peers(peers)
         peer = current
 
-        reciprocal: Dict[str, Any] = {"skipped": True}
+        reciprocal: dict[str, Any] = {"skipped": True}
         if auto_reciprocal and ok:
             reciprocal_ok, reciprocal_payload = self._attempt_reciprocal_pair(peer)
             reciprocal = {"success": reciprocal_ok, **reciprocal_payload}
@@ -1715,7 +1715,7 @@ class BuddyBackupManager:
         st = os.statvfs(path)
         return max(2 * 1024 ** 3, (st.f_blocks * st.f_frsize) // 50)
 
-    def list_peer_streams(self, owner_node_id: str, limit: int = 100) -> Tuple[bool, Dict]:
+    def list_peer_streams(self, owner_node_id: str, limit: int = 100) -> tuple[bool, dict]:
         owner = str(owner_node_id or "").strip()
         if not owner:
             return False, {"error": "owner_node_id is required"}
@@ -1728,7 +1728,7 @@ class BuddyBackupManager:
         max_items = max(1, min(500, int(limit or 100)))
         return True, {"streams": entries[:max_items]}
 
-    def get_peer_stream_payload(self, owner_node_id: str, stream_id: str) -> Tuple[bool, Dict]:
+    def get_peer_stream_payload(self, owner_node_id: str, stream_id: str) -> tuple[bool, dict]:
         owner = str(owner_node_id or "").strip()
         sid = str(stream_id or "").strip()
         if not owner:
@@ -1746,7 +1746,7 @@ class BuddyBackupManager:
             return True, {"stream": self._public_stream_entry(item), "payload_path": payload_path}
         return False, {"error": "Stream not found"}
 
-    def delete_peer_stream(self, owner_node_id: str, stream_id: str) -> Tuple[bool, Dict]:
+    def delete_peer_stream(self, owner_node_id: str, stream_id: str) -> tuple[bool, dict]:
         """Delete a snapshot a buddy stored here in the old stream format."""
         owner = str(owner_node_id or "").strip()
         sid = str(stream_id or "").strip()
@@ -1766,11 +1766,11 @@ class BuddyBackupManager:
     # After a successful sync, the read-only snapshot that was sent stays on
     # this NAS: the next sync to the same buddy only sends what changed since
     # (`btrfs send -p`), as long as the buddy's vault still has that snapshot.
-    def _load_send_state(self) -> Dict[str, Dict[str, Dict]]:
+    def _load_send_state(self) -> dict[str, dict[str, dict]]:
         state = self._load_json(self.send_state_file, {})
         return state if isinstance(state, dict) else {}
 
-    def _save_send_state(self, state: Dict[str, Dict[str, Dict]]) -> None:
+    def _save_send_state(self, state: dict[str, dict[str, dict]]) -> None:
         self._save_json(self.send_state_file, state)
 
     def _kept_base_paths(self) -> set:
@@ -1780,7 +1780,7 @@ class BuddyBackupManager:
             for entry in per_source.values() if isinstance(entry, dict) and entry.get("snapshot_path")
         }
 
-    def _drop_send_bases(self, node_id: str, btrfs_cmd: Optional[str] = None) -> None:
+    def _drop_send_bases(self, node_id: str, btrfs_cmd: str | None = None) -> None:
         """Forget and delete the kept bases for one buddy (e.g. when it is removed)."""
         state = self._load_send_state()
         per_source = state.pop(node_id, None)
@@ -1793,7 +1793,7 @@ class BuddyBackupManager:
             if path:
                 self._cleanup_temp_subvolume(path, btrfs, attempts=2)
 
-    def _take_send_snapshot(self, source_path: str) -> Tuple[bool, Dict]:
+    def _take_send_snapshot(self, source_path: str) -> tuple[bool, dict]:
         """Read-only snapshot of a source to send from. The caller removes it."""
         source = str(source_path or "").strip()
         if not source.startswith("/"):
@@ -1850,7 +1850,7 @@ class BuddyBackupManager:
             "created_at": self._now_iso(),
         }
 
-    def _peer_request(self, peer: Dict, method: str, path: str, timeout: int = 60, **kwargs) -> Tuple[int, Dict]:
+    def _peer_request(self, peer: dict, method: str, path: str, timeout: int = 60, **kwargs) -> tuple[int, dict]:
         """One request to a buddy through the tunnel: (HTTP status, JSON body)."""
         urls = self._peer_api_urls(peer, path)
         if not urls:
@@ -1864,7 +1864,7 @@ class BuddyBackupManager:
             body = {}
         return response.status_code, body if isinstance(body, dict) else {}
 
-    def _keep_as_base(self, node_id: str, source_path: str, snapshot: Dict) -> None:
+    def _keep_as_base(self, node_id: str, source_path: str, snapshot: dict) -> None:
         """Remember the snapshot just sent as base for the next sync; drop the old base."""
         state = self._load_send_state()
         per_source = state.setdefault(node_id, {})
@@ -1884,9 +1884,9 @@ class BuddyBackupManager:
     def sync_to_peer(
         self,
         node_id: str,
-        sources: Optional[List[str]] = None,
+        sources: list[str] | None = None,
         include_system: bool = False,
-    ) -> Tuple[bool, Dict]:
+    ) -> tuple[bool, dict]:
         target = str(node_id or "").strip()
         if not target:
             return False, {"error": "node_id is required"}
@@ -1934,7 +1934,7 @@ class BuddyBackupManager:
 
             created = []
             failed = []
-            vault_info: Dict[str, Any] = {}
+            vault_info: dict[str, Any] = {}
             try:
                 with self.vault.session(peer, "rw") as mountpoint:
                     for source_path in selected_sources:
@@ -2001,18 +2001,18 @@ class BuddyBackupManager:
             }
 
     # ── Snapshots on a buddy (vault + old stream format) ───────────────────
-    def _retention_for(self, policy: Dict) -> Dict[str, int]:
+    def _retention_for(self, policy: dict) -> dict[str, int]:
         from buddy_vault import DEFAULT_RETENTION
         return {key: int(policy.get(key, default)) for key, default in DEFAULT_RETENTION.items()}
 
-    def _vault_snapshot_cache(self, mountpoint: str) -> Dict[str, Any]:
+    def _vault_snapshot_cache(self, mountpoint: str) -> dict[str, Any]:
         """What the UI shows about a vault, saved so it does not have to be opened to look."""
         size, free = self.vault.usage(mountpoint)
         return {"snapshots": self.vault.list_snapshots(mountpoint), "size_bytes": size,
                 "free_bytes": free, "listed_at": self._now_iso()}
 
     def fetch_remote_snapshots(self, node_id: str, limit: int = 100, refresh: bool = False,
-                               passphrase: str = "") -> Tuple[bool, Dict]:
+                               passphrase: str = "") -> tuple[bool, dict]:
         """Snapshots this NAS has on a buddy: its vault, plus old-format streams.
 
         Without `refresh` the vault listing saved at the last sync is shown, so
@@ -2049,7 +2049,7 @@ class BuddyBackupManager:
             "vault_error": vault_error,
         }
 
-    def delete_remote_snapshot(self, node_id: str, stream_id: str, passphrase: str = "") -> Tuple[bool, Dict]:
+    def delete_remote_snapshot(self, node_id: str, stream_id: str, passphrase: str = "") -> tuple[bool, dict]:
         target = str(node_id or "").strip()
         sid = str(stream_id or "").strip()
         if "/" not in sid:
@@ -2073,7 +2073,7 @@ class BuddyBackupManager:
         stream_id: str,
         source_path: str = "",
         encryption_passphrase: str = "",
-    ) -> Tuple[bool, Dict]:
+    ) -> tuple[bool, dict]:
         sid = str(stream_id or "").strip()
         if "/" not in sid:
             return self._restore_legacy_stream(node_id, sid, source_path, encryption_passphrase)
@@ -2100,7 +2100,7 @@ class BuddyBackupManager:
                 restore_ok, restore_payload = False, {"error": str(exc)}
             return self._finish_restore(restore_ok, restore_payload, {"id": sid, "source_path": restore_source})
 
-    def _finish_restore(self, restore_ok: bool, restore_payload: Dict, entry: Dict) -> Tuple[bool, Dict]:
+    def _finish_restore(self, restore_ok: bool, restore_payload: dict, entry: dict) -> tuple[bool, dict]:
         now_iso = self._now_iso()
         if restore_ok:
             self._update_runtime({"last_restore_at": now_iso, "last_restore_status": "success",
@@ -2114,7 +2114,7 @@ class BuddyBackupManager:
                               "last_restore_error": error})
         return False, {"error": error}
 
-    def _fetch_legacy_streams(self, node_id: str, limit: int = 100) -> Tuple[bool, Dict]:
+    def _fetch_legacy_streams(self, node_id: str, limit: int = 100) -> tuple[bool, dict]:
         """Snapshots a buddy stored in the old stream format (before vaults)."""
         peer = self._load_peers().get(str(node_id or "").strip())
         if not isinstance(peer, dict):
@@ -2136,7 +2136,7 @@ class BuddyBackupManager:
         streams = sorted(streams, key=lambda item: str(item.get("created_at") or ""), reverse=True)
         return True, {"node_id": node_id, "streams": streams}
 
-    def _delete_legacy_stream(self, node_id: str, stream_id: str) -> Tuple[bool, Dict]:
+    def _delete_legacy_stream(self, node_id: str, stream_id: str) -> tuple[bool, dict]:
         target = str(node_id or "").strip()
         sid = str(stream_id or "").strip()
         if not target:
@@ -2187,7 +2187,7 @@ class BuddyBackupManager:
                 last_error = str(exc)
         return False, {"error": last_error}
 
-    def _open_remote_stream(self, peer: Dict, stream_id: str, owner_node_id: str):
+    def _open_remote_stream(self, peer: dict, stream_id: str, owner_node_id: str):
         """Start downloading one of our snapshots from a buddy (streamed response)."""
         remote_secret = str(peer.get("api_secret") or "").strip()
         urls = self._peer_api_urls(peer, f"/api/v1/backup/buddy/peer/download/{stream_id}")
@@ -2245,8 +2245,8 @@ class BuddyBackupManager:
                 yield plain
         yield decryptor.finalize()
 
-    def _receive_stream(self, btrfs_cmd: str, stream: Union[str, Iterator[bytes]],
-                        target_parent: str) -> Tuple[bool, str]:
+    def _receive_stream(self, btrfs_cmd: str, stream: str | Iterator[bytes],
+                        target_parent: str) -> tuple[bool, str]:
         """`btrfs receive` from a file path or by piping an iterator of bytes."""
         if isinstance(stream, str):
             res, err = self.run_command([btrfs_cmd, "receive", "-f", stream, target_parent], timeout=None)
@@ -2279,8 +2279,8 @@ class BuddyBackupManager:
         finally:
             stderr.close()
 
-    def _restore_from_stream(self, stream: Union[str, Iterator[bytes]], snapshot_name: str,
-                             source_path: str) -> Tuple[bool, Dict]:
+    def _restore_from_stream(self, stream: str | Iterator[bytes], snapshot_name: str,
+                             source_path: str) -> tuple[bool, dict]:
         """Receive a snapshot stream (file path or iterator of bytes) and put it in place."""
         target_source = str(source_path or "").strip()
         if not target_source.startswith("/"):
@@ -2328,8 +2328,8 @@ class BuddyBackupManager:
             return cleanup_err or f"Failed to prepare restore target: {expected_path}"
         return ""
 
-    def _receive_and_apply(self, stream: Union[str, Iterator[bytes]], expected_name: str, target_source: str,
-                           target_parent: str, target_is_mount_root: bool, btrfs_cmd: str) -> Tuple[bool, Dict]:
+    def _receive_and_apply(self, stream: str | Iterator[bytes], expected_name: str, target_source: str,
+                           target_parent: str, target_is_mount_root: bool, btrfs_cmd: str) -> tuple[bool, dict]:
         before_names = set(self._list_btrfs_subvolume_names_under(target_parent))
 
         recv_ok, recv_err = self._receive_stream(btrfs_cmd, stream, target_parent)
@@ -2372,7 +2372,7 @@ class BuddyBackupManager:
         new_names = sorted(list(after_names - before_names))
 
         if not received_path:
-            name_candidates: List[str] = []
+            name_candidates: list[str] = []
             if expected_name and expected_name in after_names:
                 name_candidates.append(expected_name)
             if expected_name:
@@ -2440,8 +2440,8 @@ class BuddyBackupManager:
             "message": "Restore completed",
         }
 
-    def _open_restore_stream(self, peer: Dict, entry: Dict, owner_node_id: str, passphrase: str,
-                             temp_paths: List[str], responses: List[Any]) -> Tuple[bool, Any]:
+    def _open_restore_stream(self, peer: dict, entry: dict, owner_node_id: str, passphrase: str,
+                             temp_paths: list[str], responses: list[Any]) -> tuple[bool, Any]:
         """Start downloading one stored snapshot: (True, stream to receive) or (False, error)."""
         try:
             response = self._open_remote_stream(peer, str(entry.get("id") or ""), owner_node_id)
@@ -2475,7 +2475,7 @@ class BuddyBackupManager:
         return False, "The downloaded snapshot is not in a known encrypted format"
 
     def _legacy_v1_to_file(self, body: Iterator[bytes], passphrase: str,
-                           temp_paths: List[str]) -> Tuple[bool, str]:
+                           temp_paths: list[str]) -> tuple[bool, str]:
         """Download and decrypt an ALVAENC1 snapshot; returns the plain file path."""
         fd, encrypted_tmp = tempfile.mkstemp(prefix="buddy-restore-", suffix=".enc", dir=self.state_dir)
         temp_paths.append(encrypted_tmp)
@@ -2497,7 +2497,7 @@ class BuddyBackupManager:
         stream_id: str,
         source_path: str = "",
         encryption_passphrase: str = "",
-    ) -> Tuple[bool, Dict]:
+    ) -> tuple[bool, dict]:
         target = str(node_id or "").strip()
         sid = str(stream_id or "").strip()
         source_override = str(source_path or "").strip()
@@ -2530,8 +2530,8 @@ class BuddyBackupManager:
             if encrypted and not encryption_passphrase:
                 return False, {"error": "Encryption password is required for remote restore"}
             owner_node_id = str(self._identity_public().get("node_id") or "")
-            temp_paths: List[str] = []
-            responses: List[Any] = []
+            temp_paths: list[str] = []
+            responses: list[Any] = []
             try:
                 # Opening the stream checks the password before anything on disk is touched.
                 opened, stream = self._open_restore_stream(peer, stream_entry, owner_node_id,
@@ -2556,7 +2556,7 @@ class BuddyBackupManager:
                     except OSError:
                         pass
 
-    def remove_peer(self, node_id: str, reciprocal: bool = True, allow_missing: bool = False) -> Tuple[bool, Dict]:
+    def remove_peer(self, node_id: str, reciprocal: bool = True, allow_missing: bool = False) -> tuple[bool, dict]:
         target = str(node_id or "").strip()
         if not target:
             return False, {"error": "node_id is required"}
@@ -2615,7 +2615,7 @@ class BuddyBackupManager:
             }
         return True, {"removed": removed, "reciprocal": reciprocal_result, "tunnel_result": link_result}
 
-    def test_peer_connection(self, node_id: str) -> Tuple[bool, Dict]:
+    def test_peer_connection(self, node_id: str) -> tuple[bool, dict]:
         target = str(node_id or "").strip()
         if not target:
             return False, {"error": "node_id is required"}
@@ -2628,7 +2628,7 @@ class BuddyBackupManager:
         runtime = self._runtime_status()
         link_up = str(runtime.get("state") or "").lower() == "up"
         link_id = str(peer.get("public_key") or "").strip()
-        ping_payload: Dict[str, Any] = {"attempted": False, "success": False, "error": ""}
+        ping_payload: dict[str, Any] = {"attempted": False, "success": False, "error": ""}
         if link_up and LINK_ID_RE.match(link_id):
             ping_payload["attempted"] = True
             answer = link_client.ping(link_id)
@@ -2661,10 +2661,10 @@ class BuddyBackupManager:
             "api_probe": api_probe,
         }
 
-    def restart_tunnel(self) -> Tuple[bool, Dict]:
+    def restart_tunnel(self) -> tuple[bool, dict]:
         return self.sync_link()
 
-    def get_status(self) -> Dict:
+    def get_status(self) -> dict:
         identity = self._identity_public()
         peers_map = self._load_peers()
         settings_full = self.get_settings(include_secret=True)

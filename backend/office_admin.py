@@ -5,14 +5,14 @@ the same App Store code as every app (pulling its image takes a while: about 2 G
 the progress), with a secret made here for the signatures between the Hub and the editor."""
 
 import secrets
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 import hub_office
 
 DONE = ('completed', 'success', 'installed', 'idle')
 
 
-def state(app_store: Any, enabled: bool, ready: Optional[bool] = None) -> Dict[str, Any]:
+def state(app_store: Any, enabled: bool, ready: bool | None = None) -> dict[str, Any]:
     """{'state': off | installing | error | starting | ready | missing, 'message', 'progress'} for the admin page."""
     if not enabled:
         return {'state': 'off', 'message': '', 'progress': 0}
@@ -31,7 +31,7 @@ def state(app_store: Any, enabled: bool, ready: Optional[bool] = None) -> Dict[s
             'message': '' if up else 'The editor is starting. This takes a minute.', 'progress': 100 if up else 90}
 
 
-def ensure_installed(app_store: Any, pool_path: str) -> Tuple[bool, str]:
+def ensure_installed(app_store: Any, pool_path: str) -> tuple[bool, str]:
     """Start installing the editor on this pool unless it is there (or on its way)."""
     if hub_office.DS_APP_ID in (app_store._load_apps_state() or {}):
         return True, ''

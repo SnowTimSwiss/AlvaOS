@@ -20,7 +20,7 @@ import re
 import subprocess
 import threading
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable
 
 from common import CMD
 
@@ -39,7 +39,7 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def load_settings(path: Optional[str] = None) -> Dict[str, Any]:
+def load_settings(path: str | None = None) -> dict[str, Any]:
     try:
         with open(path or SETTINGS_FILE) as f:
             data = json.load(f)
@@ -52,7 +52,7 @@ def load_settings(path: Optional[str] = None) -> Dict[str, Any]:
             'last_error': str(data.get('last_error') or '')}
 
 
-def save_settings(settings: Dict[str, Any], path: Optional[str] = None) -> Dict[str, Any]:
+def save_settings(settings: dict[str, Any], path: str | None = None) -> dict[str, Any]:
     path = path or SETTINGS_FILE
     tmp = f'{path}.tmp'
     with open(tmp, 'w') as f:
@@ -61,7 +61,7 @@ def save_settings(settings: Dict[str, Any], path: Optional[str] = None) -> Dict[
     return settings
 
 
-def backup_disk_pool(path: Optional[str] = None) -> str:
+def backup_disk_pool(path: str | None = None) -> str:
     """The pool that is the backup disk, or ''. It is unplugged most of the
     time, so it is not a pool that is "missing"."""
     settings = load_settings(path)
@@ -76,9 +76,9 @@ def slug(source_path: str) -> str:
 
 class BackupCopier:
     def __init__(self, backup_manager, run_command: Callable, load_pools_state: Callable,
-                 popen: Callable = subprocess.Popen, build_cmd: Optional[Callable] = None,
-                 settings_path: Optional[str] = None, device_present: Optional[Callable[[str], bool]] = None,
-                 is_mounted: Optional[Callable[[str], bool]] = None):
+                 popen: Callable = subprocess.Popen, build_cmd: Callable | None = None,
+                 settings_path: str | None = None, device_present: Callable[[str], bool] | None = None,
+                 is_mounted: Callable[[str], bool] | None = None):
         self.backup = backup_manager
         self.run = run_command
         self.pools = load_pools_state
@@ -96,10 +96,10 @@ class BackupCopier:
 
     # ── Settings and state ───────────────────────────────────────────────
 
-    def settings(self) -> Dict[str, Any]:
+    def settings(self) -> dict[str, Any]:
         return load_settings(self.settings_path)
 
-    def _save(self, settings: Dict[str, Any]) -> Dict[str, Any]:
+    def _save(self, settings: dict[str, Any]) -> dict[str, Any]:
         return save_settings(settings, self.settings_path)
 
     def _source_pools(self) -> set:
@@ -113,7 +113,7 @@ class BackupCopier:
                     ids.add(pool_id)
         return ids
 
-    def choices(self) -> List[Dict[str, Any]]:
+    def choices(self) -> list[dict[str, Any]]:
         """Pools that can be the backup disk: not the system, not one being backed up."""
         busy = self._source_pools()
         out = []
@@ -124,7 +124,7 @@ class BackupCopier:
                         'connected': self.device_present(pool_id)})
         return sorted(out, key=lambda p: str(p['name']).lower())
 
-    def configure(self, payload: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], str]:
+    def configure(self, payload: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
         settings = self.settings()
         if 'enabled' in payload and not payload.get('enabled'):
             settings['enabled'] = False
@@ -140,7 +140,7 @@ class BackupCopier:
         settings.update({'enabled': True, 'pool_id': pool_id})
         return self._save(settings), ''
 
-    def status(self) -> Dict[str, Any]:
+    def status(self) -> dict[str, Any]:
         settings = self.settings()
         pool = (self.pools() or {}).get(settings['pool_id']) or {}
         mount = str(pool.get('mount_point') or '')
@@ -159,7 +159,7 @@ class BackupCopier:
 
     # ── Mounting ─────────────────────────────────────────────────────────
 
-    def _mount(self) -> Tuple[Optional[str], str]:
+    def _mount(self) -> tuple[str | None, str]:
         settings = self.settings()
         pool = (self.pools() or {}).get(settings['pool_id']) or {}
         mount = str(pool.get('mount_point') or '')
@@ -174,7 +174,7 @@ class BackupCopier:
                 return None, f'The backup disk could not be mounted: {err or "mount failed"}'
         return mount, ''
 
-    def eject(self) -> Tuple[bool, str]:
+    def eject(self) -> tuple[bool, str]:
         """Unmount the backup disk so it can be unplugged."""
         settings = self.settings()
         pool = (self.pools() or {}).get(settings['pool_id']) or {}
@@ -194,7 +194,7 @@ class BackupCopier:
 
     # ── Copying ──────────────────────────────────────────────────────────
 
-    def _pipe(self, send_args: List[str], target_dir: str) -> str:
+    def _pipe(self, send_args: list[str], target_dir: str) -> str:
         """btrfs send ... | btrfs receive target_dir, both through the helper."""
         sender = self.popen(self.build_cmd([BTRFS, 'send'] + send_args), stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, env={'LC_ALL': 'C'})
@@ -210,13 +210,13 @@ class BackupCopier:
             return (recv_err or b'').decode(errors='replace').strip() or 'Receiving failed.'
         return ''
 
-    def _copies(self, target_dir: str) -> List[str]:
+    def _copies(self, target_dir: str) -> list[str]:
         try:
             return sorted(n for n in os.listdir(target_dir) if SNAPSHOT_NAME_RE.match(n))
         except OSError:
             return []
 
-    def copy_now(self) -> Dict[str, Any]:
+    def copy_now(self) -> dict[str, Any]:
         """Copy the newest restore point of every folder that is not on the
         backup disk yet. Returns {'copied': [...], 'error': ''}."""
         if not _lock.acquire(blocking=False):
@@ -231,7 +231,7 @@ class BackupCopier:
                 self._save(settings)
                 return {'copied': [], 'error': error}
             copied, errors = [], []
-            by_source: Dict[str, List[Dict[str, Any]]] = {}
+            by_source: dict[str, list[dict[str, Any]]] = {}
             for entry in self.backup.list_snapshots(snapshot_class='data'):   # newest first
                 by_source.setdefault(str(entry.get('source_path') or ''), []).append(entry)
             for source, entries in by_source.items():
@@ -262,7 +262,7 @@ class BackupCopier:
         finally:
             _lock.release()
 
-    def _register(self, original: Dict[str, Any], copy_path: str) -> None:
+    def _register(self, original: dict[str, Any], copy_path: str) -> None:
         self.backup._append_snapshot({
             'id': f"copy-{original.get('id') or os.path.basename(copy_path)}",
             'source_path': original.get('source_path'), 'snapshot_name': os.path.basename(copy_path),
@@ -291,13 +291,13 @@ class BackupCopier:
         # Folders backed up in the same run share snapshot names; compare per folder.
         copied = {(str(e.get('source_path') or ''), os.path.basename(str(e.get('snapshot_path') or '')))
                   for e in self.backup.list_snapshots(snapshot_class='copy')}
-        newest: Dict[str, str] = {}
+        newest: dict[str, str] = {}
         for entry in self.backup.list_snapshots(snapshot_class='data'):
             newest.setdefault(str(entry.get('source_path') or ''),
                               os.path.basename(str(entry.get('snapshot_path') or '')))
         return any((source, name) not in copied for source, name in newest.items())
 
-    def serve_forever(self, stop: Optional[threading.Event] = None) -> None:
+    def serve_forever(self, stop: threading.Event | None = None) -> None:
         """Copy whenever the disk is there and something new is waiting."""
         stop = stop or threading.Event()
         while not stop.wait(CHECK_SECONDS):

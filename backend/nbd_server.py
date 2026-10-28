@@ -25,7 +25,7 @@ import struct
 import threading
 import time
 from dataclasses import dataclass
-from typing import Callable, Dict, Optional
+from typing import Callable
 
 NBD_PORT = 10809
 
@@ -116,15 +116,15 @@ def _recv_exact(sock: socket.socket, n: int) -> bytes:
 
 
 class NbdServer:
-    def __init__(self, resolve: Callable[[str, str], Optional[Export]], log: Callable[[str], None] = print):
+    def __init__(self, resolve: Callable[[str, str], Export | None], log: Callable[[str], None] = print):
         self.resolve = resolve
         self.log = log
-        self._sock: Optional[socket.socket] = None
+        self._sock: socket.socket | None = None
         self._address = ("", 0)
         self._stop = threading.Event()
         # One client per image: a new connection from the owner replaces an
         # old one (left over after a crash or a dropped link).
-        self._active: Dict[str, socket.socket] = {}
+        self._active: dict[str, socket.socket] = {}
         self._active_lock = threading.Lock()
 
     # ── Lifecycle ────────────────────────────────────────────────────────────
@@ -202,7 +202,7 @@ class NbdServer:
     def _option_reply(self, conn: socket.socket, option: int, reply: int, data: bytes = b"") -> None:
         conn.sendall(struct.pack(">QIII", OPT_REPLY_MAGIC, option, reply, len(data)) + data)
 
-    def _handshake(self, conn: socket.socket, remote_ip: str) -> Optional[Export]:
+    def _handshake(self, conn: socket.socket, remote_ip: str) -> Export | None:
         conn.sendall(NBDMAGIC + struct.pack(">QH", IHAVEOPT, FLAG_FIXED_NEWSTYLE | FLAG_NO_ZEROES))
         (client_flags,) = struct.unpack(">I", _recv_exact(conn, 4))
         no_zeroes = bool(client_flags & CLIENT_FLAG_NO_ZEROES)
@@ -250,7 +250,7 @@ class NbdServer:
 
             self._option_reply(conn, option, REP_ERR_UNSUP)
 
-    def _open(self, remote_ip: str, name: str) -> Optional[Export]:
+    def _open(self, remote_ip: str, name: str) -> Export | None:
         try:
             export = self.resolve(remote_ip, name)
         except Exception as exc:
