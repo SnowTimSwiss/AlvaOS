@@ -161,12 +161,12 @@ def test_the_editor_is_reached_only_through_the_hubs_proxy_when_office_is_on(tmp
 def test_the_editor_counts_as_reachable_only_when_the_proxy_answers_too(monkeypatch):
     asked = []
 
-    def answers(port=hub_office.DS_PORT, timeout=2.0):
+    def answers(port=ho.DS_PORT, timeout=2.0):
         asked.append(port)
-        return port == hub_office.DS_PORT
+        return port == ho.DS_PORT
 
-    monkeypatch.setattr(hub_office, "editor_answers", answers)
-    assert hub_office.editor_reachable() is False       # the editor is up, its proxy is not
-    assert asked == [hub_office.DS_PORT, hub_office.DS_PORT + 20000]
-    monkeypatch.setattr(hub_office, "editor_answers", lambda port=0, timeout=2.0: True)
-    assert hub_office.editor_reachable() is True
+    monkeypatch.setattr(ho, "editor_answers", answers)
+    assert ho.editor_reachable() is False       # the editor is up, its proxy is not
+    assert asked == [ho.DS_PORT, ho.DS_PORT + 20000]
+    monkeypatch.setattr(ho, "editor_answers", lambda port=0, timeout=2.0: True)
+    assert ho.editor_reachable() is True
