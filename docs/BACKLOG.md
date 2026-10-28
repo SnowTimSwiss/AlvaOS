@@ -15,6 +15,12 @@ How to add an entry:
 
 ---
 
+## Version beta-v0.7.0
+
+- `VERSION` is `beta-v0.7.0` (the package becomes `0.7.0~beta`); the desktop app's crates and its Flatpak release list say 0.7.0 too. What is in it: the release preparation, the steps dialogs, the calendar, ZIP files, the graphics cards, and the fixes of the PRs before it (Android Files entry, Windows drive and cloud files, files on demand).
+
+---
+
 ## Graphics cards: choose one per app, and see how busy they are
 
 - Apps (Jellyfin, Immich, Ollama): with more than one card that fits (say the processor's graphics and a dedicated card), the app's graphics block has "Use: the best fit / <card>". The best fit is still the card the catalog prefers (Jellyfin: Intel, then AMD, then NVIDIA; Ollama: NVIDIA, then AMD). The choice is kept in the app's state and survives updates and settings changes.
