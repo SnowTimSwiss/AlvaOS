@@ -73,6 +73,10 @@ def save_users_state(state):
         print(f"Error saving users state: {e}")
 
 # ── 2FA helpers ───────────────────────────────────────────────────────────────
+# Wrong codes after the password before the sign-in has to start again.
+TWO_FACTOR_MAX_TRIES = 5
+
+
 def _load_totp_secret():
     try:
         with open(AUTH_FILE) as f:
@@ -307,6 +311,9 @@ def complete_2fa_login():
 
     if not _verify_totp(totp_secret, code):
         record_failed_signin()
+        pending['failures'] = pending.get('failures', 0) + 1
+        if pending['failures'] >= TWO_FACTOR_MAX_TRIES:
+            del TEMP_2FA_TOKENS[temp_token]
         return jsonify({'error': 'Invalid 2FA code'}), 401
 
     del TEMP_2FA_TOKENS[temp_token]

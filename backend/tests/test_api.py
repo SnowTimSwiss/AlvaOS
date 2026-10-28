@@ -702,3 +702,46 @@ def test_the_admin_sees_and_switches_alvaos_link(backend, monkeypatch):
     assert client.post("/api/v1/link", json={"enabled": "yes"}, headers=headers).status_code == 400
     # Not for people who are not the admin.
     assert module.app.test_client().get("/api/v1/link").status_code in (401, 403)
+
+
+def test_web_pages_cannot_be_read_from_outside_the_web_ui(backend, tmp_path, monkeypatch):
+    # Only .html, .css and .js take the template path; those must stay inside the web UI.
+    module, _ = backend
+    web = tmp_path / "web"
+    web.mkdir()
+    (web / "index.html").write_text("ui")
+    (tmp_path / "outside.html").write_text("not for the browser")
+    monkeypatch.setattr(module, "WEBUI_ROOT", str(web))
+    client = module.app.test_client()
+    assert client.get("/index.html").data == b"ui"
+    for url in ("/..%2Foutside.html", "/%2e%2e%2Foutside.html"):
+        response = client.get(url)
+        assert response.status_code == 404
+        assert b"not for the browser" not in response.data
+
+
+def test_wrong_two_factor_codes_end_the_sign_in_attempt(backend):
+    # The second factor is six digits: without a limit, a password holder could
+    # try them all within the five minutes a temporary token lasts.
+    import json
+    from datetime import timedelta
+    import pyotp
+    import auth_manager
+    from common import _utc_now
+
+    module, state = backend
+    set_up(state)
+    secret = pyotp.random_base32()
+    (state / "auth.json").write_text(json.dumps({"totp_secret": secret}))
+    temp = "temp-token-for-the-test"
+    auth_manager.TEMP_2FA_TOKENS[temp] = {"username": "root", "role": "admin",
+                                          "expires_at": (_utc_now() + timedelta(minutes=5)).isoformat()}
+    client = module.app.test_client()
+    right = pyotp.TOTP(secret).now()
+    wrong = "000000" if right != "000000" else "111111"
+    for _ in range(10):
+        response = client.post("/api/v1/auth/2fa/complete", json={"temp_token": temp, "code": wrong})
+        assert response.status_code == 401
+    response = client.post("/api/v1/auth/2fa/complete", json={"temp_token": temp, "code": right})
+    assert response.status_code == 401
+    assert temp not in auth_manager.TEMP_2FA_TOKENS
