@@ -2823,3 +2823,7 @@ a:not([class]):hover { text-decoration-thickness: 2px; }
 
 /* One "next step" at a time: while the Getting started list is there, the headline does not say the same. */
 body:has(#getting-started:not([hidden]) .gs-head) #status-line[data-level="setup"] { display: none; }
+
+/* Tabs with an icon: icon and text on one line, the same on every page. */
+.tab-btn { display: inline-flex; align-items: center; gap: 8px; }
+.tab-btn svg { width: 16px; height: 16px; flex: none; }
