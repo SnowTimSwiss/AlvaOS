@@ -5,11 +5,6 @@ set -o pipefail
 # AlvaOS Installation Script 0.4.0
 # This script installs AlvaOS to the target system with whiptail TUI and Mirror support
 
-# Colors for terminal output (still useful for logs)
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Progress tracking
@@ -160,7 +155,8 @@ update_progress() {
 netmask_to_prefix() {
     local mask="$1"
     local IFS=.
-    local octets=($mask)
+    local octets
+    read -ra octets <<< "$mask"
     local prefix=0
     for o in "${octets[@]}"; do
         case "$o" in
@@ -227,7 +223,7 @@ restore_pools_from_manifest() {
     declare -a POOL_IDS
     declare -a SNAPSHOT_ROWS
 
-    while IFS='|' read -r rec f1 f2 f3 f4 f5 f6; do
+    while IFS='|' read -r rec f1 f2 f3 f4 f5 _; do
         [ -z "$rec" ] && continue
         case "$rec" in
             \#*) continue ;;
@@ -335,7 +331,7 @@ restore_pools_from_manifest() {
         raid="${POOL_RAID[$pid]}"
         mountp="${POOL_MOUNT[$pid]}"
         selected_list="${POOL_SELECTED[$pid]}"
-        selected_arr=($selected_list)
+        read -ra selected_arr <<< "$selected_list"
 
         if [ "${#selected_arr[@]}" -eq 0 ]; then
             msg "Internal error: no disks selected for pool \"$pname\"."
@@ -371,9 +367,9 @@ restore_pools_from_manifest() {
             return 1
         fi
 
-        local row rp rk source_path snapshot_path source_rel target_parent snapshot_on_installer received_path final_path
+        local row rp source_path snapshot_path source_rel target_parent snapshot_on_installer received_path final_path
         for row in "${SNAPSHOT_ROWS[@]}"; do
-            IFS='|' read -r rp rk source_path snapshot_path _ <<< "$row"
+            IFS='|' read -r rp _ source_path snapshot_path _ <<< "$row"
             rp=$(decode_plan_field "$rp")
             [ "$rp" != "$pid" ] && continue
 
@@ -438,7 +434,7 @@ restore_pools_from_manifest() {
             mountp="${POOL_MOUNT[$pid]}"
             [ -n "$mountp" ] || mountp="/mnt/alvaos/${pname}"
             selected_list="${POOL_SELECTED[$pid]}"
-            selected_arr=($selected_list)
+            read -ra selected_arr <<< "$selected_list"
             pool_state_id="${POOL_NEW_ID[$pid]}"
             [ -n "$pool_state_id" ] || pool_state_id="$pid"
 
@@ -712,7 +708,7 @@ INTERFACE=$(ip -o link show | awk -F': ' '{print $2}' | grep -v lo | head -n1)
     sleep 2
 
     update_progress "Formatting partitions..."
-    DISK_ARRAY=($TARGET_DISKS)
+    read -ra DISK_ARRAY <<< "$TARGET_DISKS"
     if [ "$INSTALL_MODE" == "SINGLE" ]; then
         disk=${DISK_ARRAY[0]}
         if [[ "$disk" == *"nvme"* ]]; then
