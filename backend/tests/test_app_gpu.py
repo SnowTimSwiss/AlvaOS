@@ -202,3 +202,8 @@ def test_how_busy_the_cards_are_is_read_from_sys_and_nvidia_smi(tmp_path):
     assert got["0000:00:02.0"]["freq_mhz"] == 350 and got["0000:00:02.0"]["usage"] is None and got["0000:00:02.0"]["integrated"]
     assert got["0000:01:00.0"]["usage"] == 12 and got["0000:01:00.0"]["vram_used"] == 1500 * 1024 ** 2
     assert got["0000:01:00.0"]["temp_c"] == 48 and got["0000:01:00.0"]["power_w"] == 35.2
+    assert all(c["ready"] for c in got.values())
+    # A card whose driver is not running yet (nouveau for NVIDIA, none for the rest) says so.
+    waiting = gm.gpu_stats([{**card("nvidia", "nouveau", model="RTX 3060"), "slot": "0000:01:00.0", "card_node": ""},
+                            {**card("amd", "", render=""), "slot": "0000:03:00.0", "card_node": ""}], str(tmp_path), smi)
+    assert [c["ready"] for c in waiting] == [False, False] and waiting[0]["usage"] is None

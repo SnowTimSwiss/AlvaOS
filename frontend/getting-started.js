@@ -53,6 +53,10 @@
             return;
         }
         const next = steps.find((s) => !s.done);
+        // The next three are enough to see at once: the dashboard should fit on the screen. The rest is one click away.
+        const SHOWN = 3;
+        const render = (all) => {
+        const list = all ? steps : steps.filter((s) => !s.done).slice(0, SHOWN);
         box.innerHTML = `
             <div class="gs-head">
                 <div>
@@ -63,19 +67,23 @@
             </div>
             <div class="gs-bar" role="progressbar" aria-label="Getting started: ${doneCount} of ${steps.length} done" aria-valuemin="0" aria-valuemax="${steps.length}" aria-valuenow="${doneCount}"><span style="width: ${Math.round(doneCount * 100 / steps.length)}%"></span></div>
             <ol class="gs-steps">
-                ${steps.map((s) => `
+                ${list.map((s) => `
                     <li class="gs-step${s.done ? ' done' : ''}${s === next ? ' next' : ''}">
                         <span class="gs-mark">${s.done ? icon('circle-check') : ''}</span>
                         <span class="gs-text"><strong>${s.title}</strong><span>${s.text}</span></span>
                         ${s.done ? '' : `<a class="${s === next ? 'btn-primary' : 'btn-secondary'}" href="${s.link}">${s.action}</a>`}
                     </li>`).join('')}
-            </ol>`;
+            </ol>
+            ${steps.length > list.length || all ? `<button type="button" class="gs-more">${all ? 'Show fewer' : `Show all ${steps.length} steps`}</button>` : ''}`;
         box.hidden = false;
+        box.querySelector('.gs-more')?.addEventListener('click', () => render(!all));
         box.querySelector('.gs-hide').addEventListener('click', () => {
             try { localStorage.setItem(HIDE_KEY, '1'); } catch (_e) { /* storage off: hide for now */ }
             box.hidden = true;
             if (window.showToast) window.showToast('Hidden. Everything is still in Storage, Backup and Settings.', 'info');
         });
+        };
+        render(false);
     }
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);

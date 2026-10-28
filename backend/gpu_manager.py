@@ -396,7 +396,11 @@ def gpu_stats(cards: Optional[List[Dict[str, Any]]] = None, sys_root: str = '/sy
     out = []
     for card in cards:
         dev = os.path.join(sys_root, 'bus/pci/devices', card['slot'])
-        row: Dict[str, Any] = {'slot': card.get('slot', ''), 'name': card_label(card), 'vendor': card['vendor'],
+        # Ready as Settings › Graphics counts it: the right kernel driver is running (and, but for NVIDIA,
+        # the card has a render node). Otherwise the dashboard says it still needs a driver.
+        ready = (card['driver'] == 'nvidia' if card['vendor'] == 'nvidia'
+                 else card['driver'] in GOOD_DRIVERS.get(card['vendor'], set()) and bool(card.get('render_node')))
+        row: Dict[str, Any] = {'slot': card.get('slot', ''), 'name': card_label(card), 'vendor': card['vendor'], 'ready': ready,
                                'integrated': bool(card.get('integrated')), 'usage': None, 'vram_used': None,
                                'vram_total': None, 'temp_c': None, 'power_w': None, 'freq_mhz': None}
         if card['vendor'] == 'amd' and card['driver'] == 'amdgpu':

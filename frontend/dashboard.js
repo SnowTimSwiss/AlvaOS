@@ -756,6 +756,11 @@
         if (!cards.length) { box.hidden = true; box.innerHTML = ''; return; }
         box.hidden = false;
         box.innerHTML = cards.map((c) => {
+            if (c.ready === false) {
+                return `<div class="gpu-row needs"><div class="gpu-name">${icon('cpu')}<span>${esc(c.name)}</span></div>
+                    <div class="gpu-note"><span>This card needs a driver before apps can use it.</span>
+                    <a class="btn-secondary" href="system.html#graphics">Install the driver</a></div></div>`;
+            }
             const cells = [];
             if (c.usage !== null) cells.push(gpuCell('Load', `${c.usage.toFixed(0)}%`, c.usage));
             if (c.vram_total) {

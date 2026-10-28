@@ -81,9 +81,10 @@
         const service = state.chat_service || {};
         const services = (service.services || []);
         if (!service.ready) {
-            return `<div class="hub-chat"><div>${services.length
-                ? 'The AI services have no models Chat can use yet (or need a key): add them in <a href="system.html#assistant">Settings › AI</a>.'
-                : 'It needs an AI service first: set one up in <a href="system.html#assistant">Settings › AI</a> (Ollama at home, or a service with a key).'}</div></div>`;
+            return `<div class="hub-chat hub-chat-setup"><div>${services.length
+                ? 'The AI services have no models Chat can use yet, or need a key.'
+                : 'Chat needs an AI service first: Ollama at home (free, stays in your house), or a service with a key.'}</div>
+                <div class="hub-form"><a class="btn-primary" href="system.html#assistant">${services.length ? 'Configure AI' : 'Set up an AI service'}</a></div></div>`;
         }
         const all = chatModels();
         const rule = chatDraft || savedRule(app) || { mode: chatWho ? 'same' : 'all', items: [] };
@@ -104,7 +105,8 @@
         const dirty = !!chatDraft;
         return `
             <div class="hub-chat">
-                <div>${services.length} AI service${services.length === 1 ? '' : 's'} with ${all.length} model${all.length === 1 ? '' : 's'}, set up in <a href="system.html#assistant">Settings › AI</a>. Keys stay on the NAS.</div>
+                <div class="hub-chat-head"><span>${services.length} AI service${services.length === 1 ? '' : 's'} with ${all.length} model${all.length === 1 ? '' : 's'}. Keys stay on the NAS.</span>
+                    <a class="btn-secondary" href="system.html#assistant">Configure AI</a></div>
                 <div class="hub-models">
                     <div class="hub-form">
                         <label>Models for
@@ -217,7 +219,8 @@
                 <label class="toggle" title="${app.enabled ? 'On' : 'Off'}"><input type="checkbox" data-app="${esc(app.id)}"${app.enabled ? ' checked' : ''} aria-label="${esc(app.name)} in the Hub"><span class="toggle-slider"></span></label>
             </div>`).join('');
         document.querySelectorAll('[data-app]').forEach((box) => box.addEventListener('change', () =>
-            change(box.dataset.app, { enabled: box.checked }, `${names[box.dataset.app]} is ${box.checked ? 'on' : 'off'} in the Hub.`)));
+            change(box.dataset.app, { enabled: box.checked }, `${names[box.dataset.app]} is ${box.checked ? 'on' : 'off'} in the Hub.${
+                box.checked && box.dataset.app === 'chat' && !(state.chat_service || {}).ready ? ' Next: set up an AI service below.' : ''}`)));
         document.querySelectorAll('[data-who]').forEach((btn) => btn.addEventListener('click', () => {
             const id = btn.dataset.who;
             const all = btn.dataset.v === 'all';
