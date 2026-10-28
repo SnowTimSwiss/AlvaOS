@@ -20,8 +20,8 @@ import secrets
 import socket
 import threading
 import time
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import datetime, timedelta, UTC
+from typing import Any
 from urllib.parse import quote
 
 from flask import Flask, Response, g, has_request_context, jsonify, request, send_from_directory
@@ -64,11 +64,11 @@ if not os.path.isdir(APP_ROOT):
 
 app = Flask(__name__, static_folder=None)
 _lock = threading.Lock()
-_links: Dict[str, Dict[str, Any]] = {}
-_attempts: Dict[str, Dict[str, float]] = {}
+_links: dict[str, dict[str, Any]] = {}
+_attempts: dict[str, dict[str, float]] = {}
 
 
-def _read_json(path: str) -> Dict[str, Any]:
+def _read_json(path: str) -> dict[str, Any]:
     try:
         with open(path) as f:
             data = json.load(f)
@@ -78,7 +78,7 @@ def _read_json(path: str) -> Dict[str, Any]:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 # ── Sessions ─────────────────────────────────────────────────────────────────
@@ -87,13 +87,13 @@ def _key(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def _load_sessions() -> Dict[str, Dict[str, Any]]:
+def _load_sessions() -> dict[str, dict[str, Any]]:
     sessions = _read_json(SESSIONS_FILE)
     now = _now().isoformat()
     return {k: v for k, v in sessions.items() if isinstance(v, dict) and str(v.get('expires_at')) > now}
 
 
-def _save_sessions(sessions: Dict[str, Dict[str, Any]]) -> None:
+def _save_sessions(sessions: dict[str, dict[str, Any]]) -> None:
     os.makedirs(STATE_DIR, exist_ok=True)
     tmp = f'{SESSIONS_FILE}.tmp'
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -102,7 +102,7 @@ def _save_sessions(sessions: Dict[str, Dict[str, Any]]) -> None:
     os.replace(tmp, SESSIONS_FILE)
 
 
-def _read_json_strict(path: str) -> Optional[Dict[str, Any]]:
+def _read_json_strict(path: str) -> dict[str, Any] | None:
     """The file, {} when it is not there, None when it cannot be read right now."""
     try:
         with open(path) as f:
@@ -114,7 +114,7 @@ def _read_json_strict(path: str) -> Optional[Dict[str, Any]]:
     return data if isinstance(data, dict) else None
 
 
-def _password_tag(user: str, role: str) -> Optional[str]:
+def _password_tag(user: str, role: str) -> str | None:
     """A fingerprint of the stored password: when it changes (or the person
     is removed), their Files sessions end, also in browsers signed in before.
     '' when there is no password; None when the file cannot be read right now
@@ -139,14 +139,14 @@ def _password_tag(user: str, role: str) -> Optional[str]:
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()[:24]
 
 
-def _new_session(user: str, role: str, device: Optional[Dict[str, Any]] = None) -> str:
+def _new_session(user: str, role: str, device: dict[str, Any] | None = None) -> str:
     """A browser session, or with `device` the session of a phone with the
     AlvaOS app (listed under Devices in the Hub, and removable there)."""
     token = secrets.token_urlsafe(32)
     days = DEVICE_DAYS if device else SESSION_DAYS
     with _lock:
         sessions = _load_sessions()
-        session: Dict[str, Any] = {'user': user, 'role': role, 'tag': _password_tag(user, role) or '',
+        session: dict[str, Any] = {'user': user, 'role': role, 'tag': _password_tag(user, role) or '',
                                    'expires_at': (_now() + timedelta(days=days)).isoformat()}
         if device:
             session['device'] = device
@@ -155,7 +155,7 @@ def _new_session(user: str, role: str, device: Optional[Dict[str, Any]] = None) 
     return token
 
 
-def current() -> Optional[Dict[str, Any]]:
+def current() -> dict[str, Any] | None:
     token = request.cookies.get(COOKIE, '')
     if not token:
         return None
@@ -181,7 +181,7 @@ def current() -> Optional[Dict[str, Any]]:
         return {**session, 'token_key': _key(token)}
 
 
-def device_session(token: str) -> Optional[Dict[str, Any]]:
+def device_session(token: str) -> dict[str, Any] | None:
     """The session of a phone or computer with the app, by its token (WebDAV
     takes it as the password, so the computer's drive needs no password of
     the person). Ends with the device: removed in Devices, or a new password."""
@@ -197,15 +197,9 @@ def device_session(token: str) -> Optional[Dict[str, Any]]:
     return session
 
 
-def end_sessions_for(user: str) -> None:
-    with _lock:
-        sessions = _load_sessions()
-        _save_sessions({k: v for k, v in sessions.items() if v.get('user') != user})
-
-
 # ── Who may do what ──────────────────────────────────────────────────────────
 
-def shares_for(session: Dict[str, Any], grants: bool = True) -> Dict[str, Dict[str, Any]]:
+def shares_for(session: dict[str, Any], grants: bool = True) -> dict[str, dict[str, Any]]:
     """The shares this person can open, with 'read' or 'write', as over SMB,
     and the folders other people shared with them in the Hub (see _granted)."""
     result = {}
@@ -243,12 +237,12 @@ def _grants_file() -> str:
     return os.path.join(STATE_DIR, 'files_grants.json')
 
 
-def _load_grants() -> List[Dict[str, Any]]:
+def _load_grants() -> list[dict[str, Any]]:
     grants = _read_json(_grants_file()).get('grants')
     return [x for x in grants or [] if isinstance(x, dict) and isinstance(x.get('to'), list)]
 
 
-def _save_grants(grants: List[Dict[str, Any]]) -> None:
+def _save_grants(grants: list[dict[str, Any]]) -> None:
     os.makedirs(STATE_DIR, exist_ok=True)
     tmp = _grants_file() + '.tmp'
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -257,8 +251,8 @@ def _save_grants(grants: List[Dict[str, Any]]) -> None:
     os.replace(tmp, _grants_file())
 
 
-def _granted(session: Dict[str, Any], own: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-    out: Dict[str, Dict[str, Any]] = {}
+def _granted(session: dict[str, Any], own: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    out: dict[str, dict[str, Any]] = {}
     for grant in _load_grants():
         if session['user'] not in grant['to'] or grant.get('owner') == session['user']:
             continue
@@ -282,7 +276,7 @@ def _granted(session: Dict[str, Any], own: Dict[str, Dict[str, Any]]) -> Dict[st
 _OWN = object()   # "not a shared-with-me folder": act as the person
 
 
-def as_user(session: Dict[str, Any], share: Optional[Dict[str, Any]] = None) -> Optional[str]:
+def as_user(session: dict[str, Any], share: dict[str, Any] | None = None) -> str | None:
     """The account the helper acts as: the person, or root for the admin; in
     a folder someone shared with them, the one who shared it (_granted).
     Without `share`, the folder this request opened with target()."""
@@ -317,7 +311,7 @@ def need_session(app_id: str = 'files'):
     return session, None
 
 
-def target(session: Dict[str, Any], data: Dict[str, Any], write: bool = False):
+def target(session: dict[str, Any], data: dict[str, Any], write: bool = False):
     """(share, absolute folder, relative folder, error response)."""
     shares = shares_for(session)
     name = str(data.get('share') or '')
@@ -344,7 +338,7 @@ def _limited(ip: str) -> bool:
     return entry['count'] > LOGIN_MAX_ATTEMPTS
 
 
-def check_login(username: str, password: str, code: str) -> Tuple[Optional[Tuple[str, str]], str, bool]:
+def check_login(username: str, password: str, code: str) -> tuple[tuple[str, str] | None, str, bool]:
     """((user, role), error, needs_code)."""
     if username == 'admin':
         auth = _read_json(AUTH_FILE)
@@ -416,7 +410,7 @@ def _office_secret() -> str:
     return str(env.get('JWT_SECRET') or '') if isinstance(env, dict) else ''
 
 
-def _office_for(session: Dict[str, Any], settings: Dict[str, Any]) -> Dict[str, Any]:
+def _office_for(session: dict[str, Any], settings: dict[str, Any]) -> dict[str, Any]:
     """For the page: may this person open documents in the editor, and is it up."""
     port = hub_apps.office_port(settings)
     if not port or not hub_apps.allowed('office', session['user'], session['role'], settings):
@@ -632,12 +626,12 @@ def _new_uploads(user: str) -> int:
 # Hub lists these sessions as the person's devices; removing one signs that
 # phone out. A pairing code is short, used once, and only valid for minutes.
 
-_pair_codes: Dict[str, Dict[str, Any]] = {}
+_pair_codes: dict[str, dict[str, Any]] = {}
 PAIR_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'      # nothing to mix up (no 0/O, 1/I/L)
 ADDRESS_RE = re.compile(r'^https?://[A-Za-z0-9.\-\[\]:]+$')
 
 
-def _device_from(raw: Any) -> Optional[Dict[str, Any]]:
+def _device_from(raw: Any) -> dict[str, Any] | None:
     """What the app says about itself; None for a browser."""
     if not isinstance(raw, dict):
         return None
@@ -649,7 +643,7 @@ def _device_from(raw: Any) -> Optional[Dict[str, Any]]:
             'created_at': now, 'last_seen': now, 'address': request.remote_addr or ''}
 
 
-def _addresses(origin: str) -> List[str]:
+def _addresses(origin: str) -> list[str]:
     """Where the app can reach the Hub at home: the address this browser uses. Away from
     home the app comes through AlvaOS Link (the NAS's Link address is in the QR code)."""
     url = origin.rstrip('/')
@@ -718,7 +712,7 @@ def pair():
 
 
 HANDOFF_SECONDS = 60
-_handoffs: Dict[str, Dict[str, Any]] = {}
+_handoffs: dict[str, dict[str, Any]] = {}
 
 
 @app.post('/api/devices/handoff')
@@ -777,7 +771,7 @@ def device_link():
     return jsonify({'success': ok, 'link': link_client.node_id()})
 
 
-def _device_sessions(session: Dict[str, Any]) -> List[Tuple[str, Dict[str, Any]]]:
+def _device_sessions(session: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
     """(key, session) of the devices this person may see: their own; the admin all."""
     return [(k, v) for k, v in _load_sessions().items() if isinstance(v.get('device'), dict)
             and (v.get('user') == session['user'] or session['role'] == 'admin')]
@@ -893,7 +887,7 @@ def search():
         if bad:
             return bad
         places = [(share, path, rel)]
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
     complete = True
     for share, path, rel in places:
         if len(results) >= SEARCH_LIMIT:
@@ -941,7 +935,7 @@ def photo_sources():
     return jsonify({'sources': sources})
 
 
-_space_cache: Dict[str, Tuple[float, Optional[Dict[str, Optional[int]]]]] = {}
+_space_cache: dict[str, tuple[float, dict[str, int | None] | None]] = {}
 SPACE_SECONDS = 60
 
 
@@ -1000,7 +994,7 @@ def _in_background(work) -> None:
     _thumbnail_pool().submit(work)   # the same low-priority workers as thumbnails
 
 
-def _read_head(path: str, user: Optional[str]) -> Optional[bytes]:
+def _read_head(path: str, user: str | None) -> bytes | None:
     stream, _ = files_manager.open_stream(path, part=(0, photo_dates.HEAD_BYTES), user=user)
     if stream is None:
         return None
@@ -1083,7 +1077,7 @@ SNAPSHOTS_FILE = os.path.join(STATE_DIR, 'backup_snapshots.json')
 MAX_VERSION_POINTS = 100
 
 
-def _restore_points_for(file_path: str) -> List[Tuple[Dict[str, Any], str]]:
+def _restore_points_for(file_path: str) -> list[tuple[dict[str, Any], str]]:
     """(restore point, folder in it that held the file), newest first."""
     try:
         with open(SNAPSHOTS_FILE) as f:
@@ -1104,7 +1098,7 @@ def _restore_points_for(file_path: str) -> List[Tuple[Dict[str, Any], str]]:
     return found[:MAX_VERSION_POINTS]
 
 
-def _point_id(entry: Dict[str, Any]) -> str:
+def _point_id(entry: dict[str, Any]) -> str:
     return hashlib.sha256(str(entry.get('snapshot_path') or '').encode()).hexdigest()[:16]
 
 
@@ -1263,9 +1257,9 @@ def _thumb_dir() -> str:
 _photo_dates = photo_dates.DateCache(lambda: os.path.dirname(_thumb_dir()))
 
 
-def _read_part(path: str, user: Optional[str]):
+def _read_part(path: str, user: str | None):
     """read(start, length) -> bytes of the file, as the person, for hub_video."""
-    def read(start: int, length: int) -> Optional[bytes]:
+    def read(start: int, length: int) -> bytes | None:
         stream, _ = files_manager.open_stream(path, part=(start, length), user=user)
         if stream is None:
             return None
@@ -1273,7 +1267,7 @@ def _read_part(path: str, user: Optional[str]):
     return read
 
 
-def _make_preview(path: str, user: Optional[str], size: int, side: int) -> Optional[bytes]:
+def _make_preview(path: str, user: str | None, size: int, side: int) -> bytes | None:
     """A JPEG of a picture (at most `side` pixels), or a still of a video."""
     name = os.path.basename(path)
     if hub_video.is_video(name):
@@ -1284,7 +1278,7 @@ def _make_preview(path: str, user: Optional[str], size: int, side: int) -> Optio
     return hub_video.jpeg(b''.join(stream), name, side, 80 if side <= THUMB_SIZE else 86)
 
 
-def _thumb_response(path: str, user: Optional[str], stamp: str, large: bool = False):
+def _thumb_response(path: str, user: str | None, stamp: str, large: bool = False):
     side = hub_video.MAX_PREVIEW_SIDE if large else THUMB_SIZE
     key = hashlib.sha256(f'{user}|{path}|{stamp}{"|large" if large else ""}'.encode()).hexdigest()
     cached = os.path.join(_thumb_dir(), key[:2], key + '.jpg')
@@ -1332,7 +1326,7 @@ def preview():
 _converter = hub_video.Converter(lambda: os.path.dirname(_thumb_dir()))
 
 
-def _video_target(session: Dict[str, Any], args: Any):
+def _video_target(session: dict[str, Any], args: Any):
     """(path, name, size, key, error response) for a video the person may open."""
     share, path, rel, bad = target(session, args)
     if bad:
@@ -1348,7 +1342,7 @@ def _video_target(session: Dict[str, Any], args: Any):
     return path, name, size, key, None
 
 
-def _video_status(key: str, args: Any) -> Dict[str, Any]:
+def _video_status(key: str, args: Any) -> dict[str, Any]:
     status = _converter.status(key)
     status['ffmpeg'] = hub_video.ffmpeg() is not None
     if status['state'] == 'ready':
@@ -1532,7 +1526,7 @@ def upload_finish():
     return _helper_answer(*files_manager.run_helper(_finish_args(path, data, size), user=as_user(session)), 201)
 
 
-def _finish_args(path: str, data: Dict[str, Any], size: str) -> List[str]:
+def _finish_args(path: str, data: dict[str, Any], size: str) -> list[str]:
     """files-part-finish, with the file's own date when the browser sent it."""
     name = str(data.get('name') or '')
     try:
@@ -1609,8 +1603,8 @@ def _move_or_copy(operation: str):
     names = data.get('names') if isinstance(data.get('names'), list) else []
     if not names or len(names) > 500:
         return jsonify({'error': 'Choose what to move.'}), 400
-    moved: List[str] = []
-    failed: List[str] = []
+    moved: list[str] = []
+    failed: list[str] = []
     for name in names:
         result, problem = files_manager.run_helper([operation, path, str(name), dest], user=as_user(session),
                                                    timeout=3600)
@@ -1635,8 +1629,8 @@ def delete():
     names = data.get('names') if isinstance(data.get('names'), list) else []
     if not names or len(names) > 500:
         return jsonify({'error': 'Choose what to delete.'}), 400
-    moved: List[str] = []
-    failed: List[str] = []
+    moved: list[str] = []
+    failed: list[str] = []
     for name in names:
         result, problem = files_manager.run_helper(['files-trash', share.get('root', share['path']), path, str(name)],
                                                    user=as_user(session))
@@ -1655,11 +1649,11 @@ GRANT_ACCESS = ('read', 'write')
 MAX_GRANT_PEOPLE = 50
 
 
-def _people() -> List[str]:
+def _people() -> list[str]:
     return sorted(n for n, v in _read_json(USERS_FILE).items() if isinstance(v, dict) and v.get('files_auth'))
 
 
-def _grant_view(grant: Dict[str, Any]) -> Dict[str, Any]:
+def _grant_view(grant: dict[str, Any]) -> dict[str, Any]:
     return {k: grant.get(k) for k in ('id', 'share', 'path', 'to', 'access', 'created_at')}
 
 
@@ -1812,13 +1806,13 @@ def _secret() -> bytes:
     return data
 
 
-def _load_links() -> Dict[str, Dict[str, Any]]:
+def _load_links() -> dict[str, dict[str, Any]]:
     links = _read_json(LINKS_FILE)
     now = _now().isoformat()
     return {k: v for k, v in links.items() if isinstance(v, dict) and (not v.get('expires_at') or v['expires_at'] > now)}
 
 
-def _save_links(links: Dict[str, Dict[str, Any]]) -> None:
+def _save_links(links: dict[str, dict[str, Any]]) -> None:
     os.makedirs(STATE_DIR, exist_ok=True)
     tmp = f'{LINKS_FILE}.tmp'
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -1827,7 +1821,7 @@ def _save_links(links: Dict[str, Dict[str, Any]]) -> None:
     os.replace(tmp, LINKS_FILE)
 
 
-def _public_link(link: Dict[str, Any], token: str) -> Dict[str, Any]:
+def _public_link(link: dict[str, Any], token: str) -> dict[str, Any]:
     return {'id': link['id'], 'url': f'/s/{token}', 'share': link['share'], 'path': link['path'],
             'name': link['name'], 'kind': link['kind'], 'mode': link.get('mode', 'view'),
             'max_bytes': link.get('max_bytes'), 'received': link.get('received', 0), 'owner': link['owner'],
@@ -1960,7 +1954,7 @@ def opened_link(token: str, upload: bool = False):
     return link, base, as_user(owner), None
 
 
-def _inside_link(link: Dict[str, Any], base: str, sub: str):
+def _inside_link(link: dict[str, Any], base: str, sub: str):
     """The path a visitor asks for, inside the link's folder (or the file itself)."""
     if link['kind'] == 'file':
         return (base, link['name']) if not sub else (None, '')
@@ -2089,7 +2083,7 @@ def _drop_target(token: str):
     return base, owner, bad
 
 
-def _free_upload_name(base: str, owner: Optional[str], name: str) -> Tuple[Optional[str], int, str]:
+def _free_upload_name(base: str, owner: str | None, name: str) -> tuple[str | None, int, str]:
     """The name an upload is saved under, never over an existing file:
     "photo.jpg", then "photo (2).jpg", ... An unfinished upload with that name
     is continued. Returns (name, bytes already there, error)."""
@@ -2150,7 +2144,7 @@ def _count_file(token: str) -> None:
         links = _load_links()
         if token in links:
             links[token]['new_files'] = int(links[token].get('new_files') or 0) + 1
-            links[token]['last_upload'] = datetime.now(timezone.utc).isoformat(timespec='seconds')
+            links[token]['last_upload'] = datetime.now(UTC).isoformat(timespec='seconds')
             _save_links(links)
 
 
@@ -2269,7 +2263,7 @@ def headers(response):
 def keep_embed_proxies(interval: float = 5.0) -> None:
     """The proxies of the apps shown in the Hub's window follow the admin's settings."""
     proxies = embed_proxy.EmbedProxies()
-    last: Dict[int, int] = {}
+    last: dict[int, int] = {}
     while True:
         try:
             wanted = hub_apps.embed_targets()

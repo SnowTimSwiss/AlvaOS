@@ -30,7 +30,7 @@ import re
 import time
 import urllib.request
 import zipfile
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 DS_APP_ID = 'hub-office'
 DS_PORT = 8082
@@ -39,7 +39,7 @@ JWT_FUTURE = 60
 
 # extension -> (document type of the editor, whether the editor can change it). The old binary formats
 # (doc, xls, ppt) and PDF are shown only; the Document Server edits the rest.
-FORMATS: Dict[str, Tuple[str, bool]] = {
+FORMATS: dict[str, tuple[str, bool]] = {
     'docx': ('word', True), 'odt': ('word', True), 'rtf': ('word', True), 'txt': ('word', True),
     'doc': ('word', False), 'pdf': ('word', False),
     'xlsx': ('cell', True), 'ods': ('cell', True), 'csv': ('cell', True), 'xls': ('cell', False),
@@ -48,7 +48,7 @@ FORMATS: Dict[str, Tuple[str, bool]] = {
 NEW_KINDS = {'docx': 'Document', 'xlsx': 'Spreadsheet', 'pptx': 'Presentation'}
 
 
-def format_of(name: str) -> Optional[Tuple[str, str, bool]]:
+def format_of(name: str) -> tuple[str, str, bool] | None:
     """(extension, document type, may be edited) for a file name the editor opens, else None."""
     ext = name.rsplit('.', 1)[-1].lower() if '.' in name else ''
     found = FORMATS.get(ext)
@@ -65,14 +65,14 @@ def _unb64(text: str) -> bytes:
     return base64.urlsafe_b64decode(text + '=' * (-len(text) % 4))
 
 
-def jwt_encode(payload: Dict[str, Any], secret: str) -> str:
+def jwt_encode(payload: dict[str, Any], secret: str) -> str:
     head = _b64(json.dumps({'alg': 'HS256', 'typ': 'JWT'}, separators=(',', ':')).encode())
     body = _b64(json.dumps(payload, separators=(',', ':')).encode())
     sig = hmac.new(secret.encode(), f'{head}.{body}'.encode(), hashlib.sha256).digest()
     return f'{head}.{body}.{_b64(sig)}'
 
 
-def jwt_decode(token: str, secret: str, now: Optional[float] = None) -> Optional[Dict[str, Any]]:
+def jwt_decode(token: str, secret: str, now: float | None = None) -> dict[str, Any] | None:
     """The payload of a token signed with `secret` and not expired, else None."""
     parts = str(token or '').split('.')
     if len(parts) != 3 or not secret:
@@ -97,14 +97,14 @@ def jwt_decode(token: str, secret: str, now: Optional[float] = None) -> Optional
 
 # ── The Hub's own tokens for the file link and the save link ───────────────────────────────────
 
-def file_token(secret: str, user: str, share: str, rel: str, edit: bool, now: Optional[float] = None,
+def file_token(secret: str, user: str, share: str, rel: str, edit: bool, now: float | None = None,
                role: str = 'user') -> str:
     """A token for one file, for the Document Server to fetch it and save it again."""
     return jwt_encode({'for': 'office', 'u': user, 'role': role, 's': share, 'r': rel, 'edit': bool(edit),
                        'exp': (now if now is not None else time.time()) + TOKEN_SECONDS}, secret)
 
 
-def read_file_token(secret: str, token: str, now: Optional[float] = None) -> Optional[Dict[str, Any]]:
+def read_file_token(secret: str, token: str, now: float | None = None) -> dict[str, Any] | None:
     claims = jwt_decode(token, secret, now)
     return claims if claims and claims.get('for') == 'office' and isinstance(claims.get('u'), str) else None
 
@@ -128,7 +128,7 @@ def doc_key(share: str, rel: str, mtime: float, size: int) -> str:
 
 
 def editor_config(*, name: str, share: str, rel: str, mtime: float, size: int, user: str, edit: bool,
-                  file_url: str, callback_url: str, phone: bool = False, lang: str = 'en') -> Optional[Dict[str, Any]]:
+                  file_url: str, callback_url: str, phone: bool = False, lang: str = 'en') -> dict[str, Any] | None:
     """The settings the page gives the editor (without the signature), or None for a file it cannot open."""
     found = format_of(name)
     if not found:
@@ -152,12 +152,12 @@ def editor_config(*, name: str, share: str, rel: str, mtime: float, size: int, u
     }
 
 
-def sign_config(config: Dict[str, Any], secret: str) -> Dict[str, Any]:
+def sign_config(config: dict[str, Any], secret: str) -> dict[str, Any]:
     """The settings with the Document Server's signature (it refuses unsigned ones)."""
     return {**config, 'token': jwt_encode(config, secret)}
 
 
-def callback_claims(secret: str, header: str, body: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def callback_claims(secret: str, header: str, body: dict[str, Any]) -> dict[str, Any] | None:
     """What the Document Server's message says, if it is signed with the shared secret: the signature is
     in the header ("Bearer ..." with the message under `payload`) or in the message's own `token`."""
     bearer = header[7:] if str(header).lower().startswith('bearer ') else ''
@@ -179,7 +179,7 @@ SAVED_STATUSES = (2, 6)
 DS_PATH_RE = re.compile(r'^/[A-Za-z0-9._~%!$&\'()*+,;=:@/-]*(\?[A-Za-z0-9._~%!$&\'()*+,;=:@/?-]*)?$')
 
 
-def ds_download_path(url: str) -> Optional[str]:
+def ds_download_path(url: str) -> str | None:
     """The path and query of the address the Document Server names for the new version. Only these are
     used (the Hub fetches them from the Document Server itself): whatever host the message names, the
     Hub never goes there."""
@@ -200,7 +200,7 @@ NS_CT = 'http://schemas.openxmlformats.org/package/2006/content-types'
 NS_OD = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
 
 
-def _zip(files: Dict[str, str]) -> bytes:
+def _zip(files: dict[str, str]) -> bytes:
     out = io.BytesIO()
     with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
         for name, text in files.items():
@@ -208,12 +208,12 @@ def _zip(files: Dict[str, str]) -> bytes:
     return out.getvalue()
 
 
-def _rels(items: Dict[str, Tuple[str, str]]) -> str:
+def _rels(items: dict[str, tuple[str, str]]) -> str:
     inner = ''.join(f'<Relationship Id="{i}" Type="{t}" Target="{target}"/>' for i, (t, target) in items.items())
     return f'<Relationships xmlns="{NS_REL}">{inner}</Relationships>'
 
 
-def _content_types(defaults: Dict[str, str], overrides: Dict[str, str]) -> str:
+def _content_types(defaults: dict[str, str], overrides: dict[str, str]) -> str:
     d = ''.join(f'<Default Extension="{e}" ContentType="{c}"/>' for e, c in defaults.items())
     o = ''.join(f'<Override PartName="{p}" ContentType="{c}"/>' for p, c in overrides.items())
     return f'<Types xmlns="{NS_CT}">{d}{o}</Types>'
@@ -223,7 +223,7 @@ RT = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
 BASE_DEFAULTS = {'rels': 'application/vnd.openxmlformats-package.relationships+xml', 'xml': 'application/xml'}
 
 
-def new_document(kind: str) -> Optional[bytes]:
+def new_document(kind: str) -> bytes | None:
     """A new, empty .docx, .xlsx or .pptx that every office program opens."""
     if kind == 'docx':
         return _zip({

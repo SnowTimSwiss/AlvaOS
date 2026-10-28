@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 
 from common import PRIV_HELPER, build_privileged_cmd
@@ -41,7 +41,7 @@ class PowerUpsManager:
         self.hooks = []
 
     def _utc_now_iso(self):
-        return datetime.now(timezone.utc).isoformat()
+        return datetime.now(UTC).isoformat()
 
     def _clamp_int(self, value, min_value, max_value, fallback):
         try:
@@ -82,7 +82,7 @@ class PowerUpsManager:
     def _load_settings_unlocked(self):
         try:
             if os.path.exists(self.state_file):
-                with open(self.state_file, "r", encoding="utf-8") as f:
+                with open(self.state_file, encoding="utf-8") as f:
                     loaded = json.load(f)
                 normalized = self._normalize_settings(loaded)
                 if normalized != loaded:
@@ -121,7 +121,7 @@ class PowerUpsManager:
 
     def _read_file_value(self, path):
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 return f.read().strip()
         except Exception:
             return ""

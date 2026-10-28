@@ -312,6 +312,15 @@ Needs the NAS with the internet and a phone on mobile data (Wi-Fi off).
    NVIDIA's driver was installed before this version, Settings › Graphics
    offers "Install what apps need" (the container toolkit) first.
 
+## 12zzj. Installer and pages after the cleanup
+
+Not run anywhere yet: the installer changes (`read -ra` for the disk and pool lists, removed colour variables) and the removed CSS rules.
+
+1. Install in a virtual machine with a static address and the mask 255.255.255.0: the address and the mask show as before, and the Network settings have the /24 prefix.
+2. Mirror install with two disks: both disks are used, and the Storage page lists both as the pool.
+3. Pages look as before: Dashboard, Storage (pools, health, disks), Apps (installed and store), Hub (alerts and history panels), Settings › Remote access. Look for missing spacing or text that is not styled.
+4. Settings › Storage › Health: the SMART and scrub schedules still save.
+
 ## 12zzi. Office in the Hub (EuroOffice)
 
 1. Hub page (admin) › Office on. The row shows "Getting the editor ready" with a bar; Docker pulls about 2 GB. When it is ready: "The editor is ready". `docker ps` has `hub-office`; it is not in the App Store. On an error the row says why and "Try again" works.

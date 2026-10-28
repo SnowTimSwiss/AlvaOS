@@ -7,7 +7,7 @@ import json
 import os
 import urllib.error
 import urllib.request
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 BASE = 'http://127.0.0.1:8095'
 TOKEN_FILE = os.path.join(os.environ.get('ALVAOS_LINK_DIR', '/var/lib/alvaos/link'), 'control_token')
@@ -21,7 +21,7 @@ def _token() -> str:
         return ''
 
 
-def _call(method: str, path: str, body: Optional[Dict[str, Any]] = None, timeout: float = 10) -> Optional[Dict[str, Any]]:
+def _call(method: str, path: str, body: dict[str, Any] | None = None, timeout: float = 10) -> dict[str, Any] | None:
     token = _token()
     if not token:
         return None
@@ -42,7 +42,7 @@ def _call(method: str, path: str, body: Optional[Dict[str, Any]] = None, timeout
         return None
 
 
-def status() -> Optional[Dict[str, Any]]:
+def status() -> dict[str, Any] | None:
     """{enabled, running, node_id, relay, peers: [...]} or None."""
     return _call('GET', '/status')
 
@@ -53,7 +53,7 @@ def node_id() -> str:
     return str(found.get('node_id') or '') if found.get('running') else ''
 
 
-def set_buddies(buddies: List[Dict[str, str]]) -> Optional[Dict[str, Any]]:
+def set_buddies(buddies: list[dict[str, str]]) -> dict[str, Any] | None:
     """The buddies allowed in: [{id, name}]. Each gets an address on the loopback network
     (peer['alias'] in the answer) at which the backup code reaches it."""
     return _call('POST', '/buddies', {'buddies': buddies})
@@ -70,18 +70,18 @@ def add_phone(key: str, device_id: str, name: str, user: str) -> bool:
     return bool(found and found.get('ok'))
 
 
-def set_enabled(enabled: bool) -> Optional[Dict[str, Any]]:
+def set_enabled(enabled: bool) -> dict[str, Any] | None:
     return _call('POST', '/config', {'enabled': bool(enabled)}, timeout=40)
 
 
-def pair(peer_id: str, request: Dict[str, Any]) -> Dict[str, Any]:
+def pair(peer_id: str, request: dict[str, Any]) -> dict[str, Any]:
     """Send the other NAS a pairing request through Link: {'op': 'buddy', 'secret', 'token'}.
     Answers its JSON, or {'error': ...}."""
     found = _call('POST', '/pair', {'id': peer_id, 'request': request}, timeout=60)
     return found if found is not None else {'error': 'AlvaOS Link is not running on this NAS.'}
 
 
-def ping(peer_id: str) -> Dict[str, Any]:
+def ping(peer_id: str) -> dict[str, Any]:
     """{'ok': bool, 'ms': int, 'error': str}: does this buddy answer through Link?"""
     found = _call('POST', '/ping', {'id': peer_id}, timeout=40)
     return found if found is not None else {'ok': False, 'error': 'AlvaOS Link is not running on this NAS.'}

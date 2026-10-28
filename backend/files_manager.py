@@ -11,7 +11,7 @@ a path inside it, never a path on the NAS.
 import mimetypes
 import os
 import subprocess
-from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Callable, Iterator
 
 from backup_manager import CMD as BACKUP_CMD, FIND_LIST_FORMAT, clean_relative_path, parse_find_listing
 from common import PRIV_HELPER, is_root_user
@@ -31,14 +31,14 @@ EXTRA_TYPES = {'.mov': 'video/quicktime', '.m4v': 'video/x-m4v', '.mkv': 'video/
 TEXT_EXTENSIONS = {'.txt', '.md', '.log', '.csv', '.json', '.xml', '.yml', '.yaml', '.ini', '.conf', '.cfg'}
 
 
-def find_share(shares_state: Dict[str, Any], name: str) -> Optional[Dict[str, Any]]:
+def find_share(shares_state: dict[str, Any], name: str) -> dict[str, Any] | None:
     for share in (shares_state or {}).values():
         if isinstance(share, dict) and share.get('name') == name and str(share.get('path', '')).startswith('/'):
             return share
     return None
 
 
-def resolve(shares_state: Dict[str, Any], share_name: str, rel_path: str) -> Tuple[Optional[str], str, str]:
+def resolve(shares_state: dict[str, Any], share_name: str, rel_path: str) -> tuple[str | None, str, str]:
     """(absolute path, clean relative path, error)."""
     share = find_share(shares_state, share_name)
     if not share:
@@ -50,7 +50,7 @@ def resolve(shares_state: Dict[str, Any], share_name: str, rel_path: str) -> Tup
     return (os.path.join(base, rel) if rel else base), rel, ''
 
 
-def list_folder(path: str, run: Callable) -> Tuple[Optional[List[Dict[str, Any]]], str]:
+def list_folder(path: str, run: Callable) -> tuple[list[dict[str, Any]] | None, str]:
     res, err = run([BACKUP_CMD['FIND'], path, '-mindepth', '1', '-maxdepth', '1', '-printf', FIND_LIST_FORMAT],
                    timeout=60)
     if err or res is None or res.returncode != 0:
@@ -58,7 +58,7 @@ def list_folder(path: str, run: Callable) -> Tuple[Optional[List[Dict[str, Any]]
     return parse_find_listing(res.stdout), ''
 
 
-def content_type(name: str, inline: bool) -> Tuple[str, bool]:
+def content_type(name: str, inline: bool) -> tuple[str, bool]:
     """(Content-Type, shown inline). HTML, SVG and scripts are never inline."""
     ext = os.path.splitext(name)[1].lower()
     if inline and ext in TEXT_EXTENSIONS:
@@ -69,7 +69,7 @@ def content_type(name: str, inline: bool) -> Tuple[str, bool]:
     return 'application/octet-stream', False
 
 
-def parse_range(header: Optional[str], size: int) -> Tuple[Optional[Tuple[int, int]], bool]:
+def parse_range(header: str | None, size: int) -> tuple[tuple[int, int] | None, bool]:
     """One byte range from a Range header: ((start, length), ok). No header:
     (None, True). A range that cannot be served: (None, False)."""
     if not header:
@@ -89,14 +89,14 @@ def parse_range(header: Optional[str], size: int) -> Tuple[Optional[Tuple[int, i
     return (start, end - start + 1), True
 
 
-def file_size(path: str, user: Optional[str] = None) -> Optional[int]:
+def file_size(path: str, user: str | None = None) -> int | None:
     result, _ = run_helper(['file-size', path], timeout=30, user=user)
     size = (result or {}).get('size')
     return size if isinstance(size, int) and size >= 0 else None
 
 
-def open_stream(path: str, chunk: int = 256 * 1024, part: Optional[Tuple[int, int]] = None,
-                user: Optional[str] = None) -> Tuple[Optional[Iterator[bytes]], str]:
+def open_stream(path: str, chunk: int = 256 * 1024, part: tuple[int, int] | None = None,
+                user: str | None = None) -> tuple[Iterator[bytes] | None, str]:
     """Stream a file (or one part) through `alvaos-priv read-file`. The first
     chunk is read before answering, so a refused or missing file becomes an
     error, not an empty download."""
@@ -104,14 +104,14 @@ def open_stream(path: str, chunk: int = 256 * 1024, part: Optional[Tuple[int, in
     return _stream(cmd, chunk)
 
 
-def open_zip(path: str, user: Optional[str] = None,
-             names: Optional[List[str]] = None) -> Tuple[Optional[Iterator[bytes]], str]:
+def open_zip(path: str, user: str | None = None,
+             names: list[str] | None = None) -> tuple[Iterator[bytes] | None, str]:
     """A folder, or only the named files and folders in it, as a ZIP stream
     through `alvaos-priv files-zip`."""
     return _stream(_helper_cmd(['files-zip', path, *(names or [])], user), 256 * 1024)
 
 
-def _stream(cmd: List[str], chunk: int) -> Tuple[Optional[Iterator[bytes]], str]:
+def _stream(cmd: list[str], chunk: int) -> tuple[Iterator[bytes] | None, str]:
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env={'LC_ALL': 'C'})
     except OSError as exc:
@@ -143,14 +143,14 @@ def _stream(cmd: List[str], chunk: int) -> Tuple[Optional[Iterator[bytes]], str]
 
 # ── Changes (alvaos-priv files-* operations) ─────────────────────────────────
 
-def _helper_cmd(args: List[str], user: Optional[str] = None) -> List[str]:
+def _helper_cmd(args: list[str], user: str | None = None) -> list[str]:
     """The helper command line; with `user`, the helper drops root to that
     person first so Linux checks their rights."""
     cmd = [PRIV_HELPER] + (['--as', user] if user else []) + args
     return cmd if is_root_user() else ['sudo', '-n'] + cmd
 
 
-def _result(returncode: int, out: bytes, err: bytes) -> Tuple[Optional[Dict[str, Any]], str]:
+def _result(returncode: int, out: bytes, err: bytes) -> tuple[dict[str, Any] | None, str]:
     if returncode != 0:
         message = err.decode('utf-8', 'replace').strip().replace('alvaos-priv: denied: ', '')
         return None, message.replace('alvaos-priv: ', '') or 'That did not work.'
@@ -162,8 +162,8 @@ def _result(returncode: int, out: bytes, err: bytes) -> Tuple[Optional[Dict[str,
         return {}, ''
 
 
-def run_helper(args: List[str], timeout: int = 600,
-               user: Optional[str] = None) -> Tuple[Optional[Dict[str, Any]], str]:
+def run_helper(args: list[str], timeout: int = 600,
+               user: str | None = None) -> tuple[dict[str, Any] | None, str]:
     try:
         res = subprocess.run(_helper_cmd(args, user), capture_output=True, timeout=timeout, env={'LC_ALL': 'C'})
     except (OSError, subprocess.SubprocessError) as exc:
@@ -172,13 +172,13 @@ def run_helper(args: List[str], timeout: int = 600,
 
 
 def upload(dir_path: str, name: str, stream: Any, chunk: int = 1024 * 1024,
-           user: Optional[str] = None) -> Tuple[Optional[Dict[str, Any]], str]:
+           user: str | None = None) -> tuple[dict[str, Any] | None, str]:
     """Pipe an upload into `files-write`; the helper never overwrites."""
     return pipe_helper(['files-write', dir_path, name], stream, chunk, user)
 
 
-def pipe_helper(args: List[str], stream: Any, chunk: int = 1024 * 1024,
-                user: Optional[str] = None) -> Tuple[Optional[Dict[str, Any]], str]:
+def pipe_helper(args: list[str], stream: Any, chunk: int = 1024 * 1024,
+                user: str | None = None) -> tuple[dict[str, Any] | None, str]:
     """Run a helper operation with the request body on its stdin."""
     try:
         proc = subprocess.Popen(_helper_cmd(args, user), stdin=subprocess.PIPE,
@@ -208,19 +208,19 @@ def pipe_helper(args: List[str], stream: Any, chunk: int = 1024 * 1024,
     return _result(proc.returncode, out, err)
 
 
-def share_root(shares_state: Dict[str, Any], share_name: str) -> Optional[str]:
+def share_root(shares_state: dict[str, Any], share_name: str) -> str | None:
     share = find_share(shares_state, share_name)
     return os.path.normpath(share['path']) if share else None
 
 
-def purge_all_trash(shares_state: Dict[str, Any], days: int = 30) -> None:
+def purge_all_trash(shares_state: dict[str, Any], days: int = 30) -> None:
     """Daily: trash items older than `days` are removed for good."""
     for share in (shares_state or {}).values():
         if isinstance(share, dict) and str(share.get('path', '')).startswith('/'):
             run_helper(['files-trash-purge', os.path.normpath(share['path']), str(days)])
 
 
-def list_entries(path: str, user: Optional[str] = None) -> Tuple[Optional[List[Dict[str, Any]]], str]:
+def list_entries(path: str, user: str | None = None) -> tuple[list[dict[str, Any]] | None, str]:
     """A folder through `files-list` (as the person, when given)."""
     result, error = run_helper(['files-list', path], timeout=60, user=user)
     if result is None:

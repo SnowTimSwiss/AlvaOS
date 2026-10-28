@@ -16,8 +16,8 @@ import glob
 import os
 import subprocess
 import threading
-from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from datetime import datetime, UTC
+from typing import Any, Callable
 
 from common import CMD
 
@@ -28,7 +28,7 @@ PCI_IDS = ('/usr/share/misc/pci.ids', '/usr/share/hwdata/pci.ids', '/usr/share/p
 # What each vendor needs, in Debian trixie (checked in CI against the archive,
 # scripts/ci/optional-packages.txt). Firmware first: without it the kernel
 # driver starts the card without video acceleration, or not at all.
-PACKAGES: Dict[str, List[str]] = {
+PACKAGES: dict[str, list[str]] = {
     # In trixie the Intel and NVIDIA firmware is still in firmware-misc-nonfree.
     'intel': ['firmware-misc-nonfree', 'intel-media-va-driver-non-free', 'vainfo'],
     'amd': ['firmware-amd-graphics', 'mesa-va-drivers', 'vainfo'],
@@ -51,7 +51,7 @@ DPKG_QUERY = '/usr/bin/dpkg-query'   # reads the package list, runs without the 
 APT_CACHE = '/usr/bin/apt-cache'     # asks the package lists, runs without the helper
 
 _lock = threading.Lock()
-_job: Dict[str, Any] = {'running': False, 'vendor': '', 'started_at': '', 'finished_at': '', 'error': '',
+_job: dict[str, Any] = {'running': False, 'vendor': '', 'started_at': '', 'finished_at': '', 'error': '',
                         'log': ''}
 
 
@@ -63,7 +63,7 @@ def _read(path: str) -> str:
         return ''
 
 
-def _pci_names(vendor_id: str, device_id: str, sources=PCI_IDS) -> Tuple[str, str]:
+def _pci_names(vendor_id: str, device_id: str, sources=PCI_IDS) -> tuple[str, str]:
     """(vendor, device) names from the PCI database, or ('', '')."""
     want_vendor, want_device = vendor_id.lower().removeprefix('0x'), device_id.lower().removeprefix('0x')
     for path in sources:
@@ -89,7 +89,7 @@ def _pci_names(vendor_id: str, device_id: str, sources=PCI_IDS) -> Tuple[str, st
     return '', ''
 
 
-def detect(sys_root: str = '/sys', pci_ids=PCI_IDS) -> List[Dict[str, Any]]:
+def detect(sys_root: str = '/sys', pci_ids=PCI_IDS) -> list[dict[str, Any]]:
     """Every graphics card (PCI class 03xx), also those without a driver."""
     cards = []
     for dev in sorted(glob.glob(os.path.join(sys_root, 'bus/pci/devices/*'))):
@@ -132,9 +132,9 @@ def secure_boot(sys_root: str = '/sys') -> bool:
 
 
 class GpuManager:
-    def __init__(self, run_command: Callable, installed: Optional[Callable[[List[str]], Dict[str, bool]]] = None,
-                 sys_root: str = '/sys', restart_flag: Optional[str] = None, pci_ids=PCI_IDS,
-                 available: Optional[Callable[[str], bool]] = None):
+    def __init__(self, run_command: Callable, installed: Callable[[list[str]], dict[str, bool]] | None = None,
+                 sys_root: str = '/sys', restart_flag: str | None = None, pci_ids=PCI_IDS,
+                 available: Callable[[str], bool] | None = None):
         self.run = run_command
         self.installed = installed or _installed
         self.available = available or _available
@@ -142,7 +142,7 @@ class GpuManager:
         self.restart_flag = restart_flag or RESTART_FLAG
         self.pci_ids = pci_ids
 
-    def status(self) -> Dict[str, Any]:
+    def status(self) -> dict[str, Any]:
         cards = detect(self.sys_root, self.pci_ids)
         current_headers = f'linux-headers-{os.uname().release}'
         wanted = sorted({p for c in cards for p in PACKAGES.get(c['vendor'], [])}
@@ -161,7 +161,7 @@ class GpuManager:
             job = dict(_job)
         return {'cards': cards, 'secure_boot': secure_boot(self.sys_root), 'restart_needed': restart, 'job': job}
 
-    def clear_after_boot(self, boot_time: Optional[float] = None) -> None:
+    def clear_after_boot(self, boot_time: float | None = None) -> None:
         """The "restart needed" note is done once the NAS started after it."""
         try:
             if boot_time is None:
@@ -172,7 +172,7 @@ class GpuManager:
         except (OSError, ImportError):
             pass
 
-    def install(self, vendor: str) -> Tuple[bool, str]:
+    def install(self, vendor: str) -> tuple[bool, str]:
         """Install the driver and firmware for one vendor's cards, in the background."""
         if vendor not in PACKAGES:
             return False, 'There is nothing to install for this card.'
@@ -186,7 +186,7 @@ class GpuManager:
         threading.Thread(target=self._install, args=(vendor,), name='gpu-install', daemon=True).start()
         return True, f'Installing the {VENDOR_NAMES[vendor]} driver. This takes a few minutes.'
 
-    def repair(self) -> Tuple[bool, str]:
+    def repair(self) -> tuple[bool, str]:
         """Finish package configuration left incomplete by an earlier install."""
         with _lock:
             if _job['running']:
@@ -256,7 +256,7 @@ class GpuManager:
 # and AMD cards are handed in as /dev/dri with the groups that may open it;
 # NVIDIA cards through Docker's GPU request (needs the container toolkit).
 
-def _group_ids(path: str = '/etc/group') -> Dict[str, int]:
+def _group_ids(path: str = '/etc/group') -> dict[str, int]:
     out = {}
     try:
         with open(path) as f:
@@ -269,18 +269,18 @@ def _group_ids(path: str = '/etc/group') -> Dict[str, int]:
     return out
 
 
-def _usable(card: Dict[str, Any], have: Dict[str, bool]) -> bool:
+def _usable(card: dict[str, Any], have: dict[str, bool]) -> bool:
     if card['vendor'] == 'nvidia':
         return card['driver'] == 'nvidia' and have.get(TOOLKIT, False)
     return card['driver'] in GOOD_DRIVERS.get(card['vendor'], set()) and bool(card['render_node'])
 
 
-def card_label(card: Dict[str, Any]) -> str:
+def card_label(card: dict[str, Any]) -> str:
     return f"{card['vendor_name']} {card['model']}".strip() + (' (in the processor)' if card.get('integrated') else '')
 
 
-def fitting_cards(spec: Any, cards: Optional[List[Dict[str, Any]]] = None,
-                  installed: Optional[Callable[[List[str]], Dict[str, bool]]] = None) -> List[Dict[str, Any]]:
+def fitting_cards(spec: Any, cards: list[dict[str, Any]] | None = None,
+                  installed: Callable[[list[str]], dict[str, bool]] | None = None) -> list[dict[str, Any]]:
     """The cards an app can use, the one it prefers first (the order of the
     catalog's `vendors`, then the order they were found)."""
     if not isinstance(spec, dict):
@@ -291,7 +291,7 @@ def fitting_cards(spec: Any, cards: Optional[List[Dict[str, Any]]] = None,
     return sorted((c for c in cards if c['vendor'] in vendors and _usable(c, have)), key=lambda c: vendors.index(c['vendor']))
 
 
-def _nvidia_index(slot: str, smi: Optional[Callable[[], str]] = None) -> Optional[str]:
+def _nvidia_index(slot: str, smi: Callable[[], str] | None = None) -> str | None:
     """The number nvidia-smi gives the card in this PCI slot."""
     for line in (smi or _smi_index)().splitlines():
         parts = [p.strip() for p in line.split(',')]
@@ -304,7 +304,7 @@ def _smi_index() -> str:
     return _smi(['--query-gpu=index,pci.bus_id', '--format=csv,noheader'])
 
 
-def _smi(args: List[str]) -> str:
+def _smi(args: list[str]) -> str:
     try:
         res = subprocess.run([NVIDIA_SMI, *args], capture_output=True, text=True, timeout=5)
     except (OSError, subprocess.SubprocessError):
@@ -312,10 +312,10 @@ def _smi(args: List[str]) -> str:
     return res.stdout if res.returncode == 0 else ''
 
 
-def app_plan(spec: Any, cards: Optional[List[Dict[str, Any]]] = None, groups: Optional[Dict[str, int]] = None,
-             installed: Optional[Callable[[List[str]], Dict[str, bool]]] = None, slot: str = '',
-             nvidia_index: Optional[Callable[[str], Optional[str]]] = None
-             ) -> Tuple[Optional[Dict[str, Any]], str]:
+def app_plan(spec: Any, cards: list[dict[str, Any]] | None = None, groups: dict[str, int] | None = None,
+             installed: Callable[[list[str]], dict[str, bool]] | None = None, slot: str = '',
+             nvidia_index: Callable[[str], str | None] | None = None
+             ) -> tuple[dict[str, Any] | None, str]:
     """(how the app gets a card, or None and why not). `slot` is the card the
     person chose (its PCI slot); without one the app takes the card it prefers.
     With more than one card, the app gets only its own, and sees it where it
@@ -339,7 +339,7 @@ def app_plan(spec: Any, cards: Optional[List[Dict[str, Any]]] = None, groups: Op
         card = chosen[0]
     else:
         card = usable[0]
-    plan: Dict[str, Any] = {'service': spec['service'], 'vendor': card['vendor'], 'slot': card.get('slot', ''),
+    plan: dict[str, Any] = {'service': spec['service'], 'vendor': card['vendor'], 'slot': card.get('slot', ''),
                             'card': card_label(card)}
     image = (spec.get('images') or {}).get(card['vendor'])
     if isinstance(image, str) and image:
@@ -348,7 +348,7 @@ def app_plan(spec: Any, cards: Optional[List[Dict[str, Any]]] = None, groups: Op
         index = None
         if slot or sum(1 for c in cards if c['vendor'] == 'nvidia') > 1:
             index = (nvidia_index or _nvidia_index)(card['slot'])
-        device: Dict[str, Any] = {'driver': 'nvidia', 'capabilities': ['gpu']}
+        device: dict[str, Any] = {'driver': 'nvidia', 'capabilities': ['gpu']}
         device.update({'device_ids': [index]} if index is not None else {'count': 'all'})
         plan['deploy'] = {'resources': {'reservations': {'devices': [device]}}}
         plan['environment'] = {'NVIDIA_VISIBLE_DEVICES': index if index is not None else 'all',
@@ -371,21 +371,21 @@ def app_plan(spec: Any, cards: Optional[List[Dict[str, Any]]] = None, groups: Op
 
 # ── How busy the cards are (the dashboard) ────────────────────────────────────
 
-def _num(text: str) -> Optional[float]:
+def _num(text: str) -> float | None:
     try:
         return float(text.strip())
     except ValueError:
         return None
 
 
-def gpu_stats(cards: Optional[List[Dict[str, Any]]] = None, sys_root: str = '/sys',
-              smi: Optional[Callable[[], str]] = None) -> List[Dict[str, Any]]:
+def gpu_stats(cards: list[dict[str, Any]] | None = None, sys_root: str = '/sys',
+              smi: Callable[[], str] | None = None) -> list[dict[str, Any]]:
     """Load, video memory, temperature and power of each card, as far as the
     card tells: AMD through /sys, NVIDIA through nvidia-smi, Intel only its
     clock (the processor's graphics share the NAS's memory and report no load
     without root). A number the card does not give is None."""
     cards = detect(sys_root) if cards is None else cards
-    smi_rows: Dict[str, List[str]] = {}
+    smi_rows: dict[str, list[str]] = {}
     if any(c['vendor'] == 'nvidia' for c in cards):
         text = (smi or (lambda: _smi(['--query-gpu=pci.bus_id,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw',
                                        '--format=csv,noheader,nounits'])))()
@@ -400,7 +400,7 @@ def gpu_stats(cards: Optional[List[Dict[str, Any]]] = None, sys_root: str = '/sy
         # the card has a render node). Otherwise the dashboard says it still needs a driver.
         ready = (card['driver'] == 'nvidia' if card['vendor'] == 'nvidia'
                  else card['driver'] in GOOD_DRIVERS.get(card['vendor'], set()) and bool(card.get('render_node')))
-        row: Dict[str, Any] = {'slot': card.get('slot', ''), 'name': card_label(card), 'vendor': card['vendor'], 'ready': ready,
+        row: dict[str, Any] = {'slot': card.get('slot', ''), 'name': card_label(card), 'vendor': card['vendor'], 'ready': ready,
                                'integrated': bool(card.get('integrated')), 'usage': None, 'vram_used': None,
                                'vram_total': None, 'temp_c': None, 'power_w': None, 'freq_mhz': None}
         if card['vendor'] == 'amd' and card['driver'] == 'amdgpu':
@@ -427,8 +427,8 @@ def gpu_stats(cards: Optional[List[Dict[str, Any]]] = None, sys_root: str = '/sy
                 row['temp_c'] = temp
                 row['power_w'] = power
         elif card['vendor'] == 'intel' and card['driver'] in GOOD_DRIVERS['intel']:
-            for rel in ('drm/%s/gt_cur_freq_mhz' % os.path.basename(card.get('card_node') or ''),
-                        'drm/%s/gt/gt0/rps_cur_freq_mhz' % os.path.basename(card.get('card_node') or '')):
+            node = os.path.basename(card.get('card_node') or '')
+            for rel in (f'drm/{node}/gt_cur_freq_mhz', f'drm/{node}/gt/gt0/rps_cur_freq_mhz'):
                 freq = _num(_read(os.path.join(dev, rel)))
                 if freq is not None:
                     row['freq_mhz'] = int(freq)
@@ -437,7 +437,7 @@ def gpu_stats(cards: Optional[List[Dict[str, Any]]] = None, sys_root: str = '/sy
     return out
 
 
-def apply_plan(compose: Dict[str, Any], plan: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def apply_plan(compose: dict[str, Any], plan: dict[str, Any] | None) -> dict[str, Any]:
     """The compose config with the card handed to the plan's service."""
     if not plan:
         return compose
@@ -466,7 +466,7 @@ class _NoHeaders(Exception):
     """No headers package for the running kernel in the package lists."""
 
 
-def _advice(card: Dict[str, Any], restart: bool) -> Tuple[str, str]:
+def _advice(card: dict[str, Any], restart: bool) -> tuple[str, str]:
     """(state, what to tell the person) for one card."""
     vendor, missing = card['vendor'], card['missing']
     if vendor == 'other':
@@ -527,10 +527,10 @@ def _available(package: str) -> bool:
     return False
 
 
-def _installed(packages: List[str]) -> Dict[str, bool]:
+def _installed(packages: list[str]) -> dict[str, bool]:
     """Which packages are installed (dpkg-query needs no privileges)."""
     import subprocess
-    out: Dict[str, bool] = {p: False for p in packages}
+    out: dict[str, bool] = dict.fromkeys(packages, False)
     try:
         res = subprocess.run([DPKG_QUERY, '-W', '-f', '${Package} ${db:Status-Status}\\n'] + packages,
                              capture_output=True, text=True, timeout=20, env={'LC_ALL': 'C'})
@@ -552,4 +552,4 @@ def _touch(path: str) -> None:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()

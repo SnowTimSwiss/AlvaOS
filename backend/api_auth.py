@@ -58,7 +58,7 @@ USERS_STATE_FILE = '/var/lib/alvaos/users.json'
 def load_users_state():
     try:
         if os.path.exists(USERS_STATE_FILE):
-            with open(USERS_STATE_FILE, 'r') as f:
+            with open(USERS_STATE_FILE) as f:
                 return json.load(f)
     except Exception as e:
         print(f"Error loading users state: {e}")
@@ -75,7 +75,7 @@ def save_users_state(state):
 # ── 2FA helpers ───────────────────────────────────────────────────────────────
 def _load_totp_secret():
     try:
-        with open(AUTH_FILE, 'r') as f:
+        with open(AUTH_FILE) as f:
             data = json.load(f)
         return data.get('totp_secret') or None
     except Exception:
@@ -83,7 +83,7 @@ def _load_totp_secret():
 
 def _save_totp_secret(secret):
     try:
-        with open(AUTH_FILE, 'r') as f:
+        with open(AUTH_FILE) as f:
             data = json.load(f)
         if secret is None:
             data.pop('totp_secret', None)
@@ -155,19 +155,19 @@ def complete_setup():
 
     try:
         data = request.get_json()
-        
+
         if not data or 'password' not in data:
             return jsonify({'error': 'Password is required'}), 400
-        
+
         password = data['password']
-        
+
         if len(password) < 8:
             return jsonify({'error': 'Password must be at least 8 characters'}), 400
 
         timezone_name = data.get('timezone')
         if timezone_name is not None and not is_valid_timezone(timezone_name):
             return jsonify({'error': 'Unknown time zone'}), 400
-        
+
         # Change root password using subprocess with sudo
         try:
             process = subprocess.Popen(
@@ -179,15 +179,15 @@ def complete_setup():
                 env={'LC_ALL': 'C'}
             )
             stdout, stderr = process.communicate(input=f'root:{password}\n', timeout=5)
-            
+
             if process.returncode != 0:
                 return jsonify({'error': f'Failed to set password: {stderr}'}), 500
-                
+
         except subprocess.TimeoutExpired:
             return jsonify({'error': 'Password change timed out'}), 500
         except Exception as e:
             return jsonify({'error': f'Password change failed: {str(e)}'}), 500
-        
+
         # SSH root login stays disabled after setup. It is opt-in through
         # System → Remote Access (/api/v1/system/ssh), so a fresh box never ends
         # up reachable over SSH without the admin explicitly asking for it.
@@ -201,7 +201,7 @@ def complete_setup():
                 run_sudo_command([CMD['TIMEDATECTL'], 'set-timezone', data['timezone']])
             except Exception as e:
                 print(f"Warning: Could not set timezone during setup: {e}")
-        
+
         # Mark setup as complete
         mark_setup_complete(password, VERSION)
 
@@ -211,14 +211,14 @@ def complete_setup():
 
         # Auto-login for the setup session
         token = _create_session('root', role='admin')
-        
+
         return jsonify({
             'success': True,
             'message': 'Setup completed successfully',
             'token': token,
             'csrf_token': SESSIONS.get(token, {}).get('csrf_token', '')
         })
-        
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -247,7 +247,7 @@ def login():
     password = data['password']
 
     try:
-        with open(AUTH_FILE, 'r') as f:
+        with open(AUTH_FILE) as f:
             auth_data = json.load(f)
 
         is_valid, needs_rehash = verify_password(password, auth_data)
@@ -351,7 +351,7 @@ def change_admin_password():
         return jsonify({'error': 'The new password is the same as the current one.'}), 400
 
     try:
-        with open(AUTH_FILE, 'r') as f:
+        with open(AUTH_FILE) as f:
             auth_data = json.load(f)
     except (OSError, ValueError):
         return jsonify({'error': 'The password file could not be read.'}), 500
@@ -443,7 +443,7 @@ def setup_2fa():
         qr = qrcode.QRCode(box_size=6, border=2)
         qr.add_data(provisioning_uri)
         qr.make(fit=True)
-        img = qr.make_image(fill_color='black', back_color='white')
+        img = qr.make_image(image_factory=qrcode.image.pil.PilImage, fill_color='black', back_color='white')
         buf = io.BytesIO()
         img.save(buf, format='PNG')
         qr_b64 = base64.b64encode(buf.getvalue()).decode('ascii')
@@ -521,7 +521,7 @@ def disable_2fa():
     if not password:
         return jsonify({'error': 'Current password is required'}), 400
     try:
-        with open(AUTH_FILE, 'r') as f:
+        with open(AUTH_FILE) as f:
             auth_data = json.load(f)
         is_valid, _ = verify_password(password, auth_data)
         if not is_valid:

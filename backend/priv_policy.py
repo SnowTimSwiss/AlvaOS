@@ -30,7 +30,7 @@ import grp
 import re
 import subprocess
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Iterable, List, NoReturn, Optional, Sequence
+from typing import Callable, Iterable, NoReturn, Sequence
 
 
 class PolicyError(Exception):
@@ -123,13 +123,13 @@ PROTECTED_USERS = {'root', 'alvaos', 'nobody'}
 @dataclass
 class Plan:
     """What the helper should execute after a successful policy check."""
-    argv: List[str]
+    argv: list[str]
     # When set, stdin is read by the helper, checked, and fed to the command.
-    stdin_check: Optional[Callable[[bytes], None]] = None
+    stdin_check: Callable[[bytes], None] | None = None
     # Files to copy into the staging directory before execution: argv index -> kind
-    stage: Dict[int, str] = field(default_factory=dict)
+    stage: dict[int, str] = field(default_factory=dict)
     # Directories the helper must create (root-owned) before execution.
-    make_dirs: List[str] = field(default_factory=list)
+    make_dirs: list[str] = field(default_factory=list)
     # Long transfers that should give way to people using the NAS: the helper
     # runs them with nice 10 and the idle I/O class.
     background: bool = False
@@ -172,7 +172,7 @@ class System:
     sys_block = '/sys/class/block'
     sys_btrfs = '/sys/fs/btrfs'
 
-    def busy_devices(self) -> Dict[str, str]:
+    def busy_devices(self) -> dict[str, str]:
         """Block devices that are in use right now, by name, with the reason.
 
         A device counts as busy when it is mounted, used as swap, a member of a
@@ -180,7 +180,7 @@ class System:
         held by another device (LUKS, LVM, md). A disk is busy when any of its
         partitions is.
         """
-        busy: Dict[str, str] = {}
+        busy: dict[str, str] = {}
         try:
             with open(os.path.join(self.proc_root, 'mounts')) as f:
                 mounts = f.read().splitlines()
@@ -214,13 +214,13 @@ class System:
                 busy.setdefault(parent, f'{name} is {busy[name]}')
         return busy
 
-    def uid_of(self, user: str) -> Optional[int]:
+    def uid_of(self, user: str) -> int | None:
         try:
             return pwd.getpwnam(user).pw_uid
         except KeyError:
             return None
 
-    def gid_of(self, group: str) -> Optional[int]:
+    def gid_of(self, group: str) -> int | None:
         try:
             return grp.getgrnam(group).gr_gid
         except KeyError:
@@ -240,7 +240,7 @@ class System:
             return b''
 
 
-def _listdir(path: str) -> List[str]:
+def _listdir(path: str) -> list[str]:
     try:
         return sorted(os.listdir(path))
     except OSError:
@@ -375,7 +375,7 @@ _SMB_VFS_ALLOWED = {'recycle', 'catia', 'fruit', 'streams_xattr', 'btrfs'}
 _SMB_ROOT_KEYS = {'force user', 'force group', 'admin users', 'valid users', 'write list', 'guest account'}
 
 
-def _new_lines(content: bytes, current: bytes) -> List[str]:
+def _new_lines(content: bytes, current: bytes) -> list[str]:
     """Lines of the new content that are not already in the root-owned file.
 
     Existing lines were written by root (the distribution or an admin on the
@@ -1440,7 +1440,7 @@ def resolve_binary(path: str) -> str:
     return name
 
 
-def validate(argv: Sequence[str], system: Optional[System] = None) -> Plan:
+def validate(argv: Sequence[str], system: System | None = None) -> Plan:
     """Validate a full command line. Returns the Plan to execute."""
     if not argv:
         _fail('Empty command')
@@ -1467,7 +1467,7 @@ def validate_sysfs_write(path: str, value: str) -> None:
     _int_arg(value, 0, 100)
 
 
-def validate_update_package(path: str, system: Optional[System] = None) -> str:
+def validate_update_package(path: str, system: System | None = None) -> str:
     system = system or System()
     clean = _clean_abs_path(path)
     resolved = system.realpath(clean)
@@ -1476,7 +1476,7 @@ def validate_update_package(path: str, system: Optional[System] = None) -> str:
     return resolved
 
 
-def validate_env(pairs: Iterable[str]) -> Dict[str, str]:
+def validate_env(pairs: Iterable[str]) -> dict[str, str]:
     env = {}
     for pair in pairs:
         key, sep, value = pair.partition('=')

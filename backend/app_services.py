@@ -33,10 +33,10 @@ def get_version():
     dev_path = os.path.join(os.path.dirname(__file__), '..', 'VERSION')
     try:
         if os.path.exists(prod_path):
-            with open(prod_path, 'r') as f:
+            with open(prod_path) as f:
                 return f.read().strip()
         elif os.path.exists(dev_path):
-            with open(dev_path, 'r') as f:
+            with open(dev_path) as f:
                 return f.read().strip()
     except Exception as e:
         print(f"Error reading version file: {e}")

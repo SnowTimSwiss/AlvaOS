@@ -23,7 +23,6 @@ import base64
 import binascii
 import hashlib
 import os
-from typing import Optional
 
 PUBLIC_KEY_PATH = '/opt/alvaos/keys/update-signing.pub'
 SIGNATURE_SUFFIX = '.sig'
@@ -125,17 +124,17 @@ def signature_path_for(package_path: str) -> str:
     return package_path + SIGNATURE_SUFFIX
 
 
-def read_deb_package_name(package_path: str) -> Optional[str]:
+def read_deb_package_name(package_path: str) -> str | None:
     """Package name from the control file, via dpkg-deb (no root needed)."""
     return read_deb_field(package_path, 'Package')
 
 
-def read_deb_version(package_path: str) -> Optional[str]:
+def read_deb_version(package_path: str) -> str | None:
     """Package version from the control file, via dpkg-deb (no root needed)."""
     return read_deb_field(package_path, 'Version')
 
 
-def read_deb_field(package_path: str, field: str) -> Optional[str]:
+def read_deb_field(package_path: str, field: str) -> str | None:
     """One control field of a .deb, via dpkg-deb (no root needed)."""
     import subprocess
 

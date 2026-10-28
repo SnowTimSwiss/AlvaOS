@@ -33,7 +33,7 @@ def env(tmp_path, monkeypatch):
 
     def exists(path):
         norm = os.path.normpath(str(path))
-        if norm.startswith("/mnt/alvaos") or norm.startswith("/.alvaos"):
+        if norm.startswith(("/mnt/alvaos", "/.alvaos")):
             return runner.exists(norm)
         return real_exists(path)
 

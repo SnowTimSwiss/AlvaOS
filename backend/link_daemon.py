@@ -43,7 +43,7 @@ import threading
 import time
 from http.client import HTTPConnection
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 for _vendor in ('/opt/alvaos/vendor',):
     if os.path.isdir(_vendor) and _vendor not in sys.path:
@@ -95,8 +95,8 @@ class State:
         self.dir = directory
         self.lock = threading.RLock()
         os.makedirs(directory, mode=0o750, exist_ok=True)
-        self.peers: Dict[str, Dict[str, Any]] = self._read('peers.json', {})
-        self.config: Dict[str, Any] = {'enabled': True, **self._read('config.json', {})}
+        self.peers: dict[str, dict[str, Any]] = self._read('peers.json', {})
+        self.config: dict[str, Any] = {'enabled': True, **self._read('config.json', {})}
 
     def _read(self, name: str, default):
         try:
@@ -169,7 +169,7 @@ class State:
                 return alias
         raise RuntimeError('No more peer addresses')
 
-    def add_peer(self, peer_id: str, kind: str, name: str, **extra: Any) -> Dict[str, Any]:
+    def add_peer(self, peer_id: str, kind: str, name: str, **extra: Any) -> dict[str, Any]:
         with self.lock:
             peer = self.peers.get(peer_id) or {'alias': self.next_alias(), 'added': _now()}
             peer.update(kind=kind, name=name[:60], **extra)
@@ -184,7 +184,7 @@ class State:
                 self.save()
             return gone
 
-    def set_buddies(self, buddies: List[Dict[str, str]]) -> None:
+    def set_buddies(self, buddies: list[dict[str, str]]) -> None:
         """Make the allowed buddies exactly this list: {id, name}."""
         with self.lock:
             wanted = {b['id']: b for b in buddies}
@@ -198,23 +198,23 @@ class State:
 # ── The link ─────────────────────────────────────────────────────────────────────
 
 class Link:
-    def __init__(self, state: State, services: Optional[Dict[str, Tuple[str, int]]] = None,
-                 local_ports: Optional[Dict[str, int]] = None, direct_only: bool = False,
-                 hints: Optional[Dict[str, List[str]]] = None):
+    def __init__(self, state: State, services: dict[str, tuple[str, int]] | None = None,
+                 local_ports: dict[str, int] | None = None, direct_only: bool = False,
+                 hints: dict[str, list[str]] | None = None):
         self.state = state
         self.services = services or dict(SERVICES)
         self.local_ports = local_ports or dict(LOCAL_PORTS)
         self.direct_only = direct_only          # tests: no relay, loopback only
-        self.hints: Dict[str, List[str]] = hints or {}
+        self.hints: dict[str, list[str]] = hints or {}
         self.endpoint: Any = None
         self.iroh: Any = None
-        self.tasks: List[asyncio.Task] = []
-        self.forwarders: Dict[str, List[Any]] = {}
-        self.connections: Dict[str, Any] = {}
+        self.tasks: list[asyncio.Task] = []
+        self.forwarders: dict[str, list[Any]] = {}
+        self.connections: dict[str, Any] = {}
         self.conn_lock = asyncio.Lock()
-        self.streams: Dict[str, int] = {}
-        self.pair_log: Dict[str, List[float]] = {}
-        self.seen: Dict[str, float] = {}
+        self.streams: dict[str, int] = {}
+        self.pair_log: dict[str, list[float]] = {}
+        self.seen: dict[str, float] = {}
         self.started = False
 
     # -- Start and stop ----------------------------------------------------------
@@ -255,7 +255,7 @@ class Link:
                 pass
             self.endpoint = None
 
-    def address_hints(self) -> List[str]:
+    def address_hints(self) -> list[str]:
         return list(self.endpoint.bound_sockets()) if self.endpoint else []
 
     # -- Incoming ----------------------------------------------------------------
@@ -285,7 +285,7 @@ class Link:
                 return
             asyncio.create_task(self._stream(remote, bi))
 
-    async def _read_line(self, recv: Any, limit: int) -> Tuple[Optional[str], bytes]:
+    async def _read_line(self, recv: Any, limit: int) -> tuple[str | None, bytes]:
         """One line from a stream and whatever came with it after the newline."""
         buf = b''
         while b'\n' not in buf:
@@ -400,7 +400,7 @@ class Link:
         return True
 
     async def _pair(self, remote: str, recv: Any, send: Any, rest: bytes) -> None:
-        async def answer(payload: Dict[str, Any]) -> None:
+        async def answer(payload: dict[str, Any]) -> None:
             await send.write_all(json.dumps(payload).encode() + b'\n')
             await send.finish()
 
@@ -495,7 +495,7 @@ class Link:
                     raise
         raise RuntimeError('unreachable')
 
-    async def remote_pair(self, peer_id: str, request: Dict[str, Any]) -> Dict[str, Any]:
+    async def remote_pair(self, peer_id: str, request: dict[str, Any]) -> dict[str, Any]:
         """Pair with another NAS: the same narrow request a stranger may make (see _pair)."""
         try:
             conn = await self._connection_to(peer_id)
@@ -509,7 +509,7 @@ class Link:
             self.connections.pop(peer_id, None)
             return {'error': f'The other NAS could not be reached: {exc}'}
 
-    async def ping(self, peer_id: str) -> Dict[str, Any]:
+    async def ping(self, peer_id: str) -> dict[str, Any]:
         """Whether an allowed buddy answers, and how fast."""
         started = time.monotonic()
         try:
@@ -523,7 +523,7 @@ class Link:
 
     # -- For the control API ---------------------------------------------------------
 
-    def status(self) -> Dict[str, Any]:
+    def status(self) -> dict[str, Any]:
         addr = self.endpoint.addr() if self.endpoint else None
         peers = []
         for peer_id, p in self.state.peers.items():
@@ -535,8 +535,8 @@ class Link:
                 'peers': peers}
 
 
-def _http_post(host: str, port: int, path: str, source: str, body: Dict[str, Any],
-               headers: Dict[str, str]) -> Tuple[int, Dict[str, Any]]:
+def _http_post(host: str, port: int, path: str, source: str, body: dict[str, Any],
+               headers: dict[str, str]) -> tuple[int, dict[str, Any]]:
     """One local POST from a given source address; (status, JSON answer)."""
     try:
         conn = HTTPConnection(host, port, timeout=15, source_address=(source, 0))
@@ -556,12 +556,12 @@ def _http_post(host: str, port: int, path: str, source: str, body: Dict[str, Any
 # ── Local control API (for the Hub, the backup code and the admin pages) ────────
 
 def control_server(link: Link, loop: asyncio.AbstractEventLoop, token: str,
-                   address: Tuple[str, int] = CONTROL_ADDRESS) -> ThreadingHTTPServer:
+                   address: tuple[str, int] = CONTROL_ADDRESS) -> ThreadingHTTPServer:
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args: Any) -> None:
             pass
 
-        def _send(self, status: int, payload: Dict[str, Any]) -> None:
+        def _send(self, status: int, payload: dict[str, Any]) -> None:
             body = json.dumps(payload).encode()
             self.send_response(status)
             self.send_header('Content-Type', 'application/json')

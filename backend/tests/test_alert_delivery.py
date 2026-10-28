@@ -49,7 +49,7 @@ def test_nothing_is_marked_sent_without_a_channel(tmp_path):
     path = str(tmp_path / "d.json")
     for _ in range(2):
         state = ad.run_once(collect=lambda: [DISK], now=datetime(2026, 10, 1, 12), path=path,
-                            send=lambda s, a, b: [], pools=lambda: [])
+                            send=lambda s, a, b: [], pools=list)
     assert state["sent"] == []
 
 
@@ -146,7 +146,7 @@ def test_settings_saved_while_sending_are_kept(tmp_path):
     state["report"]["weekly"] = False
     ad.save_state(state, path)
     ad.run_once(collect=lambda: [DISK], now=datetime(2026, 10, 1, 12), path=path, send=lambda s, a, b: ["email"],
-                pools=lambda: [])
+                pools=list)
 
     def slow_send(state, subject, body):
         # Meanwhile the admin sets up email on the settings page.
@@ -157,6 +157,6 @@ def test_settings_saved_while_sending_are_kept(tmp_path):
         return ["email"]
 
     after = ad.run_once(collect=lambda: [DISK], now=datetime(2026, 10, 1, 12, 5), path=path, send=slow_send,
-                        pools=lambda: [])
+                        pools=list)
     assert after["email"]["recipient"] == "new@example.com" and after["report"]["weekly"] is True
     assert after["sent"] == ["smart-sdb"]

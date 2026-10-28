@@ -7,7 +7,7 @@ Shared constants, command helpers, and utility functions used across all manager
 import os
 import re
 import subprocess
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 
 # Absolute paths of the system commands the backend runs. Privileged ones go
@@ -188,7 +188,7 @@ def format_bytes_gib(byte_val):
 
 
 def _utc_now():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _now_iso():

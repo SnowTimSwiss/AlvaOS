@@ -28,7 +28,7 @@ import shutil
 import stat
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, HERE)
@@ -55,7 +55,7 @@ BASE_ENV = {
 def log_denied(argv, reason):
     try:
         os.makedirs('/var/log/alvaos', exist_ok=True)
-        stamp = datetime.now(timezone.utc).isoformat()
+        stamp = datetime.now(UTC).isoformat()
         with open('/var/log/alvaos/priv-denied.log', 'a', encoding='utf-8') as f:
             f.write(f'{stamp} denied={reason!r} argv={list(argv)!r}\n')
     except Exception:

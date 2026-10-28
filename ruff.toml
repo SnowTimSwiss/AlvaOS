@@ -4,8 +4,20 @@ line-length = 120
 extend-include = ["backend/alvaos-priv"]
 
 [lint]
-# pycodestyle errors, pyflakes, and bugbear (likely bugs).
-select = ["E4", "E7", "E9", "F", "B"]
+# pycodestyle, pyflakes, bugbear (likely bugs), simplify, pyupgrade, and a few
+# checks for needlessly complicated code and commented-out code.
+select = ["E", "W", "F", "B", "SIM", "UP", "PIE", "C4", "ERA"]
+ignore = [
+    # Long lines are wrapped where they read badly; reformatting all of them
+    # would only change the diff.
+    "E501",
+    # Plain if/else and nested ifs read better than the suggested rewrites.
+    "SIM102", "SIM105", "SIM108", "SIM117", "SIM118",
+    # Several files close their handles explicitly on purpose.
+    "SIM115",
+    # typing.Callable and friends from collections.abc: a separate cleanup.
+    "UP035",
+]
 
 [lint.per-file-ignores]
 # The entry point imports the blueprints after creating the Flask app.

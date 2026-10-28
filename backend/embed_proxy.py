@@ -23,7 +23,7 @@ import json
 import os
 import re
 import threading
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import h11
 
@@ -35,7 +35,7 @@ CONNECT_SECONDS = 10
 CHUNK = 64 * 1024
 
 
-def embed_port(app_port: int) -> Optional[int]:
+def embed_port(app_port: int) -> int | None:
     """The proxy's port for an app on `app_port`, or None when it would be above 65535."""
     port = app_port + EMBED_OFFSET
     return port if 1 <= app_port <= 65535 and port <= 65535 else None
@@ -47,7 +47,7 @@ def _clean_csp(value: str) -> str:
     return '; '.join(p for p in parts if p and not re.match(r'(?i)^frame-ancestors\b', p))
 
 
-def clean_response_headers(headers: List[Tuple[bytes, bytes]]) -> List[Tuple[bytes, bytes]]:
+def clean_response_headers(headers: list[tuple[bytes, bytes]]) -> list[tuple[bytes, bytes]]:
     """The answer's headers without what keeps the app out of a frame."""
     out = []
     for name, value in headers:
@@ -63,6 +63,14 @@ def clean_response_headers(headers: List[Tuple[bytes, bytes]]) -> List[Tuple[byt
     return out
 
 
+def _wire(connection: h11.Connection, event: h11.Event) -> bytes:
+    # h11 returns None only for a ConnectionClosed event, which is never sent here.
+    data = connection.send(event)
+    if data is None:
+        raise RuntimeError(f'nothing to send for {type(event).__name__}')
+    return data
+
+
 async def _read(reader: asyncio.StreamReader) -> bytes:
     return await asyncio.wait_for(reader.read(CHUNK), IDLE_SECONDS)
 
@@ -75,7 +83,7 @@ async def _pipe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> N
                 break
             writer.write(data)
             await writer.drain()
-    except (asyncio.TimeoutError, ConnectionError, OSError):
+    except (TimeoutError, ConnectionError, OSError):
         pass
     finally:
         try:
@@ -88,7 +96,7 @@ async def handle(client_reader: asyncio.StreamReader, client_writer: asyncio.Str
     """One browser connection: any number of requests, one upstream connection."""
     try:
         up_reader, up_writer = await asyncio.wait_for(asyncio.open_connection('127.0.0.1', target_port), CONNECT_SECONDS)
-    except (asyncio.TimeoutError, OSError):
+    except (TimeoutError, OSError):
         client_writer.close()
         return
     try:
@@ -108,7 +116,7 @@ async def _relay(client_reader: asyncio.StreamReader, client_writer: asyncio.Str
         app = h11.Connection(h11.CLIENT, max_incomplete_event_size=MAX_HEAD)
         while True:
             # The request: head, then body, from the browser to the app.
-            request: Optional[h11.Request] = None
+            request: h11.Request | None = None
             while True:
                 event = browser.next_event()
                 if event is h11.NEED_DATA:
@@ -119,11 +127,11 @@ async def _relay(client_reader: asyncio.StreamReader, client_writer: asyncio.Str
                     return
                 if isinstance(event, h11.Request):
                     request = event
-                    up_writer.write(app.send(h11.Request(method=event.method, target=event.target, headers=event.headers)))
+                    up_writer.write(_wire(app, h11.Request(method=event.method, target=event.target, headers=event.headers)))
                 elif isinstance(event, h11.Data):
-                    up_writer.write(app.send(h11.Data(data=event.data)))
+                    up_writer.write(_wire(app, h11.Data(data=event.data)))
                 elif isinstance(event, h11.EndOfMessage):
-                    up_writer.write(app.send(h11.EndOfMessage(headers=event.headers)))
+                    up_writer.write(_wire(app, h11.EndOfMessage(headers=event.headers)))
                     await up_writer.drain()
                     break
                 elif browser.their_state is h11.MIGHT_SWITCH_PROTOCOL or event is h11.PAUSED:
@@ -141,15 +149,15 @@ async def _relay(client_reader: asyncio.StreamReader, client_writer: asyncio.Str
                 if isinstance(event, (h11.Response, h11.InformationalResponse)):
                     headers = clean_response_headers(list(event.headers))
                     cls = h11.InformationalResponse if isinstance(event, h11.InformationalResponse) else h11.Response
-                    client_writer.write(browser.send(cls(status_code=event.status_code, headers=headers, reason=event.reason)))
+                    client_writer.write(_wire(browser, cls(status_code=event.status_code, headers=headers, reason=event.reason)))
                     if event.status_code == 101:
                         switched = True
                         break
                 elif isinstance(event, h11.Data):
-                    client_writer.write(browser.send(h11.Data(data=event.data)))
+                    client_writer.write(_wire(browser, h11.Data(data=event.data)))
                     await client_writer.drain()
                 elif isinstance(event, h11.EndOfMessage):
-                    client_writer.write(browser.send(h11.EndOfMessage(headers=event.headers)))
+                    client_writer.write(_wire(browser, h11.EndOfMessage(headers=event.headers)))
                     await client_writer.drain()
                     break
                 elif isinstance(event, h11.ConnectionClosed):
@@ -168,7 +176,7 @@ async def _relay(client_reader: asyncio.StreamReader, client_writer: asyncio.Str
                 return
             browser.start_next_cycle()
             app.start_next_cycle()
-    except (h11.ProtocolError, asyncio.TimeoutError, ConnectionError, OSError):
+    except (TimeoutError, h11.ProtocolError, ConnectionError, OSError):
         # A message that is not HTTP, a silent connection or a closed one: end it.
         return
 
@@ -179,10 +187,10 @@ class EmbedProxies:
     def __init__(self, ports_file: str = EMBED_PORTS_FILE, bind: str = '0.0.0.0') -> None:
         self.ports_file = ports_file
         self.bind = bind
-        self.servers: Dict[int, Tuple[int, Any]] = {}    # listening port -> (app port, server)
-        self.loop: Optional[asyncio.AbstractEventLoop] = None
-        self.thread: Optional[threading.Thread] = None
-        self.failed: Dict[int, str] = {}
+        self.servers: dict[int, tuple[int, Any]] = {}    # listening port -> (app port, server)
+        self.loop: asyncio.AbstractEventLoop | None = None
+        self.thread: threading.Thread | None = None
+        self.failed: dict[int, str] = {}
 
     def start(self) -> None:
         if self.thread:
@@ -199,14 +207,14 @@ class EmbedProxies:
         self.thread.start()
         ready.wait(5)
 
-    def sync(self, wanted: Dict[int, int]) -> None:
+    def sync(self, wanted: dict[int, int]) -> None:
         """Listen on exactly these ports: {listening port: the app's port}."""
         self.start()
         assert self.loop is not None
         asyncio.run_coroutine_threadsafe(self._sync(dict(wanted)), self.loop).result(15)
         self._write_ports()
 
-    async def _sync(self, wanted: Dict[int, int]) -> None:
+    async def _sync(self, wanted: dict[int, int]) -> None:
         for port, (target, server) in list(self.servers.items()):
             if wanted.get(port) != target:
                 server.close()

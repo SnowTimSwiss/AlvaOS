@@ -9,7 +9,7 @@ import subprocess
 import json
 import os
 import re
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable
 
 from common import build_privileged_cmd, privilege_error_message
 
@@ -32,7 +32,7 @@ def write_compose_file(compose_str: str, project_name: str) -> str:
 
 class DockerManager:
     """Manages Docker container lifecycle and operations"""
-    
+
     def __init__(self):
         self.CMD = {
             'DOCKER': '/usr/bin/docker',
@@ -41,8 +41,8 @@ class DockerManager:
         }
         self.docker_cmd = self.CMD['DOCKER']
         self.compose_cmd = self.CMD['COMPOSE']
-    
-    def _run_docker_command(self, args: List[str], timeout: int = 30) -> Tuple[Optional[subprocess.CompletedProcess], Optional[str]]:
+
+    def _run_docker_command(self, args: list[str], timeout: int = 30) -> tuple[subprocess.CompletedProcess | None, str | None]:
         """Run a docker command with sudo if needed"""
         try:
             cmd = build_privileged_cmd([self.docker_cmd] + args)
@@ -58,23 +58,23 @@ class DockerManager:
                 # Never return an empty error: callers treat "" as success.
                 return None, (privilege_error_message(result, cmd) or (result.stderr or '').strip()
                               or f"docker exited with status {result.returncode}")
-            
+
             return result, None
         except subprocess.TimeoutExpired:
             return None, "Command timed out"
         except Exception as e:
             return None, str(e)
-    
-    def list_containers(self, all_containers: bool = True) -> Tuple[Optional[List[Dict]], Optional[str]]:
+
+    def list_containers(self, all_containers: bool = True) -> tuple[list[dict] | None, str | None]:
         """List all Docker containers"""
         args = ['ps', '--format', '{{json .}}']
         if all_containers:
             args.append('-a')
-        
+
         result, error = self._run_docker_command(args)
         if error or result is None:
             return None, error
-        
+
         try:
             # Docker ps --format '{{json .}}' returns one JSON object per line
             containers = []
@@ -84,13 +84,13 @@ class DockerManager:
             return containers, None
         except json.JSONDecodeError as e:
             return None, f"Failed to parse Docker output: {str(e)}"
-    
-    def get_container_details(self, container_id: str) -> Tuple[Optional[Dict], Optional[str]]:
+
+    def get_container_details(self, container_id: str) -> tuple[dict | None, str | None]:
         """Get detailed information about a container"""
         result, error = self._run_docker_command(['inspect', container_id])
         if error or result is None:
             return None, error
-        
+
         try:
             details = json.loads(result.stdout)
             if details and len(details) > 0:
@@ -99,7 +99,7 @@ class DockerManager:
         except json.JSONDecodeError as e:
             return None, f"Failed to parse container details: {str(e)}"
 
-    def get_image_repo_digests(self, image: str) -> Tuple[Optional[List[str]], Optional[str]]:
+    def get_image_repo_digests(self, image: str) -> tuple[list[str] | None, str | None]:
         """Return the locally known RepoDigests for an image reference."""
         result, error = self._run_docker_command([
             'image',
@@ -118,51 +118,51 @@ class DockerManager:
             return [str(item) for item in digests if str(item).strip()], None
         except json.JSONDecodeError as e:
             return None, f"Failed to parse image digests: {str(e)}"
-    
-    def start_container(self, container_id: str) -> Tuple[bool, Optional[str]]:
+
+    def start_container(self, container_id: str) -> tuple[bool, str | None]:
         """Start a container"""
         result, error = self._run_docker_command(['start', container_id])
         if error or result is None:
             return False, error
         return True, None
-    
-    def stop_container(self, container_id: str, timeout: int = 10) -> Tuple[bool, Optional[str]]:
+
+    def stop_container(self, container_id: str, timeout: int = 10) -> tuple[bool, str | None]:
         """Stop a container"""
         result, error = self._run_docker_command(['stop', '-t', str(timeout), container_id])
         if error or result is None:
             return False, error
         return True, None
-    
-    def restart_container(self, container_id: str) -> Tuple[bool, Optional[str]]:
+
+    def restart_container(self, container_id: str) -> tuple[bool, str | None]:
         """Restart a container"""
         result, error = self._run_docker_command(['restart', container_id])
         if error or result is None:
             return False, error
         return True, None
-    
-    def remove_container(self, container_id: str, force: bool = False) -> Tuple[bool, Optional[str]]:
+
+    def remove_container(self, container_id: str, force: bool = False) -> tuple[bool, str | None]:
         """Remove a container"""
         args = ['rm']
         if force:
             args.append('-f')
         args.append(container_id)
-        
+
         result, error = self._run_docker_command(args)
         if error or result is None:
             return False, error
         return True, None
-    
-    def get_container_logs(self, container_id: str, lines: int = 100) -> Tuple[Optional[str], Optional[str]]:
+
+    def get_container_logs(self, container_id: str, lines: int = 100) -> tuple[str | None, str | None]:
         """Get container logs"""
         result, error = self._run_docker_command(['logs', '--tail', str(lines), container_id])
         if error or result is None:
             return None, error
-        
+
         # Combine stdout and stderr
         logs = result.stdout
         if result.stderr:
             logs += "\n" + result.stderr
-        
+
         return logs, None
 
     def exec_in_container(
@@ -170,9 +170,9 @@ class DockerManager:
         container_id: str,
         command: str,
         timeout: int = 60,
-        user: Optional[str] = None,
-        workdir: Optional[str] = None
-    ) -> Tuple[Optional[Dict], Optional[str]]:
+        user: str | None = None,
+        workdir: str | None = None
+    ) -> tuple[dict | None, str | None]:
         """Execute a shell command inside a running container."""
         try:
             # Security: Validate container_id to prevent injection
@@ -181,7 +181,7 @@ class DockerManager:
             # Container IDs should be alphanumeric with optional hyphens/underscores
             if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_.-]*$', container_id):
                 return None, "Invalid container ID format"
-            
+
             # Security: Validate command to prevent shell injection
             if not command or not isinstance(command, str):
                 return None, "Invalid command"
@@ -230,38 +230,38 @@ class DockerManager:
             return None, "Command timed out"
         except Exception as e:
             return None, str(e)
-    
-    def get_container_stats(self, container_id: str) -> Tuple[Optional[Dict], Optional[str]]:
+
+    def get_container_stats(self, container_id: str) -> tuple[dict | None, str | None]:
         """Get container resource usage statistics"""
         result, error = self._run_docker_command(['stats', '--no-stream', '--format', '{{json .}}', container_id])
         if error or result is None:
             return None, error
-        
+
         try:
             stats = json.loads(result.stdout)
             return stats, None
         except json.JSONDecodeError as e:
             return None, f"Failed to parse stats: {str(e)}"
-    
+
     def create_container_from_compose(
         self,
-        compose_dict: Dict,
+        compose_dict: dict,
         app_name: str,
         pool_path: str,
-        project_name: Optional[str] = None,
-        callback: Optional[Callable[[str], None]] = None
-    ) -> Tuple[bool, Optional[str]]:
+        project_name: str | None = None,
+        callback: Callable[[str], None] | None = None
+    ) -> tuple[bool, str | None]:
         """Create and start containers from a Docker Compose configuration"""
         import yaml
-        
+
         if project_name is None:
             project_name = app_name
-        
+
         try:
             # Replace ${POOL_PATH} placeholder in compose dict
             compose_str = yaml.dump(compose_dict)
             compose_str = compose_str.replace('${POOL_PATH}', pool_path)
-            
+
             compose_file = write_compose_file(compose_str, project_name)
 
             cmd = build_privileged_cmd(
@@ -278,7 +278,7 @@ class DockerManager:
                     text=True,
                     env=COMPOSE_ENV
                 )
-                
+
                 output = []
                 assert process.stdout is not None  # stdout=PIPE
                 while True:
@@ -289,13 +289,13 @@ class DockerManager:
                         line_stripped = line.strip()
                         output.append(line_stripped)
                         callback(line_stripped)
-                
+
                 returncode = process.poll()
                 full_output = "\n".join(output)
-                
+
                 # Clean up temp file
                 os.unlink(compose_file)
-                
+
                 if returncode != 0:
                     return False, full_output
                 return True, None
@@ -314,21 +314,21 @@ class DockerManager:
 
                 if result.returncode != 0:
                     return False, privilege_error_message(result, cmd) or result.stderr
-                
+
                 return True, None
-            
+
         except Exception as e:
             return False, str(e)
 
     def update_container_from_compose(
         self,
-        compose_dict: Dict,
+        compose_dict: dict,
         app_name: str,
         pool_path: str,
-        project_name: Optional[str] = None,
-        callback: Optional[Callable[[str], None]] = None,
+        project_name: str | None = None,
+        callback: Callable[[str], None] | None = None,
         pull: bool = True
-    ) -> Tuple[bool, Optional[str]]:
+    ) -> tuple[bool, str | None]:
         """Update containers from a Docker Compose configuration.
         Pulls new images first (unless pull is False, for a settings change),
         then recreates containers while preserving volumes.
@@ -346,7 +346,7 @@ class DockerManager:
             base_cmd = [self.compose_cmd, '-f', compose_file, '-p', project_name]
             compose_env = COMPOSE_ENV
 
-            def run_step(step_args: List[str], timeout: int = 600) -> Tuple[bool, Optional[str]]:
+            def run_step(step_args: list[str], timeout: int = 600) -> tuple[bool, str | None]:
                 cmd = build_privileged_cmd(base_cmd + step_args, env=compose_env)
                 if callback:
                     process = subprocess.Popen(
@@ -402,15 +402,15 @@ class DockerManager:
                     os.unlink(compose_file)
             except Exception:
                 pass
-    
-    def pull_image(self, image: str) -> Tuple[bool, Optional[str]]:
+
+    def pull_image(self, image: str) -> tuple[bool, str | None]:
         """Pull a Docker image"""
         result, error = self._run_docker_command(['pull', image], timeout=300)
         if error or result is None:
             return False, error
         return True, None
-    
-    def check_docker_running(self) -> Tuple[bool, Optional[str]]:
+
+    def check_docker_running(self) -> tuple[bool, str | None]:
         """Check if Docker daemon is running"""
         try:
             result = subprocess.run(
@@ -419,11 +419,11 @@ class DockerManager:
                 text=True,
                 timeout=5
             )
-            
+
             is_running = result.returncode == 0 and result.stdout.strip() == 'active'
             if not is_running:
                 return False, "Docker daemon is not running"
-            
+
             return True, None
         except Exception as e:
             return False, str(e)

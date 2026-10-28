@@ -29,8 +29,8 @@ own date; afterwards the phone reports them (`done`).
 import os
 import re
 import secrets
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Set, Tuple
+from datetime import datetime, UTC
+from typing import Any
 
 from flask import Blueprint, jsonify, request
 
@@ -48,7 +48,7 @@ MAX_BATCH = 5000
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec='seconds')
+    return datetime.now(UTC).isoformat(timespec='seconds')
 
 
 def folder_name(name: Any, fallback: str = 'Phone') -> str:
@@ -58,7 +58,7 @@ def folder_name(name: Any, fallback: str = 'Phone') -> str:
     return clean[:60] or fallback
 
 
-def _place(session: Dict[str, Any]) -> Tuple[Optional[hub_data.Place], Any]:
+def _place(session: dict[str, Any]) -> tuple[hub_data.Place | None, Any]:
     place = hub_data.own_place('photos', session, hub_apps.load())
     if not place:
         return None, (jsonify({'error': 'You have no place for photos yet. Ask whoever runs this NAS for a '
@@ -76,7 +76,7 @@ def _manifest_name(phone_id: str) -> str:
     return f'{PHONES_DIR}/{phone_id}.json'
 
 
-def _load(place: hub_data.Place, phone_id: str) -> Tuple[Optional[Dict[str, Any]], str]:
+def _load(place: hub_data.Place, phone_id: str) -> tuple[dict[str, Any] | None, str]:
     if not PHONE_ID_RE.match(phone_id):
         return None, 'That phone is not known here.'
     data, error = hub_data.read(place, _manifest_name(phone_id))
@@ -88,7 +88,7 @@ def _load(place: hub_data.Place, phone_id: str) -> Tuple[Optional[Dict[str, Any]
     return data, ''
 
 
-def _list(place: hub_data.Place, rel_dir: str) -> Optional[Dict[str, Dict[str, Any]]]:
+def _list(place: hub_data.Place, rel_dir: str) -> dict[str, dict[str, Any]] | None:
     """name -> entry of one folder below the share, or None when it is not there."""
     entries, _ = files_manager.list_entries(os.path.join(place.root, rel_dir) if rel_dir else place.root,
                                             user=place.user)
@@ -97,7 +97,7 @@ def _list(place: hub_data.Place, rel_dir: str) -> Optional[Dict[str, Dict[str, A
     return {str(e.get('name')): e for e in entries if isinstance(e, dict)}
 
 
-def _trashed(place: hub_data.Place) -> List[str]:
+def _trashed(place: hub_data.Place) -> list[str]:
     """What is in the share's trash, as paths below the share."""
     result, _ = files_manager.run_helper(['files-trash-list', place.root], timeout=60, user=place.user)
     out = []
@@ -107,7 +107,7 @@ def _trashed(place: hub_data.Place) -> List[str]:
     return out
 
 
-def _in_trash(path: str, trashed: List[str]) -> bool:
+def _in_trash(path: str, trashed: list[str]) -> bool:
     return any(path == t or path.startswith(t + '/') for t in trashed)
 
 
@@ -120,11 +120,11 @@ def _mkdir(place: hub_data.Place, rel_dir: str) -> None:
         parent = f'{parent}/{part}' if parent else part
 
 
-def _flag(entry: List[Any]) -> str:
+def _flag(entry: list[Any]) -> str:
     return str(entry[4]) if len(entry) > 4 else ''
 
 
-def _free_name(name: str, taken: Dict[str, Any], local_id: str) -> str:
+def _free_name(name: str, taken: dict[str, Any], local_id: str) -> str:
     if name not in taken:
         return name
     stem, ext = os.path.splitext(name)
@@ -133,7 +133,7 @@ def _free_name(name: str, taken: Dict[str, Any], local_id: str) -> str:
 
 # ── The API for the app ─────────────────────────────────────────────────────
 
-def phone_list(place: hub_data.Place) -> List[Dict[str, Any]]:
+def phone_list(place: hub_data.Place) -> list[dict[str, Any]]:
     """The phones backing up into this place, with what they backed up."""
     folder = _list(place, _rel(place, PHONES_DIR)) or {}
     out = []
@@ -148,7 +148,7 @@ def phone_list(place: hub_data.Place) -> List[Dict[str, Any]]:
     return out
 
 
-def phones_of(session: Dict[str, Any]) -> List[Dict[str, Any]]:
+def phones_of(session: dict[str, Any]) -> list[dict[str, Any]]:
     """The same for the Devices list in the Hub; empty without Photos."""
     if not hub_apps.allowed('photos', session['user'], session['role']):
         return []
@@ -185,7 +185,7 @@ def add_phone():
     unique, n = name, 2
     while unique in taken:
         unique, n = f'{name} {n}', n + 1
-    phone: Dict[str, Any] = {'id': secrets.token_hex(6), 'name': name, 'folder': unique, 'created_at': _now(), 'last_sync': '',
+    phone: dict[str, Any] = {'id': secrets.token_hex(6), 'name': name, 'folder': unique, 'created_at': _now(), 'last_sync': '',
              'items': {}}
     if isinstance(session.get('device'), dict):
         phone['device'] = session['device'].get('id', '')      # the app that added it (Hub › Devices)
@@ -232,7 +232,7 @@ def _change(phone_id: str, work):
     return jsonify({'success': True, **answer})
 
 
-def _checked_items(raw: Any) -> Tuple[List[Dict[str, Any]], str]:
+def _checked_items(raw: Any) -> tuple[list[dict[str, Any]], str]:
     if not isinstance(raw, list) or len(raw) > MAX_BATCH:
         return [], f'Send up to {MAX_BATCH} pictures at a time.'
     out = []
@@ -251,7 +251,7 @@ def _checked_items(raw: Any) -> Tuple[List[Dict[str, Any]], str]:
     return out, ''
 
 
-def _ids(raw: Any) -> List[str]:
+def _ids(raw: Any) -> list[str]:
     return [str(i) for i in raw if LOCAL_ID_RE.match(str(i))][:MAX_BATCH] if isinstance(raw, list) else []
 
 
@@ -264,15 +264,15 @@ def plan(phone_id):
     items, problem = _checked_items(body.get('items') or [])
     deleted, keep = set(_ids(body.get('deleted'))), set(_ids(body.get('keep')))
 
-    def work(place: hub_data.Place, phone: Dict[str, Any]):
+    def work(place: hub_data.Place, phone: dict[str, Any]):
         if problem:
             return None, problem
-        known: Dict[str, List[Any]] = phone['items']
+        known: dict[str, list[Any]] = phone['items']
         base = _rel(place, phone['folder'])
-        trashed: Optional[List[str]] = None
-        listings: Dict[str, Optional[Dict[str, Dict[str, Any]]]] = {}
+        trashed: list[str] | None = None
+        listings: dict[str, dict[str, dict[str, Any]] | None] = {}
 
-        def listing(album: str) -> Optional[Dict[str, Dict[str, Any]]]:
+        def listing(album: str) -> dict[str, dict[str, Any]] | None:
             if album not in listings:
                 listings[album] = _list(place, f'{base}/{album}')
             return listings[album]
@@ -311,7 +311,7 @@ def plan(phone_id):
                 forgotten += 1
 
         upload = []
-        made: Set[str] = set()
+        made: set[str] = set()
         for item in items:
             if item['id'] in known or item['id'] in deleted:
                 continue
@@ -340,7 +340,7 @@ def done(phone_id):
     """Uploads that finished: {items: [{id, path, name, size, modified}]}."""
     raw = (request.get_json(silent=True) or {}).get('items')
 
-    def work(place: hub_data.Place, phone: Dict[str, Any]):
+    def work(place: hub_data.Place, phone: dict[str, Any]):
         if not isinstance(raw, list) or len(raw) > MAX_BATCH:
             return None, 'Nothing to note.'
         base = _rel(place, phone['folder'])
@@ -365,7 +365,7 @@ def deleted_on_phone(phone_id):
     """The phone deleted what `plan` asked it to: {ids}."""
     ids = set(_ids((request.get_json(silent=True) or {}).get('ids')))
 
-    def work(place: hub_data.Place, phone: Dict[str, Any]):
+    def work(place: hub_data.Place, phone: dict[str, Any]):
         for local_id in ids:
             phone['items'].pop(local_id, None)
         return {'count': len(phone['items'])}, ''

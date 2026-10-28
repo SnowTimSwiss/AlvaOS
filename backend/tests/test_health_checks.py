@@ -280,7 +280,7 @@ def test_failing_disks_raise_alerts(state, monkeypatch):
         "S2": {"name": "sdc", "model": "WDC WD40", "reading": hc.parse_smart(ata(pending=2))},
         "S3": {"name": "sdd", "model": "WDC WD40", "reading": hc.parse_smart(ata())},
     }}))
-    monkeypatch.setattr(storage_manager, "load_pools_state", lambda: {})
+    monkeypatch.setattr(storage_manager, "load_pools_state", dict)
     monkeypatch.setattr(storage_manager, "detect_btrfs_pools", lambda: ([], None))
 
     alerts = {a["id"]: a for a in alerts_manager._collect_system_alerts()}

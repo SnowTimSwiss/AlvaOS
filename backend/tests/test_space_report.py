@@ -67,7 +67,7 @@ def test_a_scan_sorts_folders_apps_and_restore_points():
 
 def test_only_one_scan_at_a_time_and_errors_keep_the_last_result():
     runner = Runner()
-    scanner = sr.SpaceScanner(runner, lambda: [])
+    scanner = sr.SpaceScanner(runner, list)
     scanner.start("u1", MOUNT, background=False)
     scanner._running = "u2"
     assert scanner.start("u1", MOUNT, background=False)[0] is False

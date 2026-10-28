@@ -7,7 +7,7 @@ import subprocess
 import secrets
 import shutil
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -88,9 +88,6 @@ DEBIAN_RELEASES = [
 DEBIAN_CODENAME_TO_VERSION = {r["codename"]: r["version"] for r in DEBIAN_RELEASES}
 DEBIAN_VERSION_TO_CODENAME = {r["version"]: r["codename"] for r in DEBIAN_RELEASES}
 DEFAULT_DEBIAN_TARGET_CODENAME = "trixie"
-DEFAULT_DEBIAN_TARGET_VERSION = DEBIAN_CODENAME_TO_VERSION.get(DEFAULT_DEBIAN_TARGET_CODENAME, "13")
-
-
 class UpdateManager:
     def __init__(self, repo="SnowTimSwiss/AlvaOS"):
         self.repo = repo
@@ -221,7 +218,7 @@ class UpdateManager:
     def load_json(self, path, default):
         try:
             if os.path.exists(path):
-                with open(path, "r") as f:
+                with open(path) as f:
                     return json.load(f)
         except Exception:
             pass
@@ -271,7 +268,7 @@ class UpdateManager:
             "status": status,
             "message": message or "",
             "details": details or {},
-            "updated_at": datetime.now(timezone.utc).isoformat()
+            "updated_at": datetime.now(UTC).isoformat()
         }
         self.save_json(self.state_file, payload)
         return payload
@@ -284,7 +281,7 @@ class UpdateManager:
                 "percent": max(0, min(100, int(percent)))
             },
             "details": details or {},
-            "updated_at": datetime.now(timezone.utc).isoformat()
+            "updated_at": datetime.now(UTC).isoformat()
         }
         self.save_json(self.state_file, payload)
         return payload
@@ -305,7 +302,7 @@ class UpdateManager:
         data = {}
         path = "/etc/os-release"
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 for raw_line in f:
                     line = raw_line.strip()
                     if not line or line.startswith("#") or "=" not in line:
@@ -399,11 +396,7 @@ class UpdateManager:
         elif current_idx >= 0 and stable_idx >= 0 and current_idx > stable_idx:
             # Current release is newer than known stable (or mixed sources). Do not downgrade automatically.
             reason = "current_newer_than_stable"
-        elif stable_codename and current_codename and current_codename != stable_codename:
-            target_codename = stable_codename
-            target_version = stable_version
-            reason = "stable_upgrade_available"
-        elif not current_codename and stable_codename:
+        elif stable_codename and current_codename and current_codename != stable_codename or not current_codename and stable_codename:
             target_codename = stable_codename
             target_version = stable_version
             reason = "stable_upgrade_available"
@@ -463,7 +456,7 @@ class UpdateManager:
         for path in (prod_path, dev_path):
             if os.path.exists(path):
                 try:
-                    with open(path, "r") as f:
+                    with open(path) as f:
                         return f.read().strip()
                 except Exception:
                     continue
@@ -504,7 +497,7 @@ class UpdateManager:
         try:
             return Version(self.normalize_version(latest)) > Version(self.normalize_version(current))
         except InvalidVersion:
-            # If parsing fails, do NOT assume it's an update. 
+            # If parsing fails, do NOT assume it's an update.
             # Only return True if we are sure.
             print(f"Version check warning: Could not parse versions '{current}' or '{latest}'")
             return False
@@ -542,13 +535,13 @@ class UpdateManager:
         self.set_update_state("checking", f"Checking {channel} channel")
         base_url = f"https://api.github.com/repos/{self.repo}"
         current_version = self.get_current_version()
-        
+
         # 1. Check local cache first
         cache = self.load_json(self.github_cache_file, {})
         cache_key = f"{self.repo}/{channel}"
         cached_entry = cache.get(cache_key)
-        
-        now = datetime.now(timezone.utc)
+
+        now = datetime.now(UTC)
         # Cache for 1 hour to stay safe with rate limits.
         # Manual checks may request force_refresh=True to bypass this.
         if cached_entry and not force_refresh:
@@ -565,7 +558,7 @@ class UpdateManager:
         release = None
         error = None
         rate_limit_hit = False
-        
+
         try:
             if channel == "stable":
                 url = f"{base_url}/releases/latest"
@@ -609,7 +602,7 @@ class UpdateManager:
 
         if error and not rate_limit_hit:
             self.set_update_state("error", "Update check failed", {"error": error})
-        
+
         # 3. Save to cache if successful
         if release is not None:
             cache[cache_key] = {
@@ -646,7 +639,7 @@ class UpdateManager:
         if not url or not url.startswith("https://"):
             raise ValueError("Invalid download URL")
         self.ensure_dirs()
-        self.cleanup_cache() 
+        self.cleanup_cache()
         self.update_progress("downloading", f"Downloading {version}", 0, {"version": version})
 
         parsed = urlparse(url)
@@ -820,7 +813,7 @@ class UpdateManager:
             candidates.setdefault(version, {
                 "version": version,
                 "file": name,
-                "downloaded_at": datetime.fromtimestamp(os.path.getmtime(path), timezone.utc).isoformat(),
+                "downloaded_at": datetime.fromtimestamp(os.path.getmtime(path), UTC).isoformat(),
             })
 
         def sort_key(item):
@@ -869,7 +862,7 @@ class UpdateManager:
         entry = {
             "type": "offline-system",
             "package": package_path,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "stdout": res.stdout[-2000:] if res and res.stdout else ""
         }
         self.append_history(entry)
@@ -956,7 +949,7 @@ class UpdateManager:
         entry = {
             "type": "debian",
             "packages": selected_packages,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "stdout": res.stdout[-2000:] if res.stdout else ""
         }
         self.append_history(entry)
@@ -1068,7 +1061,7 @@ class UpdateManager:
             final_info = self.get_debian_os_info()
             entry = {
                 "type": "debian-os",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "from": plan.get("current"),
                 "to": final_info,
                 "target": final_target
@@ -1096,9 +1089,9 @@ class UpdateManager:
 
     def scan_offline_packages(self, root_path=None):
 
-      
+
         packages = []
-        
+
         # 1. Scan explicit path if provided
         if root_path:
             return self._scan_path(root_path)
@@ -1124,14 +1117,14 @@ class UpdateManager:
                             if not children:
                                 # Sometimes USB sticks have no partition table, just /dev/sdb
                                 children = [device]
-                                
+
                             for part in children:
                                 # Accept 'part' or 'disk' if it has no mountpoint
                                 if not part.get('mountpoint'):
                                     # Candidate for temporary mount
                                     part_name = part.get('name')
                                     # Relax fstype check completely -> let mount auto-detect or fail
-                                    # But filter out linux_raid_member etc if needed. 
+                                    # But filter out linux_raid_member etc if needed.
                                     # For now, just try to mount.
                                     pkgs = self._temp_mount_and_scan(part_name)
                                     packages.extend(pkgs)
@@ -1151,14 +1144,14 @@ class UpdateManager:
         packages = []
         if not os.path.exists(path):
             return {"packages": []}
-            
+
         for dirpath, dirnames, filenames in os.walk(path):
             # Limit depth to avoid scanning entire OS if someone points to /
             depth = dirpath.count(os.sep) - path.count(os.sep)
             if depth > 3:
                 del dirnames[:] # Don't go deeper
                 continue
-                
+
             for name in filenames:
                 if name.endswith(".deb"):
                     full_path = os.path.join(dirpath, name)
@@ -1200,7 +1193,7 @@ class UpdateManager:
                     self.run_command([CMD['UMOUNT'], mount_point], timeout=10)
         except Exception as e:
             print(f"Failed to temp mount {dev_path}: {e}")
-            
+
         return packages
 
     def _cache_offline_package(self, src_path):

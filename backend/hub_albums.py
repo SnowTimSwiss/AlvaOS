@@ -18,8 +18,8 @@ enough), and change one list per call.
 
 import re
 import secrets
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import datetime, UTC
+from typing import Any
 
 from flask import Blueprint, jsonify, request
 
@@ -39,7 +39,7 @@ MAX_REF = 1024
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec='seconds')
+    return datetime.now(UTC).isoformat(timespec='seconds')
 
 
 def album_name(name: Any) -> str:
@@ -47,11 +47,11 @@ def album_name(name: Any) -> str:
     return re.sub(r'\s+', ' ', clean).strip()[:60]
 
 
-def refs(raw: Any) -> Tuple[List[str], str]:
+def refs(raw: Any) -> tuple[list[str], str]:
     """The pictures of a request: "<share>/<path>" strings, checked."""
     if not isinstance(raw, list) or len(raw) > MAX_BATCH:
         return [], f'Send up to {MAX_BATCH} pictures at a time.'
-    out: List[str] = []
+    out: list[str] = []
     for item in raw:
         text = str(item or '')
         share, _, path = text.partition('/')
@@ -64,7 +64,7 @@ def refs(raw: Any) -> Tuple[List[str], str]:
     return out, ''
 
 
-def _place(session: Dict[str, Any], need_write: bool) -> Tuple[Optional[hub_data.Place], Any]:
+def _place(session: dict[str, Any], need_write: bool) -> tuple[hub_data.Place | None, Any]:
     place = hub_data.own_place('photos', session, hub_apps.load())
     if not place:
         return None, (jsonify({'error': 'You have no place for photos yet. Ask whoever runs this NAS for a '
@@ -78,14 +78,14 @@ def _album_file(album_id: str) -> str:
     return f'{ALBUMS_DIR}/{album_id}.json'
 
 
-def _list_names(place: hub_data.Place) -> List[str]:
+def _list_names(place: hub_data.Place) -> list[str]:
     folder = '/'.join(p for p in (place.folder, ALBUMS_DIR) if p)
     entries, _ = files_manager.list_entries('/'.join(p for p in (place.root, folder) if p), user=place.user)
     return sorted(str(e.get('name')) for e in entries or [] if str(e.get('name', '')).endswith('.json')
                   and ALBUM_ID_RE.match(str(e.get('name'))[:-5]))
 
 
-def _items(data: Dict[str, Any]) -> List[str]:
+def _items(data: dict[str, Any]) -> list[str]:
     items = data.get('items')
     return [str(i) for i in items] if isinstance(items, list) else []
 
@@ -161,7 +161,7 @@ def _change(album_id: str, work):
     return jsonify({'success': True, 'album': album})
 
 
-def _apply(data: Dict[str, Any], album: Dict[str, Any]) -> str:
+def _apply(data: dict[str, Any], album: dict[str, Any]) -> str:
     """Rename and add/remove pictures, as the request says."""
     if 'name' in data:
         name = album_name(data.get('name'))

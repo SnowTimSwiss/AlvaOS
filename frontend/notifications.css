@@ -130,9 +130,6 @@
 }
 .modal-content details.modal-details > .modal-disclosure-panel .pw-form { margin: 0; }
 
-.modal-content.modal-wide { max-width: 640px; }
-.modal-content.modal-narrow { max-width: 420px; }
-
 /* Long forms: the fields scroll, the title and the buttons stay in view. */
 .modal-form {
     display: flex;

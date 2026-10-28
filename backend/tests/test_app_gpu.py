@@ -20,7 +20,7 @@ def card(vendor, driver, render="/dev/dri/renderD128", model="Card"):
 
 
 def toolkit(have):
-    return lambda packages: {p: have for p in packages}
+    return lambda packages: dict.fromkeys(packages, have)
 
 
 def test_intel_and_amd_cards_come_in_as_dev_dri_with_their_groups():

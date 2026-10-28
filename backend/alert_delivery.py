@@ -17,7 +17,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 from email.message import EmailMessage
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable
 
 from common import _now_iso, ensure_directories
 
@@ -28,7 +28,7 @@ NOT_SENT_PREFIXES = ('cpu-usage', 'memory-')
 REPORT_WEEKDAY = 6          # Sunday
 REPORT_HOUR = 10            # local time
 
-EMAIL_PRESETS: Dict[str, Dict[str, Any]] = {
+EMAIL_PRESETS: dict[str, dict[str, Any]] = {
     'gmail': {'host': 'smtp.gmail.com', 'port': 587, 'security': 'starttls'},
     'outlook': {'host': 'smtp-mail.outlook.com', 'port': 587, 'security': 'starttls'},
     'icloud': {'host': 'smtp.mail.me.com', 'port': 587, 'security': 'starttls'},
@@ -39,7 +39,7 @@ SECURITY_MODES = ('starttls', 'ssl', 'none')
 EMAIL_RE = re.compile(r'^[^@\s<>,;"]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,63}$')
 HOST_RE = re.compile(r'^[A-Za-z0-9.-]{1,253}$')
 
-DEFAULT_STATE: Dict[str, Any] = {
+DEFAULT_STATE: dict[str, Any] = {
     'email': {
         'enabled': False, 'provider': 'other', 'host': '', 'port': 587, 'security': 'starttls',
         'username': '', 'password': '', 'sender': '', 'recipient': '',
@@ -55,7 +55,7 @@ _lock = threading.Lock()
 
 # ── State ────────────────────────────────────────────────────────────────────
 
-def _normalize(raw: Any) -> Dict[str, Any]:
+def _normalize(raw: Any) -> dict[str, Any]:
     state = json.loads(json.dumps(DEFAULT_STATE))
     if not isinstance(raw, dict):
         return state
@@ -79,7 +79,7 @@ def _normalize(raw: Any) -> Dict[str, Any]:
     return state
 
 
-def load_state(path: str = DELIVERY_FILE) -> Dict[str, Any]:
+def load_state(path: str = DELIVERY_FILE) -> dict[str, Any]:
     try:
         with open(path) as f:
             return _normalize(json.load(f))
@@ -87,7 +87,7 @@ def load_state(path: str = DELIVERY_FILE) -> Dict[str, Any]:
         return _normalize(None)
 
 
-def save_state(state: Dict[str, Any], path: str = DELIVERY_FILE) -> Dict[str, Any]:
+def save_state(state: dict[str, Any], path: str = DELIVERY_FILE) -> dict[str, Any]:
     state = _normalize(state)
     ensure_directories()
     tmp = f'{path}.tmp'
@@ -99,7 +99,7 @@ def save_state(state: Dict[str, Any], path: str = DELIVERY_FILE) -> Dict[str, An
     return state
 
 
-def public_settings(state: Dict[str, Any]) -> Dict[str, Any]:
+def public_settings(state: dict[str, Any]) -> dict[str, Any]:
     email = dict(state['email'])
     password = email.pop('password', '')
     email['password_set'] = bool(password)
@@ -107,7 +107,7 @@ def public_settings(state: Dict[str, Any]) -> Dict[str, Any]:
     return {'email': email, 'report': dict(state['report']), 'presets': EMAIL_PRESETS}
 
 
-def apply_email_settings(state: Dict[str, Any], payload: Dict[str, Any]) -> Tuple[Dict[str, Any], str]:
+def apply_email_settings(state: dict[str, Any], payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
     """Merge what the page sent into the email settings. A password is only
     replaced when a new one is typed. Returns (settings, problem)."""
     email = dict(state['email'])
@@ -140,8 +140,8 @@ def apply_email_settings(state: Dict[str, Any], payload: Dict[str, Any]) -> Tupl
 
 # ── Sending ──────────────────────────────────────────────────────────────────
 
-def send_email(email: Dict[str, Any], subject: str, body: str,
-               smtp_module: Any = smtplib) -> Tuple[bool, str]:
+def send_email(email: dict[str, Any], subject: str, body: str,
+               smtp_module: Any = smtplib) -> tuple[bool, str]:
     msg = EmailMessage()
     msg['Subject'] = re.sub(r'[\r\n]+', ' ', subject)[:200]
     msg['From'] = email.get('sender') or email.get('username') or email['recipient']
@@ -166,7 +166,7 @@ def send_email(email: Dict[str, Any], subject: str, body: str,
     return True, ''
 
 
-def _telegram_target() -> Optional[Tuple[str, str]]:
+def _telegram_target() -> tuple[str, str] | None:
     from alerts_manager import load_alerts_state
     telegram = load_alerts_state().get('telegram', {})
     token = str(telegram.get('bot_token') or '').strip()
@@ -176,7 +176,7 @@ def _telegram_target() -> Optional[Tuple[str, str]]:
     return None
 
 
-def send_telegram(text: str) -> Tuple[bool, str]:
+def send_telegram(text: str) -> tuple[bool, str]:
     target = _telegram_target()
     if not target:
         return False, 'Telegram is not set up.'
@@ -186,8 +186,8 @@ def send_telegram(text: str) -> Tuple[bool, str]:
     return bool(ok), str(error or '')
 
 
-def deliver(state: Dict[str, Any], subject: str, body: str,
-            email_sender: Callable = send_email, telegram_sender: Callable = send_telegram) -> List[str]:
+def deliver(state: dict[str, Any], subject: str, body: str,
+            email_sender: Callable = send_email, telegram_sender: Callable = send_telegram) -> list[str]:
     """Send to every channel that is set up. Returns the channels that worked."""
     reached = []
     email = state['email']
@@ -221,7 +221,7 @@ def _nas_name() -> str:
         return 'AlvaOS'
 
 
-def problems_to_send(alerts: List[Dict[str, Any]], state: Dict[str, Any]) -> List[Dict[str, Any]]:
+def problems_to_send(alerts: list[dict[str, Any]], state: dict[str, Any]) -> list[dict[str, Any]]:
     """Problems seen at this check and the one before, not sent yet. Updates
     state['seen'] and state['sent']; gone problems can be sent again later."""
     current = [a for a in alerts
@@ -235,7 +235,7 @@ def problems_to_send(alerts: List[Dict[str, Any]], state: Dict[str, Any]) -> Lis
     return new
 
 
-def problem_message(problems: List[Dict[str, Any]], name: str) -> Tuple[str, str]:
+def problem_message(problems: list[dict[str, Any]], name: str) -> tuple[str, str]:
     critical = any(p.get('severity') == 'critical' for p in problems)
     first = problems[0].get('title', 'A problem')
     subject = f'{name}: {first}' + (f' and {len(problems) - 1} more' if len(problems) > 1 else '')
@@ -246,7 +246,7 @@ def problem_message(problems: List[Dict[str, Any]], name: str) -> Tuple[str, str
     return subject, '\n'.join(lines)
 
 
-def report_due(state: Dict[str, Any], now: datetime) -> bool:
+def report_due(state: dict[str, Any], now: datetime) -> bool:
     if not state['report']['weekly'] or now.weekday() != REPORT_WEEKDAY or now.hour < REPORT_HOUR:
         return False
     try:
@@ -258,7 +258,7 @@ def report_due(state: Dict[str, Any], now: datetime) -> bool:
     return now - last > timedelta(days=6)
 
 
-def report_message(alerts: List[Dict[str, Any]], pools: List[Dict[str, Any]], name: str) -> Tuple[str, str]:
+def report_message(alerts: list[dict[str, Any]], pools: list[dict[str, Any]], name: str) -> tuple[str, str]:
     problems = [a for a in alerts if str(a.get('severity')) in ('critical', 'warning')]
     lines = []
     if problems:
@@ -275,7 +275,7 @@ def report_message(alerts: List[Dict[str, Any]], pools: List[Dict[str, Any]], na
     return subject, '\n'.join(lines)
 
 
-def _pool_usage() -> List[Dict[str, Any]]:
+def _pool_usage() -> list[dict[str, Any]]:
     import shutil
     from storage_manager import load_pools_state
     pools = []
@@ -291,9 +291,9 @@ def _pool_usage() -> List[Dict[str, Any]]:
 
 # ── The loop ─────────────────────────────────────────────────────────────────
 
-def run_once(collect: Optional[Callable[[], List[Dict[str, Any]]]] = None,
-             now: Optional[datetime] = None, path: str = DELIVERY_FILE,
-             send: Callable = deliver, pools: Callable = _pool_usage) -> Dict[str, Any]:
+def run_once(collect: Callable[[], list[dict[str, Any]]] | None = None,
+             now: datetime | None = None, path: str = DELIVERY_FILE,
+             send: Callable = deliver, pools: Callable = _pool_usage) -> dict[str, Any]:
     if collect is None:
         from alerts_manager import _collect_system_alerts
         collect = _collect_system_alerts

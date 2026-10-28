@@ -84,7 +84,7 @@ def test_installing_runs_apt_with_the_fixed_list_and_asks_for_a_restart(tmp_path
         return subprocess.CompletedProcess(cmd, 0, "ok", ""), None
 
     flag = tmp_path / "restart"
-    gpu = gm.GpuManager(run, installed=lambda pkgs: {p: False for p in pkgs}, sys_root=str(sys_root),
+    gpu = gm.GpuManager(run, installed=lambda pkgs: dict.fromkeys(pkgs, False), sys_root=str(sys_root),
                         restart_flag=str(flag), pci_ids=ids, available=lambda p: True)
     assert not gpu.install("matrox")[0]
     ok, message = gpu.install("nvidia")
@@ -121,7 +121,7 @@ def test_missing_headers_for_the_running_kernel_are_explained_not_retried(tmp_pa
         return subprocess.CompletedProcess(cmd, 0, "ok", ""), None
 
     flag = tmp_path / "restart"
-    gpu = gm.GpuManager(run, installed=lambda pkgs: {p: False for p in pkgs}, sys_root=str(sys_root),
+    gpu = gm.GpuManager(run, installed=lambda pkgs: dict.fromkeys(pkgs, False), sys_root=str(sys_root),
                         restart_flag=str(flag), pci_ids=ids, available=lambda p: False)
     assert gpu.install("nvidia")[0]
     for _ in range(100):

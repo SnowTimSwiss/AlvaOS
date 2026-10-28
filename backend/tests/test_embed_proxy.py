@@ -82,7 +82,7 @@ def raw(port, request: bytes, until=b'', read=65536, timeout=3):
                 data += chunk
                 if until and until in data:
                     break
-        except socket.timeout:
+        except TimeoutError:
             pass
         return data
 

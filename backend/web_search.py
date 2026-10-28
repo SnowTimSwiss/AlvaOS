@@ -15,7 +15,7 @@ import re
 import socket
 from concurrent.futures import ThreadPoolExecutor
 from html.parser import HTMLParser
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 SEARCH_URLS = ('https://html.duckduckgo.com/html/', 'https://lite.duckduckgo.com/lite/')
@@ -32,12 +32,12 @@ class _Results(HTMLParser):
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
-        self.results: List[Dict[str, str]] = []
-        self._into: Optional[str] = None   # 'title' or 'snippet'
+        self.results: list[dict[str, str]] = []
+        self._into: str | None = None   # 'title' or 'snippet'
         self._end = ''
-        self._text: List[str] = []
+        self._text: list[str] = []
 
-    def handle_starttag(self, tag: str, attrs: List[Tuple[str, Optional[str]]]) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         a = {k: v or '' for k, v in attrs}
         cls = a.get('class', '')
         if tag == 'a' and ('result__a' in cls or 'result-link' in cls):
@@ -65,10 +65,10 @@ def _target(href: str) -> str:
     return href if href.startswith(('http://', 'https://')) else ''
 
 
-def parse_results(page: str) -> List[Dict[str, str]]:
+def parse_results(page: str) -> list[dict[str, str]]:
     parser = _Results()
     parser.feed(page)
-    out: List[Dict[str, str]] = []
+    out: list[dict[str, str]] = []
     for r in parser.results:
         host = urlparse(r['url']).netloc
         if not r['url'] or not r['title'] or 'duckduckgo.com' in host:   # ads go through duckduckgo.com/y.js
@@ -78,7 +78,7 @@ def parse_results(page: str) -> List[Dict[str, str]]:
     return out[:MAX_RESULTS]
 
 
-def search(query: str, post: Optional[Callable[..., Any]] = None) -> Tuple[List[Dict[str, str]], str]:
+def search(query: str, post: Callable[..., Any] | None = None) -> tuple[list[dict[str, str]], str]:
     """The results for `query`, or why there are none."""
     if post is None:
         import requests
@@ -120,7 +120,7 @@ class _Text(HTMLParser):
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
-        self.parts: List[str] = []
+        self.parts: list[str] = []
         self.skip = 0
 
     def handle_starttag(self, tag: str, attrs: Any) -> None:
@@ -149,7 +149,7 @@ def page_text(html: str, limit: int = PAGE_CHARS) -> str:
     return text[:limit]
 
 
-def read_page(url: str, get: Optional[Callable[..., Any]] = None, public: Callable[[str], bool] = _public) -> str:
+def read_page(url: str, get: Callable[..., Any] | None = None, public: Callable[[str], bool] = _public) -> str:
     """The readable text of a page ('' when it cannot be read)."""
     if get is None:
         import requests
@@ -179,8 +179,8 @@ def read_page(url: str, get: Optional[Callable[..., Any]] = None, public: Callab
     return ''
 
 
-def gather(query: str, post: Optional[Callable[..., Any]] = None, get: Optional[Callable[..., Any]] = None,
-           public: Callable[[str], bool] = _public) -> Tuple[List[Dict[str, str]], str]:
+def gather(query: str, post: Callable[..., Any] | None = None, get: Callable[..., Any] | None = None,
+           public: Callable[[str], bool] = _public) -> tuple[list[dict[str, str]], str]:
     """Search, then read the first pages: [{title, url, snippet, text}]."""
     results, error = search(query, post)
     if not results:
@@ -192,7 +192,7 @@ def gather(query: str, post: Optional[Callable[..., Any]] = None, get: Optional[
     return results, ''
 
 
-def context(results: List[Dict[str, str]]) -> str:
+def context(results: list[dict[str, str]]) -> str:
     """What the model gets: numbered sources to answer from."""
     blocks = []
     for n, r in enumerate(results, 1):
