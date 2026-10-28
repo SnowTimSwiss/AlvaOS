@@ -246,7 +246,7 @@
           "image": "vaultwarden/server:latest",
           "restart": "unless-stopped",
           "ports": [
-            "8090:80"
+            "8097:80"
           ],
           "volumes": [
             "${POOL_PATH}/data:/data"
@@ -261,7 +261,7 @@
       "ports": [
         {
           "internal": 80,
-          "external": 8090,
+          "external": 8097,
           "protocol": "tcp",
           "description": "Web UI"
         }
@@ -802,6 +802,179 @@
           "required": true,
           "secret": true,
           "generate": true
+        }
+      ]
+    }
+  },
+  "syncthing": {
+    "name": "Syncthing",
+    "description": "Keeps folders in sync between your devices, without a cloud",
+    "icon": "/apps/icons/syncthing.png",
+    "category": "Productivity",
+    "version": "latest",
+    "docker_compose": {
+      "version": "3",
+      "services": {
+        "syncthing": {
+          "image": "syncthing/syncthing:latest",
+          "restart": "unless-stopped",
+          "ports": [
+            "8384:8384",
+            "22000:22000",
+            "22000:22000/udp"
+          ],
+          "volumes": [
+            "${POOL_PATH}/data:/var/syncthing"
+          ],
+          "environment": {
+            "PUID": "1000",
+            "PGID": "1000"
+          }
+        }
+      }
+    },
+    "config_schema": {
+      "ports": [
+        {
+          "internal": 8384,
+          "external": 8384,
+          "protocol": "tcp",
+          "description": "Web UI"
+        },
+        {
+          "internal": 22000,
+          "external": 22000,
+          "protocol": "tcp",
+          "description": "Sync (TCP)"
+        },
+        {
+          "internal": 22000,
+          "external": 22000,
+          "protocol": "udp",
+          "description": "Sync (QUIC)"
+        }
+      ],
+      "volumes": [
+        {
+          "container_path": "/var/syncthing",
+          "description": "Synced folders and settings",
+          "required": true
+        }
+      ],
+      "environment": [
+        {
+          "key": "PUID",
+          "default": "1000",
+          "description": "User ID the files belong to"
+        },
+        {
+          "key": "PGID",
+          "default": "1000",
+          "description": "Group ID the files belong to"
+        }
+      ]
+    }
+  },
+  "navidrome": {
+    "name": "Navidrome",
+    "description": "Your own music streaming server, with apps for phones",
+    "icon": "/apps/icons/navidrome.png",
+    "category": "Media",
+    "version": "latest",
+    "docker_compose": {
+      "version": "3",
+      "services": {
+        "navidrome": {
+          "image": "deluan/navidrome:latest",
+          "restart": "unless-stopped",
+          "ports": [
+            "4533:4533"
+          ],
+          "volumes": [
+            "${POOL_PATH}/data:/data",
+            "${POOL_PATH}/music:/music"
+          ],
+          "environment": {
+            "ND_SCANSCHEDULE": "1h"
+          }
+        }
+      }
+    },
+    "config_schema": {
+      "ports": [
+        {
+          "internal": 4533,
+          "external": 4533,
+          "protocol": "tcp",
+          "description": "Web UI"
+        }
+      ],
+      "volumes": [
+        {
+          "container_path": "/data",
+          "description": "Library index and settings",
+          "required": true
+        },
+        {
+          "container_path": "/music",
+          "description": "Your music (put the files here)",
+          "required": true
+        }
+      ],
+      "environment": [
+        {
+          "key": "ND_SCANSCHEDULE",
+          "default": "1h",
+          "description": "How often to look for new music (e.g. 1h, 30m)"
+        }
+      ]
+    }
+  },
+  "homeassistant": {
+    "name": "Home Assistant",
+    "description": "Smart home control and automations that stay in your house",
+    "icon": "/apps/icons/homeassistant.png",
+    "category": "Smart Home",
+    "version": "latest",
+    "docker_compose": {
+      "version": "3",
+      "services": {
+        "homeassistant": {
+          "image": "ghcr.io/home-assistant/home-assistant:stable",
+          "restart": "unless-stopped",
+          "ports": [
+            "8123:8123"
+          ],
+          "volumes": [
+            "${POOL_PATH}/config:/config"
+          ],
+          "environment": {
+            "TZ": "UTC"
+          }
+        }
+      }
+    },
+    "config_schema": {
+      "ports": [
+        {
+          "internal": 8123,
+          "external": 8123,
+          "protocol": "tcp",
+          "description": "Web UI"
+        }
+      ],
+      "volumes": [
+        {
+          "container_path": "/config",
+          "description": "Settings and automations",
+          "required": true
+        }
+      ],
+      "environment": [
+        {
+          "key": "TZ",
+          "default": "UTC",
+          "description": "Timezone (e.g. Europe/Berlin)"
         }
       ]
     }

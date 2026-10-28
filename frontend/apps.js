@@ -293,6 +293,9 @@ const APP_MARKS = {
     eurooffice: ['#22609e', 'file-text'],
     wireguard: ['#7a1a1d', 'lock'],
     openwebui: ['#2d3340', 'message-square'],
+    syncthing: ['#1f6f8b', 'refresh-cw'],
+    navidrome: ['#8a3a7a', 'play'],
+    homeassistant: ['#1b7fa8', 'house'],
 };
 
 function appMark(appId) {
