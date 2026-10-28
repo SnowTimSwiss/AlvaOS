@@ -15,7 +15,7 @@ How to add an entry:
 
 ---
 
-## Security review: privileged policy, sign-in, web files (2026-10-28)
+## Security review: privileged policy, sign-in, web files (2026-10-28, [PR 53](https://github.com/SnowTimSwiss/AlvaOS/pull/53))
 
 - The privileged command policy (`priv_policy.py`) had four escapes, now closed: `btrfs receive` and `set-default` judged their target as a string, so a symlink under the data directory sent a stream into `/etc`; `mount -U` accepted the UUID of the system disk, which `read-file` could then read; Samba's `wins hook` runs a program as root; and compose files could bring in host files and devices (`include`, `extends`, `env_file`, `secrets`, `configs`, `build`, `device_cgroup_rules`, host networking, `..` in device paths). No catalog app uses any of them (a test checks the catalog).
 - The sign-in file (`auth.json`: password hash, 2FA secret) was readable by every local account; all writers now use `write_auth_file` (mode 0600, atomic). The update script fixes existing installs.
