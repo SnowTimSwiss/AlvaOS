@@ -296,8 +296,8 @@ fn show_main(app: &AppHandle) {
     }
     let built = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
         .title("AlvaOS")
-        .inner_size(560.0, 720.0)
-        .min_inner_size(400.0, 560.0)
+        .inner_size(460.0, 640.0)
+        .min_inner_size(380.0, 520.0)
         .build();
     if let Ok(window) = built {
         let _ = window.set_focus();
@@ -590,19 +590,20 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let sync = MenuItem::with_id(app, "sync-status", "No sync folder yet", false, None::<&str>)?;
     let sync_open = MenuItem::with_id(app, "sync-open", "Open the sync folder", true, None::<&str>)?;
     let sync_now = MenuItem::with_id(app, "sync-now", "Sync now", true, None::<&str>)?;
-    let open = MenuItem::with_id(app, "open", "Open AlvaOS", true, None::<&str>)?;
+    let show = MenuItem::with_id(app, "show", "Show AlvaOS", true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", "Open the Hub apps", true, None::<&str>)?;
     let browser = MenuItem::with_id(app, "browser", "Open in the browser", true, None::<&str>)?;
     let drive = MenuItem::with_id(app, "drive", "Show Files as a drive", false, None::<&str>)?;
     let connected = CheckMenuItem::with_id(app, "connected", "Connected to the NAS", true, true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit AlvaOS", true, None::<&str>)?;
     let separator = || PredefinedMenuItem::separator(app);
-    let mut items: Vec<&dyn tauri::menu::IsMenuItem<Wry>> = vec![&status, &sync, &open, &browser, &sync_open, &sync_now];
+    // "Show AlvaOS" first: on Linux every click on the icon opens this menu (AppIndicator has no clicks).
+    let (s0, s1, s2, s3) = (separator()?, separator()?, separator()?, separator()?);
+    let mut items: Vec<&dyn tauri::menu::IsMenuItem<Wry>> = vec![&show, &s0, &status, &sync, &s1, &open, &browser, &sync_open, &sync_now];
     if drive::supported() {
         items.push(&drive);
     }
-    let (s1, s2) = (separator()?, separator()?);
-    items.extend([&s1 as &dyn tauri::menu::IsMenuItem<Wry>, &connected, &settings, &s2, &quit]);
+    items.extend([&s2 as &dyn tauri::menu::IsMenuItem<Wry>, &connected, &s3, &quit]);
     let menu = Menu::with_items(app, &items)?;
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
     TrayIconBuilder::with_id("main")
@@ -618,7 +619,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
                 let app = tray.app_handle().clone();
-                tauri::async_runtime::spawn(async move { on_menu(&app, "open").await });
+                show_main(&app);
             }
         })
         .build(app)?;
@@ -635,7 +636,7 @@ async fn on_menu(app: &AppHandle, id: &str) {
                 show_main(app);
             }
         }
-        "open" | "settings" => show_main(app),
+        "open" | "show" => show_main(app),
         "browser" if set_up => {
             if let Ok(url) = signed_in_url(app).await {
                 let _ = tauri_plugin_opener::open_url(url, None::<&str>);

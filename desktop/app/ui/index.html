@@ -144,7 +144,7 @@
             </div>
         </section>
 
-        <!-- 5. Status and settings -->
+        <!-- 5. Home: how it is, and the sync folders -->
         <section class="view" id="view-home" hidden>
             <div class="hero" id="hero">
                 <div class="orb" id="orb" aria-hidden="true"><span></span><span></span><img src="logo.png" alt=""></div>
@@ -153,46 +153,45 @@
                     <p id="home-line"></p>
                     <small id="home-user"></small>
                 </div>
+                <button type="button" class="btn small ghost gear" id="home-settings" title="Settings" aria-label="Settings"><span class="ic" data-icon="gear"></span></button>
             </div>
             <div class="note warn" id="home-note" hidden></div>
             <div class="row actions">
                 <button type="button" class="btn primary big" id="home-open"><span class="ic" data-icon="window"></span>Open AlvaOS</button>
-                <button type="button" class="btn big" id="home-browser"><span class="ic" data-icon="globe"></span>In the browser</button>
+                <button type="button" class="btn big" id="home-browser" title="Open in the browser"><span class="ic" data-icon="globe"></span>Browser</button>
             </div>
 
             <div class="section-head"><h2>Sync folders</h2><span class="grow"></span>
                 <span class="sync-line" id="sync-line"></span>
-                <button type="button" class="btn small ghost" id="sync-now" title="Sync now"><span class="ic" data-icon="refresh"></span></button>
+                <button type="button" class="btn small ghost" id="sync-now" title="Sync now" aria-label="Sync now"><span class="ic" data-icon="refresh"></span></button>
+                <button type="button" class="btn small ghost" id="sync-add" title="Add a folder" aria-label="Add a folder"><span class="ic" data-icon="plus"></span></button>
             </div>
-            <div class="card list" id="sync-list"></div>
-            <div class="row">
-                <button type="button" class="btn" id="sync-add"><span class="ic" data-icon="plus"></span>Add a folder</button>
-                <button type="button" class="btn ghost" id="sync-open"><span class="ic" data-icon="folder"></span>Open</button>
-                <span class="grow"></span>
-                <label class="mini-switch">Pause <span class="switch"><input type="checkbox" id="sync-pause"><span></span></span></label>
-            </div>
+            <div class="card list sync-list" id="sync-list"></div>
+            <p class="error" id="home-error" role="alert"></p>
+        </section>
 
-            <h2>Your NAS on this computer</h2>
+        <!-- 6. Settings -->
+        <section class="view" id="view-settings" hidden>
+            <header class="bar">
+                <button type="button" class="btn small ghost" id="settings-back" aria-label="Back"><span class="ic back" data-icon="chev"></span></button>
+                <h1>Settings</h1>
+            </header>
             <div class="card list">
                 <div class="item">
-                    <span class="ic tile" data-icon="globe"></span>
-                    <div><strong>The Hub</strong><small>In any browser, from anywhere. Calendar and contacts apps (CalDAV, CardDAV) sign in there with your name and password.</small></div>
-                    <button type="button" class="btn copy" data-copy="hub"><code class="hub-url"></code></button>
+                    <span class="ic tile" data-icon="link"></span>
+                    <div><strong>Connected to the NAS</strong><small>Off: the NAS cannot be reached from here.</small></div>
+                    <label class="switch"><input type="checkbox" id="home-connected"><span></span></label>
+                </div>
+                <div class="item">
+                    <span class="ic tile" data-icon="sync"></span>
+                    <div><strong>Pause syncing</strong><small>Nothing goes up or down until you switch it back.</small></div>
+                    <label class="switch"><input type="checkbox" id="sync-pause"><span></span></label>
                 </div>
                 <div class="item" id="drive-row">
                     <span class="ic tile" data-icon="drive"></span>
                     <div><strong>Files as a drive</strong><small id="drive-text">Your shared folders in the file manager.</small></div>
                     <label class="switch"><input type="checkbox" id="home-drive"><span></span></label>
                 </div>
-                <div class="item">
-                    <span class="ic tile" data-icon="link"></span>
-                    <div><strong>Connected to the NAS</strong><small>Off: the NAS cannot be reached from this computer until you switch it on.</small></div>
-                    <label class="switch"><input type="checkbox" id="home-connected"><span></span></label>
-                </div>
-            </div>
-
-            <h2>Settings</h2>
-            <div class="card list">
                 <div class="item">
                     <span class="ic tile" data-icon="window"></span>
                     <div><strong>The Hub apps in a window</strong><small>Else "Open AlvaOS" opens the browser.</small></div>
@@ -203,13 +202,20 @@
                     <div><strong>Start with the computer</strong><small>Quietly, in the tray.</small></div>
                     <label class="switch"><input type="checkbox" id="home-autostart"><span></span></label>
                 </div>
+            </div>
+            <div class="card list">
+                <div class="item">
+                    <span class="ic tile" data-icon="globe"></span>
+                    <div><strong>The Hub's address</strong><small>For any browser and for calendar and contacts apps (CalDAV, CardDAV).</small></div>
+                    <button type="button" class="btn copy" data-copy="hub"><code class="hub-url"></code></button>
+                </div>
                 <div class="item">
                     <span class="ic tile danger" data-icon="logout"></span>
-                    <div><strong>Sign out this computer</strong><small>Here and on the NAS (Devices). Sync folders stay here, they just stop syncing.</small></div>
+                    <div><strong>Sign out this computer</strong><small>Here and on the NAS. Sync folders stay here.</small></div>
                     <button type="button" class="btn danger" id="home-signout">Sign out</button>
                 </div>
             </div>
-            <p class="error" id="home-error" role="alert"></p>
+            <p class="error" id="settings-error" role="alert"></p>
             <footer id="home-foot"></footer>
         </section>
     </main>
