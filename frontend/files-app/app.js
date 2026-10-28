@@ -38,6 +38,9 @@
         open: '<path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
         lock: '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
         settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+        up: '<path d="m18 15-6-6-6 6"/>',
+        down: '<path d="m6 9 6 6 6-6"/>',
+        sliders: '<path d="M4 21v-7"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M2 14h4"/><path d="M10 8h4"/><path d="M18 16h4"/>',
         info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
         undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
         link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
@@ -2353,40 +2356,136 @@
     // Which apps this person sees comes from the server (hub_apps.py); the
     // admin turns them on and off. With one app the bar stays hidden.
     let hubApps = [];
+    // Everything the person may open from the bar: the Hub's own apps and the App Store apps shown to them.
+    function railItems() {
+        const store = (me.hub && me.hub.store) || [];
+        return [...hubApps.map((a) => ({ id: a.id, name: a.name, icon: a.icon, kind: 'app' })),
+            ...store.map((a) => ({ id: `store:${a.id}`, name: a.name, kind: 'store', tile: a }))];
+    }
+    // What is in the side bar and what is under "More": the person's own choice (kept on the NAS), else the
+    // Hub's own apps in the bar and the App Store apps under "More".
+    function railLayout() {
+        const items = railItems();
+        const byId = Object.fromEntries(items.map((i) => [i.id, i]));
+        const bar = me.prefs && Array.isArray(me.prefs.bar) ? me.prefs.bar.filter((id) => byId[id]) : null;
+        let pinned = bar && bar.length ? bar : items.filter((i) => i.kind === 'app').map((i) => i.id);
+        if (!pinned.length && items.length) pinned = [items[0].id];
+        return { pinned: pinned.map((id) => byId[id]), more: items.filter((i) => !pinned.includes(i.id)), all: items };
+    }
+    const railButton = (i) => i.kind === 'app'
+        ? `<button type="button" class="rail-app" data-app="${esc(i.id)}">${icon(i.icon)}<span>${esc(i.name)}</span></button>`
+        : `<button type="button" class="rail-app" data-store="${esc(i.tile.id)}" title="${esc(i.name)}"><span class="rail-letter" aria-hidden="true">${esc(i.name.charAt(0).toUpperCase())}</span><span>${esc(i.name)}</span></button>`;
     function renderRail() {
         hubApps = (me.hub && me.hub.apps) || [];
-        const store = (me.hub && me.hub.store) || [];
         const rail = $('rail');
-        if (hubApps.length < 2 && !store.length) {
+        const { pinned, more, all } = railLayout();
+        if (all.length < 2) {
             rail.hidden = true;
             $('app').classList.remove('with-rail');
             return;
         }
         rail.innerHTML = `<img class="rail-logo" src="hub.svg" alt="" title="${esc((me.hub && me.hub.name) || 'AlvaOS Hub')}">`
-            + hubApps.map((a) => `<button type="button" class="rail-app" data-app="${esc(a.id)}">${icon(a.icon)}<span>${esc(a.name)}</span></button>`).join('')
-            + (store.length ? `<span class="rail-gap" aria-hidden="true"></span><button type="button" class="rail-app" id="rail-store" aria-haspopup="menu" aria-expanded="false">${icon('apps')}<span>Apps</span></button>
-                <div class="menu store-menu" id="store-menu" hidden role="menu" aria-label="Apps">${store.map((a) => `
-                    <a role="menuitem" href="${esc(storeUrl(a))}" target="_blank" rel="noopener"><span class="store-letter" aria-hidden="true">${esc(a.name.charAt(0).toUpperCase())}</span><span class="store-name">${esc(a.name)}<small>${esc(storeUrl(a).replace(/^https?:\/\//, '').replace(/\/$/, ''))}</small></span>${icon('open')}</a>`).join('')}</div>` : '');
+            + pinned.map(railButton).join('')
+            + (more.length ? `<span class="rail-gap" aria-hidden="true"></span><button type="button" class="rail-app" id="rail-store" aria-haspopup="menu" aria-expanded="false">${icon('apps')}<span>More</span></button>
+                <div class="menu store-menu" id="store-menu" hidden role="menu" aria-label="More apps">${more.map((i) => i.kind === 'app'
+        ? `<button type="button" role="menuitem" data-more-app="${esc(i.id)}"><span class="store-letter" aria-hidden="true">${icon(i.icon)}</span><span class="store-name">${esc(i.name)}</span></button>`
+        : `<button type="button" role="menuitem" data-more-store="${esc(i.tile.id)}"><span class="store-letter" aria-hidden="true">${esc(i.name.charAt(0).toUpperCase())}</span><span class="store-name">${esc(i.name)}<small>${i.tile.embed_port ? 'Opens in this window' : 'Opens in a new tab'}</small></span></button>`).join('')}</div>` : '')
+            + `<button type="button" class="rail-app rail-custom" id="rail-custom" title="Choose what is in the side bar">${icon('sliders')}<span>Customize</span></button>`;
         rail.hidden = false;
         $('app').classList.add('with-rail');
         rail.querySelectorAll('[data-app]').forEach((b) => b.addEventListener('click', () => openApp(b.dataset.app)));
+        rail.querySelectorAll('[data-store]').forEach((b) => b.addEventListener('click', () => openStoreApp(b.dataset.store)));
+        $('rail-custom').addEventListener('click', customizeRail);
         const storeBtn = $('rail-store');
-        if (storeBtn) storeBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
+        if (storeBtn) {
             const menu = $('store-menu');
-            const opening = menu.hidden;
-            hideMenus();
-            menu.hidden = !opening;
-            storeBtn.setAttribute('aria-expanded', String(opening));
-            // Beside the button in the rail on the left; above the bar on a phone (CSS).
-            const box = storeBtn.getBoundingClientRect();
-            const side = getComputedStyle(rail).flexDirection === 'column';
-            menu.style.left = side ? `${box.right + 8}px` : '';
-            menu.style.top = side ? `${Math.max(8, Math.min(box.top, innerHeight - menu.offsetHeight - 8))}px` : '';
-            menu.style.bottom = side ? 'auto' : '';
-            if (opening) menu.querySelector('a')?.focus();
-        });
+            menu.querySelectorAll('[data-more-app]').forEach((b) => b.addEventListener('click', () => { hideMenus(); openApp(b.dataset.moreApp); }));
+            menu.querySelectorAll('[data-more-store]').forEach((b) => b.addEventListener('click', () => { hideMenus(); openStoreApp(b.dataset.moreStore); }));
+            storeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const opening = menu.hidden;
+                hideMenus();
+                menu.hidden = !opening;
+                storeBtn.setAttribute('aria-expanded', String(opening));
+                // Beside the button in the rail on the left; above the bar on a phone (CSS).
+                const box = storeBtn.getBoundingClientRect();
+                const side = getComputedStyle(rail).flexDirection === 'column';
+                menu.style.left = side ? `${box.right + 8}px` : '';
+                menu.style.top = side ? `${Math.max(8, Math.min(box.top, innerHeight - menu.offsetHeight - 8))}px` : '';
+                menu.style.bottom = side ? 'auto' : '';
+                if (opening) menu.querySelector('button')?.focus();
+            });
+        }
         markRail();
+    }
+
+    // The window of an App Store app: the app on the proxy port of the NAS (embed_proxy.py) in a frame, so the
+    // app opens inside the Hub, also in the AlvaOS apps. Apps the admin did not set up for the window, and a
+    // Hub on https (the browser shows no plain http page inside it), open in a new tab.
+    const embedUrl = (a) => `http://${location.hostname}:${a.embed_port}${a.path || '/'}`;
+    function openStoreApp(id) {
+        const tile = ((me.hub && me.hub.store) || []).find((a) => a.id === id);
+        if (!tile) return;
+        if (!tile.embed_port || location.protocol === 'https:') {
+            if (tile.embed_port) toast(`${tile.name} opens in a new tab: this page is on https, and the app is not.`);
+            window.open(storeUrl(tile), '_blank', 'noopener');
+            return;
+        }
+        inTrash = null;
+        closeSide();
+        leaveView();
+        current = `store:${tile.id}`;
+        const view = $('appwin-view');
+        view.hidden = false;
+        view.innerHTML = `<div class="appwin-bar"><strong>${esc(tile.name)}</strong><span class="appwin-spacer"></span>
+            <button type="button" class="btn" data-reload title="Load it again">${icon('refresh')}<span class="hide-phone">Reload</span></button>
+            <a class="btn" href="${esc(embedUrl(tile))}" target="_blank" rel="noopener" title="If the app does not show here">${icon('open')}<span class="hide-phone">New tab</span></a></div>
+            <iframe class="appwin-frame" title="${esc(tile.name)}" src="${esc(embedUrl(tile))}" allow="fullscreen; autoplay; clipboard-read; clipboard-write; picture-in-picture"></iframe>`;
+        $('app').classList.add('in-view');
+        view.querySelector('[data-reload]').addEventListener('click', () => { view.querySelector('iframe').src = embedUrl(tile); });
+        markRail();
+    }
+
+    // What is in the side bar and in which order: per person, kept on the NAS (so the phone has it too).
+    function customizeRail() {
+        const { pinned, more } = railLayout();
+        let order = [...pinned, ...more].map((i) => ({ id: i.id, name: i.name, kind: i.kind, icon: i.icon, on: pinned.includes(i) }));
+        const wrap = $('dialog');
+        const paint = () => {
+            wrap.innerHTML = `<div class="dialog wide"><h2>Your side bar</h2>
+                <p>Choose what is in the side bar and in which order. The rest is under "More". This is only for you.</p>
+                <ul class="rail-edit">${order.map((o, n) => `<li class="${o.on ? 'on' : ''}">
+                    <span class="re-ic">${o.kind === 'app' ? icon(o.icon) : esc(o.name.charAt(0).toUpperCase())}</span>
+                    <span class="re-name">${esc(o.name)}${o.kind === 'store' ? '<small>App</small>' : ''}</span>
+                    <button type="button" class="icon-btn" data-up="${n}" aria-label="Move ${esc(o.name)} up"${n === 0 ? ' disabled' : ''}>${icon('up')}</button>
+                    <button type="button" class="icon-btn" data-down="${n}" aria-label="Move ${esc(o.name)} down"${n === order.length - 1 ? ' disabled' : ''}>${icon('down')}</button>
+                    <label class="re-switch" title="In the side bar"><input type="checkbox" data-on="${n}"${o.on ? ' checked' : ''} aria-label="${esc(o.name)} in the side bar"><span class="re-slider"></span></label></li>`).join('')}</ul>
+                <div class="notice" id="re-error"></div>
+                <div class="actions"><button type="button" class="btn ghost" id="re-reset">Back to the default</button><span class="grow"></span>
+                    <button type="button" class="btn" data-cancel>Cancel</button><button type="button" class="btn primary" id="re-save">Save</button></div></div>`;
+            wrap.hidden = false;
+            wrap.querySelector('[data-cancel]').onclick = close;
+            wrap.querySelectorAll('[data-up]').forEach((b) => { b.onclick = () => { const n = Number(b.dataset.up); [order[n - 1], order[n]] = [order[n], order[n - 1]]; paint(); }; });
+            wrap.querySelectorAll('[data-down]').forEach((b) => { b.onclick = () => { const n = Number(b.dataset.down); [order[n + 1], order[n]] = [order[n], order[n + 1]]; paint(); }; });
+            wrap.querySelectorAll('[data-on]').forEach((b) => { b.onchange = () => { order[Number(b.dataset.on)].on = b.checked; paint(); }; });
+            $('re-save').onclick = () => save({ bar: order.filter((o) => o.on).map((o) => o.id) });
+            $('re-reset').onclick = () => save({ bar: null });
+        };
+        const close = () => { wrap.hidden = true; wrap.innerHTML = ''; wrap.onclick = null; };
+        const save = async (body) => {
+            try {
+                const got = await api('prefs', { method: 'POST', json: body });
+                me.prefs = { bar: got.bar };
+                close();
+                renderRail();
+                toast(got.bar ? 'Your side bar is saved.' : 'Back to the default side bar.');
+            } catch (err) {
+                $('re-error').textContent = err.message;
+                $('re-error').classList.add('show');
+            }
+        };
+        wrap.onclick = (e) => { if (e.target === wrap) close(); };
+        paint();
     }
     // Apps from the App Store live on ports of their own, always plain http
     // (they bring no certificate of this NAS).
@@ -2394,10 +2493,11 @@
     function markRail() {
         // Photos has no folders to show: no side bar there (later maybe people).
         $('app').classList.toggle('no-side', current === 'photos');
-        $('rail').querySelectorAll('[data-app]').forEach((b) => {
-            if (b.dataset.app === current) b.setAttribute('aria-current', 'page');
+        $('rail').querySelectorAll('[data-app], [data-store]').forEach((b) => {
+            if ((b.dataset.app || `store:${b.dataset.store}`) === current) b.setAttribute('aria-current', 'page');
             else b.removeAttribute('aria-current');
         });
+        $('rail-store')?.toggleAttribute('data-current', current.startsWith('store:') && !$('rail').querySelector('[aria-current]'));
     }
 
     // Calendar and Chat are views of their own (calendar.js, chat.js): they
@@ -2408,6 +2508,9 @@
         inTrash = null;
         $('trash-nav').classList.remove('active');
         Object.values(VIEWS).forEach((id) => { $(id).hidden = true; });
+        const win = $('appwin-view');
+        win.hidden = true;
+        win.innerHTML = '';          // the frame goes: a video stops playing
         $('app').classList.remove('in-view');
     }
     function openApp(id, push = true) {

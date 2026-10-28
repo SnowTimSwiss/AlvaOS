@@ -312,6 +312,14 @@ Needs the NAS with the internet and a phone on mobile data (Wi-Fi off).
    NVIDIA's driver was installed before this version, Settings › Graphics
    offers "Install what apps need" (the container toolkit) first.
 
+## 12zzh. Apps in the Hub's window and the side bar
+
+1. Hub page (admin): show an installed app (say Jellyfin) and choose "Opens in: The Hub's window". Open the Hub (http://<NAS>:8090): the app is in the bar under "More" (or in the bar when you customize), and opens inside the Hub with Reload and "New tab". Video plays, the sign-in of the app works.
+2. An app that forbids frames (Pi-hole, Vaultwarden) shows inside the window too. Choose "A new tab" for it: it opens in a tab again.
+3. On the Hub over https (port 9443) the same app opens in a new tab, with a note.
+4. "Customize" (foot of the bar): turn Contacts off, Jellyfin on, move Jellyfin up; Save. The bar changes at once; sign in as the same person on the phone: the same bar. "Back to the default" restores it. Another person has their own.
+5. Hide the app again on the Hub page: its proxy port (app port + 20000) stops answering within a few seconds (`ss -ltn`).
+
 ## 12zzg. Graphics cards: one per app, and the load
 
 1. Dashboard, below the live strip: a row for each card (name, load, video memory, temperature, power). Run something on the card (a Jellyfin transcode, `ollama run`): the numbers move. An Intel card in the processor shows only the clock, and "shared with the NAS".

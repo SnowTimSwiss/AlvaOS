@@ -15,6 +15,15 @@ How to add an entry:
 
 ---
 
+## Apps in the Hub's window, and your own side bar
+
+- `backend/embed_proxy.py`: a proxy per app (port + 20000) that takes X-Frame-Options and CSP `frame-ancestors` out of the answers and passes everything else on, WebSockets included (h11 for the framing). Fixed target 127.0.0.1:<app port>. Tested with a real HTTP server: header cleaning, keep-alive, POST bodies, chunks, a WebSocket tunnel, ports following the settings, a busy port skipped.
+- Hub page (admin): each shown store app has "Opens in: the Hub's window / a new tab". The Hub's own page shows the app in a frame with Reload and "New tab".
+- Side bar per person: `hub_prefs.py`, `GET/POST /api/prefs`, "Customize" (switch and up/down per app), "More" for the rest. `python3-h11` is a new dependency (package, installer, requirements).
+- **Note for next time**: Away from home and in the computer and phone apps the frame needs the proxy ports to go through AlvaOS Link (next step: service `app:<port>`); until then the window works in a browser on the home network.
+
+---
+
 ## Version beta-v0.7.0
 
 - `VERSION` is `beta-v0.7.0` (the package becomes `0.7.0~beta`); the desktop app's crates and its Flatpak release list say 0.7.0 too. What is in it: the release preparation, the steps dialogs, the calendar, ZIP files, the graphics cards, and the fixes of the PRs before it (Android Files entry, Windows drive and cloud files, files on demand).
