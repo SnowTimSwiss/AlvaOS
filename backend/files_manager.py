@@ -104,9 +104,11 @@ def open_stream(path: str, chunk: int = 256 * 1024, part: Optional[Tuple[int, in
     return _stream(cmd, chunk)
 
 
-def open_zip(path: str, user: Optional[str] = None) -> Tuple[Optional[Iterator[bytes]], str]:
-    """A folder as a ZIP stream through `alvaos-priv files-zip`."""
-    return _stream(_helper_cmd(['files-zip', path], user), 256 * 1024)
+def open_zip(path: str, user: Optional[str] = None,
+             names: Optional[List[str]] = None) -> Tuple[Optional[Iterator[bytes]], str]:
+    """A folder, or only the named files and folders in it, as a ZIP stream
+    through `alvaos-priv files-zip`."""
+    return _stream(_helper_cmd(['files-zip', path, *(names or [])], user), 256 * 1024)
 
 
 def _stream(cmd: List[str], chunk: int) -> Tuple[Optional[Iterator[bytes]], str]:

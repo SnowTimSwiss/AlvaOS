@@ -741,39 +741,222 @@ def copy(src_dir: str, name: str, dst_dir: str, root: str = DATA_ROOT) -> str:
         os.close(sfd)
 
 
-def zip_folder(dir_path: str, out: BinaryIO, root: str = DATA_ROOT) -> int:
-    """Write a folder as a ZIP stream (no temporary file). Walks with
-    descriptors and never follows symlinks; files that cannot be read (no
-    access) are left out. Returns the number of files."""
+ZIP_NAMES_MAX = 200
+
+
+def zip_folder(dir_path: str, out: BinaryIO, root: str = DATA_ROOT, names: Optional[List[str]] = None) -> int:
+    """Write a folder as a ZIP stream (no temporary file), or only the listed
+    files and folders in it. Walks with descriptors and never follows
+    symlinks; files that cannot be read (no access) are left out. Returns the
+    number of files."""
     import zipfile
+    if names is not None:
+        if not names or len(names) > ZIP_NAMES_MAX:
+            raise FileOpError('Choose what to put in the ZIP.')
+        for name in names:
+            check_name(name)
     dfd = open_dir(dir_path, root)
     count = 0
+
+    def add_file(zf: Any, name: str, tfd: int, arcname: str) -> int:
+        try:
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=tfd)
+        except OSError:
+            return 0
+        with os.fdopen(fd, 'rb') as f:
+            st = os.fstat(f.fileno())
+            if not stat.S_ISREG(st.st_mode):
+                return 0
+            info = zipfile.ZipInfo(arcname, datetime.fromtimestamp(st.st_mtime).timetuple()[:6])
+            info.compress_type = zipfile.ZIP_STORED
+            info.file_size = st.st_size
+            with zf.open(info, 'w', force_zip64=st.st_size > 2 ** 31) as dst:
+                shutil.copyfileobj(f, dst, 1024 * 1024)
+        return 1
+
+    def add_tree(zf: Any, tree_fd: int, prefix: str) -> int:
+        added = 0
+        for top, dirs, files, tfd in os.fwalk('.', dir_fd=tree_fd, follow_symlinks=False):
+            dirs[:] = sorted(d for d in dirs if d != TRASH_DIR and not d.startswith('.'))
+            rel_top = os.path.normpath(top)
+            for name in sorted(files):
+                if name.startswith('.'):
+                    continue
+                arcname = name if rel_top == '.' else os.path.join(rel_top, name)
+                added += add_file(zf, name, tfd, os.path.join(prefix, arcname) if prefix else arcname)
+        return added
+
     try:
         with zipfile.ZipFile(_Unseekable(out), "w", compression=zipfile.ZIP_STORED, allowZip64=True) as zf:  # type: ignore[call-overload]
-            for top, dirs, files, tfd in os.fwalk('.', dir_fd=dfd, follow_symlinks=False):
-                dirs[:] = sorted(d for d in dirs if d != TRASH_DIR and not d.startswith('.'))
-                rel_top = os.path.normpath(top)
-                for name in sorted(files):
-                    if name.startswith('.'):
-                        continue
+            if names is None:
+                count = add_tree(zf, dfd, '')
+            else:
+                for name in names:
                     try:
-                        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=tfd)
+                        st = os.lstat(name, dir_fd=dfd)
                     except OSError:
                         continue
-                    with os.fdopen(fd, 'rb') as f:
-                        st = os.fstat(f.fileno())
-                        if not stat.S_ISREG(st.st_mode):
+                    if stat.S_ISREG(st.st_mode):
+                        count += add_file(zf, name, dfd, name)
+                    elif stat.S_ISDIR(st.st_mode):
+                        try:
+                            sub = _open_subdir(name, dfd)
+                        except OSError:
                             continue
-                        arcname = name if rel_top == '.' else os.path.join(rel_top, name)
-                        info = zipfile.ZipInfo(arcname, datetime.fromtimestamp(st.st_mtime).timetuple()[:6])
-                        info.compress_type = zipfile.ZIP_STORED
-                        info.file_size = st.st_size
-                        with zf.open(info, 'w', force_zip64=st.st_size > 2 ** 31) as dst:
-                            shutil.copyfileobj(f, dst, 1024 * 1024)
-                        count += 1
+                        try:
+                            count += add_tree(zf, sub, name)
+                        finally:
+                            os.close(sub)
         return count
     finally:
         os.close(dfd)
+
+
+UNZIP_ENTRIES_MAX = 50000
+UNZIP_BYTES_MAX = 50 * 1024 ** 3
+
+
+def unzip(dir_path: str, name: str, root: str = DATA_ROOT) -> Dict[str, Any]:
+    """Unpack a ZIP file of a folder into a new folder next to it, named like
+    the ZIP. Nothing is overwritten; paths that climb out ("../", absolute),
+    links and passworded files are refused or skipped, and the size is capped
+    while writing (the sizes in a ZIP's header are not trusted)."""
+    import zipfile
+    check_name(name)
+    dfd = open_dir(dir_path, root)
+    made = ''
+    try:
+        try:
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=dfd)
+        except OSError:
+            raise FileOpError('That ZIP file could not be opened.') from None
+        with os.fdopen(fd, 'rb') as raw:
+            if not stat.S_ISREG(os.fstat(raw.fileno()).st_mode):
+                raise FileOpError('That is not a file.')
+            try:
+                zf = zipfile.ZipFile(raw)
+            except zipfile.BadZipFile:
+                raise FileOpError('This is not a ZIP file, or it is damaged.') from None
+            infos = zf.infolist()
+            if len(infos) > UNZIP_ENTRIES_MAX:
+                raise FileOpError('This ZIP has too many files to unpack here.')
+            if any(i.flag_bits & 0x1 for i in infos):
+                raise FileOpError('This ZIP is protected with a password; it cannot be unpacked here.')
+            stem = name[:-4] if name.lower().endswith('.zip') and len(name) > 4 else name + ' (unpacked)'
+            folder = stem
+            n = 2
+            while _exists(folder, dfd):
+                folder = f'{stem} {n}'
+                n += 1
+            os.mkdir(folder, 0o770, dir_fd=dfd)
+            made = folder
+            top = _open_subdir(folder, dfd)
+            try:
+                _like_parent(top, dfd, True)
+                total = 0
+                files = 0
+                for info in infos:
+                    parts = [p for p in info.filename.replace('\\', '/').split('/') if p not in ('', '.')]
+                    if not parts or info.filename.startswith('/') or '..' in parts or any('\x00' in p for p in parts):
+                        if parts and (info.filename.startswith('/') or '..' in parts):
+                            raise FileOpError('This ZIP holds paths that point outside its folder; it was not unpacked.')
+                        continue
+                    if (info.external_attr >> 16) & 0o170000 == stat.S_IFLNK:
+                        continue
+                    for part in parts:
+                        check_name(part)
+                    cur = os.dup(top)
+                    try:
+                        for part in parts[:-1] if not info.is_dir() else parts:
+                            try:
+                                os.mkdir(part, 0o770, dir_fd=cur)
+                                made_fd = _open_subdir(part, cur)
+                                _like_parent(made_fd, cur, True)
+                            except FileExistsError:
+                                made_fd = _open_subdir(part, cur)
+                            os.close(cur)
+                            cur = made_fd
+                        if info.is_dir():
+                            continue
+                        leaf = parts[-1]
+                        try:
+                            out_fd = os.open(leaf, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o660, dir_fd=cur)
+                        except FileExistsError:
+                            continue
+                        with os.fdopen(out_fd, 'wb') as dst, zf.open(info) as src:
+                            _like_parent(dst.fileno(), cur, False)
+                            while True:
+                                chunk = src.read(1024 * 1024)
+                                if not chunk:
+                                    break
+                                total += len(chunk)
+                                if total > UNZIP_BYTES_MAX:
+                                    raise FileOpError('This ZIP unpacks to more than 50 GB; it was not unpacked.')
+                                dst.write(chunk)
+                            try:
+                                moment = time.mktime(datetime(*info.date_time).timetuple())
+                                os.utime(dst.fileno(), (moment, moment))
+                            except (ValueError, OverflowError, OSError):
+                                pass
+                        files += 1
+                    finally:
+                        os.close(cur)
+            finally:
+                os.close(top)
+        return {'folder': folder, 'files': files, 'bytes': total}
+    except BaseException:
+        if made:
+            shutil.rmtree(made, ignore_errors=True, dir_fd=dfd)
+        raise
+    finally:
+        os.close(dfd)
+
+
+SIZE_SECONDS = 25
+
+
+def folder_size(dir_path: str, name: str, root: str = DATA_ROOT, seconds: float = SIZE_SECONDS) -> Dict[str, Any]:
+    """How much a file or folder holds: bytes, files and folders. Looks at
+    everything the person may open (the trash left out) and stops after
+    `seconds`, saying that the answer is not complete then."""
+    check_name(name)
+    dfd = open_dir(dir_path, root)
+    try:
+        try:
+            st = os.lstat(name, dir_fd=dfd)
+        except OSError:
+            raise FileOpError('That does not exist (any more).') from None
+        if stat.S_ISREG(st.st_mode):
+            return {'size': st.st_size, 'files': 1, 'folders': 0, 'complete': True}
+        if not stat.S_ISDIR(st.st_mode):
+            raise FileOpError('Only files and folders have a size.')
+        try:
+            sub = _open_subdir(name, dfd)
+        except PermissionError:
+            raise FileOpError('You do not have access to this folder.') from None
+    finally:
+        os.close(dfd)
+    deadline = time.monotonic() + seconds
+    size = files = folders = 0
+    complete = True
+    try:
+        for _top, dirs, names, tfd in os.fwalk('.', dir_fd=sub, follow_symlinks=False):
+            dirs[:] = [d for d in dirs if d != TRASH_DIR]
+            folders += len(dirs)
+            for item in names:
+                try:
+                    item_st = os.lstat(item, dir_fd=tfd)
+                except OSError:
+                    continue
+                if stat.S_ISREG(item_st.st_mode):
+                    size += item_st.st_size
+                    files += 1
+            if time.monotonic() > deadline:
+                complete = False
+                break
+    finally:
+        os.close(sub)
+    return {'size': size, 'files': files, 'folders': folders, 'complete': complete}
 
 
 class _Unseekable:

@@ -562,3 +562,37 @@ def test_the_sync_folder_reads_a_whole_tree_as_the_person(client, monkeypatch):
     data = client.get("/api/sync/tree?share=Family&path=Photos").get_json()
     assert seen == [(["files-tree", "/mnt/alvaos/main/Family/Photos"], "ben")]
     assert data["entries"][0]["path"] == "2024/a.jpg" and data["complete"] is True and data["access"] == "read"
+
+
+def test_chosen_items_download_as_one_zip_through_a_link(client, monkeypatch):
+    zipped = []
+    monkeypatch.setattr(files_manager, "open_zip",
+                        lambda path, user=None, names=None: (zipped.append((path, user, names)) or iter([b"PK"]), ""))
+    sign_in(client, "ben", "ben-pass")
+    assert client.post("/api/zip-link", json={"share": "Family", "path": "Holidays", "names": ["a.jpg", "Sub"]}).status_code == 403
+    made = client.post("/api/zip-link", json={"share": "Family", "path": "Holidays", "names": ["a.jpg", "Sub"]}, headers=H)
+    assert made.status_code == 200
+    got = client.get(made.get_json()["url"])
+    assert got.status_code == 200 and got.mimetype == "application/zip" and "Holidays.zip" in got.headers["Content-Disposition"]
+    assert zipped == [("/mnt/alvaos/main/Family/Holidays", "ben", ["a.jpg", "Sub"])]
+    assert client.post("/api/zip-link", json={"share": "Family", "path": "", "names": []}, headers=H).status_code == 400
+    assert client.post("/api/zip-link", json={"share": "Anna", "names": ["x"]}, headers=H).status_code == 404
+
+
+def test_zip_files_unpack_and_sizes_run_as_the_person(client, monkeypatch):
+    calls = []
+
+    def helper(args, timeout=600, user=None):
+        calls.append((args, user))
+        return ({"folder": "Trip", "files": 3, "bytes": 9} if args[0] == "files-unzip" else {"size": 5, "files": 1, "folders": 0, "complete": True}), ""
+
+    monkeypatch.setattr(files_manager, "run_helper", helper)
+    sign_in(client, "anna", "anna-pass")
+    assert client.post("/api/unzip", json={"share": "Anna", "path": "", "name": "Trip.zip"}).status_code == 403
+    done = client.post("/api/unzip", json={"share": "Anna", "path": "Trips", "name": "Trip.zip"}, headers=H)
+    assert done.status_code == 200 and done.get_json()["folder"] == "Trip"
+    size = client.get("/api/size?share=Anna&path=Trips&name=Sub")
+    assert size.status_code == 200 and size.get_json()["size"] == 5
+    assert calls == [(["files-unzip", "/mnt/alvaos/main/Anna/Trips", "Trip.zip"], "anna"),
+                     (["files-size", "/mnt/alvaos/main/Anna/Trips", "Sub"], "anna")]
+    assert client.get("/api/size?share=Nobody&name=x").status_code == 404

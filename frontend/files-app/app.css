@@ -520,3 +520,9 @@ details.dav > summary svg { width: 18px; height: 18px; flex: none; }
 
 /* Demo mode: a small line that says so */
 .demo-tag { position: fixed; bottom: 8px; left: 10px; z-index: 140; padding: 3px 10px; border-radius: 10px; background: #f6bf26; color: #1f2937; font-size: 0.72rem; font-weight: 700; pointer-events: none; opacity: .92; }
+
+/* The space line in a header: next to the text, a short bar. */
+.space.inline { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 0 14px; }
+.space.inline[hidden] { display: none; }
+.space.inline .space-bar { width: 90px; margin-top: 0; }
+@media (max-width: 700px) { .space.inline { display: none; } }

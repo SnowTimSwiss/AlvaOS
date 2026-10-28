@@ -852,6 +852,11 @@ def get_file(token):
         item = dict(_links.get(token) or {})
     if not item or item['expires'] < time.time():
         return jsonify({'error': 'This link has expired. Open the file again.'}), 404
+    if item.get('zip'):
+        stream, error = files_manager.open_zip(item['path'], user=item['user'], names=item['zip'])
+        if stream is None:
+            return jsonify({'error': error or 'These could not be read.'}), 404
+        return _zip_response(stream, item['name'])
     if 'size' not in item:
         item['size'] = files_manager.file_size(item['path'], user=item['user'])
         with _lock:
@@ -1227,6 +1232,57 @@ def zip_folder():
     if stream is None:
         return jsonify({'error': error or 'This folder could not be read.'}), 404
     return _zip_response(stream, os.path.basename(rel) if rel else share['name'])
+
+
+@app.post('/api/zip-link')
+def zip_link():
+    """A download link (like /api/link) for chosen files and folders of one folder as one ZIP: the
+    ZIP is made while it downloads."""
+    session, refused = need_session()
+    if refused:
+        return refused
+    data = request.get_json(silent=True) or {}
+    share, path, rel, bad = target(session, data)
+    if bad:
+        return bad
+    names = [str(n) for n in data.get('names') or [] if n] if isinstance(data.get('names'), list) else []
+    if not names or len(names) > 200:
+        return jsonify({'error': 'Choose what to put in the ZIP.'}), 400
+    token = secrets.token_urlsafe(32)
+    with _lock:
+        now = time.time()
+        for t in [t for t, v in _links.items() if v['expires'] < now]:
+            del _links[t]
+        _links[token] = {'path': path, 'name': os.path.basename(rel) if rel else share['name'], 'user': as_user(session),
+                         'zip': names, 'inline': False, 'expires': now + LINK_TTL_SECONDS}
+    return jsonify({'url': f'/api/get/{token}', 'expires_in': LINK_TTL_SECONDS})
+
+
+@app.post('/api/unzip')
+def unzip_here():
+    """Unpack a ZIP file into a new folder next to it."""
+    session, refused = need_session()
+    if refused:
+        return refused
+    data = request.get_json(silent=True) or {}
+    _, path, _, bad = target(session, data, write=True)
+    if bad:
+        return bad
+    return _helper_answer(*files_manager.run_helper(['files-unzip', path, str(data.get('name') or '')],
+                                                    user=as_user(session), timeout=3600))
+
+
+@app.get('/api/size')
+def size_of():
+    """How much a file or folder holds (bytes, files, folders)."""
+    session, refused = need_session()
+    if refused:
+        return refused
+    _, path, _, bad = target(session, request.args)
+    if bad:
+        return bad
+    return _helper_answer(*files_manager.run_helper(['files-size', path, str(request.args.get('name') or '')],
+                                                    user=as_user(session), timeout=120))
 
 
 # Uploads arrive in pieces of up to PIECE_LIMIT_BYTES, so big files work, a

@@ -344,3 +344,85 @@ def test_the_whole_tree_comes_in_one_answer_for_the_sync_folder(share):
     assert [e["path"] for e in fo.tree(os.path.join(s, "Films"), root)["entries"]] == ["Summer 2024", "Summer 2024/beach.mp4"]
     stopped = fo.tree(s, root, limit=2)
     assert len(stopped["entries"]) == 2 and stopped["complete"] is False
+
+
+def test_chosen_files_and_folders_zip_together(share):
+    import zipfile
+    root, s_, outside = share
+    fo.write_file(os.path.join(s_, "Films"), "a.mkv", io.BytesIO(b"film"), root)
+    fo.write_file(s_, "other.txt", io.BytesIO(b"x"), root)
+    buf = io.BytesIO()
+    assert fo.zip_folder(s_, buf, root, names=["Films", "notes.txt"]) == 2
+    z = zipfile.ZipFile(io.BytesIO(buf.getvalue()))
+    assert sorted(z.namelist()) == ["Films/a.mkv", "notes.txt"]          # not other.txt
+    for bad in ([], ["../etc"], ["a/b"], ["x"] * 201):
+        with pytest.raises(fo.FileOpError):
+            fo.zip_folder(s_, io.BytesIO(), root, names=bad)
+
+
+def _zip_of(entries):
+    import zipfile
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for name, data in entries:
+            if isinstance(data, zipfile.ZipInfo):
+                z.writestr(data, "target")
+            else:
+                z.writestr(name, data)
+    return buf.getvalue()
+
+
+def test_a_zip_unpacks_into_a_new_folder_next_to_it(share):
+    root, s_, _ = share
+    fo.write_file(s_, "Trip.zip", io.BytesIO(_zip_of([("a.txt", "A"), ("Photos/b.jpg", "B"), ("Empty/", "")])), root)
+    got = fo.unzip(s_, "Trip.zip", root)
+    assert got["folder"] == "Trip" and got["files"] == 2
+    assert open(os.path.join(s_, "Trip", "Photos", "b.jpg")).read() == "B"
+    assert os.path.isdir(os.path.join(s_, "Trip", "Empty"))
+    assert os.stat(os.path.join(s_, "Trip", "a.txt")).st_mode & 0o777 == 0o660
+    assert fo.unzip(s_, "Trip.zip", root)["folder"] == "Trip 2"          # never into what is there
+    assert open(os.path.join(s_, "Trip.zip"), "rb").read()               # the ZIP stays
+
+
+def test_a_zip_cannot_write_outside_its_folder_or_through_links(share):
+    import zipfile
+    root, s_, outside = share
+    fo.write_file(s_, "evil.zip", io.BytesIO(_zip_of([("fine.txt", "ok"), ("../../etc/shadow", "owned")])), root)
+    with pytest.raises(fo.FileOpError, match="outside"):
+        fo.unzip(s_, "evil.zip", root)
+    assert not os.path.exists(os.path.join(s_, "evil"))                  # nothing half unpacked is left
+    assert open(os.path.join(outside, "shadow")).read() == "secret"
+    fo.write_file(s_, "abs.zip", io.BytesIO(_zip_of([("/etc/passwd", "x")])), root)
+    with pytest.raises(fo.FileOpError, match="outside"):
+        fo.unzip(s_, "abs.zip", root)
+    link = zipfile.ZipInfo("link")
+    link.external_attr = (0o120777 << 16)
+    fo.write_file(s_, "sym.zip", io.BytesIO(_zip_of([("link", link), ("ok.txt", "1")])), root)
+    got = fo.unzip(s_, "sym.zip", root)
+    assert got["files"] == 1 and not os.path.lexists(os.path.join(s_, "sym", "link"))
+    fo.write_file(s_, "bad.zip", io.BytesIO(b"not a zip"), root)
+    with pytest.raises(fo.FileOpError, match="not a ZIP"):
+        fo.unzip(s_, "bad.zip", root)
+
+
+def test_a_zip_that_unpacks_huge_is_stopped_while_writing(share, monkeypatch):
+    root, s_, _ = share
+    monkeypatch.setattr(fo, "UNZIP_BYTES_MAX", 1000)
+    fo.write_file(s_, "bomb.zip", io.BytesIO(_zip_of([("big.bin", "0" * 5000)])), root)
+    with pytest.raises(fo.FileOpError, match="more than"):
+        fo.unzip(s_, "bomb.zip", root)
+    assert not os.path.exists(os.path.join(s_, "bomb"))
+
+
+def test_folder_size_counts_files_and_leaves_the_trash_out(share):
+    root, s_, _ = share
+    fo.write_file(os.path.join(s_, "Films"), "a.mkv", io.BytesIO(b"1234"), root)
+    fo.make_dir(os.path.join(s_, "Films"), "Sub", root)
+    fo.write_file(os.path.join(s_, "Films", "Sub"), "b", io.BytesIO(b"12"), root)
+    fo.write_file(s_, "gone.txt", io.BytesIO(b"123456789"), root)
+    fo.trash(s_, s_, "gone.txt", root)
+    assert fo.folder_size(s_, "Films", root) == {"size": 6, "files": 2, "folders": 1, "complete": True}
+    assert fo.folder_size(s_, "notes.txt", root)["size"] == 3
+    with pytest.raises(fo.FileOpError):
+        fo.folder_size(s_, "../x", root)
+    assert fo.folder_size(s_, "Films", root, seconds=-1)["complete"] is False

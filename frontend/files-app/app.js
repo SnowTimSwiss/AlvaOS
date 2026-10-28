@@ -37,6 +37,7 @@
         more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
         open: '<path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
         lock: '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+        info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
         undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
         link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
         copy: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
@@ -618,7 +619,7 @@
             head.innerHTML = foundInfo.list
                 ? `${icon(foundInfo.list === 'recent' ? 'clock' : 'star').replace('<svg', '<svg width="16" height="16"')}<span>${foundInfo.list === 'recent' ? 'Recently opened' : 'Starred'} · ${found.length} ${found.length === 1 ? 'item' : 'items'}</span>`
                 : foundInfo.photos
-                ? `${icon(v.type === 'fav' ? 'heart' : 'image').replace('<svg', '<svg width="16" height="16"')}<span>${what}</span>
+                ? `${icon(v.type === 'fav' ? 'heart' : 'image').replace('<svg', '<svg width="16" height="16"')}<span>${what}</span><span class="space inline" data-hub-space hidden></span>
                 <span class="head-actions">${albumNow && foundInfo.lib.writable ? `<button type="button" class="link" id="album-rename">Rename</button><button type="button" class="link" id="album-delete">Delete album</button>` : ''}
                 ${(foundInfo.sources || []).some((src) => src.own && src.writable !== false) ? `<button type="button" class="btn" id="photos-upload" title="Add pictures and videos from this device">${icon('upload')}<span class="hide-phone">Upload</span></button>` : ''}
                 <button type="button" class="btn${foundInfo.selecting ? ' primary' : ''}" id="photos-select" aria-pressed="${!!foundInfo.selecting}">${foundInfo.selecting ? 'Done' : 'Select'}</button></span>
@@ -935,6 +936,45 @@
         toast('The ZIP is made while it downloads; big folders take a while.');
     }
 
+    // Several things of one folder as one ZIP: the ZIP is made while it downloads.
+    async function zipChosen(list) {
+        try {
+            const url = (await api('zip-link', { method: 'POST', json: { share, path, names: list.map((e) => e.name) } })).url;
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = '';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            toast('The ZIP is made while it downloads; big folders take a while.');
+        } catch (err) {
+            toast(err.message, 'error');
+        }
+    }
+
+    async function unpack(entry) {
+        toast(`Unpacking ${entry.name}…`);
+        try {
+            const got = await api('unzip', { method: 'POST', json: { share, path, name: entry.name } });
+            toast(`Unpacked into "${got.folder}": ${got.files} ${got.files === 1 ? 'file' : 'files'}.`);
+            await load();
+        } catch (err) {
+            toast(err.message, 'error');
+        }
+    }
+
+    async function sizeOf(entry) {
+        toast('Measuring…');
+        try {
+            const got = await api(`size?${new URLSearchParams({ share: sh(entry), path: entry.folder !== undefined ? entry.folder : path, name: entry.name })}`);
+            const parts = [`${got.files} ${got.files === 1 ? 'file' : 'files'}`];
+            if (got.folders) parts.push(`${got.folders} ${got.folders === 1 ? 'folder' : 'folders'}`);
+            toast(`${entry.name}: ${bytes(got.size)} in ${parts.join(' and ')}${got.complete ? '' : ' so far (it is big: this is not all of it yet)'}.`);
+        } catch (err) {
+            toast(err.message, 'error');
+        }
+    }
+
     async function download(list) {
         for (const entry of list.filter((e) => e.type === 'folder')) zipDownload(rel(entry), sh(entry));
         for (const entry of list.filter((e) => e.type === 'file')) {
@@ -962,6 +1002,9 @@
         if (one && found) rows.push(`<button type="button" data-ctx="reveal">${icon('folder')}Show in folder</button>`);
         if (sel.some((e) => e.type === 'file')) rows.push(`<button type="button" data-ctx="download">${icon('download')}Download</button>`);
         if (one && one.type === 'folder') rows.push(`<button type="button" data-ctx="zip">${icon('archive')}Download as ZIP</button>`);
+        if (sel.length > 1 && !found) rows.push(`<button type="button" data-ctx="zip-chosen">${icon('archive')}Download all as one ZIP</button>`);
+        if (canWrite && one && one.type === 'file' && /\.zip$/i.test(one.name) && !found) rows.push(`<button type="button" data-ctx="unzip">${icon('archive')}Unpack here</button>`);
+        if (one && one.type === 'folder') rows.push(`<button type="button" data-ctx="size">${icon('info')}How big is it?</button>`);
         if (!sel.length && !found) rows.push(`<button type="button" data-ctx="zip-here">${icon('archive')}Download this folder as ZIP</button>`);
         if (canWrite && one) rows.push(`<button type="button" data-ctx="rename">${icon('pen')}Rename</button>`);
         if (one && one.type === 'folder' && !shareOf(sh(one))?.from) rows.push(`<button type="button" data-ctx="people">${icon('user-plus')}Share with people…</button>`);
@@ -1009,6 +1052,9 @@
         if (name === 'download') download(sel);
         if (name === 'zip' && sel.length === 1) zipDownload(rel(sel[0]), sh(sel[0]));
         if (name === 'zip-here') zipDownload(path);
+        if (name === 'zip-chosen' && sel.length > 1) zipChosen(sel);
+        if (name === 'unzip' && sel.length === 1) unpack(sel[0]);
+        if (name === 'size' && sel.length === 1) sizeOf(sel[0]);
         if (name === 'rename' && sel.length === 1) rename(sel[0]);
         if (name === 'delete' && sel.length) remove(sel);
         if (name === 'move' && sel.length) moveDialog(sel);
@@ -2365,6 +2411,32 @@
         if (app) app.show($(VIEWS[id]));
     }
     // What the other apps use from here.
+    // "You use 42 of 100 GB" in the other apps' sidebars too: the person's own limited folder.
+    let ownSpace = null;
+    let ownSpaceAt = 0;
+    async function fillSpace(box) {
+        const info = (me?.shares || []).find((x) => x.limited && !x.from) || (me?.shares || []).find((x) => x.limited);
+        if (!info) return;
+        try {
+            if (!ownSpace || Date.now() - ownSpaceAt > 60000) {
+                ownSpace = await api(`space?share=${encodeURIComponent(info.name)}`);
+                ownSpaceAt = Date.now();
+            }
+            if (!ownSpace.limit_bytes || ownSpace.used_bytes === null || ownSpace.used_bytes === undefined) return;
+            const part = Math.min(1, ownSpace.used_bytes / ownSpace.limit_bytes);
+            box.classList.add('space');
+            box.classList.toggle('full', part >= 0.99);
+            box.classList.toggle('warn', part >= 0.9 && part < 0.99);
+            box.innerHTML = `<div>You use <strong>${esc(bytes(ownSpace.used_bytes))}</strong> of ${esc(bytes(ownSpace.limit_bytes))}</div>
+                <div class="space-bar" role="progressbar" aria-label="Space used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(part * 100)}"><span style="width:${(part * 100).toFixed(1)}%"></span></div>`;
+            box.hidden = false;
+        } catch (_e) { /* no number is better than a wrong one */ }
+    }
+    new MutationObserver((list) => list.forEach((m) => m.addedNodes.forEach((n) => {
+        if (n.nodeType !== 1) return;
+        (n.matches && n.matches('[data-hub-space]') ? [n] : [...n.querySelectorAll('[data-hub-space]')]).forEach(fillSpace);
+    }))).observe(document.body, { childList: true, subtree: true });
+
     window.Hub = {
         api, toast, esc, icon,
         addIcons: (paths) => Object.assign(P, paths),
@@ -2375,7 +2447,7 @@
         // One of the Files tools ("trash", "links", "devices"), asked by the app's Settings.
         tool: (t) => { if (started) openTool(t); else pendingTool = t; },
         // The person and "Sign out", at the foot of each app's sidebar.
-        foot: () => `<div class="side-foot"><div class="me"><span class="avatar">${esc((me?.user || '?').slice(0, 1).toUpperCase())}</span><span>${esc(me?.user || '')}</span></div><button type="button" class="link" data-signout>Sign out</button></div>`,
+        foot: () => `<div class="space" data-hub-space hidden></div><div class="side-foot"><div class="me"><span class="avatar">${esc((me?.user || '?').slice(0, 1).toUpperCase())}</span><span>${esc(me?.user || '')}</span></div><button type="button" class="link" data-signout>Sign out</button></div>`,
     };
     document.addEventListener('click', (e) => { if (e.target.closest('[data-signout]')) signOut(); });
 

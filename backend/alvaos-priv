@@ -370,6 +370,8 @@ FILES_OPS = {
     'files-search': (2, lambda a: files_ops.search(a[0], a[1])),
     'files-tree': (1, lambda a: files_ops.tree(a[0])),
     'files-media': (1, lambda a: files_ops.media(a[0])),
+    'files-unzip': (2, lambda a: files_ops.unzip(a[0], a[1])),
+    'files-size': (2, lambda a: files_ops.folder_size(a[0], a[1])),
     'files-versions': (None, lambda a: {'versions': files_ops.versions(a[0], a[1:])}),
     'files-restore-version': (4, lambda a: {'name': files_ops.restore_version(a[0], a[1], a[2], a[3])}),
     'files-write': (2, lambda a: {'written': files_ops.write_file(a[0], a[1], sys.stdin.buffer)}),
@@ -416,11 +418,11 @@ def become(user):
 
 
 def files_zip(argv):
-    """AlvaOS Files: a folder as a ZIP stream on stdout."""
-    if len(argv) != 1:
-        deny(['files-zip'] + list(argv), 'usage: files-zip DIR')
+    """AlvaOS Files: a folder, or some of its files and folders, as a ZIP stream on stdout."""
+    if not 1 <= len(argv) <= 1 + files_ops.ZIP_NAMES_MAX:
+        deny(['files-zip'] + list(argv), 'usage: files-zip DIR [NAME...]')
     try:
-        files_ops.zip_folder(argv[0], sys.stdout.buffer)
+        files_ops.zip_folder(argv[0], sys.stdout.buffer, names=list(argv[1:]) or None)
         sys.stdout.buffer.flush()
     except files_ops.FileOpError as e:
         sys.stderr.write(f'{e}\n')

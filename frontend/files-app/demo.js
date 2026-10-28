@@ -324,6 +324,9 @@
         if (path === 'devices/pair-code') return json({ code: 'DEMO0000', link: 'alvaos://pair?c=DEMO0000', qr: '', addresses: [], expires_in: 600, away: true });
         if (path === 'links') return json({ links: [] });
         if (path === 'trash') return json({ success: true, items: [], keep_days: 30 });
+        if (path === 'size') return json({ success: true, size: 48 * 1024 ** 2, files: 12, folders: 3, complete: true });
+        if (path === 'unzip' && method === 'POST') return json({ error: 'Unpacking is not part of the demo.' }, 409);
+        if (path === 'zip-link' && method === 'POST') return json({ error: 'Downloads are not part of the demo.' }, 409);
         if (path === 'people') return json({ people: ['sam', 'anna'] });
         if (path === 'grants') return json({ grants: [] });
         if (path === 'mkdir' && method === 'POST') {
