@@ -299,3 +299,13 @@
 .chip.dragging { opacity: .85; z-index: 3; box-shadow: 0 2px 8px rgba(0, 0, 0, .25); }
 .chip.ghost { background: color-mix(in srgb, var(--accent, #1f5fd1) 35%, transparent); border: 1px dashed var(--accent, #1f5fd1); pointer-events: none; }
 @media (pointer: coarse) { .grip { opacity: 1; width: 14px; } }
+
+/* Round and pill backgrounds hold their text in the middle on every system's fonts (a plain button
+   centres the line box, and numbers sit high in it); bars keep a gap to the bar next to them. */
+.cal-mini-grid button, .wk-day .dnum, .mo-num button { display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
+.cal-mini-grid button { display: flex; }
+.chip { height: 20px; align-self: center; line-height: 1; }
+.chip.solid { padding: 0 8px; }
+.mo-week .chip { margin-top: 0; }
+.ev.short { display: flex; flex-direction: column; justify-content: center; padding-top: 0; padding-bottom: 0; }
+.pop-tabs button { line-height: 1.2; }

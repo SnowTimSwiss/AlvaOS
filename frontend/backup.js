@@ -692,7 +692,7 @@ function renderBuddyStatus() {
         peersEl.innerHTML = `
             <div class="buddy-empty">
                 <p class="metric-sub">No buddy yet. Pair with someone you trust and their AlvaOS keeps an encrypted copy of your data, far away from a fire or a break-in.</p>
-                <button class="btn-primary buddy-add-btn">Add a buddy</button>
+                <button class="btn-primary buddy-add-btn">Pair a buddy</button>
             </div>`;
         buddyRemoteSnapshots = [];
         renderBuddyRemoteSnapshotsList();
@@ -1122,112 +1122,112 @@ async function loadBuddySettings() {
     fillBuddySettingsUi();
 }
 
-async function generateBuddyToken() {
-    const expiresMinutes = Number(document.getElementById('buddy-token-expiry')?.value || 0);
-
-    const response = await backupApi('/backup/pairing/generate', {
-        method: 'POST',
-        json: {
-            expires_minutes: expiresMinutes
-        }
-    });
+// Pairing with a buddy, in steps: first the choice (I send a code, or I got one), then the page for it.
+async function requestBuddyToken(expiresMinutes) {
+    const response = await backupApi('/backup/pairing/generate', { method: 'POST', json: { expires_minutes: expiresMinutes } });
     const data = await backupReadJson(response);
-    if (!response || !response.ok || !data) {
-        backupNotify(data?.error || 'Failed to generate pairing token', 'error');
-        return;
-    }
-
-    const tokenEl = document.getElementById('buddy-generated-token');
-    if (tokenEl) tokenEl.value = data.token || '';
-    backupNotify('Pairing token generated', 'success');
-    await loadBuddyStatus();
+    if (!response || !response.ok || !data) throw new Error(data?.error || 'The code could not be made.');
+    return data.token || '';
 }
 
-async function copyBuddyToken() {
-    const token = document.getElementById('buddy-generated-token')?.value || '';
-    if (!token) {
-        backupNotify('No token to copy', 'warning');
-        return;
-    }
-
-    // Primary path: modern clipboard API
-    try {
-        if (navigator?.clipboard?.writeText) {
-            await navigator.clipboard.writeText(token);
-            backupNotify('Token copied to clipboard', 'success');
-            return;
-        }
-    } catch {
-        // fallback below
-    }
-
-    // Fallback path: temporary textarea + execCommand copy
-    try {
-        const temp = document.createElement('textarea');
-        temp.value = token;
-        temp.setAttribute('readonly', 'readonly');
-        temp.style.position = 'fixed';
-        temp.style.left = '-9999px';
-        temp.style.top = '0';
-        document.body.appendChild(temp);
-        temp.focus();
-        temp.select();
-        temp.setSelectionRange(0, temp.value.length);
-        const ok = document.execCommand('copy');
-        document.body.removeChild(temp);
-        if (ok) {
-            backupNotify('Token copied to clipboard', 'success');
-            return;
-        }
-    } catch {
-        // manual fallback below
-    }
-
-    try {
-        const tokenEl = document.getElementById('buddy-generated-token');
-        if (tokenEl) {
-            tokenEl.focus();
-            tokenEl.select();
-            tokenEl.setSelectionRange(0, tokenEl.value.length);
-        }
-        backupNotify('Clipboard blocked. Token is selected, copy with Ctrl+C (or Cmd+C).', 'warning');
-    } catch {
-        backupNotify('Failed to copy automatically. Copy the token manually from the text box.', 'warning');
-    }
+async function pairWithBuddyToken(token) {
+    const response = await backupApi('/backup/pairing/validate', { method: 'POST', json: { token } });
+    const data = await backupReadJson(response);
+    if (!response || !response.ok || !data) throw new Error(data?.error || 'Pairing did not work.');
+    return data;
 }
 
-async function validateBuddyToken() {
-    const token = document.getElementById('buddy-token-input')?.value?.trim() || '';
-    if (!token) {
-        backupNotify('Paste a buddy token first', 'warning');
-        return;
-    }
-
-    const response = await backupApi('/backup/pairing/validate', {
-        method: 'POST',
-        json: {
-            token: token
-        }
+function openBuddyPairing() {
+    const esc = backupEscapeHtml;
+    const known = new Set((Array.isArray(buddyState?.peers) ? buddyState.peers : []).map((p) => String(p.node_id || '')));
+    let poll = 0;
+    const arrived = () => (Array.isArray(buddyState?.peers) ? buddyState.peers : []).find((p) => !known.has(String(p.node_id || '')));
+    openFlow({
+        title: 'Pair a buddy',
+        onClose: () => { clearInterval(poll); loadBuddyStatus(); },
+        start: 'choose',
+        screens: {
+            choose: () => ({
+                body: `
+                    <p class="flow-lead">A buddy is a friend's or family member's AlvaOS. Each keeps an encrypted copy of the other's data, far away from a fire or a break-in. You pair once, with a code.</p>
+                    <div class="flow-choices">
+                        <button type="button" class="flow-choice" data-go="make"><span class="fc-ic"><i data-lucide="send" aria-hidden="true"></i></span><span><strong>I send a code</strong><small>Make a code here and send it to your buddy.</small></span></button>
+                        <button type="button" class="flow-choice" data-go="paste"><span class="fc-ic"><i data-lucide="clipboard-paste" aria-hidden="true"></i></span><span><strong>I got a code</strong><small>Paste the code your buddy sent you.</small></span></button>
+                    </div>
+                    <p class="flow-note">AlvaOS Link must be on at both NAS (Settings › AlvaOS Link). Nothing to set in either router.</p>`,
+            }),
+            make: ({ go, dlg }) => ({
+                title: 'Make a code',
+                body: `
+                    <p class="flow-lead">The code works for one buddy, once. Send it by message or email; it is no secret from the NAS, but only your buddy should have it.</p>
+                    <label class="setting-label" for="flow-valid">The code is valid</label>
+                    <select id="flow-valid" class="select-input">
+                        <option value="60">1 hour</option><option value="1440" selected>1 day</option>
+                        <option value="10080">1 week</option><option value="0">Until it is used</option>
+                    </select>`,
+                actions: '<button type="button" class="btn-primary" id="flow-make">Make the code</button>',
+                mount: () => {
+                    dlg.$('#flow-make').addEventListener('click', async (event) => {
+                        event.target.disabled = true;
+                        try { go('show', { token: await requestBuddyToken(Number(dlg.$('#flow-valid').value)) }); } catch (err) {
+                            backupNotify(err.message, 'error');
+                            event.target.disabled = false;
+                        }
+                    });
+                },
+            }),
+            show: ({ go, data, dlg }) => ({
+                title: 'Send this code',
+                body: `
+                    <p class="flow-lead">Send this code to your buddy. They open <strong>Backup › Buddy › Pair a buddy</strong> and choose <strong>I got a code</strong>.</p>
+                    <textarea id="flow-token" class="buddy-token-area" rows="4" readonly data-copy aria-label="Pairing code">${esc(data.token)}</textarea>
+                    <p class="flow-wait"><span class="flow-spin" aria-hidden="true"></span><span>Waiting for your buddy… this page notices when they have pasted it.</span></p>`,
+                actions: '<button type="button" class="btn-secondary" data-close>Close</button>',
+                mount: () => {
+                    clearInterval(poll);
+                    poll = setInterval(async () => {
+                        if (dlg.closed) { clearInterval(poll); return; }
+                        try { await loadBuddyStatus(); } catch (e) { return; }
+                        const peer = arrived();
+                        if (peer) { clearInterval(poll); go('done', { name: peer.name || 'Your buddy' }); }
+                    }, 3000);
+                },
+            }),
+            paste: ({ go, dlg }) => ({
+                title: 'Paste the code',
+                body: `
+                    <p class="flow-lead">Paste the code your buddy sent you.</p>
+                    <textarea id="flow-paste" class="buddy-token-area" rows="4" data-paste placeholder="The code from your buddy" aria-label="Code from your buddy"></textarea>`,
+                actions: '<button type="button" class="btn-primary" id="flow-pair">Pair</button>',
+                mount: () => {
+                    dlg.$('#flow-pair').addEventListener('click', async (event) => {
+                        const token = dlg.$('#flow-paste').value.trim();
+                        if (!token) { backupNotify('Paste the code first.', 'warning'); return; }
+                        event.target.disabled = true;
+                        try {
+                            const result = await pairWithBuddyToken(token);
+                            await loadBuddyStatus();
+                            go('done', { name: arrivedName(result), partial: result?.reciprocal?.success === false ? result.reciprocal.error || 'unknown error' : '' });
+                        } catch (err) {
+                            backupNotify(err.message, 'error');
+                            event.target.disabled = false;
+                        }
+                    });
+                },
+            }),
+            done: ({ data }) => ({
+                title: 'Paired',
+                body: `
+                    <div class="flow-done"><span class="flow-check" aria-hidden="true"><i data-lucide="check" aria-hidden="true"></i></span>
+                        <h3>${esc(data.name)} is your buddy now</h3>
+                        <p>${data.partial ? `It worked on this NAS; the other side said: ${esc(data.partial)}. Ask your buddy to look at their Buddy page.` : 'Choose what to send to them next, in the buddy\'s card on the Buddy page.'}</p></div>`,
+                actions: '<button type="button" class="btn-primary" data-close>Done</button>',
+            }),
+        },
     });
-    const data = await backupReadJson(response);
-    if (!response || !response.ok || !data) {
-        backupNotify(data?.error || 'Pairing failed', 'error');
-        return;
+    function arrivedName(result) {
+        return (arrived() || {}).name || result?.peer?.name || 'Your buddy';
     }
-
-    if (data?.reciprocal?.success === false) {
-        backupNotify(
-            `Buddy paired locally, but reciprocal pairing failed: ${data.reciprocal.error || 'unknown error'}`,
-            'warning'
-        );
-    } else if (data?.reciprocal?.success === true) {
-        backupNotify('Buddy paired on both NAS systems', 'success');
-    } else {
-        backupNotify('Buddy paired successfully', 'success');
-    }
-    const tokenInput = document.getElementById('buddy-token-input');
-    if (tokenInput) tokenInput.value = '';
-    await loadBuddyStatus();
 }
 
 async function saveBuddySettings() {
@@ -1381,46 +1381,77 @@ async function exportRecoveryKit() {
     await loadRecoveryKitStatus();
 }
 
-async function readRecoveryKitInput() {
-    const file = document.getElementById('buddy-kit-file')?.files?.[0];
-    if (file) return (await file.text()).trim();
-    return String(document.getElementById('buddy-kit-text')?.value || '').trim();
-}
-
-async function importRecoveryKit() {
-    const kit = await readRecoveryKitInput();
-    if (!kit) {
-        backupNotify('Choose the recovery kit file or paste its contents first', 'warning');
-        return;
-    }
-    const passphrase = await window.showPrompt('Recovery kit password', {
-        type: 'password', label: 'Password', placeholder: 'Kit password', confirmLabel: 'Restore identity'
-    });
-    if (passphrase === null || !String(passphrase)) return;
-
+// Taking over the identity of a lost NAS from its recovery kit, in steps: the file or the text, then the password.
+async function restoreFromKit(kit, passphrase) {
     let response = await backupApi('/backup/buddy/recovery-kit/import', { method: 'POST', json: { kit, passphrase } });
     let data = await backupReadJson(response);
     if (response && response.status === 409 && data?.needs_confirmation) {
         const ok = await window.showConfirm(
             'Replace this NAS\'s buddy identity?\nThis NAS is already paired with buddies. Restoring the kit replaces its identity and buddy list with the ones from the kit.'
         );
-        if (!ok) return;
+        if (!ok) return null;
         response = await backupApi('/backup/buddy/recovery-kit/import', {
             method: 'POST', json: { kit, passphrase, replace: true }
         });
         data = await backupReadJson(response);
     }
-    if (!response || !response.ok || !data) {
-        backupNotify(data?.error || 'Could not restore from the recovery kit', 'error');
-        return;
-    }
-    const kitText = document.getElementById('buddy-kit-text');
-    if (kitText) kitText.value = '';
-    const kitFile = document.getElementById('buddy-kit-file');
-    if (kitFile) kitFile.value = '';
-    backupNotify(data.message || 'Identity restored', 'success');
+    if (!response || !response.ok || !data) throw new Error(data?.error || 'Could not restore from the recovery kit.');
     await loadBuddyStatus();
     await loadRecoveryKitStatus();
+    return data;
+}
+
+function importRecoveryKit() {
+    const kitScreen = (how) => ({ go, dlg }) => ({
+        title: 'Your recovery kit',
+        body: `
+            <p class="flow-lead">${how === 'file' ? 'Choose the kit file you saved from your old NAS.' : 'Paste the text of the kit.'}</p>
+            ${how === 'file'
+        ? '<input id="flow-kit-file" type="file" accept=".txt,text/plain" class="select-input" aria-label="Recovery kit file">'
+        : '<textarea id="flow-kit-text" rows="4" data-paste placeholder="ALVAKIT1..." aria-label="Recovery kit text"></textarea>'}
+            <label class="setting-label" for="flow-kit-pass" style="margin-top:14px">The kit's password</label>
+            <input id="flow-kit-pass" type="password" class="select-input" autocomplete="off" placeholder="The password you chose when you saved it">`,
+        actions: '<button type="button" class="btn-primary" id="flow-kit-go">Restore</button>',
+        mount: () => {
+            dlg.$('#flow-kit-go').addEventListener('click', async (event) => {
+                const file = dlg.$('#flow-kit-file')?.files?.[0];
+                const kit = file ? (await file.text()).trim() : String(dlg.$('#flow-kit-text')?.value || '').trim();
+                const passphrase = dlg.$('#flow-kit-pass').value;
+                if (!kit) { backupNotify(how === 'file' ? 'Choose the kit file first.' : 'Paste the kit first.', 'warning'); return; }
+                if (!passphrase) { backupNotify('Type the kit\'s password.', 'warning'); return; }
+                event.target.disabled = true;
+                try {
+                    const done = await restoreFromKit(kit, passphrase);
+                    if (done) go('done', { message: done.message });
+                    else event.target.disabled = false;
+                } catch (err) {
+                    backupNotify(err.message, 'error');
+                    event.target.disabled = false;
+                }
+            });
+        },
+    });
+    openFlow({
+        title: 'Use a recovery kit', start: 'choose',
+        screens: {
+            choose: () => ({
+                body: `
+                    <p class="flow-lead">The recovery kit is what you saved from your old NAS. With it this NAS can reach the copies your buddies keep.</p>
+                    <div class="flow-choices">
+                        <button type="button" class="flow-choice" data-go="file"><span class="fc-ic"><i data-lucide="file-text" aria-hidden="true"></i></span><span><strong>I have the file</strong><small>Choose the kit file from this computer.</small></span></button>
+                        <button type="button" class="flow-choice" data-go="text"><span class="fc-ic"><i data-lucide="clipboard-paste" aria-hidden="true"></i></span><span><strong>I have the text</strong><small>Paste what is in the kit.</small></span></button>
+                    </div>`,
+            }),
+            file: kitScreen('file'),
+            text: kitScreen('text'),
+            done: ({ data }) => ({
+                title: 'Restored',
+                body: `<div class="flow-done"><span class="flow-check" aria-hidden="true"><i data-lucide="check" aria-hidden="true"></i></span>
+                    <h3>This NAS has its old identity back</h3><p>${backupEscapeHtml(data.message || 'Your buddies recognise it again.')}</p></div>`,
+                actions: '<button type="button" class="btn-primary" data-close>Done</button>',
+            }),
+        },
+    });
 }
 
 async function removeBuddyPeer(nodeId) {
@@ -1803,9 +1834,7 @@ function initBackupHandlers() {
     // Buddy Handlers
     document.getElementById('buddy-refresh-btn')?.addEventListener('click', loadBuddyStatus);
     document.getElementById('buddy-restart-tunnel-btn')?.addEventListener('click', restartBuddyTunnel);
-    document.getElementById('buddy-generate-token-btn')?.addEventListener('click', generateBuddyToken);
-    document.getElementById('buddy-copy-token-btn')?.addEventListener('click', copyBuddyToken);
-    document.getElementById('buddy-validate-token-btn')?.addEventListener('click', validateBuddyToken);
+    document.getElementById('buddy-pair-btn')?.addEventListener('click', openBuddyPairing);
     document.getElementById('buddy-save-settings-btn')?.addEventListener('click', saveBuddySettings);
     document.getElementById('buddy-kit-export-btn')?.addEventListener('click', exportRecoveryKit);
     document.getElementById('buddy-kit-import-btn')?.addEventListener('click', importRecoveryKit);
@@ -1813,11 +1842,7 @@ function initBackupHandlers() {
     document.getElementById('buddy-refresh-remote-btn')?.addEventListener('click', () => loadBuddyRemoteSnapshots(true));
     document.getElementById('buddy-peers-list')?.addEventListener('click', (event) => {
         if (event.target.closest('.buddy-add-btn')) {
-            const pairing = document.getElementById('buddy-pairing');
-            if (pairing) {
-                pairing.open = true;
-                pairing.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }
+            openBuddyPairing();
             return;
         }
         const saveBtn = event.target.closest('.buddy-save-peer-policy-btn');

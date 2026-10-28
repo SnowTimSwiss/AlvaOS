@@ -68,3 +68,5 @@
     .ct-grid { grid-template-columns: 1fr; }
     .ct-entry { grid-template-columns: 84px minmax(0, 1fr) auto; }
 }
+
+.ct-new { justify-content: center; }

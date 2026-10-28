@@ -25,8 +25,10 @@
     function wrap(field) {
         const w = document.createElement('div');
         w.className = 'field-wrap';
+        const focused = document.activeElement === field;
         field.parentNode.insertBefore(w, field);
         w.appendChild(field);
+        if (focused) field.focus();   // moving a field in the page takes the focus from it
         const actions = document.createElement('div');
         actions.className = 'field-actions';
         w.appendChild(actions);
@@ -73,8 +75,10 @@
         }
     }
 
+    const SELECTOR = '[data-paste], [data-copy], input[type="search"]';
     function scan(root) {
-        (root.querySelectorAll ? root : document).querySelectorAll('[data-paste], [data-copy], input[type="search"]').forEach(enhance);
+        if (root.matches && root.matches(SELECTOR)) enhance(root);   // the field itself was added
+        (root.querySelectorAll ? root : document).querySelectorAll(SELECTOR).forEach(enhance);
     }
 
     document.addEventListener('DOMContentLoaded', () => {

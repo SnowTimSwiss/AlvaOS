@@ -2784,3 +2784,35 @@ button.ai-chip.add:hover { border-color: var(--accent-primary); }
     .ai-model-row { flex-wrap: wrap; }
     .ai-model-name { flex-basis: 100%; }
 }
+
+/* Dialogs in steps (openFlow): a choice first, then the page for it. */
+.modal-content.flow .modal-actions { align-items: center; }
+.flow-spacer { flex: 1; }
+.flow-lead { margin: 0 0 14px; color: var(--text-secondary); line-height: 1.5; }
+.flow-note { margin: 14px 0 0; font-size: 0.85rem; color: var(--text-secondary); }
+.flow-choices { display: grid; gap: 10px; }
+.flow-choice { display: flex; align-items: center; gap: 14px; width: 100%; padding: 14px 16px; text-align: left; font: inherit; color: var(--text-primary);
+    background: var(--bg-card); border: 1px solid var(--border-default); border-radius: 12px; cursor: pointer; transition: border-color .15s, background-color .15s, box-shadow .15s; }
+.flow-choice:hover { border-color: var(--accent-primary); background: var(--accent-primary-soft); }
+.flow-choice:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
+.flow-choice strong { display: block; font-size: 1rem; }
+.flow-choice small { display: block; margin-top: 2px; color: var(--text-secondary); font-size: 0.85rem; }
+.fc-ic { flex: none; display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; background: var(--accent-primary-soft); color: var(--accent-primary); }
+.fc-ic svg { width: 22px; height: 22px; }
+.buddy-token-area, .modal-content textarea { width: 100%; resize: vertical; font-family: var(--font-mono, monospace); font-size: 0.82rem; }
+.flow-wait { display: flex; align-items: center; gap: 10px; margin: 14px 0 0; color: var(--text-secondary); font-size: 0.88rem; }
+.flow-spin { flex: none; width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--border-default); border-top-color: var(--accent-primary); animation: flow-turn 0.9s linear infinite; }
+@keyframes flow-turn { to { transform: rotate(360deg); } }
+.flow-done { text-align: center; padding: 8px 0 4px; }
+.flow-done h3 { margin: 14px 0 6px; font-size: 1.15rem; }
+.flow-done p { margin: 0; color: var(--text-secondary); line-height: 1.5; }
+.flow-check { display: inline-grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; background: color-mix(in srgb, var(--accent-success, #1a7f37) 16%, transparent); color: var(--accent-success, #1a7f37); }
+.flow-check svg { width: 28px; height: 28px; }
+@media (prefers-reduced-motion: reduce) { .flow-spin { animation: none; } }
+
+.kit-replace { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border-default); }
+.kit-replace strong { display: block; }
+.kit-replace span { display: block; margin-top: 2px; font-size: 0.85rem; color: var(--text-secondary); }
+@media (max-width: 600px) { .kit-replace { flex-direction: column; align-items: stretch; } }
+.modal-content .password-toggle-wrap input { width: 100%; }
+.kit-replace .btn-secondary { white-space: nowrap; flex: none; }
