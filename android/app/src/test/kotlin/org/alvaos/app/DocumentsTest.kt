@@ -89,13 +89,13 @@ class DocumentsTest {
 
     @Test
     fun theSharesAndTheirFoldersAreListedAndReadOnlyOnesCannotBeChanged() {
-        val shares = rows(provider.queryChildDocuments("/", null, null))
+        val shares = rows(provider.queryChildDocuments("/", null, null as String?))
         assertEquals(listOf("Family", "Music"), shares.map { it[Document.COLUMN_DISPLAY_NAME] })
         val family = shares[0][Document.COLUMN_FLAGS]!!.toInt()
         val music = shares[1][Document.COLUMN_FLAGS]!!.toInt()
         assertTrue(family and Document.FLAG_DIR_SUPPORTS_CREATE != 0)
         assertFalse(music and Document.FLAG_DIR_SUPPORTS_CREATE != 0)
-        val inside = rows(provider.queryChildDocuments("/Family", null, null))
+        val inside = rows(provider.queryChildDocuments("/Family", null, null as String?))
         assertEquals(listOf("/Family/Docs", "/Family/a.txt"), inside.map { it[Document.COLUMN_DOCUMENT_ID] })
         assertEquals(Document.MIME_TYPE_DIR, inside[0][Document.COLUMN_MIME_TYPE])
         assertEquals("text/plain", inside[1][Document.COLUMN_MIME_TYPE])
@@ -105,7 +105,7 @@ class DocumentsTest {
 
     @Test
     fun aFileIsReadThroughItsLinkAndKeptForNextTime() {
-        provider.queryChildDocuments("/Family", null, null)
+        provider.queryChildDocuments("/Family", null, null as String?)
         val text = { provider.openDocument("/Family/a.txt", "r", null).let { fd -> java.io.FileInputStream(fd.fileDescriptor).use { it.readBytes().decodeToString() } } }
         assertEquals("hello", text())
         assertEquals("hello", text())
