@@ -415,6 +415,12 @@ function renderUpdateBanner(versionLabel, versionKey) {
         return;
     }
 
+    // Once a session is enough: after that the sidebar says it (the dot under the name, the number on Updates).
+    try {
+        if (sessionStorage.getItem('alvaos_update_banner_seen') === versionKey) return;
+        sessionStorage.setItem('alvaos_update_banner_seen', versionKey);
+    } catch (e) { /* no storage: the banner shows on every page, as before */ }
+
     const banner = document.createElement('div');
     banner.id = 'update-banner';
     banner.className = 'update-banner';

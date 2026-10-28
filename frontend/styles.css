@@ -2816,3 +2816,7 @@ button.ai-chip.add:hover { border-color: var(--accent-primary); }
 @media (max-width: 600px) { .kit-replace { flex-direction: column; align-items: stretch; } }
 .modal-content .password-toggle-wrap input { width: 100%; }
 .kit-replace .btn-secondary { white-space: nowrap; flex: none; }
+
+/* Links without a class of their own: the accent colour, not the browser's blue. */
+a:not([class]) { color: var(--accent-primary); text-underline-offset: 2px; }
+a:not([class]):hover { text-decoration-thickness: 2px; }
