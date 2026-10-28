@@ -15,6 +15,12 @@ How to add an entry:
 
 ---
 
+## Version beta-v0.8.1
+
+- `VERSION` is `beta-v0.8.1` (the package becomes `0.8.1~beta`); the desktop app's crates, its demo and its Flatpak release list say 0.8.1 too. What is in it: Office built into the Hub (EuroOffice), apps in the Hub's window with your own side bar, and AlvaOS Link carrying the apps to the computer and phone apps.
+
+---
+
 ## Office built into the Hub (EuroOffice)
 
 - Fix: the Hub page's Content-Security-Policy only allowed its own origin, so the editor's script and frame (and the frames of apps in the Hub's window) were blocked as "not reachable". The policy now adds the Hub's own proxy origins (`http://<host>:<app port + 20000>`, taken from the Host header, validated) to `script-src` and `frame-src`. "Ready" now also needs the proxy to answer, not only the editor.

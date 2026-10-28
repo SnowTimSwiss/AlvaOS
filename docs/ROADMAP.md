@@ -10,7 +10,7 @@ check it on a real machine is in [TESTING.md](TESTING.md).
 - [~] Done, but still needs a run on real hardware or a real phone
 - [ ] Not done yet
 
-Current version: **beta-v0.7.0**
+Current version: **beta-v0.8.1**
 
 ---
 
@@ -42,7 +42,7 @@ Current version: **beta-v0.7.0**
 ### Apps for phones and computers
 - [ ] File sync and notifications in the Android app
 - [ ] iPhone app (on AlvaOS Link)
-- [~] Desktop app: 0.7.0 is there (docs/DESKTOP.md), the plan below
+- [~] Desktop app: 0.8.1 is there (docs/DESKTOP.md), the plan below
 
 #### Desktop app (Windows, Linux): the plan
 
