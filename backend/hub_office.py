@@ -122,7 +122,7 @@ def editor_reachable() -> bool:
     """Is the editor up *and* does the Hub's proxy for it carry the same answer (what people's browsers use)?"""
     import embed_proxy
     through = embed_proxy.embed_port(DS_PORT)
-    return editor_answers() and bool(through) and editor_answers(through)
+    return editor_answers() and through is not None and editor_answers(through)
 
 
 # ── The editor's settings ───────────────────────────────────────────────────────────────────────

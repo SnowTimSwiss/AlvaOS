@@ -2247,7 +2247,7 @@ def send_to_https():
     return redirect(target, code=308) if target else None
 
 
-_embed_ports_seen: Dict[str, Any] = {'at': 0.0, 'ports': []}
+_embed_ports_seen: dict[str, Any] = {'at': 0.0, 'ports': []}
 
 
 def _embed_origins() -> str:
