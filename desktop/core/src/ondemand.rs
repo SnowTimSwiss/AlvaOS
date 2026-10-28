@@ -104,6 +104,13 @@ impl Cache {
             std::fs::read_to_string(&index).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
         let cache = Self { dir: dir.to_path_buf(), index, held: Mutex::new(BTreeMap::new()), keep: Mutex::new(Filter::default()) };
         held.retain(|path, _| cache.file(path).is_file());
+        // What waits to go up may have been written to after the index was saved: the file is the truth.
+        for (path, h) in held.iter_mut().filter(|(_, h)| h.dirty) {
+            if let Ok(meta) = std::fs::metadata(cache.file(path)) {
+                h.size = meta.len();
+                h.mtime = mtime_of(&meta);
+            }
+        }
         let known: BTreeSet<PathBuf> = held.keys().map(|p| cache.file(p)).collect();
         if let Ok(entries) = std::fs::read_dir(dir.join("files")) {
             for entry in entries.flatten() {
