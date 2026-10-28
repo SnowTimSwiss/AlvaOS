@@ -123,6 +123,11 @@
                 <p class="in" style="--i:2">Pick a share, or a folder in it. It is kept in <code id="sync-root"></code>.</p>
             </header>
             <div class="picker in" style="--i:3" data-picker="setup"></div>
+            <div class="card list ondemand-row" hidden><div class="item">
+                <span class="ic tile" data-icon="cloud"></span>
+                <div><strong>Only download what you open</strong><small>Every file shows up in the folder at once; one is fetched when you open it, and the oldest go again when space runs short. The folder must be empty.</small></div>
+                <label class="switch"><input type="checkbox" id="setup-ondemand"><span></span></label>
+            </div></div>
             <div class="row">
                 <button type="button" class="btn ghost" id="sync-skip">Not now</button>
                 <span class="grow"></span>
@@ -225,6 +230,11 @@
         <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
             <h2 id="sheet-title" class="sheet-title">Add a sync folder</h2>
             <div class="picker" data-picker="sheet"></div>
+            <div class="card list ondemand-row" hidden><div class="item">
+                <span class="ic tile" data-icon="cloud"></span>
+                <div><strong>Only download what you open</strong><small>Every file shows up in the folder at once; one is fetched when you open it, and the oldest go again when space runs short. The folder must be empty.</small></div>
+                <label class="switch"><input type="checkbox" id="sheet-ondemand"><span></span></label>
+            </div></div>
             <p class="error" id="sheet-error" role="alert"></p>
             <div class="row">
                 <button type="button" class="btn ghost" id="sheet-cancel">Cancel</button>
@@ -244,6 +254,13 @@
                 <textarea id="folder-exclude" rows="4" spellcheck="false" autocomplete="off" placeholder="*.mov&#10;node_modules&#10;Videos/"></textarea>
                 <small>One per line. A name (<code>*.mov</code>, <code>node_modules</code>) in any folder, or a path from the top of this folder (<code>Videos/</code>, <code>Photos/Raw</code>). Things left out stay where they are, on both sides.</small>
             </label>
+            <div class="od-only" hidden>
+                <label class="field">Always keep on this computer
+                    <textarea id="folder-keep" rows="3" spellcheck="false" autocomplete="off" placeholder="Documents/&#10;*.pdf"></textarea>
+                    <small>One per line, like Don't sync. These are fetched ahead and stay here, also without a connection.</small>
+                </label>
+                <div class="row"><button type="button" class="btn" id="folder-free"><span class="ic" data-icon="refresh"></span>Free up space</button><small id="folder-stats"></small></div>
+            </div>
             <h2>Recent</h2>
             <ul class="activity" id="folder-recent"></ul>
             <p class="error" id="folder-error" role="alert"></p>

@@ -29,6 +29,12 @@ pub struct SyncFolder {
     /// What is left out, one pattern per line ("Don't sync", see sync::Filter).
     #[serde(default)]
     pub exclude: Vec<String>,
+    /// Files on demand: the folder shows everything on the NAS and fetches what is opened.
+    #[serde(default)]
+    pub on_demand: bool,
+    /// What an on-demand folder always keeps here, one pattern per line (see sync::Filter).
+    #[serde(default)]
+    pub keep: Vec<String>,
 }
 
 impl SyncFolder {
