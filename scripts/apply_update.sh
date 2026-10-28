@@ -43,6 +43,11 @@ repair_core_permissions() {
     chown root:root /etc/sudoers.d/alvaos 2>/dev/null || true
     chmod 440 /etc/sudoers.d/alvaos 2>/dev/null || true
   fi
+  # The sign-in file holds the password hash and the 2FA secret. Older versions
+  # wrote it with the default permissions, which let every local account read it.
+  if [ -e /var/lib/alvaos/auth.json ]; then
+    chmod 600 /var/lib/alvaos/auth.json 2>/dev/null || true
+  fi
 }
 
 restore_setup_state_if_missing() {

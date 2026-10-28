@@ -159,3 +159,22 @@ def test_signin_history_tells_about_the_last_one_and_wrong_passwords(tmp_path):
     import os
     import stat
     assert stat.S_IMODE(os.stat(log).st_mode) == 0o600
+
+
+def test_the_sign_in_file_is_private_and_never_half_written(tmp_path, monkeypatch):
+    # It holds the password hash and the 2FA secret: owner-only, and replaced in one
+    # piece, so a crash mid-write cannot leave the admin locked out.
+    import json
+    import stat
+
+    path = tmp_path / "auth.json"
+    path.write_text('{"old": true}')
+    path.chmod(0o644)
+    monkeypatch.setattr(am, "AUTH_FILE", str(path))
+    monkeypatch.setattr(am, "ensure_directories", lambda: None)
+
+    am.write_auth_file({"password_hash": "h", "totp_secret": "s"})
+
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert json.loads(path.read_text()) == {"password_hash": "h", "totp_secret": "s"}
+    assert not (tmp_path / "auth.json.tmp").exists()
