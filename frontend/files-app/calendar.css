@@ -288,3 +288,14 @@
 .cal-pop.sheet { animation: cal-sheet-up .22s cubic-bezier(.2, .8, .2, 1); }
 .cal-dialog-wrap { animation: cal-pop-in .16s ease-out; }
 @media (prefers-reduced-motion: reduce) { .cal-pop, .cal-pop.sheet, .cal-dialog-wrap { animation: none; } }
+
+/* Handles at the ends of a bar, to change the days it covers; and the bar being drawn. */
+.chip { position: relative; }
+.grip { position: absolute; top: 0; bottom: 0; width: 9px; cursor: ew-resize; opacity: 0; transition: opacity .12s; }
+.grip.l { left: 0; border-radius: 6px 0 0 6px; }
+.grip.r { right: 0; border-radius: 0 6px 6px 0; }
+.grip::after { content: ''; position: absolute; top: 25%; bottom: 25%; left: 3px; width: 3px; border-radius: 2px; background: rgba(255, 255, 255, .85); }
+.chip:hover .grip, .chip.dragging .grip { opacity: 1; }
+.chip.dragging { opacity: .85; z-index: 3; box-shadow: 0 2px 8px rgba(0, 0, 0, .25); }
+.chip.ghost { background: color-mix(in srgb, var(--accent, #1f5fd1) 35%, transparent); border: 1px dashed var(--accent, #1f5fd1); pointer-events: none; }
+@media (pointer: coarse) { .grip { opacity: 1; width: 14px; } }
