@@ -15,6 +15,13 @@ How to add an entry:
 
 ---
 
+## Android: AlvaOS in the system's Files app
+
+- A document provider (`AlvaDocuments.kt`): root "AlvaOS – <NAS>", shares as folders, open (kept in a cache of up to 300 MB), save (uploaded when closed, replacing and trashing the old one), create, rename, move, delete; read-only shares cannot be changed. Roots come and go with the sign-in (`Store`).
+- Core: `HubClient.list/download/delete/rename/move`, `upload(replace)`; tested with a pretend NAS (14 core tests, run here). The provider's own tests (Robolectric with a pretend NAS) run in CI: this environment has no Android SDK.
+
+---
+
 ## Desktop sync: the everyday things
 
 - "Don't sync" per sync folder (`sync::Filter`: names with `*`/`?` in any folder, or paths from the top), left-out things are forgotten, never deleted.

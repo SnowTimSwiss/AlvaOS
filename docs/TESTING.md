@@ -312,6 +312,16 @@ Needs the NAS with the internet and a phone on mobile data (Wi-Fi off).
    NVIDIA's driver was installed before this version, Settings › Graphics
    offers "Install what apps need" (the container toolkit) first.
 
+## 12z. The Android app: AlvaOS in the Files app
+
+1. Open the phone's Files app: the side menu has "AlvaOS – <NAS name>". Open it: the shared folders.
+2. Open a picture and a PDF from there; open the same one again (fast, from the phone's copy). Change it on the NAS and open it again: the new one.
+3. Make a folder, rename it, move a file into it, delete a file: all show in the Hub's Files (the deleted one in the trash).
+4. In another app (Gmail, a notes app): "Attach" or "Save to" › AlvaOS › a folder. Saving a file with a name that is there makes "name (1)" or replaces it (the old one in the trash).
+5. A read-only share: no "new folder", no delete.
+6. Away from home (mobile data): the same, through Link.
+7. Sign out in the app: the entry is gone from the Files app.
+
 ## 12x. The Android app: the new setup
 
 1. Fresh install: a welcome screen (the logo glows and floats), "Get started" goes to "Connect your phone" (phone and NAS with lights travelling between them).

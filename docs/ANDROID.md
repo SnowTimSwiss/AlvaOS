@@ -27,6 +27,14 @@ The app has the version of AlvaOS: the release's name, between releases the
 `VERSION` file (`beta-v0.2.0`). The version code Google Play needs is
 counted up by CI on its own (minutes since 2026); nobody needs to see it.
 
+## AlvaOS in the Files app
+
+Once the phone is connected, the system's Files app (and every app that opens or saves a file: "Open from…", "Save to…") shows **AlvaOS – <NAS name>** in its side menu, with the shared folders of the person in it. Open and save files, make and rename folders, move and delete. It goes through the Hub (and AlvaOS Link away from home) with the phone's own session (`AlvaDocuments.kt`, a Storage Access Framework provider).
+
+- Read-only shares cannot be changed; moving works inside one share.
+- A file you open is kept on the phone for a while (up to 300 MB in all, the oldest go first), so it opens fast the next time; a file you save goes up when the app closes it, and an older one of the same name goes to the NAS's trash.
+- The entry is gone when the phone is signed out, and in the demo.
+
 ## AlvaOS Link (away from home)
 
 The app reaches the NAS from anywhere through AlvaOS Link (`docs/LINK.md`).
