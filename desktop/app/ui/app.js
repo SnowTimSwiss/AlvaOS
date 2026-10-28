@@ -206,14 +206,29 @@
     document.querySelectorAll('[data-picker]').forEach((el) => { pickers[el.dataset.picker] = picker(el); });
     pickers.setup.onchange = () => { $('sync-done').disabled = !pickers.setup.chosen(); };
     pickers.sheet.onchange = () => { $('sheet-done').disabled = !pickers.sheet.chosen(); };
-    const wantsOnDemand = (box) => !!(state.sync && state.sync.on_demand_supported) && $(box).checked;
+    const wantsOnDemand = (box) => !!(state.sync && state.sync.on_demand_supported) && (!!state.sync.on_demand_forced || $(box).checked);
+    // Where there is no other kind (Windows) the switch is not shown, only what it means.
+    function onDemandRows() {
+        const sync = state.sync || {};
+        document.querySelectorAll('.ondemand-row').forEach((row) => {
+            row.hidden = !sync.on_demand_supported;
+            const sw = row.querySelector('.switch');
+            if (sw) sw.hidden = !!sync.on_demand_forced;
+            const title = row.querySelector('strong');
+            const text = row.querySelector('small');
+            if (sync.on_demand_forced) {
+                title.textContent = 'Files download when you open them';
+                text.textContent = 'Every file of the share shows up in the folder at once (with a cloud icon); one is fetched when you open it. Right-click in Explorer: "Always keep on this device" or "Free up space". The folder must be empty.';
+            }
+        });
+    }
 
     async function addSync(chosen) {
         state.sync = await invoke('add_sync', chosen);
     }
     function sync() {
-        document.querySelectorAll('.ondemand-row').forEach((r) => { r.hidden = !(state.sync && state.sync.on_demand_supported); });
         $('setup-ondemand').checked = false;
+        onDemandRows();
         $('sync-root').textContent = state.sync ? state.sync.root : '~/AlvaOS';
         show('sync');
         $('sync-done').disabled = true;
@@ -288,7 +303,7 @@
         $('folder-path').textContent = f.local;
         $('folder-exclude').value = (f.exclude || []).join('\n');
         const od = document.querySelector('#sheet-folder .od-only');
-        od.hidden = !f.on_demand;
+        od.hidden = !f.on_demand || !!(state.sync && state.sync.on_demand_forced);
         $('folder-keep').value = (f.keep || []).join('\n');
         $('folder-stats').textContent = f.status.stats || '';
         $('folder-error').textContent = '';
@@ -407,7 +422,7 @@
         $('sync-add').addEventListener('click', () => {
             $('sheet-error').textContent = '';
             $('sheet-ondemand').checked = false;
-            document.querySelectorAll('.ondemand-row').forEach((r) => { r.hidden = !(state.sync && state.sync.on_demand_supported); });
+            onDemandRows();
             $('sheet').hidden = false;
             $('sheet-done').disabled = true;
             pickers.sheet.reset();
