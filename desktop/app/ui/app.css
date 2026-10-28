@@ -23,7 +23,7 @@
 [hidden] { display: none !important; }
 html, body { margin: 0; }
 body { background: var(--bg); color: var(--text); font: 14.5px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
-#app { position: relative; max-width: 560px; margin: 0 auto; padding: 26px 22px 24px; }
+#app { position: relative; max-width: 560px; margin: 0 auto; padding: 20px 16px 16px; }
 h1 { font-size: 1.4rem; margin: 0; line-height: 1.25; letter-spacing: -.01em; }
 h2 { font-size: 0.76rem; text-transform: uppercase; letter-spacing: .07em; color: var(--faint); margin: 24px 0 8px; font-weight: 650; }
 p { margin: 0; }
@@ -260,3 +260,29 @@ footer { color: var(--faint); font-size: 0.78rem; text-align: center; margin-top
     *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; animation-delay: 0s !important; transition-duration: .001ms !important; }
     .wire i, .done-rings i, .hero .orb span { display: none; }
 }
+
+/* ── Compact home and settings (a small window, nothing to scroll on home) ── */
+#view-home, #view-settings { padding-top: 0; }
+#view-home .hero { padding: 14px; gap: 12px; margin-bottom: 12px; }
+#view-home .orb { width: 52px; height: 52px; }
+#view-home .orb img { width: 40px; height: 40px; border-radius: 11px; }
+.hero-text { flex: 1; }
+.hero-text small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gear { align-self: flex-start; color: var(--muted); }
+.gear .ic { transition: transform .5s var(--ease); }
+.gear:hover .ic { transform: rotate(60deg); }
+#view-home .btn.big { padding: 10px 14px; font-size: .92rem; }
+#view-home .section-head { margin: 18px 0 6px; }
+.section-head .btn.small { color: var(--muted); }
+.sync-list { max-height: calc(100vh - 290px); min-height: 64px; overflow-y: auto; padding-top: 2px; padding-bottom: 2px; }
+.sync-list .item { padding: 10px 0; }
+.empty-sync { width: 100%; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; color: var(--text); border-radius: 10px; }
+.empty-sync:hover strong { color: var(--accent); }
+.empty-sync small { white-space: normal; }
+.bar { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+.bar h1 { font-size: 1.15rem; }
+.ic.back { transform: rotate(180deg); }
+#view-settings .card + .card { margin-top: 12px; }
+#view-settings .item { padding: 10px 0; }
+#view-settings .ic.tile { width: 32px; height: 32px; padding: 7px; }
+@media (max-height: 640px) { #app { padding-top: 16px; } }

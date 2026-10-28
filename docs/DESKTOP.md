@@ -14,7 +14,9 @@ When it is set up, the app asks once what to use (everything can be changed late
 | **A sync folder** | Chosen folders of the NAS kept on this computer (by default in `~/AlvaOS/<share>/<folder>`), also offline. See below. |
 | **Start with the computer** | Quietly, in the tray. |
 
-The tray shows how the computer reaches the NAS ("Connected to cygnus · direct · 12 ms", "through a relay", "cannot be reached") and has: Open AlvaOS, Open in the browser, Show Files as a drive, the switch **Connected to the NAS**, Settings, Quit.
+The tray shows how the computer reaches the NAS ("Connected to cygnus · direct · 12 ms", "through a relay", "cannot be reached") and has: Show AlvaOS (its small window), Open the Hub apps, Open in the browser, Sync now, Open the sync folder, Show Files as a drive, the switch **Connected to the NAS**, Quit. A click on the icon (Windows, macOS) shows the small window; on Linux the menu opens, with Show AlvaOS on top. The window has the status and the sync folders; the gear opens the settings.
+
+Starting AlvaOS from the launcher (search, start menu, a shortcut) opens the Hub apps' window: right away if the app is already running in the tray, else once it has connected (the small window if the NAS cannot be reached). Starting with the computer stays quiet, in the tray.
 
 **Open in the browser** signs the browser in by itself: the app asks the NAS for a code that works once, for a minute (`POST /api/devices/handoff`), and opens `http://127.0.0.1:18090/?handoff=<code>`; the Hub page trades it for a browser session of the same person (`POST /api/handoff`). The Hub's window does the same. The app's own session never reaches a page. Bookmarks keep working: the ports stay the same.
 

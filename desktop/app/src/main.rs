@@ -287,6 +287,17 @@ async fn forget(app: &AppHandle) {
 
 // ── Windows ───────────────────────────────────────────────────────────────────
 
+/// What opening AlvaOS means: the Hub apps in their window; the small window when that is
+/// not possible (not set up, the window switched off, the NAS not reached).
+async fn open_interface(app: &AppHandle) {
+    let me = app.state::<App>();
+    let config = me.config();
+    if config.is_set_up() && config.use_window && config.connected && show_hub(app).await.is_ok() {
+        return;
+    }
+    show_main(app);
+}
+
 fn show_main(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
@@ -296,8 +307,8 @@ fn show_main(app: &AppHandle) {
     }
     let built = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
         .title("AlvaOS")
-        .inner_size(560.0, 720.0)
-        .min_inner_size(400.0, 560.0)
+        .inner_size(460.0, 640.0)
+        .min_inner_size(380.0, 520.0)
         .build();
     if let Ok(window) = built {
         let _ = window.set_focus();
@@ -590,19 +601,20 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let sync = MenuItem::with_id(app, "sync-status", "No sync folder yet", false, None::<&str>)?;
     let sync_open = MenuItem::with_id(app, "sync-open", "Open the sync folder", true, None::<&str>)?;
     let sync_now = MenuItem::with_id(app, "sync-now", "Sync now", true, None::<&str>)?;
-    let open = MenuItem::with_id(app, "open", "Open AlvaOS", true, None::<&str>)?;
+    let show = MenuItem::with_id(app, "show", "Show AlvaOS", true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", "Open the Hub apps", true, None::<&str>)?;
     let browser = MenuItem::with_id(app, "browser", "Open in the browser", true, None::<&str>)?;
     let drive = MenuItem::with_id(app, "drive", "Show Files as a drive", false, None::<&str>)?;
     let connected = CheckMenuItem::with_id(app, "connected", "Connected to the NAS", true, true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit AlvaOS", true, None::<&str>)?;
     let separator = || PredefinedMenuItem::separator(app);
-    let mut items: Vec<&dyn tauri::menu::IsMenuItem<Wry>> = vec![&status, &sync, &open, &browser, &sync_open, &sync_now];
+    // "Show AlvaOS" first: on Linux every click on the icon opens this menu (AppIndicator has no clicks).
+    let (s0, s1, s2, s3) = (separator()?, separator()?, separator()?, separator()?);
+    let mut items: Vec<&dyn tauri::menu::IsMenuItem<Wry>> = vec![&show, &s0, &status, &sync, &s1, &open, &browser, &sync_open, &sync_now];
     if drive::supported() {
         items.push(&drive);
     }
-    let (s1, s2) = (separator()?, separator()?);
-    items.extend([&s1 as &dyn tauri::menu::IsMenuItem<Wry>, &connected, &settings, &s2, &quit]);
+    items.extend([&s2 as &dyn tauri::menu::IsMenuItem<Wry>, &connected, &s3, &quit]);
     let menu = Menu::with_items(app, &items)?;
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
     TrayIconBuilder::with_id("main")
@@ -618,7 +630,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
                 let app = tray.app_handle().clone();
-                tauri::async_runtime::spawn(async move { on_menu(&app, "open").await });
+                show_main(&app);
             }
         })
         .build(app)?;
@@ -635,7 +647,7 @@ async fn on_menu(app: &AppHandle, id: &str) {
                 show_main(app);
             }
         }
-        "open" | "settings" => show_main(app),
+        "open" | "show" => show_main(app),
         "browser" if set_up => {
             if let Ok(url) = signed_in_url(app).await {
                 let _ = tauri_plugin_opener::open_url(url, None::<&str>);
@@ -675,7 +687,11 @@ fn main() {
     let store = Store::open();
     let config = store.load();
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // Started again (from the launcher, a menu, a shortcut): the interface, not just the tray.
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move { open_interface(&app).await });
+        }))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -697,7 +713,9 @@ fn main() {
             build_tray(app.handle())?;
             let handle = app.handle().clone();
             let config = app.state::<App>().config();
-            if !hidden || !config.is_set_up() {
+            // Started by the person (not quietly at login): the interface opens once the NAS is there.
+            let open_now = !hidden && config.is_set_up() && config.use_window && config.connected;
+            if !hidden && !open_now || !config.is_set_up() {
                 show_main(&handle);
             }
             syncing::watch(app.handle());
@@ -705,7 +723,11 @@ fn main() {
             tauri::async_runtime::spawn(async move {
                 let config = handle.state::<App>().config();
                 if config.is_set_up() && config.connected {
-                    if go_online(&handle).await.is_ok() && config.use_drive && handle.state::<App>().status.lock().unwrap().state == "ok" {
+                    let online = go_online(&handle).await.is_ok();
+                    if open_now {
+                        open_interface(&handle).await;
+                    }
+                    if online && config.use_drive && handle.state::<App>().status.lock().unwrap().state == "ok" {
                         let _ = set_drive(&handle, true).await;
                     }
                 } else {

@@ -35,6 +35,7 @@
         check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
         x: '<path d="M6 6l12 12M18 6L6 18"/>',
         home: '<path d="M4 11l8-7 8 7v9H4z"/>',
+        gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
     };
     const icon = (name, cls = '') => `<span class="ic ${cls}"><svg viewBox="0 0 24 24">${ICONS[name] || ''}</svg></span>`;
     function paintIcons(root = document) {
@@ -233,7 +234,6 @@
         const sync = state.sync || { folders: [] };
         $('sync-line').textContent = sync.line || '';
         $('sync-pause').checked = !!sync.paused;
-        $('sync-open').hidden = !sync.folders.length;
         const key = JSON.stringify(sync.folders);
         if (key === syncKey) return;
         syncKey = key;
@@ -254,7 +254,8 @@
         });
         const list = $('sync-list');
         list.innerHTML = rows.length ? asks.join('') + rows.join('')
-            : `<div class="empty-sync">${icon('sync', 'tile')}<span>No sync folder yet. Keep a folder of the NAS on this computer, also offline.</span></div>`;
+            : `<button type="button" class="empty-sync" data-add>${icon('plus', 'tile')}<span><strong>Add a sync folder</strong><small>Keep a folder of the NAS on this computer, also offline.</small></span></button>`;
+        list.querySelectorAll('[data-add]').forEach((b) => b.addEventListener('click', () => $('sync-add').click()));
         list.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => invoke('open_sync', { id: b.dataset.open }).catch((e) => toast(String(e)))));
         list.querySelectorAll('[data-remove]').forEach((b) => b.addEventListener('click', () => {
             if (!window.confirm('Stop syncing this folder? The files on this computer and on the NAS stay as they are.')) return;
@@ -276,7 +277,7 @@
             return;
         }
         if (setup) return;      // still in the steps
-        show('home');
+        if (current() !== 'settings') show('home');
         const s = state.status;
         $('home-nas').textContent = state.nas || 'Your NAS';
         $('home-user').textContent = `${state.user} on ${state.computer}`;
@@ -363,12 +364,13 @@
             invoke('sync_now').then((s) => { state.sync = s; paintSync(); }).catch((err) => toast(String(err)));
             setTimeout(() => { b.classList.remove('working'); refresh(); }, 1600);
         });
-        $('sync-open').addEventListener('click', () => invoke('open_sync', { id: null }).catch((e) => toast(String(e))));
+        $('home-settings').addEventListener('click', () => show('settings'));
+        $('settings-back').addEventListener('click', () => show('home'));
         $('sync-pause').addEventListener('change', (e) => run(null, async () => {
             state.sync = await invoke('pause_sync', { paused: e.target.checked });
             toast(e.target.checked ? 'Sync paused. Nothing goes up or down until you switch it back.' : 'Syncing again.');
             paintSync();
-        }, $('home-error')));
+        }, $('settings-error')));
         $('sync-add').addEventListener('click', () => {
             $('sheet-error').textContent = '';
             $('sheet').hidden = false;
@@ -393,13 +395,13 @@
                 toast(on ? `Files is a drive now${place ? `: ${place}` : ''}.` : 'The drive is removed.');
             } catch (err) { e.target.checked = !on; throw err; }
             await setChoice({ use_drive: on });
-        }, $('home-error')));
+        }, $('settings-error')));
         $('home-connected').addEventListener('change', (e) => run(null, async () => {
             state = await invoke('set_connected', { on: e.target.checked });
             paint();
-        }, $('home-error')));
-        $('home-window').addEventListener('change', (e) => run(null, () => setChoice({ use_window: e.target.checked }), $('home-error')));
-        $('home-autostart').addEventListener('change', (e) => run(null, () => setChoice({ autostart: e.target.checked }), $('home-error')));
+        }, $('settings-error')));
+        $('home-window').addEventListener('change', (e) => run(null, () => setChoice({ use_window: e.target.checked }), $('settings-error')));
+        $('home-autostart').addEventListener('change', (e) => run(null, () => setChoice({ autostart: e.target.checked }), $('settings-error')));
         $('home-signout').addEventListener('click', (e) => {
             if (!window.confirm('Sign out this computer? It is removed on the NAS too; connect it again with a new link from the Hub. Sync folders stay on this computer.')) return;
             run(e.currentTarget, async () => {
@@ -410,7 +412,7 @@
                 syncKey = '';
                 show('welcome');
                 paint();
-            }, $('home-error'));
+            }, $('settings-error'));
         });
     }
 
