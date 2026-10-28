@@ -253,6 +253,7 @@
                 </div>
                 <nav class="ch-list" id="ch-list" aria-label="Chats"></nav>
                 <div class="ch-keep-note" id="ch-keep-note"></div>
+                ${H.adminUrl('system.html#assistant') ? `<a class="ch-config" href="${esc(H.adminUrl('system.html#assistant'))}" target="_blank" rel="noopener">${icon('settings')}<span>Configure AI</span></a>` : ''}
                 ${H.foot()}
             </aside>
             <div class="ch-scrim" id="ch-scrim" hidden></div>
@@ -613,7 +614,9 @@
         const messages = chat ? chat.messages || [] : [];
         root.classList.toggle('is-empty', !messages.length && !problem);
         if (problem) {
-            thread.innerHTML = `<div class="ch-hello"><div class="ch-hello-ic">${icon('alert')}</div><h2>Chat is not ready yet</h2><p>${esc(problem)}</p></div>`;
+            thread.innerHTML = `<div class="ch-hello"><div class="ch-hello-ic">${icon('alert')}</div><h2>Chat is not ready yet</h2><p>${esc(problem)}</p>${H.adminUrl('system.html#assistant')
+                ? `<a class="btn primary" href="${esc(H.adminUrl('system.html#assistant'))}" target="_blank" rel="noopener">Set up an AI service</a>`
+                : '<p class="ch-ask">Ask the person who looks after the NAS to set up an AI service.</p>'}</div>`;
         } else if (!messages.length) {
             thread.innerHTML = privateMode
                 ? `<div class="ch-hello"><div class="ch-hello-ic private">${icon('ghost')}</div><h2>Private chat</h2><p>Kept nowhere: not in your chats, not on the NAS. It is gone when you start a new chat or leave. The AI service still sees what you write.</p></div>`

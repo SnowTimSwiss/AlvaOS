@@ -311,6 +311,45 @@
         return String(container?.Names || '').split(',').some((n) => n.trim().includes(`alvaos-${appId}`));
     }
 
+    // The Hub and AlvaOS Link: the two things people ask for first, so the dashboard says where they stand.
+    function renderHub(hub) {
+        if (!hub || hub.error) {
+            setCard('hub', { state: 'unknown', label: 'Unknown', value: 'Could not check the Hub', sub: 'Open the Hub page to see details.' });
+            return;
+        }
+        if (!hub.enabled) {
+            setCard('hub', { state: 'setup', label: 'Off', value: 'Not turned on',
+                sub: 'Files, photos, calendar and more for everyone at home, in the browser and on the phone. One click to turn on.' });
+            return;
+        }
+        const apps = (hub.apps || []).filter((a) => a.enabled).length;
+        const people = (hub.people || []).length;
+        setCard('hub', hub.running
+            ? { state: 'ok', label: 'On', value: `${apps} ${apps === 1 ? 'app' : 'apps'} for ${people} ${people === 1 ? 'person' : 'people'}`,
+                sub: people ? 'Open it from the Hub page.' : 'Add the people who will use it: Storage › Users.' }
+            : { state: 'warn', label: 'Starting', value: 'The Hub is starting', sub: 'This takes a few seconds.' });
+    }
+
+    function renderLink(link) {
+        if (!link || link.error) {
+            setCard('link', { state: 'unknown', label: 'Unknown', value: 'Could not check AlvaOS Link', sub: 'Open Settings › AlvaOS Link.' });
+            return;
+        }
+        if (!link.available) {
+            setCard('link', { state: 'warn', label: 'Not running', value: 'AlvaOS Link is not running', sub: 'Phones and buddies cannot reach this NAS away from home. Restart the NAS or reinstall the update.' });
+            return;
+        }
+        if (!link.enabled) {
+            setCard('link', { state: 'neutral', label: 'Off', value: 'Only at home',
+                sub: 'Turn it on so phones, computers and buddies reach this NAS from anywhere.' });
+            return;
+        }
+        const peers = (link.peers || []).length;
+        setCard('link', link.online
+            ? { state: 'ok', label: 'On', value: 'Reachable from anywhere', sub: peers ? `${peers} ${peers === 1 ? 'phone or buddy' : 'phones and buddies'} paired.` : 'Nothing is paired yet: connect a phone from the Hub.' }
+            : { state: 'warn', label: 'Connecting', value: 'Looking for a way out', sub: 'AlvaOS Link is on and looking for the internet.' });
+    }
+
     function renderApps(appsPayload, containersPayload) {
         const apps = Array.isArray(appsPayload?.apps) ? appsPayload.apps : null;
         if (apps === null) {
@@ -661,18 +700,22 @@
         if (slowBusy) return;
         slowBusy = true;
         try {
-            const [alerts, backup, buddy, apps, containers] = await Promise.all([
+            const [alerts, backup, buddy, apps, containers, hub, link] = await Promise.all([
                 getJson('/alerts'),
                 getJson('/backup/status'),
                 getJson('/backup/pairing/status'),
                 getJson('/apps/installed'),
                 getJson('/containers'),
+                getJson('/hub'),
+                getJson('/link'),
             ]);
             lastAlerts = alerts;
             setIssues('alerts', alertsToIssues(alerts));
             if (lastSystem) renderStorage(lastSystem, alerts);
             renderBackup(backup, buddy);
             renderApps(apps, containers);
+            renderHub(hub);
+            renderLink(link);
             slowLoaded = true;
             renderStatusLine();
         } finally {

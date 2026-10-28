@@ -25,9 +25,9 @@
 
     async function load() {
         if (hiddenByUser()) return;
-        const [pools, shares, backup, email, telegram] = await Promise.all([
+        const [pools, shares, backup, email, telegram, hub] = await Promise.all([
             getJson('/storage/pools'), getJson('/storage/shares'), getJson('/backup/settings'),
-            getJson('/alerts/email'), getJson('/alerts/settings'),
+            getJson('/alerts/email'), getJson('/alerts/settings'), getJson('/hub'),
         ]);
         if (!pools) return;   // not an admin, or the NAS is not answering: show nothing
 
@@ -41,6 +41,8 @@
         const steps = [
             { done: own.length > 0, title: 'Storage for your files', text: 'Combine one or more disks into a pool.', link: 'storage.html', action: 'Create a pool' },
             { done: sharesList.length > 0, title: 'A shared folder', text: 'Open it from your computers and phones.', link: 'storage.html#shares', action: 'Share a folder' },
+            { done: (hub?.people || []).length > 0, title: 'People who use it', text: 'Everyone gets their own name, password and folder.', link: 'storage.html#users', action: 'Add people' },
+            { done: !!hub?.enabled, title: 'The AlvaOS Hub', text: 'Files, photos, calendar and more for everyone, also on the phone.', link: 'files.html', action: 'Turn on' },
             { done: !!(pb.enabled && (pb.sources || []).length), title: 'Automatic restore points', text: 'Get back files you deleted or changed by mistake.', link: 'backup.html', action: 'Turn on' },
             { done: protectedPool, title: 'Protection against a failing disk', text: 'With a second disk, every file is kept twice.', link: own.length ? `storage.html#pool=${encodeURIComponent(own[0].id)}` : 'storage.html', action: 'Add a disk' },
             { done: notifies, title: 'Hear about problems', text: 'Get an email or a Telegram message when a disk fails.', link: 'system.html#alerts', action: 'Set up' },

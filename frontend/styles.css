@@ -2820,3 +2820,6 @@ button.ai-chip.add:hover { border-color: var(--accent-primary); }
 /* Links without a class of their own: the accent colour, not the browser's blue. */
 a:not([class]) { color: var(--accent-primary); text-underline-offset: 2px; }
 a:not([class]):hover { text-decoration-thickness: 2px; }
+
+/* One "next step" at a time: while the Getting started list is there, the headline does not say the same. */
+body:has(#getting-started:not([hidden]) .gs-head) #status-line[data-level="setup"] { display: none; }
