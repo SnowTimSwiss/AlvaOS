@@ -141,8 +141,13 @@ class Store(context: Context) : SyncState {
         get() = prefs.getBoolean("delete_on_nas", true)
         set(v) = prefs.edit().putBoolean("delete_on_nas", v).apply()
 
+    /** The steps after connecting: "backup", "albums", "done", or "" (none: never started, or finished). */
+    var wizard: String
+        get() = prefs.getString("wizard", "").orEmpty()
+        set(v) = prefs.edit().putString("wizard", v).apply()
+
     /** Signed out (here or on the NAS): the session goes, the rest stays for signing in again. */
-    fun signOut() = prefs.edit().remove("token").remove("demo").apply()
+    fun signOut() = prefs.edit().remove("token").remove("demo").remove("wizard").apply()
 
     companion object {
         /** The Hub apps in the demo (the same as a NAS with everything turned on). */

@@ -15,6 +15,15 @@ How to add an entry:
 
 ---
 
+## Android: a setup like the desktop app's
+
+- After connecting, the app walks through the photo backup: cards (backup on or off and how), the albums, "All set" (`MainActivity.wizardBackup/wizardAlbums/wizardDone`, `Store.wizard`). Phones that were already signed in skip it.
+- Welcome screen, and a phone ↔ NAS picture with travelling lights while connecting (`Wizard.kt`: HaloLogo, Bridge, CheckBurst, choice cards). Everything is still when the phone has animations off.
+- CI: pictures of the screens only for a run by hand with "screens" ticked (`-Pscreens`); the screens are still opened on every run.
+- Not built here (no Android SDK in this environment): checked by CI.
+
+---
+
 ## Desktop app 0.6.0: sync folder and a new setup
 
 - NAS: `files-tree` helper op and `GET /api/sync/tree` (whole tree in one answer), WebDAV PUT keeps `X-OC-Mtime`.

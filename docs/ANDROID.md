@@ -11,11 +11,14 @@ it; nothing needs Android Studio.
   `alvaos-android.aab` for Google Play. With Play set up (below) it also
   goes to Play's internal testing by itself. One release, OS and app.
 - **Every pull request and every push to `main`** that touches `android/`:
-  the tests run and the app is built (the screens of the app are put on the
-  `app-screens` branch). Nothing is kept or published.
+  the tests run (every screen is opened) and the app is built. Nothing is kept
+  or published, and no pictures of the screens are made.
 - **Actions › Android app › Run workflow**: builds the app including the Link
   library and keeps the APK with the run for a day (Actions › the run ›
   Artifacts), to test between releases. Run it once by hand before a release.
+  Tick **screens** to also get pictures of every screen on the `app-screens`
+  branch (`git fetch origin app-screens`, look at the .jpg files); without it
+  there are none.
   With a track (internal, alpha, beta, production) it also uploads to that
   track on Google Play (the default is none).
   With a release tag in "Add the app to this existing release", the app is
@@ -37,7 +40,7 @@ that line on a phone.
 ## The demo, and "App access" in the Play Console
 
 Google's review asks how to get into the parts of an app that need a sign-in. The app needs the person's own NAS,
-which a reviewer cannot reach, so the app has a **demo**: on the first screen, "Try the demo". It opens the whole
+which a reviewer cannot reach, so the app has a **demo**: on the first screen, "Try the demo" (on the screen after "Get started"). It opens the whole
 app with sample files, photos (with the time slider), a calendar, contacts and a chat, with no NAS and no account.
 Nothing is sent or saved; Settings has "Exit the demo".
 

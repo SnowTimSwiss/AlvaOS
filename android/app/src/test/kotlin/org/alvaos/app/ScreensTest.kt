@@ -40,10 +40,11 @@ class ScreensTest {
         WorkManagerTestInitHelper.initializeTestWorkManager(ctx)
         ctx.getSharedPreferences("alvaos", Context.MODE_PRIVATE).edit().clear().commit()
         SyncWorker.live = null
+        Motion.enabled = false        // pictures of finished screens, not of half-faded ones
     }
 
     @After
-    fun after() { SyncWorker.live = null }
+    fun after() { SyncWorker.live = null; Motion.enabled = true }
 
     private fun texts(root: View): List<String> = when (root) {
         is TextView -> listOf(root.text.toString())
@@ -104,6 +105,10 @@ class ScreensTest {
     fun theFirstScreenSaysHowToConnect() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             idle()
+            scenario.onActivity { a -> assertTrue(texts(a.window.decorView).toString(), "Welcome to AlvaOS" in texts(a.window.decorView)) }
+            picture(scenario, "0-welcome")
+            scenario.onActivity { clickText(it.window.decorView, "Get started") }
+            idle()
             scenario.onActivity { a ->
                 val shown = texts(a.window.decorView)
                 assertTrue(shown.toString(), "Scan the QR code" in shown)
@@ -119,7 +124,11 @@ class ScreensTest {
     @Test
     @Config(qualifiers = "w400dp-h880dp-night-xxhdpi")
     fun theFirstScreenInTheDark() {
-        ActivityScenario.launch(MainActivity::class.java).use { picture(it, "1-connect-dark") }
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            picture(scenario, "0-welcome-dark")
+            scenario.onActivity { clickText(it.window.decorView, "Get started") }
+            picture(scenario, "1-connect-dark")
+        }
     }
 
     @Test
@@ -196,6 +205,8 @@ class ScreensTest {
     fun theDemoNeedsNoNasAndCanBeLeft() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             idle()
+            scenario.onActivity { clickText(it.window.decorView, "Get started") }
+            idle()
             scenario.onActivity { clickText(it.window.decorView, "Try the demo") }
             idle()
             picture(scenario, "6-demo-hub")
@@ -238,6 +249,61 @@ class ScreensTest {
             picture(scenario, "5-dark-settings")
             openTab(scenario, MainActivity.TAB_APPS)
             picture(scenario, "5-dark-apps")
+        }
+    }
+
+    @Test
+    fun afterConnectingTheSetupAsksAboutTheBackupThenTheAlbumsThenIsDone() {
+        signedIn()
+        Store(ctx).wizard = "backup"
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            idle()
+            scenario.onActivity { a ->
+                val shown = texts(a.window.decorView)
+                assertTrue(shown.toString(), "Back up your photos" in shown && "Continue" in shown)
+                assertTrue("no bar in the setup", find(a.window.decorView, BottomNavigationView::class.java)!!.visibility != View.VISIBLE)
+            }
+            picture(scenario, "7-setup-backup")
+            // Without access to the pictures it asks; the albums come once it is allowed.
+            Store(ctx).wizard = "albums"
+            scenario.recreate()
+            idle()
+            scenario.onActivity { a -> assertTrue(texts(a.window.decorView).toString(), "Which albums?" in texts(a.window.decorView)) }
+            picture(scenario, "7-setup-albums")
+            scenario.onActivity { clickText(it.window.decorView, "Not now") }
+            idle()
+            scenario.onActivity { a -> assertTrue(texts(a.window.decorView).toString(), "All set" in texts(a.window.decorView)) }
+            picture(scenario, "7-setup-done")
+            scenario.onActivity { clickText(it.window.decorView, "Open AlvaOS") }
+            idle()
+            scenario.onActivity { a ->
+                assertEquals("", Store(a).wizard)
+                assertTrue(find(a.window.decorView, BottomNavigationView::class.java)!!.visibility == View.VISIBLE)
+            }
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "w400dp-h880dp-night-xxhdpi")
+    fun theSetupInTheDark() {
+        signedIn(albums = setOf("Camera"))
+        Store(ctx).wizard = "backup"
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            picture(scenario, "7-dark-setup-backup")
+            Store(ctx).wizard = "done"
+            scenario.recreate()
+            picture(scenario, "7-dark-setup-done")
+        }
+    }
+
+    @Test
+    fun signedInPhonesFromBeforeSkipTheSetup() {
+        signedIn()
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            idle()
+            scenario.onActivity { a ->
+                assertTrue(find(a.window.decorView, BottomNavigationView::class.java)!!.visibility == View.VISIBLE)
+            }
         }
     }
 

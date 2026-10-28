@@ -34,7 +34,6 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
@@ -63,6 +62,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var store: Store
     private lateinit var gallery: Gallery
     private lateinit var ui: Ui
+    private lateinit var wizard: Wizard
+    private var welcomed = false                       // the welcome screen was shown (once per start of the app)
     private lateinit var frame: FrameLayout
     private lateinit var nav: BottomNavigationView
     private lateinit var statusBar: View
@@ -94,7 +95,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val askPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-        if (hasGalleryAccess()) { choosing = true }
+        if (hasGalleryAccess()) {
+            if (store.wizard == "backup") store.wizard = "albums" else choosing = true
+        } else if (store.wizard == "backup") {
+            Snack.show(frame, "Without access to your pictures there is nothing to back up.")
+        }
         show()
     }
     private val deleteRequest = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
@@ -113,6 +118,7 @@ class MainActivity : AppCompatActivity() {
         store = Store(this)
         gallery = Gallery(this)
         ui = Ui(this)
+        wizard = Wizard(this, ui)
         SyncWorker.channels(this)
 
         frame = FrameLayout(this)
@@ -155,6 +161,7 @@ class MainActivity : AppCompatActivity() {
                 val first = nav.menu.getItem(0).itemId
                 when {
                     page != null && page.inFullscreen() -> page.exitFullscreen()
+                    store.signedIn && store.wizard == "albums" -> { store.wizard = "backup"; show() }
                     choosing -> { choosing = false; show() }
                     showsHub() && page != null && page.canGoBack() -> page.goBack()
                     appsOpen != null -> { appsOpen = null; show() }
@@ -188,7 +195,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         if (!store.signedIn) return
-        if (!showsHub()) show()
+        if (!showsHub() && store.wizard.isEmpty()) show()
         if (store.demo) return                                    // no NAS to ask, nothing to back up
         if (store.backupOn) SyncWorker.schedule(this)         // the watchers survive an update of the app
         deleteWhatTheNasDeleted()
@@ -203,7 +210,7 @@ class MainActivity : AppCompatActivity() {
                 answer == "out" -> confirmSignedOut()
                 answer is Me -> {
                     store.remember(answer)
-                    if (buildNav()) show() else if (showsHub()) hub?.load()
+                    if (buildNav() && store.wizard.isEmpty()) show() else if (showsHub()) hub?.load()
                 }
                 showsHub() -> hub?.load()
             }
@@ -232,11 +239,20 @@ class MainActivity : AppCompatActivity() {
         statusHost = null
         albumsHost = null
         val signed = store.signedIn
-        nav.visibility = if (signed) View.VISIBLE else View.GONE
+        val setup = signed && !store.demo && store.wizard.isNotEmpty()
+        nav.visibility = if (signed && !setup) View.VISIBLE else View.GONE
         (nav.tag as? View)?.visibility = nav.visibility
         pad()
         if (!signed) {
             signIn(message)
+            return
+        }
+        if (setup) {
+            when (store.wizard) {
+                "albums" -> wizardAlbums()
+                "done" -> wizardDone()
+                else -> wizardBackup()
+            }
             return
         }
         // Only marks the tab: setting selectedItemId here would call this again and again.
@@ -357,31 +373,42 @@ class MainActivity : AppCompatActivity() {
         return DeviceInfo(name.take(60), model.take(60), "android", HubPage.appVersion(this))
     }
 
-    private enum class Mode { Start, Password }
+    private enum class Mode { Welcome, Start, Password }
 
-    private fun signIn(error: String = "", mode: Mode = Mode.Start) {
+    private fun signIn(error: String = "", mode: Mode? = null) {
         frame.removeAllViews()
+        val kind = mode ?: if (!welcomed && store.server.isEmpty() && error.isEmpty()) Mode.Welcome else Mode.Start
         val page = ui.page(frame)
         page.gravity = Gravity.CENTER_HORIZONTAL
-        ui.logo(page)
-        ui.headline(page, if (mode == Mode.Password) "Sign in" else "Connect to your NAS", 20).gravity = Gravity.CENTER
-        ui.body(page, "Your files, photos, calendar and chat from AlvaOS, and the backup of this phone's pictures.")
-            .gravity = Gravity.CENTER
-        if (error.isNotEmpty()) ui.error(page, error)
-        ui.space(page, 12)
-        when (mode) {
-            Mode.Start -> {
+        when (kind) {
+            Mode.Welcome -> {
+                wizard.halo(page)
+                ui.headline(page, "Welcome to AlvaOS", 12).gravity = Gravity.CENTER
+                ui.body(page, "Your NAS on this phone: files, photos, calendar and chat, at home and away. " +
+                    "Private, end to end, no router settings.").gravity = Gravity.CENTER
+                ui.space(page, 8)
                 ui.feature(page, R.drawable.ic_tab_files, "Files and photos", "Everything on your NAS, at home and away.")
                 ui.feature(page, R.drawable.ic_tab_backup, "Backup of this phone", "Your pictures go to the NAS by themselves.")
                 ui.feature(page, R.drawable.ic_tab_calendar, "Calendar and chat", "Every app of your Hub, in one place.")
                 ui.space(page, 12)
-                ui.button(page, "Scan the QR code", icon = R.drawable.ic_qr, top = 16) { scan() }
-                ui.caption(page, "On a computer, open the Hub of your NAS and choose Devices › Connect a phone.", 10)
+                ui.button(page, "Get started", top = 20) { welcomed = true; signIn(mode = Mode.Start) }
+            }
+            Mode.Start -> {
+                wizard.steps(page, 0)
+                wizard.bridge(page).set(Bridge.State.Idle)
+                ui.headline(page, "Connect your phone", 8).gravity = Gravity.CENTER
+                ui.body(page, "In the Hub of your NAS, open Devices › Connect a phone and scan the QR code.")
                     .gravity = Gravity.CENTER
-                ui.button(page, "Sign in with name and password", Ui.Kind.Outlined, top = 24) { signIn(mode = Mode.Password) }
+                if (error.isNotEmpty()) ui.error(page, error)
+                ui.space(page, 8)
+                ui.button(page, "Scan the QR code", icon = R.drawable.ic_qr, top = 16) { scan() }
+                ui.button(page, "Sign in with name and password", Ui.Kind.Outlined, top = 12) { signIn(mode = Mode.Password) }
                 ui.button(page, "Try the demo", Ui.Kind.Text, top = 4) { startDemo() }
             }
             Mode.Password -> {
+                wizard.steps(page, 0)
+                ui.headline(page, "Sign in", 20).gravity = Gravity.CENTER
+                if (error.isNotEmpty()) ui.error(page, error)
                 val address = ui.field(page, "NAS address", store.server, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI,
                     "As in the Hub, e.g. 192.168.1.20:8090")
                 val name = ui.field(page, "Name", store.user)
@@ -397,9 +424,10 @@ class MainActivity : AppCompatActivity() {
                         try { store.remember(store.hub().me()) } catch (e: Exception) { /* later */ }
                     }
                 }
-                ui.button(page, "Back", Ui.Kind.Text, top = 4) { signIn() }
+                ui.button(page, "Back", Ui.Kind.Text, top = 4) { signIn(mode = Mode.Start) }
             }
         }
+        Motion.stagger(page)
     }
 
     private fun scan() {
@@ -444,30 +472,37 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Shows a moment of waiting, does the work, and opens the Hub, or says what went wrong. */
+    /** Shows phone and NAS connecting, does the work, and goes on with the setup, or says what went wrong. */
     private fun busy(label: String, work: suspend () -> Unit) {
         frame.removeAllViews()
         nav.visibility = View.GONE
         (nav.tag as? View)?.visibility = View.GONE
         val page = ui.page(frame)
         page.gravity = Gravity.CENTER_HORIZONTAL
-        ui.space(page, 120)
-        ui.logo(page)
+        wizard.steps(page, 0)
+        ui.space(page, 40)
+        val bridge = wizard.bridge(page, 0)
+        bridge.set(Bridge.State.Busy)
         ui.title(page, label, 24).gravity = Gravity.CENTER
-        LinearProgressIndicator(this).apply { isIndeterminate = true }
-            .also { page.addView(it, LinearLayout.LayoutParams(ui.dp(160), ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = ui.dp(16) }) }
         lifecycleScope.launch {
             val problem = withContext(Dispatchers.IO) {
                 try { work(); "" } catch (e: Exception) { e.message ?: "That did not work." }
             }
-            if (problem.isNotEmpty()) { signIn(problem); return@launch }
+            if (problem.isNotEmpty()) {
+                bridge.set(Bridge.State.Fail)
+                delay(if (Motion.on()) 500L else 0L)
+                signIn(problem)
+                return@launch
+            }
+            bridge.set(Bridge.State.Done)
+            delay(if (Motion.on()) 800L else 0L)
             autoDeleted = false
             tab = TAB_HUB
             appsOpen = null
             navKey = ""
+            store.wizard = "backup"
             buildNav()
             hub?.destroy(); hub = null
-            if (store.backupOn) SyncWorker.schedule(this@MainActivity)
             show()
         }
     }
@@ -535,6 +570,102 @@ class MainActivity : AppCompatActivity() {
             }
         }
         if (inHub.isEmpty() && store.storeApps.isEmpty()) ui.body(page, "No more apps.", 16)
+    }
+
+    // ── The setup after connecting ───────────────────────────────────────
+
+    private fun finishSetup() {
+        store.wizard = ""
+        tab = TAB_HUB
+        appsOpen = null
+        navKey = ""
+        buildNav()
+        if (store.backupOn) SyncWorker.schedule(this)
+        show()
+    }
+
+    /** Step 2: do you want the photo backup, and how. */
+    private fun wizardBackup() {
+        val page = ui.page(frame)
+        page.gravity = Gravity.CENTER_HORIZONTAL
+        wizard.steps(page, 1)
+        wizard.burst(page, 72, rings = false)
+        ui.headline(page, "Connected to ${store.nasName.ifEmpty { "your NAS" }}", 4).gravity = Gravity.CENTER
+        ui.body(page, "What do you want this phone to do?").gravity = Gravity.CENTER
+        ui.space(page, 8)
+        var backup = true
+        val how = mutableListOf<Wizard.Choice>()
+        wizard.choice(page, R.drawable.ic_tab_backup, "Back up your photos",
+            "The pictures and videos of the albums you choose go to your NAS by themselves, also when the app is closed.", true) { on ->
+            backup = on
+            how.forEach { it.enable(on) }
+        }
+        how += wizard.choice(page, R.drawable.ic_tab_settings, "Only on Wi-Fi", "Not on mobile data", store.wifiOnly) { store.wifiOnly = it }
+        how += wizard.choice(page, R.drawable.ic_charge, "Only while charging", "Easier on the battery", store.chargingOnly) { store.chargingOnly = it }
+        how += wizard.choice(page, R.drawable.ic_trash, "Deleting here deletes on the NAS too",
+            "Into the NAS's trash, for 30 days", store.deleteOnNas) { store.deleteOnNas = it }
+        ui.button(page, "Continue", top = 22) {
+            if (!backup) { store.backupOn = false; store.wizard = "done"; show() }
+            else if (hasGalleryAccess()) { store.wizard = "albums"; show() }
+            else {
+                val extra = mutableListOf(Manifest.permission.ACCESS_MEDIA_LOCATION)
+                if (Build.VERSION.SDK_INT >= 33) extra += Manifest.permission.POST_NOTIFICATIONS
+                askPermissions.launch((needed() + extra).toTypedArray())
+            }
+        }
+        if (!hasGalleryAccess()) ui.caption(page, "The app asks to see your pictures and videos.", 8).gravity = Gravity.CENTER
+        Motion.stagger(page)
+    }
+
+    /** Step 3: which albums. */
+    private fun wizardAlbums() {
+        val page = ui.page(frame)
+        page.gravity = Gravity.CENTER_HORIZONTAL
+        wizard.steps(page, 2)
+        ui.space(page, 8)
+        ui.headline(page, "Which albums?", 8).gravity = Gravity.CENTER
+        ui.body(page, "Each one becomes an album in Photos on your NAS.").gravity = Gravity.CENTER
+        val counts = gallery.counts()
+        val chosen = store.albums.ifEmpty { counts.keys.filter { it.equals("Camera", true) }.toSet() }.toMutableSet()
+        if (counts.isEmpty()) {
+            ui.body(page, "There are no pictures on this phone yet.", 16).gravity = Gravity.CENTER
+        } else {
+            counts.entries.sortedByDescending { it.value }.forEach { (album, count) ->
+                wizard.choice(page, R.drawable.ic_tab_photos, album, "$count pictures and videos", album in chosen) { on ->
+                    if (on) chosen += album else chosen -= album
+                }
+            }
+        }
+        ui.button(page, "Start the backup", top = 22) {
+            if (chosen.isEmpty()) { Snack.show(frame, "Choose at least one album."); return@button }
+            store.albums = chosen
+            store.backupOn = true
+            store.wizard = "done"
+            albums = null
+            SyncWorker.schedule(this)
+            SyncWorker.now(this)
+            if (Build.VERSION.SDK_INT >= 31 && !gallery.maySilentlyDelete() && !store.askedManageMedia) askManageMedia()
+            else show()
+        }
+        ui.button(page, "Not now", Ui.Kind.Text, top = 4) { store.wizard = "done"; show() }
+        Motion.stagger(page)
+    }
+
+    /** The last step: what is set up. */
+    private fun wizardDone() {
+        val page = ui.page(frame)
+        page.gravity = Gravity.CENTER_HORIZONTAL
+        ui.space(page, 40)
+        wizard.burst(page, 140, rings = true)
+        ui.headline(page, "All set", 4).gravity = Gravity.CENTER
+        ui.body(page, "AlvaOS is ready. The Hub apps are in the bar at the bottom.").gravity = Gravity.CENTER
+        ui.space(page, 8)
+        val nas = store.nasName.ifEmpty { "your NAS" }
+        wizard.done(page, "Connected to $nas as ${store.user}" + if (store.linkNas.isNotEmpty()) ", from anywhere" else "")
+        if (store.backupOn) wizard.done(page, "Photo backup of ${store.albums.size} ${if (store.albums.size == 1) "album" else "albums"}")
+        else wizard.done(page, "Photo backup is off. Turn it on any time under Backup.")
+        ui.button(page, "Open AlvaOS", top = 24) { finishSetup() }
+        Motion.stagger(page, from = 2)
     }
 
     // ── The Backup tab ───────────────────────────────────────────────────

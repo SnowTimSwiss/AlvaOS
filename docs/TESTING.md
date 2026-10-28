@@ -312,6 +312,15 @@ Needs the NAS with the internet and a phone on mobile data (Wi-Fi off).
    NVIDIA's driver was installed before this version, Settings › Graphics
    offers "Install what apps need" (the container toolkit) first.
 
+## 12x. The Android app: the new setup
+
+1. Fresh install: a welcome screen (the logo glows and floats), "Get started" goes to "Connect your phone" (phone and NAS with lights travelling between them).
+2. Scan the QR code: the lights speed up, the line closes in green, then "Connected to <NAS>" with a drawn check mark.
+3. The cards: "Back up your photos" on, and the options (Wi-Fi only, charging only, deleting) as cards; switch backup off: the options dim. "Continue" asks for access to the pictures, then "Which albums?" (Camera is ticked), "Start the backup".
+4. "All set" with rings, what was set up, "Open AlvaOS" opens the bar with the Hub apps.
+5. Back button in the album step goes back to the cards. A phone that was signed in before the update shows no setup.
+6. Settings › Accessibility › Remove animations: everything stands still, nothing is missing.
+
 ## 12b. The Android app: connect, the Hub, photo backup (Android 11 or newer)
 
 1. On the phone open GitHub › Releases › the newest AlvaOS release and
