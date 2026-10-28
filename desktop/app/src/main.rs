@@ -707,7 +707,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             app_state, parse_link, connect, choose, open_hub, open_browser, drive, set_connected, sign_out,
             syncing::remote_shares, syncing::remote_folders, syncing::add_sync, syncing::remove_sync, syncing::sync_now,
-            syncing::sync_answer, syncing::pause_sync, syncing::open_sync, syncing::pick_local
+            syncing::sync_answer, syncing::pause_sync, syncing::open_sync, syncing::pick_local, syncing::set_exclude
         ])
         .setup(move |app| {
             build_tray(app.handle())?;

@@ -234,6 +234,31 @@
         </div>
     </div>
 
+    <!-- The options of one sync folder -->
+    <div class="sheet" id="sheet-folder" hidden>
+        <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="folder-title">
+            <h2 id="folder-title" class="sheet-title"></h2>
+            <small id="folder-path"></small>
+            <div class="note warn" id="folder-conflicts" hidden></div>
+            <label class="field">Don't sync
+                <textarea id="folder-exclude" rows="4" spellcheck="false" autocomplete="off" placeholder="*.mov&#10;node_modules&#10;Videos/"></textarea>
+                <small>One per line. A name (<code>*.mov</code>, <code>node_modules</code>) in any folder, or a path from the top of this folder (<code>Videos/</code>, <code>Photos/Raw</code>). Things left out stay where they are, on both sides.</small>
+            </label>
+            <h2>Recent</h2>
+            <ul class="activity" id="folder-recent"></ul>
+            <p class="error" id="folder-error" role="alert"></p>
+            <div class="row">
+                <button type="button" class="btn" id="folder-open"><span class="ic" data-icon="folder"></span>Open</button>
+                <button type="button" class="btn danger" id="folder-remove">Stop syncing</button>
+            </div>
+            <div class="row">
+                <button type="button" class="btn ghost" id="folder-close">Close</button>
+                <span class="grow"></span>
+                <button type="button" class="btn primary" id="folder-save">Save</button>
+            </div>
+        </div>
+    </div>
+
     <div class="toast" id="toast" hidden></div>
     <script src="app.js"></script>
 </body>

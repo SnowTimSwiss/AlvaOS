@@ -15,6 +15,15 @@ How to add an entry:
 
 ---
 
+## Desktop sync: the everyday things
+
+- "Don't sync" per sync folder (`sync::Filter`: names with `*`/`?` in any folder, or paths from the top), left-out things are forgotten, never deleted.
+- Progress while a round runs (file x of y), an activity list per folder, conflict copies named in the app.
+- Files are tried three times on network errors or a busy NAS (5xx, 408, 423, 429); a read timeout of 90 s.
+- Tests: patterns, left-out files both ways, progress and log, retries. The row's "open" and "stop syncing" moved into the folder's "…" window.
+
+---
+
 ## Android CI: the screens come in the run's zip
 
 - No more `app-screens` branch: with **screens** ticked, the pictures are in the same zip as the APK (Artifacts › alvaos-android, folder `screens/`), also when the build fails. The old `app-screens` branch can be deleted.
