@@ -15,6 +15,12 @@ How to add an entry:
 
 ---
 
+## Android CI: the screens come in the run's zip
+
+- No more `app-screens` branch: with **screens** ticked, the pictures are in the same zip as the APK (Artifacts › alvaos-android, folder `screens/`), also when the build fails. The old `app-screens` branch can be deleted.
+
+---
+
 ## Android: a setup like the desktop app's
 
 - After connecting, the app walks through the photo backup: cards (backup on or off and how), the albums, "All set" (`MainActivity.wizardBackup/wizardAlbums/wizardDone`, `Store.wizard`). Phones that were already signed in skip it.
