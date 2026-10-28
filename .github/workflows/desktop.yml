@@ -61,6 +61,19 @@ jobs:
       - name: Build the app
         run: cargo build -p alvaos-desktop
 
+  # The Windows parts (the network drive, trash, key store) at least compile, are linted and tested.
+  windows:
+    runs-on: windows-2022
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - name: Lint
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Test the core
+        run: cargo test -p alvaos-core --lib
+
   packages:
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     needs: test

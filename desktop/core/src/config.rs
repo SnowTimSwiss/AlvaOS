@@ -14,6 +14,7 @@ pub const LINK_KEY: &str = "link-key";
 const SERVICE: &str = "AlvaOS";
 const HUB_PORT: u16 = 18090;
 const DAV_PORT: u16 = 18091;
+const DAV_TLS_PORT: u16 = 18092;
 
 /// A folder of the NAS kept on this computer (the sync folder).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -65,6 +66,8 @@ pub struct Config {
     /// The ports of the NAS on this computer (kept, so bookmarks and sign-ins stay valid).
     pub hub_port: u16,
     pub dav_port: u16,
+    /// Files over HTTPS on this computer (Windows' network drive only signs in over HTTPS).
+    pub dav_tls_port: u16,
     /// The building blocks chosen at setup; remote access is always there.
     pub use_window: bool,
     pub use_drive: bool,
@@ -87,6 +90,7 @@ impl Default for Config {
             addresses: Vec::new(),
             hub_port: HUB_PORT,
             dav_port: DAV_PORT,
+            dav_tls_port: DAV_TLS_PORT,
             use_window: true,
             use_drive: false,
             connected: true,
@@ -179,7 +183,7 @@ impl Store {
         }
         self.drop_file_secret(SESSION)?;
         let keep = self.load();
-        self.save(&Config { hub_port: keep.hub_port, dav_port: keep.dav_port, ..Config::default() })
+        self.save(&Config { hub_port: keep.hub_port, dav_port: keep.dav_port, dav_tls_port: keep.dav_tls_port, ..Config::default() })
     }
 
     fn file_secrets(&self) -> serde_json::Map<String, serde_json::Value> {

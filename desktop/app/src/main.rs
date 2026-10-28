@@ -56,6 +56,8 @@ struct Net {
     link: Option<Arc<Link>>,
     hub: Option<Proxy>,
     dav: Option<Proxy>,
+    /// Files over HTTPS (Windows' network drive), handing on to `dav`.
+    tls: Option<alvaos_core::tls::Front>,
 }
 
 struct TrayItems {
@@ -184,9 +186,18 @@ async fn go_online(app: &AppHandle) -> Result<(), String> {
     };
     let hub = Proxy::start(config.hub_port, hub_way).await.map_err(text)?;
     let dav = Proxy::start(config.dav_port, dav_way).await.map_err(text)?;
-    if (hub.port, dav.port) != (config.hub_port, config.dav_port) {
+    net.tls = None;
+    let mut tls_port = config.dav_tls_port;
+    if cfg!(windows) {
+        let cert = alvaos_core::tls::LocalCert::load_or_create(me.store.dir()).map_err(text)?;
+        let front = alvaos_core::tls::Front::start(&cert, config.dav_tls_port, dav.port).await.map_err(text)?;
+        tls_port = front.port;
+        net.tls = Some(front);
+    }
+    if (hub.port, dav.port, tls_port) != (config.hub_port, config.dav_port, config.dav_tls_port) {
         config.hub_port = hub.port;
         config.dav_port = dav.port;
+        config.dav_tls_port = tls_port;
         me.save(config)?;
     }
     net.hub = Some(hub);
@@ -201,6 +212,7 @@ async fn go_offline(app: &AppHandle) {
     let mut net = me.net.lock().await;
     net.hub = None;
     net.dav = None;
+    net.tls = None;
     if let Some(link) = net.link.take() {
         link.close().await;
     }
@@ -272,7 +284,7 @@ async fn forget(app: &AppHandle) {
     let me = app.state::<App>();
     let config = me.config();
     if me.status.lock().unwrap().drive {
-        let _ = drive::unmount(config.dav_port, &config.user).await;
+        let _ = drive::unmount(config.dav_port, &config.user, config.dav_tls_port).await;
         me.status.lock().unwrap().drive = false;
     }
     go_offline(app).await;
@@ -548,9 +560,10 @@ async fn set_drive(app: &AppHandle, on: bool) -> Result<String, String> {
     let config = me.config();
     let result = if on {
         let token = me.token().ok_or("This computer is not signed in.")?;
-        drive::mount(config.dav_port, &config.user, &token).await.map_err(text)
+        let cert = me.store.dir().join("local-cert.pem");
+        drive::mount(config.dav_port, &config.user, &token, config.dav_tls_port, &cert).await.map_err(text)
     } else {
-        drive::unmount(config.dav_port, &config.user).await.map(|_| String::new()).map_err(text)
+        drive::unmount(config.dav_port, &config.user, config.dav_tls_port).await.map(|_| String::new()).map_err(text)
     };
     if result.is_ok() {
         me.status.lock().unwrap().drive = on;
@@ -673,7 +686,7 @@ async fn on_menu(app: &AppHandle, id: &str) {
         "quit" => {
             if me.status.lock().unwrap().drive {
                 let config = me.config();
-                let _ = drive::unmount(config.dav_port, &config.user).await;
+                let _ = drive::unmount(config.dav_port, &config.user, config.dav_tls_port).await;
             }
             syncing::unmount_all(app);
             go_offline(app).await;

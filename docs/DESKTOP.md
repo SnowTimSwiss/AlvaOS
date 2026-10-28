@@ -10,7 +10,7 @@ When it is set up, the app asks once what to use (everything can be changed late
 |---|---|
 | **Your NAS from anywhere** | Always there. The NAS has addresses on this computer: `http://127.0.0.1:18090` for the Hub (and CalDAV, CardDAV), `http://127.0.0.1:18091` for Files over WebDAV. Every connection to them goes through Link to the NAS: directly on the home network or through the routers, else through a relay that only passes on encrypted packets. |
 | **The Hub apps in a window** | Files, Photos, Calendar, Contacts, Chat, one click from the tray, signed in. |
-| **Files as a drive** | The shares of the person in the file manager (Linux: GNOME Files and every app using GIO; macOS: Finder). Windows: not yet (use a sync folder). |
+| **Files as a drive** | The shares of the person in the file manager (Linux: GNOME Files and every app using GIO; macOS: Finder; Windows: a network drive in Explorer, see below). |
 | **A sync folder** | Chosen folders of the NAS kept on this computer (by default in `~/AlvaOS/<share>/<folder>`), also offline. See below. |
 | **Start with the computer** | Quietly, in the tray. |
 
@@ -42,7 +42,7 @@ WebDAV through the computer's own address of the NAS (`dav` service of Link → 
 
 - **Linux:** `gio mount dav://<person>@127.0.0.1:18091/` (needs gvfs, as on GNOME). In GNOME Files under Other Locations.
 - **macOS:** Finder's `mount volume`.
-- **Windows:** its WebDAV client only signs in over HTTPS with a trusted certificate; the drive comes with the sync folder in 0.6. Until then Files in the app's window.
+- **Windows:** a network drive (`net use Z:`, the first free letter from Z down). Windows' WebDAV client only signs in over HTTPS with a certificate it trusts, so the app answers HTTPS on `https://127.0.0.1:18092` (handing every connection on to the plain Files address) with a certificate of its own, made for `127.0.0.1` and `localhost` only and not allowed to sign anything (`core/src/tls.rs`). The first time, Windows asks "Do you want to install this certificate?": Yes trusts that one certificate for this user (`certutil -user -addstore Root`); the key stays in the app's folder, readable only by this user. Windows opens files through WebDAV up to 50 MB (a setting of its WebClient service); bigger files are for the sync folder. If mounting fails with "network name not found", the WebClient service is off: start it in Services.
 
 ## The sync folder (0.6)
 

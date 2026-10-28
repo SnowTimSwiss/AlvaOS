@@ -20,6 +20,7 @@ pub mod ondemand;
 pub mod pairlink;
 pub mod proxy;
 pub mod sync;
+pub mod tls;
 
 /// The app's version (the version of AlvaOS).
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

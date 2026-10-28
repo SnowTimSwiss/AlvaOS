@@ -15,6 +15,11 @@ How to add an entry:
 
 ---
 
+## Windows: Files as a network drive
+
+- `core/src/tls.rs`: an own certificate for 127.0.0.1 (not a CA, 20 years), HTTPS on port 18092 handing on to the plain Files address; tested with a client that trusts only that certificate (also: any other name is refused).
+- `core/src/drive.rs`: `net use` of `\\127.0.0.1@SSL@18092\DavWWWRoot`, the certificate trusted for this user once (`certutil -user`, by thumbprint), the drive letter found again from `net use`'s list.
+- The whole app now compiles for Windows (checked here with the mingw target) and CI lints and tests on a Windows runner. Not run on a real Windows yet: the drive, the certificate question, the 50 MB limit.
 ## Windows: the sync folder is files on demand (cloud files)
 
 - `core/src/cloudfiles.rs` (Windows' Cloud Files API through the `cloud-filter` crate): the folder is registered as a cloud folder (progressive hydration, all placeholders made up front); `fetch_data` reads the asked range from the NAS over WebDAV `Range`; Windows' questions about delete, rename and dehydrate are answered after doing it on the NAS (or yes); each round new and changed files are sent and turned into placeholders, the NAS's tree is brought in (create, update, delete when in sync, conflict copy when changed on both sides).
