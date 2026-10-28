@@ -24,7 +24,7 @@ from common import (
 from auth_manager import (
     AUTH_FILE,
     SESSIONS, TEMP_2FA_TOKENS, TEMP_2FA_TTL_SECONDS,
-    is_setup_complete, mark_setup_complete,
+    is_setup_complete, mark_setup_complete, write_auth_file,
     _create_session, _get_current_session, _purge_expired_sessions,
     _destroy_session, _destroy_all_sessions, require_auth,
     _check_rate_limit, _reset_rate_limit,
@@ -73,6 +73,10 @@ def save_users_state(state):
         print(f"Error saving users state: {e}")
 
 # ── 2FA helpers ───────────────────────────────────────────────────────────────
+# Wrong codes after the password before the sign-in has to start again.
+TWO_FACTOR_MAX_TRIES = 5
+
+
 def _load_totp_secret():
     try:
         with open(AUTH_FILE) as f:
@@ -89,8 +93,7 @@ def _save_totp_secret(secret):
             data.pop('totp_secret', None)
         else:
             data['totp_secret'] = secret
-        with open(AUTH_FILE, 'w') as f:
-            json.dump(data, f, indent=2)
+        write_auth_file(data)
         return True
     except Exception as e:
         print(f"Error saving TOTP secret: {e}")
@@ -260,8 +263,7 @@ def login():
         if needs_rehash:
             try:
                 auth_data.update(hash_password(password))
-                with open(AUTH_FILE, 'w') as f:
-                    json.dump(auth_data, f)
+                write_auth_file(auth_data)
             except Exception as e:
                 print(f"Warning: could not upgrade password hash: {e}")
 
@@ -309,6 +311,9 @@ def complete_2fa_login():
 
     if not _verify_totp(totp_secret, code):
         record_failed_signin()
+        pending['failures'] = pending.get('failures', 0) + 1
+        if pending['failures'] >= TWO_FACTOR_MAX_TRIES:
+            del TEMP_2FA_TOKENS[temp_token]
         return jsonify({'error': 'Invalid 2FA code'}), 401
 
     del TEMP_2FA_TOKENS[temp_token]
@@ -376,8 +381,7 @@ def change_admin_password():
 
     # Keep everything else in the file (the 2FA secret lives there too).
     auth_data.update(hash_password(new))
-    with open(AUTH_FILE, 'w') as f:
-        json.dump(auth_data, f)
+    write_auth_file(auth_data)
 
     token = request.headers.get('Authorization', '').strip()
     signed_out = revoke_other_sessions(token)

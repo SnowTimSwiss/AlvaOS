@@ -49,14 +49,25 @@ def is_setup_complete():
     return os.path.exists(SETUP_STATUS_FILE)
 
 
+def write_auth_file(data):
+    """Replace the sign-in file (password hash, 2FA secret): owner-only, and in one
+    piece, so a crash while writing cannot leave it empty."""
+    ensure_directories()
+    tmp = f'{AUTH_FILE}.tmp'
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w') as f:
+        os.fchmod(f.fileno(), 0o600)
+        json.dump(data, f)
+    os.replace(tmp, AUTH_FILE)
+
+
 def mark_setup_complete(password, version):
     """Mark the initial setup as complete and store password hash"""
     ensure_directories()
 
     auth_data = hash_password(password)
 
-    with open(AUTH_FILE, 'w') as f:
-        json.dump(auth_data, f)
+    write_auth_file(auth_data)
 
     setup_data = {
         'setup_completed': True,

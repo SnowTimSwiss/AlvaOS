@@ -1056,7 +1056,8 @@ SSH_EOF
     # helper) run as root. Only state, logs and config belong to the service.
     chroot /mnt chown -R root:root /opt/alvaos >> "$INSTALL_LOG" 2>&1
     chroot /mnt chmod -R go-w /opt/alvaos >> "$INSTALL_LOG" 2>&1
-    chroot /mnt chown -R alvaos:alvaos /var/lib/alvaos /var/log/alvaos /etc/alvaos >> "$INSTALL_LOG" 2>&1
+    chroot /mnt chown -R alvaos:alvaos /var/lib/alvaos /var/log/alvaos >> "$INSTALL_LOG" 2>&1
+    chroot /mnt chown -R root:root /etc/alvaos >> "$INSTALL_LOG" 2>&1
     
     # Version file
     cat > /mnt/etc/alvaos/version.json << VERSION_EOF

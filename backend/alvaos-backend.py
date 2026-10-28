@@ -12,6 +12,7 @@ import secrets
 import atexit
 
 # ── Third-party ───────────────────────────────────────────────────────────────
+from werkzeug.utils import safe_join
 from flask import Flask, Response, jsonify, redirect, request, send_from_directory
 
 # ── AlvaOS managers ───────────────────────────────────────────────────────────
@@ -60,7 +61,11 @@ for _module in (api_auth, api_system, api_updates, api_storage, api_shares, api_
 def serve_frontend(filename):
     try:
         if filename.endswith(('.html', '.css', '.js')):
-            with open(os.path.join(WEBUI_ROOT, filename)) as f:
+            # The page is read here (for the version), so the path must be checked here too.
+            path = safe_join(WEBUI_ROOT, filename)
+            if path is None:
+                return f"File not found: {filename}", 404
+            with open(path) as f:
                 content = f.read()
             clean_version = VERSION.strip('() ')
             content = content.replace('{{VERSION}}', clean_version)
