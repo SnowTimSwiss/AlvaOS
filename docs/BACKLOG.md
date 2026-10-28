@@ -15,6 +15,11 @@ How to add an entry:
 
 ---
 
+## Version beta-v0.8.1
+
+- `VERSION` is `beta-v0.8.1` (the package becomes `0.8.1~beta`); the desktop app's crates, its demo and its Flatpak release list say 0.8.1 too. What is in it: Office built into the Hub (EuroOffice), apps in the Hub's window with your own side bar, and AlvaOS Link carrying the apps to the computer and phone apps.
+
+---
 ## Lint, type and shell checks, and dead code out (2026-10-28, [PR 51](https://github.com/SnowTimSwiss/AlvaOS/pull/51))
 
 - ruff checks pyflakes, pycodestyle, bugbear, simplify, pyupgrade and commented-out code (`ruff.toml`). The annotations use built-in generics and `X | None`. E501 stays off: 287 lines are longer than 120 characters, and wrapping them would be pure churn.
@@ -27,6 +32,7 @@ How to add an entry:
 
 ## Office built into the Hub (EuroOffice)
 
+- Fix: the Hub page's Content-Security-Policy only allowed its own origin, so the editor's script and frame (and the frames of apps in the Hub's window) were blocked as "not reachable". The policy now adds the Hub's own proxy origins (`http://<host>:<app port + 20000>`, taken from the Host header, validated) to `script-src` and `frame-src`. "Ready" now also needs the proxy to answer, not only the editor.
 - Turning Office on (Hub page) installs the Document Server by itself as the internal catalog app `hub-office` (127.0.0.1:8082, not in the App Store, `app_store.py` skips `internal`), with progress and "Try again" in the row (`office_admin.py`, `hub-admin.js`). It is reached through the proxy for apps (port 28082), so Link and both apps carry it.
 - `hub_office.py`: signed editor settings (JWT HS256), Hub file tokens with their own secret, `GET /api/office/file`, `POST /api/office/callback` (new version fetched from 127.0.0.1:<Document Server port> only, using just the URL path), new documents from generated OOXML templates. Saving goes through the new `files-replace` helper as the person.
 - Files: documents, spreadsheets and presentations open in an editor window, "Open in Office" in the menu, Document/Spreadsheet/Presentation in "New".

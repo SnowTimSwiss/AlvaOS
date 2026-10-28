@@ -662,6 +662,18 @@ def test_office_is_for_people_who_have_it_and_the_editor_is_found_in_me(office, 
     assert office.get("/api/me").get_json()["office"] == {"on": False}
 
 
+def test_the_page_may_frame_and_load_scripts_from_the_apps_proxies_only(office):
+    import files_server
+    files_server._embed_ports_seen.update(at=0.0)
+    csp = office.get("/api/me", base_url="http://nas.local:8090").headers["Content-Security-Policy"]
+    assert "script-src 'self' http://nas.local:28082" in csp
+    assert "frame-src 'self' http://nas.local:28082" in csp
+    assert "frame-ancestors 'none'" in csp
+    # a made-up Host header cannot put anything else into the policy
+    bad = office.get("/api/me", headers={"Host": "x; script-src *"}).headers["Content-Security-Policy"]
+    assert "script-src 'self' " in bad and "*" not in bad
+
+
 def test_the_editors_settings_hold_links_with_their_own_token_and_a_signature(office):
     import hub_office
     sign_in(office, "anna", "anna-pass")

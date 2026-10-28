@@ -69,7 +69,7 @@ dependencies = [
 
 [[package]]
 name = "alvaos-core"
-version = "0.7.0"
+version = "0.8.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -98,7 +98,7 @@ dependencies = [
 
 [[package]]
 name = "alvaos-desktop"
-version = "0.7.0"
+version = "0.8.1"
 dependencies = [
  "alvaos-core",
  "anyhow",

@@ -399,7 +399,7 @@ def _editor_up() -> bool:
     """Does the Document Server answer (asked at most every few seconds)?"""
     now = time.time()
     if now - _editor_seen['at'] > 5:
-        _editor_seen.update(at=now, up=hub_office.editor_answers())
+        _editor_seen.update(at=now, up=hub_office.editor_reachable())
     return bool(_editor_seen['up'])
 
 
@@ -2247,16 +2247,37 @@ def send_to_https():
     return redirect(target, code=308) if target else None
 
 
+_embed_ports_seen: Dict[str, Any] = {'at': 0.0, 'ports': []}
+
+
+def _embed_origins() -> str:
+    """The origins of the Hub's own app proxies on this address (docs/HUB.md), for frames and scripts.
+
+    The page may show an app or load the editor's script only from there, and only from the host
+    name it was opened with: no other site is allowed in."""
+    host = (request.host or '').rsplit(':', 1)[0] if not request.host.endswith(']') else request.host
+    if not re.fullmatch(r'[A-Za-z0-9.\-]+|\[[0-9A-Fa-f:.]+\]', host or ''):
+        return ''
+    now = time.time()
+    if now - _embed_ports_seen['at'] > 5:
+        try:
+            _embed_ports_seen.update(at=now, ports=sorted(hub_apps.embed_targets()))
+        except Exception:  # noqa: BLE001 - the page works without them
+            _embed_ports_seen.update(at=now, ports=[])
+    return ' '.join(f'http://{host}:{port}' for port in _embed_ports_seen['ports'])
+
+
 @app.after_request
 def headers(response):
     response.headers.setdefault('X-Content-Type-Options', 'nosniff')
     response.headers.setdefault('X-Frame-Options', 'DENY')
     response.headers.setdefault('Referrer-Policy', 'same-origin')
+    origins = _embed_origins()
     response.headers.setdefault(
         'Content-Security-Policy',
         "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; "
-        "style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; "
-        "base-uri 'self'; form-action 'self'")
+        f"style-src 'self' 'unsafe-inline'; script-src 'self' {origins}; frame-src 'self' {origins}; "
+        "frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
     return response
 
 

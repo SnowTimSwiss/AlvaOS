@@ -499,7 +499,7 @@
         ];
         const fake = {
             set_up: !['welcome', 'connect'].includes(kind), nas: 'cygnus', user: 'anna', link: true, use_window: true, use_drive: true, connected: true, autostart: true,
-            hub_url: 'http://127.0.0.1:18090', dav_url: 'http://127.0.0.1:18091', platform: 'linux', drive_supported: true, version: '0.7.0', computer: 'anna-laptop',
+            hub_url: 'http://127.0.0.1:18090', dav_url: 'http://127.0.0.1:18091', platform: 'linux', drive_supported: true, version: '0.8.1', computer: 'anna-laptop',
             status: { state: 'ok', route: 'direct', ms: 14, message: '', drive: true }, line: 'Connected to cygnus · direct · 14 ms',
             sync: { folders: kind === 'home' ? folders : [], paused: false, root: '/home/anna/AlvaOS', line: kind === 'home' ? 'Syncing anna…' : '', on_demand_supported: true },
         };
