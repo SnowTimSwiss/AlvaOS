@@ -2827,3 +2827,16 @@ body:has(#getting-started:not([hidden]) .gs-head) #status-line[data-level="setup
 /* Tabs with an icon: icon and text on one line, the same on every page. */
 .tab-btn { display: inline-flex; align-items: center; gap: 8px; }
 .tab-btn svg { width: 16px; height: 16px; flex: none; }
+
+/* Graphics cards under the live strip: one row per card, each number under its label. */
+.gpu-live { display: flex; flex-direction: column; gap: 10px; margin: 12px 0 0; }
+.gpu-row { display: grid; grid-template-columns: minmax(170px, 1.4fr) repeat(auto-fit, minmax(110px, 1fr)); align-items: start; gap: 10px 22px;
+    padding: 12px 18px; background: var(--bg-card); border: 1px solid var(--border-default); border-radius: var(--radius-lg); }
+.gpu-name { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 0.9rem; min-width: 0; padding-top: 2px; }
+.gpu-name svg { width: 16px; height: 16px; flex: none; color: var(--text-secondary); }
+.gpu-name span { overflow: hidden; text-overflow: ellipsis; }
+.gpu-cell { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.gpu-k { font-size: 0.75rem; color: var(--text-secondary); }
+.gpu-v { font-family: var(--font-mono); font-size: 0.85rem; font-weight: 500; white-space: nowrap; }
+.gpu-cell .live-bar { margin-top: 2px; }
+@media (max-width: 700px) { .gpu-row { grid-template-columns: 1fr 1fr; } .gpu-name { grid-column: 1 / -1; } }

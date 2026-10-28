@@ -89,7 +89,7 @@ def test_the_switch_recreates_the_app_with_the_card_and_keeps_it_on_updates(gpu_
     assert gpu_store._load_apps_state()["jellyfin"]["gpu"] is True
     overview = gpu_store.get_installed_apps()[0]["gpu"]
     assert overview == {"possible": True, "on": True, "card": "Intel UHD 770", "why_not": "",
-                        "after": "Turn it on in Jellyfin."}
+                        "after": "Turn it on in Jellyfin.", "choices": [], "chosen": "", "auto": "Intel UHD 770"}
     # Folders and ports later: the card stays.
     gpu_store.reconfigure_app("jellyfin", {8096: 8100}, {})
     assert gpu_store.docker_manager.calls[-1]["compose"]["services"]["jellyfin"]["devices"] == ["/dev/dri:/dev/dri"]
@@ -123,3 +123,82 @@ def test_the_catalog_names_services_that_exist():
     for app_id, spec in with_gpu.items():
         assert spec["service"] in catalog[app_id]["docker_compose"]["services"]
         assert set(spec["vendors"]) <= set(gm.GOOD_DRIVERS)
+
+
+def two_cards():
+    igpu = {**card("intel", "i915", "/dev/dri/renderD128", "UHD 770"), "slot": "0000:00:02.0",
+            "card_node": "/dev/dri/card0", "integrated": True}
+    dgpu = {**card("amd", "amdgpu", "/dev/dri/renderD129", "RX 7600"), "slot": "0000:03:00.0", "card_node": "/dev/dri/card1"}
+    return [igpu, dgpu]
+
+
+def test_with_two_cards_an_app_gets_only_its_own_and_sees_it_as_the_first():
+    cards = two_cards()
+    plan, _ = gm.app_plan(SPEC, cards, GROUPS)                       # Jellyfin prefers the Intel one
+    assert plan["card"] == "Intel UHD 770 (in the processor)"
+    assert plan["devices"] == ["/dev/dri/renderD128:/dev/dri/renderD128", "/dev/dri/card0:/dev/dri/card0"]
+    plan, _ = gm.app_plan(OLLAMA, cards, GROUPS)                     # Ollama only takes AMD (or NVIDIA)
+    assert plan["slot"] == "0000:03:00.0"
+    assert plan["devices"] == ["/dev/dri/renderD129:/dev/dri/renderD128", "/dev/dri/card1:/dev/dri/card0",
+                               "/dev/kfd:/dev/kfd"]
+    priv_policy.check_compose(yaml.safe_dump(gm.apply_plan({"services": {"ollama": {"image": "o"}}}, plan)).encode())
+
+
+def test_the_person_can_choose_the_card_and_a_missing_one_is_refused():
+    cards = two_cards()
+    plan, why = gm.app_plan(SPEC, cards, GROUPS, slot="0000:03:00.0")
+    assert why == "" and plan["slot"] == "0000:03:00.0" and plan["devices"][0] == "/dev/dri/renderD129:/dev/dri/renderD128"
+    plan, why = gm.app_plan(SPEC, cards, GROUPS, slot="0000:09:00.0")
+    assert plan is None and "not available" in why
+    # An app that cannot use that vendor does not offer it.
+    assert [c["slot"] for c in gm.fitting_cards(OLLAMA, cards)] == ["0000:03:00.0"]
+    assert [c["slot"] for c in gm.fitting_cards(SPEC, cards)] == ["0000:00:02.0", "0000:03:00.0"]
+
+
+def test_with_two_nvidia_cards_the_app_gets_one_by_its_number():
+    a = {**card("nvidia", "nvidia"), "slot": "0000:01:00.0"}
+    b = {**card("nvidia", "nvidia"), "slot": "0000:02:00.0"}
+    plan, _ = gm.app_plan(OLLAMA, [a, b], GROUPS, installed=toolkit(True), slot="0000:02:00.0",
+                          nvidia_index=lambda slot: {"0000:01:00.0": "0", "0000:02:00.0": "1"}[slot])
+    device = plan["deploy"]["resources"]["reservations"]["devices"][0]
+    assert device["device_ids"] == ["1"] and "count" not in device
+    assert plan["environment"]["NVIDIA_VISIBLE_DEVICES"] == "1"
+    assert gm._nvidia_index("0000:02:00.0", lambda: "0, 00000000:01:00.0\n1, 00000000:02:00.0\n") == "1"
+
+
+def test_the_choice_is_kept_in_the_app_state_and_offered_in_the_overview(gpu_store, monkeypatch):
+    monkeypatch.setattr(gm, "detect", lambda *a, **k: two_cards())
+    ok, error = gpu_store.set_gpu("jellyfin", True, "0000:03:00.0")
+    assert ok, error
+    assert gpu_store._load_apps_state()["jellyfin"]["gpu_card"] == "0000:03:00.0"
+    assert gpu_store.docker_manager.calls[-1]["compose"]["services"]["jellyfin"]["devices"][0].startswith("/dev/dri/renderD129")
+    overview = gpu_store.get_installed_apps()[0]["gpu"]
+    assert overview["chosen"] == "0000:03:00.0" and overview["card"] == "AMD RX 7600"
+    assert [c["slot"] for c in overview["choices"]] == ["0000:00:02.0", "0000:03:00.0"]
+    gpu_store.reconfigure_app("jellyfin", {8096: 8100}, {})            # later changes keep the choice
+    assert gpu_store.docker_manager.calls[-1]["compose"]["services"]["jellyfin"]["devices"][0].startswith("/dev/dri/renderD129")
+    ok, error = gpu_store.set_gpu("jellyfin", True, "0000:09:00.0")
+    assert not ok and "not available" in error
+
+
+def test_how_busy_the_cards_are_is_read_from_sys_and_nvidia_smi(tmp_path):
+    amd = tmp_path / "bus/pci/devices/0000:03:00.0"
+    (amd / "hwmon/hwmon2").mkdir(parents=True)
+    for name, value in (("gpu_busy_percent", "37"), ("mem_info_vram_used", str(2 * 1024 ** 3)),
+                        ("mem_info_vram_total", str(8 * 1024 ** 3))):
+        (amd / name).write_text(value + "\n")
+    (amd / "hwmon/hwmon2/temp1_input").write_text("61000\n")
+    (amd / "hwmon/hwmon2/power1_average").write_text("88000000\n")
+    intel = tmp_path / "bus/pci/devices/0000:00:02.0/drm/card0"
+    intel.mkdir(parents=True)
+    (intel / "gt_cur_freq_mhz").write_text("350\n")
+    cards = [{**card("amd", "amdgpu", "/dev/dri/renderD129", "RX 7600"), "slot": "0000:03:00.0", "card_node": "/dev/dri/card1"},
+             {**card("intel", "i915", model="UHD 770"), "slot": "0000:00:02.0", "card_node": "/dev/dri/card0", "integrated": True},
+             {**card("nvidia", "nvidia", model="RTX 3060"), "slot": "0000:01:00.0", "card_node": ""}]
+    smi = lambda: "00000000:01:00.0, 12, 1500, 12288, 48, 35.20\n"  # noqa: E731
+    got = {c["slot"]: c for c in gm.gpu_stats(cards, str(tmp_path), smi)}
+    assert got["0000:03:00.0"]["usage"] == 37 and got["0000:03:00.0"]["vram_total"] == 8 * 1024 ** 3
+    assert got["0000:03:00.0"]["temp_c"] == 61 and got["0000:03:00.0"]["power_w"] == 88
+    assert got["0000:00:02.0"]["freq_mhz"] == 350 and got["0000:00:02.0"]["usage"] is None and got["0000:00:02.0"]["integrated"]
+    assert got["0000:01:00.0"]["usage"] == 12 and got["0000:01:00.0"]["vram_used"] == 1500 * 1024 ** 2
+    assert got["0000:01:00.0"]["temp_c"] == 48 and got["0000:01:00.0"]["power_w"] == 35.2

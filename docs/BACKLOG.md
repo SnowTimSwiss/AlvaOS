@@ -15,6 +15,15 @@ How to add an entry:
 
 ---
 
+## Graphics cards: choose one per app, and see how busy they are
+
+- Apps (Jellyfin, Immich, Ollama): with more than one card that fits (say the processor's graphics and a dedicated card), the app's graphics block has "Use: the best fit / <card>". The best fit is still the card the catalog prefers (Jellyfin: Intel, then AMD, then NVIDIA; Ollama: NVIDIA, then AMD). The choice is kept in the app's state and survives updates and settings changes.
+- With several cards an app gets only its own: its render node and card node are mapped to `renderD128` and `card0` inside the container (Jellyfin's default device works without a setting), NVIDIA cards by their number (`device_ids`, found with nvidia-smi from the PCI slot). With one card nothing changes (`/dev/dri`).
+- Dashboard: a row per card under the live strip, load, video memory, temperature and power as far as the card says (AMD from /sys, NVIDIA from nvidia-smi, Intel only the clock: the processor's graphics report no load without root and share the NAS's memory). `GET /api/v1/system/gpu/stats`.
+- **Note for next time**: no card of each kind was at hand: the AMD and Intel reads are tested against a fake /sys tree, the NVIDIA ones against nvidia-smi's output format. Check on real hardware (TESTING 12zzg).
+
+---
+
 ## Release preparation: the Hub's look, the calendar, ZIP files, and a few bugs
 
 - Hub page (admin): "Who sees it" is a two-way switch (Everyone, Only some people) with the people as chips instead of a drop-down and tick boxes; a bar with the people and "Manage people" (Storage › Users); the Contacts icon was missing.

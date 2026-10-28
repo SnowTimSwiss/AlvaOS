@@ -27,3 +27,11 @@ def gpu_install():
     if not ok:
         return jsonify({'error': message}), 409
     return jsonify({'success': True, 'message': message})
+
+
+@bp.route('/api/v1/system/gpu/stats', methods=['GET'])
+@require_auth(require_admin=True)
+def gpu_stats():
+    """How busy each card is and how much video memory it uses (the dashboard)."""
+    import gpu_manager
+    return jsonify({'success': True, 'cards': gpu_manager.gpu_stats()})

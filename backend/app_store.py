@@ -1298,8 +1298,9 @@ class AppStore:
         thread.start()
         return True, None
 
-    def set_gpu(self, app_id: str, on: bool) -> Tuple[bool, Optional[str]]:
-        """Give an installed app the graphics card, or take it away. The
+    def set_gpu(self, app_id: str, on: bool, card: str = '') -> Tuple[bool, Optional[str]]:
+        """Give an installed app the graphics card, or take it away. `card` is the
+        PCI slot of the one it should use ('' = the one it prefers). The
         containers are recreated with the same images and settings."""
         apps_state = self._load_apps_state()
         if app_id not in apps_state:
@@ -1314,7 +1315,7 @@ class AppStore:
             return False, "This app cannot use a graphics card."
         if on:
             import gpu_manager
-            plan, why_not = gpu_manager.app_plan(app_details['gpu'])
+            plan, why_not = gpu_manager.app_plan(app_details['gpu'], slot=card)
             if plan is None:
                 return False, why_not
         installed = str(app_state.get('installed_version') or '').strip()
@@ -1334,7 +1335,7 @@ class AppStore:
         thread = threading.Thread(
             target=self._update_app_worker,
             args=(app_id, storage_path, ports, folders, environment_vars),
-            kwargs={'action': 'gpu', 'pull': False, 'gpu': bool(on)},   # compose fetches a missing image itself
+            kwargs={'action': 'gpu', 'pull': False, 'gpu': bool(on), 'gpu_card': card if on else None},   # compose fetches a missing image itself
         )
         thread.daemon = True
         message = 'Giving the app the graphics card...' if on else 'Taking the graphics card away...'
@@ -1356,9 +1357,16 @@ class AppStore:
         if not isinstance(spec, dict):
             return {'possible': False}
         import gpu_manager
-        plan, why_not = gpu_manager.app_plan(spec)
+        chosen = str(app_state.get('gpu_card') or '')
+        plan, why_not = gpu_manager.app_plan(spec, slot=chosen)
+        if plan is None and chosen:
+            chosen = ''   # the chosen card is gone: it falls back to the one it prefers
+            plan, why_not = gpu_manager.app_plan(spec)
+        choices = [{'slot': c.get('slot', ''), 'label': gpu_manager.card_label(c)} for c in gpu_manager.fitting_cards(spec)]
         return {'possible': True, 'on': bool(app_state.get('gpu')), 'card': (plan or {}).get('card', ''),
-                'why_not': why_not, 'after': str(spec.get('after') or '')}
+                'why_not': why_not, 'after': str(spec.get('after') or ''),
+                'choices': choices if len(choices) > 1 else [], 'chosen': chosen,
+                'auto': gpu_manager.card_label(gpu_manager.fitting_cards(spec)[0]) if choices else ''}
 
     def get_app_update_status(self, app_id: str, force_refresh: bool = False) -> Tuple[Optional[Dict], Optional[str]]:
         """Return update availability for an installed app, using cached registry probes when possible."""
@@ -1417,7 +1425,8 @@ class AppStore:
         environment_vars: Optional[Dict[str, str]],
         action: str = "update",
         pull: bool = True,
-        gpu: Optional[bool] = None
+        gpu: Optional[bool] = None,
+        gpu_card: Optional[str] = None
     ) -> None:
         """Worker thread for app updates and settings changes (no pull).
         `gpu` turns the graphics card on or off; None keeps how it was."""
@@ -1431,10 +1440,12 @@ class AppStore:
 
             if gpu is None:
                 gpu = bool((self._load_apps_state().get(app_id) or {}).get('gpu'))
+            if gpu_card is None:
+                gpu_card = str((self._load_apps_state().get(app_id) or {}).get('gpu_card') or '')
             plan = None
             if gpu:
                 import gpu_manager
-                plan, why_not = gpu_manager.app_plan(app_details.get('gpu'))
+                plan, why_not = gpu_manager.app_plan(app_details.get('gpu'), slot=gpu_card)
                 if plan is None:
                     if action == 'gpu':
                         self._update_install_status(app_id, "error", 0, why_not, logs, force_write=True, action=action)
@@ -1503,6 +1514,7 @@ class AppStore:
             app_state['volume_mappings'] = volume_mappings or {}
             app_state['environment_vars'] = environment_vars or {}
             app_state['gpu'] = bool(gpu)
+            app_state['gpu_card'] = gpu_card if gpu else str(app_state.get('gpu_card') or '')
             app_state['updated_at'] = datetime.now().isoformat()
             if 'installed_at' not in app_state:
                 app_state['installed_at'] = datetime.now().isoformat()

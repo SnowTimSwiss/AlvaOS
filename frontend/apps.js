@@ -1561,11 +1561,19 @@ function gpuBlock(app, escId) {
     if (g.on && g.card) sub = `Uses the ${escapeHtml(g.card)}.`;
     else if (g.card) sub = `Can use the ${escapeHtml(g.card)}: video converts faster, AI models run faster.`;
     else sub = `${escapeHtml(g.why_not || 'No graphics card is ready.')} <a href="/system.html#graphics">Settings › Graphics</a>`;
+    // With more than one card that fits (say the processor's and a dedicated one): which one this app uses.
+    const choose = (g.choices || []).length > 1 ? `
+        <label class="app-gpu-pick">Use
+            <select id="gpu-card-${escId}" aria-label="Which graphics card" onchange="pickAppGpuCard('${escId}', this, ${g.on ? 'true' : 'false'})">
+                <option value=""${g.chosen ? '' : ' selected'}>The best fit${g.auto ? `: ${escapeHtml(g.auto)}` : ''}</option>
+                ${g.choices.map((c) => `<option value="${escapeHtml(c.slot)}"${c.slot === g.chosen ? ' selected' : ''}>${escapeHtml(c.label)}</option>`).join('')}
+            </select></label>` : '';
     return `
         <div class="app-gpu">
             <div class="app-gpu-text">
                 <div class="app-gpu-title">${window.alvaIcon ? window.alvaIcon('cpu') : ''} Graphics card</div>
                 <div class="app-gpu-sub">${sub}</div>
+                ${choose}
                 ${g.on && g.after ? `<div class="app-gpu-sub">${escapeHtml(g.after)}</div>` : ''}
             </div>
             <label class="toggle" title="${g.on ? 'On' : 'Off'}"><input type="checkbox"${g.on ? ' checked' : ''}${can ? '' : ' disabled'}
@@ -1573,14 +1581,23 @@ function gpuBlock(app, escId) {
         </div>`;
 }
 
+// Another card while the app already uses one: it restarts with the new one. While it is off, the choice
+// is only remembered until the switch is turned on.
+function pickAppGpuCard(appId, select, isOn) {
+    if (!isOn) return;
+    const box = select.closest('.app-gpu').querySelector('.toggle input');
+    if (box) setAppGpu(appId, box);
+}
+
 async function setAppGpu(appId, box) {
     const on = box.checked;
+    const picked = document.getElementById(`gpu-card-${appId}`);
     box.disabled = true;
     try {
         const res = await apiFetch(`${API_BASE}/apps/${encodeURIComponent(appId)}/gpu`, {
             method: 'POST',
             headers: { 'Authorization': authToken, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ on }),
+            body: JSON.stringify({ on, card: picked ? picked.value : '' }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || 'The graphics card was not changed.');
