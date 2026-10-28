@@ -15,7 +15,7 @@ How to add an entry:
 
 ---
 
-## Lint, type and shell checks, and dead code out (2026-10-28)
+## Lint, type and shell checks, and dead code out (2026-10-28, [PR 51](https://github.com/SnowTimSwiss/AlvaOS/pull/51))
 
 - ruff checks pyflakes, pycodestyle, bugbear, simplify, pyupgrade and commented-out code (`ruff.toml`). The annotations use built-in generics and `X | None`. E501 stays off: 287 lines are longer than 120 characters, and wrapping them would be pure churn.
 - mypy runs without `ignore_missing_imports`. The stubs for psutil and qrcode, and ruff and mypy themselves, are pinned in `backend/requirements-dev.txt`, which CI installs for the lint job.
