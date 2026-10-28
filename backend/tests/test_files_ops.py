@@ -426,3 +426,32 @@ def test_folder_size_counts_files_and_leaves_the_trash_out(share):
     with pytest.raises(fo.FileOpError):
         fo.folder_size(s_, "../x", root)
     assert fo.folder_size(s_, "Films", root, seconds=-1)["complete"] is False
+
+
+def test_a_saved_office_document_replaces_its_file_whole_and_keeps_its_rights(share):
+    root, s_, outside = share
+    path = os.path.join(s_, "notes.txt")
+    os.chmod(path, 0o640)
+    assert fo.replace_file(s_, "notes.txt", io.BytesIO(b"new text"), root) == 8
+    assert open(path).read() == "new text" and os.stat(path).st_mode & 0o777 == 0o640
+    assert not any(n.endswith(".alvaos-save") for n in os.listdir(s_))          # nothing left over
+    # It is never a new file, never a folder, never a link, and a failed save leaves the old file.
+    with pytest.raises(fo.FileOpError, match="not there"):
+        fo.replace_file(s_, "ghost.docx", io.BytesIO(b"x"), root)
+    with pytest.raises(fo.FileOpError, match="Only a file"):
+        fo.replace_file(s_, "Films", io.BytesIO(b"x"), root)
+    os.symlink(os.path.join(outside, "shadow"), os.path.join(s_, "evil.txt"))
+    with pytest.raises(fo.FileOpError, match="Only a file"):
+        fo.replace_file(s_, "evil.txt", io.BytesIO(b"owned"), root)
+    assert open(os.path.join(outside, "shadow")).read() == "secret"
+
+    class Broken(io.BytesIO):
+        def read(self, n=-1):
+            raise OSError("the connection dropped")
+
+    with pytest.raises(OSError):
+        fo.replace_file(s_, "notes.txt", Broken(b""), root)
+    assert open(path).read() == "new text" and not any(n.endswith(".alvaos-save") for n in os.listdir(s_))
+    with pytest.raises(fo.FileOpError, match="Nothing"):
+        fo.replace_file(s_, "notes.txt", io.BytesIO(b""), root)
+    assert open(path).read() == "new text"

@@ -202,6 +202,37 @@
                <a class="btn-primary" href="storage.html#users" style="margin-left:auto;text-decoration:none">Add people</a>`;
     }
 
+    // Office: AlvaOS installs the editor (EuroOffice) by itself when it is turned on; the row says how far it is.
+    function officeInner() {
+        const o = state.office || { state: 'off' };
+        if (o.state === 'ready') return `<span class="hub-office-ok">${svg('circle-check')} The editor is ready: documents, spreadsheets and presentations open in Files.</span>`;
+        if (o.state === 'error') return `<div class="hub-st-note" style="margin:0">${esc(o.message)}</div><div class="hub-form"><button type="button" class="btn-primary" id="office-retry">Try again</button></div>`;
+        if (o.state === 'installing' || o.state === 'starting' || o.state === 'missing') {
+            const part = o.state === 'missing' ? 0 : Math.max(5, Math.min(100, o.progress || 0));
+            return `<div class="hub-office-wait"><div class="hub-office-text">${esc(o.message || 'Getting the editor ready…')}</div>
+                <div class="hub-office-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${part}"><span style="width:${part}%"></span></div>
+                <div class="hub-st-note" style="margin:4px 0 0">The editor is about 2 GB and needs 2 GB of memory. This runs in the background; you can leave this page.</div></div>`;
+        }
+        return '';
+    }
+
+    let officeTimer = null;
+    function watchOffice() {
+        clearTimeout(officeTimer);
+        const o = state && state.office;
+        if (!o || !state.enabled || !['installing', 'starting', 'missing'].includes(o.state)) return;
+        officeTimer = setTimeout(async () => {
+            try { state = await call(); } catch (e) { /* asked again */ }
+            const box = $('hub-office');
+            if (box) { box.innerHTML = officeInner(); bindOffice(); }
+            watchOffice();
+        }, 3000);
+    }
+    function bindOffice() {
+        const retry = $('office-retry');
+        if (retry) retry.onclick = () => change('office', { enabled: true }, 'Trying again.');
+    }
+
     function renderApps() {
         $('hub-apps').hidden = !state.enabled;
         renderPeople();
@@ -215,6 +246,7 @@
                     ${app.needs.length ? `<div class="hub-needs">Part of ${esc(app.needs.map((n) => names[n] || n).join(', '))}: only there while that is on.</div>` : ''}
                     ${whoHtml(app)}
                     ${app.models_choice && app.enabled ? modelsHtml(app) : ''}
+                    ${app.id === 'office' && app.enabled ? `<div class="hub-office" id="hub-office">${officeInner()}</div>` : ''}
                 </div>
                 <label class="toggle" title="${app.enabled ? 'On' : 'Off'}"><input type="checkbox" data-app="${esc(app.id)}"${app.enabled ? ' checked' : ''} aria-label="${esc(app.name)} in the Hub"><span class="toggle-slider"></span></label>
             </div>`).join('');
@@ -240,6 +272,8 @@
             change(id, { people: chosen }, '');
         }));
         bindModels();
+        bindOffice();
+        watchOffice();
         renderStore();
     }
 

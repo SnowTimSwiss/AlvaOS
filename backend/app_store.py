@@ -465,6 +465,8 @@ class AppStore:
         
         apps = []
         for app_id, app_data in catalog.items():
+            if app_data.get('internal'):        # parts of AlvaOS (the Hub's Office editor), not for the store
+                continue
             apps.append({
                 'id': app_id,
                 'name': app_data.get('name', app_id),

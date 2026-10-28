@@ -60,6 +60,22 @@ next is tracked in `ROADMAP.md` and `BACKLOG.md`.
   has the same. Without a choice the Hub's own apps are in the bar and the
   store apps under "More".
 
+- **Office (done, needs a real test):** "Office" on the Hub page installs the
+  editor by itself when it is turned on: EuroOffice's Document Server (a
+  fork of ONLYOFFICE's) as the internal catalog app `hub-office`, listening on
+  127.0.0.1:8082 only and not shown in the App Store. The row shows the
+  progress (about 2 GB to fetch, 2 GB of memory) and "Try again" on an error.
+  People reach the editor through the proxy for apps (port 28082), so it works
+  at home, through AlvaOS Link and in the computer and phone apps. In Files,
+  documents, spreadsheets and presentations open in an editor window ("Open in
+  Office" and a double click), and "New" has Document, Spreadsheet and
+  Presentation. The Hub signs the editor's settings (JWT with the Document
+  Server's secret) and gives it file links with a token of their own; saves
+  come back as `POST /api/office/callback`, the Hub fetches the new version
+  from the Document Server only and writes it *as the person*
+  (`files-replace`), so Linux checks the rights. Old binary formats (doc, xls,
+  ppt) and PDF open read-only. Code: `hub_office.py`, `office_admin.py`.
+
 ## Who sees what
 
 The admin chooses, per Hub app on the Hub page:

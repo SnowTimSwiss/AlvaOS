@@ -916,6 +916,7 @@
         if (!entry) return;
         rememberRecent(entry);
         if (entry.type === 'folder') { go(sh(entry), rel(entry)); return; }
+        if (inOffice(entry, true)) { openEditor(entry); return; }
         if (/\.pdf$/i.test(entry.name)) {
             const w = window.open('', '_blank');
             try { const url = await link(entry, true); if (w) w.location.href = url; else location.href = url; } catch (err) { if (w) w.close(); toast(err.message, 'error'); }
@@ -995,6 +996,63 @@
         }
     }
 
+    // ── Office: documents, spreadsheets and presentations in the editor (hub_office.py) ──────
+    // The editor is the Document Server of the NAS, reached on the Hub's proxy port (app port + 20000): the same
+    // address at home, away from home and in the AlvaOS apps. It is plain http, so not from a Hub page on https.
+    const OFFICE_OPEN = /\.(docx?|odt|rtf|xlsx?|ods|pptx?|odp)$/i;      // what a click opens there (text, csv and pdf have their own viewers)
+    const officeOn = () => !!(me && me.office && me.office.on && me.office.ready);
+    function inOffice(entry, byClick) {
+        if (!officeOn() || entry.type !== 'file') return false;
+        const ext = (entry.name.split('.').pop() || '').toLowerCase();
+        return byClick ? OFFICE_OPEN.test(entry.name) : ext in (me.office.formats || {});
+    }
+
+    function loadEditorScript(port) {
+        const src = `http://${location.hostname}:${port}/web-apps/apps/api/documents/api.js`;
+        return new Promise((resolve, reject) => {
+            if (window.DocsAPI) { resolve(); return; }
+            const el = document.createElement('script');
+            el.src = src;
+            el.onload = () => resolve();
+            el.onerror = () => reject(new Error('The editor does not answer. Is Office turned on, and is it still starting?'));
+            document.head.appendChild(el);
+        });
+    }
+
+    let editor = null;
+    async function openEditor(entry) {
+        if (location.protocol === 'https:') { toast('The editor opens on a Hub page with http:// (the editor itself is not on https).', 'error'); return; }
+        try {
+            const got = await api('office/config', { method: 'POST', json: { share: sh(entry), path: rel(entry), phone: matchMedia('(max-width: 760px)').matches } });
+            await loadEditorScript(got.editor_port);
+            const wrap = document.createElement('div');
+            wrap.className = 'office';
+            wrap.innerHTML = `<div class="office-bar"><strong>${esc(entry.name)}</strong><span class="office-note">${got.edit ? 'Saved by itself' : 'You can only look at this one'}</span><span class="office-spacer"></span>
+                <button type="button" class="btn primary" data-close>${icon('x')}Close</button></div><div class="office-host"><div id="office-host"></div></div>`;
+            document.body.appendChild(wrap);
+            const close = () => { try { editor && editor.destroyEditor(); } catch (_e) { /* gone already */ } editor = null; wrap.remove(); load(); };
+            wrap.querySelector('[data-close]').onclick = close;
+            editor = new window.DocsAPI.DocEditor('office-host', { ...got.config, events: {
+                onRequestClose: close,
+                onError: (e) => toast(`The editor says: ${e && e.data && e.data.errorDescription ? e.data.errorDescription : 'something went wrong'}.`, 'error'),
+            } });
+        } catch (err) {
+            toast(err.message, 'error');
+        }
+    }
+
+    async function newOfficeDocument(kind) {
+        try {
+            const got = await api('office/new', { method: 'POST', json: { share, path, kind } });
+            await load();
+            const entry = shown.find((e) => e.name === got.name);
+            toast(`"${got.name}" is made.`);
+            if (entry) openEditor(entry);
+        } catch (err) {
+            toast(err.message, 'error');
+        }
+    }
+
     // ── Context menu ───────────────────────────────────────────────────────
     function showContext(x, y) {
         const menu = $('ctx');
@@ -1004,6 +1062,7 @@
         const rows = [];
         if (one) rows.push(`<button type="button" data-ctx="open">${icon(one.type === 'folder' ? 'folder' : 'open')}Open</button>`);
         if (one && found) rows.push(`<button type="button" data-ctx="reveal">${icon('folder')}Show in folder</button>`);
+        if (one && one.type === 'file' && inOffice(one, false)) rows.push(`<button type="button" data-ctx="office">${icon('doc')}Open in Office</button>`);
         if (sel.some((e) => e.type === 'file')) rows.push(`<button type="button" data-ctx="download">${icon('download')}Download</button>`);
         if (one && one.type === 'folder') rows.push(`<button type="button" data-ctx="zip">${icon('archive')}Download as ZIP</button>`);
         if (sel.length > 1 && !found) rows.push(`<button type="button" data-ctx="zip-chosen">${icon('archive')}Download all as one ZIP</button>`);
@@ -1052,6 +1111,8 @@
     function action(name) {
         const sel = selectedEntries();
         if (name === 'open') open(sel[0]);
+        if (name === 'office' && sel.length === 1) openEditor(sel[0]);
+        if (name.startsWith('new-office-')) newOfficeDocument(name.slice(11));
         if (name === 'reveal' && sel.length === 1) reveal(sel[0]);
         if (name === 'download') download(sel);
         if (name === 'zip' && sel.length === 1) zipDownload(rel(sel[0]), sh(sel[0]));
@@ -1074,7 +1135,17 @@
         if (name === 'pin-here') togglePin(share, path, path.split('/').pop());
     }
 
-    $('new-btn').addEventListener('click', () => { $('new-menu').hidden = !$('new-menu').hidden; });
+    $('new-btn').addEventListener('click', () => {
+        const menu = $('new-menu');
+        menu.querySelectorAll('[data-office-new]').forEach((b) => b.remove());
+        menu.querySelector('hr.office-sep')?.remove();
+        if (officeOn() && access() === 'write') {
+            const kinds = (me.office.new || { docx: 'Document', xlsx: 'Spreadsheet', pptx: 'Presentation' });
+            menu.insertAdjacentHTML('beforeend', `<hr class="office-sep">${Object.entries(kinds).map(([k, n]) =>
+                `<button type="button" role="menuitem" data-new="new-office-${esc(k)}" data-office-new>${icon('doc')}${esc(n)}</button>`).join('')}`);
+        }
+        menu.hidden = !menu.hidden;
+    });
     $('new-menu').addEventListener('click', (e) => {
         const b = e.target.closest('[data-new]');
         if (!b) return;
@@ -2358,6 +2429,7 @@
     let hubApps = [];
     // Everything the person may open from the bar: the Hub's own apps and the App Store apps shown to them.
     function railItems() {
+        hubApps = ((me.hub && me.hub.apps) || []).filter((a) => !a.feature);
         const store = (me.hub && me.hub.store) || [];
         return [...hubApps.map((a) => ({ id: a.id, name: a.name, icon: a.icon, kind: 'app' })),
             ...store.map((a) => ({ id: `store:${a.id}`, name: a.name, kind: 'store', tile: a }))];
@@ -2376,7 +2448,7 @@
         ? `<button type="button" class="rail-app" data-app="${esc(i.id)}">${icon(i.icon)}<span>${esc(i.name)}</span></button>`
         : `<button type="button" class="rail-app" data-store="${esc(i.tile.id)}" title="${esc(i.name)}"><span class="rail-letter" aria-hidden="true">${esc(i.name.charAt(0).toUpperCase())}</span><span>${esc(i.name)}</span></button>`;
     function renderRail() {
-        hubApps = (me.hub && me.hub.apps) || [];
+        hubApps = ((me.hub && me.hub.apps) || []).filter((a) => !a.feature);
         const rail = $('rail');
         const { pinned, more, all } = railLayout();
         if (all.length < 2) {

@@ -12,6 +12,7 @@ uses (users.json, shares.json). Sessions live in files_sessions.json.
 """
 
 import hashlib
+import io
 import json
 import os
 import re
@@ -38,6 +39,7 @@ import hub_chat
 import hub_contacts
 import hub_data
 import hub_prefs
+import hub_office
 import embed_proxy
 from password_utils import verify_password
 
@@ -393,6 +395,166 @@ def login():
     return response
 
 
+# ── Office: documents opened in the editor (hub_office.py) ─────────────────────────────────────
+
+HUB_INTERNAL = os.environ.get('ALVAOS_HUB_INTERNAL', f'http://host.docker.internal:{8090}')
+_editor_seen = {'at': 0.0, 'up': False}
+
+
+def _editor_up() -> bool:
+    """Does the Document Server answer (asked at most every few seconds)?"""
+    now = time.time()
+    if now - _editor_seen['at'] > 5:
+        _editor_seen.update(at=now, up=hub_office.editor_answers())
+    return bool(_editor_seen['up'])
+
+
+def _office_secret() -> str:
+    """The secret the Hub and the Document Server sign with (made when the editor was installed)."""
+    state = hub_apps._read_json(hub_apps.STORE_STATE_FILE).get(hub_office.DS_APP_ID)
+    env = state.get('environment_vars') if isinstance(state, dict) else None
+    return str(env.get('JWT_SECRET') or '') if isinstance(env, dict) else ''
+
+
+def _office_for(session: Dict[str, Any], settings: Dict[str, Any]) -> Dict[str, Any]:
+    """For the page: may this person open documents in the editor, and is it up."""
+    port = hub_apps.office_port(settings)
+    if not port or not hub_apps.allowed('office', session['user'], session['role'], settings):
+        return {'on': False}
+    import embed_proxy
+    return {'on': True, 'ready': _editor_up(), 'embed_port': embed_proxy.embed_port(port),
+            'formats': {k: v[1] for k, v in hub_office.FORMATS.items()}, 'new': hub_office.NEW_KINDS}
+
+
+def _office_target(token: str, need_edit: bool = False):
+    """(session, share, folder path, file name, edit, error response) for a link the Document Server uses."""
+    claims = hub_office.read_file_token(_secret().hex(), token)
+    if not claims or not _office_secret():
+        return None, None, '', '', False, (jsonify({'error': 'This link has expired.'}), 403)
+    session = {'user': claims['u'], 'role': 'admin' if claims.get('role') == 'admin' else 'user'}
+    if not hub_apps.allowed('office', session['user'], session['role']):
+        return None, None, '', '', False, (jsonify({'error': 'Office is not turned on for this person.'}), 403)
+    share = shares_for(session).get(str(claims.get('s') or ''))
+    if not share or (need_edit and (share['access'] != 'write' or not claims.get('edit'))):
+        return None, None, '', '', False, (jsonify({'error': 'This shared folder is not yours to change.'}), 403)
+    g.files_act_as = share.get('act_as', _OWN)
+    path, rel, error = files_manager.resolve({'s': share}, share['name'], str(claims.get('r') or ''))
+    if error or path is None or not rel:
+        return None, None, '', '', False, (jsonify({'error': error or 'The file is not there.'}), 404)
+    return session, share, os.path.dirname(path), os.path.basename(path), bool(claims.get('edit')), None
+
+
+@app.post('/api/office/config')
+def office_config():
+    """The editor's settings for a file: {"share", "path"} (+ "phone": true for a narrow screen)."""
+    session, refused = need_session('office')
+    if refused:
+        return refused
+    data = request.get_json(silent=True) or {}
+    share, path, rel, bad = target(session, data)
+    if bad:
+        return bad
+    name = os.path.basename(rel)
+    port = hub_apps.office_port()
+    if not rel or not hub_office.format_of(name):
+        return jsonify({'error': 'This kind of file does not open in Office.'}), 400
+    if not port or not _office_secret() or not _editor_up():
+        return jsonify({'error': 'The editor is not ready yet. Try again in a minute.'}), 503
+    entries, error = files_manager.list_entries(os.path.dirname(path), user=as_user(session))
+    entry = next((e for e in entries or [] if e.get('name') == name and e.get('type') == 'file'), None)
+    if entry is None:
+        return jsonify({'error': error or 'The file is not there (any more).'}), 404
+    try:
+        mtime = datetime.fromisoformat(str(entry.get('modified_at'))).timestamp()
+    except ValueError:
+        mtime = 0.0
+    edit = share['access'] == 'write'
+    token = hub_office.file_token(_secret().hex(), session['user'], share['name'], rel, edit, role=session['role'])
+    config = hub_office.editor_config(
+        name=name, share=share['name'], rel=rel, mtime=mtime, size=int(entry.get('size_bytes') or 0), user=session['user'],
+        edit=edit, file_url=f'{HUB_INTERNAL}/api/office/file?t={token}', callback_url=f'{HUB_INTERNAL}/api/office/callback?t={token}',
+        phone=bool(data.get('phone')))
+    if config is None:
+        return jsonify({'error': 'This kind of file does not open in Office.'}), 400
+    import embed_proxy
+    return jsonify({'success': True, 'config': hub_office.sign_config(config, _office_secret()),
+                    'editor_port': embed_proxy.embed_port(port), 'edit': config['editorConfig']['mode'] == 'edit'})
+
+
+@app.get('/api/office/file')
+def office_file():
+    """The file for the Document Server (the link in the editor's settings is the permission)."""
+    session, _share, folder, name, _edit, bad = _office_target(request.args.get('t', ''))
+    if bad:
+        return bad
+    path = os.path.join(folder, name)
+    size = files_manager.file_size(path, user=as_user(session))
+    stream, error = files_manager.open_stream(path, part=None, user=as_user(session))
+    if stream is None:
+        return jsonify({'error': error or 'The file could not be read.'}), 404
+    headers = {'Content-Disposition': f"attachment; filename*=UTF-8''{quote(name)}", 'Cache-Control': 'no-store',
+               'X-Content-Type-Options': 'nosniff'}
+    if size is not None:
+        headers['Content-Length'] = str(size)
+    return Response(stream, mimetype='application/octet-stream', headers=headers, direct_passthrough=True)
+
+
+@app.post('/api/office/callback')
+def office_callback():
+    """The Document Server tells what became of a document; a saved version replaces the file, as the person."""
+    session, _share, folder, name, edit, bad = _office_target(request.args.get('t', ''))
+    if bad:
+        return jsonify({'error': 1}), 403
+    body = request.get_json(silent=True) or {}
+    claims = hub_office.callback_claims(_office_secret(), request.headers.get('Authorization', ''), body)
+    if claims is None:
+        return jsonify({'error': 1}), 403
+    if int(claims.get('status') or 0) not in hub_office.SAVED_STATUSES:
+        return jsonify({'error': 0})               # still being edited, or closed without changes
+    want = hub_office.ds_download_path(str(claims.get('url') or ''))
+    port = hub_apps.office_port()
+    if not edit or not want or not port:
+        return jsonify({'error': 1})
+    import requests
+    try:
+        res = requests.get(f'http://127.0.0.1:{port}{want}', stream=True, timeout=(5, 120))
+    except requests.RequestException:
+        return jsonify({'error': 1})
+    with res:
+        if res.status_code != 200:
+            return jsonify({'error': 1})
+        result, _problem = files_manager.pipe_helper(['files-replace', folder, name], res.raw, user=as_user(session))
+    return jsonify({'error': 0 if result is not None else 1})
+
+
+@app.post('/api/office/new')
+def office_new():
+    """A new empty document, spreadsheet or presentation in a folder: {"share", "path", "kind": docx|xlsx|pptx}."""
+    session, refused = need_session('office')
+    if refused:
+        return refused
+    data = request.get_json(silent=True) or {}
+    share, path, rel, bad = target(session, data, write=True)
+    if bad:
+        return bad
+    kind = str(data.get('kind') or '')
+    content = hub_office.new_document(kind)
+    if content is None or kind not in hub_office.NEW_KINDS:
+        return jsonify({'error': 'Choose a document, a spreadsheet or a presentation.'}), 400
+    entries, _error = files_manager.list_entries(path, user=as_user(session))
+    taken = {str(e.get('name')) for e in entries or []}
+    base = f'Untitled {hub_office.NEW_KINDS[kind].lower()}'
+    name = f'{base}.{kind}'
+    for n in range(2, 100):
+        if name not in taken:
+            break
+        name = f'{base} {n}.{kind}'
+    result, error = files_manager.upload(path, name, io.BytesIO(content), user=as_user(session))
+    if result is None:
+        return jsonify({'error': error or 'The document could not be made.'}), 409
+    return jsonify({'success': True, 'name': name, 'path': '/'.join(p for p in (rel, name) if p)})
+
+
 @app.get('/api/prefs')
 def get_prefs():
     session, refused = need_session()
@@ -449,6 +611,7 @@ def me():
                     'new_uploads': _new_uploads(session['user']),
                     'nas_name': nas, 'hub': {'name': hub_apps.NAME, 'apps': apps, 'store': store},
                     'prefs': hub_prefs.get(session['user']),
+                    'office': _office_for(session, settings),
                     'features': hub_video.features()})
 
 

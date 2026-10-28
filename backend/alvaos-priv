@@ -375,6 +375,7 @@ FILES_OPS = {
     'files-versions': (None, lambda a: {'versions': files_ops.versions(a[0], a[1:])}),
     'files-restore-version': (4, lambda a: {'name': files_ops.restore_version(a[0], a[1], a[2], a[3])}),
     'files-write': (2, lambda a: {'written': files_ops.write_file(a[0], a[1], sys.stdin.buffer)}),
+    'files-replace': (2, lambda a: {'written': files_ops.replace_file(a[0], a[1], sys.stdin.buffer)}),
     'files-mkdir': (2, lambda a: files_ops.make_dir(a[0], a[1])),
     'files-rename': (3, lambda a: files_ops.rename(a[0], a[1], a[2])),
     'files-move': (3, lambda a: files_ops.move(a[0], a[1], a[2])),

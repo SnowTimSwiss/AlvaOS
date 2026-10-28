@@ -312,6 +312,17 @@ Needs the NAS with the internet and a phone on mobile data (Wi-Fi off).
    NVIDIA's driver was installed before this version, Settings › Graphics
    offers "Install what apps need" (the container toolkit) first.
 
+## 12zzi. Office in the Hub (EuroOffice)
+
+1. Hub page (admin) › Office on. The row shows "Getting the editor ready" with a bar; Docker pulls about 2 GB. When it is ready: "The editor is ready". `docker ps` has `hub-office`; it is not in the App Store. On an error the row says why and "Try again" works.
+2. Files: double click a .docx, .xlsx, .pptx: the editor opens in a window and the document shows. Type, close: reopen, the change is there (it is saved as the person: `ls -l` shows their owner).
+3. "New" › Document, Spreadsheet, Presentation: each opens empty and can be saved. Check that the generated .pptx opens.
+4. Someone with read-only rights opens a file: the editor is read-only. A .doc, .xls, .ppt and a PDF open read-only.
+5. Two people open the same document: both see the other's changes.
+6. Away from home (Link) and in the computer and Android apps: the editor works (port 28082 is carried).
+7. Turn Office off: the container stops and the port closes. Turn it on again: it starts without a new download.
+8. If the editor says it cannot download the file or save: look at the Document Server's log (`docker logs hub-office`): the usual causes are a private address it refuses (`ALLOW_PRIVATE_IP_ADDRESS`), `host.docker.internal` not resolving, or a different JWT layout in the callback.
+
 ## 12zzh. Apps in the Hub's window and the side bar
 
 1. Hub page (admin): show an installed app (say Jellyfin) and choose "Opens in: The Hub's window". Open the Hub (http://<NAS>:8090): the app is in the bar under "More" (or in the bar when you customize), and opens inside the Hub with Reload and "New tab". Video plays, the sign-in of the app works.

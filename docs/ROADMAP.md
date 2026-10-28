@@ -24,7 +24,7 @@ Current version: **beta-v0.7.0**
 - [ ] Links: download limit, how often opened, "end all my links"
 - [x] Unpack ZIP files, download several files as one ZIP, folder sizes
 - [ ] Rename many files at once
-- [ ] Edit Office documents with the EuroOffice app (WOPI)
+- [x] Edit Office documents in the Hub with EuroOffice (installed by itself, no App Store step)
 - [ ] Share links for people without the app, done differently from the old Remote access
 
 ### Photos
