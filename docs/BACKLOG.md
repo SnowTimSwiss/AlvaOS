@@ -15,6 +15,16 @@ How to add an entry:
 
 ---
 
+## Lint, type and shell checks, and dead code out (2026-10-28)
+
+- ruff checks pyflakes, pycodestyle, bugbear, simplify, pyupgrade and commented-out code (`ruff.toml`). The annotations use built-in generics and `X | None`. E501 stays off: 287 lines are longer than 120 characters, and wrapping them would be pure churn.
+- mypy runs without `ignore_missing_imports`. The stubs for psutil and qrcode, and ruff and mypy themselves, are pinned in `backend/requirements-dev.txt`, which CI installs for the lint job.
+- shellcheck (warning and worse) runs on every `.sh` file in CI. The installer splits its lists with `read -ra`, which does not expand file name patterns.
+- Dead code removed: unused Python functions and constants (among them the Telegram sender in `alerts_manager.py`, which `alert_delivery.py` replaces), four JavaScript functions, 75 CSS rules whose classes nothing uses, and the `docker` package (the backend runs the docker command, it does not import the library).
+- `scripts/ci/check_secrets.py` looks for private keys and common token shapes in tracked files.
+- CI: the test job installs `btrfs-progs` (the backup tests look for the btrfs command) and `h11` (the embed proxy test).
+- **Note for next time**: `except Exception` without a reason (ruff's BLE001) is not enforced yet; 256 places need one. That is the next stage's work. Two questions for the owner are in the PR, not changed here.
+
 ## Office built into the Hub (EuroOffice)
 
 - Turning Office on (Hub page) installs the Document Server by itself as the internal catalog app `hub-office` (127.0.0.1:8082, not in the App Store, `app_store.py` skips `internal`), with progress and "Try again" in the row (`office_admin.py`, `hub-admin.js`). It is reached through the proxy for apps (port 28082), so Link and both apps carry it.
