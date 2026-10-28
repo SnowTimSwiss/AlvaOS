@@ -15,6 +15,14 @@ How to add an entry:
 
 ---
 
+## Windows: Files as a network drive
+
+- `core/src/tls.rs`: an own certificate for 127.0.0.1 (not a CA, 20 years), HTTPS on port 18092 handing on to the plain Files address; tested with a client that trusts only that certificate (also: any other name is refused).
+- `core/src/drive.rs`: `net use` of `\\127.0.0.1@SSL@18092\DavWWWRoot`, the certificate trusted for this user once (`certutil -user`, by thumbprint), the drive letter found again from `net use`'s list.
+- The whole app now compiles for Windows (checked here with the mingw target) and CI lints and tests on a Windows runner. Not run on a real Windows yet: the drive, the certificate question, the 50 MB limit.
+
+---
+
 ## Android CI: the screens come in the run's zip
 
 - No more `app-screens` branch: with **screens** ticked, the pictures are in the same zip as the APK (Artifacts › alvaos-android, folder `screens/`), also when the build fails. The old `app-screens` branch can be deleted.

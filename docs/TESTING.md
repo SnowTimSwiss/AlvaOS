@@ -515,6 +515,14 @@ Calendar › Create › Birthday: type a name and a year; choose "And make a new
 4. Open a deep folder in Files, go to Photos, then click Files: you are in your own folder, not in the deep one.
 \n
 
+## 12y The Windows drive (desktop app)
+
+1. Windows 10/11: Settings › Files as a drive on. Windows asks "Do you want to install this certificate?" (once): Yes. A drive Z: appears in Explorer with the shares.
+2. Open a file, create one, rename it, delete it: it is on the NAS (Files in the Hub).
+3. A file over 50 MB opens with an error: that is Windows' limit; the sync folder has no limit.
+4. Switch the drive off (or Quit): Z: is gone. Switch on again: no question this time.
+5. Services › WebClient stopped: the error says to start it.
+
 ## 12w The sync folder (desktop app 0.6)
 
 1. Set up a computer: after "Connected", keep "A sync folder" on, pick a share or a folder, "Keep it here". It appears in `~/AlvaOS/<share>/...` within a minute.

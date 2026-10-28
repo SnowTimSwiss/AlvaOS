@@ -141,7 +141,8 @@
         drive.disabled = !state.drive_supported;
         drive.checked = state.drive_supported && state.use_drive;
         $('pick-drive-row').classList.toggle('off', !state.drive_supported);
-        if (!state.drive_supported) $('pick-drive-text').textContent = 'Not on Windows yet: its WebDAV only signs in over HTTPS. The sync folder does the job.';
+        if (!state.drive_supported) $('pick-drive-text').textContent = 'Not possible on this system. A sync folder does the job.';
+        else if (state.platform === 'windows') $('pick-drive-text').textContent = 'A network drive in Explorer (Z:), without copying. Windows opens files up to 50 MB this way: bigger ones are for a sync folder.';
         show('choose');
     }
 
@@ -292,9 +293,9 @@
         $('home-browser').disabled = !online;
         $('home-drive').checked = s.drive;
         $('home-drive').disabled = !state.drive_supported || !online;
-        $('drive-text').textContent = state.drive_supported
-            ? 'Your shared folders in the file manager, at home and away.'
-            : 'Not on Windows yet: its WebDAV only signs in over HTTPS. Use a sync folder.';
+        $('drive-text').textContent = !state.drive_supported ? 'Not possible on this system. Use a sync folder.'
+            : state.platform === 'windows' ? 'A network drive in Explorer, at home and away. Files up to 50 MB; bigger ones: a sync folder.'
+            : 'Your shared folders in the file manager, at home and away.';
         $('home-connected').checked = state.connected;
         $('home-window').checked = state.use_window;
         $('home-autostart').checked = state.autostart;
