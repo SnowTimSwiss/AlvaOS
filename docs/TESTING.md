@@ -312,6 +312,16 @@ Needs the NAS with the internet and a phone on mobile data (Wi-Fi off).
    NVIDIA's driver was installed before this version, Settings › Graphics
    offers "Install what apps need" (the container toolkit) first.
 
+## 12z. The Android app: AlvaOS in the Files app
+
+1. Open the phone's Files app: the side menu has "AlvaOS – <NAS name>". Open it: the shared folders.
+2. Open a picture and a PDF from there; open the same one again (fast, from the phone's copy). Change it on the NAS and open it again: the new one.
+3. Make a folder, rename it, move a file into it, delete a file: all show in the Hub's Files (the deleted one in the trash).
+4. In another app (Gmail, a notes app): "Attach" or "Save to" › AlvaOS › a folder. Saving a file with a name that is there makes "name (1)" or replaces it (the old one in the trash).
+5. A read-only share: no "new folder", no delete.
+6. Away from home (mobile data): the same, through Link.
+7. Sign out in the app: the entry is gone from the Files app.
+
 ## 12x. The Android app: the new setup
 
 1. Fresh install: a welcome screen (the logo glows and floats), "Get started" goes to "Connect your phone" (phone and NAS with lights travelling between them).
@@ -522,6 +532,28 @@ Calendar › Create › Birthday: type a name and a year; choose "And make a new
 3. A file over 50 MB opens with an error: that is Windows' limit; the sync folder has no limit.
 4. Switch the drive off (or Quit): Z: is gone. Switch on again: no question this time.
 5. Services › WebClient stopped: the error says to start it.
+## 12yb The Windows sync folder (cloud files, desktop app)
+
+Windows 10 1809 or newer, NTFS. Not run on a real Windows yet: please go through this once.
+
+1. Add a sync folder (an empty folder): no switch is shown; the text says files download when opened. The folder appears in Explorer's side bar as "AlvaOS – <share>" and shows every file with a cloud icon within a few seconds.
+2. Open a picture and a document: they open (a progress shows for a bigger file); the icon turns to a green check. Open a film: it starts at once.
+3. Right-click a file: "Always keep on this device" (green circle) and "Free up space" (back to the cloud). Both work.
+4. Make a new file and a new folder in it: after a minute they are on the NAS (Hub › Files); the file shows a green check. Save over an existing file in an editor: the NAS has the new content, the old one is in the trash.
+5. Delete a file and rename another: on the NAS the same (deleted: in the trash). Move a file into a folder: moved on the NAS.
+6. Change a file on the NAS (Hub): after a minute the placeholder updates (opens with the new content). Delete one on the NAS: gone here.
+7. Change the same file here and on the NAS before a round: both are kept (`… (conflict …)`).
+8. Quit the app: the folder stops answering (opening a cloud file fails); start it: it works again. Remove the sync folder in the app: only downloaded files stay.
+9. If anything does not work: set `ALVAOS_CLASSIC_SYNC=1` (system environment variable), restart the app, and add the folder again: the old kind of sync folder.
+
+## 12ya Files on demand (Linux)
+
+1. Install the .deb (or `sudo apt install fuse3`). Add a sync folder with **Only download what you open**, an empty folder: it shows up with every file of the share at once (a few seconds), tray: "N files · 0 KB here".
+2. Open a picture in the folder: it is fetched; the "…" window shows more "here". Open a big film: it starts at once.
+3. Save a document in a text editor: it is on the NAS (Hub › Files) and the old version is in the trash. Make, rename, delete a file and a folder.
+4. "Always keep on this computer": `Photos/`; go offline: those still open, others do not. "Free up space": the rest is freed.
+5. Cut the connection while saving: the file stays, goes up in the next round after it is back. Quit the app: the folder is empty again (not mounted); start it: the files are back.
+6. Remove the sync folder: unmounted; nothing on the NAS is deleted.
 
 ## 12w The sync folder (desktop app 0.6)
 
@@ -531,7 +563,9 @@ Calendar › Create › Birthday: type a name and a year; choose "And make a new
 4. Delete a file on the NAS: it lands in this computer's trash. Delete one here: it lands in the share's trash on the NAS.
 5. Delete 25 files here at once: the app asks; try both "Bring them back" and "Delete them too".
 6. Pause in the settings: nothing moves; switch back: it catches up. Tray: "Sync now", "Open the sync folder".
-7. Windows and macOS: the same, once each.
+7. Windows (and Linux): the same, once each.
+8. Sync folder "…" › Don't sync: add `*.mov`, save; a .mov in the folder is not sent, one on the NAS is not fetched, one synced before stays on both sides.
+9. Copy a big folder in: the row shows "4 of 12 · name" and a bar; the "…" window lists what was sent. Pull the network cable in the middle: the file is tried again, no error shows for a short break.
 
 ## 12v The desktop app (Windows, Linux, macOS)
 

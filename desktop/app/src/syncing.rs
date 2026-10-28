@@ -4,12 +4,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use alvaos_core::config::{default_sync_root, SyncFolder};
 use alvaos_core::hub::Hub;
 use alvaos_core::link;
+use alvaos_core::ondemand::{Cache, Volume};
 use alvaos_core::sync::{self, DavRemote, ManyDeletions, Options};
 use alvaos_core::DeviceInfo;
 use notify::{RecursiveMode, Watcher};
@@ -33,10 +34,61 @@ pub struct FolderStatus {
     pub ask: usize,
     pub problems: Vec<String>,
     pub changed: usize,
+    /// On-demand folders: "1,204 files · 3.2 GB here".
+    pub stats: String,
+    /// While a round runs: which file, and how far.
+    pub progress: Option<sync::Progress>,
+    /// Conflict copies made here (shown while they are still there).
+    pub conflicts: Vec<String>,
+    /// What was done lately, the newest first.
+    pub recent: Vec<Activity>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Activity {
+    pub at: i64,
+    pub text: String,
+}
+
+const RECENT: usize = 40;
+
+/// A folder of files on demand that is mounted: its volume, and (Linux) the mount that shows it.
+pub struct Mounted {
+    volume: Arc<Volume<DavRemote>>,
+    #[cfg(target_os = "linux")]
+    _session: fuser::BackgroundSession,
+    /// Windows: the cloud folder Windows asks when a file is opened, deleted or renamed.
+    #[cfg(windows)]
+    cloud: Arc<alvaos_core::cloudfiles::Mount<DavRemote>>,
+    path: PathBuf,
+}
+
+/// Can this system show a folder of files on demand?
+pub fn on_demand_supported() -> bool {
+    cfg!(any(target_os = "linux", windows))
+}
+
+/// Windows has no other kind of sync folder: a new one always shows the files and fetches them
+/// when they are opened (a plain copy of everything is what the cloud files API is for avoiding).
+pub fn on_demand_forced() -> bool {
+    // ALVAOS_CLASSIC_SYNC=1: the way out if the cloud files do not work on a computer.
+    cfg!(windows) && std::env::var_os("ALVAOS_CLASSIC_SYNC").is_none()
+}
+
+/// How much an on-demand folder may hold here before the oldest copies are freed.
+const CACHE_LIMIT: u64 = 5 * 1024 * 1024 * 1024;
+
+fn human(bytes: u64) -> String {
+    match bytes {
+        b if b >= 1 << 30 => format!("{:.1} GB", b as f64 / (1u64 << 30) as f64),
+        b if b >= 1 << 20 => format!("{:.0} MB", b as f64 / (1u64 << 20) as f64),
+        b => format!("{} KB", b / 1024),
+    }
 }
 
 #[derive(Default)]
 pub struct Syncing {
+    pub mounts: Mutex<BTreeMap<String, Mounted>>,
     pub folders: Mutex<BTreeMap<String, FolderStatus>>,
     pub kick: tokio::sync::Notify,
     round: tokio::sync::Mutex<()>,
@@ -95,12 +147,15 @@ pub fn state_json(app: &AppHandle) -> Value {
         .iter()
         .map(|f| {
             let status = folders.get(&f.id).cloned().unwrap_or(FolderStatus { state: "waiting".into(), ..Default::default() });
+            let conflicts: Vec<&String> = status.conflicts.iter().filter(|c| f.local.join(c.as_str()).exists()).collect();
             json!({"id": f.id, "label": f.label(), "share": f.share, "folder": f.folder, "local": f.local, "read_only": f.read_only,
+                   "exclude": f.exclude, "conflicts": conflicts, "on_demand": f.on_demand, "keep": f.keep,
                    "status": status, "ago": status.last.map(|at| ago(now() - at))})
         })
         .collect();
     drop(folders);
-    json!({"folders": list, "paused": config.sync_paused, "root": default_sync_root(), "line": summary(app)})
+    json!({"folders": list, "paused": config.sync_paused, "root": default_sync_root(), "line": summary(app),
+           "on_demand_supported": on_demand_supported(), "on_demand_forced": on_demand_forced()})
 }
 
 /// The loop: a round every minute, or soon after a change here.
@@ -148,13 +203,40 @@ pub async fn round(app: &AppHandle) {
     let (Some(hub), Some(dav), Some(token)) = (hub, dav, me.token()) else { return };
     let computer = DeviceInfo::this_computer().name;
     for folder in &config.sync {
-        set(app, &folder.id, |s| s.state = "syncing".into());
+        if folder.on_demand {
+            set(app, &folder.id, |s| s.state = "syncing".into());
+            let result = on_demand_round(app, folder, &hub, &dav, &config.user, &token).await;
+            set(app, &folder.id, |s| match result {
+                Ok(stats) => {
+                    s.state = "ok".into();
+                    s.last = Some(now());
+                    s.message = String::new();
+                    s.stats = stats;
+                }
+                Err(err) => {
+                    s.state = "problem".into();
+                    s.message = format!("{err:#}");
+                }
+            });
+            continue;
+        }
+        set(app, &folder.id, |s| { s.state = "syncing".into(); s.progress = None; });
         let remote = DavRemote::new(&hub, &dav, &folder.share, &folder.folder, &config.user, &token, folder.read_only);
         let allow = me.syncing.allow_once.lock().unwrap().remove(&folder.id);
-        let options = Options { computer: computer.clone(), allow_many_deletions: allow, trash: None };
+        let tell = {
+            let (handle, id) = (app.clone(), folder.id.clone());
+            Arc::new(move |p: sync::Progress| set(&handle, &id, |s| s.progress = Some(p)))
+        };
+        let options = Options { computer: computer.clone(), allow_many_deletions: allow, trash: None,
+                                exclude: folder.exclude.clone(), progress: Some(tell) };
         let result = sync::sync_once(&folder.local, &remote, &me.store.sync_state(&folder.id), &options).await;
         set(app, &folder.id, |s| match result {
             Ok(report) => {
+                let mut recent: Vec<Activity> = report.log.iter().rev().map(|text| Activity { at: now(), text: text.clone() }).collect();
+                recent.extend(std::mem::take(&mut s.recent));
+                recent.truncate(RECENT);
+                let mut conflicts = std::mem::take(&mut s.conflicts);
+                conflicts.extend(report.conflict_files.iter().cloned());
                 *s = FolderStatus {
                     state: if report.problems.is_empty() { "ok" } else { "problem" }.into(),
                     last: Some(now()),
@@ -162,14 +244,20 @@ pub async fn round(app: &AppHandle) {
                     ask: 0,
                     changed: report.changed(),
                     problems: report.problems.into_iter().take(20).collect(),
+                    stats: String::new(),
+                    progress: None,
+                    conflicts,
+                    recent,
                 };
             }
             Err(err) if err.is::<ManyDeletions>() => {
+                s.progress = None;
                 s.state = "ask".into();
                 s.ask = err.downcast_ref::<ManyDeletions>().map(|m| m.count).unwrap_or(0);
                 s.message = err.to_string();
             }
             Err(err) => {
+                s.progress = None;
                 s.state = "problem".into();
                 s.message = format!("{err:#}");
             }
@@ -177,10 +265,85 @@ pub async fn round(app: &AppHandle) {
     }
 }
 
+/// One round of a folder of files on demand: mounted if it is not yet; the NAS's tree looked at
+/// again, what was changed here sent, what is to be kept fetched.
+#[cfg(windows)]
+async fn on_demand_round(app: &AppHandle, folder: &SyncFolder, hub: &str, dav: &str, user: &str, token: &str) -> anyhow::Result<String> {
+    let me = app.state::<App>();
+    let existing = me.syncing.mounts.lock().unwrap().get(&folder.id).map(|m| (m.volume.clone(), m.cloud.clone()));
+    let (volume, cloud) = match existing {
+        Some(found) => found,
+        None => {
+            let remote = Arc::new(DavRemote::new(hub, dav, &folder.share, &folder.folder, user, token, folder.read_only));
+            let cache = Cache::open(&me.store.dir().join("ondemand").join(&folder.id))?;
+            let volume = Arc::new(Volume::new(remote, cache, CACHE_LIMIT));
+            volume.refresh().await?;
+            let computer = DeviceInfo::this_computer().name;
+            let cloud = Arc::new(alvaos_core::cloudfiles::mount(
+                volume.clone(), tokio::runtime::Handle::current(), &folder.local, &folder.label(), &folder.id, &folder.exclude, &computer,
+            )?);
+            me.syncing.mounts.lock().unwrap().insert(folder.id.clone(), Mounted { volume: volume.clone(), cloud: cloud.clone(), path: folder.local.clone() });
+            (volume, cloud)
+        }
+    };
+    let sent = cloud.round().await?;
+    let (files, _) = volume.counts();
+    Ok(if sent > 0 { format!("{files} files · {sent} sent") } else { format!("{files} files") })
+}
+
+#[cfg(not(windows))]
+async fn on_demand_round(app: &AppHandle, folder: &SyncFolder, hub: &str, dav: &str, user: &str, token: &str) -> anyhow::Result<String> {
+    let me = app.state::<App>();
+    let existing = me.syncing.mounts.lock().unwrap().get(&folder.id).map(|m| m.volume.clone());
+    let volume = match existing {
+        Some(v) => v,
+        None => {
+            let remote = Arc::new(DavRemote::new(hub, dav, &folder.share, &folder.folder, user, token, folder.read_only));
+            let cache = Cache::open(&me.store.dir().join("ondemand").join(&folder.id))?;
+            cache.set_keep(&folder.keep);
+            let volume = Arc::new(Volume::new(remote, cache, CACHE_LIMIT));
+            volume.refresh().await?;
+            #[cfg(target_os = "linux")]
+            {
+                let session = alvaos_core::fusefs::mount(volume.clone(), tokio::runtime::Handle::current(), &folder.local)?;
+                me.syncing.mounts.lock().unwrap().insert(folder.id.clone(), Mounted { volume: volume.clone(), _session: session, path: folder.local.clone() });
+            }
+            #[cfg(not(target_os = "linux"))]
+            anyhow::bail!("Files on demand are not possible on this system yet.");
+            #[allow(unreachable_code)]
+            volume
+        }
+    };
+    volume.cache.set_keep(&folder.keep);
+    volume.refresh().await?;
+    volume.flush().await;
+    volume.keep_up().await;
+    let (files, held) = volume.counts();
+    Ok(format!("{files} files · {} here", human(held)))
+}
+
+/// A mounted folder is let go (its files stay on the NAS; what was kept here stays in the cache).
+pub fn unmount(app: &AppHandle, id: &str) {
+    let me = app.state::<App>();
+    let gone = me.syncing.mounts.lock().unwrap().remove(id);
+    if let Some(m) = gone {
+        #[cfg(target_os = "linux")]
+        alvaos_core::fusefs::unmount(&m.path);
+        let _ = &m.path;
+    }
+}
+
+pub fn unmount_all(app: &AppHandle) {
+    let ids: Vec<String> = app.state::<App>().syncing.mounts.lock().unwrap().keys().cloned().collect();
+    for id in ids {
+        unmount(app, &id);
+    }
+}
+
 /// Watches the sync folders here: a change starts a round a few seconds later.
 pub fn watch(app: &AppHandle) {
     let me = app.state::<App>();
-    let folders: Vec<PathBuf> = me.config().sync.iter().map(|f| f.local.clone()).collect();
+    let folders: Vec<PathBuf> = me.config().sync.iter().filter(|f| !f.on_demand).map(|f| f.local.clone()).collect();
     let handle = app.clone();
     let watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
         let Ok(event) = event else { return };
@@ -225,9 +388,11 @@ fn overlaps(a: &Path, b: &Path) -> bool {
 }
 
 /// A new sync folder: a folder of a share, kept here (by default in ~/AlvaOS/<share>/<folder>).
-#[tauri::command]
+// The page sends snake_case names (read_only, on_demand), as everywhere else in its calls.
+#[tauri::command(rename_all = "snake_case")]
 pub async fn add_sync(app: AppHandle, state: State<'_, App>, share: String, folder: String, read_only: bool,
-                      local: Option<String>) -> Result<Value, String> {
+                      local: Option<String>, on_demand: Option<bool>) -> Result<Value, String> {
+    let on_demand = (on_demand.unwrap_or(false) || on_demand_forced()) && on_demand_supported();
     let folder = folder.trim_matches('/').to_string();
     let mut config = state.config();
     let place = match local.filter(|l| !l.trim().is_empty()) {
@@ -248,11 +413,43 @@ pub async fn add_sync(app: AppHandle, state: State<'_, App>, share: String, fold
     }
     // Files there already are fine: the first round puts both together (a conflict keeps both).
     let id = link::hex(&link::new_key()[..5]);
-    config.sync.push(SyncFolder { id: id.clone(), share, folder, local: place, read_only });
+    config.sync.push(SyncFolder { id: id.clone(), share, folder, local: place, read_only, exclude: Vec::new(), on_demand, keep: Vec::new() });
     state.save(config)?;
     watch(&app);
     state.syncing.kick.notify_one();
     Ok(state_json(&app))
+}
+
+/// What a sync folder leaves out ("Don't sync"), one pattern per line.
+#[tauri::command]
+pub async fn set_exclude(app: AppHandle, state: State<'_, App>, id: String, text: String) -> Result<Value, String> {
+    let mut config = state.config();
+    let folder = config.sync.iter_mut().find(|f| f.id == id).ok_or("This sync folder is not there any more.")?;
+    folder.exclude = text.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_string).collect();
+    state.save(config)?;
+    state.syncing.kick.notify_one();
+    Ok(state_json(&app))
+}
+
+/// What an on-demand folder always keeps on this computer, one pattern per line.
+#[tauri::command]
+pub async fn set_keep(app: AppHandle, state: State<'_, App>, id: String, text: String) -> Result<Value, String> {
+    let mut config = state.config();
+    let folder = config.sync.iter_mut().find(|f| f.id == id).ok_or("This sync folder is not there any more.")?;
+    folder.keep = text.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_string).collect();
+    state.save(config)?;
+    state.syncing.kick.notify_one();
+    Ok(state_json(&app))
+}
+
+/// "Free up space": the copies that are neither to be kept nor waiting to go up. Returns the bytes freed.
+#[tauri::command]
+pub async fn free_space(state: State<'_, App>, id: String) -> Result<String, String> {
+    if on_demand_forced() {
+        return Err("Free up space in Explorer: right-click the folder or a file, then \"Free up space\".".into());
+    }
+    let volume = state.syncing.mounts.lock().unwrap().get(&id).map(|m| m.volume.clone()).ok_or("This folder is not mounted right now.")?;
+    Ok(human(volume.cache.free_all()))
 }
 
 /// No more sync for a folder: the files here stay where they are.
@@ -261,6 +458,10 @@ pub async fn remove_sync(app: AppHandle, state: State<'_, App>, id: String) -> R
     let mut config = state.config();
     config.sync.retain(|f| f.id != id);
     state.save(config)?;
+    unmount(&app, &id);
+    #[cfg(windows)]
+    alvaos_core::cloudfiles::unregister(&id);
+    let _ = std::fs::remove_dir_all(state.store.dir().join("ondemand").join(&id));
     let _ = std::fs::remove_file(state.store.sync_state(&id));
     state.syncing.folders.lock().unwrap().remove(&id);
     watch(&app);

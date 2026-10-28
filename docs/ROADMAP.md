@@ -59,7 +59,8 @@ How it is built:
 Steps:
 - [~] **0.5.0** Remote access for the whole computer, the Hub in the app's window, tray, setup that asks what to use, "Connect a computer" in the Hub, Files as a drive (Linux, macOS), packages for the three systems (tested on Linux; Windows and macOS need a run on a real computer)
 - [~] **0.6.0** A real sync folder for chosen folders (also offline); conflicts keep both versions, nothing is deleted without the NAS's trash, tested against a simulated file system
-- [ ] Later: files on demand (placeholders: Cloud Files on Windows, File Provider on macOS), CalDAV/CardDAV set up in the system by itself where it can (macOS, GNOME, Thunderbird)
+- [~] Files on demand: Linux is there (a FUSE folder, docs/DESKTOP.md); Windows is there too (Explorer's cloud folders, the only kind of sync folder there; written without a Windows machine to run it on, to be tested); macOS is not planned
+- [ ] Later: CalDAV/CardDAV set up in the system by itself where it can (macOS, GNOME, Thunderbird)
 
 What it needs from you: Windows code signing (else SmartScreen warns at install).
 

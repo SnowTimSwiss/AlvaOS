@@ -35,6 +35,8 @@
         check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
         x: '<path d="M6 6l12 12M18 6L6 18"/>',
         home: '<path d="M4 11l8-7 8 7v9H4z"/>',
+        cloud: '<path d="M7 18a4 4 0 0 1-.5-7.97A6 6 0 0 1 18 9.2 4.4 4.4 0 0 1 17.5 18z"/>',
+        dots: '<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>',
         gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
     };
     const icon = (name, cls = '') => `<span class="ic ${cls}"><svg viewBox="0 0 24 24">${ICONS[name] || ''}</svg></span>`;
@@ -197,18 +199,37 @@
             if (me.onchange) me.onchange();
         }
         me.reset = () => { me.shares = null; me.share = null; me.path = []; me.local = null; return paint(); };
-        me.chosen = () => me.share && { share: me.share.name, folder: me.path.join('/'), read_only: me.share.access === 'read', local: me.local };
+        me.chosen = () => me.share && { share: me.share.name, folder: me.path.join('/'), read_only: me.share.access === 'read', local: me.local,
+            on_demand: wantsOnDemand(el.dataset.picker === 'sheet' ? 'sheet-ondemand' : 'setup-ondemand') };
         return me;
     }
     const pickers = {};
     document.querySelectorAll('[data-picker]').forEach((el) => { pickers[el.dataset.picker] = picker(el); });
     pickers.setup.onchange = () => { $('sync-done').disabled = !pickers.setup.chosen(); };
     pickers.sheet.onchange = () => { $('sheet-done').disabled = !pickers.sheet.chosen(); };
+    const wantsOnDemand = (box) => !!(state.sync && state.sync.on_demand_supported) && (!!state.sync.on_demand_forced || $(box).checked);
+    // Where there is no other kind (Windows) the switch is not shown, only what it means.
+    function onDemandRows() {
+        const sync = state.sync || {};
+        document.querySelectorAll('.ondemand-row').forEach((row) => {
+            row.hidden = !sync.on_demand_supported;
+            const sw = row.querySelector('.switch');
+            if (sw) sw.hidden = !!sync.on_demand_forced;
+            const title = row.querySelector('strong');
+            const text = row.querySelector('small');
+            if (sync.on_demand_forced) {
+                title.textContent = 'Files download when you open them';
+                text.textContent = 'Every file of the share shows up in the folder at once (with a cloud icon); one is fetched when you open it. Right-click in Explorer: "Always keep on this device" or "Free up space". The folder must be empty.';
+            }
+        });
+    }
 
     async function addSync(chosen) {
         state.sync = await invoke('add_sync', chosen);
     }
     function sync() {
+        $('setup-ondemand').checked = false;
+        onDemandRows();
         $('sync-root').textContent = state.sync ? state.sync.root : '~/AlvaOS';
         show('sync');
         $('sync-done').disabled = true;
@@ -244,29 +265,56 @@
             <button type="button" class="btn small" data-answer="${esc(f.id)}" data-delete="">Bring them back</button></div></div>`);
         const rows = sync.folders.map((f) => {
             const s = f.status;
-            const detail = s.state === 'problem' ? (s.message || s.problems[0] || '') : `${f.local}${f.ago ? ` · ${f.ago}` : ''}${f.read_only ? ' · only comes down' : ''}`;
+            const p = s.progress;
+            const detail = s.state === 'problem' ? (s.message || s.problems[0] || '')
+                : s.state === 'syncing' && p && p.total ? `${p.done + 1} of ${p.total} · ${p.current}`
+                : f.on_demand ? `On demand · ${s.stats || 'starting'} · ${f.local}`
+                : `${f.local}${f.ago ? ` · ${f.ago}` : ''}${f.read_only ? ' · only comes down' : ''}`;
+            const bar = s.state === 'syncing' && p && p.total ? `<div class="meter"><i style="width:${Math.round(100 * p.done / p.total)}%"></i></div>` : '';
+            const copies = f.conflicts && f.conflicts.length ? `<span class="state problem" title="Both versions were kept">${f.conflicts.length} ${f.conflicts.length === 1 ? 'copy' : 'copies'}</span>` : '';
             const fresh = !seen.has(f.id);
             seen.add(f.id);
             return `<div class="item sync${fresh ? ' new' : ''}">${icon('sync', 'tile')}
-                <div><strong>${esc(f.label)}</strong><small title="${esc(detail)}">${esc(detail)}</small></div>
-                <div class="item-tail"><span class="state ${esc(s.state)}">${STATES[s.state] || esc(s.state)}</span>
-                <button type="button" class="btn small ghost" data-open="${esc(f.id)}" title="Open the folder">${icon('folder')}</button>
-                <button type="button" class="btn small ghost" data-remove="${esc(f.id)}" title="Stop syncing">${icon('x')}</button></div></div>`;
+                <div><strong>${esc(f.label)}</strong><small title="${esc(detail)}">${esc(detail)}</small>${bar}</div>
+                <div class="item-tail">${copies}<span class="state ${esc(s.state)}">${STATES[s.state] || esc(s.state)}</span>
+                <button type="button" class="btn small ghost" data-options="${esc(f.id)}" title="Options and what happened">${icon('dots')}</button></div></div>`;
         });
         const list = $('sync-list');
         list.innerHTML = rows.length ? asks.join('') + rows.join('')
             : `<button type="button" class="empty-sync" data-add>${icon('plus', 'tile')}<span><strong>Add a sync folder</strong><small>Keep a folder of the NAS on this computer, also offline.</small></span></button>`;
+        list.querySelectorAll('[data-options]').forEach((b) => b.addEventListener('click', () => openFolder(b.dataset.options)));
         list.querySelectorAll('[data-add]').forEach((b) => b.addEventListener('click', () => $('sync-add').click()));
-        list.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => invoke('open_sync', { id: b.dataset.open }).catch((e) => toast(String(e)))));
-        list.querySelectorAll('[data-remove]').forEach((b) => b.addEventListener('click', () => {
-            if (!window.confirm('Stop syncing this folder? The files on this computer and on the NAS stay as they are.')) return;
-            run(b, async () => { state.sync = await invoke('remove_sync', { id: b.dataset.remove }); paintSync(); }, $('home-error'));
-        }));
         list.querySelectorAll('[data-answer]').forEach((b) => b.addEventListener('click', () => run(b, async () => {
             state.sync = await invoke('sync_answer', { id: b.dataset.answer, delete: !!b.dataset.delete });
             toast(b.dataset.delete ? 'Deleting them on the other side too.' : 'They come back on the next round.');
             paintSync();
         }, $('home-error'))));
+    }
+    // The options of one sync folder: what is left out, what is kept twice, what happened lately.
+    let optionsOf = null;
+    function ago(at) {
+        const s = Math.max(0, Math.round(Date.now() / 1000 - at));
+        return s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)} min ago` : s < 86400 ? `${Math.floor(s / 3600)} h ago` : `${Math.floor(s / 86400)} days ago`;
+    }
+    function openFolder(id) {
+        const f = ((state.sync || {}).folders || []).find((x) => x.id === id);
+        if (!f) return;
+        optionsOf = id;
+        $('folder-title').textContent = f.label;
+        $('folder-path').textContent = f.local;
+        $('folder-exclude').value = (f.exclude || []).join('\n');
+        const od = document.querySelector('#sheet-folder .od-only');
+        od.hidden = !f.on_demand || !!(state.sync && state.sync.on_demand_forced);
+        $('folder-keep').value = (f.keep || []).join('\n');
+        $('folder-stats').textContent = f.status.stats || '';
+        $('folder-error').textContent = '';
+        const note = $('folder-conflicts');
+        note.hidden = !(f.conflicts && f.conflicts.length);
+        note.textContent = note.hidden ? '' : `Changed on both sides, so both were kept: ${f.conflicts.join(', ')}. Look at them in the folder and delete the one you do not need.`;
+        const recent = f.status.recent || [];
+        $('folder-recent').innerHTML = recent.length ? recent.slice(0, 15).map((a) => `<li><span>${esc(a.text)}</span><small>${esc(ago(a.at))}</small></li>`).join('')
+            : '<li class="none">Nothing yet.</li>';
+        $('sheet-folder').hidden = false;
     }
     function paint() {
         if (!state.set_up) {
@@ -374,14 +422,38 @@
         }, $('settings-error')));
         $('sync-add').addEventListener('click', () => {
             $('sheet-error').textContent = '';
+            $('sheet-ondemand').checked = false;
+            onDemandRows();
             $('sheet').hidden = false;
             $('sheet-done').disabled = true;
             pickers.sheet.reset();
         });
+        const closeFolder = () => { $('sheet-folder').hidden = true; optionsOf = null; };
+        $('folder-close').addEventListener('click', closeFolder);
+        $('folder-free').addEventListener('click', (e) => run(e.currentTarget, async () => {
+            const freed = await invoke('free_space', { id: optionsOf });
+            toast(`Freed ${freed}. Files are fetched again when you open them.`);
+        }, $('folder-error')));
+        $('folder-open').addEventListener('click', () => invoke('open_sync', { id: optionsOf }).catch((e) => toast(String(e))));
+        $('folder-remove').addEventListener('click', (e) => {
+            if (!window.confirm('Stop syncing this folder? The files on this computer and on the NAS stay as they are.')) return;
+            const id = optionsOf;
+            run(e.currentTarget, async () => { state.sync = await invoke('remove_sync', { id }); closeFolder(); syncKey = ''; paintSync(); }, $('folder-error'));
+        });
+        $('sheet-folder').addEventListener('click', (e) => { if (e.target === $('sheet-folder')) closeFolder(); });
+        $('folder-save').addEventListener('click', (e) => run(e.currentTarget, async () => {
+            state.sync = await invoke('set_exclude', { id: optionsOf, text: $('folder-exclude').value });
+            const f = ((state.sync || {}).folders || []).find((x) => x.id === optionsOf);
+            if (f && f.on_demand) state.sync = await invoke('set_keep', { id: optionsOf, text: $('folder-keep').value });
+            syncKey = '';
+            closeFolder();
+            paintSync();
+            toast('Saved. The next round leaves these out.');
+        }, $('folder-error')));
         const closeSheet = () => { $('sheet').hidden = true; };
         $('sheet-cancel').addEventListener('click', closeSheet);
         $('sheet').addEventListener('click', (e) => { if (e.target === $('sheet')) closeSheet(); });
-        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSheet(); });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeSheet(); closeFolder(); } });
         $('sheet-done').addEventListener('click', (e) => run(e.currentTarget, async () => {
             await addSync(pickers.sheet.chosen());
             closeSheet();
@@ -420,15 +492,16 @@
     function preview() {
         const kind = new URLSearchParams(location.search).get('preview') || 'welcome';
         const folders = [
-            { id: 'a1', label: 'Family › Photos', share: 'Family', folder: 'Photos', local: '/home/anna/AlvaOS/Family/Photos', read_only: false, ago: '2 min ago', status: { state: 'ok', last: 1, message: '', ask: 0, problems: [], changed: 0 } },
-            { id: 'b2', label: 'anna', share: 'anna', folder: '', local: '/home/anna/AlvaOS/anna', read_only: false, ago: null, status: { state: 'syncing', last: null, message: '', ask: 0, problems: [], changed: 0 } },
+            { id: 'a1', label: 'Family › Photos', share: 'Family', folder: 'Photos', local: '/home/anna/AlvaOS/Family/Photos', read_only: false, ago: '2 min ago', exclude: ['*.mov', 'Videos/'], conflicts: ['letter (conflict laptop 2026-10-28 12-00).odt'], status: { state: 'ok', last: 1, message: '', ask: 0, problems: [], changed: 0, recent: [{ at: Date.now() / 1000 - 90, text: 'Sent Docs/letter.odt' }, { at: Date.now() / 1000 - 400, text: 'Received Photos/2024/beach.jpg' }] } },
+            { id: 'b2', label: 'anna', share: 'anna', folder: '', local: '/home/anna/AlvaOS/anna', read_only: false, ago: null, status: { state: 'syncing', last: null, message: '', ask: 0, problems: [], changed: 0, progress: { done: 3, total: 12, current: 'IMG_2041.jpg (to the NAS)' } } },
+            { id: 'd4', label: 'Videos', share: 'Videos', folder: '', local: '/home/anna/AlvaOS/Videos', read_only: false, on_demand: true, keep: ['Holiday/'], exclude: [], conflicts: [], ago: null, status: { state: 'ok', last: 1, message: '', ask: 0, problems: [], changed: 0, stats: '1,204 files · 3.2 GB here', recent: [] } },
             { id: 'c3', label: 'Music', share: 'Music', folder: '', local: '/home/anna/AlvaOS/Music', read_only: true, ago: '1 h ago', status: { state: 'ask', last: 1, message: '', ask: 34, problems: [], changed: 0 } },
         ];
         const fake = {
             set_up: !['welcome', 'connect'].includes(kind), nas: 'cygnus', user: 'anna', link: true, use_window: true, use_drive: true, connected: true, autostart: true,
             hub_url: 'http://127.0.0.1:18090', dav_url: 'http://127.0.0.1:18091', platform: 'linux', drive_supported: true, version: '0.6.0', computer: 'anna-laptop',
             status: { state: 'ok', route: 'direct', ms: 14, message: '', drive: true }, line: 'Connected to cygnus · direct · 14 ms',
-            sync: { folders: kind === 'home' ? folders : [], paused: false, root: '/home/anna/AlvaOS', line: kind === 'home' ? 'Syncing anna…' : '' },
+            sync: { folders: kind === 'home' ? folders : [], paused: false, root: '/home/anna/AlvaOS', line: kind === 'home' ? 'Syncing anna…' : '', on_demand_supported: true },
         };
         if (kind === 'connect') setTimeout(() => show('connect'), 0);
         if (['choose', 'sync', 'done'].includes(kind)) {
@@ -449,8 +522,9 @@
             if (cmd === 'remote_shares') return [{ name: 'anna', access: 'write' }, { name: 'Family', access: 'write' }, { name: 'Music', access: 'read' }];
             if (cmd === 'remote_folders') return args.path ? ['2023', '2024', '2025'] : ['Documents', 'Photos', 'Projects', 'Videos'];
             if (cmd === 'add_sync') return { ...fake.sync, folders: [{ ...folders[0], label: [args.share, args.folder].filter(Boolean).join(' › '), local: `/home/anna/AlvaOS/${args.share}${args.folder ? `/${args.folder}` : ''}` }] };
-            if (['sync_now', 'pause_sync', 'remove_sync', 'sync_answer'].includes(cmd)) return fake.sync;
+            if (['sync_now', 'pause_sync', 'remove_sync', 'sync_answer', 'set_exclude', 'set_keep'].includes(cmd)) return fake.sync;
             if (cmd === 'pick_local') return null;
+            if (cmd === 'free_space') return '2.1 GB';
             return fake;
         };
     }

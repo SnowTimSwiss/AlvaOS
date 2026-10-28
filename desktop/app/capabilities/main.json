@@ -8,6 +8,6 @@
     "allow-app-state", "allow-parse-link", "allow-connect", "allow-choose", "allow-open-hub",
     "allow-open-browser", "allow-drive", "allow-set-connected", "allow-sign-out",
     "allow-remote-shares", "allow-remote-folders", "allow-add-sync", "allow-remove-sync", "allow-sync-now",
-    "allow-sync-answer", "allow-pause-sync", "allow-open-sync", "allow-pick-local"
+    "allow-sync-answer", "allow-pause-sync", "allow-open-sync", "allow-pick-local", "allow-set-exclude", "allow-set-keep", "allow-free-space"
   ]
 }

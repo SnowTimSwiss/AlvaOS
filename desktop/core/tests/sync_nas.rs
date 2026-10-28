@@ -33,7 +33,7 @@ async fn a_sync_folder_against_the_real_hub_and_webdav() {
     let _ = std::fs::remove_dir_all(&top);
     let (root, state, trash) = (top.join("AlvaOS/SyncTest"), top.join("state.json"), top.join("trash"));
     let nas = DavRemote::new(&hub, &dav, "SyncTest", "", "anna", &token, false);
-    let options = Options { computer: "laptop".into(), allow_many_deletions: false, trash: Some(trash.clone()) };
+    let options = Options { computer: "laptop".into(), allow_many_deletions: false, trash: Some(trash.clone()), ..Options::default() };
     let t = 1_790_000_000;
 
     // 1. What the NAS has comes down, with its date.

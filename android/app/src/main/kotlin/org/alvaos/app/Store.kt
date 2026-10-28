@@ -12,6 +12,7 @@ import org.json.JSONObject
 
 /** Everything the app remembers, in its private preferences. */
 class Store(context: Context) : SyncState {
+    private val appContext = context.applicationContext
     private val prefs: SharedPreferences = context.getSharedPreferences("alvaos", Context.MODE_PRIVATE)
 
     /** The address that worked last; see `addresses` for all of them. */
@@ -42,7 +43,7 @@ class Store(context: Context) : SyncState {
     /** The demo: the whole app with sample data and no NAS (what Google Play's review and curious people open). */
     var demo: Boolean
         get() = prefs.getBoolean("demo", false)
-        set(v) = prefs.edit().putBoolean("demo", v).apply()
+        set(v) { prefs.edit().putBoolean("demo", v).apply(); AlvaDocuments.rootsChanged(appContext) }
     var nasName: String
         get() = if (demo) "Demo NAS" else prefs.getString("nas_name", "").orEmpty()
         set(v) = prefs.edit().putString("nas_name", v).apply()
@@ -81,7 +82,7 @@ class Store(context: Context) : SyncState {
     /** The Hub session (cookie), not the password. */
     var token: String
         get() = prefs.getString("token", "").orEmpty()
-        set(v) = prefs.edit().putString("token", v).apply()
+        set(v) { prefs.edit().putString("token", v).apply(); AlvaDocuments.rootsChanged(appContext) }
     var wifiOnly: Boolean
         get() = prefs.getBoolean("wifi_only", true)
         set(v) = prefs.edit().putBoolean("wifi_only", v).apply()
@@ -147,7 +148,10 @@ class Store(context: Context) : SyncState {
         set(v) = prefs.edit().putString("wizard", v).apply()
 
     /** Signed out (here or on the NAS): the session goes, the rest stays for signing in again. */
-    fun signOut() = prefs.edit().remove("token").remove("demo").remove("wizard").apply()
+    fun signOut() {
+        prefs.edit().remove("token").remove("demo").remove("wizard").apply()
+        AlvaDocuments.rootsChanged(appContext)
+    }
 
     companion object {
         /** The Hub apps in the demo (the same as a NAS with everything turned on). */

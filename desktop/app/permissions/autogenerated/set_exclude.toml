@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-exclude"
+description = "Enables the set_exclude command without any pre-configured scope."
+commands.allow = ["set_exclude"]
+
+[[permission]]
+identifier = "deny-set-exclude"
+description = "Denies the set_exclude command without any pre-configured scope."
+commands.deny = ["set_exclude"]

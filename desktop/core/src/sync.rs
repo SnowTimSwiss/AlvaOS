@@ -18,6 +18,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -52,6 +54,14 @@ pub trait Remote: Sync {
     fn mkdir(&self, path: &str) -> impl Future<Output = Result<()>> + Send;
     /// To the share's trash on the NAS.
     fn delete(&self, path: &str) -> impl Future<Output = Result<()>> + Send;
+    /// A piece of a file (files on demand: a big file is read where it is, not fetched whole).
+    fn read_range(&self, _path: &str, _offset: u64, _len: usize) -> impl Future<Output = Result<Vec<u8>>> + Send {
+        async { bail!("reading a piece of a file is not possible here") }
+    }
+    /// Moves or renames a file or folder on the NAS (an existing target is replaced).
+    fn rename(&self, _from: &str, _to: &str) -> impl Future<Output = Result<()>> + Send {
+        async { bail!("renaming is not possible here") }
+    }
     /// A share the person may only read: nothing goes up, nothing is deleted there.
     fn read_only(&self) -> bool;
 }
@@ -80,10 +90,22 @@ pub struct Report {
     pub deleted_remote: usize,
     pub trashed_local: usize,
     pub conflicts: usize,
+    /// The conflict copies made here this round (names of the files kept aside).
+    pub conflict_files: Vec<String>,
+    /// What was done, file by file (the newest 200), for the activity list.
+    pub log: Vec<String>,
     pub problems: Vec<String>,
 }
 
+const LOG_LINES: usize = 200;
+
 impl Report {
+    fn note(&mut self, line: String) {
+        if self.log.len() < LOG_LINES {
+            self.log.push(line);
+        }
+    }
+
     pub fn changed(&self) -> usize {
         self.uploaded + self.downloaded + self.deleted_remote + self.trashed_local + self.conflicts
     }
@@ -103,6 +125,7 @@ impl std::fmt::Display for ManyDeletions {
 
 impl std::error::Error for ManyDeletions {}
 
+#[derive(Clone, Default)]
 pub struct Options {
     /// This computer's name, for conflict copies.
     pub computer: String,
@@ -110,6 +133,92 @@ pub struct Options {
     pub allow_many_deletions: bool,
     /// Where files deleted on the NAS go here; None: the system's trash.
     pub trash: Option<PathBuf>,
+    /// What is left out ("Don't sync"), see [`Filter`].
+    pub exclude: Vec<String>,
+    /// Told before each file: how far the round is.
+    pub progress: Option<ProgressFn>,
+}
+
+/// How far a round is: file `done` of `total`, and what it is doing now.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct Progress {
+    pub done: usize,
+    pub total: usize,
+    pub current: String,
+}
+
+pub type ProgressFn = Arc<dyn Fn(Progress) + Send + Sync>;
+
+/// What is left out of syncing, one pattern per line (blank lines and `#` lines are skipped):
+/// - `*.mov`, `node_modules`: a name (with `*` and `?`), in any folder, ignoring case;
+/// - `Videos/`, `Photos/Raw`, `/Backup`: a path from the top of the sync folder (everything in it too).
+///
+/// Left-out files are neither sent nor fetched, nor deleted on either side; if they were synced
+/// before, they are simply forgotten (they stay where they are).
+#[derive(Debug, Clone, Default)]
+pub struct Filter {
+    names: Vec<Vec<char>>,
+    paths: Vec<Vec<char>>,
+}
+
+impl Filter {
+    pub fn new(lines: &[String]) -> Self {
+        let mut filter = Filter::default();
+        for line in lines {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let core = line.trim_matches('/').to_lowercase();
+            if core.is_empty() {
+                continue;
+            }
+            let pattern: Vec<char> = core.chars().collect();
+            if line.contains('/') {
+                filter.paths.push(pattern);
+            } else {
+                filter.names.push(pattern);
+            }
+        }
+        filter
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.names.is_empty() && self.paths.is_empty()
+    }
+
+    pub fn matches(&self, path: &str) -> bool {
+        if self.is_empty() {
+            return false;
+        }
+        let lower = path.to_lowercase();
+        let mut prefix = String::new();
+        for part in lower.split('/') {
+            if !prefix.is_empty() {
+                prefix.push('/');
+            }
+            prefix.push_str(part);
+            let part_chars: Vec<char> = part.chars().collect();
+            if self.names.iter().any(|n| glob(n, &part_chars)) {
+                return true;
+            }
+            let prefix_chars: Vec<char> = prefix.chars().collect();
+            if self.paths.iter().any(|p| glob(p, &prefix_chars)) {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+/// `*` (not over a `/`) and `?`, nothing else.
+fn glob(pattern: &[char], text: &[char]) -> bool {
+    match pattern.split_first() {
+        None => text.is_empty(),
+        Some(('*', rest)) => (0..=text.len()).take_while(|&n| n == 0 || text[n - 1] != '/').any(|n| glob(rest, &text[n..])),
+        Some(('?', rest)) => text.first().is_some_and(|c| *c != '/') && glob(rest, &text[1..]),
+        Some((c, rest)) => text.first() == Some(c) && glob(rest, &text[1..]),
+    }
 }
 
 const MANY_DELETIONS: usize = 20;
@@ -347,9 +456,12 @@ pub async fn sync_once<R: Remote>(root: &Path, remote: &R, state_file: &Path, op
         }
         std::fs::create_dir_all(root).with_context(|| format!("cannot make {}", root.display()))?;
     }
-    let local = scan(root)?;
+    let filter = Filter::new(&options.exclude);
+    let mut local = scan(root)?;
+    local.retain(|p, _| !filter.matches(p));
+    base.retain(|p, _| !filter.matches(p));
     let (remote_tree, complete) = remote.tree().await?;
-    let remote_tree: Tree = remote_tree.into_iter().filter(|(p, _)| !ignored_path(p)).collect();
+    let remote_tree: Tree = remote_tree.into_iter().filter(|(p, _)| !ignored_path(p) && !filter.matches(p)).collect();
     let actions = plan(&local, &remote_tree, &base, complete, remote.read_only());
     let count = deletions(&actions, &local, &remote_tree);
     if count >= MANY_DELETIONS && count * 2 > base.values().filter(|i| !i.dir).count() && !options.allow_many_deletions {
@@ -365,7 +477,15 @@ pub async fn sync_once<R: Remote>(root: &Path, remote: &R, state_file: &Path, op
     };
     let mut ordered = actions;
     ordered.sort_by_key(rank);
+    let total = ordered.iter().filter(|a| !matches!(a, Action::Adopt(_) | Action::Forget(_))).count();
+    let mut done = 0;
     for action in ordered {
+        if !matches!(action, Action::Adopt(_) | Action::Forget(_)) {
+            if let Some(tell) = &options.progress {
+                tell(Progress { done, total, current: describe(&action) });
+            }
+            done += 1;
+        }
         let result = run(&action, root, remote, &local, &remote_tree, &mut base, options, &mut report).await;
         if let Err(e) = result {
             report.problems.push(format!("{}: {e:#}", describe(&action)));
@@ -415,12 +535,14 @@ async fn run<R: Remote>(action: &Action, root: &Path, remote: &R, local: &Tree, 
             remote.upload(p, &local_path(root, p), seen.mtime).await?;
             base.insert(p.clone(), seen);
             report.uploaded += 1;
+            report.note(format!("Sent {p}"));
         }
         Action::Download(p) => {
             let item = remote_tree.get(p).cloned().ok_or_else(|| anyhow!("gone"))?;
             download_into(root, remote, p, &item).await?;
             base.insert(p.clone(), item);
             report.downloaded += 1;
+            report.note(format!("Received {p}"));
         }
         Action::Conflict(p) => {
             let mine = local.get(p).cloned().ok_or_else(|| anyhow!("gone"))?;
@@ -435,19 +557,23 @@ async fn run<R: Remote>(action: &Action, root: &Path, remote: &R, local: &Tree, 
             base.insert(p.clone(), theirs);
             if !mine.dir && !remote.read_only() {
                 remote.upload(&aside, &local_path(root, &aside), mine.mtime).await?;
-                base.insert(aside, mine);
+                base.insert(aside.clone(), mine);
             }
             report.conflicts += 1;
+            report.note(format!("Changed on both sides, both kept: {p}"));
+            report.conflict_files.push(aside);
         }
         Action::DeleteRemote(p) => {
             remote.delete(p).await?;
             forget_below(base, p);
             report.deleted_remote += 1;
+            report.note(format!("Deleted on the NAS (into its trash): {p}"));
         }
         Action::TrashLocal(p) => {
             trash_local(root, p, options)?;
             forget_below(base, p);
             report.trashed_local += 1;
+            report.note(format!("Moved to the trash here: {p}"));
         }
         Action::Adopt(p) => {
             if let Some(item) = remote_tree.get(p).or_else(|| local.get(p)) {
@@ -500,9 +626,36 @@ pub struct DavRemote {
 }
 
 impl DavRemote {
+    async fn download_once(&self, path: &str, to: &Path) -> Result<()> {
+        use futures_util::StreamExt;
+        use tokio::io::AsyncWriteExt;
+        let res = checked(self.dav_request("GET", path).send().await?, &[]).await?;
+        let mut file = tokio::fs::File::create(to).await?;
+        let mut body = res.bytes_stream();
+        while let Some(chunk) = body.next().await {
+            file.write_all(&chunk?).await?;
+        }
+        file.sync_all().await?;
+        Ok(())
+    }
+
+    async fn upload_once(&self, path: &str, from: &Path, mtime: i64) -> Result<()> {
+        let file = tokio::fs::File::open(from).await?;
+        let size = file.metadata().await?.len();
+        let body = reqwest::Body::wrap_stream(tokio_util::io::ReaderStream::new(file));
+        let req = self
+            .dav_request("PUT", path)
+            .header("X-OC-Mtime", mtime.to_string())
+            .header(reqwest::header::CONTENT_LENGTH, size)
+            .body(body);
+        checked(req.send().await?, &[]).await?;
+        Ok(())
+    }
+
     pub fn new(hub: &str, dav: &str, share: &str, folder: &str, user: &str, token: &str, read_only: bool) -> Self {
         let http = reqwest::Client::builder()
-            .connect_timeout(std::time::Duration::from_secs(15))
+            .connect_timeout(Duration::from_secs(15))
+            .read_timeout(Duration::from_secs(90))
             .user_agent(format!("AlvaOSDesktop/{}", crate::VERSION))
             .build()
             .expect("an HTTP client");
@@ -534,13 +687,56 @@ impl DavRemote {
     }
 }
 
+/// An answer that may well work a moment later (the NAS busy or restarting).
+#[derive(Debug)]
+struct Transient(String);
+
+impl std::fmt::Display for Transient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for Transient {}
+
 async fn checked(res: reqwest::Response, ok_also: &[u16]) -> Result<reqwest::Response> {
     let status = res.status();
     if status.is_success() || ok_also.contains(&status.as_u16()) {
         return Ok(res);
     }
     let said = res.text().await.unwrap_or_default();
-    Err(anyhow!("the NAS answered {status}{}", if said.trim().is_empty() { String::new() } else { format!(": {}", said.trim()) }))
+    let message = format!("the NAS answered {status}{}", if said.trim().is_empty() { String::new() } else { format!(": {}", said.trim()) });
+    if status.is_server_error() || matches!(status.as_u16(), 408 | 423 | 429) {
+        return Err(Transient(message).into());
+    }
+    Err(anyhow!(message))
+}
+
+fn transient(e: &anyhow::Error) -> bool {
+    e.downcast_ref::<Transient>().is_some()
+        || e.chain().filter_map(|c| c.downcast_ref::<reqwest::Error>()).any(|r| r.is_connect() || r.is_timeout() || r.is_body() || r.is_request())
+}
+
+/// Seconds to wait before the second and the third try of a file.
+const RETRY_AFTER: [Duration; 2] = [Duration::from_secs(2), Duration::from_secs(8)];
+
+/// Tries again after a network hiccup or a busy NAS; any other error stops at once.
+async fn retrying<T, F, Fut>(delays: &[Duration], mut attempt: F) -> Result<T>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T>>,
+{
+    let mut waits = delays.iter();
+    loop {
+        match attempt().await {
+            Ok(value) => return Ok(value),
+            Err(e) if transient(&e) => match waits.next() {
+                Some(wait) => tokio::time::sleep(*wait).await,
+                None => return Err(e),
+            },
+            Err(e) => return Err(e),
+        }
+    }
 }
 
 impl Remote for DavRemote {
@@ -569,39 +765,53 @@ impl Remote for DavRemote {
     }
 
     async fn download(&self, path: &str, to: &Path) -> Result<()> {
-        use futures_util::StreamExt;
-        use tokio::io::AsyncWriteExt;
-        let res = checked(self.dav_request("GET", path).send().await?, &[]).await?;
-        let mut file = tokio::fs::File::create(to).await?;
-        let mut body = res.bytes_stream();
-        while let Some(chunk) = body.next().await {
-            file.write_all(&chunk?).await?;
-        }
-        file.sync_all().await?;
-        Ok(())
+        retrying(&RETRY_AFTER, || self.download_once(path, to)).await
     }
 
     async fn upload(&self, path: &str, from: &Path, mtime: i64) -> Result<()> {
-        let file = tokio::fs::File::open(from).await?;
-        let size = file.metadata().await?.len();
-        let body = reqwest::Body::wrap_stream(tokio_util::io::ReaderStream::new(file));
-        let req = self
-            .dav_request("PUT", path)
-            .header("X-OC-Mtime", mtime.to_string())
-            .header(reqwest::header::CONTENT_LENGTH, size)
-            .body(body);
-        checked(req.send().await?, &[]).await?;
-        Ok(())
+        retrying(&RETRY_AFTER, || self.upload_once(path, from, mtime)).await
     }
 
     async fn mkdir(&self, path: &str) -> Result<()> {
-        checked(self.dav_request("MKCOL", path).send().await?, &[405]).await?; // 405: already there
-        Ok(())
+        retrying(&RETRY_AFTER, || async {
+            checked(self.dav_request("MKCOL", path).send().await?, &[405]).await?; // 405: already there
+            Ok(())
+        })
+        .await
     }
 
     async fn delete(&self, path: &str) -> Result<()> {
-        checked(self.dav_request("DELETE", path).send().await?, &[404]).await?;
-        Ok(())
+        retrying(&RETRY_AFTER, || async {
+            checked(self.dav_request("DELETE", path).send().await?, &[404]).await?;
+            Ok(())
+        })
+        .await
+    }
+
+    async fn read_range(&self, path: &str, offset: u64, len: usize) -> Result<Vec<u8>> {
+        retrying(&RETRY_AFTER, || async {
+            let end = offset + len as u64 - 1;
+            let res = self.dav_request("GET", path).header("Range", format!("bytes={offset}-{end}")).send().await?;
+            let status = res.status().as_u16();
+            if status == 416 {
+                return Ok(Vec::new()); // past the end
+            }
+            let res = checked(res, &[]).await?;
+            let bytes = res.bytes().await?;
+            // A NAS that ignored the range sends everything: cut out what was asked for.
+            let piece = if status == 206 { bytes.to_vec() } else { bytes.iter().skip(offset as usize).take(len).copied().collect() };
+            Ok(piece)
+        })
+        .await
+    }
+
+    async fn rename(&self, from: &str, to: &str) -> Result<()> {
+        retrying(&RETRY_AFTER, || async {
+            let req = self.dav_request("MOVE", from).header("Destination", self.url(to)).header("Overwrite", "T");
+            checked(req.send().await?, &[]).await?;
+            Ok(())
+        })
+        .await
     }
 
     fn read_only(&self) -> bool {
@@ -610,21 +820,21 @@ impl Remote for DavRemote {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::sync::Mutex;
 
     /// A NAS folder in memory.
     #[derive(Default)]
-    struct Mem {
-        files: Mutex<BTreeMap<String, (Item, Vec<u8>)>>,
-        incomplete: bool,
-        read_only: bool,
-        deleted: Mutex<Vec<String>>,
+    pub(crate) struct Mem {
+        pub(crate) files: Mutex<BTreeMap<String, (Item, Vec<u8>)>>,
+        pub(crate) incomplete: bool,
+        pub(crate) read_only: bool,
+        pub(crate) deleted: Mutex<Vec<String>>,
     }
 
     impl Mem {
-        fn put(&self, path: &str, body: &str, mtime: i64) {
+        pub(crate) fn put(&self, path: &str, body: &str, mtime: i64) {
             let mut files = self.files.lock().unwrap();
             let mut parent = String::new();
             for part in path.split('/').collect::<Vec<_>>().split_last().unwrap().1 {
@@ -633,10 +843,10 @@ mod tests {
             }
             files.insert(path.into(), (Item::file(body.len() as u64, mtime), body.as_bytes().to_vec()));
         }
-        fn body(&self, path: &str) -> Option<String> {
+        pub(crate) fn body(&self, path: &str) -> Option<String> {
             self.files.lock().unwrap().get(path).map(|(_, b)| String::from_utf8_lossy(b).to_string())
         }
-        fn has(&self, path: &str) -> bool {
+        pub(crate) fn has(&self, path: &str) -> bool {
             self.files.lock().unwrap().contains_key(path)
         }
     }
@@ -657,6 +867,23 @@ mod tests {
         }
         async fn mkdir(&self, path: &str) -> Result<()> {
             self.files.lock().unwrap().insert(path.into(), (Item::folder(), Vec::new()));
+            Ok(())
+        }
+        async fn read_range(&self, path: &str, offset: u64, len: usize) -> Result<Vec<u8>> {
+            let files = self.files.lock().unwrap();
+            let body = &files.get(path).ok_or_else(|| anyhow!("404"))?.1;
+            Ok(body.iter().skip(offset as usize).take(len).copied().collect())
+        }
+        async fn rename(&self, from: &str, to: &str) -> Result<()> {
+            let mut files = self.files.lock().unwrap();
+            let moved: Vec<String> = files.keys().filter(|k| *k == from || under(k, from)).cloned().collect();
+            if moved.is_empty() {
+                bail!("404");
+            }
+            for key in moved {
+                let value = files.remove(&key).unwrap();
+                files.insert(format!("{to}{}", &key[from.len()..]), value);
+            }
             Ok(())
         }
         async fn delete(&self, path: &str) -> Result<()> {
@@ -691,7 +918,7 @@ mod tests {
             std::fs::read_to_string(local_path(&self.root, path)).ok()
         }
         fn options(&self, allow: bool) -> Options {
-            Options { computer: "laptop".into(), allow_many_deletions: allow, trash: Some(self.trash.clone()) }
+            Options { computer: "laptop".into(), allow_many_deletions: allow, trash: Some(self.trash.clone()), ..Options::default() }
         }
         async fn round(&self, nas: &Mem) -> Result<Report> {
             sync_once(&self.root, nas, &self.state, &self.options(false)).await
@@ -886,5 +1113,84 @@ mod tests {
     fn webdav_addresses_are_encoded_per_part() {
         let nas = DavRemote::new("http://127.0.0.1:18090", "http://127.0.0.1:18091/", "Family", "/Photos/2024/", "anna", "t", false);
         assert_eq!(nas.url("Sommer & Meer/ä #1.jpg"), "http://127.0.0.1:18091/Family/Photos/2024/Sommer%20%26%20Meer/%C3%A4%20%231.jpg");
+    }
+
+    #[test]
+    fn the_patterns_of_what_is_left_out() {
+        let f = Filter::new(&["*.MOV".into(), "node_modules".into(), "# a comment".into(), "".into(), "Videos/".into(), "/Backup/old?".into(), "Photos/Raw".into()]);
+        for left_out in ["a.mov", "trip/clip.mov", "app/node_modules", "app/node_modules/x/y.js", "Videos", "videos/a.txt", "Backup/old1/f", "Photos/Raw/img.cr2"] {
+            assert!(f.matches(left_out), "{left_out}");
+        }
+        for kept in ["a.mp4", "trip/Videos", "Docs/Backup/old1", "Backup/older/f", "Photos/Jpg/Raw", "notes.txt"] {
+            assert!(!f.matches(kept), "{kept}");
+        }
+        assert!(!Filter::new(&[]).matches("anything"));
+    }
+
+    #[tokio::test]
+    async fn left_out_files_are_not_sent_fetched_or_deleted() {
+        let (here, nas) = (Place::new(), Mem::default());
+        nas.put("Videos/b.mov", "theirs", T);
+        nas.put("keep.txt", "keep", T);
+        here.write("Videos/a.mov", "mine", T);
+        here.write("Docs/cache/x.tmp2", "x", T);
+        let mut options = here.options(false);
+        options.exclude = vec!["Videos/".into(), "cache".into()];
+        let report = sync_once(&here.root, &nas, &here.state, &options).await.unwrap();
+        assert_eq!((report.uploaded, report.downloaded), (0, 1), "{report:?}");
+        assert!(here.read("Videos/b.mov").is_none() && !nas.has("Videos/a.mov") && !nas.has("Docs/cache/x.tmp2"));
+        // It was synced before, then left out: nothing is deleted on either side, it is only forgotten.
+        let before = Place::new();
+        let nas2 = Mem::default();
+        before.write("Videos/a.mov", "mine", T);
+        before.round(&nas2).await.unwrap();
+        assert!(nas2.has("Videos/a.mov"));
+        let mut options = before.options(false);
+        options.exclude = vec!["*.mov".into()];
+        let r = sync_once(&before.root, &nas2, &before.state, &options).await.unwrap();
+        assert_eq!(r.changed(), 0, "{r:?}");
+        assert!(before.read("Videos/a.mov").is_some() && nas2.has("Videos/a.mov"));
+        assert!(!load_state(&before.state).contains_key("Videos/a.mov"));
+    }
+
+    #[tokio::test]
+    async fn progress_and_the_activity_log_say_what_happened() {
+        let (here, nas) = (Place::new(), Mem::default());
+        nas.put("a.txt", "A", T);
+        nas.put("b.txt", "B", T);
+        here.write("c.txt", "C", T);
+        let seen = Arc::new(Mutex::new(Vec::<Progress>::new()));
+        let sink = seen.clone();
+        let mut options = here.options(false);
+        options.progress = Some(Arc::new(move |p| sink.lock().unwrap().push(p)));
+        let report = sync_once(&here.root, &nas, &here.state, &options).await.unwrap();
+        let seen = seen.lock().unwrap().clone();
+        assert_eq!(seen.len(), 3);
+        assert!(seen.iter().enumerate().all(|(i, p)| p.done == i && p.total == 3), "{seen:?}");
+        assert!(report.log.contains(&"Sent c.txt".to_string()) && report.log.contains(&"Received a.txt".to_string()), "{:?}", report.log);
+        // A conflict names the copy it kept.
+        here.write("c.txt", "mine again", T + 100);
+        nas.put("c.txt", "theirs, longer", T + 200);
+        let r = here.round(&nas).await.unwrap();
+        assert_eq!(r.conflict_files.len(), 1, "{r:?}");
+        assert!(r.conflict_files[0].starts_with("c (conflict laptop"), "{:?}", r.conflict_files);
+    }
+
+    #[tokio::test]
+    async fn a_busy_nas_is_tried_again_and_other_errors_are_not() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let none = [Duration::ZERO, Duration::ZERO];
+        let tries = AtomicUsize::new(0);
+        let ok = retrying(&none, || async {
+            if tries.fetch_add(1, Ordering::SeqCst) < 2 { Err(Transient("503".into()).into()) } else { Ok(7) }
+        })
+        .await;
+        assert_eq!((ok.unwrap(), tries.load(Ordering::SeqCst)), (7, 3));
+        let tries = AtomicUsize::new(0);
+        let gave_up: Result<()> = retrying(&none, || async { tries.fetch_add(1, Ordering::SeqCst); Err(Transient("503".into()).into()) }).await;
+        assert!(gave_up.is_err() && tries.load(Ordering::SeqCst) == 3);
+        let tries = AtomicUsize::new(0);
+        let not_again: Result<()> = retrying(&none, || async { tries.fetch_add(1, Ordering::SeqCst); Err(anyhow!("the NAS answered 403")) }).await;
+        assert!(not_again.is_err() && tries.load(Ordering::SeqCst) == 1);
     }
 }

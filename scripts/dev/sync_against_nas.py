@@ -3,8 +3,9 @@
 
 Starts the real Hub (files_server.py) and WebDAV (files_dav.py) with the real
 privileged helper (backend/alvaos-priv) on a share /mnt/alvaos/main/SyncTest
-of a person "anna" (both made if missing), then runs the Rust test
-desktop/core/tests/sync_nas.rs against them. Needs root (the helper drops to
+of a person "anna" (both made if missing), then runs the Rust tests
+desktop/core/tests/sync_nas.rs (the sync folder) and ondemand_nas.rs (files on demand, through a
+real FUSE mount) against them. Needs root (the helper drops to
 anna) and a machine you do not mind getting that folder and person: a test
 VM or container, not a real NAS.
 
@@ -26,6 +27,18 @@ SHARE = '/mnt/alvaos/main/SyncTest'
 sys.path.insert(0, BACKEND)
 
 
+def reset_share() -> None:
+    """The share as the tests expect it: one file with a date, owned by anna."""
+    shutil.rmtree(SHARE, ignore_errors=True)
+    os.makedirs(os.path.join(SHARE, 'Photos', '2024'))
+    path = os.path.join(SHARE, 'Photos', '2024', 'Sommer & Meer ä.txt')
+    with open(path, 'w') as f:
+        f.write('beach')
+    os.utime(path, (1790000000, 1790000000))
+    subprocess.run(['chown', '-R', 'anna:anna', SHARE], check=True)
+    os.chmod(SHARE, 0o2770)
+
+
 def main() -> int:
     if os.geteuid() != 0:
         print('Needs root (the helper drops to the person).')
@@ -34,14 +47,7 @@ def main() -> int:
         pwd.getpwnam('anna')
     except KeyError:
         subprocess.run(['useradd', '-M', '-s', '/usr/sbin/nologin', 'anna'], check=True)
-    shutil.rmtree(SHARE, ignore_errors=True)
-    os.makedirs(os.path.join(SHARE, 'Photos', '2024'))
-    with open(os.path.join(SHARE, 'Photos', '2024', 'Sommer & Meer ä.txt'), 'w') as f:
-        f.write('beach')
-    os.utime(os.path.join(SHARE, 'Photos', '2024', 'Sommer & Meer ä.txt'), (1790000000, 1790000000))
-    subprocess.run(['chown', '-R', 'anna:anna', SHARE], check=True)
-    os.chmod(SHARE, 0o2770)
-
+    reset_share()
     work = tempfile.mkdtemp()
     import common
     import files_manager
@@ -68,13 +74,17 @@ def main() -> int:
     env = {**os.environ, 'ALVAOS_TEST_HUB': f'http://127.0.0.1:{hub.server_port}',
            'ALVAOS_TEST_DAV': f'http://127.0.0.1:{dav.server_port}', 'ALVAOS_TEST_TOKEN': token,
            'ALVAOS_TEST_SHARE_DIR': SHARE}
-    result = subprocess.run(['cargo', 'test', '-p', 'alvaos-core', '--test', 'sync_nas', '--', '--nocapture'],
-                            cwd=os.path.join(REPO, 'desktop'), env=env)
+    code = 0
+    for name in ('sync_nas', 'ondemand_nas'):
+        reset_share()                 # each test starts from the same share
+        result = subprocess.run(['cargo', 'test', '-p', 'alvaos-core', '--test', name, '--', '--nocapture'],
+                                cwd=os.path.join(REPO, 'desktop'), env=env)
+        code = code or result.returncode
     hub.shutdown()
     dav.shutdown()
     shutil.rmtree(work, ignore_errors=True)
     shutil.rmtree(SHARE, ignore_errors=True)
-    return result.returncode
+    return code
 
 
 if __name__ == '__main__':
