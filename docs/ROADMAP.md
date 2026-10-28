@@ -26,6 +26,7 @@ Current version: **beta-v0.7.0**
 - [ ] Rename many files at once
 - [x] Edit Office documents in the Hub with EuroOffice (installed by itself, no App Store step)
 - [ ] Share links for people without the app, done differently from the old Remote access
+- [ ] Docker images out of the system backup: see whether `/var/lib/docker` should be its own subvolume that system snapshots skip (images are downloaded again on restore, so only app data and settings need saving)
 
 ### Photos
 - [ ] Share an album with the household

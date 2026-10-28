@@ -17,6 +17,7 @@ How to add an entry:
 
 ## Office built into the Hub (EuroOffice)
 
+- Fix: the Hub page's Content-Security-Policy only allowed its own origin, so the editor's script and frame (and the frames of apps in the Hub's window) were blocked as "not reachable". The policy now adds the Hub's own proxy origins (`http://<host>:<app port + 20000>`, taken from the Host header, validated) to `script-src` and `frame-src`. "Ready" now also needs the proxy to answer, not only the editor.
 - Turning Office on (Hub page) installs the Document Server by itself as the internal catalog app `hub-office` (127.0.0.1:8082, not in the App Store, `app_store.py` skips `internal`), with progress and "Try again" in the row (`office_admin.py`, `hub-admin.js`). It is reached through the proxy for apps (port 28082), so Link and both apps carry it.
 - `hub_office.py`: signed editor settings (JWT HS256), Hub file tokens with their own secret, `GET /api/office/file`, `POST /api/office/callback` (new version fetched from 127.0.0.1:<Document Server port> only, using just the URL path), new documents from generated OOXML templates. Saving goes through the new `files-replace` helper as the person.
 - Files: documents, spreadsheets and presentations open in an editor window, "Open in Office" in the menu, Document/Spreadsheet/Presentation in "New".

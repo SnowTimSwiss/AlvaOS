@@ -118,6 +118,13 @@ def editor_answers(port: int = DS_PORT, timeout: float = 2.0) -> bool:
         return False
 
 
+def editor_reachable() -> bool:
+    """Is the editor up *and* does the Hub's proxy for it carry the same answer (what people's browsers use)?"""
+    import embed_proxy
+    through = embed_proxy.embed_port(DS_PORT)
+    return editor_answers() and bool(through) and editor_answers(through)
+
+
 # ── The editor's settings ───────────────────────────────────────────────────────────────────────
 
 def doc_key(share: str, rel: str, mtime: float, size: int) -> str:

@@ -26,7 +26,7 @@ def state(app_store: Any, enabled: bool, ready: Optional[bool] = None) -> Dict[s
         if mine and status.get('status') == 'error':
             return {'state': 'error', 'message': str(status.get('message') or 'The editor could not be installed.'), 'progress': 0}
         return {'state': 'missing', 'message': '', 'progress': 0}
-    up = hub_office.editor_answers() if ready is None else ready
+    up = hub_office.editor_reachable() if ready is None else ready
     return {'state': 'ready' if up else 'starting',
             'message': '' if up else 'The editor is starting. This takes a minute.', 'progress': 100 if up else 90}
 
