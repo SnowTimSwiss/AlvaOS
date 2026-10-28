@@ -279,6 +279,7 @@ async fn forget(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("hub") {
         let _ = window.destroy();
     }
+    syncing::unmount_all(app);
     let _ = me.store.forget();
     *me.config.lock().unwrap() = me.store.load();
     me.syncing.folders.lock().unwrap().clear();
@@ -674,6 +675,7 @@ async fn on_menu(app: &AppHandle, id: &str) {
                 let config = me.config();
                 let _ = drive::unmount(config.dav_port, &config.user).await;
             }
+            syncing::unmount_all(app);
             go_offline(app).await;
             app.exit(0);
         }
@@ -707,7 +709,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             app_state, parse_link, connect, choose, open_hub, open_browser, drive, set_connected, sign_out,
             syncing::remote_shares, syncing::remote_folders, syncing::add_sync, syncing::remove_sync, syncing::sync_now,
-            syncing::sync_answer, syncing::pause_sync, syncing::open_sync, syncing::pick_local, syncing::set_exclude
+            syncing::sync_answer, syncing::pause_sync, syncing::open_sync, syncing::pick_local, syncing::set_exclude, syncing::set_keep, syncing::free_space
         ])
         .setup(move |app| {
             build_tray(app.handle())?;

@@ -59,6 +59,25 @@ Chosen at setup (after "What do you want on this computer?") or later under **Sy
 
 Tested in memory and against the real Hub, WebDAV and helper (`scripts/dev/sync_against_nas.py`). Not tested yet: Windows and macOS.
 
+## Files on demand (Linux)
+
+When adding a sync folder, **Only download what you open** shows the whole folder of the NAS on this computer at once, but holds only what was opened. It is a folder of its own (a FUSE mount through `fusermount3`, package `fuse3`, which the .deb and .rpm depend on; no root, no kernel module of ours): the folder must be empty, and it shows the NAS's files until the app quits or the sync folder is removed.
+
+- **Open** a file: it is fetched and kept (a file over 64 MB that is not kept here is read in pieces where it is, so a film starts at once). **Save**: the file goes back to the NAS when the program closes it, and an older file of that name goes to the share's trash. **Make, rename, move, delete** work as in any folder and happen on the NAS (delete: into its trash).
+- **Always keep on this computer** (the folder's "…" window): patterns like Don't sync (`Documents/`, `*.pdf`); those files are fetched ahead and stay, also without a connection. **Free up space** frees every other copy at once; the oldest copies also go by themselves when the folder holds more than 5 GB.
+- What was saved but could not go up yet (no connection) stays marked in the cache, also after a restart, and is sent in the next round. The NAS's folder is looked at again every minute.
+- A share you may only read cannot be changed. The Flatpak cannot mount (its sandbox has no FUSE).
+
+### Windows: the same through Explorer's own cloud folders
+
+On Windows a new sync folder is **always** files on demand (there is no switch): it is a cloud folder like OneDrive's (Windows' Cloud Files API, `core/src/cloudfiles.rs`). Every file of the share shows up at once with a cloud icon; opening one makes Windows ask the app, which fetches it (a big file piece by piece, so a film starts at once). Explorer's own menu does the rest: **Always keep on this device**, **Free up space**. The folder must be empty when it is added.
+
+- **Delete, rename, move** a file or folder: done on the NAS first (delete: into its trash). **New and changed files** are found each round (every minute) and sent; they become placeholders in step with the NAS. A file changed here and on the NAS keeps both (`name (conflict …)`). What changed on the NAS comes in as placeholders; what was deleted there is deleted here when nobody changed it here.
+- Removing the sync folder in the app ends the cloud folder: what was downloaded stays, files that were not downloaded are gone from it (they are still on the NAS).
+- A file deleted while the app was not running comes back at the next round (Windows only tells the app while it runs).
+- Sync folders made before this (0.6.0, copies of everything) keep working as before. `ALVAOS_CLASSIC_SYNC=1` in the environment brings the old kind of sync folder back for new ones, if the cloud files do not work on a computer.
+- **Files as a drive** (the network drive) stays as it was, for a quick look at everything without a sync folder.
+
 ## Building
 
 The app is in `desktop/`: a Rust workspace with `core` (no window: pairing link, Link client with iroh 1.x, the local proxy, settings and key store, the drive, the Hub calls) and `app` (Tauri 2: the tray, the windows, the commands of the app's own pages in `app/ui/`). Only the app's own pages may call its commands (`app/capabilities/main.json`); the Hub's window may call nothing.

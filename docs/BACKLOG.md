@@ -15,10 +15,21 @@ How to add an entry:
 
 ---
 
-## Android: AlvaOS in the system's Files app
+## Windows: the sync folder is files on demand (cloud files)
 
-- A document provider (`AlvaDocuments.kt`): root "AlvaOS – <NAS>", shares as folders, open (kept in a cache of up to 300 MB), save (uploaded when closed, replacing and trashing the old one), create, rename, move, delete; read-only shares cannot be changed. Roots come and go with the sign-in (`Store`).
-- Core: `HubClient.list/download/delete/rename/move`, `upload(replace)`; tested with a pretend NAS (14 core tests, run here). The provider's own tests (Robolectric with a pretend NAS) run in CI: this environment has no Android SDK.
+- `core/src/cloudfiles.rs` (Windows' Cloud Files API through the `cloud-filter` crate): the folder is registered as a cloud folder (progressive hydration, all placeholders made up front); `fetch_data` reads the asked range from the NAS over WebDAV `Range`; Windows' questions about delete, rename and dehydrate are answered after doing it on the NAS (or yes); each round new and changed files are sent and turned into placeholders, the NAS's tree is brought in (create, update, delete when in sync, conflict copy when changed on both sides).
+- New sync folders are always this kind on Windows (`on_demand_forced`); `ALVAOS_CLASSIC_SYNC=1` is the way back. The page shows text instead of the switch.
+- Pure helpers are tested (paths, Windows time, the range to fetch). The module and the whole app **compile for Windows** (checked with the mingw target and by the Windows CI job); it has **not been run on Windows**: TESTING 12yb.
+- **Fix found on the way:** `fuser` had been put into the app's Cargo.toml in the middle of the dependency list, so `tokio`, `serde` and the rest below it only applied on Linux: the app would not have built for Windows or macOS. Moved to the end.
+
+---
+
+## Files on demand (Linux)
+
+- `core/src/ondemand.rs`: the cache (fetched files with an index, the oldest freed over a limit, never the ones to keep or those waiting to go up), the catalog of the NAS's tree, and the `Volume` (open, read in pieces over WebDAV Range, save when closed, create, rename (WebDAV MOVE), delete, mkdir, keep ahead). 7 tests with a NAS in memory.
+- `core/src/fusefs.rs`: the volume as a folder through FUSE (`fuser`, no libfuse needed to build; `fusermount3` to run). A real-mount test, and `ondemand_nas.rs` against the real Hub, WebDAV and helper (read, date kept, create, replace with trash, rename, delete, a Range read, a change on the NAS) run by `scripts/dev/sync_against_nas.py`.
+- App: "Only download what you open" at adding, "Always keep" and "Free up space" per folder, status "N files · X here". `add_sync` is now declared `rename_all = "snake_case"`: before, the page's `read_only` was not understood by Tauri (it expects camelCase), so adding a folder from the page would have failed.
+- Not yet: Windows (the Cloud Files API is not written blind: it needs a Windows machine; until then the network drive), switching an existing folder to on demand (remove it and add it again).
 
 ---
 

@@ -525,6 +525,29 @@ Calendar › Create › Birthday: type a name and a year; choose "And make a new
 4. Open a deep folder in Files, go to Photos, then click Files: you are in your own folder, not in the deep one.
 \n
 
+## 12yb The Windows sync folder (cloud files, desktop app)
+
+Windows 10 1809 or newer, NTFS. Not run on a real Windows yet: please go through this once.
+
+1. Add a sync folder (an empty folder): no switch is shown; the text says files download when opened. The folder appears in Explorer's side bar as "AlvaOS – <share>" and shows every file with a cloud icon within a few seconds.
+2. Open a picture and a document: they open (a progress shows for a bigger file); the icon turns to a green check. Open a film: it starts at once.
+3. Right-click a file: "Always keep on this device" (green circle) and "Free up space" (back to the cloud). Both work.
+4. Make a new file and a new folder in it: after a minute they are on the NAS (Hub › Files); the file shows a green check. Save over an existing file in an editor: the NAS has the new content, the old one is in the trash.
+5. Delete a file and rename another: on the NAS the same (deleted: in the trash). Move a file into a folder: moved on the NAS.
+6. Change a file on the NAS (Hub): after a minute the placeholder updates (opens with the new content). Delete one on the NAS: gone here.
+7. Change the same file here and on the NAS before a round: both are kept (`… (conflict …)`).
+8. Quit the app: the folder stops answering (opening a cloud file fails); start it: it works again. Remove the sync folder in the app: only downloaded files stay.
+9. If anything does not work: set `ALVAOS_CLASSIC_SYNC=1` (system environment variable), restart the app, and add the folder again: the old kind of sync folder.
+
+## 12ya Files on demand (Linux)
+
+1. Install the .deb (or `sudo apt install fuse3`). Add a sync folder with **Only download what you open**, an empty folder: it shows up with every file of the share at once (a few seconds), tray: "N files · 0 KB here".
+2. Open a picture in the folder: it is fetched; the "…" window shows more "here". Open a big film: it starts at once.
+3. Save a document in a text editor: it is on the NAS (Hub › Files) and the old version is in the trash. Make, rename, delete a file and a folder.
+4. "Always keep on this computer": `Photos/`; go offline: those still open, others do not. "Free up space": the rest is freed.
+5. Cut the connection while saving: the file stays, goes up in the next round after it is back. Quit the app: the folder is empty again (not mounted); start it: the files are back.
+6. Remove the sync folder: unmounted; nothing on the NAS is deleted.
+
 ## 12w The sync folder (desktop app 0.6)
 
 1. Set up a computer: after "Connected", keep "A sync folder" on, pick a share or a folder, "Keep it here". It appears in `~/AlvaOS/<share>/...` within a minute.
