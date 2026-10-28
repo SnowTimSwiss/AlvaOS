@@ -720,17 +720,20 @@ def test_web_pages_cannot_be_read_from_outside_the_web_ui(backend, tmp_path, mon
         assert b"not for the browser" not in response.data
 
 
-def test_wrong_two_factor_codes_end_the_sign_in_attempt(backend):
+def test_wrong_two_factor_codes_end_the_sign_in_attempt(backend, monkeypatch):
     # The second factor is six digits: without a limit, a password holder could
     # try them all within the five minutes a temporary token lasts.
     import json
     from datetime import timedelta
     import pyotp
+    import api_auth
     import auth_manager
     from common import _utc_now
 
     module, state = backend
     set_up(state)
+    # api_auth imports the path when it is loaded, so point it at this test's file too.
+    monkeypatch.setattr(api_auth, "AUTH_FILE", str(state / "auth.json"))
     secret = pyotp.random_base32()
     (state / "auth.json").write_text(json.dumps({"totp_secret": secret}))
     temp = "temp-token-for-the-test"
