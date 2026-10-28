@@ -104,6 +104,7 @@ def load(path: Optional[str] = None) -> Dict[str, Any]:
             people = entry.get('people')
             store[str(app_id)] = {
                 'shown': bool(entry.get('shown')),
+                'embed': bool(entry.get('embed')),
                 'people': sorted({str(p) for p in people if USER_RE.match(str(p))}) if isinstance(people, list) else None,
             }
     return {'apps': apps, 'storage': {'cache_pool': str(storage.get('cache_pool') or '')}, 'store': store}
@@ -261,9 +262,11 @@ def save(payload: Dict[str, Any], known_people: Iterable[str], path: Optional[st
     for app_id, change in store_changes.items():
         if app_id not in set(store_ids or []) or not isinstance(change, dict):
             return None, f'There is no installed app "{app_id}" with a page to open.'
-        entry = settings['store'].setdefault(app_id, {'shown': False, 'people': None})
+        entry = settings['store'].setdefault(app_id, {'shown': False, 'embed': False, 'people': None})
         if 'shown' in change:
             entry['shown'] = bool(change['shown'])
+        if 'embed' in change:
+            entry['embed'] = bool(change['embed'])
         if 'people' in change:
             people = change['people']
             if people is None:
@@ -399,7 +402,7 @@ def store_overview(settings: Optional[Dict[str, Any]] = None, apps: Optional[Lis
     """Every installed app with a page, and whether the Hub shows it to whom."""
     settings = settings or load()
     apps = store_apps() if apps is None else apps
-    return [{**a, **settings['store'].get(a['id'], {'shown': False, 'people': None})} for a in apps]
+    return [{**a, 'embed': False, **settings['store'].get(a['id'], {'shown': False, 'people': None})} for a in apps]
 
 
 def store_tiles(user: str, role: str = 'user', settings: Optional[Dict[str, Any]] = None,
@@ -408,5 +411,21 @@ def store_tiles(user: str, role: str = 'user', settings: Optional[Dict[str, Any]
     out = []
     for app in store_overview(settings, apps):
         if app['shown'] and (role == 'admin' or app['people'] is None or user in app['people']):
-            out.append({k: app[k] for k in ('id', 'name', 'port', 'path')})
+            tile = {k: app[k] for k in ('id', 'name', 'port', 'path')}
+            if app.get('embed'):
+                # Opens in the Hub's window, through the proxy of embed_proxy.py.
+                import embed_proxy
+                tile['embed_port'] = embed_proxy.embed_port(app['port'])
+            out.append(tile)
+    return out
+
+
+def embed_targets(settings: Optional[Dict[str, Any]] = None, apps: Optional[List[Dict[str, Any]]] = None) -> Dict[int, int]:
+    """{port of the proxy: port of the app} for the apps shown in the Hub's window."""
+    import embed_proxy
+    out = {}
+    for app in store_overview(settings, apps):
+        port = embed_proxy.embed_port(app['port'])
+        if app['shown'] and app.get('embed') and port:
+            out[port] = app['port']
     return out

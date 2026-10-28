@@ -38,6 +38,7 @@ class LinkTest {
     private lateinit var nasId: String
     private lateinit var hints: List<String>
     private val seen = mutableListOf<String>()
+    private lateinit var embedPorts: String
 
     private fun backend(): File = generateSequence(File("").absoluteFile) { it.parentFile }
         .map { File(it, "backend/link_daemon.py") }.first { it.exists() }
@@ -71,6 +72,9 @@ class LinkTest {
             .directory(backend().parentFile)
         pb.environment()["ALVAOS_LINK_DIR"] = dir.toString()
         pb.environment()["ALVAOS_LINK_TEST"] = """{"services": {"hub": ${hub.address.port}}}"""
+        embedPorts = File(dir.toFile(), "embed_ports.json").path
+        File(embedPorts).writeText("{\"ports\": []}")
+        pb.environment()["ALVAOS_EMBED_PORTS"] = embedPorts
         pb.environment()["PYTHONUNBUFFERED"] = "1"
         pb.redirectError(File(dir.toFile(), "daemon.err"))
         daemonLog = File(dir.toFile(), "daemon.err")
@@ -129,6 +133,51 @@ class LinkTest {
         } finally {
             scope.cancel()
             phone.close()
+        }
+    }
+
+    @Test
+    fun anAppInTheHubsWindowGetsItsPortHereThroughLink() = runBlocking {
+        val app = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        app.createContext("/") { x ->
+            val body = "app says hello to ${x.remoteAddress.address.hostAddress}"
+            x.sendResponseHeaders(200, body.toByteArray().size.toLong())
+            x.responseBody.use { it.write(body.toByteArray()) }
+        }
+        app.start()
+        val phone = LinkClient(directOnly = true)
+        phone.start()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val http = OkHttpClient.Builder().callTimeout(10, TimeUnit.SECONDS).build()
+        try {
+            phone.pairDevice(nasId, "ABCD1234", DeviceInfo("Pixel 8", "Pixel 8"), hints)
+            // The Hub lists the proxy's port for the daemon (here the app's own port stands in for it).
+            val port = app.address.port
+            File(embedPorts).writeText("{\"ports\": [$port]}")
+            // Only ports from the first one up are listened on, and exactly these: the rest stop.
+            val apps = AppPorts(phone, nasId, hints)
+            val free = java.net.ServerSocket(0).use { it.localPort }
+            apps.sync(scope, setOf(80, free))
+            assertEquals(setOf(free), apps.ports())
+            apps.sync(scope, emptySet())
+            assertEquals(emptySet(), apps.ports())
+            apps.stop()
+            // A port on the list is carried to the app, from the phone's own address on the NAS side.
+            val taken = java.net.ServerSocket(0).use { it.localPort }
+            val local = LinkProxy(phone, nasId, hints, "app:$port")
+            assertTrue(local.startExact(scope, taken))
+            val got = http.newCall(Request.Builder().url("http://127.0.0.1:$taken/x").build()).execute().use { it.body!!.string() }
+            assertTrue(got.startsWith("app says hello"), got)
+            // A port the Hub did not list is refused by the NAS.
+            val other = LinkProxy(phone, nasId, hints, "app:22")
+            val otherPort = java.net.ServerSocket(0).use { it.localPort }
+            assertTrue(other.startExact(scope, otherPort))
+            assertFailsWith<Exception> { http.newCall(Request.Builder().url("http://127.0.0.1:$otherPort/x").build()).execute().use { it.body!!.string() } }
+            local.stop(); other.stop()
+        } finally {
+            scope.cancel()
+            phone.close()
+            app.stop(0)
         }
     }
 

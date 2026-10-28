@@ -134,6 +134,20 @@ def test_store_tiles_are_off_until_shown_and_follow_who_sees_them(tmp_path):
     assert [t["id"] for t in hub_apps.store_tiles("anna", settings=settings, apps=apps)] == ["jellyfin"]
     assert [t["id"] for t in hub_apps.store_tiles("tim", settings=settings, apps=apps)] == ["jellyfin", "pihole"]
     assert [t["id"] for t in hub_apps.store_tiles("root", "admin", settings=settings, apps=apps)] == ["jellyfin", "pihole"]
-    assert hub_apps.load(path)["store"]["pihole"] == {"shown": True, "people": ["tim"]}
+    assert hub_apps.load(path)["store"]["pihole"] == {"shown": True, "embed": False, "people": ["tim"]}
     for bad in ({"dnsonly": {"shown": True}}, {"jellyfin": {"people": ["nobody"]}}, {"jellyfin": {"people": []}}):
         assert hub_apps.save({"store": bad}, ["anna", "tim"], path=path, store_ids=ids)[0] is None
+
+
+def test_an_app_can_open_in_the_hubs_window_through_its_proxy_port(tmp_path):
+    path = str(tmp_path / "hub.json")
+    apps = hub_apps.store_apps(INSTALLED, CATALOG)
+    ids = [a["id"] for a in apps]
+    settings, _ = hub_apps.save({"store": {"jellyfin": {"shown": True, "embed": True}, "pihole": {"shown": True}}},
+                                ["anna"], path=path, store_ids=ids)
+    tiles = {t["id"]: t for t in hub_apps.store_tiles("anna", settings=settings, apps=apps)}
+    assert tiles["jellyfin"]["embed_port"] == 18096 + 20000 and "embed_port" not in tiles["pihole"]
+    assert hub_apps.embed_targets(settings, apps) == {38096: 18096}
+    # An app that is not shown is not proxied, whatever its window setting.
+    settings, _ = hub_apps.save({"store": {"jellyfin": {"shown": False}}}, ["anna"], path=path, store_ids=ids)
+    assert hub_apps.embed_targets(settings, apps) == {}

@@ -264,6 +264,14 @@
                     <strong>${esc(app.name)}</strong>
                     <div class="hub-desc">Opens ${esc(window.location.hostname)}:${esc(app.port)}${esc(app.path === '/' ? '' : app.path)} in a new tab, with its own sign-in.</div>
                     ${app.shown ? `<div class="hub-who">
+                        <span class="hub-who-label">Opens in</span>
+                        <div class="seg" role="group" aria-label="Where ${esc(app.name)} opens">
+                            <button type="button" data-store-open="${esc(app.id)}" data-v="window" aria-pressed="${!!app.embed}">The Hub's window</button>
+                            <button type="button" data-store-open="${esc(app.id)}" data-v="tab" aria-pressed="${!app.embed}">A new tab</button>
+                        </div>
+                        ${app.embed ? '<span class="hub-st-note" style="margin:0">Shown inside the Hub, also away from home and in the AlvaOS apps. Some apps do not like to be shown inside another page: then use a new tab.</span>' : ''}
+                    </div>
+                    <div class="hub-who">
                         <span class="hub-who-label">Who sees it</span>
                         ${seg('data-store-who', app.id, some, app.name, !people.length)}
                         ${some ? `<div class="hub-people chips" role="group" aria-label="People who see ${esc(app.name)}">${people.map((p) => chip('data-store-person', app.id, p, app.people.includes(p))).join('')}</div>` : ''}
@@ -276,6 +284,12 @@
         const changeStore = (id, body, message) => post({ store: { [id]: body } }, message);
         box.querySelectorAll('[data-store]').forEach((b) => b.addEventListener('change', () =>
             changeStore(b.dataset.store, { shown: b.checked }, `${names[b.dataset.store]} is ${b.checked ? 'now' : 'no longer'} a tile in the Hub.`)));
+        box.querySelectorAll('[data-store-open]').forEach((btn) => btn.addEventListener('click', () => {
+            const id = btn.dataset.storeOpen;
+            const window_ = btn.dataset.v === 'window';
+            if (window_ === !!(apps.find((a) => a.id === id) || {}).embed) return;
+            changeStore(id, { embed: window_ }, window_ ? `${names[id]} opens in the Hub's window.` : `${names[id]} opens in a new tab.`);
+        }));
         box.querySelectorAll('[data-store-who]').forEach((btn) => btn.addEventListener('click', () => {
             const id = btn.dataset.storeWho;
             const all = btn.dataset.v === 'all';

@@ -51,7 +51,11 @@ data class HubApp(val id: String, val name: String = "", val icon: String = "")
 
 /** An app from the App Store with a tile in the Hub (Jellyfin, Immich, …): its own port. */
 @Serializable
-data class StoreTile(val id: String = "", val name: String = "", val port: Int = 0, val path: String = "/")
+data class StoreTile(
+    val id: String = "", val name: String = "", val port: Int = 0, val path: String = "/",
+    /** Set when the Hub shows the app in its window: the port of the NAS's proxy for it (the app's port + 20000). */
+    val embed_port: Int = 0,
+)
 
 @Serializable
 data class HubInfo(val apps: List<HubApp> = emptyList(), val store: List<StoreTile> = emptyList())

@@ -596,3 +596,20 @@ def test_zip_files_unpack_and_sizes_run_as_the_person(client, monkeypatch):
     assert calls == [(["files-unzip", "/mnt/alvaos/main/Anna/Trips", "Trip.zip"], "anna"),
                      (["files-size", "/mnt/alvaos/main/Anna/Trips", "Sub"], "anna")]
     assert client.get("/api/size?share=Nobody&name=x").status_code == 404
+
+
+def test_each_person_keeps_their_own_side_bar(client, monkeypatch, tmp_path):
+    import hub_prefs
+    monkeypatch.setattr(hub_prefs, "PREFS_FILE", str(tmp_path / "prefs.json"))
+    sign_in(client, "anna", "anna-pass")
+    assert client.get("/api/prefs").get_json()["bar"] is None
+    assert client.post("/api/prefs", json={"bar": ["calendar", "files"]}).status_code == 403    # needs the page's header
+    got = client.post("/api/prefs", json={"bar": ["calendar", "files"]}, headers=H)
+    assert got.status_code == 200 and got.get_json()["bar"] == ["calendar", "files"]
+    assert client.get("/api/me").get_json()["prefs"] == {"bar": ["calendar", "files"]}
+    assert client.post("/api/prefs", json={"bar": ["store:ghost"]}, headers=H).status_code == 400
+    assert client.post("/api/prefs", json={"bar": []}, headers=H).status_code == 400
+    sign_in(client, "ben", "ben-pass")
+    assert client.get("/api/prefs").get_json()["bar"] is None
+    sign_in(client, "anna", "anna-pass")
+    assert client.post("/api/prefs", json={"bar": None}, headers=H).get_json()["bar"] is None

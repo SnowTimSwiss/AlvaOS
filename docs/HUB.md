@@ -34,14 +34,31 @@ next is tracked in `ROADMAP.md` and `BACKLOG.md`.
 - **No third-party plugins inside the Hub** for now: their code would run with
   the Hub's rights and could read everyone's files. Others' apps stay isolated
   Docker apps.
-- No iframes for store apps and no `/apps/<name>` paths: many apps forbid the
-  one and break with the other.
+- No `/apps/<name>` paths (many apps break under a path). An app can open **in
+  the Hub's window** instead: see below.
 - **Store apps as tiles (done):** the Hub page lists every installed store app
   that has a page (a catalog port described as "Web UI", on the port chosen at
   install). Each is off until the admin shows it, then for everyone or only
   some people (`store` in `hub.json`). In the Hub they sit behind "Apps" in
   the bar and open `http://<the NAS>:<port><path>` in a new tab. Apps added as
   a compose file have no known page and are not listed.
+- **Apps in the Hub's window (done):** per app the admin chooses "Opens in: the
+  Hub's window / a new tab" (`embed` in `hub.json`). Apps do not like being
+  shown inside another page (X-Frame-Options, CSP `frame-ancestors`), so the Hub
+  runs a small proxy for each such app on the app's port + 20000 (Jellyfin 8096
+  → 28096; `backend/embed_proxy.py`, started by the Hub service, kept in step
+  with the settings every few seconds). It always goes to `127.0.0.1` and that
+  app's port (no open proxy), takes the two frame bans out of the answers and
+  changes nothing else; WebSockets are passed through. The Hub shows the proxy's
+  address in a frame with Reload and "New tab". The app keeps its own sign-in.
+  A Hub page on https (port 9443) cannot show a plain http frame: the app opens
+  in a new tab then. The proxy's ports are written to
+  `/var/lib/alvaos/embed_ports.json` for AlvaOS Link (docs/LINK.md).
+- **Your own side bar (done):** every person chooses what is in the Hub's side
+  bar and in which order ("Customize" at its foot); the rest is under "More".
+  Kept on the NAS (`/var/lib/alvaos/hub_prefs.json`, `/api/prefs`), so the phone
+  has the same. Without a choice the Hub's own apps are in the bar and the
+  store apps under "More".
 
 ## Who sees what
 

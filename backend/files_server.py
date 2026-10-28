@@ -37,6 +37,8 @@ import hub_video
 import hub_chat
 import hub_contacts
 import hub_data
+import hub_prefs
+import embed_proxy
 from password_utils import verify_password
 
 PORT = 8090
@@ -391,6 +393,31 @@ def login():
     return response
 
 
+@app.get('/api/prefs')
+def get_prefs():
+    session, refused = need_session()
+    if refused:
+        return refused
+    return jsonify({'success': True, **hub_prefs.get(session['user'])})
+
+
+@app.post('/api/prefs')
+def set_prefs():
+    """This person's side bar: {"bar": [ids in order]} or {"bar": null} for the default."""
+    session, refused = need_session()
+    if refused:
+        return refused
+    data = request.get_json(silent=True) or {}
+    settings = hub_apps.load()
+    available = [a['id'] for a in hub_apps.visible(session['user'], session['role'], settings)] + \
+        [f"store:{t['id']}" for t in hub_apps.store_tiles(session['user'], session['role'], settings)]
+    try:
+        saved = hub_prefs.save(session['user'], data.get('bar'), available)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'success': True, **saved})
+
+
 @app.post('/api/logout')
 def logout():
     token = request.cookies.get(COOKIE, '')
@@ -421,6 +448,7 @@ def me():
     return jsonify({'user': session['user'], 'role': session['role'], 'shares': shares,
                     'new_uploads': _new_uploads(session['user']),
                     'nas_name': nas, 'hub': {'name': hub_apps.NAME, 'apps': apps, 'store': store},
+                    'prefs': hub_prefs.get(session['user']),
                     'features': hub_video.features()})
 
 
@@ -2075,7 +2103,23 @@ def headers(response):
     return response
 
 
+def keep_embed_proxies(interval: float = 5.0) -> None:
+    """The proxies of the apps shown in the Hub's window follow the admin's settings."""
+    proxies = embed_proxy.EmbedProxies()
+    last: Dict[int, int] = {}
+    while True:
+        try:
+            wanted = hub_apps.embed_targets()
+            if wanted != last or not proxies.thread:
+                proxies.sync(wanted)
+                last = wanted
+        except Exception as exc:  # noqa: BLE001 - the Hub goes on without the window apps
+            print(f'Embedded apps: {exc}')
+        time.sleep(interval)
+
+
 def main() -> None:
+    threading.Thread(target=keep_embed_proxies, name='embed-sync', daemon=True).start()
     try:
         import waitress
     except ImportError:

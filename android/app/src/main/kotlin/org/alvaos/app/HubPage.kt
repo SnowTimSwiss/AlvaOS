@@ -193,6 +193,13 @@ class HubPage(
         pendingTool = ""
         web.loadUrl(store.server.trimEnd('/') + "/" + if (app.isNotEmpty()) "#app=$app" else "")
         if (tool.isNotEmpty()) web.postDelayed({ openTool(tool) }, 1500)
+        // Away from home, the apps that open in the Hub's window get their ports on this phone (through Link).
+        Thread {
+            try {
+                val ports = store.hub().me().hub.store.map { it.embed_port }.filter { it > 0 }.toSet()
+                LinkService.syncApps(store, ports)
+            } catch (e: Exception) { /* the Hub is not reachable now: the windows of apps wait */ }
+        }.start()
     }
 
     private fun showOffline() {

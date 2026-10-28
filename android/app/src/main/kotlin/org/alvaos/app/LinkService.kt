@@ -4,6 +4,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.runBlocking
+import org.alvaos.link.AppPorts
 import org.alvaos.link.LinkClient
 import org.alvaos.link.LinkProxy
 import org.alvaos.link.hexBytes
@@ -23,6 +24,8 @@ object LinkService {
     private var client: LinkClient? = null
     private var proxy: LinkProxy? = null
     private var proxyNas = ""
+    private var appPorts: AppPorts? = null
+    private var appPortsNas = ""
 
     /** Why Link cannot be used in this build (the library is missing), or "". */
     @Volatile var unavailable: String = ""
@@ -63,6 +66,25 @@ object LinkService {
         url
     }
 
+    /**
+     * Away from home the apps that open in the Hub's window need a port each on this phone (the same number as on
+     * the NAS), carried through Link. Does nothing at home or without Link.
+     */
+    @Synchronized
+    fun syncApps(store: Store, ports: Set<Int>) {
+        guarded {
+            val nas = store.linkNas
+            if (nas.length != 64 || !isProxy(store.server)) {
+                appPorts?.stop(); appPorts = null
+                return@guarded
+            }
+            val current = appPorts?.takeIf { appPortsNas == nas } ?: AppPorts(client(store), nas).also {
+                appPorts?.stop(); appPorts = it; appPortsNas = nas
+            }
+            current.sync(scope, ports)
+        }
+    }
+
     /** Pairs through Link with the code of the QR (no address needed), and keeps the NAS's Link address. */
     suspend fun pair(store: Store, nas: String, code: String, device: DeviceInfo): Paired {
         val c = try { client(store) } catch (e: Throwable) { fail(e); throw java.io.IOException(NOT_AVAILABLE) }
@@ -90,6 +112,7 @@ object LinkService {
     @Synchronized
     fun reset() {
         proxy?.stop(); proxy = null; proxyNas = ""
+        appPorts?.stop(); appPorts = null; appPortsNas = ""
         client = null
     }
 

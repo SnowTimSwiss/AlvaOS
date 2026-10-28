@@ -19,6 +19,7 @@ One QUIC stream per request; the first line names a **service**:
 |---|---|---|
 | `hub` | a paired phone or computer | the Hub (`127.0.0.1:8090`), also CalDAV and CardDAV |
 | `dav` | a paired phone or computer | Files over WebDAV (`127.0.0.1:8091`): the drive of a computer |
+| `app:<port>` | a paired phone or computer | an app that opens in the Hub's window: the Hub's proxy for it (`127.0.0.1:<port>`, the app's port + 20000, docs/HUB.md), only for the ports the Hub lists in `/var/lib/alvaos/embed_ports.json`, never another port. The computer and phone apps listen on the same number locally (from the Hub's `me`), so the window's address is the same at home and away. |
 | `api`, `nbd` | a paired buddy | the backend (`:8080`) and the vault server (`:10809`) |
 | `pair` | anybody | one narrow request: trade a Hub pairing code for a session (phone) or hand over a buddy pairing code. Slowed down per key (6 per minute). |
 | `ping` | a paired peer | answers `pong` |

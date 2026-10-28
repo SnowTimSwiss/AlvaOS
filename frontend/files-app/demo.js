@@ -26,6 +26,7 @@
         { id: 'calendar', name: 'Calendar', icon: 'calendar' }, { id: 'contacts', name: 'Contacts', icon: 'contact' },
         { id: 'chat', name: 'Chat', icon: 'message-circle' },
     ];
+    let prefs = { bar: null };
     const shares = [{ name: 'Demo', access: 'write', limited: true }, { name: 'Family', access: 'read', from: 'sam' }];
 
     // Files: folders are objects, files are numbers (size in bytes).
@@ -177,7 +178,11 @@
     async function handle(method, url, body) {
         const path = url.pathname.replace(/^\/api\//, '');
         const q = url.searchParams;
-        if (path === 'me') return json({ user: 'demo', role: 'user', shares, new_uploads: 0, nas_name: 'Demo NAS', hub: { name: 'AlvaOS Hub', apps: APPS, store: [] }, features: { heif: true } });
+        // "#demo&store" also shows two App Store apps in the Hub's bar (to look at the side bar and the app window).
+        const STORE = /[#?&]store(?:[=&]|$)/.test(location.href) ? [
+            { id: 'jellyfin', name: 'Jellyfin', port: 8096, path: '/', embed_port: 28096 }, { id: 'pihole', name: 'Pi-hole', port: 8053, path: '/admin/' }] : [];
+        if (path === 'prefs' && method === 'POST') { prefs = { bar: (body && body.bar) || null }; return json({ success: true, ...prefs }); }
+        if (path === 'me') return json({ user: 'demo', role: 'user', shares, new_uploads: 0, nas_name: 'Demo NAS', hub: { name: 'AlvaOS Hub', apps: APPS, store: STORE }, prefs, features: { heif: true } });
         if (path === 'logout') return json({ success: true });
         if (path === 'list') {
             const list = entriesOf(q.get('share'), q.get('path'));

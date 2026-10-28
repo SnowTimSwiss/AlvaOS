@@ -20,6 +20,8 @@ Starting AlvaOS from the launcher (search, start menu, a shortcut) opens the Hub
 
 **Open in the browser** signs the browser in by itself: the app asks the NAS for a code that works once, for a minute (`POST /api/devices/handoff`), and opens `http://127.0.0.1:18090/?handoff=<code>`; the Hub page trades it for a browser session of the same person (`POST /api/handoff`). The Hub's window does the same. The app's own session never reaches a page. Bookmarks keep working: the ports stay the same.
 
+Apps that open in the Hub's window (docs/HUB.md) get a port of their own on this computer too, the same number as on the NAS (`127.0.0.1:28096` for an app on 8096): the app asks the Hub which apps those are (each minute, with its connection check) and carries every connection through Link as `app:<port>`. A port that is taken here is left out; the app then opens in a new tab.
+
 Calendar and contacts programs (Thunderbird, GNOME Calendar, macOS Calendar) use the Hub's address `http://127.0.0.1:18090/` with the person's name and password, as at home.
 
 ## Connecting a computer
