@@ -15,6 +15,12 @@ How to add an entry:
 
 ---
 
+## Fix: the Hub did not start (missing type name)
+
+- After merging the Office PR with the changes of another PR, `files_server.py` used `Dict` without importing it (the file now uses the built-in `dict`), so the Hub service stopped at start. Fixed; `ruff` finds this class of error (F821) and the tests import the module.
+
+---
+
 ## Version beta-v0.8.1
 
 - `VERSION` is `beta-v0.8.1` (the package becomes `0.8.1~beta`); the desktop app's crates, its demo and its Flatpak release list say 0.8.1 too. What is in it: Office built into the Hub (EuroOffice), apps in the Hub's window with your own side bar, and AlvaOS Link carrying the apps to the computer and phone apps.
