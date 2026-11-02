@@ -15,11 +15,25 @@ How to add an entry:
 
 ---
 
+## Security review: privileged policy, sign-in, web files (2026-10-28, [PR 53](https://github.com/SnowTimSwiss/AlvaOS/pull/53))
+
+- The privileged command policy (`priv_policy.py`) had four escapes, now closed: `btrfs receive` and `set-default` judged their target as a string, so a symlink under the data directory sent a stream into `/etc`; `mount -U` accepted the UUID of the system disk, which `read-file` could then read; Samba's `wins hook` runs a program as root; and compose files could bring in host files and devices (`include`, `extends`, `env_file`, `secrets`, `configs`, `build`, `device_cgroup_rules`, host networking, `..` in device paths). No catalog app uses any of them (a test checks the catalog).
+- The sign-in file (`auth.json`: password hash, 2FA secret) was readable by every local account; all writers now use `write_auth_file` (mode 0600, atomic). The update script fixes existing installs.
+- Two-factor codes: five wrong codes end the sign-in attempt (before: unlimited tries within the five minutes of a temporary token).
+- The web UI route read `.html`, `.css` and `.js` files with a plain join: `/..%2F...` read files outside the UI folder. It uses `safe_join` now.
+- Office: a callback token with a non-object header raised instead of being refused.
+- `/etc/alvaos` is root-owned (read-only for the service, like the code); `setup_sudoers.sh` checks the rules before installing them.
+- **Found on main, fixed here**: `files_server.py` used `Dict` without importing it, so the Files server and the Hub did not start (introduced with the Hub office work).
+- **Note for next time**: path-based privileged commands (`chown -R`, `chmod -R`, `mkdir`, `rmdir`, `cp`, `find`) check the path, then run it: a directory swapped for a symlink in between is a race. That needs file-descriptor based helpers, not string checks. Also open: compose bind-mount sources are not resolved, SMB and NFS paths are not resolved.
+
+---
+
 ## Version beta-v0.8.1
 
 - `VERSION` is `beta-v0.8.1` (the package becomes `0.8.1~beta`); the desktop app's crates, its demo and its Flatpak release list say 0.8.1 too. What is in it: Office built into the Hub (EuroOffice), apps in the Hub's window with your own side bar, and AlvaOS Link carrying the apps to the computer and phone apps.
 
 ---
+
 ## Lint, type and shell checks, and dead code out (2026-10-28, [PR 51](https://github.com/SnowTimSwiss/AlvaOS/pull/51))
 
 - ruff checks pyflakes, pycodestyle, bugbear, simplify, pyupgrade and commented-out code (`ruff.toml`). The annotations use built-in generics and `X | None`. E501 stays off: 287 lines are longer than 120 characters, and wrapping them would be pure churn.

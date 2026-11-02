@@ -367,7 +367,7 @@ def _expect(args: Sequence[str], *patterns) -> None:
 # Samba parameters that execute programs (as root for the "root ..." variants)
 # or load code. A single injected line with one of these is a root shell.
 _SMB_EXEC_KEY = re.compile(
-    r'(command|script|exec|program|panic action|vfs objects|^include$|config file|'
+    r'(command|script|exec|program|hook|panic action|vfs objects|^include$|config file|'
     r'username map|modules|log file|lock directory|state directory|private dir)',
     re.IGNORECASE,
 )
@@ -631,6 +631,9 @@ def _check_host_path(src: str) -> None:
             _fail(f'Compose bind mount of a protected host path: {src}')
 
 
+_COMPOSE_DENIED_KEYS = {'include', 'secrets', 'configs', 'extends', 'env_file', 'build', 'device_cgroup_rules'}
+
+
 def check_compose(content: bytes) -> None:
     import yaml  # python3-yaml is a hard dependency of AlvaOS
 
@@ -640,13 +643,20 @@ def check_compose(content: bytes) -> None:
         _fail(f'Compose file is not valid YAML: {e}')
     if not isinstance(doc, dict) or not isinstance(doc.get('services'), dict):
         _fail('Compose file has no services')
+    # Each of these reads files or other compose files from the host (as root),
+    # or builds from a host directory, so none of them is allowed.
+    for key in _COMPOSE_DENIED_KEYS:
+        if key in doc:
+            _fail(f'Compose key "{key}" is not allowed')
 
     for name, svc in doc['services'].items():
         if not isinstance(svc, dict):
             _fail(f'Invalid service definition: {name}')
         if svc.get('privileged'):
             _fail(f'Service {name}: privileged containers are not allowed')
-        for key in ('pid', 'ipc', 'userns_mode', 'uts', 'cgroup'):
+        for key in _COMPOSE_DENIED_KEYS & set(svc):
+            _fail(f'Service {name}: compose key "{key}" is not allowed')
+        for key in ('pid', 'ipc', 'userns_mode', 'uts', 'cgroup', 'network_mode'):
             if str(svc.get(key, '')).lower() == 'host':
                 _fail(f'Service {name}: {key}: host is not allowed')
         for opt in svc.get('security_opt') or []:
@@ -657,7 +667,7 @@ def check_compose(content: bytes) -> None:
                 _fail(f'Service {name}: capability {cap} is not allowed')
         for dev in svc.get('devices') or []:
             host = str(dev).split(':', 1)[0]
-            if not host.startswith(_ALLOWED_DEVICE_PREFIXES):
+            if '..' in host.split('/') or not host.startswith(_ALLOWED_DEVICE_PREFIXES):
                 _fail(f'Service {name}: device {host} is not allowed')
         for vol in svc.get('volumes') or []:
             if isinstance(vol, str):
@@ -984,10 +994,18 @@ def _scan_mountpoint(path: str) -> bool:
     return parent == SCAN_MOUNT_BASE and bool(re.match(r'^[a-zA-Z0-9]+$', name))
 
 
+def _uuid_not_system_disk(sys_: System, uuid: str) -> None:
+    """A filesystem UUID is only a name: the device it points to must not be the system disk."""
+    if not UUID_RE.match(uuid or ''):
+        _fail('Invalid filesystem UUID')
+    device = sys_.realpath(f'/dev/disk/by-uuid/{uuid}')
+    if DEVICE_RE.match(device):
+        _device(sys_, device, destructive=True)
+
+
 def _rule_mount(sys_: System, args):
     if len(args) == 3 and args[0] == '-U':
-        if not UUID_RE.match(args[1]):
-            _fail('Invalid filesystem UUID')
+        _uuid_not_system_disk(sys_, args[1])
         target = _clean_abs_path(args[2])
         _pool_mountpoint(target)
         return Plan(argv=list(args))
@@ -998,8 +1016,7 @@ def _rule_mount(sys_: System, args):
         return Plan(argv=list(args))
     if len(args) == 5 and args[:3] == ['-o', 'degraded', '-U']:
         # A redundant pool with a missing disk, at startup (storage_manager decides).
-        if not UUID_RE.match(args[3]):
-            _fail('Invalid filesystem UUID')
+        _uuid_not_system_disk(sys_, args[3])
         _pool_mountpoint(_clean_abs_path(args[4]))
         return Plan(argv=list(args))
     if len(args) == 4 and args[0] == '-o' and args[1] == 'ro':
@@ -1030,6 +1047,15 @@ def _rule_umount(sys_: System, args):
 def _replace_source(value: str) -> None:
     if not (re.match(r'^[1-9][0-9]{0,5}$', value or '') or DEVICE_RE.match(value or '')):
         _fail(f'Invalid device to replace: {value!r}')
+
+
+def _data_target(sys_: System, path: str) -> str:
+    """A btrfs target (a received stream, a new default): a pool or a folder in the
+    data directories. Judged by where it really is: btrfs follows symlinks."""
+    resolved = sys_.realpath(_clean_abs_path(path))
+    if not (_pool_mountpoint(resolved, strict=False) or any(_strictly_within(resolved, r) for r in WRITE_ROOTS)):
+        _fail('btrfs target not allowed')
+    return resolved
 
 
 def _rule_btrfs(sys_: System, args):
@@ -1104,11 +1130,8 @@ def _rule_btrfs(sys_: System, args):
         return Plan(argv=list(args))
     if group == 'subvolume' and action == 'set-default':
         _expect(rest, _int_arg, lambda p: None)
-        target = _clean_abs_path(rest[1])
-        if target != '/' and not _pool_mountpoint(target, strict=False) \
-                and not any(_strictly_within(target, r) for r in WRITE_ROOTS):
-            _fail('btrfs set-default target not allowed')
-        return Plan(argv=list(args))
+        target = '/' if rest[1] == '/' else _data_target(sys_, rest[1])
+        return Plan(argv=[*args[:3], target])
     if group == 'send':
         if len(args) == 2:
             # Stream to stdout: the backend pipes it straight into the upload.
@@ -1124,13 +1147,9 @@ def _rule_btrfs(sys_: System, args):
     if group == 'receive':
         if len(args) == 2:
             # Stream from stdin: restores pipe the download straight in.
-            target = _clean_abs_path(args[1])
-        else:
-            _expect(args[1:], '-f', lambda p: writable_path(sys_, p), lambda p: None)
-            target = _clean_abs_path(args[3])
-        if not (_pool_mountpoint(target, strict=False) or any(_strictly_within(target, r) for r in WRITE_ROOTS)):
-            _fail('btrfs receive target not allowed')
-        return Plan(argv=list(args), background=True)
+            return Plan(argv=['receive', _data_target(sys_, args[1])], background=True)
+        _expect(args[1:], '-f', lambda p: writable_path(sys_, p), lambda p: None)
+        return Plan(argv=['receive', '-f', args[2], _data_target(sys_, args[3])], background=True)
     if group == 'device' and action == 'add':
         if len(rest) < 2:
             _fail('btrfs device add needs devices and a mount point')

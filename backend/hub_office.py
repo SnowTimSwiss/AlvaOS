@@ -79,7 +79,7 @@ def jwt_decode(token: str, secret: str, now: float | None = None) -> dict[str, A
         return None
     try:
         head = json.loads(_unb64(parts[0]))
-        if head.get('alg') != 'HS256':
+        if not isinstance(head, dict) or head.get('alg') != 'HS256':
             return None
         want = hmac.new(secret.encode(), f'{parts[0]}.{parts[1]}'.encode(), hashlib.sha256).digest()
         if not hmac.compare_digest(want, _unb64(parts[2])):
@@ -122,7 +122,7 @@ def editor_reachable() -> bool:
     """Is the editor up *and* does the Hub's proxy for it carry the same answer (what people's browsers use)?"""
     import embed_proxy
     through = embed_proxy.embed_port(DS_PORT)
-    return editor_answers() and bool(through) and editor_answers(through)
+    return editor_answers() and through is not None and editor_answers(through)
 
 
 # ── The editor's settings ───────────────────────────────────────────────────────────────────────

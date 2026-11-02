@@ -255,7 +255,8 @@ chown -R root:root /opt/alvaos
 chmod -R go-w /opt/alvaos
 chown -R alvaos:alvaos /var/lib/alvaos
 chown -R alvaos:alvaos /var/log/alvaos
-chown -R alvaos:alvaos /etc/alvaos
+# Read-only for the service: it only reads the version (the same as the code).
+chown -R root:root /etc/alvaos
 
 # Ensure sudoers rules are repaired/updated on both fresh install and deb upgrades
 mkdir -p /etc/sudoers.d
