@@ -550,7 +550,7 @@ class UpdateManager:
                 cached_at = datetime.fromisoformat(cached_at_str) if cached_at_str else None
             except Exception:
                 cached_at = None
-            if cached_at and (now - cached_at).total_seconds() < 3600:
+            if cached_at and (now - cached_at).total_seconds() < self._cache_seconds(cached_entry.get("release")):
                 print(f"Using cached GitHub release for {cache_key}")
                 release = cached_entry.get("release")
                 return self._build_check_result(current_version, release, channel)
@@ -612,6 +612,13 @@ class UpdateManager:
             self.save_json(self.github_cache_file, cache)
 
         return self._build_check_result(current_version, release, channel, error)
+
+    @staticmethod
+    def _cache_seconds(release):
+        """How long a release from GitHub is trusted: an hour, but only two minutes while it has no
+        package yet (a release is often published before its files are uploaded)."""
+        has_package = any(str(a.get("name") or "").endswith(".deb") for a in (release or {}).get("assets", []))
+        return 3600 if has_package or not release else 120
 
     def _build_check_result(self, current_version, release, channel, error=None):
         latest_version = self.normalize_version(release.get("tag_name", "")) if release else ""

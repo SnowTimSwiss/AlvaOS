@@ -28,6 +28,8 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(bm_module.BackupManager, "_path_on_system_disk", lambda self, p: False)
     monkeypatch.setattr(bm_module.BackupManager, "_path_on_btrfs", lambda self, p: True)
     monkeypatch.setattr(bm_module.BackupManager, "_same_filesystem", lambda self, a, b: True)
+    # The runner below plays btrfs, so the tests must not need btrfs-progs on the machine they run on.
+    monkeypatch.setattr(bm_module.BackupManager, "_btrfs_cmd", lambda self: "/usr/bin/btrfs")
 
     real_exists = os.path.exists
 

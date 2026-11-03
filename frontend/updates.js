@@ -150,7 +150,7 @@ function renderCheck(data) {
     if (data?.update_available && data.release) {
         const latest = cleanVersion(data.latest_version || data.release.tag_name);
         setStatus('info', `AlvaOS ${latest} is ready to install`,
-            `You have ${current || 'an older version'}. See what changed below.`, { install: true, check: false });
+            `You have ${current || 'an older version'}. See what changed below.`, { install: true });
         $('upd-notes-title').textContent = `What's new in ${latest}`;
         $('upd-notes-date').textContent = data.release.published_at ? `Released ${timeAgo(data.release.published_at)}` : '';
         renderNotes(data.release.body);
@@ -197,10 +197,15 @@ function debAssetUrl(release) {
     return deb ? deb.browser_download_url : null;
 }
 
-async function installAlvaos() {
+async function installAlvaos(asked = false) {
     const release = lastCheck?.release;
     const url = debAssetUrl(release);
     if (!url) {
+        // The check may have been made before the files were uploaded: look again once, then give up.
+        if (!asked) {
+            await checkAlvaos(true);
+            return installAlvaos(true);
+        }
         window.showToast('This release has no installable package yet. Try again later.', 'warning');
         return;
     }
@@ -603,7 +608,7 @@ async function resumeIfBusy() {
 
 async function init() {
     $('upd-check-btn').addEventListener('click', () => checkAlvaos(true));
-    $('upd-install-btn').addEventListener('click', installAlvaos);
+    $('upd-install-btn').addEventListener('click', () => installAlvaos());
     $('upd-system-install').addEventListener('click', () => applyDebian(null));
     $('upd-system-install-selected').addEventListener('click', () => {
         const packages = Array.from(document.querySelectorAll('.upd-pkg-box:checked')).map((b) => b.value);
