@@ -150,7 +150,7 @@ function renderCheck(data) {
     if (data?.update_available && data.release) {
         const latest = cleanVersion(data.latest_version || data.release.tag_name);
         setStatus('info', `AlvaOS ${latest} is ready to install`,
-            `You have ${current || 'an older version'}. See what changed below.`, { install: true, check: false });
+            `You have ${current || 'an older version'}. See what changed below.`, { install: true });
         $('upd-notes-title').textContent = `What's new in ${latest}`;
         $('upd-notes-date').textContent = data.release.published_at ? `Released ${timeAgo(data.release.published_at)}` : '';
         renderNotes(data.release.body);

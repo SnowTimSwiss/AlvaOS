@@ -17,7 +17,7 @@ How to add an entry:
 
 ## Updates: a release without its files is looked at again
 
-- A release is often published before its package is uploaded; the check kept that answer for an hour, so "This release has no installable package yet" stayed. Now a release without a `.deb` is trusted for two minutes only, and "Install" looks again once by itself before it gives up. "Check now" always asked GitHub afresh.
+- A release is often published before its package is uploaded; the check kept that answer for an hour, so "This release has no installable package yet" stayed. Now a release without a `.deb` is trusted for two minutes only, and "Install" looks again once by itself before it gives up. "Check now" always asked GitHub afresh, but it was hidden as soon as an update was shown; it is there now in that state too. The backup tests no longer need btrfs-progs on the machine (they failed without it; `_btrfs_cmd` is faked like the runner).
 
 ---
 
