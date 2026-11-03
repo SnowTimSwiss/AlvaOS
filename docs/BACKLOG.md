@@ -15,6 +15,9 @@ How to add an entry:
 
 ---
 
+## Fix: the Hub did not start (missing type name)
+
+- After merging the Office PR with the changes of another PR, `files_server.py` used `Dict` without importing it (the file now uses the built-in `dict`), so the Hub service stopped at start. Fixed; `ruff` finds this class of error (F821) and the tests import the module.
 ## Security review: privileged policy, sign-in, web files (2026-10-28, [PR 53](https://github.com/SnowTimSwiss/AlvaOS/pull/53))
 
 - The privileged command policy (`priv_policy.py`) had four escapes, now closed: `btrfs receive` and `set-default` judged their target as a string, so a symlink under the data directory sent a stream into `/etc`; `mount -U` accepted the UUID of the system disk, which `read-file` could then read; Samba's `wins hook` runs a program as root; and compose files could bring in host files and devices (`include`, `extends`, `env_file`, `secrets`, `configs`, `build`, `device_cgroup_rules`, host networking, `..` in device paths). No catalog app uses any of them (a test checks the catalog).
