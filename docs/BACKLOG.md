@@ -15,6 +15,12 @@ How to add an entry:
 
 ---
 
+## Updates: a release without its files is looked at again
+
+- A release is often published before its package is uploaded; the check kept that answer for an hour, so "This release has no installable package yet" stayed. Now a release without a `.deb` is trusted for two minutes only, and "Install" looks again once by itself before it gives up. "Check now" always asked GitHub afresh.
+
+---
+
 ## Fix: the Hub did not start (missing type name)
 
 - After merging the Office PR with the changes of another PR, `files_server.py` used `Dict` without importing it (the file now uses the built-in `dict`), so the Hub service stopped at start. Fixed; `ruff` finds this class of error (F821) and the tests import the module.

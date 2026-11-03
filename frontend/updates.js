@@ -197,10 +197,15 @@ function debAssetUrl(release) {
     return deb ? deb.browser_download_url : null;
 }
 
-async function installAlvaos() {
+async function installAlvaos(asked = false) {
     const release = lastCheck?.release;
     const url = debAssetUrl(release);
     if (!url) {
+        // The check may have been made before the files were uploaded: look again once, then give up.
+        if (!asked) {
+            await checkAlvaos(true);
+            return installAlvaos(true);
+        }
         window.showToast('This release has no installable package yet. Try again later.', 'warning');
         return;
     }
@@ -603,7 +608,7 @@ async function resumeIfBusy() {
 
 async function init() {
     $('upd-check-btn').addEventListener('click', () => checkAlvaos(true));
-    $('upd-install-btn').addEventListener('click', installAlvaos);
+    $('upd-install-btn').addEventListener('click', () => installAlvaos());
     $('upd-system-install').addEventListener('click', () => applyDebian(null));
     $('upd-system-install-selected').addEventListener('click', () => {
         const packages = Array.from(document.querySelectorAll('.upd-pkg-box:checked')).map((b) => b.value);
