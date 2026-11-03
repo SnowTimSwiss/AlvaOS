@@ -170,3 +170,10 @@ def test_the_editor_counts_as_reachable_only_when_the_proxy_answers_too(monkeypa
     assert asked == [ho.DS_PORT, ho.DS_PORT + 20000]
     monkeypatch.setattr(ho, "editor_answers", lambda port=0, timeout=2.0: True)
     assert ho.editor_reachable() is True
+
+
+def test_a_token_whose_header_is_not_an_object_is_refused():
+    # Any caller can send such a token; it must be refused, not crash the request.
+    import hub_office
+    token = '.'.join([hub_office._b64(b'[]'), hub_office._b64(b'{}'), 'c2ln'])
+    assert hub_office.jwt_decode(token, 'secret') is None
