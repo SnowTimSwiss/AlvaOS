@@ -106,6 +106,15 @@ class SyncTest {
     }
 
     @Test
+    fun anEmptyLibraryDeletesNothingOnTheNas() {
+        library.add("1"); library.add("2")
+        engine.run()
+        library.photos.clear()
+        assertEquals(0, engine.run().trashedOnNas)
+        assertEquals(setOf("Camera/1.jpg", "Camera/2.jpg"), hub.files.keys)
+    }
+
+    @Test
     fun deletedOnTheNasWaitsForTheYesThenIsReported() {
         library.add("1"); library.add("2")
         engine.run()

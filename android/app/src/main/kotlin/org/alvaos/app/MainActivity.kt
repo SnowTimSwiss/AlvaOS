@@ -229,7 +229,21 @@ class MainActivity : AppCompatActivity() {
     private fun handle(intent: Intent?) {
         val link = intent?.data?.toString()?.let { PairLink.parse(it) } ?: return
         intent.data = null
-        connect(link)
+        confirmConnect(link)
+    }
+
+    /** A link or QR code can come from anywhere, so the person sees which NAS it names before the phone trusts it. */
+    private fun confirmConnect(link: PairLink) {
+        val name = link.nas.ifEmpty { "a NAS" }
+        val where = link.addresses.joinToString("\n").ifEmpty { "through AlvaOS Link" }
+        val replaces = if (store.signedIn)
+            "\n\nThis phone is connected to ${store.nasName.ifEmpty { "your NAS" }} now. Connecting replaces that." else ""
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Connect to $name?")
+            .setMessage("Only connect if you know this NAS.\n\n$where$replaces")
+            .setPositiveButton("Connect") { _, _ -> connect(link) }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     // ── Which screen ─────────────────────────────────────────────────────
@@ -436,7 +450,7 @@ class MainActivity : AppCompatActivity() {
             .addOnSuccessListener { code ->
                 val link = PairLink.parse(code.rawValue.orEmpty())
                 if (link == null) signIn("That is not the QR code of AlvaOS. Use the one in the Hub › Devices.")
-                else connect(link)
+                else confirmConnect(link)
             }
             .addOnFailureListener { e ->
                 signIn("The scanner did not start (${e.message}). Sign in with name and password.", Mode.Password)

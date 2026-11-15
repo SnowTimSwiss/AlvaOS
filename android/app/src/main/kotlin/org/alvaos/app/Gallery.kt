@@ -30,7 +30,10 @@ class Gallery(private val context: Context) : Library {
             MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.SIZE,
             MediaStore.MediaColumns.DATE_TAKEN, MediaStore.MediaColumns.DATE_MODIFIED,
         )
-        context.contentResolver.query(collection(kind), columns, null, null, null)?.use { c ->
+        // A null cursor is a failed query: an empty list would read as "everything was deleted".
+        val cursor = context.contentResolver.query(collection(kind), columns, null, null, null)
+            ?: throw java.io.IOException("The gallery cannot be read")
+        cursor.use { c ->
             while (c.moveToNext()) {
                 val album = c.getString(1) ?: "Pictures"
                 if (albums != null && album !in albums) continue
