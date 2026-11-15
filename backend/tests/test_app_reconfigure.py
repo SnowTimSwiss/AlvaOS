@@ -97,3 +97,16 @@ def test_port_mappings_are_numbers():
     assert normalize_port_mappings({"a": 1})[0] is None
     assert normalize_port_mappings({"80": 0})[0] is None
     assert normalize_port_mappings(["80"])[0] is None
+
+
+def test_uninstall_only_removes_containers_of_that_exact_project(store):
+    removed = []
+    store.docker_manager.list_containers = lambda all_containers=True: ([
+        {"ID": "a", "Labels": "x=1,com.docker.compose.project=alvaos-jellyfin,y=2"},
+        {"ID": "b", "Labels": "com.docker.compose.project=alvaos-jellyfin-ml"},
+        {"ID": "c", "Labels": "com.docker.compose.project=other,note=com.docker.compose.project=alvaos-jellyfin"},
+    ], None)
+    store.docker_manager.remove_container = lambda cid, force=False: removed.append(cid) or (True, None)
+    ok, error = store.uninstall_app("jellyfin", keep_data=True)
+    assert ok, error
+    assert removed == ["a"]

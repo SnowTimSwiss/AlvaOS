@@ -18,6 +18,19 @@ from common import run_sudo_command
 from docker_manager import DockerManager
 
 
+def compose_project_of(container: dict) -> str:
+    """The compose project a `docker ps` row belongs to. Compared as a whole
+    value: `alvaos-immich` must not match `alvaos-immich-ml`."""
+    labels = container.get('Labels') or ''
+    if isinstance(labels, dict):
+        return str(labels.get('com.docker.compose.project') or '')
+    for label in str(labels).split(','):
+        key, _, value = label.partition('=')
+        if key.strip() == 'com.docker.compose.project':
+            return value.strip()
+    return ''
+
+
 def summarize_app_needs(app_data: dict) -> dict:
     """What an app needs from the NAS, for the store card before installing:
     the ports it opens and how many folders it keeps on your storage."""
@@ -351,8 +364,7 @@ class AppStore:
             return {}
 
         for container in containers:
-            labels = str(container.get('Labels', '') or '')
-            if f'com.docker.compose.project={project_name}' not in labels:
+            if compose_project_of(container) != project_name:
                 continue
             container_id = container.get('ID') or str(container.get('Names', '')).split(',')[0]
             if not container_id:
@@ -1543,8 +1555,7 @@ class AppStore:
 
         project_name = f"alvaos-{app_id}"
         for container in containers:
-            labels = container.get('Labels', '')
-            if f'com.docker.compose.project={project_name}' in labels:
+            if compose_project_of(container) == project_name:
                 container_id = container.get('ID') or container.get('Names', '').split(',')[0]
                 success, error = self.docker_manager.remove_container(container_id, force=True)
                 if not success:
