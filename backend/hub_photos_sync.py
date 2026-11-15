@@ -348,13 +348,14 @@ def done(phone_id):
             if not isinstance(item, dict) or not LOCAL_ID_RE.match(str(item.get('id') or '')):
                 continue
             path, name = str(item.get('path') or ''), folder_name(item.get('name'), '')
-            if not path.startswith(base + '/') or '/' in path[len(base) + 1:] or not name:
-                continue                                   # only into this phone's own album folders
+            album = path[len(base) + 1:]
+            if not path.startswith(base + '/') or '/' in album or not name or not folder_name(album, ''):
+                continue                                   # only into this phone's own album folders ('.', '..' never)
             try:
                 size, modified = int(str(item.get('size'))), int(item.get('modified') or 0)
             except (TypeError, ValueError):
                 continue
-            phone['items'][str(item['id'])] = [f'{path[len(base) + 1:]}/{name}', size, modified, _now()]
+            phone['items'][str(item['id'])] = [f'{album}/{name}', size, modified, _now()]
         return {'count': len(phone['items'])}, ''
 
     return _change(phone_id, work)

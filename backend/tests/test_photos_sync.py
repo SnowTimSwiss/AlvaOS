@@ -164,6 +164,10 @@ def test_nothing_strange_gets_through(phone):
     phone.post(f"/api/photos/phones/{phone.phone}/done", headers=H, json={"items": [
         {"id": "7", "path": "Photos/Other phone/Camera", "name": "x.jpg", "size": 1}]})
     assert phone.get("/api/photos/phones").get_json()["phones"][0]["count"] == 0     # not its own folder
+    for dots in ("..", "."):
+        phone.post(f"/api/photos/phones/{phone.phone}/done", headers=H, json={"items": [
+            {"id": "8", "path": f"Photos/Pixel 8/{dots}", "name": "x.jpg", "size": 1}]})
+    assert phone.get("/api/photos/phones").get_json()["phones"][0]["count"] == 0     # no album called "." or ".."
     assert phone.post("/api/photos/phones/../plan", json={}, headers=H).status_code in (404, 405)
     assert phone.post("/api/photos/phones/0123456789ab/plan", json={}, headers=H).status_code == 404
 
