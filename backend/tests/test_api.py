@@ -742,9 +742,101 @@ def test_wrong_two_factor_codes_end_the_sign_in_attempt(backend, monkeypatch):
     client = module.app.test_client()
     right = pyotp.TOTP(secret).now()
     wrong = "000000" if right != "000000" else "111111"
-    for _ in range(10):
+    auth_manager.LOGIN_RATE_LIMIT.clear()
+    auth_manager.reset_totp_failures()
+    for _ in range(5):
         response = client.post("/api/v1/auth/2fa/complete", json={"temp_token": temp, "code": wrong})
         assert response.status_code == 401
     response = client.post("/api/v1/auth/2fa/complete", json={"temp_token": temp, "code": right})
     assert response.status_code == 401
     assert temp not in auth_manager.TEMP_2FA_TOKENS
+
+
+def test_wrong_two_factor_codes_are_counted_across_temp_tokens(backend, monkeypatch):
+    import json
+    from datetime import timedelta
+    import pyotp
+    import api_auth
+    import auth_manager
+    from common import _utc_now
+
+    module, state = backend
+    set_up(state)
+    monkeypatch.setattr(api_auth, "AUTH_FILE", str(state / "auth.json"))
+    secret = pyotp.random_base32()
+    (state / "auth.json").write_text(json.dumps({"totp_secret": secret}))
+    auth_manager.LOGIN_RATE_LIMIT.clear()
+    auth_manager.reset_totp_failures()
+    client = module.app.test_client()
+    right = pyotp.TOTP(secret).now()
+    wrong = "000000" if right != "000000" else "111111"
+    expires = (_utc_now() + timedelta(minutes=5)).isoformat()
+    for n in range(auth_manager.TOTP_MAX_FAILURES):
+        auth_manager.LOGIN_RATE_LIMIT.clear()  # a new address each time
+        temp = f"temp-{n}"
+        auth_manager.TEMP_2FA_TOKENS[temp] = {"username": "root", "role": "admin", "expires_at": expires}
+        response = client.post("/api/v1/auth/2fa/complete", json={"temp_token": temp, "code": wrong})
+        assert response.status_code == 401
+    auth_manager.LOGIN_RATE_LIMIT.clear()
+    auth_manager.TEMP_2FA_TOKENS["fresh"] = {"username": "root", "role": "admin", "expires_at": expires}
+    response = client.post("/api/v1/auth/2fa/complete", json={"temp_token": "fresh", "code": right})
+    assert response.status_code == 429
+    auth_manager.reset_totp_failures()
+    auth_manager.TEMP_2FA_TOKENS.pop("fresh", None)
+
+
+def test_password_login_keeps_the_ip_limit_until_two_factor_succeeds(backend, monkeypatch):
+    import json
+    import api_auth
+    import auth_manager
+    from password_utils import hash_password
+
+    module, state = backend
+    set_up(state)
+    monkeypatch.setattr(api_auth, "AUTH_FILE", str(state / "auth.json"))
+    (state / "auth.json").write_text(json.dumps({**hash_password("a good password"), "totp_secret": "ABCDEFGHIJKLMNOP"}))
+    auth_manager.LOGIN_RATE_LIMIT.clear()
+    client = module.app.test_client()
+    response = client.post("/api/v1/auth/login", json={"password": "a good password"})
+    assert response.json["require_2fa"] is True
+    assert auth_manager.LOGIN_RATE_LIMIT["127.0.0.1"]["count"] == 1
+    auth_manager.LOGIN_RATE_LIMIT.clear()
+
+
+def test_replacing_an_active_second_factor_needs_the_password(backend, monkeypatch):
+    import json
+    import pyotp
+    import api_auth
+    from password_utils import hash_password
+
+    module, state = backend
+    set_up(state)
+    monkeypatch.setattr(api_auth, "AUTH_FILE", str(state / "auth.json"))
+    monkeypatch.setattr(api_auth, "TOTP_AVAILABLE", True)
+    old = pyotp.random_base32()
+    (state / "auth.json").write_text(json.dumps({**hash_password("a good password"), "totp_secret": old}))
+    new = pyotp.random_base32()
+    token = auth_manager._create_session("root", role="admin")
+    headers = {"Authorization": token, "X-CSRF-Token": auth_manager.SESSIONS[token]["csrf_token"]}
+    client = module.app.test_client()
+    body = {"secret": new, "code": pyotp.TOTP(new).now()}
+    assert client.post("/api/v1/auth/2fa/verify-setup", json=body, headers=headers).status_code == 400
+    assert client.post("/api/v1/auth/2fa/verify-setup", json={**body, "password": "nope nope"},
+                       headers=headers).status_code == 401
+    assert json.loads((state / "auth.json").read_text())["totp_secret"] == old
+    response = client.post("/api/v1/auth/2fa/verify-setup", json={**body, "password": "a good password"},
+                           headers=headers)
+    assert response.status_code == 200
+    assert json.loads((state / "auth.json").read_text())["totp_secret"] == new
+
+
+def test_users_file_is_owner_only_and_write_errors_surface(tmp_path, monkeypatch):
+    import api_auth
+    path = tmp_path / "users.json"
+    monkeypatch.setattr(api_auth, "USERS_STATE_FILE", str(path))
+    monkeypatch.setattr(api_auth, "ensure_directories", lambda: None)
+    api_auth.save_users_state({"anna": {"username": "anna"}})
+    assert oct(path.stat().st_mode & 0o777) == "0o600"
+    monkeypatch.setattr(api_auth, "USERS_STATE_FILE", str(tmp_path / "missing" / "users.json"))
+    with pytest.raises(OSError):
+        api_auth.save_users_state({})
