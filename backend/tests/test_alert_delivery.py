@@ -160,3 +160,19 @@ def test_settings_saved_while_sending_are_kept(tmp_path):
                         pools=list)
     assert after["email"]["recipient"] == "new@example.com" and after["report"]["weekly"] is True
     assert after["sent"] == ["smart-sdb"]
+
+
+def test_the_telegram_token_stays_out_of_error_text_and_file_is_owner_only(tmp_path, monkeypatch):
+    import os
+    import alerts_manager as am
+    import requests
+
+    def boom(url, **kw):
+        raise requests.ConnectionError(f"cannot reach {url}")
+    monkeypatch.setattr(am.requests, "get", boom)
+    ok, error, _ = am._telegram_api_call("123:SECRET", "getMe")
+    assert not ok and "SECRET" not in error
+    state = am.load_alerts_state()
+    state["telegram"]["bot_token"] = "123:SECRET"
+    am.save_alerts_state(state)
+    assert os.stat(am.ALERTS_STATE_FILE).st_mode & 0o777 == 0o600

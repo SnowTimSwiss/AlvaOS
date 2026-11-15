@@ -28,6 +28,7 @@ from auth_manager import (
     _create_session, _get_current_session, _purge_expired_sessions,
     _destroy_session, _destroy_all_sessions, require_auth,
     _check_rate_limit, _reset_rate_limit,
+    totp_locked_seconds, record_totp_failure, reset_totp_failures,
     list_sessions, revoke_session_by_id, revoke_other_sessions,
     record_signin, record_failed_signin,
 )
@@ -65,12 +66,15 @@ def load_users_state():
     return {}
 
 def save_users_state(state):
-    try:
-        ensure_directories()
-        with open(USERS_STATE_FILE, 'w') as f:
-            json.dump(state, f, indent=2)
-    except (OSError, TypeError, ValueError) as e:
-        print(f"Error saving users state: {e}")
+    """Owner-only and in one piece (it holds the share users' password hashes).
+    Raises when it cannot be written, so a route does not report success."""
+    ensure_directories()
+    tmp = f'{USERS_STATE_FILE}.tmp'
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w') as f:
+        os.fchmod(f.fileno(), 0o600)
+        json.dump(state, f, indent=2)
+    os.replace(tmp, USERS_STATE_FILE)
 
 # ── 2FA helpers ───────────────────────────────────────────────────────────────
 # Wrong codes after the password before the sign-in has to start again.
@@ -267,15 +271,16 @@ def login():
             except Exception as e:  # noqa: BLE001 - upgrading the hash is optional and must not block the sign-in
                 print(f"Warning: could not upgrade password hash: {e}")
 
-        _reset_rate_limit(client_ip)
-
-        # Check 2FA
+        # Check 2FA. With a second factor the IP limit stays until the code is
+        # right too, otherwise a known password would give endless code guesses.
         totp_secret = auth_data.get('totp_secret')
+        if not totp_secret:
+            _reset_rate_limit(client_ip)
         if totp_secret:
             # Issue short-lived temp token; client must call /api/v1/auth/2fa/complete
             temp_token = secrets.token_hex(24)
             expires_at = (_utc_now() + timedelta(seconds=TEMP_2FA_TTL_SECONDS)).isoformat()
-            TEMP_2FA_TOKENS[temp_token] = {'username': 'root', 'role': 'admin', 'expires_at': expires_at}
+            TEMP_2FA_TOKENS[temp_token] = {'username': 'root', 'role': 'admin', 'expires_at': expires_at, 'ip': client_ip}
             return jsonify({'require_2fa': True, 'temp_token': temp_token})
 
         token = _create_session('root', role='admin')
@@ -300,10 +305,23 @@ def complete_2fa_login():
     if not temp_token or not code:
         return jsonify({'error': 'temp_token and code are required'}), 400
 
+    client_ip = request.remote_addr or 'unknown'
+    allowed, retry_after = _check_rate_limit(client_ip)
+    if not allowed:
+        resp = jsonify({'error': f'Too many login attempts. Try again in {retry_after}s.'})
+        resp.headers['Retry-After'] = str(retry_after)
+        return resp, 429
+
     _purge_expired_sessions()
     pending = TEMP_2FA_TOKENS.get(temp_token)
     if not pending:
         return jsonify({'error': 'Invalid or expired token'}), 401
+
+    locked = totp_locked_seconds()
+    if locked:
+        resp = jsonify({'error': f'Too many wrong codes. Try again in {locked}s.'})
+        resp.headers['Retry-After'] = str(locked)
+        return resp, 429
 
     totp_secret = _load_totp_secret()
     if not totp_secret:
@@ -311,12 +329,15 @@ def complete_2fa_login():
 
     if not _verify_totp(totp_secret, code):
         record_failed_signin()
+        record_totp_failure()
         pending['failures'] = pending.get('failures', 0) + 1
         if pending['failures'] >= TWO_FACTOR_MAX_TRIES:
             del TEMP_2FA_TOKENS[temp_token]
         return jsonify({'error': 'Invalid 2FA code'}), 401
 
     del TEMP_2FA_TOKENS[temp_token]
+    reset_totp_failures()
+    _reset_rate_limit(pending.get('ip') or client_ip)
     token = _create_session(pending['username'], role=pending.get('role', 'admin'))
     return jsonify({
         'token': token,
@@ -433,7 +454,7 @@ def get_csrf_token():
     return jsonify({'csrf_token': session.get('csrf_token', '')})
 
 @bp.route('/api/v1/auth/2fa/setup', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def setup_2fa():
     """Generate a new TOTP secret and return a QR code data-URI."""
     if not TOTP_AVAILABLE:
@@ -500,9 +521,10 @@ def install_2fa_library():
     })
 
 @bp.route('/api/v1/auth/2fa/verify-setup', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def verify_2fa_setup():
-    """Confirm first TOTP code to activate 2FA."""
+    """Confirm first TOTP code to activate 2FA. Replacing a secret that is
+    already active also needs the current password."""
     if not TOTP_AVAILABLE:
         return jsonify({'error': '2FA library not installed'}), 501
     data = request.get_json() or {}
@@ -510,6 +532,18 @@ def verify_2fa_setup():
     code = str(data.get('code', '')).strip()
     if not secret or not code:
         return jsonify({'error': 'secret and code are required'}), 400
+    if _load_totp_secret():
+        password = str(data.get('password', '')).strip()
+        if not password:
+            return jsonify({'error': 'Current password is required to replace 2FA'}), 400
+        try:
+            with open(AUTH_FILE) as f:
+                auth_data = json.load(f)
+            is_valid, _ = verify_password(password, auth_data)
+        except (OSError, ValueError, KeyError, TypeError):
+            return jsonify({'error': 'Authentication failed'}), 500
+        if not is_valid:
+            return jsonify({'error': 'Incorrect password'}), 401
     if not _verify_totp(secret, code):
         return jsonify({'error': 'Invalid code — please check your authenticator app'}), 400
     if not _save_totp_secret(secret):
@@ -517,7 +551,7 @@ def verify_2fa_setup():
     return jsonify({'success': True, 'message': '2FA enabled successfully'})
 
 @bp.route('/api/v1/auth/2fa/disable', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def disable_2fa():
     """Disable 2FA. Requires current password confirmation."""
     data = request.get_json() or {}

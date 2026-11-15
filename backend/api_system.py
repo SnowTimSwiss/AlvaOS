@@ -369,7 +369,7 @@ def alerts_email_test():
 
 
 @bp.route('/api/v1/alerts/telegram/pairing/start', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def start_telegram_pairing():
     state = load_alerts_state()
     token = str(state.get('telegram', {}).get('bot_token') or '').strip()
@@ -392,7 +392,7 @@ def start_telegram_pairing():
     })
 
 @bp.route('/api/v1/alerts/telegram/pairing/check', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def check_telegram_pairing():
     state = load_alerts_state()
     telegram = state.get('telegram', {})
@@ -499,7 +499,7 @@ def check_telegram_pairing():
     })
 
 @bp.route('/api/v1/alerts/telegram/test', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def test_telegram_alert_delivery():
     state = load_alerts_state()
     telegram = state.get('telegram', {})
@@ -526,7 +526,7 @@ def test_telegram_alert_delivery():
     return jsonify({'success': True, 'message': 'Test alert sent to Telegram'})
 
 @bp.route('/api/v1/alerts/telegram/unpair', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def unpair_telegram_alert_delivery():
     state = load_alerts_state()
     _clear_telegram_chat_binding(state)
@@ -767,7 +767,8 @@ def system_permissions_check():
 def system_power_ups():
     """Get or update battery UPS behavior (charge limit + low-battery shutdown)."""
     if request.method == 'GET':
-        status = power_ups_manager.run_monitor_check()
+        # Reading must not act: the monitor thread and the POST do the checks.
+        status = power_ups_manager.get_live_status()
         return jsonify({
             'success': True,
             'settings': power_ups_manager.get_settings(),

@@ -225,3 +225,12 @@ def test_a_share_everyone_may_only_read_is_not_restarted_for_every_start():
     state = {"1": {"name": "Docs", "path": "/mnt/alvaos/main/Docs", "protocol": "smb", "read_only": False,
                    "smb_permissions": {"anna": "read"}}}
     assert sm.missing_recycle_bin(conf, state) == []
+
+
+def test_a_failed_config_edit_keeps_the_share_record(api, monkeypatch):
+    client, headers, _runner, _written, _pool = api
+    shm.save_shares_state({'s1': {'name': 'media', 'path': '/mnt/x', 'protocol': 'smb'}})
+    monkeypatch.setattr(api_shares, 'run_sudo_command', lambda cmd, **kw: (None, 'permission denied'))
+    response = client.delete('/api/v1/storage/shares', json={'share_id': 's1'}, headers=headers)
+    assert response.status_code == 500
+    assert 's1' in shm.load_shares_state()

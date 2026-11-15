@@ -18,6 +18,19 @@ from common import run_sudo_command
 from docker_manager import DockerManager
 
 
+def compose_project_of(container: dict) -> str:
+    """The compose project a `docker ps` row belongs to. Compared as a whole
+    value: `alvaos-immich` must not match `alvaos-immich-ml`."""
+    labels = container.get('Labels') or ''
+    if isinstance(labels, dict):
+        return str(labels.get('com.docker.compose.project') or '')
+    for label in str(labels).split(','):
+        key, _, value = label.partition('=')
+        if key.strip() == 'com.docker.compose.project':
+            return value.strip()
+    return ''
+
+
 def summarize_app_needs(app_data: dict) -> dict:
     """What an app needs from the NAS, for the store card before installing:
     the ports it opens and how many folders it keeps on your storage."""
@@ -112,6 +125,18 @@ class AppStore:
 
         # Ensure directories exist
         Path('/var/lib/alvaos').mkdir(parents=True, exist_ok=True)
+
+        self._end_interrupted_operation()
+
+    def _end_interrupted_operation(self) -> None:
+        """An install or update that was running when the backend stopped has no
+        worker any more; left as it is, it would block every later operation."""
+        status = self.get_install_status()
+        if status.get('status') in ('starting', 'installing', 'updating'):
+            self._update_install_status(
+                str(status.get('app_id') or ''), 'error', 0,
+                'The operation was interrupted by a restart. Start it again.',
+                logs=status.get('logs') or [], force_write=True, action=str(status.get('action') or 'install'))
 
     def _get_catalog_path(self) -> str:
         """Get the app catalog path (production or development)"""
@@ -351,8 +376,7 @@ class AppStore:
             return {}
 
         for container in containers:
-            labels = str(container.get('Labels', '') or '')
-            if f'com.docker.compose.project={project_name}' not in labels:
+            if compose_project_of(container) != project_name:
                 continue
             container_id = container.get('ID') or str(container.get('Names', '')).split(',')[0]
             if not container_id:
@@ -385,9 +409,14 @@ class AppStore:
 
     def _save_apps_state(self, state: dict) -> None:
         """Save installed apps state"""
+        # Owner-only and in one piece: it holds the passwords typed at install time.
         try:
-            with open(self.apps_state_file, 'w') as f:
+            tmp = f'{self.apps_state_file}.tmp'
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, 'w') as f:
+                os.fchmod(f.fileno(), 0o600)
                 json.dump(state, f, indent=2)
+            os.replace(tmp, self.apps_state_file)
         except (OSError, TypeError, ValueError) as e:
             print(f"Error saving apps state: {e}")
 
@@ -1552,8 +1581,7 @@ class AppStore:
 
         project_name = f"alvaos-{app_id}"
         for container in containers:
-            labels = container.get('Labels', '')
-            if f'com.docker.compose.project={project_name}' in labels:
+            if compose_project_of(container) == project_name:
                 container_id = container.get('ID') or container.get('Names', '').split(',')[0]
                 success, error = self.docker_manager.remove_container(container_id, force=True)
                 if not success:

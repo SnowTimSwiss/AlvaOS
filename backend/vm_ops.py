@@ -598,6 +598,9 @@ def _chown_tree(path: str) -> None:
     import grp
     import pwd
     uid, gid = pwd.getpwnam(VM_USER).pw_uid, grp.getgrnam(VM_GROUP).gr_gid
+    if not os.path.isdir(path) or os.path.islink(path):
+        os.lchown(path, uid, gid)  # os.walk yields nothing for a single file
+        return
     for here, dirs, files in os.walk(path):
         for name in [''] + dirs + files:
             os.lchown(os.path.join(here, name) if name else here, uid, gid)

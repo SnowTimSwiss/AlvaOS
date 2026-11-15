@@ -124,8 +124,13 @@ def save_alerts_state(state):
     try:
         ensure_directories()
         normalized = _normalize_alerts_state(state)
-        with open(ALERTS_STATE_FILE, 'w') as f:
+        # Owner-only and in one piece: it holds the Telegram bot token.
+        tmp = f'{ALERTS_STATE_FILE}.tmp'
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'w') as f:
+            os.fchmod(f.fileno(), 0o600)
             json.dump(normalized, f, indent=2)
+        os.replace(tmp, ALERTS_STATE_FILE)
         return normalized
     except (OSError, TypeError, ValueError) as e:
         print(f"Error saving alerts state: {e}")
@@ -193,7 +198,8 @@ def _telegram_api_call(bot_token, method, payload=None, params=None, timeout_sec
         else:
             response = requests.get(url, params=params, timeout=timeout_sec)
     except requests.RequestException as e:
-        return False, f'Telegram request failed: {e}', None
+        # The message of a requests error contains the URL, and so the token.
+        return False, f'Telegram request failed ({type(e).__name__})', None
 
     try:
         data = response.json()

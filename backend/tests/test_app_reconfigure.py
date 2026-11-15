@@ -97,3 +97,32 @@ def test_port_mappings_are_numbers():
     assert normalize_port_mappings({"a": 1})[0] is None
     assert normalize_port_mappings({"80": 0})[0] is None
     assert normalize_port_mappings(["80"])[0] is None
+
+
+def test_uninstall_only_removes_containers_of_that_exact_project(store):
+    removed = []
+    store.docker_manager.list_containers = lambda all_containers=True: ([
+        {"ID": "a", "Labels": "x=1,com.docker.compose.project=alvaos-jellyfin,y=2"},
+        {"ID": "b", "Labels": "com.docker.compose.project=alvaos-jellyfin-ml"},
+        {"ID": "c", "Labels": "com.docker.compose.project=other,note=com.docker.compose.project=alvaos-jellyfin"},
+    ], None)
+    store.docker_manager.remove_container = lambda cid, force=False: removed.append(cid) or (True, None)
+    ok, error = store.uninstall_app("jellyfin", keep_data=True)
+    assert ok, error
+    assert removed == ["a"]
+
+
+def test_an_operation_cut_off_by_a_restart_does_not_block_new_ones(store):
+    import json
+    with open(store.install_status_file, "w") as f:
+        json.dump({"app_id": "jellyfin", "action": "install", "status": "installing", "logs": []}, f)
+    assert store._is_operation_in_progress()[0] is True
+    store._end_interrupted_operation()
+    assert store._is_operation_in_progress()[0] is False
+    assert store.get_install_status()["status"] == "error"
+
+
+def test_apps_state_is_owner_only(store):
+    import os
+    store._save_apps_state({"a": {}})
+    assert os.stat(store.apps_state_file).st_mode & 0o777 == 0o600
