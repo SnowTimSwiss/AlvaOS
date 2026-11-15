@@ -59,8 +59,8 @@ def log_denied(argv, reason):
         stamp = datetime.now(UTC).isoformat()
         with open('/var/log/alvaos/priv-denied.log', 'a', encoding='utf-8') as f:
             f.write(f'{stamp} denied={reason!r} argv={list(argv)!r}\n')
-    except Exception:
-        pass
+    except OSError:
+        pass  # the denial itself still happens; only its log line is lost
 
 
 def deny(argv, reason):

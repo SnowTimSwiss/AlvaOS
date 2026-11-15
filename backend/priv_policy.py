@@ -153,7 +153,7 @@ class System:
                 capture_output=True, text=True, timeout=10, env={'LC_ALL': 'C'},
             ).stdout
             data = json.loads(out or '{}')
-        except Exception:
+        except (OSError, subprocess.SubprocessError, ValueError):
             # If we cannot tell which disk is the system disk, refuse to touch any.
             raise PolicyError('Cannot determine system disks; refusing destructive disk operation') from None
 
@@ -668,7 +668,7 @@ def check_compose(content: bytes, realpath: Callable[[str], str] = os.path.realp
     try:
         text = content.decode('utf-8', 'strict')
         doc = yaml.safe_load(text)
-    except Exception as e:
+    except (UnicodeDecodeError, yaml.YAMLError) as e:
         _fail(f'Compose file is not valid YAML: {e}')
     if _COMPOSE_VARIABLE_RE.search(text):
         # A variable could turn a checked value into another one ("${X}:/host"

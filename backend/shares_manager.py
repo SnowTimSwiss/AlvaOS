@@ -4,13 +4,13 @@ AlvaOS Shares Manager
 Samba/NFS share configuration, user helpers, and filesystem permissions.
 """
 
-import json
 import os
 import platform
 import re
 import subprocess
 
-from common import CMD, run_sudo_command, build_privileged_cmd, ensure_directories
+from common import (CMD, StateFileError, build_privileged_cmd, ensure_directories, read_json_state,
+                    run_sudo_command, write_json_atomic)
 
 # ── State file ────────────────────────────────────────────────────────────────
 SHARES_STATE_FILE = '/var/lib/alvaos/shares.json'
@@ -26,7 +26,7 @@ def system_user_exists(username):
     try:
         result = subprocess.run([CMD['ID'], '-u', username], capture_output=True, text=True)
         return result.returncode == 0
-    except Exception:
+    except (OSError, subprocess.SubprocessError):
         return False
 
 
@@ -64,7 +64,7 @@ def sync_samba_password(username, password):
             return False, stderr
 
         return True, None
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - Samba setup is best effort: the error is printed, the share is still saved
         print(f"Samba sync error: {e}")
         return False, str(e)
 
@@ -80,7 +80,7 @@ def ensure_samba_conf_exists():
             base_conf = "[global]\n   workgroup = WORKGROUP\n   server string = AlvaOS\n   security = user\n"
             cmd = build_privileged_cmd([CMD['TEE'], '/etc/samba/smb.conf'])
             subprocess.run(cmd, input=base_conf, text=True, check=True, env={'LC_ALL': 'C'})
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - Samba setup is best effort: the error is printed, the share is still saved
         print(f"Error ensuring smb.conf exists: {e}")
 
 
@@ -108,7 +108,7 @@ def ensure_samba_global_settings(guest_access):
             env={'LC_ALL': 'C'}
         )
         process.communicate(input=content)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - Samba setup is best effort: the error is printed, the share is still saved
         print(f"Error ensuring global Samba settings: {e}")
 
 
@@ -145,7 +145,7 @@ def reconcile_samba_guest_settings(shares_state):
             env={'LC_ALL': 'C'}
         )
         process.communicate(input=content)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - Samba setup is best effort: the error is printed, the share is still saved
         print(f"Error reconciling Samba guest settings: {e}")
 
 
@@ -176,14 +176,14 @@ def get_group_members(group_name):
         if not members:
             return []
         return [m for m in members.split(',') if m]
-    except Exception:
+    except (OSError, subprocess.SubprocessError):
         return []
 
 
 def ensure_group_exists(group_name):
     try:
         run_sudo_command([CMD['GROUPADD'], '-f', group_name])
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - Samba setup is best effort: the error is printed, the share is still saved
         print(f"Error ensuring group exists: {e}")
 
 
@@ -225,7 +225,7 @@ def apply_smb_permissions_to_fs(share_path, group_name, smb_permissions, guest_a
             # Setgid for group inheritance, grant write if any write users
             mode = '2770' if write_users else '2750'
         run_sudo_command([CMD['CHMOD'], '-R', mode, share_path])
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - Samba setup is best effort: the error is printed, the share is still saved
         print(f"Error applying SMB permissions to filesystem: {e}")
 
 
@@ -250,7 +250,7 @@ def disable_samba_homes_share():
                 env={'LC_ALL': 'C'}
             )
             process.communicate(input=new_content)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - Samba setup is best effort: the error is printed, the share is still saved
         print(f"Error disabling Samba homes share: {e}")
 
 
@@ -366,7 +366,7 @@ def update_samba_share_section(share_name, new_config):
             env={'LC_ALL': 'C'}
         )
         process.communicate(input=content)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - Samba setup is best effort: the error is printed, the share is still saved
         print(f"Error updating SMB share section: {e}")
 
 
@@ -454,21 +454,25 @@ def render_nfs_export(name, path, allowed_hosts, read_only):
 # ── Shares state ──────────────────────────────────────────────────────────────
 
 def load_shares_state():
-    """Load shares state from file"""
+    """The shares by id; {} when the file is missing or damaged."""
     try:
-        if os.path.exists(SHARES_STATE_FILE):
-            with open(SHARES_STATE_FILE) as f:
-                return json.load(f)
-    except Exception:
-        pass
-    return {}
+        state = read_json_state(SHARES_STATE_FILE, {})
+    except StateFileError as e:
+        print(f"Error: {e}")
+        return {}
+    return state if isinstance(state, dict) else {}
 
 
 def save_shares_state(state):
-    """Save shares state to file"""
+    """Save shares state to file. A damaged file is left alone: saving what a
+    caller loaded from it ({}) would drop every other share."""
+    try:
+        read_json_state(SHARES_STATE_FILE, {})
+    except StateFileError:
+        print(f"Error: {SHARES_STATE_FILE} is damaged; not overwriting it")
+        return
     try:
         ensure_directories()
-        with open(SHARES_STATE_FILE, 'w') as f:
-            json.dump(state, f, indent=2)
-    except Exception as e:
+        write_json_atomic(SHARES_STATE_FILE, state)
+    except (OSError, TypeError, ValueError) as e:
         print(f"Error saving shares state: {e}")

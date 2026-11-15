@@ -24,14 +24,30 @@ How to add an entry:
 - **Note for next time**: Docker follows symlinks in a bind source every time a container starts, so an app data folder the backend can write to could still be swapped later; closing that needs app data below folders only root can change. The chmod/chown of a big share is done in Python now: slower than the programs, but it only runs when a share's people change.
 
 ---
+
 ## Every blind `except Exception` has a reason (2026-11-15)
 
-- `ruff` rule BLE001 is on now (`BLE` in `ruff.toml`). Of the 241 places in `backend/` that caught `Exception`, 134 now catch only what can really happen there (`OSError`, `ValueError`, `requests.RequestException`, `subprocess.SubprocessError` and so on).
-- The other 107 stay broad on purpose and say why in a `# noqa: BLE001 - ...` comment: request handlers that turn any error into a JSON error, background loops and threads that must not die, status pages that must render when one probe fails, best-effort cleanup.
-- No behaviour was changed. No module has a logger, so silent `pass` handlers were left as they are.
-- `priv_policy.py`, `alvaos-priv`, `files_ops.py` and `shares_manager.py` are ignored for BLE001 in `ruff.toml` (marked "handled in a separate change"); they were being edited elsewhere.
-- **Note for next time**: when that change lands, remove the four ignores and sort their `except Exception` places the same way.
-- **Note for next time**: `tests/test_backup_manager.py` has six failing tests that also fail on `main`; they were not touched here.
+- `ruff` rule BLE001 is on now (`BLE` in `ruff.toml`), with no file left out. Most places catch only what can really happen there (`OSError`, `ValueError`, `requests.RequestException`, `subprocess.SubprocessError` and so on).
+- The rest stay broad on purpose and say why in a `# noqa: BLE001 - ...` comment: request handlers that turn any error into a JSON error, background loops and threads that must not die, status pages that must render when one probe fails, best-effort Samba setup and cleanup.
+
+---
+
+## Code review before publishing: fixes (2026-11-15)
+
+The whole codebase was reviewed in six parts (API, Hub, storage and backup, system services, web UI, desktop/Android/scripts). What was found and fixed:
+
+- **Backups**: a scheduled run that took longer than 30 seconds was started again on every scheduler tick (a long send queued hundreds of backups and retention then pushed out the history); now one scheduled run per kind at a time. "Delete restore point" deleted any subvolume it was given, a live share too; now only known restore points or ones in a snapshot folder. A restore needs a restore point of that very folder, on a pool.
+- **State files**: the restore point list, Buddy identity and peers, `pools.json` and `shares.json` were written in place and a damaged file read as empty, which the next save made permanent (a lost Buddy identity cut the NAS off from its buddies; an empty pool list offered the data disks for erasing). New `common.write_json_atomic` and `read_json_state`: written in one piece; a damaged file is kept (or set aside as `.broken-<time>`) instead of being replaced, and a disk is not offered for erasing while the pool list cannot be read. `users.json`, `apps_state.json` and `alerts.json` are owner-only now.
+- A share on a whole pool no longer runs `chgrp -R`/`chmod -R` over the pool (which reached every other share and everyone's own folder).
+- **Sign-in**: the per-address limit was reset as soon as the password was right, so the 2FA code could be guessed without limit; wrong codes now count per account (10 in 15 minutes locks), and replacing an active second factor needs the password. Telegram, Buddy, 2FA and offline-scan routes are admin-only; the UPS status GET no longer acts; the assistant sends a saved API key only to its saved address.
+- **Apps**: uninstalling an app removed the containers of every app whose project name started with the same text (`immich` and `immich-ml`); labels are compared exactly now. A backend restart during an install no longer blocks every later app operation.
+- **Hub**: WebDAV copy or move onto itself put the file into the trash; a phone could report an album named `..`; an Office save is checked against the person's current access; repeat rules with a huge COUNT, chunked DAV bodies over the size limit and control characters in calendar and contact fields are handled.
+- **Web UI**: toasts showed their text as HTML (a web search result title could run script in the admin page); they are text now unless a caller asks for markup. Inline handlers use a JS-string escape; failed loads show an error instead of an empty state.
+- **Apps for phones and computers**: an `alvaos://pair` link from a web page connected the phone to any host without asking; it asks now. The Android bridge answers only the NAS page. A failed gallery query no longer reads as "every photo deleted". The desktop app keeps a damaged secrets file instead of overwriting it, opens only web links outside, and tells a lost connection from a refusal.
+- **Scripts**: `apply_update.sh` rolls back when a migration fails instead of reporting success; the installer no longer aborts without an EFI entry or with a NIC named like `wlo1`.
+- **Note for next time**: the Kotlin and Rust changes were not built here (no Android SDK, no libdbus): CI builds them. Office saves now require `exp` in the Document Server's callback token (its default); check one save on a real NAS (TESTING 12zzi). Open from the review, not done: Hub folder scoping by share root instead of the data root (`files_ops.open_dir`), certificate pinning in the apps, the Windows drive token on the `net use` command line, and the review's low findings in `api_*` and the system services.
+
+---
 
 ## Fix: the Hub did not start (missing type name)
 

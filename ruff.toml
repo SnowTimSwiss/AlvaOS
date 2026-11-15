@@ -25,9 +25,5 @@ ignore = [
 "backend/alvaos-backend.py" = ["E402"]
 # Scripts put backend/ on sys.path before importing from it.
 "scripts/**" = ["E402"]
-"backend/alvaos-priv" = ["E402", "BLE001"]  # BLE001: handled in a separate change
+"backend/alvaos-priv" = ["E402"]
 
-# handled in a separate change
-"backend/priv_policy.py" = ["BLE001"]
-"backend/files_ops.py" = ["BLE001"]
-"backend/shares_manager.py" = ["BLE001"]
