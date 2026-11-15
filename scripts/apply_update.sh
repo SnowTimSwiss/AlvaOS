@@ -253,6 +253,7 @@ update_state "installing" "Stopping services" 60
 stop_services
 
 install_failed=0
+migration_failed=0
 update_state "installing" "Installing package" 75
 log "Installing package: $PACKAGE_PATH"
 if ! dpkg -i "$PACKAGE_PATH" >> "$LOG_FILE" 2>&1; then
@@ -273,6 +274,15 @@ if [ -d "$migrations_dir" ]; then
     if [ -x "$script" ]; then
       log "Executing migration: $script"
       "$script" >> "$LOG_FILE" 2>&1
+      status=$?
+      if [ "$status" -ne 0 ]; then
+        # Later migrations may build on this one, so none of them runs.
+        install_failed=1
+        migration_failed=1
+        update_state "error" "A migration failed" 85
+        log "ERROR: migration failed with exit code $status: $script"
+        break
+      fi
     else
       log "Skipping non-executable migration: $script"
     fi
@@ -280,8 +290,12 @@ if [ -d "$migrations_dir" ]; then
   set -e
 fi
 
-update_state "installing" "Starting services" 95
-start_services
+# After a failed migration the data is half changed: the new version must not start on it.
+# go_back installs the old package, and the cleanup trap restores the data from the backup.
+if [ "$migration_failed" -eq 0 ]; then
+  update_state "installing" "Starting services" 95
+  start_services
+fi
 if [ "$install_failed" -eq 0 ] && ! backend_answers; then
   install_failed=1
   log "ERROR: AlvaOS does not answer after the update"
