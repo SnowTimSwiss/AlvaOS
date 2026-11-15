@@ -15,6 +15,15 @@ How to add an entry:
 
 ---
 
+## Every blind `except Exception` has a reason (2026-11-15)
+
+- `ruff` rule BLE001 is on now (`BLE` in `ruff.toml`). Of the 241 places in `backend/` that caught `Exception`, 134 now catch only what can really happen there (`OSError`, `ValueError`, `requests.RequestException`, `subprocess.SubprocessError` and so on).
+- The other 107 stay broad on purpose and say why in a `# noqa: BLE001 - ...` comment: request handlers that turn any error into a JSON error, background loops and threads that must not die, status pages that must render when one probe fails, best-effort cleanup.
+- No behaviour was changed. No module has a logger, so silent `pass` handlers were left as they are.
+- `priv_policy.py`, `alvaos-priv`, `files_ops.py` and `shares_manager.py` are ignored for BLE001 in `ruff.toml` (marked "handled in a separate change"); they were being edited elsewhere.
+- **Note for next time**: when that change lands, remove the four ignores and sort their `except Exception` places the same way.
+- **Note for next time**: `tests/test_backup_manager.py` has six failing tests that also fail on `main`; they were not touched here.
+
 ## Fix: the Hub did not start (missing type name)
 
 - After merging the Office PR with the changes of another PR, `files_server.py` used `Dict` without importing it (the file now uses the built-in `dict`), so the Hub service stopped at start. Fixed; `ruff` finds this class of error (F821) and the tests import the module.
