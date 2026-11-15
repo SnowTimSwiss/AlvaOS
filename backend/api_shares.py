@@ -228,60 +228,58 @@ def manage_shares():
             if platform.system() == 'Linux':
                 if protocol == 'nfs':
                     # Remove from /etc/exports using sudo
-                    try:
-                        res, err = run_sudo_command([CMD['CAT'], '/etc/exports'])
-                        if err or not res:
-                            raise Exception(f"Could not read /etc/exports: {err}")
+                    res, err = run_sudo_command([CMD['CAT'], '/etc/exports'])
+                    if err or not res:
+                        raise Exception(f"Could not read /etc/exports: {err}")
 
-                        lines = res.stdout.splitlines()
+                    lines = res.stdout.splitlines()
 
-                        # Filter out the share (comment line and the siguiente line)
-                        new_lines = []
-                        skip_next = False
-                        for line in lines:
-                            if f'# AlvaOS Share: {share_name}' in line:
-                                skip_next = True
-                                continue
-                            if skip_next and share_path in line:
-                                skip_next = False
-                                continue
-                            new_lines.append(line)
-                        content = "\n".join(new_lines)
-                        if content and not content.endswith('\n'):
-                            content += '\n'
+                    # Filter out the share (the comment line and the export line after it)
+                    new_lines = []
+                    skip_next = False
+                    for line in lines:
+                        if f'# AlvaOS Share: {share_name}' in line:
+                            skip_next = True
+                            continue
+                        if skip_next and share_path in line:
+                            skip_next = False
+                            continue
+                        new_lines.append(line)
+                    content = "\n".join(new_lines)
+                    if content and not content.endswith('\n'):
+                        content += '\n'
 
-                        process = subprocess.Popen(build_privileged_cmd([CMD['TEE'], '/etc/exports']), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env={'LC_ALL': 'C'})
-                        _, tee_err = process.communicate(input=content)
-                        if process.returncode != 0:
-                            raise Exception(f"Could not write /etc/exports: {tee_err}")
+                    process = subprocess.Popen(build_privileged_cmd([CMD['TEE'], '/etc/exports']), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env={'LC_ALL': 'C'})
+                    _, tee_err = process.communicate(input=content)
+                    if process.returncode != 0:
+                        raise Exception(f"Could not write /etc/exports: {tee_err}")
 
-                        # Reload NFS exports
-                        run_sudo_command([CMD['EXPORTFS'], '-ra'])
-                    except Exception as e:
-                        print(f"Error removing NFS export: {e}")
+                    # Reload NFS exports
+                    _, reload_err = run_sudo_command([CMD['EXPORTFS'], '-ra'])
+                    if reload_err:
+                        raise Exception(f"Could not reload the NFS exports: {reload_err}")
 
                 elif protocol == 'smb':
                     # Remove from /etc/samba/smb.conf using sudo
-                    try:
-                        res, err = run_sudo_command([CMD['CAT'], '/etc/samba/smb.conf'])
-                        if err or not res:
-                            raise Exception(f"Could not read /etc/samba/smb.conf: {err}")
+                    res, err = run_sudo_command([CMD['CAT'], '/etc/samba/smb.conf'])
+                    if err or not res:
+                        raise Exception(f"Could not read /etc/samba/smb.conf: {err}")
 
-                        content = res.stdout
+                    content = res.stdout
 
-                        import re
-                        pattern = rf'# AlvaOS Share: {re.escape(share_name)}\n\[{re.escape(share_name)}\].*?(?=\n\[|\n# AlvaOS Share:|\Z)'
-                        content = re.sub(pattern, '', content, flags=re.DOTALL)
+                    import re
+                    pattern = rf'# AlvaOS Share: {re.escape(share_name)}\n\[{re.escape(share_name)}\].*?(?=\n\[|\n# AlvaOS Share:|\Z)'
+                    content = re.sub(pattern, '', content, flags=re.DOTALL)
 
-                        process = subprocess.Popen(build_privileged_cmd([CMD['TEE'], '/etc/samba/smb.conf']), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env={'LC_ALL': 'C'})
-                        _, tee_err = process.communicate(input=content)
-                        if process.returncode != 0:
-                            raise Exception(f"Could not write /etc/samba/smb.conf: {tee_err}")
+                    process = subprocess.Popen(build_privileged_cmd([CMD['TEE'], '/etc/samba/smb.conf']), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env={'LC_ALL': 'C'})
+                    _, tee_err = process.communicate(input=content)
+                    if process.returncode != 0:
+                        raise Exception(f"Could not write /etc/samba/smb.conf: {tee_err}")
 
-                        # Restart Samba
-                        run_sudo_command([CMD['SYSTEMCTL'], 'restart', 'smbd'])
-                    except Exception as e:
-                        print(f"Error removing SMB share: {e}")
+                    # Restart Samba
+                    _, restart_err = run_sudo_command([CMD['SYSTEMCTL'], 'restart', 'smbd'])
+                    if restart_err:
+                        raise Exception(f"Could not restart Samba: {restart_err}")
                     try:
                         group_name = share_info.get('smb_group')
                         if group_name:
