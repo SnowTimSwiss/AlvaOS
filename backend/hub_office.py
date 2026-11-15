@@ -35,7 +35,7 @@ from typing import Any
 DS_APP_ID = 'hub-office'
 DS_PORT = 8082
 TOKEN_SECONDS = 12 * 3600       # an editing session may last a working day
-JWT_FUTURE = 60
+JWT_LEEWAY_SECONDS = 60       # clock difference between the Hub and the editor
 
 # extension -> (document type of the editor, whether the editor can change it). The old binary formats
 # (doc, xls, ppt) and PDF are shown only; the Document Server edits the rest.
@@ -73,7 +73,7 @@ def jwt_encode(payload: dict[str, Any], secret: str) -> str:
 
 
 def jwt_decode(token: str, secret: str, now: float | None = None) -> dict[str, Any] | None:
-    """The payload of a token signed with `secret` and not expired, else None."""
+    """The payload of a token signed with `secret` and not expired (it must carry a numeric `exp`), else None."""
     parts = str(token or '').split('.')
     if len(parts) != 3 or not secret:
         return None
@@ -90,7 +90,9 @@ def jwt_decode(token: str, secret: str, now: float | None = None) -> dict[str, A
     if not isinstance(payload, dict):
         return None
     exp = payload.get('exp')
-    if isinstance(exp, (int, float)) and exp < (now if now is not None else time.time()) - JWT_FUTURE:
+    if isinstance(exp, bool) or not isinstance(exp, (int, float)):
+        return None                                  # a token that never expires is not accepted
+    if exp < (now if now is not None else time.time()) - JWT_LEEWAY_SECONDS:
         return None
     return payload
 
@@ -161,7 +163,7 @@ def editor_config(*, name: str, share: str, rel: str, mtime: float, size: int, u
 
 def sign_config(config: dict[str, Any], secret: str) -> dict[str, Any]:
     """The settings with the Document Server's signature (it refuses unsigned ones)."""
-    return {**config, 'token': jwt_encode(config, secret)}
+    return {**config, 'token': jwt_encode({**config, 'exp': time.time() + TOKEN_SECONDS}, secret)}
 
 
 def callback_claims(secret: str, header: str, body: dict[str, Any]) -> dict[str, Any] | None:

@@ -20,8 +20,11 @@ def test_formats_say_what_opens_and_what_may_be_changed():
 
 
 def test_a_jwt_is_checked_for_its_signature_algorithm_and_age():
-    token = ho.jwt_encode({"a": 1}, SECRET)
-    assert ho.jwt_decode(token, SECRET) == {"a": 1}
+    exp = time.time() + 60
+    token = ho.jwt_encode({"a": 1, "exp": exp}, SECRET)
+    assert ho.jwt_decode(token, SECRET) == {"a": 1, "exp": exp}
+    assert ho.jwt_decode(ho.jwt_encode({"a": 1}, SECRET), SECRET) is None      # no expiry: refused
+    assert ho.jwt_decode(ho.jwt_encode({"exp": "soon"}, SECRET), SECRET) is None
     assert ho.jwt_decode(token, "other") is None
     head, body, sig = token.split(".")
     assert ho.jwt_decode(f"{head}.{body}x.{sig}", SECRET) is None       # changed content
@@ -64,10 +67,12 @@ def test_the_editor_settings_follow_the_file_and_the_rights():
 
 def test_the_document_servers_message_must_be_signed_with_the_shared_secret():
     body = {"status": 2, "url": "http://ds/cache/files/x", "key": "k"}
-    header = "Bearer " + ho.jwt_encode({"payload": body}, SECRET)
+    exp = time.time() + 60
+    header = "Bearer " + ho.jwt_encode({"payload": body, "exp": exp}, SECRET)
     assert ho.callback_claims(SECRET, header, body) == body
-    assert ho.callback_claims(SECRET, "", {**body, "token": ho.jwt_encode(body, SECRET)}) == body     # signed in the body
-    assert ho.callback_claims(SECRET, "Bearer " + ho.jwt_encode({"payload": body}, "other"), body) is None
+    signed_body = {**body, "exp": exp}
+    assert ho.callback_claims(SECRET, "", {**body, "token": ho.jwt_encode(signed_body, SECRET)}) == signed_body
+    assert ho.callback_claims(SECRET, "Bearer " + ho.jwt_encode({"payload": body, "exp": exp}, "other"), body) is None
     assert ho.callback_claims(SECRET, "", body) is None                    # nobody signed it
     assert ho.callback_claims(SECRET, "Basic abc", body) is None
 

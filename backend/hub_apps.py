@@ -13,7 +13,7 @@ libraries); and the pool for caches such as thumbnails.
 
 Settings live in /var/lib/alvaos/hub.json; both the admin backend and the
 Hub server (same service account) read it. Without the file every app is on
-for everyone (but Chat, which needs an AI service first), personal data goes to the personal folder and caches stay on
+for everyone (but Chat, which needs an AI service first, and Office, which installs its editor first, are off), personal data goes to the personal folder and caches stay on
 the system disk, which is how Files behaved before the Hub.
 """
 
