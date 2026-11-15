@@ -50,6 +50,7 @@ def test_a_phones_card_is_read_and_written_back_the_same():
     assert card["emails"] == [{"type": "home", "value": "max@example.org"}]
     assert card["addresses"][0]["value"] == "Bahnhofstr. 1\n8000 Zurich\nZH\nSwitzerland"
     assert card["birthday"] == "1985-03-09" and card["notes"] == "Likes, cake\nand tea" and card["uid"].startswith("7C1F")
+    assert "\r" not in hub_vcard.escape("a\rb\r\nc") and hub_vcard.escape("a\r\nb") == "a\\nb"
     text = hub_vcard.vcard_of(card, "u1")
     assert hub_vcard.cards(text)[0] == {**card, "uid": "u1"}
     assert all(len(line.encode()) <= 75 for line in text.split("\r\n"))

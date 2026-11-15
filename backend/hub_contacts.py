@@ -35,7 +35,7 @@ LIMITS = {'first': 80, 'last': 80, 'org': 120, 'title': 120, 'nickname': 80, 'ur
 
 
 def _text(value: Any, limit: int) -> str:
-    return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', str(value or '')).strip()[:limit]
+    return hub_vcard.strip_control(value or '').strip()[:limit]
 
 
 def _entries(raw: Any, kinds: tuple[str, ...], limit: int, one_line: bool) -> list[dict[str, str]]:

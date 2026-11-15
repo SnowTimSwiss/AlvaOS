@@ -25,6 +25,7 @@ from flask import Blueprint, jsonify, request
 
 import hub_apps
 import hub_data
+import hub_vcard
 
 bp = Blueprint('hub_calendar', __name__)
 
@@ -44,7 +45,7 @@ def _new_id() -> str:
 
 
 def _text(value: Any, limit: int) -> str:
-    return str(value or '').strip()[:limit]
+    return hub_vcard.strip_control(value or '').strip()[:limit]
 
 
 def _day(value: Any) -> str | None:
