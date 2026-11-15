@@ -305,7 +305,7 @@
                 <small>With its own address, devices at home reach it directly; the NAS itself cannot reach it then (a limit of this kind of network).</small></div>
             <div class="vm-field"><span>USB devices</span>
                 ${usb.length ? usb.map((u) => `<label class="vm-check"><input type="checkbox" data-usb="${esc(u.vendor)}:${esc(u.product)}" data-name="${esc(u.name)}"${chosen.has(`${u.vendor}:${u.product}`) ? ' checked' : ''}> ${esc(u.name)}</label>`).join('')
-                    : '<small>No USB devices are plugged into the NAS.</small>'}
+                    : `<small>${devices.failed ? 'Could not read the USB devices. Close this and open the settings again to retry.' : 'No USB devices are plugged into the NAS.'}</small>`}
                 <small>A device given to the machine is only there for the machine while it runs.</small></div>
             <label class="vm-field">Graphics card<select id="vm-gpu"><option value="">None (a screen in the browser)</option>
                 ${gpus.map((g) => `<option value="${esc(g.slot)}"${g.slot === vm.gpu ? ' selected' : ''}${g.why_not && g.slot !== vm.gpu ? ' disabled' : ''}>${esc(g.name)}${g.why_not ? ` — ${esc(g.why_not)}` : ''}</option>`).join('')}</select>
@@ -331,7 +331,7 @@
         const d = dialog(`Settings of ${vm.name}`, '<div class="vm-summary">Looking for installers…</div>', '');
         await loadIsos();
         let devices = { usb: [], gpus: [] };
-        try { devices = await call('/devices'); } catch (_e) { /* shown as none */ }
+        try { devices = await call('/devices'); } catch (_e) { devices = { usb: [], gpus: [], failed: true }; }
         d.el.querySelector('.modal-body').innerHTML = `
             <label class="vm-field">Name<input id="vm-name" maxlength="60" value="${esc(vm.name)}" autocomplete="off"></label>
             <label class="vm-field">Installer<select id="vm-iso">${isoOptions(vm.iso)}</select>

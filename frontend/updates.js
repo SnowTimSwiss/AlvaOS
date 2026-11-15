@@ -549,7 +549,12 @@ function historyText(entry) {
 async function loadHistory() {
     const list = $('upd-history-list');
     const res = await apiFetch('/updates/history').catch(() => null);
-    const data = await readJson(res);
+    const data = res && res.ok ? await readJson(res) : null;
+    if (!data) {
+        list.innerHTML = '<div class="metric-sub">Could not load the history. <button type="button" class="btn-secondary btn-quiet" id="upd-history-retry">Try again</button></div>';
+        $('upd-history-retry').addEventListener('click', loadHistory);
+        return;
+    }
     const history = Array.isArray(data?.history) ? data.history.slice().reverse() : [];
     if (!history.length) {
         list.innerHTML = '<div class="metric-sub">Nothing installed through this page yet.</div>';
