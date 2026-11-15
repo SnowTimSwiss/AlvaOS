@@ -2,6 +2,7 @@
 """AlvaOS, Debian and offline updates."""
 
 # ── Standard library ──────────────────────────────────────────────────────────
+import os
 
 # ── Third-party ───────────────────────────────────────────────────────────────
 from flask import Blueprint, jsonify, request
@@ -74,11 +75,18 @@ def apply_debian_os_upgrade():
     status = 200 if result.get('success') else 500
     return jsonify(result), status
 
+OFFLINE_SCAN_ROOTS = ('/media', '/mnt', '/run/alvaos-scan')
+
+
 @bp.route('/api/v1/updates/offline/scan', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def scan_offline_updates():
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     path = data.get('path')
+    if path is not None:
+        real = os.path.realpath(str(path))
+        if not any(real == root or real.startswith(root + '/') for root in OFFLINE_SCAN_ROOTS):
+            return jsonify({'error': 'Only removable media and mounted disks can be scanned.'}), 400
     packages = []
     packages = update_manager.scan_offline_packages(path).get('packages', [])
     return jsonify({'packages': packages})

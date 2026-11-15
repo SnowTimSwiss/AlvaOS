@@ -327,7 +327,7 @@ if __name__ == '__main__':
                      daemon=True).start()
 
     if not is_setup_complete():
-        print("\n⚠️  SETUP REQUIRED: Access the Web UI to complete initial setup")
+        print("\nWARNING: SETUP REQUIRED: Access the Web UI to complete initial setup")
 
     # Serve through waitress: a NAS is expected to run unattended for years, and
     # the Werkzeug development server is explicitly not built for that.

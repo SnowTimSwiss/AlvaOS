@@ -840,3 +840,14 @@ def test_users_file_is_owner_only_and_write_errors_surface(tmp_path, monkeypatch
     monkeypatch.setattr(api_auth, "USERS_STATE_FILE", str(tmp_path / "missing" / "users.json"))
     with pytest.raises(OSError):
         api_auth.save_users_state({})
+
+
+def test_offline_scan_is_limited_to_mounted_media(backend):
+    module, state = backend
+    set_up(state)
+    token = auth_manager._create_session("root", role="admin")
+    headers = {"Authorization": token, "X-CSRF-Token": auth_manager.SESSIONS[token]["csrf_token"]}
+    client = module.app.test_client()
+    for path in ("/etc", "/mnt/../etc", "/mnt-evil"):
+        response = client.post("/api/v1/updates/offline/scan", json={"path": path}, headers=headers)
+        assert response.status_code == 400
