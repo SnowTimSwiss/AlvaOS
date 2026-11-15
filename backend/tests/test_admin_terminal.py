@@ -152,3 +152,22 @@ def test_plain_http_is_refused_while_https_only_is_on(server, monkeypatch):
         assert (await connect(port, at.issue("good")))[2].startswith(b"HTTP/1.1 403")
         srv.close()
     asyncio.run(run())
+
+
+def test_a_large_paste_arrives_whole(server):
+    start, _ = server
+    lines = b"".join(b"x" * 99 + b"\n" for _ in range(2000))      # 200000 bytes
+
+    async def run():
+        srv, port = await start()
+        reader, writer, status, key = await connect(port, at.issue("good"))
+        assert status.endswith(b"101 Switching Protocols")
+        writer.write(masked(2, b"stty -echo; cat | wc -c | sed 's/^/count-/'\n"))
+        data = lines + b"\x04"
+        for start_at in range(0, len(data), 50000):
+            writer.write(masked(2, data[start_at:start_at + 50000]))
+        out, _ = await collect(reader, b"count-200000")
+        assert b"count-200000" in out
+        writer.close()
+        srv.close()
+    asyncio.run(run())

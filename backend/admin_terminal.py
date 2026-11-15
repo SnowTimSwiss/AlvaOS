@@ -247,6 +247,15 @@ async def session(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, to
             writer.write(frame(2, data))
             await writer.drain()
 
+    async def write_all(data: bytes) -> None:
+        # The master is non-blocking: a big paste is taken in pieces.
+        view = memoryview(data)
+        while view:
+            try:
+                view = view[os.write(master, view):]
+            except BlockingIOError:
+                await asyncio.sleep(0.01)
+
     async def receive_input() -> str:
         while True:
             op, data = await read_message(reader)
@@ -257,7 +266,7 @@ async def session(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, to
                 continue
             if op == 2:
                 last_input[0] = time.monotonic()
-                os.write(master, data)
+                await write_all(data)
             elif op == 1:
                 try:
                     msg = json.loads(data.decode('utf-8'))
