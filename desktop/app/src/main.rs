@@ -363,6 +363,14 @@ async fn signed_in_url(app: &AppHandle) -> Result<String, String> {
     Ok(format!("{url}/?handoff={code}"))
 }
 
+/// Links in Hub pages can be written by other people: only web and mail links go to the system,
+/// never file:, smb: or another program's protocol.
+fn open_outside(url: &tauri::Url) {
+    if matches!(url.scheme(), "http" | "https" | "mailto") {
+        let _ = tauri_plugin_opener::open_url(url.as_str(), None::<&str>);
+    }
+}
+
 async fn show_hub(app: &AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("hub") {
         let _ = window.show();
@@ -385,12 +393,12 @@ async fn show_hub(app: &AppHandle) -> Result<(), String> {
             if ours(url) {
                 return true;
             }
-            let _ = tauri_plugin_opener::open_url(url.as_str(), None::<&str>);
+            open_outside(url);
             false
         })
         .on_new_window(move |url, _| {
             if !ours(&url) {
-                let _ = tauri_plugin_opener::open_url(url.as_str(), None::<&str>);
+                open_outside(&url);
                 return NewWindowResponse::Deny;
             }
             // A file of the NAS opened in a new tab: a window of its own, signed in as this one.
