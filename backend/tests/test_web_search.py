@@ -147,3 +147,34 @@ def test_the_setting_is_kept(tmp_path):
     assert json.loads(open(path).read())["search"] == {"enabled": True}
     assert ai_assistant.public_settings(s)["search"] == {"enabled": True}
 
+
+
+def test_a_page_with_an_unknown_charset_is_still_read():
+    res = Res(headers={"Content-Type": "text/html"}, body=b"<p>Hello there</p>")
+    res.encoding = "no-such-charset"
+    assert web_search.read_page("https://example.org/", lambda url, **kw: res, public=lambda u: True) == "Hello there"
+
+
+def test_the_address_really_connected_to_is_checked():
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class Page(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(b"<p>secret admin page</p>")
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Page)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        # `public` says yes (as if the name had resolved to a public address once);
+        # the connection itself goes to loopback and must be refused.
+        url = f"http://127.0.0.1:{server.server_port}/"
+        assert web_search.read_page(url, public=lambda u: True) == ""
+    finally:
+        server.shutdown()
