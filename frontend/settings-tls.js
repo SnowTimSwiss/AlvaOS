@@ -3,7 +3,7 @@
 // https://<nas>:8443 opens without a warning.
 (function () {
     const $ = (id) => document.getElementById(id);
-    const esc = window.escapeHtml || ((v) => String(v ?? ''));
+    const esc = (v) => window.escapeHtml(v);
     let tls = null;
 
     const httpsUrl = () => `https://${window.location.hostname}:${(tls && tls.ports && tls.ports.web) || 8443}/`;

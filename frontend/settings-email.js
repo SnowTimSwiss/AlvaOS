@@ -2,7 +2,7 @@
 // The mail server is filled in from the provider; the details are folded away.
 (function () {
     const $ = (id) => document.getElementById(id);
-    const esc = window.escapeHtml || ((v) => String(v ?? ''));
+    const esc = (v) => window.escapeHtml(v);
     let settings = null;
 
     const PROVIDERS = [

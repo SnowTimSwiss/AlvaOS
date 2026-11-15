@@ -20,7 +20,7 @@
     const HISTORY_MAX = 120;
     const LEVEL_ORDER = { bad: 0, warn: 1, setup: 2, info: 3 };
 
-    const esc = window.escapeHtml || ((v) => String(v ?? ''));
+    const esc = (v) => window.escapeHtml(v);
     const issues = {};          // source -> [issue]
     let lastSystem = null;      // last /system/info payload
     let lastCounters = null;    // { ts, net, disk } for rate calculation

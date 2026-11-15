@@ -191,6 +191,10 @@
 
         setTimeout(() => {
             document.addEventListener('click', function handleOutside(event) {
+                if (!menu.isConnected) {
+                    document.removeEventListener('click', handleOutside);
+                    return;
+                }
                 if (!menu.contains(event.target) && event.target.id !== 'feedback-fab-close') {
                     closeFabDismissMenu();
                     document.removeEventListener('click', handleOutside);
