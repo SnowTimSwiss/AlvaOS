@@ -88,6 +88,14 @@ def _refuse(status: str) -> bytes:
     return f'HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'.encode()
 
 
+def _plain_http_refused(writer: asyncio.StreamWriter) -> bool:
+    """With "HTTPS only" on, this door does not talk over plain HTTP either."""
+    if writer.get_extra_info('ssl_object') is not None:
+        return False
+    import tls_manager
+    return tls_manager.https_only()
+
+
 def check_request(head: bytes) -> tuple[tuple[str, str] | None, str]:
     """((sign-in token, websocket key), '') for a good request, else (None, status line)."""
     try:
@@ -305,6 +313,10 @@ async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, arg
         return
     if len(head) > HEAD_LIMIT:
         writer.write(_refuse('431 Request Header Fields Too Large'))
+        writer.close()
+        return
+    if _plain_http_refused(writer):
+        writer.write(_refuse('403 Forbidden'))
         writer.close()
         return
     found, status = check_request(head)

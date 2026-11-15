@@ -140,3 +140,15 @@ def test_the_shell_gets_a_plain_environment(monkeypatch):
     monkeypatch.setenv("SECRET_TOKEN", "x")
     env = at._clean_env()
     assert "SECRET_TOKEN" not in env and env["TERM"] == "xterm-256color"
+
+
+def test_plain_http_is_refused_while_https_only_is_on(server, monkeypatch):
+    import tls_manager
+    start, _ = server
+    monkeypatch.setattr(tls_manager, "https_only", lambda path=None: True)
+
+    async def run():
+        srv, port = await start()
+        assert (await connect(port, at.issue("good")))[2].startswith(b"HTTP/1.1 403")
+        srv.close()
+    asyncio.run(run())
