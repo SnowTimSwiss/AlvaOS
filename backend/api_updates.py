@@ -45,7 +45,7 @@ def apply_alvaos_update():
         result = update_manager.apply_alvaos_update(package_path)
         status = 200 if result.get('success') else 500
         return jsonify(result), status
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - any failure becomes a JSON error for the request
         update_manager.set_update_state("error", "Install failed", {"error": str(e)})
         return jsonify({'success': False, 'error': str(e)}), 500
 

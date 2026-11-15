@@ -61,14 +61,14 @@ def _io_counters():
             recv += counters.bytes_recv
         info['net_bytes_sent'] = sent
         info['net_bytes_recv'] = recv
-    except Exception:
+    except Exception:  # noqa: BLE001 - network counters are optional, system info must render without them
         pass
     try:
         disk = psutil.disk_io_counters()
         if disk is not None:
             info['disk_read_bytes'] = disk.read_bytes
             info['disk_write_bytes'] = disk.write_bytes
-    except Exception:
+    except Exception:  # noqa: BLE001 - disk counters are optional, system info must render without them
         pass
     return info
 
@@ -89,7 +89,7 @@ def get_system_info():
                     if line.lower().startswith('model name'):
                         cpu_model = line.split(':', 1)[1].strip()
                         break
-    except Exception:
+    except (OSError, ValueError, IndexError):
         pass
     try:
         temps = psutil.sensors_temperatures() if hasattr(psutil, 'sensors_temperatures') else {}
@@ -104,7 +104,7 @@ def get_system_info():
                 if entries:
                     cpu_temp = entries[0].current
                     break
-    except Exception:
+    except Exception:  # noqa: BLE001 - temperature sensors are optional and differ per machine
         pass
     cpu_info = {
         'cores': psutil.cpu_count(logical=False),
@@ -165,13 +165,13 @@ def get_system_info():
                         'free_gb': round(pool_usage.free / (1024**3), 2),
                         'percent': pool_usage.percent,
                     })
-                except Exception as pool_usage_error:
+                except OSError as pool_usage_error:
                     pool_entry['error'] = str(pool_usage_error)
             else:
                 pool_entry['error'] = 'Pool is not mounted'
 
             pool_storage_info.append(pool_entry)
-    except Exception:
+    except Exception:  # noqa: BLE001 - pool details are optional, system info must render without them
         pass
 
     # Network Information
@@ -185,7 +185,7 @@ def get_system_info():
                 hostname = socket.gethostname() or 'unknown'
         else:
             hostname = socket.gethostname() or 'unknown'
-    except Exception:
+    except (OSError, subprocess.SubprocessError):
         hostname = 'unknown'
 
     ip_address = '127.0.0.1'
@@ -202,7 +202,7 @@ def get_system_info():
                     break
             if ip_address != '127.0.0.1':
                 break
-    except Exception:
+    except Exception:  # noqa: BLE001 - IP lookup is optional, the page falls back to 127.0.0.1
         pass
 
     network_info = {
@@ -597,7 +597,7 @@ def system_time():
                                           capture_output=True, text=True)
                 if ntp_result.returncode == 0:
                     ntp_enabled = ntp_result.stdout.strip() == 'yes'
-            except Exception:
+            except (OSError, subprocess.SubprocessError):
                 pass
 
         return jsonify({
@@ -629,7 +629,7 @@ def system_time():
                     })
 
                 return jsonify({'success': True, 'message': 'Time settings updated'})
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - any failure becomes a JSON error for the request
                 return jsonify({'error': str(e)}), 500
         else:
             return jsonify({'error': 'Time settings can only be changed on the NAS itself (Linux).'}), 501
@@ -652,7 +652,7 @@ def system_power():
             if err:
                 return jsonify({'error': f'Failed to {action}: {err}'}), 500
             return jsonify({'success': True, 'message': f'System {action} initiated'})
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any failure becomes a JSON error for the request
             return jsonify({'error': f'Failed to {action}: {str(e)}'}), 500
     else:
         return jsonify({'success': False, 'message': f'System {action} not supported on {platform.system()}'}), 400
@@ -690,7 +690,7 @@ def system_permissions_check():
                 'valid_owner': int(st.st_uid) == 0,
                 'valid_mode': mode == 0o440,
             })
-    except Exception as e:
+    except OSError as e:
         report['errors'].append(f'Failed reading sudoers metadata: {e}')
     report['sudoers'] = sudoers_info
 
@@ -720,7 +720,7 @@ def system_permissions_check():
             sudo_list['error'] = sudo_output or f"sudo -n -l failed (exit {sudo_probe.returncode})"
             for rule in required_rules:
                 sudo_list['required_rules'][rule] = False
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError) as e:
         sudo_list['error'] = str(e)
         for rule in required_rules:
             sudo_list['required_rules'][rule] = False
@@ -783,19 +783,19 @@ def system_power_ups():
     if 'charge_limit_percent' in data:
         try:
             payload['charge_limit_percent'] = int(data['charge_limit_percent'])
-        except Exception:
+        except (TypeError, ValueError):
             return jsonify({'error': 'charge_limit_percent must be an integer'}), 400
 
     if 'shutdown_percent' in data:
         try:
             payload['shutdown_percent'] = int(data['shutdown_percent'])
-        except Exception:
+        except (TypeError, ValueError):
             return jsonify({'error': 'shutdown_percent must be an integer'}), 400
 
     if 'monitor_interval_seconds' in data:
         try:
             payload['monitor_interval_seconds'] = int(data['monitor_interval_seconds'])
-        except Exception:
+        except (TypeError, ValueError):
             return jsonify({'error': 'monitor_interval_seconds must be an integer'}), 400
 
     preview = power_ups_manager.get_settings().copy()
@@ -825,7 +825,7 @@ def get_network_details():
                 hostname = socket.gethostname() or "unknown"
         else:
             hostname = socket.gethostname() or "unknown"
-    except Exception:
+    except (OSError, subprocess.SubprocessError):
         pass
 
     ip_address = "127.0.0.1"
@@ -864,7 +864,7 @@ def get_network_details():
                     parts = result.stdout.split()
                     if len(parts) >= 3 and parts[0] == 'default':
                         gateway = parts[2]
-            except Exception:
+            except (OSError, subprocess.SubprocessError):
                 pass
 
             # Try to get DNS servers
@@ -876,14 +876,14 @@ def get_network_details():
                                 dns = line.split()[1]
                                 if dns not in dns_servers:
                                     dns_servers.append(dns)
-            except Exception:
+            except (OSError, IndexError):
                 pass
 
         # Fallback DNS if none found
         if not dns_servers:
             dns_servers = ['1.1.1.1', '8.8.8.8']
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - the network page must render with fallback values
         print(f"Error getting network details: {e}")
         # Use fallback values
 
@@ -935,7 +935,7 @@ def _read_ssh_access_state():
             if not key_err and keys and keys.returncode == 0 and (keys.stdout or '').strip():
                 state['keys'] = [line.strip() for line in keys.stdout.splitlines() if line.strip()]
                 break
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - SSH status must render even if the config cannot be read
         print(f"Error reading SSH config: {e}")
     return state
 
@@ -1121,7 +1121,7 @@ def set_hostname():
                     env={'LC_ALL': 'C'}
                 )
                 process.communicate(input=new_content)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - the hosts file update is best effort, the hostname change goes on
             print(f"Warning: Failed to update /etc/hosts: {e}")
     else:
         print(f"SIMULATION: Setting hostname to {new_hostname}")
@@ -1144,7 +1144,7 @@ def get_system_logs():
                 if res and res.returncode == 0:
                     logs = res.stdout.splitlines()
                     return jsonify({'logs': logs})
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - a failed syslog read falls through to journalctl
                 print(f"Reading syslog failed: {e}")
 
         # Strategy 2: Use journalctl (systemd systems)
@@ -1154,12 +1154,12 @@ def get_system_logs():
             if res and res.returncode == 0:
                 logs = res.stdout.splitlines()
                 return jsonify({'logs': logs})
-        except Exception:
+        except Exception:  # noqa: BLE001 - a failed journal read falls through to the placeholder line
             pass
 
         logs = [f"[{datetime.now().isoformat()}] Could not read system logs (no syslog or journal available)"]
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - log page returns the error as a line instead of failing
         logs = [f"Error fetching logs: {str(e)}"]
 
     return jsonify({'logs': logs})
@@ -1178,7 +1178,7 @@ def get_watchdog_status():
     try:
         status = watchdog_manager.get_status()
         return jsonify({'success': True, **status})
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - any failure becomes a JSON error for the request
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/api/v1/watchdog/check', methods=['POST'])
@@ -1188,5 +1188,5 @@ def run_watchdog_check():
     try:
         result = watchdog_manager.run_check()
         return jsonify({'success': True, **result})
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - any failure becomes a JSON error for the request
         return jsonify({'error': str(e)}), 500

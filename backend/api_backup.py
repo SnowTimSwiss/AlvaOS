@@ -638,7 +638,7 @@ def buddy_peer_list():
     limit = request.args.get('limit', 100)
     try:
         limit_int = int(limit)
-    except Exception:
+    except (TypeError, ValueError):
         limit_int = 100
     success, payload = buddy_backup_manager.list_peer_streams(owner_node_id=owner_node_id, limit=limit_int)
     if not success:
