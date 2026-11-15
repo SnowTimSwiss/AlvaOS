@@ -76,3 +76,11 @@ def test_rollback_refuses_versions_that_are_not_cached(manager, monkeypatch):
         result = manager.rollback_to(version)
         assert result["success"] is False
         assert "not stored" in result["error"]
+
+
+def test_a_release_without_a_package_is_looked_at_again_after_two_minutes(manager):
+    bare = {"tag_name": "v1", "assets": []}
+    full = {"tag_name": "v1", "assets": [{"name": "alvaos_1.deb"}, {"name": "alvaos_1.deb.sig"}]}
+    assert manager._cache_seconds(bare) == 120
+    assert manager._cache_seconds(full) == 3600
+    assert manager._cache_seconds(None) == 3600
