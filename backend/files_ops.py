@@ -6,7 +6,8 @@ the name. The folder is opened without following a symlink and checked on
 the open descriptor to be inside the data root; everything after that is
 done relative to that descriptor (dir_fd), so swapping a folder for a
 symlink meanwhile cannot reach anything else. Nothing is overwritten,
-except the data files of Hub apps (see write_app_data).
+except the data files of Hub apps (see write_app_data) and a document saved
+from the Office editor (see replace_file).
 
 Deleting moves the item into "<share>/.alvaos-trash/<stamp>/", next to a
 small ".origin" file that says where it came from. Items older than
@@ -332,7 +333,7 @@ def replace_file(dir_path: str, name: str, src: BinaryIO, root: str = DATA_ROOT)
     a new one, nor follows a link), and keeps its owner, group and mode. Only for the editor in the Hub."""
     check_name(name)
     dfd = open_dir(dir_path, root)
-    tmp = f'.{name[:120]}.alvaos-save'
+    tmp = f'.alvaos-{secrets.token_hex(8)}.alvaos-save'   # short: a long multi-byte name would pass 255 bytes
     try:
         try:
             st = os.lstat(name, dir_fd=dfd)
