@@ -60,7 +60,7 @@ def load_users_state():
         if os.path.exists(USERS_STATE_FILE):
             with open(USERS_STATE_FILE) as f:
                 return json.load(f)
-    except Exception as e:
+    except (OSError, ValueError) as e:
         print(f"Error loading users state: {e}")
     return {}
 
@@ -69,7 +69,7 @@ def save_users_state(state):
         ensure_directories()
         with open(USERS_STATE_FILE, 'w') as f:
             json.dump(state, f, indent=2)
-    except Exception as e:
+    except (OSError, TypeError, ValueError) as e:
         print(f"Error saving users state: {e}")
 
 # ── 2FA helpers ───────────────────────────────────────────────────────────────
@@ -82,7 +82,7 @@ def _load_totp_secret():
         with open(AUTH_FILE) as f:
             data = json.load(f)
         return data.get('totp_secret') or None
-    except Exception:
+    except (OSError, ValueError, AttributeError):
         return None
 
 def _save_totp_secret(secret):
@@ -95,7 +95,7 @@ def _save_totp_secret(secret):
             data['totp_secret'] = secret
         write_auth_file(data)
         return True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - a failed save is reported to the caller as False
         print(f"Error saving TOTP secret: {e}")
         return False
 
@@ -105,7 +105,7 @@ def _verify_totp(secret, code):
     try:
         totp = pyotp.TOTP(secret)
         return totp.verify(str(code).strip(), valid_window=1)
-    except Exception:
+    except Exception:  # noqa: BLE001 - any 2FA library error counts as a wrong code
         return False
 
 def _refresh_totp_runtime():
@@ -117,7 +117,7 @@ def _refresh_totp_runtime():
         base64 = importlib.import_module('base64')
         TOTP_AVAILABLE = True
         return True, None
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - a broken 2FA library must only switch 2FA off
         TOTP_AVAILABLE = False
         return False, str(e)
 
@@ -188,7 +188,7 @@ def complete_setup():
 
         except subprocess.TimeoutExpired:
             return jsonify({'error': 'Password change timed out'}), 500
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any failure becomes a JSON error for the request
             return jsonify({'error': f'Password change failed: {str(e)}'}), 500
 
         # SSH root login stays disabled after setup. It is opt-in through
@@ -202,7 +202,7 @@ def complete_setup():
         if 'timezone' in data and platform.system() == 'Linux':
             try:
                 run_sudo_command([CMD['TIMEDATECTL'], 'set-timezone', data['timezone']])
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - the timezone is optional during setup
                 print(f"Warning: Could not set timezone during setup: {e}")
 
         # Mark setup as complete
@@ -222,7 +222,7 @@ def complete_setup():
             'csrf_token': SESSIONS.get(token, {}).get('csrf_token', '')
         })
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - any failure becomes a JSON error for the request
         return jsonify({'error': str(e)}), 500
 
 # API paths reachable before first-run setup is complete. Everything else is
@@ -264,7 +264,7 @@ def login():
             try:
                 auth_data.update(hash_password(password))
                 write_auth_file(auth_data)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - upgrading the hash is optional and must not block the sign-in
                 print(f"Warning: could not upgrade password hash: {e}")
 
         _reset_rate_limit(client_ip)
@@ -286,7 +286,7 @@ def login():
             'last_signin': record_signin(),
         })
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - any failure becomes a generic sign-in error
         print(f"Login error: {e}")
         return jsonify({'error': 'Authentication failed'}), 500
 
@@ -375,7 +375,7 @@ def change_admin_password():
             _, stderr = process.communicate(input=f'root:{new}\n', timeout=10)
             if process.returncode != 0:
                 return jsonify({'error': f'The password could not be set: {stderr.strip()}'}), 500
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any failure becomes a JSON error for the request
             return jsonify({'error': f'The password could not be set: {e}'}), 500
         sync_samba_password('root', new)
 
@@ -456,7 +456,7 @@ def setup_2fa():
             'qr_code': f'data:image/png;base64,{qr_b64}',
             'provisioning_uri': provisioning_uri,
         })
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - any failure becomes a JSON error for the request
         print(f"2FA setup error: {e}")
         return jsonify({'error': 'Failed to generate 2FA setup'}), 500
 
@@ -530,7 +530,7 @@ def disable_2fa():
         is_valid, _ = verify_password(password, auth_data)
         if not is_valid:
             return jsonify({'error': 'Incorrect password'}), 401
-    except Exception:
+    except Exception:  # noqa: BLE001 - any failure becomes a JSON error for the request
         return jsonify({'error': 'Authentication failed'}), 500
     if not _save_totp_secret(None):
         return jsonify({'error': 'Failed to disable 2FA'}), 500
@@ -626,7 +626,7 @@ def manage_users():
                 return jsonify({'success': True, 'message': f'"{username}" was created with a personal folder.',
                                 'share_id': folder.get('share_id'), 'warning': folder.get('warning', '')})
             return jsonify({'success': True, 'message': f'User "{username}" created'})
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any failure becomes a JSON error for the request
             return jsonify({'error': f'Failed to create user: {str(e)}'}), 500
 
     if request.method == 'DELETE':
@@ -689,7 +689,7 @@ def manage_users():
                 message += (f'. Their personal folder "{kept[0]}" and its files are kept; '
                             'delete that share under Storage when nobody needs it any more.')
             return jsonify({'success': True, 'message': message})
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any failure becomes a JSON error for the request
             return jsonify({'error': f'Failed to delete user: {str(e)}'}), 500
 
 @bp.route('/api/v1/users/<username>', methods=['PATCH'])
@@ -730,7 +730,7 @@ def update_user(username):
             entry['files_auth'] = hash_password(password)
             users_state[username] = entry
             save_users_state(users_state)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any failure becomes a JSON error for the request
             return jsonify({'error': f'Failed to update password: {str(e)}'}), 500
 
     return jsonify({'success': True, 'message': f'User "{username}" updated'})

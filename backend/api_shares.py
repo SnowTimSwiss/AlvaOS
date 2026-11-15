@@ -109,7 +109,7 @@ def create_share(data, known_users, extra=None):
         return {'error': 'Share creation timed out'}, 500
     except PermissionError:
         return {'error': 'Permission denied. Backend needs sudo access.'}, 500
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - any failure becomes a JSON error for the request
         return {'error': f'Failed to create share: {str(e)}'}, 500
 
 
@@ -257,7 +257,7 @@ def manage_shares():
 
                         # Reload NFS exports
                         run_sudo_command([CMD['EXPORTFS'], '-ra'])
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001 - a failed export cleanup is printed and the delete goes on
                         print(f"Error removing NFS export: {e}")
 
                 elif protocol == 'smb':
@@ -280,13 +280,13 @@ def manage_shares():
 
                         # Restart Samba
                         run_sudo_command([CMD['SYSTEMCTL'], 'restart', 'smbd'])
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001 - a failed SMB cleanup is printed and the delete goes on
                         print(f"Error removing SMB share: {e}")
                     try:
                         group_name = share_info.get('smb_group')
                         if group_name:
                             run_sudo_command([CMD['GROUPDEL'], group_name])
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001 - a failed group cleanup is printed and the delete goes on
                         print(f"Error removing SMB group: {e}")
 
             del shares_state[share_id]
@@ -296,7 +296,7 @@ def manage_shares():
 
             return jsonify({'success': True, 'message': f'Share "{share_name}" deleted successfully'})
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any failure becomes a JSON error for the request
             return jsonify({'error': f'Failed to delete share: {str(e)}'}), 500
 
     return jsonify({

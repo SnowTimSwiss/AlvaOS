@@ -64,7 +64,7 @@ CMD = {
 def is_root_user():
     try:
         return hasattr(os, 'geteuid') and os.geteuid() == 0
-    except Exception:
+    except OSError:
         return False
 
 
@@ -151,7 +151,7 @@ def run_sudo_command(cmd, timeout=30, extra_env=None, input=None):
         return result, None
     except subprocess.TimeoutExpired:
         return None, "Command timed out"
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - any failure becomes an error string for the caller
         return None, str(e)
 
 
@@ -175,7 +175,7 @@ def parse_size_to_bytes(size_str):
             'KiB': 1024, 'MiB': 1024**2, 'GiB': 1024**3, 'TiB': 1024**4, 'PiB': 1024**5
         }
         return int(value * multipliers.get(unit, 1))
-    except Exception:
+    except (AttributeError, ValueError):
         return None
 
 
@@ -183,7 +183,7 @@ def format_bytes_gib(byte_val):
     try:
         gib = byte_val / (1024**3)
         return f"{gib:.2f}GiB"
-    except Exception:
+    except (TypeError, ValueError):
         return "Unknown"
 
 
@@ -203,14 +203,14 @@ def _parse_iso(value):
         if raw.endswith('Z'):
             raw = raw[:-1] + '+00:00'
         return datetime.fromisoformat(raw)
-    except Exception:
+    except (TypeError, ValueError):
         return None
 
 
 def _safe_int(value, fallback=0):
     try:
         return int(value)
-    except Exception:
+    except (TypeError, ValueError):
         return fallback
 
 
@@ -230,6 +230,6 @@ def _read_cpu_temperature_c():
                     current = getattr(entry, 'current', None)
                     if isinstance(current, (int, float)):
                         return round(float(current), 1)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - temperature is optional, a sensor failure only prints a warning
         print(f"Warning: Failed to read CPU temperature: {e}")
     return None

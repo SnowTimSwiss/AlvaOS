@@ -94,14 +94,14 @@ def _save_sessions():
         try:
             with os.fdopen(fd, 'w') as f:
                 json.dump(payload, f)
-        except Exception:
+        except Exception:  # noqa: BLE001 - remove the temp file after any error, then re-raise
             try:
                 os.unlink(tmp_path)
             except OSError:
                 pass
             raise
         os.replace(tmp_path, SESSIONS_FILE)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - saving sessions must never break the request in flight
         # A failure here must never break the request in flight; the worst case
         # is falling back to the previous behaviour of losing sessions.
         print(f"Warning: could not persist sessions: {e}")
@@ -131,7 +131,7 @@ def _load_sessions():
             restored[token] = session
         SESSIONS.clear()
         SESSIONS.update(restored)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - restoring sessions must never block startup
         print(f"Warning: could not restore sessions: {e}")
 
 

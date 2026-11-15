@@ -211,7 +211,7 @@ class HealthScheduler:
                 continue
             try:
                 act = self.activity(mount)
-            except Exception as e:  # btrfs missing or pool gone: try next time
+            except Exception as e:  # noqa: BLE001 - btrfs missing or pool gone: try next time
                 outcome[pool_id] = f'unreadable: {e}'
                 continue
             scrub = act.get('scrub') or {}
@@ -242,12 +242,12 @@ class HealthScheduler:
         while True:
             try:
                 self.run_once()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - the scheduler loop must survive any error
                 self.log(f"[health] scheduler error: {e}")
             if smart is not None:
                 try:
                     smart.run_once()
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - the scheduler loop must survive any error
                     self.log(f"[health] self-test scheduler error: {e}")
             time.sleep(LOOP_SECONDS)
 

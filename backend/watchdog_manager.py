@@ -34,7 +34,7 @@ class WatchdogManager:
             if os.path.exists(STATE_FILE):
                 with open(STATE_FILE) as f:
                     return json.load(f)
-        except Exception:
+        except (OSError, ValueError):
             pass
         return {'last_check': None, 'recoveries': []}
 
@@ -43,7 +43,7 @@ class WatchdogManager:
             os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
             with open(STATE_FILE, 'w') as f:
                 json.dump(state, f, indent=2)
-        except Exception as e:
+        except (OSError, TypeError, ValueError) as e:
             print(f"[watchdog] Error saving state: {e}")
 
     def _log(self, message):
@@ -52,7 +52,7 @@ class WatchdogManager:
             ts = self._utc_now_iso()
             with open(LOG_FILE, 'a') as f:
                 f.write(f"[{ts}] {message}\n")
-        except Exception:
+        except OSError:
             pass
 
     def _is_service_active(self, service_name):
@@ -65,7 +65,7 @@ class WatchdogManager:
                 capture_output=True, text=True, timeout=5, env={'LC_ALL': 'C'}
             )
             return result.stdout.strip() == 'active'
-        except Exception:
+        except (OSError, subprocess.SubprocessError):
             return False
 
     def _is_service_enabled(self, service_name):
@@ -82,7 +82,7 @@ class WatchdogManager:
                 capture_output=True, text=True, timeout=5, env={'LC_ALL': 'C'}
             )
             return result.stdout.strip() in ('enabled', 'enabled-runtime')
-        except Exception:
+        except (OSError, subprocess.SubprocessError):
             return False
 
     def _restart_service(self, service_name):
@@ -99,7 +99,7 @@ class WatchdogManager:
             return False, (result.stderr or result.stdout or f'exit {result.returncode}').strip()
         except subprocess.TimeoutExpired:
             return False, 'Restart timed out'
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError) as e:
             return False, str(e)
 
     def run_check(self):

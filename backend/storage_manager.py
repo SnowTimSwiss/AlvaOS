@@ -77,7 +77,7 @@ def is_secure_system_device(device_name):
 
         return False
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - an unreadable device counts as not a system device
         print(f"Error checking system device: {e}")
         return False
 
@@ -153,7 +153,7 @@ def is_path_on_system_disk(path):
     try:
         probe = _existing_probe_path(candidate)
         return os.stat(probe).st_dev == os.stat('/').st_dev
-    except Exception:
+    except (OSError, ValueError):
         return False
 
 
@@ -165,7 +165,7 @@ def _json_or_none(raw_text):
         if not text:
             return None
         return json.loads(text)
-    except Exception:
+    except ValueError:
         return None
 
 
@@ -265,7 +265,7 @@ def load_pools_state():
         if os.path.exists(POOLS_STATE_FILE):
             with open(POOLS_STATE_FILE) as f:
                 return json.load(f)
-    except Exception:
+    except (OSError, ValueError):
         pass
     return {}
 
@@ -276,7 +276,7 @@ def save_pools_state(state):
         ensure_directories()
         with open(POOLS_STATE_FILE, 'w') as f:
             json.dump(state, f, indent=2)
-    except Exception as e:
+    except (OSError, TypeError, ValueError) as e:
         print(f"Error saving pools state: {e}")
 
 
@@ -301,7 +301,7 @@ def detect_btrfs_pools():
             root_match = re.search(r"uuid:\s+([A-Fa-f0-9-]+)", root_res.stdout, re.IGNORECASE)
             if root_match:
                 root_btrfs_uuid = root_match.group(1).lower()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - the root UUID is optional, detection goes on without it
         print(f"Warning: Could not detect root Btrfs UUID: {e}")
 
     result, err = run_sudo_command([CMD['BTRFS'], 'filesystem', 'show'])
@@ -805,5 +805,5 @@ def mount_existing_pools():
             else:
                 print(f"Pool {name} is already mounted.")
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - one failing pool must not stop the others from mounting
             print(f"Failed to process pool {name}: {e}")

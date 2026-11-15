@@ -46,7 +46,7 @@ class PowerUpsManager:
     def _clamp_int(self, value, min_value, max_value, fallback):
         try:
             value = int(value)
-        except Exception:
+        except (TypeError, ValueError):
             return fallback
         return max(min_value, min(max_value, value))
 
@@ -88,7 +88,7 @@ class PowerUpsManager:
                 if normalized != loaded:
                     self._save_settings_unlocked(normalized)
                 return normalized, True
-        except Exception:
+        except Exception:  # noqa: BLE001 - a damaged settings file falls back to the defaults
             pass
         return self._settings_defaults(), False
 
@@ -104,7 +104,7 @@ class PowerUpsManager:
             if os.path.exists(tmp_path):
                 try:
                     os.remove(tmp_path)
-                except Exception:
+                except OSError:
                     pass
         return normalized
 
@@ -123,7 +123,7 @@ class PowerUpsManager:
         try:
             with open(path, encoding="utf-8") as f:
                 return f.read().strip()
-        except Exception:
+        except (OSError, ValueError):
             return ""
 
     def _list_power_supply_paths(self):
@@ -131,7 +131,7 @@ class PowerUpsManager:
         try:
             names = sorted(os.listdir(base))
             return [os.path.join(base, n) for n in names]
-        except Exception:
+        except OSError:
             return []
 
     def _detect_battery(self):
@@ -182,7 +182,7 @@ class PowerUpsManager:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(value_str)
             return True, None
-        except Exception:
+        except OSError:
             pass
 
         # Fallback when direct write fails (non-root backend user): the privilege
@@ -196,7 +196,7 @@ class PowerUpsManager:
                 return True, None
             err = (result.stderr or result.stdout or f"exit code {result.returncode}").strip()
             return False, err
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError) as e:
             return False, str(e)
 
     def get_live_status(self):
@@ -211,7 +211,7 @@ class PowerUpsManager:
         try:
             if capacity_raw:
                 capacity = int(float(capacity_raw))
-        except Exception:
+        except (TypeError, ValueError):
             capacity = None
 
         thresholds = self._get_threshold_paths(battery_path)
@@ -280,7 +280,7 @@ class PowerUpsManager:
                 "timestamp": self._utc_now_iso(),
             }
             return True, None
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any failure is returned to the caller as text
             return False, str(e)
 
     def run_monitor_check(self):
@@ -312,18 +312,18 @@ class PowerUpsManager:
         while not self._stop_event.is_set():
             try:
                 self.run_monitor_check()
-            except Exception:
+            except Exception:  # noqa: BLE001 - the monitor loop must not die on one bad check
                 pass
             for hook in list(self.hooks):
                 try:
                     hook()
-                except Exception:
+                except Exception:  # noqa: BLE001 - one bad hook must not stop the monitor loop
                     pass
 
             interval = self.get_settings().get("monitor_interval_seconds", 30)
             try:
                 interval = int(interval)
-            except Exception:
+            except (TypeError, ValueError):
                 interval = 30
             interval = max(10, min(300, interval))
             self._stop_event.wait(interval)

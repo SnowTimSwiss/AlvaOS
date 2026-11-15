@@ -28,7 +28,7 @@ def _private_sessions_file(tmp_path, monkeypatch):
     developer machine (or a NAS someone runs the tests on)."""
     try:
         import auth_manager
-    except Exception:  # Flask missing: those tests are skipped anyway
+    except ImportError:  # Flask missing: those tests are skipped anyway
         return
     monkeypatch.setattr(auth_manager, "SESSIONS_FILE", str(tmp_path / "sessions.json"))
     monkeypatch.setattr(auth_manager, "SIGNIN_LOG_FILE", str(tmp_path / "signin_log.json"))

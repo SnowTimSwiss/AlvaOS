@@ -661,7 +661,7 @@ def _qr_data_url(text: str) -> str:
         buf = io.BytesIO()
         image.save(buf)
         return 'data:image/svg+xml;base64,' + base64.b64encode(buf.getvalue()).decode()
-    except Exception:
+    except Exception:  # noqa: BLE001 - the QR code is optional, the page shows the pairing code as text
         return ''
 
 

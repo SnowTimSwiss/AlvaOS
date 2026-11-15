@@ -66,7 +66,7 @@ def get_disks():
         return jsonify({'disks': [], 'error': NOT_ON_NAS}), 200
     try:
         disks = disk_inventory()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - any failure becomes a JSON error for the request
         print(f"Error getting disk info: {e}")
         return jsonify({'error': str(e)}), 500
     records = health_checks.smart_records()
@@ -91,7 +91,7 @@ def _smart_summary(name):
     summary = {'smart_status': 'unknown', 'temp': None, 'power_on_hours': None}
     try:
         data, _, _ = _collect_smart_report(name, detailed=False, timeout=5)
-    except Exception:
+    except Exception:  # noqa: BLE001 - a failed SMART probe leaves the summary at its default
         return summary
     if not isinstance(data, dict) or data.get('smart_support', {}).get('available', True) is False:
         return summary
@@ -139,7 +139,7 @@ def get_disk_smart(disk_name):
             return jsonify({'error': 'Device did not return any SMART data'}), 404
         else:
             return jsonify({'error': NOT_ON_NAS}), 501
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - any failure becomes a JSON error for the request
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/api/v1/storage/disks/<disk_name>/wipe', methods=['POST'])
@@ -155,7 +155,7 @@ def wipe_disk(disk_name):
 
     try:
         disk = find_disk(disk_inventory(), disk_name)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - any failure becomes a JSON error for the request
         return jsonify({'error': f'Could not read the disks: {e}'}), 500
     if disk is None:
         return jsonify({'error': f'Disk /dev/{disk_name} was not found.'}), 404
@@ -259,7 +259,7 @@ def manage_pools():
                                     pool['total_size'] = fs_match.group(1)
                                 if free_match:
                                     pool['free_size'] = free_match.group(1)
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001 - pool usage is optional, the pool is still listed
                             print(f"Error getting pool usage: {e}")
 
                         # Adjust usable size for mirror-like RAID
@@ -300,7 +300,7 @@ def manage_pools():
                                 usable_bytes = total_bytes // 2
                                 if usable_bytes > 0:
                                     pool['total_size'] = format_bytes_gib(usable_bytes)
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001 - size adjustment is optional, the pool is still listed
                             print(f"Error adjusting usable size: {e}")
 
                         if (pool['used_size'] == 'Unknown' or 'Estimated' not in pool['total_size']) and mount_point:
@@ -313,7 +313,7 @@ def manage_pools():
                                         if len(p_parts) >= 4:
                                             pool['total_size'] = p_parts[1]
                                             pool['used_size'] = p_parts[2]
-                            except Exception:
+                            except (OSError, subprocess.SubprocessError):
                                 pass
 
                 # Fallback: include managed pools that were not returned by btrfs detection.
@@ -351,7 +351,7 @@ def manage_pools():
                                     if len(p_parts) >= 4:
                                         pool_entry['total_size'] = p_parts[1]
                                         pool_entry['used_size'] = p_parts[2]
-                        except Exception:
+                        except (OSError, subprocess.SubprocessError):
                             pass
                     pools.append(pool_entry)
             else:
@@ -359,7 +359,7 @@ def manage_pools():
                 # here. Returning invented pools made dev runs look like real
                 # hardware and turned every test into a guess.
                 pools = []
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - the pool list must render even if one probe fails
             print(f"Error in manage_pools GET: {e}")
 
         for pool in pools:
@@ -467,7 +467,7 @@ def manage_pools():
                          real_uuid = blkid_res.stdout.strip()
                          if real_uuid:
                              pool_id = real_uuid
-                except Exception:
+                except Exception:  # noqa: BLE001 - the UUID lookup is optional, the pool id stays as it is
                     pass
 
                 pools_state[pool_id] = {
@@ -497,7 +497,7 @@ def manage_pools():
 
         except subprocess.TimeoutExpired:
             return jsonify({'error': 'Pool creation timed out'}), 500
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any failure becomes a JSON error for the request
             return jsonify({'error': f'Pool creation failed: {str(e)}'}), 500
 
     elif request.method == 'DELETE':
@@ -668,7 +668,7 @@ def import_pool():
             'pool_id': pool_id,
             'mount_point': mount_point
         })
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - any failure becomes a JSON error for the request
         return jsonify({'error': f'Failed to import pool: {str(e)}'}), 500
 
 @bp.route('/api/v1/storage/pools/<pool_id>/subvolumes', methods=['GET', 'POST', 'DELETE'])
@@ -709,7 +709,7 @@ def manage_subvolumes(pool_id):
             else:
                 return jsonify({'subvolumes': [], 'error': NOT_ON_NAS})
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - a failed listing is printed and the list stays empty
             print(f"Error listing subvolumes: {e}")
 
         return jsonify({'subvolumes': subvolumes})
@@ -738,7 +738,7 @@ def manage_subvolumes(pool_id):
             else:
                 return jsonify({'error': NOT_ON_NAS}), 501
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any failure becomes a JSON error for the request
             return jsonify({'error': f'Failed to create subvolume: {str(e)}'}), 500
 
     elif request.method == 'DELETE':
@@ -763,7 +763,7 @@ def manage_subvolumes(pool_id):
                                 return None
                             try:
                                 return int(m.group(1))
-                            except Exception:
+                            except ValueError:
                                 return None
 
                         def _parse_default_id(text):
@@ -772,7 +772,7 @@ def manage_subvolumes(pool_id):
                                 return None
                             try:
                                 return int(m.group(1))
-                            except Exception:
+                            except ValueError:
                                 return None
 
                         active_id = None
@@ -823,7 +823,7 @@ def manage_subvolumes(pool_id):
             else:
                 return jsonify({'error': NOT_ON_NAS}), 501
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any failure becomes a JSON error for the request
             return jsonify({'error': f'Failed to delete subvolume: {str(e)}'}), 500
 
 @bp.route('/api/v1/storage/pools/<pool_id>/expand', methods=['POST'])
@@ -922,7 +922,7 @@ def expand_pool(pool_id):
             })
         else:
             return jsonify({'error': NOT_ON_NAS}), 501
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - any failure becomes a JSON error for the request
         return jsonify({'error': f'Failed to expand pool: {str(e)}'}), 500
 
 # ── Long-running pool work: replace, scrub, balance ─────────────────────────
@@ -1326,7 +1326,7 @@ def get_available_paths():
                                 'name': f"  -> Subvolume: {subvol_name}",
                                 'path': subvol_path
                             })
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - the path list must render even if subvolume listing fails
                 print(f"Error listing subvolumes for path: {e}")
         # On non-Linux systems there are no btrfs subvolumes to list; the pool
         # mount point on its own is the honest answer.

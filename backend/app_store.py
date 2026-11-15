@@ -133,7 +133,7 @@ class AppStore:
             return catalog, None
         except json.JSONDecodeError as e:
             return None, f"Invalid catalog JSON: {str(e)}"
-        except Exception as e:
+        except (OSError, ValueError) as e:
             return None, str(e)
 
     def _load_update_cache(self) -> dict:
@@ -144,7 +144,7 @@ class AppStore:
                     with open(self.update_cache_file) as f:
                         data = json.load(f)
                     return data if isinstance(data, dict) else {}
-            except Exception as e:
+            except (OSError, ValueError) as e:
                 print(f"Error loading app update cache: {e}")
         return {}
 
@@ -154,7 +154,7 @@ class AppStore:
             try:
                 with open(self.update_cache_file, 'w') as f:
                     json.dump(cache or {}, f, indent=2)
-            except Exception as e:
+            except (OSError, TypeError, ValueError) as e:
                 print(f"Error saving app update cache: {e}")
 
     def _read_cached_update_status(self, app_id: str, allow_stale: bool = False) -> dict | None:
@@ -228,7 +228,7 @@ class AppStore:
                                 new_ports.append(f"{port_mappings[internal_port]}:{internal_port}{protocol}")
                             else:
                                 new_ports.append(port_spec)
-                    except Exception:
+                    except (IndexError, ValueError):
                         new_ports.append(port_spec)
                 service_config['ports'] = new_ports
 
@@ -379,7 +379,7 @@ class AppStore:
             if os.path.exists(self.apps_state_file):
                 with open(self.apps_state_file) as f:
                     return json.load(f)
-        except Exception as e:
+        except (OSError, ValueError) as e:
             print(f"Error loading apps state: {e}")
         return {}
 
@@ -388,7 +388,7 @@ class AppStore:
         try:
             with open(self.apps_state_file, 'w') as f:
                 json.dump(state, f, indent=2)
-        except Exception as e:
+        except (OSError, TypeError, ValueError) as e:
             print(f"Error saving apps state: {e}")
 
     def get_install_status(self) -> dict:
@@ -401,7 +401,7 @@ class AppStore:
             if os.path.exists(self.install_status_file):
                 with open(self.install_status_file) as f:
                     return json.load(f)
-        except Exception as e:
+        except (OSError, ValueError) as e:
             print(f"Error loading install status: {e}")
         return {"status": "idle"}
 
@@ -421,7 +421,7 @@ class AppStore:
                         if os.path.exists(self.install_status_file):
                             with open(self.install_status_file) as f:
                                 current = json.load(f) or {}
-                    except Exception:
+                    except (OSError, ValueError):
                         current = {}
                     logs = current.get('logs', [])
 
@@ -450,7 +450,7 @@ class AppStore:
                     with open(self.install_status_file, 'w') as f:
                         json.dump(payload, f, indent=2)
                     self._last_status_write = now
-                except Exception as e:
+                except (OSError, TypeError, ValueError) as e:
                     print(f"Error saving install status: {e}")
 
             # If finished, we can eventually clear the active status,
@@ -669,7 +669,7 @@ class AppStore:
             return None, "Registry response did not include a manifest digest"
         except requests.RequestException as e:
             return None, f"Registry request failed for {image}: {e}"
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any odd registry reply is reported as text
             return None, f"Failed to inspect registry manifest for {image}: {e}"
 
     def _probe_registry_update_status(self, app_id: str, app_details: dict) -> dict:
@@ -838,7 +838,7 @@ class AppStore:
 
             return app_path, None
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any failure is returned to the caller as text
             return None, str(e)
 
     def install_app(
@@ -1061,7 +1061,7 @@ class AppStore:
 
             self._update_install_status(app_id, "success", 100, "Installation completed successfully", force_write=True, action="install")
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - the install thread must record any failure and not die
             self._update_install_status(app_id, "error", 0, f"Unexpected error during installation: {str(e)}", force_write=True, action="install")
 
     def _install_compose_app_worker(
@@ -1149,7 +1149,7 @@ class AppStore:
             }
             self._save_apps_state(apps_state)
             self._update_install_status(app_id, "success", 100, "Installation completed successfully", logs, force_write=True, action="install")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - the install thread must record any failure and not die
             if app_storage_path:
                 self._delete_subvolume(app_storage_path)
             self._update_install_status(
@@ -1238,7 +1238,7 @@ class AppStore:
         for key, value in (stored_port_mappings or {}).items():
             try:
                 port_mappings[int(key)] = int(value)
-            except Exception:
+            except (TypeError, ValueError):
                 continue
 
         volume_mappings: dict[str, str] = {
@@ -1533,7 +1533,7 @@ class AppStore:
             self._save_apps_state(apps_state)
 
             self._update_install_status(app_id, "success", 100, "Update completed successfully" if pull else "Settings applied", logs, force_write=True, action=action)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - the update thread must record any failure and not die
             self._update_install_status(app_id, "error", 0, f"Unexpected error during update: {str(e)}", logs, force_write=True, action=action)
 
     def uninstall_app(self, app_id: str, keep_data: bool = False) -> tuple[bool, str | None]:
