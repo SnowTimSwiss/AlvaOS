@@ -133,6 +133,10 @@ class Plan:
     # Long transfers that should give way to people using the NAS: the helper
     # runs them with nice 10 and the idle I/O class.
     background: bool = False
+    # Path commands that must not be raced (priv_paths.py): builtin runs them in
+    # the helper on descriptors; pin hands the command /proc/self/fd paths.
+    builtin: bool = False
+    pin: bool = False
 
 
 # ── System inspection (overridable for tests) ────────────────────────────────
@@ -385,7 +389,22 @@ def _new_lines(content: bytes, current: bytes) -> list[str]:
     return [line for line in content.decode('utf-8', 'strict').splitlines() if line.strip() not in existing]
 
 
-def check_smb_conf(content: bytes, current: bytes = b'') -> None:
+def _data_dir_path(value: str, what: str, realpath: Callable[[str], str]) -> None:
+    """A share path: inside the data directories, also where a symlink on the
+    way points now. (Samba and the NFS server open the path later, as the
+    person connecting or with root squashed; this keeps a planted link from
+    making /etc a share in the first place.)"""
+    clean = _clean_abs_path(value)
+    for path in (clean, realpath(clean)):
+        if not any(_strictly_within(path, root) for root in WRITE_ROOTS):
+            _fail(f'{what} outside the AlvaOS data directories: {value}')
+
+
+# Symlinks that leave the share stay closed (Samba's default); these open them.
+_SMB_WIDE_LINKS = {'wide links', 'allow insecure wide links'}
+
+
+def check_smb_conf(content: bytes, current: bytes = b'', realpath: Callable[[str], str] = os.path.realpath) -> None:
     for raw in _new_lines(content, current):
         line = raw.strip()
         if not line or line.startswith(('#', ';')):
@@ -407,10 +426,10 @@ def check_smb_conf(content: bytes, current: bytes = b'') -> None:
             _fail(f'smb.conf parameter "{key}" is not allowed')
         if key_l in _SMB_ROOT_KEYS and re.search(r'(^|[\s,@+&])root\b', value.lower()):
             _fail(f'smb.conf parameter "{key}" cannot grant root')
+        if key_l in _SMB_WIDE_LINKS and value.lower() in ('yes', 'true', '1', 'on'):
+            _fail(f'smb.conf parameter "{key}" is not allowed')
         if key_l == 'path':
-            clean = _clean_abs_path(value)
-            if not any(_strictly_within(clean, root) for root in WRITE_ROOTS):
-                _fail(f'Samba share path outside the AlvaOS data directories: {value}')
+            _data_dir_path(value, 'Samba share path', realpath)
 
 
 _SSHD_ALLOWED = {
@@ -456,15 +475,13 @@ def check_admin_ssh_keys(content: bytes, current: bytes = b'') -> None:
             _fail('Only valid ssh-ed25519 public keys are allowed')
 
 
-def check_exports(content: bytes, current: bytes = b'') -> None:
+def check_exports(content: bytes, current: bytes = b'', realpath: Callable[[str], str] = os.path.realpath) -> None:
     for raw in _new_lines(content, current):
         line = raw.strip()
         if not line or line.startswith('#'):
             continue
         path = line.split()[0].strip('"')
-        clean = _clean_abs_path(path)
-        if not any(_strictly_within(clean, root) for root in WRITE_ROOTS):
-            _fail(f'NFS export outside the AlvaOS data directories: {path}')
+        _data_dir_path(path, 'NFS export', realpath)
         if re.search(r'no_root_squash|insecure_locks', line):
             # Remote root would act as root on the NAS's files.
             _fail(f'NFS export option not allowed: {line!r}')
@@ -618,29 +635,46 @@ _ALLOWED_CAPS = {'NET_ADMIN', 'NET_RAW', 'NET_BIND_SERVICE', 'CHOWN', 'SETUID', 
 _ALLOWED_DEVICE_PREFIXES = ('/dev/dri', '/dev/kfd', '/dev/net/tun', '/dev/nvidia', '/dev/video', '/dev/snd')
 
 
-def _check_host_path(src: str) -> None:
+def _check_host_path(src: str, realpath: Callable[[str], str] = os.path.realpath) -> None:
     if any(part == '..' for part in src.split('/')) or src.startswith('~'):
         _fail(f'Compose bind mount with path traversal: {src}')
+    if src.startswith('.'):
+        # Relative to the project directory, which the backend can write to.
+        _fail(f'Compose bind mounts need an absolute path: {src}')
     if not src.startswith('/'):
-        return  # named volume or relative path inside the project directory
+        return  # a named volume
     clean = os.path.normpath(src)
-    for bad in _DANGEROUS_HOST_PATHS:
-        if clean == bad or (bad != '/' and _within(clean, bad)):
-            # /var/lib/alvaos is the backend's own state; /run and /var/run
-            # hold the docker socket.
-            _fail(f'Compose bind mount of a protected host path: {src}')
+    # Docker follows symlinks in the source, so the place it really points to
+    # counts too (as far as it can be known now).
+    for path in {clean, realpath(clean)}:
+        for bad in _DANGEROUS_HOST_PATHS:
+            if path == bad or (bad != '/' and _within(path, bad)):
+                # /var/lib/alvaos is the backend's own state; /run and /var/run
+                # hold the docker socket.
+                _fail(f'Compose bind mount of a protected host path: {src}')
+
+
+# ${VAR} or $VAR: compose fills these in from the environment and from the .env
+# file in the project directory, after this check. "$$" is a literal "$".
+_COMPOSE_VARIABLE_RE = re.compile(r'(?<!\$)(?:\$\$)*\$(?!\$)')
 
 
 _COMPOSE_DENIED_KEYS = {'include', 'secrets', 'configs', 'extends', 'env_file', 'build', 'device_cgroup_rules'}
 
 
-def check_compose(content: bytes) -> None:
+def check_compose(content: bytes, realpath: Callable[[str], str] = os.path.realpath) -> None:
     import yaml  # python3-yaml is a hard dependency of AlvaOS
 
     try:
-        doc = yaml.safe_load(content.decode('utf-8', 'strict'))
+        text = content.decode('utf-8', 'strict')
+        doc = yaml.safe_load(text)
     except Exception as e:
         _fail(f'Compose file is not valid YAML: {e}')
+    if _COMPOSE_VARIABLE_RE.search(text):
+        # A variable could turn a checked value into another one ("${X}:/host"
+        # with X=/etc, network_mode "${N}" with N=host). AlvaOS fills in its
+        # own placeholders before writing the file, so none are left.
+        _fail('Compose variables like ${NAME} are not allowed: write the value itself')
     if not isinstance(doc, dict) or not isinstance(doc.get('services'), dict):
         _fail('Compose file has no services')
     # Each of these reads files or other compose files from the host (as root),
@@ -671,17 +705,17 @@ def check_compose(content: bytes) -> None:
                 _fail(f'Service {name}: device {host} is not allowed')
         for vol in svc.get('volumes') or []:
             if isinstance(vol, str):
-                _check_host_path(vol.split(':', 1)[0])
+                _check_host_path(vol.split(':', 1)[0], realpath)
             elif isinstance(vol, dict):
                 if vol.get('type', 'volume') == 'bind':
-                    _check_host_path(str(vol.get('source') or ''))
+                    _check_host_path(str(vol.get('source') or ''), realpath)
             else:
                 _fail(f'Service {name}: invalid volume entry')
 
     for vol in (doc.get('volumes') or {}).values():
         opts = (vol or {}).get('driver_opts') or {} if isinstance(vol, dict) else {}
         if 'device' in opts:
-            _check_host_path(str(opts['device']))
+            _check_host_path(str(opts['device']), realpath)
 
 
 # ── Per-binary rules ─────────────────────────────────────────────────────────
@@ -737,7 +771,7 @@ def _rule_gpasswd(sys_: System, args):
 
 def _rule_chgrp(sys_: System, args):
     _expect(args, '-R', lambda g: _share_group(sys_, g), lambda p: writable_path(sys_, p))
-    return Plan(argv=['-R', args[1], writable_path(sys_, args[2])])
+    return Plan(argv=['-R', args[1], writable_path(sys_, args[2])], builtin=True)
 
 
 _OCTAL_MODE_RE = re.compile(r'^0?[0-2]?[0-7]{3}$')
@@ -753,7 +787,7 @@ def _mode(mode: str) -> str:
 
 def _rule_chmod(sys_: System, args):
     _expect(args, '-R', _mode, lambda p: writable_path(sys_, p))
-    return Plan(argv=['-R', args[1], writable_path(sys_, args[2])])
+    return Plan(argv=['-R', args[1], writable_path(sys_, args[2])], builtin=True)
 
 
 def _owner(sys_: System, spec: str) -> str:
@@ -775,30 +809,30 @@ def _owner(sys_: System, spec: str) -> str:
 
 def _rule_chown(sys_: System, args):
     _expect(args, '-R', lambda o: _owner(sys_, o), lambda p: writable_path(sys_, p))
-    return Plan(argv=['-R', args[1], writable_path(sys_, args[2])])
+    return Plan(argv=['-R', args[1], writable_path(sys_, args[2])], builtin=True)
 
 
 def _rule_mkdir(sys_: System, args):
     _expect(args, '-p', lambda p: None)
     path = _clean_abs_path(args[1])
     if _pool_mountpoint(path, strict=False):
-        return Plan(argv=['-p', path])
-    return Plan(argv=['-p', writable_path(sys_, path)])
+        return Plan(argv=['-p', path], builtin=True)
+    return Plan(argv=['-p', writable_path(sys_, path)], builtin=True)
 
 
 def _rule_rmdir(sys_: System, args):
     _expect(args, lambda p: None)
     path = _clean_abs_path(args[0])
     if _pool_mountpoint(path, strict=False):
-        return Plan(argv=[path])
-    return Plan(argv=[writable_path(sys_, path)])
+        return Plan(argv=[path], builtin=True)
+    return Plan(argv=[writable_path(sys_, path)], builtin=True)
 
 
 def _rule_mv(sys_: System, args):
     _expect(args, lambda p: None, lambda p: None)
     src = writable_path(sys_, args[0], allow_root_level_temp=True)
     dst = writable_path(sys_, args[1], allow_root_level_temp=True)
-    return Plan(argv=[src, dst])
+    return Plan(argv=[src, dst], pin=True)
 
 
 _SYSTEMCTL_ALLOWED = {
@@ -1373,7 +1407,7 @@ def _rule_find(sys_: System, args):
     """List one directory inside the data directories. Nothing else: no
     -exec, -delete or other expressions."""
     _expect(args, lambda p: None, '-mindepth', '1', '-maxdepth', '1', '-printf', FIND_LIST_FORMAT)
-    return Plan(argv=[writable_path(sys_, args[0])] + list(args[1:]))
+    return Plan(argv=[writable_path(sys_, args[0])] + list(args[1:]), pin=True)
 
 
 def _rule_cp(sys_: System, args):
@@ -1381,7 +1415,7 @@ def _rule_cp(sys_: System, args):
     _expect(args, '-a', '--reflink=auto', '--no-clobber', '--', lambda p: None, lambda p: None)
     src = writable_path(sys_, args[4])
     dst = writable_path(sys_, args[5])
-    return Plan(argv=list(args[:4]) + [src, dst])
+    return Plan(argv=list(args[:4]) + [src, dst], pin=True)
 
 
 def _rule_readonly_any(sys_: System, args):

@@ -917,6 +917,15 @@ class AppStore:
         services = compose_config.get('services')
         if not isinstance(services, dict) or len(services) == 0:
             return False, "compose configuration must define at least one service", None
+        # The privilege helper checks the file again before every start; saying
+        # it now gives the reason before anything is downloaded.
+        import yaml
+        import priv_policy
+        try:
+            text = yaml.safe_dump(compose_config).replace('${POOL_PATH}', str(pool_path or ''))
+            priv_policy.check_compose(text.encode('utf-8'))
+        except priv_policy.PolicyError as e:
+            return False, f"This compose file is not allowed: {e}", None
 
         apps_state = self._load_apps_state()
         if resolved_app_id in apps_state:

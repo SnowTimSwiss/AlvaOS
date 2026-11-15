@@ -15,6 +15,16 @@ How to add an entry:
 
 ---
 
+## Root commands that a symlink cannot redirect, compose and share paths (2026-11-15)
+
+- The privilege helper checked a path as a string and then ran `chown -R`, `chgrp -R`, `chmod -R`, `mkdir -p`, `rmdir`, `mv`, `cp` or `find` on it. The backend owns most of the data directories, so it could swap a folder on the way for a symlink to `/etc` between the check and the command (for example `chmod -R 0777`, or `mv` a file into `/etc/profile.d`). New `priv_paths.py`: the helper opens the path again from its data directory, one folder at a time, never following a symlink, and works on the open descriptors. chown, chgrp, chmod, mkdir and rmdir run inside the helper (`os.fwalk`, GNU chmod's mode rules); find, mv and cp get `/proc/self/fd/N` paths, and mv and cp also `-T`, so a link planted at the target name is not followed.
+- Compose files: variables (`${X}`, `$X`) are refused, because compose filled them in after the check from the backend's own `.env` file (`"${X}:/host"` with `X=/etc`, or `network_mode: "${N}"`). The helper also passes an empty `--env-file`. Bind mounts need an absolute path and are checked where a symlink on the way points too. Custom compose apps hear the reason when they are added, not at the first start.
+- Samba and NFS share paths are checked where a symlink points too; `wide links` cannot be turned on.
+- `test_imports.py` imports every backend module in a fresh interpreter, so a missing import (like the `Dict` that stopped the Hub) fails CI.
+- **Note for next time**: Docker follows symlinks in a bind source every time a container starts, so an app data folder the backend can write to could still be swapped later; closing that needs app data below folders only root can change. The chmod/chown of a big share is done in Python now: slower than the programs, but it only runs when a share's people change.
+
+---
+
 ## Fix: the Hub did not start (missing type name)
 
 - After merging the Office PR with the changes of another PR, `files_server.py` used `Dict` without importing it (the file now uses the built-in `dict`), so the Hub service stopped at start. Fixed; `ruff` finds this class of error (F821) and the tests import the module.
