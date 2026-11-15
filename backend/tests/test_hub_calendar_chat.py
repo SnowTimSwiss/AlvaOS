@@ -392,3 +392,17 @@ def test_umlauts_in_a_streamed_answer_stay_umlauts():
     got = "".join(t for kind, t in hub_chat.stream_answer(
         service, "m", [{"role": "user", "content": "Hallo"}], False, "low", post=lambda *a, **k: Stream(lines)) if kind == "t")
     assert got == "Grüße aus Köln: Maß, Äpfel, Öl"
+
+
+def test_a_saved_key_is_only_used_for_the_saved_address():
+    import api_ai
+    two_services()
+    settings = ai_assistant.load_settings()
+    saved = settings["connections"][0]
+    saved["api_key"] = "secret-key"
+    same = api_ai._draft({"connection": {"id": saved["id"]}}, settings)
+    assert same["api_key"] == "secret-key"
+    elsewhere = api_ai._draft({"connection": {"id": saved["id"], "base_url": "http://evil.example/v1"}}, settings)
+    assert elsewhere["api_key"] == ""
+    typed = api_ai._draft({"connection": {"id": saved["id"], "base_url": "http://evil.example/v1", "api_key": "new"}}, settings)
+    assert typed["api_key"] == "new"

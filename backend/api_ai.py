@@ -111,15 +111,19 @@ def ai_action(proposal_id):
 
 
 def _draft(payload: dict[str, Any], settings: dict[str, Any]) -> dict[str, Any]:
-    """A connection as the form has it now: a key left empty is the saved one."""
+    """A connection as the form has it now: a key left empty is the saved one,
+    but only for the saved address, so a request cannot send the key elsewhere."""
     found = payload.get('connection')
     raw: dict[str, Any] = found if isinstance(found, dict) else {}
     saved = next((c for c in settings['connections'] if c['id'] == raw.get('id')), None)
     provider = str(raw.get('provider') or (saved or {}).get('provider') or 'other')
     provider = provider if provider in ai_assistant.PROVIDERS else 'other'
+    base_url = str(raw.get('base_url') or (saved or {}).get('base_url') or '').strip()
+    same_address = bool(saved) and base_url.rstrip('/') == str(saved.get('base_url') or '').rstrip('/')
+    saved_key = saved.get('api_key', '') if saved and same_address else ''
     return {'id': str(raw.get('id') or ''), 'name': str(raw.get('name') or ''), 'provider': provider,
-            'base_url': str(raw.get('base_url') or (saved or {}).get('base_url') or '').strip(),
-            'api_key': str(raw.get('api_key') or '').strip() or (saved or {}).get('api_key', '')}
+            'base_url': base_url,
+            'api_key': str(raw.get('api_key') or '').strip() or saved_key}
 
 
 @bp.route('/api/v1/ai/models', methods=['POST'])
@@ -149,6 +153,8 @@ def ai_test():
                 trial[key] = str(payload[key]).strip()
         if payload.get('api_key'):
             trial['api_key'] = str(payload['api_key']).strip()
+        elif str(trial.get('base_url') or '').rstrip('/') != str(settings.get('base_url') or '').rstrip('/'):
+            trial['api_key'] = ''
     if not ai_assistant.check_url(trial['base_url']):
         return jsonify({'error': 'Enter the address of the service.'}), 400
     if not ai_assistant.MODEL_RE.match(trial['model'] or ''):
