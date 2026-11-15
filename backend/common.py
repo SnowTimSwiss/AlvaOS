@@ -4,9 +4,11 @@ AlvaOS Common Utilities
 Shared constants, command helpers, and utility functions used across all managers.
 """
 
+import json
 import os
 import re
 import subprocess
+import tempfile
 from datetime import datetime, UTC
 from pathlib import Path
 
@@ -64,7 +66,7 @@ CMD = {
 def is_root_user():
     try:
         return hasattr(os, 'geteuid') and os.geteuid() == 0
-    except Exception:
+    except OSError:
         return False
 
 
@@ -151,8 +153,56 @@ def run_sudo_command(cmd, timeout=30, extra_env=None, input=None):
         return result, None
     except subprocess.TimeoutExpired:
         return None, "Command timed out"
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - any failure becomes an error string for the caller
         return None, str(e)
+
+
+class StateFileError(Exception):
+    """A state file exists but cannot be read as JSON."""
+
+
+def write_json_atomic(path, payload, mode=0o644):
+    """Write JSON so that a crash or power cut leaves the old file or the new
+    one, never half of it."""
+    folder = os.path.dirname(path) or '.'
+    fd, tmp = tempfile.mkstemp(dir=folder, prefix=f'.{os.path.basename(path)}.', suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump(payload, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def read_json_state(path, default):
+    """The file's JSON, or default when there is no file. A file that is there
+    but unreadable raises StateFileError: the caller decides, because silently
+    starting from default and saving would erase what the file held."""
+    try:
+        with open(path, encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return default
+    except (OSError, ValueError) as e:
+        raise StateFileError(f'{path} could not be read: {e}') from e
+
+
+def set_aside_broken(path):
+    """Rename an unreadable state file next to itself, so it is kept for a
+    person to look at and the next save starts a fresh file."""
+    aside = f'{path}.broken-{datetime.now(UTC).strftime("%Y%m%d-%H%M%S")}'
+    try:
+        os.replace(path, aside)
+    except OSError:
+        return None
+    return aside
 
 
 def ensure_directories():
@@ -175,7 +225,7 @@ def parse_size_to_bytes(size_str):
             'KiB': 1024, 'MiB': 1024**2, 'GiB': 1024**3, 'TiB': 1024**4, 'PiB': 1024**5
         }
         return int(value * multipliers.get(unit, 1))
-    except Exception:
+    except (AttributeError, ValueError):
         return None
 
 
@@ -183,7 +233,7 @@ def format_bytes_gib(byte_val):
     try:
         gib = byte_val / (1024**3)
         return f"{gib:.2f}GiB"
-    except Exception:
+    except (TypeError, ValueError):
         return "Unknown"
 
 
@@ -203,14 +253,14 @@ def _parse_iso(value):
         if raw.endswith('Z'):
             raw = raw[:-1] + '+00:00'
         return datetime.fromisoformat(raw)
-    except Exception:
+    except (TypeError, ValueError):
         return None
 
 
 def _safe_int(value, fallback=0):
     try:
         return int(value)
-    except Exception:
+    except (TypeError, ValueError):
         return fallback
 
 
@@ -230,6 +280,6 @@ def _read_cpu_temperature_c():
                     current = getattr(entry, 'current', None)
                     if isinstance(current, (int, float)):
                         return round(float(current), 1)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - temperature is optional, a sensor failure only prints a warning
         print(f"Warning: Failed to read CPU temperature: {e}")
     return None

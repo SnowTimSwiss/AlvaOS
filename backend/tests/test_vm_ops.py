@@ -267,3 +267,16 @@ def test_helper_commands_answer_in_json(pool, monkeypatch, capsys):
     assert vm.helper_main(["vm-isos"]) == 0 and json.loads(capsys.readouterr().out) == {"isos": []}
     assert vm.helper_main(["vm-delete", "nonsense"]) == 1 and "not a virtual machine" in capsys.readouterr().err
     assert vm.helper_main(["vm-delete"]) == 1
+
+
+def test_chown_tree_changes_a_single_file(tmp_path, monkeypatch):
+    import grp
+    import pwd
+    changed = []
+    monkeypatch.setattr(pwd, "getpwnam", lambda n: type("P", (), {"pw_uid": 7})())
+    monkeypatch.setattr(grp, "getgrnam", lambda n: type("G", (), {"gr_gid": 8})())
+    monkeypatch.setattr(os, "lchown", lambda p, u, g: changed.append((p, u, g)))
+    disk = tmp_path / "data.qcow2"
+    disk.write_bytes(b"")
+    vm._chown_tree(str(disk))
+    assert changed == [(str(disk), 7, 8)]

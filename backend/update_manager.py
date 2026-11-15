@@ -18,7 +18,7 @@ from update_signing import read_deb_version, signature_path_for
 
 try:
     from packaging.version import Version, InvalidVersion
-except Exception:
+except ImportError:
     class InvalidVersion(ValueError):  # type: ignore[no-redef]
         pass
 
@@ -107,7 +107,7 @@ class UpdateManager:
                 f.write("ok")
             probe.unlink(missing_ok=True)
             return str(preferred)
-        except Exception:
+        except OSError:
             fallback = (Path(__file__).resolve().parent / ".." / ".alvaos_state").resolve()
             fallback.mkdir(parents=True, exist_ok=True)
             return str(fallback)
@@ -137,9 +137,9 @@ class UpdateManager:
                 for path in (f, signature_path_for(f)):
                     try:
                         os.remove(path)
-                    except Exception:
+                    except OSError:
                         pass
-        except Exception:
+        except Exception:  # noqa: BLE001 - cache cleanup is best effort and must never break an update
             pass
 
     def way_back_ready(self):
@@ -220,7 +220,7 @@ class UpdateManager:
             if os.path.exists(path):
                 with open(path) as f:
                     return json.load(f)
-        except Exception:
+        except (OSError, ValueError):
             pass
         return default
 
@@ -237,7 +237,7 @@ class UpdateManager:
             if os.path.exists(tmp_path):
                 try:
                     os.remove(tmp_path)
-                except Exception:
+                except OSError:
                     pass
 
     def get_settings(self):
@@ -310,7 +310,7 @@ class UpdateManager:
                     key, value = line.split("=", 1)
                     value = value.strip().strip('"').strip("'")
                     data[key.strip()] = value
-        except Exception:
+        except (OSError, ValueError):
             return {}
         return data
 
@@ -346,7 +346,7 @@ class UpdateManager:
                     value = line.split(":", 1)[1].strip().lower()
                     if re.match(r"^[a-z][a-z0-9-]*$", value):
                         return value
-        except Exception:
+        except requests.RequestException:
             return None
         return None
 
@@ -458,7 +458,7 @@ class UpdateManager:
                 try:
                     with open(path) as f:
                         return f.read().strip()
-                except Exception:
+                except OSError:
                     continue
         return "unknown"
 
@@ -548,7 +548,7 @@ class UpdateManager:
             try:
                 cached_at_str = cached_entry.get("cached_at")
                 cached_at = datetime.fromisoformat(cached_at_str) if cached_at_str else None
-            except Exception:
+            except (TypeError, ValueError, AttributeError):
                 cached_at = None
             if cached_at and (now - cached_at).total_seconds() < self._cache_seconds(cached_entry.get("release")):
                 print(f"Using cached GitHub release for {cache_key}")
@@ -584,7 +584,7 @@ class UpdateManager:
                     releases = [r for r in resp.json() if r.get("prerelease") and self.is_system_release(r)]
                     releases.sort(key=lambda r: r.get("published_at") or "", reverse=True)
                     release = releases[0] if releases else {}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - an update check reports any failure as text and falls back to the cache
             error = str(e)
             print(f"Update check error: {error}")
 
@@ -689,7 +689,7 @@ class UpdateManager:
                     raise ValueError("Signature file is too large")
                 with open(sig_path, "wb") as f:
                     f.write(sig_resp.content)
-        except Exception as e:
+        except (requests.RequestException, OSError, ValueError) as e:
             try:
                 os.remove(dest_path)
             except OSError:
@@ -732,13 +732,13 @@ class UpdateManager:
             return result, None
         except subprocess.TimeoutExpired:
             return None, "Command timed out"
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any failure becomes an error string for the caller
             return None, str(e)
 
     def is_root_user(self):
         try:
             return hasattr(os, "geteuid") and os.geteuid() == 0
-        except Exception:
+        except OSError:
             return False
 
     def _deb_package_name(self, package_path):
@@ -786,7 +786,7 @@ class UpdateManager:
         try:
             start_res = subprocess.run(cmd, capture_output=True, text=True, timeout=120,
                                        env={"LC_ALL": "C"})
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError) as e:
             self.set_update_state("error", "Install failed", {"error": str(e)})
             return {"success": False, "error": f"Failed to launch the update: {e}"}
         if start_res.returncode != 0:
@@ -1006,7 +1006,7 @@ class UpdateManager:
         try:
             with open(sources_path, "w", encoding="utf-8") as f:
                 f.write(sources_content)
-        except Exception as e:
+        except OSError as e:
             error_msg = f"Failed to prepare temporary apt sources: {e}"
             self.set_update_state("error", "Debian OS upgrade failed", {"error": error_msg})
             return {"success": False, "error": error_msg}
@@ -1091,7 +1091,7 @@ class UpdateManager:
             try:
                 if os.path.exists(sources_path):
                     os.remove(sources_path)
-            except Exception:
+            except OSError:
                 pass
 
     def scan_offline_packages(self, root_path=None):
@@ -1135,7 +1135,7 @@ class UpdateManager:
                                     # For now, just try to mount.
                                     pkgs = self._temp_mount_and_scan(part_name)
                                     packages.extend(pkgs)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - a failed USB scan must not break the update page
                 print(f"Error during USB scan: {e}")
 
         unique_packages = []
@@ -1198,7 +1198,7 @@ class UpdateManager:
                         packages.append(cached_pkg)
                 finally:
                     self.run_command([CMD['UMOUNT'], mount_point], timeout=10)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - a failed temporary mount is printed and the scan goes on
             print(f"Failed to temp mount {dev_path}: {e}")
 
         return packages
@@ -1224,7 +1224,7 @@ class UpdateManager:
             if os.path.exists(src_sig):
                 shutil.copy2(src_sig, signature_path_for(dest))
             return dest
-        except Exception as e:
+        except OSError as e:
             print(f"Failed to cache offline package {src_path}: {e}")
             return None
 

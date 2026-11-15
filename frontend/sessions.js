@@ -5,7 +5,7 @@
     const othersButton = document.getElementById('sessions-revoke-others');
     if (!list) return;
 
-    const esc = window.escapeHtml || ((v) => String(v ?? ''));
+    const esc = (v) => window.escapeHtml(v);
     const PHONE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/></svg>';
     const SCREEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/></svg>';
 

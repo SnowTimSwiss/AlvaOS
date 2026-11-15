@@ -26,6 +26,7 @@ from urllib.parse import quote
 
 from flask import Flask, Response, g, has_request_context, jsonify, request, send_from_directory
 
+import backup_manager
 import files_manager
 import hub_apps
 import photo_dates
@@ -391,7 +392,7 @@ def login():
 
 # ── Office: documents opened in the editor (hub_office.py) ─────────────────────────────────────
 
-HUB_INTERNAL = os.environ.get('ALVAOS_HUB_INTERNAL', f'http://host.docker.internal:{8090}')
+HUB_INTERNAL = os.environ.get('ALVAOS_HUB_INTERNAL', f'http://host.docker.internal:{PORT}')
 _editor_seen = {'at': 0.0, 'up': False}
 
 
@@ -496,7 +497,7 @@ def office_file():
 @app.post('/api/office/callback')
 def office_callback():
     """The Document Server tells what became of a document; a saved version replaces the file, as the person."""
-    session, _share, folder, name, edit, bad = _office_target(request.args.get('t', ''))
+    session, share, folder, name, edit, bad = _office_target(request.args.get('t', ''))
     if bad:
         return jsonify({'error': 1}), 403
     body = request.get_json(silent=True) or {}
@@ -507,7 +508,8 @@ def office_callback():
         return jsonify({'error': 0})               # still being edited, or closed without changes
     want = hub_office.ds_download_path(str(claims.get('url') or ''))
     port = hub_apps.office_port()
-    if not edit or not want or not port:
+    # The token lives 12 hours; the person's access now decides, not what it said when it was made.
+    if not edit or share['access'] != 'write' or not want or not port:
         return jsonify({'error': 1})
     import requests
     try:
@@ -661,7 +663,7 @@ def _qr_data_url(text: str) -> str:
         buf = io.BytesIO()
         image.save(buf)
         return 'data:image/svg+xml;base64,' + base64.b64encode(buf.getvalue()).decode()
-    except Exception:
+    except Exception:  # noqa: BLE001 - the QR code is optional, the page shows the pairing code as text
         return ''
 
 
@@ -1169,14 +1171,6 @@ def version_link():
     return jsonify({'url': f'/api/get/{token}', 'expires_in': LINK_TTL_SECONDS})
 
 
-def restored_name(name: str, when: datetime) -> str:
-    """'plan.txt' -> 'plan (restored 2026-10-01 0300).txt' (as on the Backup page)."""
-    stem, ext = os.path.splitext(name)
-    if not stem:
-        stem, ext = name, ''
-    return f"{stem} (restored {when.strftime('%Y-%m-%d %H%M')}){ext}"
-
-
 @app.post('/api/versions/restore')
 def version_restore():
     """The old version is copied next to the file; nothing is overwritten."""
@@ -1195,7 +1189,7 @@ def version_restore():
         when = datetime.now().astimezone()
     name = os.path.basename(path)
     result, error = files_manager.run_helper(
-        ['files-restore-version', chosen['folder'], name, os.path.dirname(path), restored_name(name, when)],
+        ['files-restore-version', chosen['folder'], name, os.path.dirname(path), backup_manager.restored_name(name, when)],
         timeout=3600, user=as_user(session))
     if result is None:
         return jsonify({'error': error or 'The old version could not be restored.'}), 409
@@ -1521,8 +1515,10 @@ def upload_finish():
         # A changed text file: the old one goes to the trash (so it can come
         # back), then the new one takes its name.
         share = shares_for(session)[str(data.get('share'))]
-        files_manager.run_helper(['files-trash', share.get('root', share['path']), path, str(data.get('name') or '')],
-                                 user=as_user(session))
+        trashed, error = files_manager.run_helper(
+            ['files-trash', share.get('root', share['path']), path, str(data.get('name') or '')], user=as_user(session))
+        if trashed is None:
+            return jsonify({'error': error}), 409
     return _helper_answer(*files_manager.run_helper(_finish_args(path, data, size), user=as_user(session)), 201)
 
 
@@ -2105,13 +2101,18 @@ def _free_upload_name(base: str, owner: str | None, name: str) -> tuple[str | No
     return None, 0, 'Too many files with this name.'
 
 
+def _public_name_ok(name: str) -> bool:
+    return bool(name) and '/' not in name and '\x00' not in name and not name.startswith('.') \
+        and len(name.encode()) <= 240
+
+
 @app.post('/api/public/<token>/upload/start')
 def public_upload_start(token):
     base, owner, bad = _drop_target(token)
     if bad:
         return bad
     name = str((request.get_json(silent=True) or {}).get('name') or '').strip()
-    if not name or '/' in name or '\x00' in name or name.startswith('.') or len(name.encode()) > 240:
+    if not _public_name_ok(name):
         return jsonify({'error': 'This file name cannot be used.'}), 400
     if not _room_left(token, 1):
         return jsonify({'error': 'This link has taken all it may. Ask the person who sent it for more room.'}), 413
@@ -2177,6 +2178,8 @@ def public_upload_finish(token):
     size = str(data.get('size') if data.get('size') is not None else '')
     if not size.isdigit():
         return jsonify({'error': 'Invalid size.'}), 400
+    if not _public_name_ok(str(data.get('name') or '').strip()):
+        return jsonify({'error': 'This file name cannot be used.'}), 400
     result, error = files_manager.run_helper(_finish_args(base, data, size), user=owner)
     if result is not None:
         _count_file(token)
@@ -2297,6 +2300,7 @@ def keep_embed_proxies(interval: float = 5.0) -> None:
 
 
 def main() -> None:
+    _converter.forget_work()
     threading.Thread(target=keep_embed_proxies, name='embed-sync', daemon=True).start()
     try:
         import waitress

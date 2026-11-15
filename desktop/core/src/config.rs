@@ -144,10 +144,13 @@ impl Store {
     }
 
     pub fn load(&self) -> Config {
-        std::fs::read_to_string(self.dir.join("settings.json"))
-            .ok()
-            .and_then(|text| serde_json::from_str(&text).ok())
-            .unwrap_or_default()
+        let path = self.dir.join("settings.json");
+        let Ok(text) = std::fs::read_to_string(&path) else { return Config::default() };
+        serde_json::from_str(&text).unwrap_or_else(|_| {
+            // The next save would overwrite it: keep what is there for the person to look at.
+            let _ = std::fs::rename(&path, self.dir.join("settings.json.bad"));
+            Config::default()
+        })
     }
 
     pub fn save(&self, config: &Config) -> Result<()> {
@@ -160,7 +163,7 @@ impl Store {
                 return Some(value);
             }
         }
-        self.file_secrets().get(name).and_then(|v| v.as_str()).map(str::to_string)
+        self.file_secrets().ok()?.get(name).and_then(|v| v.as_str()).map(str::to_string)
     }
 
     pub fn set_secret(&self, name: &str, value: &str) -> Result<()> {
@@ -168,7 +171,7 @@ impl Store {
             self.drop_file_secret(name)?;
             return Ok(());
         }
-        let mut all = self.file_secrets();
+        let mut all = self.file_secrets()?;
         all.insert(name.into(), value.into());
         write_private(&self.dir, "secrets.json", &serde_json::to_string(&all)?)
     }
@@ -186,15 +189,18 @@ impl Store {
         self.save(&Config { hub_port: keep.hub_port, dav_port: keep.dav_port, dav_tls_port: keep.dav_tls_port, ..Config::default() })
     }
 
-    fn file_secrets(&self) -> serde_json::Map<String, serde_json::Value> {
-        std::fs::read_to_string(self.dir.join("secrets.json"))
-            .ok()
-            .and_then(|text| serde_json::from_str(&text).ok())
-            .unwrap_or_default()
+    /// Empty when there is no file yet. A file that cannot be read is an error: writing over it would lose every secret in it.
+    fn file_secrets(&self) -> Result<serde_json::Map<String, serde_json::Value>> {
+        let path = self.dir.join("secrets.json");
+        match std::fs::read_to_string(&path) {
+            Ok(text) => serde_json::from_str(&text).with_context(|| format!("{} is damaged", path.display())),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Default::default()),
+            Err(e) => Err(e).with_context(|| format!("cannot read {}", path.display())),
+        }
     }
 
     fn drop_file_secret(&self, name: &str) -> Result<()> {
-        let mut all = self.file_secrets();
+        let mut all = self.file_secrets()?;
         if all.remove(name).is_some() {
             write_private(&self.dir, "secrets.json", &serde_json::to_string(&all)?)?;
         }

@@ -15,6 +15,37 @@ How to add an entry:
 
 ---
 
+## Root commands that a symlink cannot redirect, compose and share paths (2026-11-15)
+
+- The privilege helper checked a path as a string and then ran `chown -R`, `chgrp -R`, `chmod -R`, `mkdir -p`, `rmdir`, `mv`, `cp` or `find` on it. The backend owns most of the data directories, so it could swap a folder on the way for a symlink to `/etc` between the check and the command (for example `chmod -R 0777`, or `mv` a file into `/etc/profile.d`). New `priv_paths.py`: the helper opens the path again from its data directory, one folder at a time, never following a symlink, and works on the open descriptors. chown, chgrp, chmod, mkdir and rmdir run inside the helper (`os.fwalk`, GNU chmod's mode rules); find, mv and cp get `/proc/self/fd/N` paths, and mv and cp also `-T`, so a link planted at the target name is not followed.
+- Compose files: variables (`${X}`, `$X`) are refused, because compose filled them in after the check from the backend's own `.env` file (`"${X}:/host"` with `X=/etc`, or `network_mode: "${N}"`). The helper also passes an empty `--env-file`. Bind mounts need an absolute path and are checked where a symlink on the way points too. Custom compose apps hear the reason when they are added, not at the first start.
+- Samba and NFS share paths are checked where a symlink points too; `wide links` cannot be turned on.
+- `test_imports.py` imports every backend module in a fresh interpreter, so a missing import (like the `Dict` that stopped the Hub) fails CI.
+- **Note for next time**: Docker follows symlinks in a bind source every time a container starts, so an app data folder the backend can write to could still be swapped later; closing that needs app data below folders only root can change. The chmod/chown of a big share is done in Python now: slower than the programs, but it only runs when a share's people change.
+
+---
+
+## Every blind `except Exception` has a reason (2026-11-15)
+
+- `ruff` rule BLE001 is on now (`BLE` in `ruff.toml`), with no file left out. Most places catch only what can really happen there (`OSError`, `ValueError`, `requests.RequestException`, `subprocess.SubprocessError` and so on).
+- The rest stay broad on purpose and say why in a `# noqa: BLE001 - ...` comment: request handlers that turn any error into a JSON error, background loops and threads that must not die, status pages that must render when one probe fails, best-effort Samba setup and cleanup.
+
+---
+
+## Code review before publishing: fixes (2026-11-15)
+
+The whole codebase was reviewed in six parts (API, Hub, storage and backup, system services, web UI, desktop/Android/scripts). What was found and fixed:
+
+- **Backups**: a scheduled run that took longer than 30 seconds was started again on every scheduler tick (a long send queued hundreds of backups and retention then pushed out the history); now one scheduled run per kind at a time. "Delete restore point" deleted any subvolume it was given, a live share too; now only known restore points or ones in a snapshot folder. A restore needs a restore point of that very folder, on a pool.
+- **State files**: the restore point list, Buddy identity and peers, `pools.json` and `shares.json` were written in place and a damaged file read as empty, which the next save made permanent (a lost Buddy identity cut the NAS off from its buddies; an empty pool list offered the data disks for erasing). New `common.write_json_atomic` and `read_json_state`: written in one piece; a damaged file is kept (or set aside as `.broken-<time>`) instead of being replaced, and a disk is not offered for erasing while the pool list cannot be read. `users.json`, `apps_state.json` and `alerts.json` are owner-only now.
+- A share on a whole pool no longer runs `chgrp -R`/`chmod -R` over the pool (which reached every other share and everyone's own folder).
+- **Sign-in**: the per-address limit was reset as soon as the password was right, so the 2FA code could be guessed without limit; wrong codes now count per account (10 in 15 minutes locks), and replacing an active second factor needs the password. Telegram, Buddy, 2FA and offline-scan routes are admin-only; the UPS status GET no longer acts; the assistant sends a saved API key only to its saved address.
+- **Apps**: uninstalling an app removed the containers of every app whose project name started with the same text (`immich` and `immich-ml`); labels are compared exactly now. A backend restart during an install no longer blocks every later app operation.
+- **Hub**: WebDAV copy or move onto itself put the file into the trash; a phone could report an album named `..`; an Office save is checked against the person's current access; repeat rules with a huge COUNT, chunked DAV bodies over the size limit and control characters in calendar and contact fields are handled.
+- **Web UI**: toasts showed their text as HTML (a web search result title could run script in the admin page); they are text now unless a caller asks for markup. Inline handlers use a JS-string escape; failed loads show an error instead of an empty state.
+- **Apps for phones and computers**: an `alvaos://pair` link from a web page connected the phone to any host without asking; it asks now. The Android bridge answers only the NAS page. A failed gallery query no longer reads as "every photo deleted". The desktop app keeps a damaged secrets file instead of overwriting it, opens only web links outside, and tells a lost connection from a refusal.
+- **Scripts**: `apply_update.sh` rolls back when a migration fails instead of reporting success; the installer no longer aborts without an EFI entry or with a NIC named like `wlo1`.
+- **Note for next time**: the Kotlin and Rust changes were not built here (no Android SDK, no libdbus): CI builds them. Office saves now require `exp` in the Document Server's callback token (its default); check one save on a real NAS (TESTING 12zzi). Open from the review, not done: Hub folder scoping by share root instead of the data root (`files_ops.open_dir`), certificate pinning in the apps, the Windows drive token on the `net use` command line, and the review's low findings in `api_*` and the system services.
 ## Updates: a release without its files is looked at again
 
 - A release is often published before its package is uploaded; the check kept that answer for an hour, so "This release has no installable package yet" stayed. Now a release without a `.deb` is trusted for two minutes only, and "Install" looks again once by itself before it gives up. "Check now" always asked GitHub afresh, but it was hidden as soon as an update was shown; it is there now in that state too. The backup tests no longer need btrfs-progs on the machine (they failed without it; `_btrfs_cmd` is faked like the runner).

@@ -115,7 +115,7 @@ def load_alerts_state():
                 if normalized != loaded:
                     save_alerts_state(normalized)
                 return normalized
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - a damaged state file falls back to the defaults
         print(f"Error loading alerts state: {e}")
     return _build_default_alerts_state()
 
@@ -124,10 +124,15 @@ def save_alerts_state(state):
     try:
         ensure_directories()
         normalized = _normalize_alerts_state(state)
-        with open(ALERTS_STATE_FILE, 'w') as f:
+        # Owner-only and in one piece: it holds the Telegram bot token.
+        tmp = f'{ALERTS_STATE_FILE}.tmp'
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'w') as f:
+            os.fchmod(f.fileno(), 0o600)
             json.dump(normalized, f, indent=2)
+        os.replace(tmp, ALERTS_STATE_FILE)
         return normalized
-    except Exception as e:
+    except (OSError, TypeError, ValueError) as e:
         print(f"Error saving alerts state: {e}")
         return _normalize_alerts_state(state)
 
@@ -192,12 +197,13 @@ def _telegram_api_call(bot_token, method, payload=None, params=None, timeout_sec
             response = requests.post(url, json=payload, timeout=timeout_sec)
         else:
             response = requests.get(url, params=params, timeout=timeout_sec)
-    except Exception as e:
-        return False, f'Telegram request failed: {e}', None
+    except requests.RequestException as e:
+        # The message of a requests error contains the URL, and so the token.
+        return False, f'Telegram request failed ({type(e).__name__})', None
 
     try:
         data = response.json()
-    except Exception:
+    except ValueError:
         data = {}
 
     if response.status_code != 200 or not isinstance(data, dict) or not data.get('ok'):
@@ -255,7 +261,7 @@ def _collect_system_alerts():
                 route='index.html',
                 action_label='Open Dashboard'
             ))
-    except Exception:
+    except Exception:  # noqa: BLE001 - one failing probe must not hide the other alerts
         pass
 
     try:
@@ -265,7 +271,7 @@ def _collect_system_alerts():
             alerts.append(_build_alert_item(alert_id=item['id'], severity=item['severity'], title=item['title'],
                                             message=item['message'], route='system.html#power',
                                             action_label='Open Power'))
-    except Exception:
+    except Exception:  # noqa: BLE001 - one failing probe must not hide the other alerts
         pass
 
     cpu_temp_c = _read_cpu_temperature_c()
@@ -309,7 +315,7 @@ def _collect_system_alerts():
                 route='index.html',
                 action_label='Open Dashboard'
             ))
-    except Exception:
+    except Exception:  # noqa: BLE001 - one failing probe must not hide the other alerts
         pass
 
     try:
@@ -332,7 +338,7 @@ def _collect_system_alerts():
                 route='storage.html',
                 action_label='Open Storage'
             ))
-    except Exception:
+    except Exception:  # noqa: BLE001 - one failing probe must not hide the other alerts
         pass
 
     try:
@@ -361,7 +367,7 @@ def _collect_system_alerts():
                 link='storage.html',
                 fingerprint=f'pool-degraded-{pool_id}',
             )
-    except Exception:
+    except Exception:  # noqa: BLE001 - one failing probe must not hide the other alerts
         pass
 
     try:
@@ -406,9 +412,9 @@ def _collect_system_alerts():
                             route='storage.html',
                             action_label='Open Storage'
                         ))
-                except Exception:
+                except Exception:  # noqa: BLE001 - one failing probe must not hide the other alerts
                     pass
-    except Exception:
+    except Exception:  # noqa: BLE001 - one failing probe must not hide the other alerts
         pass
 
     # Results of the last data check per pool (recorded by health_checks; no
@@ -442,7 +448,7 @@ def _collect_system_alerts():
                     route=f'storage.html#pool={pool_id}',
                     action_label='Open pool'
                 ))
-    except Exception:
+    except Exception:  # noqa: BLE001 - one failing probe must not hide the other alerts
         pass
 
     # What the disks themselves report (recorded at night by the self-test
@@ -462,7 +468,7 @@ def _collect_system_alerts():
                 route='storage.html#disks',
                 action_label='Open disks'
             ))
-    except Exception:
+    except Exception:  # noqa: BLE001 - one failing probe must not hide the other alerts
         pass
 
     # The backup disk has not had a copy for a week (it was not connected).
@@ -476,7 +482,7 @@ def _collect_system_alerts():
                 message=(f'"{copy.get("pool_name")}" has not had a copy of your restore points for a week. '
                          'Connect it; the copy starts on its own.'),
                 route='backup.html', action_label='Open Backup'))
-    except Exception:
+    except Exception:  # noqa: BLE001 - one failing probe must not hide the other alerts
         pass
 
     # Shares (personal folders) close to their space limit.
@@ -491,7 +497,7 @@ def _collect_system_alerts():
                     lambda path: share_quota.read_usage(path, run_sudo_command, CMD['BTRFS'])):
                 alerts.append(_build_alert_item(alert_id=alert_id, severity=severity, title=title,
                                                 message=message, route=route, action_label='Open shares'))
-    except Exception:
+    except Exception:  # noqa: BLE001 - one failing probe must not hide the other alerts
         pass
 
     alerts.sort(key=lambda item: (
@@ -533,7 +539,7 @@ def _load_notifications_raw():
                 data = json.load(f)
                 if isinstance(data, list):
                     return data
-    except Exception as e:
+    except (OSError, ValueError) as e:
         print(f"Error loading notifications: {e}")
     return []
 
@@ -543,7 +549,7 @@ def _save_notifications_raw(notifications):
         ensure_directories()
         with open(NOTIFICATIONS_STATE_FILE, 'w') as f:
             json.dump(notifications, f, indent=2)
-    except Exception as e:
+    except (OSError, TypeError, ValueError) as e:
         print(f"Error saving notifications: {e}")
 
 

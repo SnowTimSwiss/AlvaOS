@@ -106,7 +106,7 @@ def install_compose_app():
         import yaml
         try:
             compose_config = yaml.safe_load(compose_yaml)
-        except Exception as e:
+        except yaml.YAMLError as e:
             return jsonify({'error': f'Invalid compose_yaml: {str(e)}'}), 400
     else:
         return jsonify({'error': 'Either compose_yaml or compose is required'}), 400
@@ -295,7 +295,7 @@ def exec_container_command(container_id):
 
     try:
         timeout = int(timeout)
-    except Exception:
+    except (TypeError, ValueError):
         return jsonify({'error': 'timeout must be an integer'}), 400
 
     if timeout < 1 or timeout > 300:

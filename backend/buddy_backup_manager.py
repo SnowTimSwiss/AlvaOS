@@ -25,6 +25,7 @@ from typing import Any, Callable, Iterator, Optional
 import requests
 
 from alerts_manager import push_notification
+from common import StateFileError, read_json_state, set_aside_broken, write_json_atomic
 from buddy_vault import TransferError as _TransferError
 from buddy_vault import VaultError, VaultReplicator, VaultStore
 from buddy_vault import read_stderr as _read_stderr
@@ -84,6 +85,10 @@ class BuddyBackupManager:
         # restores derive the key from the passphrase and the stream header.
         self.encryption_key_file = os.path.join(self.state_dir, "buddy_encryption_key.json")
         self._transfer_lock = threading.RLock()
+        # State files that were there but unreadable and must not be replaced by
+        # fresh ones: a new identity or key would cut this NAS off from its buddies.
+        self._keep_files = {self.identity_file, self.peers_file, self.encryption_key_file}
+        self._unreadable: set[str] = set()
         # Encrypted vaults: the ones buddies keep here, and ours on buddies.
         self.vault_store = VaultStore(self)
         self.vault = VaultReplicator(self)
@@ -101,7 +106,7 @@ class BuddyBackupManager:
                 f.write("ok")
             probe.unlink(missing_ok=True)
             return str(preferred)
-        except Exception:
+        except OSError:
             fallback = (Path(__file__).resolve().parent / ".." / ".alvaos_state").resolve()
             fallback.mkdir(parents=True, exist_ok=True)
             return str(fallback)
@@ -111,21 +116,25 @@ class BuddyBackupManager:
 
     def _load_json(self, path: str, default):
         try:
-            if os.path.exists(path):
-                with open(path, encoding="utf-8") as f:
-                    return json.load(f)
-        except Exception:
-            pass
-        return default
+            return read_json_state(path, default)
+        except StateFileError as e:
+            if path in self._keep_files:
+                self._unreadable.add(path)
+                print(f"Warning: {e}; Buddy Backup will not replace it")
+            else:
+                print(f"Warning: {e}; moved to {set_aside_broken(path)}")
+            return default
 
     def _save_json(self, path: str, payload) -> None:
+        if path in self._unreadable:
+            raise StateFileError(f"{os.path.basename(path)} could not be read; repair or remove it first, "
+                                 "so that it is not replaced by mistake")
         self._ensure_dirs()
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2)
+        write_json_atomic(path, payload, mode=0o600)
 
     def _ensure_defaults(self) -> None:
         identity = self._load_identity()
-        if not identity:
+        if not identity and self.identity_file not in self._unreadable:
             self._save_json(self.identity_file, self._create_identity())
 
         peers = self._load_json(self.peers_file, {})
@@ -170,7 +179,7 @@ class BuddyBackupManager:
             return None
         try:
             return datetime.fromisoformat(value)
-        except Exception:
+        except (TypeError, ValueError):
             return None
 
     def _normalize_path(self, path: str | None) -> str:
@@ -199,7 +208,7 @@ class BuddyBackupManager:
             probe = os.path.realpath(self._existing_probe_path(target))
             root = os.path.realpath("/")
             return os.stat(probe).st_dev == os.stat(root).st_dev
-        except Exception:
+        except (OSError, ValueError):
             return False
 
     def _sanitize_non_system_path(self, path: str | None) -> str:
@@ -213,7 +222,7 @@ class BuddyBackupManager:
     def _hostname(self) -> str:
         try:
             return os.uname().nodename or "alvaos"
-        except Exception:
+        except OSError:
             return "alvaos"
 
     def _detect_cmd(self, candidates: list[str], which_name: str) -> str | None:
@@ -310,7 +319,7 @@ class BuddyBackupManager:
             if not isinstance(payload, dict):
                 return None, "Invalid pairing token payload"
             return payload, None
-        except Exception:
+        except (ValueError, TypeError):
             return None, "Invalid pairing token format"
 
     def _load_peers(self) -> dict[str, dict]:
@@ -356,13 +365,13 @@ class BuddyBackupManager:
 
             try:
                 interval = int(item.get("interval_minutes", DEFAULT_BUDDY_SETTINGS["interval_minutes"]))
-            except Exception:
+            except (TypeError, ValueError):
                 interval = int(DEFAULT_BUDDY_SETTINGS["interval_minutes"])
             interval = max(15, min(43200, interval))
 
             try:
                 quota = int(item.get("max_storage_gb", DEFAULT_BUDDY_SETTINGS["incoming_quota_gb"]))
-            except Exception:
+            except (TypeError, ValueError):
                 quota = int(DEFAULT_BUDDY_SETTINGS["incoming_quota_gb"])
             quota = max(1, min(20000, quota))
 
@@ -413,7 +422,7 @@ class BuddyBackupManager:
         )
         try:
             incoming_quota = int(source.get("incoming_quota_gb", merged["incoming_quota_gb"]))
-        except Exception:
+        except (TypeError, ValueError):
             incoming_quota = int(DEFAULT_BUDDY_SETTINGS["incoming_quota_gb"])
         merged["incoming_quota_gb"] = max(1, min(20000, incoming_quota))
 
@@ -431,13 +440,13 @@ class BuddyBackupManager:
 
         try:
             interval = int(source.get("interval_minutes", merged["interval_minutes"]))
-        except Exception:
+        except (TypeError, ValueError):
             interval = int(DEFAULT_BUDDY_SETTINGS["interval_minutes"])
         merged["interval_minutes"] = max(15, min(43200, interval))
 
         try:
             keep_last = int(source.get("keep_last", merged["keep_last"]))
-        except Exception:
+        except (TypeError, ValueError):
             keep_last = int(DEFAULT_BUDDY_SETTINGS["keep_last"])
         merged["keep_last"] = max(1, min(500, keep_last))
 
@@ -616,7 +625,7 @@ class BuddyBackupManager:
             return
         try:
             self._save_encryption_material(buddy_crypto.new_key_material(passphrase))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - key material is optional, a failure is printed and the backup goes on
             print(f"Buddy backup: could not create encryption key material: {exc}")
 
     def _decrypt_stream_with_passphrase(self, encrypted_path: str, plain_path: str,
@@ -653,7 +662,7 @@ class BuddyBackupManager:
             return False, "The downloaded snapshot is not in a known encrypted format"
         except buddy_crypto.BuddyCryptoError as exc:
             return False, str(exc)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - any decrypt failure is shown to the user as a message
             return False, f"Failed to decrypt snapshot: {exc}"
 
     def save_peer_policy(self, node_id: str, payload: dict) -> tuple[bool, dict]:
@@ -722,7 +731,7 @@ class BuddyBackupManager:
         try:
             digest, _ = self._hash_passphrase(passphrase, salt=str(settings.get("encryption_salt")))
             ok = secrets.compare_digest(digest, str(settings.get("encryption_hash")))
-        except Exception:
+        except (TypeError, ValueError):
             return False
         if ok:
             self._ensure_encryption_material(passphrase)
@@ -934,7 +943,7 @@ class BuddyBackupManager:
             return None
         try:
             return int(os.stat(target).st_dev)
-        except Exception:
+        except (OSError, ValueError):
             return None
 
     def _best_temp_snapshot_parent(self, source_path: str) -> str:
@@ -966,7 +975,7 @@ class BuddyBackupManager:
             try:
                 Path(target).mkdir(parents=True, exist_ok=True)
                 return True, ""
-            except Exception as exc:
+            except OSError as exc:
                 return False, str(exc)
 
         mkdir_cmd = self._mkdir_cmd()
@@ -986,7 +995,7 @@ class BuddyBackupManager:
         try:
             os.rename(src, dst)
             return True, ""
-        except Exception as exc:
+        except OSError as exc:
             last_error = str(exc)
 
         mv_cmd = self._mv_cmd()
@@ -1005,7 +1014,7 @@ class BuddyBackupManager:
             return False
         try:
             return os.path.ismount(target)
-        except Exception:
+        except (OSError, ValueError):
             return False
 
     def _get_subvolume_id(self, path: str) -> int | None:
@@ -1022,7 +1031,7 @@ class BuddyBackupManager:
             if "Subvolume ID:" in line:
                 try:
                     return int(line.split(":", 1)[1].strip())
-                except Exception:
+                except (IndexError, ValueError):
                     return None
         return None
 
@@ -1041,7 +1050,7 @@ class BuddyBackupManager:
             return None
         try:
             return int(m.group(1))
-        except Exception:
+        except ValueError:
             return None
 
     def _stream_root_path(self) -> str:
@@ -1077,14 +1086,14 @@ class BuddyBackupManager:
         for root in candidates:
             try:
                 Path(root).mkdir(parents=True, exist_ok=True)
-            except Exception as exc:
+            except OSError as exc:
                 last_error = f"Failed to prepare stream root: {root} ({exc})"
                 continue
 
             owner_dir = os.path.join(root, owner)
             try:
                 Path(owner_dir).mkdir(parents=True, exist_ok=True)
-            except Exception as exc:
+            except OSError as exc:
                 last_error = f"Failed to prepare owner stream path: {owner_dir} ({exc})"
                 continue
 
@@ -1095,14 +1104,14 @@ class BuddyBackupManager:
                         f.write(b"ok")
                     try:
                         os.remove(probe)
-                    except Exception:
+                    except OSError:
                         pass
                     return True, ""
-                except Exception as exc:
+                except OSError as exc:
                     try:
                         if os.path.exists(probe):
                             os.remove(probe)
-                    except Exception:
+                    except OSError:
                         pass
                     return False, str(exc)
 
@@ -1174,7 +1183,7 @@ class BuddyBackupManager:
                 body: dict[str, Any] = {}
                 try:
                     body = response.json() if response.text else {}
-                except Exception:
+                except ValueError:
                     body = {}
                 if 200 <= response.status_code < 300 and not body.get("error"):
                     return {
@@ -1184,7 +1193,7 @@ class BuddyBackupManager:
                         "error": "",
                     }
                 last_error = body.get("error") or f"HTTP {response.status_code}"
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - an unreachable peer or odd reply becomes the error text
                 last_error = str(exc)
 
         return {
@@ -1232,7 +1241,7 @@ class BuddyBackupManager:
                 )
                 try:
                     body = response.json() if response.content else {}
-                except Exception:
+                except ValueError:
                     body = {}
                 if 200 <= int(response.status_code) < 300 and not body.get("error"):
                     return {
@@ -1249,7 +1258,7 @@ class BuddyBackupManager:
                     "url": url,
                     "error": last_error,
                 }
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - an unreachable peer or odd reply becomes the error text
                 last_error = str(exc)
 
         return {
@@ -1466,7 +1475,7 @@ class BuddyBackupManager:
             data = buddy_crypto.open_json(kit, passphrase)
         except buddy_crypto.BuddyCryptoError as exc:
             return False, {"error": str(exc)}
-        except Exception:
+        except Exception:  # noqa: BLE001 - a damaged recovery kit is reported as unreadable
             return False, {"error": "The recovery kit could not be read"}
         if data.get("kind") != self.RECOVERY_KIT_KIND or data.get("v") not in (1, 2):
             return False, {"error": "This recovery kit comes from an unsupported AlvaOS version"}
@@ -1534,7 +1543,7 @@ class BuddyBackupManager:
     def generate_pairing_token(self, expires_minutes: int = 20) -> tuple[bool, dict]:
         try:
             ttl = int(expires_minutes)
-        except Exception:
+        except (TypeError, ValueError):
             ttl = 20
         if ttl < 0:
             ttl = 20
@@ -1702,7 +1711,7 @@ class BuddyBackupManager:
         policy = policies.get(owner_node_id, {}) if isinstance(policies, dict) else {}
         try:
             limit_gb = int(policy.get("max_storage_gb", settings.get("incoming_quota_gb", 200)))
-        except Exception:
+        except (TypeError, ValueError):
             limit_gb = 200
         return max(1, limit_gb) * (1024 ** 3)
 
@@ -1860,7 +1869,7 @@ class BuddyBackupManager:
         response = requests.request(method, urls[0], headers=headers, timeout=timeout, **kwargs)
         try:
             body = response.json() if response.content else {}
-        except Exception:
+        except ValueError:
             body = {}
         return response.status_code, body if isinstance(body, dict) else {}
 
@@ -2173,7 +2182,7 @@ class BuddyBackupManager:
                 )
                 try:
                     body = response.json() if response.content else {}
-                except Exception:
+                except ValueError:
                     body = {}
                 if response.status_code >= 200 and response.status_code < 300 and not body.get("error"):
                     return True, {
@@ -2183,7 +2192,7 @@ class BuddyBackupManager:
                     }
                 last_error = body.get("error") or f"HTTP {response.status_code}"
                 return False, {"error": last_error}
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - an unreachable peer or odd reply becomes the error text
                 last_error = str(exc)
         return False, {"error": last_error}
 
@@ -2206,7 +2215,7 @@ class BuddyBackupManager:
         if not (200 <= response.status_code < 300):
             try:
                 error = (response.json() or {}).get("error")
-            except Exception:
+            except (ValueError, AttributeError):
                 error = None
             response.close()
             raise _TransferError(error or f"Download failed: HTTP {response.status_code}")
@@ -2585,7 +2594,7 @@ class BuddyBackupManager:
                 try:
                     if payload_path and os.path.exists(payload_path):
                         os.remove(payload_path)
-                except Exception:
+                except OSError:
                     pass
                 continue
             kept_streams.append(entry)

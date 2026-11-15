@@ -53,12 +53,21 @@ class HubPage(
     private var loadedFor = ""
     private var custom: View? = null                       // a video shown over the whole screen
     private var customCallback: WebChromeClient.CustomViewCallback? = null
+    @Volatile private var pageUrl = ""                     // the top page, kept for the bridge (its calls come on another thread)
+
+    /** The bridge answers only the NAS's own page (or the bundled demo), never a page that was linked from there. */
+    private fun fromNas(): Boolean {
+        val url = Uri.parse(pageUrl)
+        if (store.demo) return pageUrl.startsWith("file:///android_asset/hub/")
+        return url.host != null && url.host == Uri.parse(store.server).host
+    }
 
     /** What the Hub page may ask of the app (only in this window, only the NAS's pages). */
     private inner class Bridge {
         /** The state of the photo backup, for the card on top of Photos. */
         @JavascriptInterface
         fun backup(): String {
+            if (!fromNas()) return "{}"
             val live = SyncWorker.live
             val chosen = store.albums
             return JSONObject()
@@ -73,11 +82,11 @@ class HubPage(
         }
 
         @JavascriptInterface
-        fun openBackup() { Handler(Looper.getMainLooper()).post { this@HubPage.openBackup() } }
+        fun openBackup() { if (fromNas()) Handler(Looper.getMainLooper()).post { this@HubPage.openBackup() } }
 
         /** The Hub says this phone's session ended (signed out on the NAS): the app shows its connect screen. */
         @JavascriptInterface
-        fun signedOut() { Handler(Looper.getMainLooper()).post { this@HubPage.signedOut() } }
+        fun signedOut() { if (fromNas()) Handler(Looper.getMainLooper()).post { this@HubPage.signedOut() } }
     }
 
     init {
@@ -105,6 +114,7 @@ class HubPage(
                 return true
             }
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+                pageUrl = url
                 offline.visibility = View.GONE
             }
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {

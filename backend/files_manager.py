@@ -2,7 +2,7 @@
 """AlvaOS Files, first step: browse and download the shared folders.
 
 The backend user cannot read the share folders (they belong to the share
-groups), so listing goes through the helper's `find` rule and reading through
+groups), so listing goes through the helper (`files-list`) and reading through
 its `read-file` operation, which checks the opened file itself is on a pool.
 Only the shares' own folders can be reached: every request names a share and
 a path inside it, never a path on the NAS.
@@ -11,6 +11,7 @@ a path inside it, never a path on the NAS.
 import mimetypes
 import os
 import subprocess
+import tempfile
 from typing import Any, Callable, Iterator
 
 from backup_manager import CMD as BACKUP_CMD, FIND_LIST_FORMAT, clean_relative_path, parse_find_listing
@@ -112,16 +113,22 @@ def open_zip(path: str, user: str | None = None,
 
 
 def _stream(cmd: list[str], chunk: int) -> tuple[Iterator[bytes] | None, str]:
+    # stderr goes to a file, not a pipe: nobody reads a pipe while the data streams, and a helper
+    # that writes enough to it would block.
+    errors = tempfile.TemporaryFile()
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env={'LC_ALL': 'C'})
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=errors, env={'LC_ALL': 'C'})
     except OSError as exc:
+        errors.close()
         return None, str(exc)
     assert proc.stdout is not None
     first = proc.stdout.read(chunk)
     if not first:
         proc.wait(timeout=30)
         if proc.returncode != 0:
-            err = (proc.stderr.read() if proc.stderr else b'').decode('utf-8', 'replace').strip()
+            errors.seek(0)
+            err = errors.read(4096).decode('utf-8', 'replace').strip()
+            errors.close()
             return None, err.replace('alvaos-priv: ', '') or 'The file could not be read.'
 
     def chunks() -> Iterator[bytes]:
@@ -137,6 +144,7 @@ def _stream(cmd: list[str], chunk: int) -> tuple[Iterator[bytes] | None, str]:
             if proc.poll() is None:
                 proc.kill()
             proc.wait()
+            errors.close()
 
     return chunks(), ''
 

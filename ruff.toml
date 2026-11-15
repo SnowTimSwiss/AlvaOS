@@ -5,8 +5,9 @@ extend-include = ["backend/alvaos-priv"]
 
 [lint]
 # pycodestyle, pyflakes, bugbear (likely bugs), simplify, pyupgrade, and a few
-# checks for needlessly complicated code and commented-out code.
-select = ["E", "W", "F", "B", "SIM", "UP", "PIE", "C4", "ERA"]
+# checks for needlessly complicated code, commented-out code, and blind
+# `except Exception` (BLE: narrow it, or say why in a noqa comment).
+select = ["E", "W", "F", "B", "SIM", "UP", "PIE", "C4", "ERA", "BLE"]
 ignore = [
     # Long lines are wrapped where they read badly; reformatting all of them
     # would only change the diff.
@@ -25,3 +26,4 @@ ignore = [
 # Scripts put backend/ on sys.path before importing from it.
 "scripts/**" = ["E402"]
 "backend/alvaos-priv" = ["E402"]
+

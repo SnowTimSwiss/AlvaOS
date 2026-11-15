@@ -81,7 +81,9 @@ class SyncEngine(private val hub: HubApi, private val library: Library, private 
         val hereIds = here.map { it.id }.toSet()
         // An album no longer chosen is not "deleted": its pictures stay on both sides.
         val known = state.known.filterValues { it in chosen }
-        val vanished = known.keys - hereIds
+        // An empty library with a known past looks like a failed read (revoked permission, provider down), not like
+        // "everything was deleted": nothing is reported to the NAS then.
+        val vanished = if (here.isEmpty()) emptySet() else known.keys - hereIds
         val keep = state.keep.intersect(vanished) + (if (state.deleteOnNas) emptySet() else vanished)
         val plan = hub.plan(state.phoneId, here.map { PlanItem(it.id, it.album, it.name, it.size, it.modified) },
             vanished, keep)

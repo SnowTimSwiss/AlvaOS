@@ -18,6 +18,19 @@ from common import run_sudo_command
 from docker_manager import DockerManager
 
 
+def compose_project_of(container: dict) -> str:
+    """The compose project a `docker ps` row belongs to. Compared as a whole
+    value: `alvaos-immich` must not match `alvaos-immich-ml`."""
+    labels = container.get('Labels') or ''
+    if isinstance(labels, dict):
+        return str(labels.get('com.docker.compose.project') or '')
+    for label in str(labels).split(','):
+        key, _, value = label.partition('=')
+        if key.strip() == 'com.docker.compose.project':
+            return value.strip()
+    return ''
+
+
 def summarize_app_needs(app_data: dict) -> dict:
     """What an app needs from the NAS, for the store card before installing:
     the ports it opens and how many folders it keeps on your storage."""
@@ -113,6 +126,18 @@ class AppStore:
         # Ensure directories exist
         Path('/var/lib/alvaos').mkdir(parents=True, exist_ok=True)
 
+        self._end_interrupted_operation()
+
+    def _end_interrupted_operation(self) -> None:
+        """An install or update that was running when the backend stopped has no
+        worker any more; left as it is, it would block every later operation."""
+        status = self.get_install_status()
+        if status.get('status') in ('starting', 'installing', 'updating'):
+            self._update_install_status(
+                str(status.get('app_id') or ''), 'error', 0,
+                'The operation was interrupted by a restart. Start it again.',
+                logs=status.get('logs') or [], force_write=True, action=str(status.get('action') or 'install'))
+
     def _get_catalog_path(self) -> str:
         """Get the app catalog path (production or development)"""
         prod_path = '/opt/alvaos/apps/catalog.json'
@@ -133,7 +158,7 @@ class AppStore:
             return catalog, None
         except json.JSONDecodeError as e:
             return None, f"Invalid catalog JSON: {str(e)}"
-        except Exception as e:
+        except (OSError, ValueError) as e:
             return None, str(e)
 
     def _load_update_cache(self) -> dict:
@@ -144,7 +169,7 @@ class AppStore:
                     with open(self.update_cache_file) as f:
                         data = json.load(f)
                     return data if isinstance(data, dict) else {}
-            except Exception as e:
+            except (OSError, ValueError) as e:
                 print(f"Error loading app update cache: {e}")
         return {}
 
@@ -154,7 +179,7 @@ class AppStore:
             try:
                 with open(self.update_cache_file, 'w') as f:
                     json.dump(cache or {}, f, indent=2)
-            except Exception as e:
+            except (OSError, TypeError, ValueError) as e:
                 print(f"Error saving app update cache: {e}")
 
     def _read_cached_update_status(self, app_id: str, allow_stale: bool = False) -> dict | None:
@@ -228,7 +253,7 @@ class AppStore:
                                 new_ports.append(f"{port_mappings[internal_port]}:{internal_port}{protocol}")
                             else:
                                 new_ports.append(port_spec)
-                    except Exception:
+                    except (IndexError, ValueError):
                         new_ports.append(port_spec)
                 service_config['ports'] = new_ports
 
@@ -351,8 +376,7 @@ class AppStore:
             return {}
 
         for container in containers:
-            labels = str(container.get('Labels', '') or '')
-            if f'com.docker.compose.project={project_name}' not in labels:
+            if compose_project_of(container) != project_name:
                 continue
             container_id = container.get('ID') or str(container.get('Names', '')).split(',')[0]
             if not container_id:
@@ -379,16 +403,21 @@ class AppStore:
             if os.path.exists(self.apps_state_file):
                 with open(self.apps_state_file) as f:
                     return json.load(f)
-        except Exception as e:
+        except (OSError, ValueError) as e:
             print(f"Error loading apps state: {e}")
         return {}
 
     def _save_apps_state(self, state: dict) -> None:
         """Save installed apps state"""
+        # Owner-only and in one piece: it holds the passwords typed at install time.
         try:
-            with open(self.apps_state_file, 'w') as f:
+            tmp = f'{self.apps_state_file}.tmp'
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, 'w') as f:
+                os.fchmod(f.fileno(), 0o600)
                 json.dump(state, f, indent=2)
-        except Exception as e:
+            os.replace(tmp, self.apps_state_file)
+        except (OSError, TypeError, ValueError) as e:
             print(f"Error saving apps state: {e}")
 
     def get_install_status(self) -> dict:
@@ -401,7 +430,7 @@ class AppStore:
             if os.path.exists(self.install_status_file):
                 with open(self.install_status_file) as f:
                     return json.load(f)
-        except Exception as e:
+        except (OSError, ValueError) as e:
             print(f"Error loading install status: {e}")
         return {"status": "idle"}
 
@@ -421,7 +450,7 @@ class AppStore:
                         if os.path.exists(self.install_status_file):
                             with open(self.install_status_file) as f:
                                 current = json.load(f) or {}
-                    except Exception:
+                    except (OSError, ValueError):
                         current = {}
                     logs = current.get('logs', [])
 
@@ -450,7 +479,7 @@ class AppStore:
                     with open(self.install_status_file, 'w') as f:
                         json.dump(payload, f, indent=2)
                     self._last_status_write = now
-                except Exception as e:
+                except (OSError, TypeError, ValueError) as e:
                     print(f"Error saving install status: {e}")
 
             # If finished, we can eventually clear the active status,
@@ -669,7 +698,7 @@ class AppStore:
             return None, "Registry response did not include a manifest digest"
         except requests.RequestException as e:
             return None, f"Registry request failed for {image}: {e}"
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any odd registry reply is reported as text
             return None, f"Failed to inspect registry manifest for {image}: {e}"
 
     def _probe_registry_update_status(self, app_id: str, app_details: dict) -> dict:
@@ -838,7 +867,7 @@ class AppStore:
 
             return app_path, None
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any failure is returned to the caller as text
             return None, str(e)
 
     def install_app(
@@ -917,6 +946,15 @@ class AppStore:
         services = compose_config.get('services')
         if not isinstance(services, dict) or len(services) == 0:
             return False, "compose configuration must define at least one service", None
+        # The privilege helper checks the file again before every start; saying
+        # it now gives the reason before anything is downloaded.
+        import yaml
+        import priv_policy
+        try:
+            text = yaml.safe_dump(compose_config).replace('${POOL_PATH}', str(pool_path or ''))
+            priv_policy.check_compose(text.encode('utf-8'))
+        except priv_policy.PolicyError as e:
+            return False, f"This compose file is not allowed: {e}", None
 
         apps_state = self._load_apps_state()
         if resolved_app_id in apps_state:
@@ -1052,7 +1090,7 @@ class AppStore:
 
             self._update_install_status(app_id, "success", 100, "Installation completed successfully", force_write=True, action="install")
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - the install thread must record any failure and not die
             self._update_install_status(app_id, "error", 0, f"Unexpected error during installation: {str(e)}", force_write=True, action="install")
 
     def _install_compose_app_worker(
@@ -1140,7 +1178,7 @@ class AppStore:
             }
             self._save_apps_state(apps_state)
             self._update_install_status(app_id, "success", 100, "Installation completed successfully", logs, force_write=True, action="install")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - the install thread must record any failure and not die
             if app_storage_path:
                 self._delete_subvolume(app_storage_path)
             self._update_install_status(
@@ -1229,7 +1267,7 @@ class AppStore:
         for key, value in (stored_port_mappings or {}).items():
             try:
                 port_mappings[int(key)] = int(value)
-            except Exception:
+            except (TypeError, ValueError):
                 continue
 
         volume_mappings: dict[str, str] = {
@@ -1524,7 +1562,7 @@ class AppStore:
             self._save_apps_state(apps_state)
 
             self._update_install_status(app_id, "success", 100, "Update completed successfully" if pull else "Settings applied", logs, force_write=True, action=action)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - the update thread must record any failure and not die
             self._update_install_status(app_id, "error", 0, f"Unexpected error during update: {str(e)}", logs, force_write=True, action=action)
 
     def uninstall_app(self, app_id: str, keep_data: bool = False) -> tuple[bool, str | None]:
@@ -1543,8 +1581,7 @@ class AppStore:
 
         project_name = f"alvaos-{app_id}"
         for container in containers:
-            labels = container.get('Labels', '')
-            if f'com.docker.compose.project={project_name}' in labels:
+            if compose_project_of(container) == project_name:
                 container_id = container.get('ID') or container.get('Names', '').split(',')[0]
                 success, error = self.docker_manager.remove_container(container_id, force=True)
                 if not success:

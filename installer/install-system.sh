@@ -691,7 +691,7 @@ done
 
 # Detected here (not inside the gauge pipe block below) so it survives into the final
 # access-URL message: the gauge block runs in a subshell because it's piped to whiptail.
-INTERFACE=$(ip -o link show | awk -F': ' '{print $2}' | grep -v lo | head -n1)
+INTERFACE=$(ip -o link show | awk -F': ' '{print $2}' | grep -vx lo | head -n1 || true)
 [ -z "$INTERFACE" ] && INTERFACE="eth0"
 
 # Main Installation Logic wrapped in progress bar
@@ -866,7 +866,7 @@ SOURCES_EOF
     ROOT_SOURCE=$(findmnt -n -o SOURCE /mnt | head -n1 | sed 's/\[.*\]//')
     ROOT_UUID=""
     if [ -n "$ROOT_SOURCE" ]; then
-        ROOT_UUID=$(blkid -s UUID -o value "$ROOT_SOURCE" 2>/dev/null | head -n1)
+        ROOT_UUID=$(blkid -s UUID -o value "$ROOT_SOURCE" 2>/dev/null | head -n1 || true)
     fi
     # Fallback: if UUID is empty, use the device path directly
     if [ -n "$ROOT_UUID" ]; then
@@ -927,7 +927,7 @@ FSTAB_EOF
         # Force the very next boot to the installed system regardless of current BootOrder
         # (the USB installer is often listed first). This lets EFI users just reboot and
         # remove the stick whenever convenient instead of shutting down and restarting by hand.
-        ALVAOS_BOOTNUM=$(chroot /mnt efibootmgr 2>/dev/null | grep -m1 "AlvaOS" | sed -n 's/^Boot\([0-9A-Fa-f]\{4\}\).*/\1/p')
+        ALVAOS_BOOTNUM=$(chroot /mnt efibootmgr 2>/dev/null | grep -m1 "AlvaOS" | sed -n 's/^Boot\([0-9A-Fa-f]\{4\}\).*/\1/p' || true)
         if [ -n "$ALVAOS_BOOTNUM" ] && chroot /mnt efibootmgr --bootnext "$ALVAOS_BOOTNUM" >> "$INSTALL_LOG" 2>&1; then
             touch /tmp/alvaos-bootnext-set
         fi

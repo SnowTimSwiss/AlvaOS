@@ -133,3 +133,47 @@ def test_delete_snapshot_only_removes_that_snapshot(env):
     assert second["snapshot_path"] in runner.subvolumes
     assert SOURCE in runner.subvolumes
     assert runner.denied == []
+
+
+def test_delete_refuses_a_live_folder(env):
+    manager, runner = env
+    ok, payload = manager.delete_snapshot(SOURCE)
+    assert not ok and "not a restore point" in payload["error"]
+    assert SOURCE in runner.subvolumes
+
+
+def test_restore_needs_a_restore_point_of_that_folder(env):
+    manager, runner = env
+    runner.subvolumes.add(f"{POOL}/other")
+    ok, payload = manager.restore_snapshot(f"{POOL}/other", source_path=SOURCE)
+    assert not ok and "not a restore point" in payload["error"]
+    assert SOURCE in runner.subvolumes and f"{POOL}/other" in runner.subvolumes
+
+
+def test_a_long_scheduled_run_is_not_started_again(env, monkeypatch):
+    import threading
+
+    manager, _ = env
+    started, release = [], threading.Event()
+
+    def slow_run(**kwargs):
+        started.append(kwargs)
+        release.wait(5)
+        return {}
+
+    monkeypatch.setattr(manager, "run_backup_now", slow_run)
+    for _ in range(3):
+        manager._start_scheduled("pool")
+    release.set()
+    assert len(started) == 1
+
+
+def test_a_damaged_registry_is_kept_aside_and_not_overwritten_in_place(env, tmp_path):
+    manager, _ = env
+    manager.create_snapshot(SOURCE)
+    path = manager.snapshots_file
+    with open(path, "w") as f:
+        f.write('[{"broken": ')
+    manager.create_snapshot(SOURCE, label="after")
+    asides = [n for n in os.listdir(tmp_path) if n.startswith(os.path.basename(path) + ".broken-")]
+    assert asides, os.listdir(tmp_path)

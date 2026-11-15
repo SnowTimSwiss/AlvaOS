@@ -177,9 +177,8 @@ class ShareActivity : AppCompatActivity() {
         val clean = fileNameOf(name ?: uri.lastPathSegment, "shared-${index + 1}")
         if (size > 0) return Triple(clean, size, null)
         val copy = File.createTempFile("share", ".tmp", cacheDir)
-        contentResolver.openInputStream(uri).use { input ->
-            copy.outputStream().use { out -> input?.copyTo(out) }
-        }
+        val input = contentResolver.openInputStream(uri) ?: throw java.io.IOException("The file cannot be read.")
+        input.use { copy.outputStream().use { out -> it.copyTo(out) } }
         return Triple(clean, copy.length(), copy)
     }
 

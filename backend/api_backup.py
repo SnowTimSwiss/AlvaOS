@@ -329,7 +329,7 @@ def buddy_settings():
     return jsonify({'success': True, 'settings': result})
 
 @bp.route('/api/v1/backup/buddy/peers/<node_id>/policy', methods=['GET', 'POST'])
-@require_auth
+@require_auth(require_admin=True)
 def buddy_peer_policy(node_id):
     """Get or update send schedule/quota policy for a specific buddy peer."""
     if buddy_backup_manager is None:
@@ -454,7 +454,7 @@ def buddy_pairing_restart():
     return jsonify({'success': True, **payload})
 
 @bp.route('/api/v1/backup/pairing/test', methods=['POST'])
-@require_auth
+@require_auth(require_admin=True)
 def buddy_pairing_test():
     """Test connectivity for a configured buddy peer."""
     if buddy_backup_manager is None:
@@ -491,7 +491,7 @@ def buddy_sync_now():
     return jsonify({'success': True, **payload})
 
 @bp.route('/api/v1/backup/buddy/remote/snapshots', methods=['GET', 'POST'])
-@require_auth
+@require_auth(require_admin=True)
 def buddy_remote_snapshots():
     """List this NAS's snapshots on a buddy.
 
@@ -638,7 +638,7 @@ def buddy_peer_list():
     limit = request.args.get('limit', 100)
     try:
         limit_int = int(limit)
-    except Exception:
+    except (TypeError, ValueError):
         limit_int = 100
     success, payload = buddy_backup_manager.list_peer_streams(owner_node_id=owner_node_id, limit=limit_int)
     if not success:

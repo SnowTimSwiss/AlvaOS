@@ -181,7 +181,12 @@ async function loadDisks() {
         }
 
         const data = await response.json();
-        const poolsData = poolsResponse && poolsResponse.ok ? await poolsResponse.json() : {};
+        // Without the pool list the page would offer "Create pool" (which erases
+        // the disk) instead of "Add to pool", so a failure here is a load failure.
+        if (!poolsResponse || !poolsResponse.ok) {
+            throw new Error('Failed to load pools');
+        }
+        const poolsData = await poolsResponse.json();
         storagePoolsCache = Array.isArray(poolsData.pools) ? poolsData.pools : [];
         displayDisks(data.disks, data.error);
     } catch (error) {
@@ -401,7 +406,7 @@ async function viewDiskDetails(diskName) {
     });
 
     try {
-        const response = await apiFetch(`${API_BASE}/storage/disks/${diskName}/smart`, {
+        const response = await apiFetch(`${API_BASE}/storage/disks/${encodeURIComponent(diskName)}/smart`, {
             headers: { 'Authorization': token || '' }
         });
 

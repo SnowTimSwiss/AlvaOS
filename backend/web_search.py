@@ -115,6 +115,46 @@ def _public(url: str) -> bool:
     return bool(infos) and all(ipaddress.ip_address(str(info[4][0]).split('%')[0]).is_global for info in infos)
 
 
+def _peer_is_public(sock: socket.socket) -> bool:
+    return ipaddress.ip_address(sock.getpeername()[0].split('%')[0]).is_global
+
+
+def _checked_session() -> Any:
+    """A requests session that checks the address it really connected to. The
+    name was resolved once for `_public` and again for the request, and a
+    hostile DNS server can answer differently the second time."""
+    import requests
+    from requests.adapters import HTTPAdapter
+    from urllib3 import HTTPConnectionPool, HTTPSConnectionPool
+    from urllib3.connection import HTTPConnection, HTTPSConnection
+
+    def checked(base: Any) -> Any:
+        class Checked(base):  # type: ignore[valid-type, misc]
+            def _new_conn(self) -> Any:
+                sock = super()._new_conn()
+                if not _peer_is_public(sock):
+                    sock.close()
+                    raise OSError('not a public address')
+                return sock
+        return Checked
+
+    class HttpPool(HTTPConnectionPool):
+        ConnectionCls = checked(HTTPConnection)
+
+    class HttpsPool(HTTPSConnectionPool):
+        ConnectionCls = checked(HTTPSConnection)
+
+    class Adapter(HTTPAdapter):
+        def init_poolmanager(self, *args: Any, **kwargs: Any) -> None:
+            super().init_poolmanager(*args, **kwargs)
+            self.poolmanager.pool_classes_by_scheme = {'http': HttpPool, 'https': HttpsPool}
+
+    session = requests.Session()
+    session.mount('http://', Adapter())
+    session.mount('https://', Adapter())
+    return session
+
+
 class _Text(HTMLParser):
     SKIP = {'script', 'style', 'noscript', 'svg', 'nav', 'footer', 'header', 'form', 'aside', 'template'}
 
@@ -152,8 +192,7 @@ def page_text(html: str, limit: int = PAGE_CHARS) -> str:
 def read_page(url: str, get: Callable[..., Any] | None = None, public: Callable[[str], bool] = _public) -> str:
     """The readable text of a page ('' when it cannot be read)."""
     if get is None:
-        import requests
-        get = requests.get
+        get = _checked_session().get
     for _ in range(4):   # follows a few redirects, each checked again
         if not public(url):
             return ''
@@ -173,7 +212,11 @@ def read_page(url: str, get: Callable[..., Any] | None = None, public: Callable[
                 body += chunk
                 if len(body) > PAGE_BYTES:
                     break
-            return page_text(body.decode(res.encoding or 'utf-8', errors='replace'))
+            try:
+                html = body.decode(res.encoding or 'utf-8', errors='replace')
+            except LookupError:   # a charset name Python does not know
+                html = body.decode('utf-8', errors='replace')
+            return page_text(html)
         finally:
             res.close()
     return ''

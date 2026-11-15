@@ -162,3 +162,7 @@ def test_long_lines_are_folded_without_breaking_letters():
     assert cd._unescape(props["SUMMARY"][1]) == "ü" * 100
     assert json.dumps(cd._repeat("FREQ=MONTHLY;COUNT=3", __import__("datetime").date(2026, 1, 31))) == \
         '["monthly", "2026-03-31"]'
+    day = __import__("datetime").date(2026, 1, 1)
+    assert cd._repeat("FREQ=DAILY;COUNT=99999999999999", day)[0] == "daily"      # cut short, not an error
+    assert cd._repeat("FREQ=YEARLY;COUNT=99999", day)[0] in ("yearly", "")
+    assert cd._repeat("FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;COUNT=99999999999999", day)[0] == "weekdays"

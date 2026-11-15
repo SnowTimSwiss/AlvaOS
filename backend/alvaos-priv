@@ -34,6 +34,7 @@ HERE = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, HERE)
 
 import priv_policy as policy  # noqa: E402
+import priv_paths  # noqa: E402
 import update_signing  # noqa: E402
 import files_ops  # noqa: E402
 import vault_ops  # noqa: E402
@@ -58,8 +59,8 @@ def log_denied(argv, reason):
         stamp = datetime.now(UTC).isoformat()
         with open('/var/log/alvaos/priv-denied.log', 'a', encoding='utf-8') as f:
             f.write(f'{stamp} denied={reason!r} argv={list(argv)!r}\n')
-    except Exception:
-        pass
+    except OSError:
+        pass  # the denial itself still happens; only its log line is lost
 
 
 def deny(argv, reason):
@@ -129,8 +130,13 @@ def stage_files(plan, cleanup):
             with open(staged, 'rb') as f:
                 policy.check_compose(f.read())
             plan.argv[arg_index] = staged
-            # Relative paths in the compose file keep resolving next to the original.
-            plan.argv[1:1] = ['--project-directory', os.path.dirname(original)]
+            # The project keeps its directory (and so its name and network), but
+            # not the .env file there: that is the backend's, unchecked, and can
+            # set COMPOSE_* options.
+            no_env = os.path.join(stage_root, 'empty.env')
+            with open(no_env, 'x', encoding='utf-8'):
+                pass
+            plan.argv[1:1] = ['--project-directory', os.path.dirname(original), '--env-file', no_env]
         elif kind == 'wg':
             # wg-quick names the interface after the file, so keep "buddy0.conf".
             staged = _stage_copy(original, policy.WG_CONFIG_PATH.rsplit('/', 2)[0], stage_root,
@@ -172,6 +178,19 @@ def give_way():
         pass
 
 
+def run_builtin(cmd, plan):
+    """chown/chgrp/chmod -R, mkdir -p and rmdir, done here on descriptors (priv_paths)."""
+    try:
+        priv_paths.run_builtin(plan.argv)
+    except policy.PolicyError as e:
+        deny(cmd, str(e))
+    except (OSError, KeyError) as e:
+        # KeyError: an owner or group name that does not exist (any more).
+        sys.stderr.write(f'{os.path.basename(plan.argv[0])}: {e}\n')
+        return 1
+    return 0
+
+
 def run_command(argv):
     env_pairs = []
     while argv and argv[0] == '--env':
@@ -194,6 +213,11 @@ def run_command(argv):
             os.makedirs(path, mode=0o755, exist_ok=True)
         if plan.stage:
             stage_files(plan, cleanup)
+        pass_fds: list[int] = []
+        if plan.builtin:
+            return run_builtin(cmd, plan)
+        if plan.pin:
+            plan.argv, pass_fds = priv_paths.pin_argv(plan.argv)
         stdin_data = None
         if plan.stdin_check:
             stdin_data = sys.stdin.buffer.read(MAX_STDIN + 1)
@@ -228,6 +252,7 @@ def run_command(argv):
             input=stdin_data,
             stdin=None if stdin_data is not None else subprocess.DEVNULL,
             env=env,
+            pass_fds=pass_fds,
         )
         return result.returncode
     finally:

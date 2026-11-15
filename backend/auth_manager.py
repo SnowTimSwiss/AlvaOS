@@ -94,14 +94,14 @@ def _save_sessions():
         try:
             with os.fdopen(fd, 'w') as f:
                 json.dump(payload, f)
-        except Exception:
+        except Exception:  # noqa: BLE001 - remove the temp file after any error, then re-raise
             try:
                 os.unlink(tmp_path)
             except OSError:
                 pass
             raise
         os.replace(tmp_path, SESSIONS_FILE)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - saving sessions must never break the request in flight
         # A failure here must never break the request in flight; the worst case
         # is falling back to the previous behaviour of losing sessions.
         print(f"Warning: could not persist sessions: {e}")
@@ -131,7 +131,7 @@ def _load_sessions():
             restored[token] = session
         SESSIONS.clear()
         SESSIONS.update(restored)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - restoring sessions must never block startup
         print(f"Warning: could not restore sessions: {e}")
 
 
@@ -419,3 +419,32 @@ def _check_rate_limit(ip):
 
 def _reset_rate_limit(ip):
     LOGIN_RATE_LIMIT.pop(ip, None)
+
+
+# Wrong 2FA codes are counted per account, not per temp token or address, so
+# asking for a new temp token or changing address does not give fresh tries.
+TOTP_FAILURES: dict[str, Any] = {'count': 0, 'window_start': 0.0}
+TOTP_MAX_FAILURES = 10
+
+
+def totp_locked_seconds():
+    """Seconds left of the 2FA lockout, or 0 when codes may be tried."""
+    now = time.time()
+    if TOTP_FAILURES['count'] < TOTP_MAX_FAILURES:
+        return 0
+    left = int(LOGIN_WINDOW_SECONDS - (now - TOTP_FAILURES['window_start'])) + 1
+    if left <= 0:
+        TOTP_FAILURES.update(count=0, window_start=0.0)
+        return 0
+    return left
+
+
+def record_totp_failure():
+    now = time.time()
+    if now - TOTP_FAILURES['window_start'] > LOGIN_WINDOW_SECONDS:
+        TOTP_FAILURES.update(count=0, window_start=now)
+    TOTP_FAILURES['count'] += 1
+
+
+def reset_totp_failures():
+    TOTP_FAILURES.update(count=0, window_start=0.0)

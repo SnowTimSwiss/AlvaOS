@@ -77,7 +77,7 @@ def serve_frontend(filename):
                 mimetype = 'application/javascript'
             return Response(content, mimetype=mimetype)
         return send_from_directory(WEBUI_ROOT, filename)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - any read failure is shown as a 404 page
         print(f"Error serving {filename}: {e}")
         return f"File not found: {filename}", 404
 
@@ -226,7 +226,7 @@ if __name__ == '__main__':
     try:
         power_ups_manager.start()
         atexit.register(power_ups_manager.stop)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - the UPS monitor is optional, the NAS starts without it
         print(f"Warning: Battery UPS monitor startup failed: {e}")
 
     # Mount existing pools on startup (persistence)
@@ -237,7 +237,7 @@ if __name__ == '__main__':
         from api_auth import load_users_state
         from shares_manager import lock_share_user_shells
         lock_share_user_shells(load_users_state())
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - the shell check is optional and must not block startup
         print(f"Warning: could not check share user shells: {e}")
 
     # Nightly data checks (btrfs scrub) for every pool, monthly by default.
@@ -261,7 +261,7 @@ if __name__ == '__main__':
             added = add_recycle_bins(load_shares_state())
             if added:
                 print(f"Network deletes now go to the trash for: {', '.join(added)}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - background thread, a failure is printed and the NAS goes on
             print(f"Could not add the network trash to shares: {e}")
     threading.Thread(target=_add_recycle_bins, name='smb-recycle', daemon=True).start()
 
@@ -274,7 +274,7 @@ if __name__ == '__main__':
             _time.sleep(3600)
             try:
                 files_manager.purge_all_trash(load_shares_state())
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - the daily cleanup loop must survive any error
                 print(f"Trash cleanup failed: {e}")
             _time.sleep(23 * 3600)
     threading.Thread(target=_purge_trash_daily, name='files-trash', daemon=True).start()
@@ -327,7 +327,7 @@ if __name__ == '__main__':
                      daemon=True).start()
 
     if not is_setup_complete():
-        print("\n⚠️  SETUP REQUIRED: Access the Web UI to complete initial setup")
+        print("\nWARNING: SETUP REQUIRED: Access the Web UI to complete initial setup")
 
     # Serve through waitress: a NAS is expected to run unattended for years, and
     # the Werkzeug development server is explicitly not built for that.

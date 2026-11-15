@@ -186,7 +186,7 @@ class NbdServer:
             self._transmit(conn, export)
         except (_Closed, OSError, struct.error):
             pass
-        except Exception as exc:  # never let one client take the server down
+        except Exception as exc:  # noqa: BLE001 - never let one client take the server down
             self.log(f"NBD: connection from {remote_ip} failed: {exc}")
         finally:
             if export is not None:
@@ -252,7 +252,7 @@ class NbdServer:
     def _open(self, remote_ip: str, name: str) -> Export | None:
         try:
             export = self.resolve(remote_ip, name)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - the resolver is a callback, a failure only refuses the export
             self.log(f"NBD: could not resolve export {name!r} for {remote_ip}: {exc}")
             return None
         if export is None:

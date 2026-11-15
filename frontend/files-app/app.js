@@ -1711,7 +1711,9 @@
     }
     setInterval(() => {
         const old = document.querySelector('.appbackup');
-        if (old && window.AlvaApp && !document.hidden) old.replaceWith(appBackupBanner());
+        if (!old || !window.AlvaApp || document.hidden) return;
+        const fresh = appBackupBanner();
+        if (fresh.innerHTML !== old.innerHTML) old.replaceWith(fresh);
     }, 4000);
 
     // ── Photos: favourites and albums of the person (docs/PHOTOS.md) ──────
