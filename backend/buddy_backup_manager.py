@@ -25,6 +25,7 @@ from typing import Any, Callable, Iterator, Optional
 import requests
 
 from alerts_manager import push_notification
+from common import StateFileError, read_json_state, set_aside_broken, write_json_atomic
 from buddy_vault import TransferError as _TransferError
 from buddy_vault import VaultError, VaultReplicator, VaultStore
 from buddy_vault import read_stderr as _read_stderr
@@ -84,6 +85,10 @@ class BuddyBackupManager:
         # restores derive the key from the passphrase and the stream header.
         self.encryption_key_file = os.path.join(self.state_dir, "buddy_encryption_key.json")
         self._transfer_lock = threading.RLock()
+        # State files that were there but unreadable and must not be replaced by
+        # fresh ones: a new identity or key would cut this NAS off from its buddies.
+        self._keep_files = {self.identity_file, self.peers_file, self.encryption_key_file}
+        self._unreadable: set[str] = set()
         # Encrypted vaults: the ones buddies keep here, and ours on buddies.
         self.vault_store = VaultStore(self)
         self.vault = VaultReplicator(self)
@@ -111,21 +116,25 @@ class BuddyBackupManager:
 
     def _load_json(self, path: str, default):
         try:
-            if os.path.exists(path):
-                with open(path, encoding="utf-8") as f:
-                    return json.load(f)
-        except Exception:
-            pass
-        return default
+            return read_json_state(path, default)
+        except StateFileError as e:
+            if path in self._keep_files:
+                self._unreadable.add(path)
+                print(f"Warning: {e}; Buddy Backup will not replace it")
+            else:
+                print(f"Warning: {e}; moved to {set_aside_broken(path)}")
+            return default
 
     def _save_json(self, path: str, payload) -> None:
+        if path in self._unreadable:
+            raise StateFileError(f"{os.path.basename(path)} could not be read; repair or remove it first, "
+                                 "so that it is not replaced by mistake")
         self._ensure_dirs()
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2)
+        write_json_atomic(path, payload, mode=0o600)
 
     def _ensure_defaults(self) -> None:
         identity = self._load_identity()
-        if not identity:
+        if not identity and self.identity_file not in self._unreadable:
             self._save_json(self.identity_file, self._create_identity())
 
         peers = self._load_json(self.peers_file, {})

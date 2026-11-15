@@ -5,7 +5,6 @@ Provides local Btrfs snapshots, restore, and automatic scheduling.
 """
 
 import copy
-import json
 import os
 import platform
 import re
@@ -14,6 +13,8 @@ import threading
 from datetime import datetime, timedelta, UTC
 from pathlib import Path
 from typing import Any, Callable
+
+from common import StateFileError, read_json_state, set_aside_broken, write_json_atomic
 
 CMD: dict[str, str] = {
     "BTRFS": "/usr/bin/btrfs",
@@ -173,6 +174,10 @@ class BackupManager:
 
         self._schedule_lock = threading.Lock()
         self._job_lock = threading.RLock()
+        # Scheduled runs started and not finished yet ("pool", "system"). The next
+        # run time only moves on when a run ends, so without this every 30-second
+        # tick of a long run queued one more backup.
+        self._scheduled_running: set[str] = set()
         self._stop_event = threading.Event()
 
         self.ensure_dirs()
@@ -201,17 +206,16 @@ class BackupManager:
 
     def _load_json(self, path: str, default):
         try:
-            if os.path.exists(path):
-                with open(path) as f:
-                    return json.load(f)
-        except Exception:
-            pass
-        return default
+            return read_json_state(path, default)
+        except StateFileError as e:
+            # Kept for a person to look at; restore points stay on disk either way.
+            aside = set_aside_broken(path)
+            print(f"Warning: {e}; moved to {aside}")
+            return default
 
     def _save_json(self, path: str, payload) -> None:
         self.ensure_dirs()
-        with open(path, "w") as f:
-            json.dump(payload, f, indent=2)
+        write_json_atomic(path, payload)
 
     def _ensure_defaults(self):
         settings = self.get_settings()
@@ -618,6 +622,10 @@ class BackupManager:
 
             if not matching and not path_exists:
                 return False, {"error": f"Snapshot not found: {snapshot}"}
+            if not matching and not self._in_snapshot_folder(snapshot):
+                # Any other subvolume could be a live share: only restore points
+                # are deleted here, known ones or ones in a snapshot folder.
+                return False, {"error": f"{snapshot} is not a restore point"}
 
             if path_exists and platform.system() == "Linux":
                 if not self._delete_snapshot_path(snapshot):
@@ -635,6 +643,16 @@ class BackupManager:
                 "deleted_path": bool(path_exists),
                 "deleted_metadata": bool(matching),
             }
+
+    def _in_snapshot_folder(self, path: str) -> bool:
+        """Inside a pool's .alvaos-snapshots folder or the system snapshot folder."""
+        parts = path.split(os.sep)
+        if ".alvaos-snapshots" in parts[:-1]:
+            return True
+        system_dir = self._normalize_path(
+            self.get_settings().get("system_backup", {}).get("target_path")
+            or DEFAULT_SETTINGS["system_backup"]["target_path"])
+        return bool(system_dir) and path.startswith(system_dir.rstrip(os.sep) + os.sep)
 
     def _save_snapshots(self, entries: list[dict]) -> None:
         if len(entries) > 1000:
@@ -1563,6 +1581,8 @@ class BackupManager:
             return False, {"error": "Restores are only possible on the AlvaOS NAS itself (Linux)"}
 
         pool_mount_points = {self._normalize_path(mp) for _, mp in self._list_pool_mounts()}
+        if not self._find_pool_for_path(target_source)[1]:
+            return False, {"error": "Only folders on a storage pool can be restored here."}
         if target_source in pool_mount_points:
             return False, {
                 "error": "Restoring a pool root is not supported. Restore a subvolume snapshot instead."
@@ -1600,6 +1620,9 @@ class BackupManager:
 
         if not self._path_exists_or_is_subvolume(snapshot):
             return False, {"error": f"Snapshot not found: {snapshot}"}
+        if metadata is None:
+            # Only a restore point of this very folder may replace it.
+            return False, {"error": f"{snapshot} is not a restore point of {target_source}"}
 
         stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
         previous_path = f"{target_source}.pre-restore-{stamp}"
@@ -1727,8 +1750,7 @@ class BackupManager:
                      should_run = True
 
              if should_run:
-                 # Launch in thread to not block tick
-                 threading.Thread(target=self.run_backup_now, kwargs={"backup_type": "pool", "trigger": "schedule"}).start()
+                 self._start_scheduled("pool")
 
         # Check System Backup
         sb = settings.get("system_backup", {})
@@ -1743,4 +1765,19 @@ class BackupManager:
                      should_run = True
 
              if should_run:
-                 threading.Thread(target=self.run_backup_now, kwargs={"backup_type": "system", "trigger": "schedule"}).start()
+                 self._start_scheduled("system")
+
+    def _start_scheduled(self, backup_type: str) -> None:
+        with self._schedule_lock:
+            if backup_type in self._scheduled_running:
+                return
+            self._scheduled_running.add(backup_type)
+
+        def run():
+            try:
+                self.run_backup_now(backup_type=backup_type, trigger="schedule")
+            finally:
+                with self._schedule_lock:
+                    self._scheduled_running.discard(backup_type)
+
+        threading.Thread(target=run, daemon=True).start()

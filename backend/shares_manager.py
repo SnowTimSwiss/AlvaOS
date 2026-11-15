@@ -210,6 +210,11 @@ def apply_smb_permissions_to_fs(share_path, group_name, smb_permissions, guest_a
             if user not in allowed_users:
                 run_sudo_command([CMD['GPASSWD'], '-d', user, group_name])
 
+        if os.path.dirname(os.path.normpath(share_path)) == '/mnt/alvaos':
+            # A whole pool: changing owner and mode of everything in it would
+            # reach every other share and everyone's own folder. Each folder
+            # keeps its own permissions instead.
+            return
         run_sudo_command([CMD['CHGRP'], '-R', group_name, share_path])
 
         # Determine permission mode
