@@ -13,7 +13,7 @@ use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Context, Result};
-use iroh::endpoint::{presets, Connection, RecvStream, SendStream};
+use iroh::endpoint::{presets, Connection, ReadError, ReadToEndError, RecvStream, SendStream};
 use iroh::{Endpoint, EndpointAddr, EndpointId, RelayMode, SecretKey, TransportAddr};
 use tokio::sync::Mutex;
 
@@ -144,7 +144,12 @@ impl Link {
         let (mut send, mut recv) = self.open(nas, "ping", hints).await?;
         send.finish()?;
         // The connection stands, so the NAS is there: a refused stream means it does not let this computer in.
-        let answer = recv.read_to_end(16).await.map_err(|_| NotPaired)?;
+        // Only a reset is the NAS saying no. A lost connection or a timeout says nothing about it.
+        let answer = match recv.read_to_end(16).await {
+            Ok(answer) => answer,
+            Err(ReadToEndError::Read(ReadError::Reset(_))) => return Err(NotPaired.into()),
+            Err(e) => return Err(anyhow!("The NAS cannot be reached: {e}")),
+        };
         if String::from_utf8_lossy(&answer).trim() != "pong" {
             return Err(NotPaired.into());
         }

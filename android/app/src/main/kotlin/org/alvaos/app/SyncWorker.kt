@@ -236,6 +236,8 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 .toBundle() else null
             request.send(applicationContext, 0, null, null, null, null, options)
             delay(5000)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             return
         }
