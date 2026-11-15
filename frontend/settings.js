@@ -2,7 +2,7 @@
 // password, and the logs folded away. The rest of the page is system.js.
 (function () {
     const $ = (id) => document.getElementById(id);
-    const esc = window.escapeHtml || ((v) => String(v ?? ''));
+    const esc = (v) => window.escapeHtml(v);
 
     // ── Network: where to open AlvaOS ────────────────────────────────────────
 
@@ -121,5 +121,4 @@
         }
     });
 
-    window.escapeHtml = window.escapeHtml || esc;
 })();

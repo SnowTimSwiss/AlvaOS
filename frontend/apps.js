@@ -221,7 +221,7 @@ function renderAvailableApps() {
         const version = String(app.version || '');
         const versionText = version && version !== 'latest' ? `v${escapeHtml(version.replace(/^v/i, ''))}` : '';
         return `
-        <div class="app-card" onclick="showAppDetails('${escapeHtml(app.id)}')">
+        <div class="app-card" onclick="showAppDetails('${jsArg(app.id)}')">
             <div class="app-head">
                 <div class="app-icon">${getAppIcon(app)}</div>
                 <div class="app-title">
@@ -234,8 +234,8 @@ function renderAvailableApps() {
             <div class="app-footer">
                 <span class="app-needs">${escapeHtml(needs.text)}</span>
                 ${installed
-                    ? `<button class="btn-secondary" style="padding: 6px 12px; font-size: 0.85rem;" onclick="event.stopPropagation(); showInstalledApp('${escapeHtml(app.id)}')">Installed</button>`
-                    : `<button class="btn-primary" style="padding: 6px 12px; font-size: 0.85rem;" onclick="event.stopPropagation(); installApp('${escapeHtml(app.id)}')">Install</button>`}
+                    ? `<button class="btn-secondary" style="padding: 6px 12px; font-size: 0.85rem;" onclick="event.stopPropagation(); showInstalledApp('${jsArg(app.id)}')">Installed</button>`
+                    : `<button class="btn-primary" style="padding: 6px 12px; font-size: 0.85rem;" onclick="event.stopPropagation(); installApp('${jsArg(app.id)}')">Install</button>`}
             </div>
         </div>`;
     }).join('');
@@ -553,12 +553,12 @@ function renderInstalledList() {
             : address
                 ? `<a class="btn-secondary app-quick" href="${escapeHtml(address)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Open</a>`
                 : (state.key === 'stopped' && getContainersForApp(app.app_id).length
-                    ? `<button class="btn-secondary app-quick" onclick="event.stopPropagation(); toggleAppRunning('${escapeHtml(app.app_id)}')">Start</button>`
+                    ? `<button class="btn-secondary app-quick" onclick="event.stopPropagation(); toggleAppRunning('${jsArg(app.app_id)}')">Start</button>`
                     : '');
         return `
             <div class="app-list-item ${selectedAppId === app.app_id ? 'active' : ''}" role="button" tabindex="0"
-                onclick="selectInstalledApp('${escapeHtml(app.app_id)}')"
-                onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectInstalledApp('${escapeHtml(app.app_id)}'); }">
+                onclick="selectInstalledApp('${jsArg(app.app_id)}')"
+                onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectInstalledApp('${jsArg(app.app_id)}'); }">
                 <div class="app-list-top">
                     <div class="app-list-name">${appMark(app.app_id) ? `<span class="app-mini">${appMark(app.app_id)}</span>` : ''}${escapeHtml(app.name || app.app_id)}</div>
                     ${state.label ? `<span class="app-state ${state.key}">${escapeHtml(state.label)}</span>` : ''}
@@ -613,6 +613,7 @@ async function renderInspector() {
     const webUiUrl = buildWebUiUrl(selected.app_id, appDetails, appContainers);
     const appId = selected.app_id;
     const escId = escapeHtml(appId);
+    const jsId = jsArg(appId);
     const isCustom = String(selected.source || 'catalog') === 'custom_compose';
     const toggling = appTogglePending.has(appId);
     const updateAvailable = effectiveUpdateState.update_available === true && !isCustom;
@@ -641,19 +642,19 @@ async function renderInspector() {
                     <button class="menu-btn" aria-label="More actions" onclick="toggleInspectorMenu('app-actions-menu', event)">&#8943;</button>
                     <div class="menu-pop" id="app-actions-menu">
                         ${appContainers.length > 0 ? `
-                            <button class="menu-item" onclick="toggleInspectorMenu('app-actions-menu', event); restartApp('${escId}')">
+                            <button class="menu-item" onclick="toggleInspectorMenu('app-actions-menu', event); restartApp('${jsId}')">
                                 ${window.alvaIcon ? window.alvaIcon('rotate-cw') : ''} Restart app
                             </button>` : ''}
                         ${!isCustom ? `
-                            <button class="menu-item" onclick="toggleInspectorMenu('app-actions-menu', event); showAppSettingsDialog('${escId}')">
+                            <button class="menu-item" onclick="toggleInspectorMenu('app-actions-menu', event); showAppSettingsDialog('${jsId}')">
                                 ${window.alvaIcon ? window.alvaIcon('folder-open') : ''} Folders and ports&hellip;
                             </button>` : ''}
                         ${!isCustom ? `
-                            <button class="menu-item" onclick="toggleInspectorMenu('app-actions-menu', event); checkAppForUpdates('${escId}')">
+                            <button class="menu-item" onclick="toggleInspectorMenu('app-actions-menu', event); checkAppForUpdates('${jsId}')">
                                 ${window.alvaIcon ? window.alvaIcon('refresh-cw') : ''} Check for updates
                             </button>` : ''}
                         <div class="menu-sep"></div>
-                        <button class="menu-item danger" onclick="toggleInspectorMenu('app-actions-menu', event); uninstallApp('${escId}')">
+                        <button class="menu-item danger" onclick="toggleInspectorMenu('app-actions-menu', event); uninstallApp('${jsId}')">
                             ${window.alvaIcon ? window.alvaIcon('trash-2') : ''} Uninstall app&hellip;
                         </button>
                     </div>
@@ -666,16 +667,16 @@ async function renderInspector() {
                     : '<button class="btn-secondary" disabled style="opacity:0.6; cursor:not-allowed;">No Web UI detected</button>'}
                 ${appContainers.length > 0 ? `
                     <button class="btn-secondary" ${toggling ? 'disabled style="opacity:0.6; cursor:not-allowed;"' : ''}
-                        onclick="toggleAppRunning('${escId}')">${toggling ? '...' : (runningCount > 0 ? 'Stop' : 'Start')}</button>
+                        onclick="toggleAppRunning('${jsId}')">${toggling ? '...' : (runningCount > 0 ? 'Stop' : 'Start')}</button>
                 ` : ''}
                 ${updateAvailable ? `
-                    <button class="btn-update" onclick="updateApp('${escId}')">
+                    <button class="btn-update" onclick="updateApp('${jsId}')">
                         ${window.alvaIcon ? window.alvaIcon('circle-arrow-up') : ''} Update
                     </button>
                 ` : ''}
             </div>
 
-            ${gpuBlock(selected, escId)}
+            ${gpuBlock(selected, escId, jsId)}
 
             <details class="disc">
                 <summary>${window.alvaIcon ? window.alvaIcon('info') : ''} Details &amp; storage <span class="chev">${window.alvaIcon ? window.alvaIcon('chevron-right') : '&rsaquo;'}</span></summary>
@@ -1174,8 +1175,8 @@ function renderInstallPorts(app) {
         return `
             <div class="install-port">
                 <span>${escapeHtml(p.description || 'Port')}
-                    <small class="${taken ? 'warn' : ''}">${taken ? `${p.external} is used by ${escapeHtml(taken)}, so ${value} is suggested.` : `Inside the app: ${escapeHtml(p.internal)}/${escapeHtml(p.protocol || 'tcp')}`}</small></span>
-                <input id="install-port-${i}" type="number" min="1" max="65535" value="${value}"
+                    <small class="${taken ? 'warn' : ''}">${taken ? `${p.external} is used by ${escapeHtml(taken)}, so ${escapeHtml(value)} is suggested.` : `Inside the app: ${escapeHtml(p.internal)}/${escapeHtml(p.protocol || 'tcp')}`}</small></span>
+                <input id="install-port-${i}" type="number" min="1" max="65535" value="${escapeHtml(value)}"
                     data-internal="${escapeHtml(p.internal)}" data-default="${escapeHtml(p.external)}" aria-label="${escapeHtml(p.description || 'Port')}">
             </div>`;
     }).join('');
@@ -1483,7 +1484,7 @@ async function showAppSettingsDialog(appId) {
                     <div class="install-port">
                         <span>${escapeHtml(p.description || 'Port')}
                             <small id="app-set-port-note-${i}">Inside the app: ${escapeHtml(p.internal)}/${escapeHtml(p.protocol || 'tcp')}</small></span>
-                        <input id="app-set-port-${i}" type="number" min="1" max="65535" value="${value}"
+                        <input id="app-set-port-${i}" type="number" min="1" max="65535" value="${escapeHtml(value)}"
                             data-internal="${escapeHtml(p.internal)}" data-default="${escapeHtml(p.external)}" aria-label="${escapeHtml(p.description || 'Port')}">
                     </div>`;
                 }).join('')}</div>` : ''}
@@ -1544,7 +1545,7 @@ async function showAppSettingsDialog(appId) {
 
 // The graphics card for apps that can use one (Jellyfin, Immich, Ollama):
 // one switch; the catalog says which service gets it (backend gpu_manager.app_plan).
-function gpuBlock(app, escId) {
+function gpuBlock(app, escId, jsId) {
     const g = app.gpu || {};
     if (!g.possible) return '';
     const can = g.on || Boolean(g.card);
@@ -1555,7 +1556,7 @@ function gpuBlock(app, escId) {
     // With more than one card that fits (say the processor's and a dedicated one): which one this app uses.
     const choose = (g.choices || []).length > 1 ? `
         <label class="app-gpu-pick">Use
-            <select id="gpu-card-${escId}" aria-label="Which graphics card" onchange="pickAppGpuCard('${escId}', this, ${g.on ? 'true' : 'false'})">
+            <select id="gpu-card-${escId}" aria-label="Which graphics card" onchange="pickAppGpuCard('${jsId}', this, ${g.on ? 'true' : 'false'})">
                 <option value=""${g.chosen ? '' : ' selected'}>The best fit${g.auto ? `: ${escapeHtml(g.auto)}` : ''}</option>
                 ${g.choices.map((c) => `<option value="${escapeHtml(c.slot)}"${c.slot === g.chosen ? ' selected' : ''}>${escapeHtml(c.label)}</option>`).join('')}
             </select></label>` : '';
@@ -1568,7 +1569,7 @@ function gpuBlock(app, escId) {
                 ${g.on && g.after ? `<div class="app-gpu-sub">${escapeHtml(g.after)}</div>` : ''}
             </div>
             <label class="toggle" title="${g.on ? 'On' : 'Off'}"><input type="checkbox"${g.on ? ' checked' : ''}${can ? '' : ' disabled'}
-                aria-label="Use the graphics card" onchange="setAppGpu('${escId}', this)"><span class="toggle-slider"></span></label>
+                aria-label="Use the graphics card" onchange="setAppGpu('${jsId}', this)"><span class="toggle-slider"></span></label>
         </div>`;
 }
 
