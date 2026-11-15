@@ -533,7 +533,7 @@ def verify_2fa_setup():
     if not secret or not code:
         return jsonify({'error': 'secret and code are required'}), 400
     if _load_totp_secret():
-        password = str(data.get('password', '')).strip()
+        password = str(data.get('password', ''))
         if not password:
             return jsonify({'error': 'Current password is required to replace 2FA'}), 400
         try:
