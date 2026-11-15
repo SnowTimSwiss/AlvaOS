@@ -125,6 +125,10 @@ def test_mkcol_delete_move_and_copy(client):
     assert res.status_code == 412                                   # Docs exists
     assert client.open("/Family/a.txt", method="COPY", headers={**ANNA, "Destination": "/Anna/a.txt"}).status_code == 502
     client.calls.clear()
+    for method in ("MOVE", "COPY"):                                  # onto itself: refused before anything is trashed
+        res = client.open("/Family/a.txt", method=method, headers={**ANNA, "Destination": "/Family/./a.txt"})
+        assert res.status_code == 403
+    assert client.calls == []
     assert client.open("/Family/a.txt", method="COPY", headers={**BEN, "Destination": "/Family/c.txt"}).status_code == 403
 
 

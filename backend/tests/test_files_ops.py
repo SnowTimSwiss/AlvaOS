@@ -435,6 +435,10 @@ def test_a_saved_office_document_replaces_its_file_whole_and_keeps_its_rights(sh
     assert fo.replace_file(s_, "notes.txt", io.BytesIO(b"new text"), root) == 8
     assert open(path).read() == "new text" and os.stat(path).st_mode & 0o777 == 0o640
     assert not any(n.endswith(".alvaos-save") for n in os.listdir(s_))          # nothing left over
+    long_name = "ä" * 120 + ".txt"                                               # 244 bytes: a long temp name would not fit
+    with open(os.path.join(s_, long_name), "w") as f:
+        f.write("old")
+    assert fo.replace_file(s_, long_name, io.BytesIO(b"new"), root) == 3
     # It is never a new file, never a folder, never a link, and a failed save leaves the old file.
     with pytest.raises(fo.FileOpError, match="not there"):
         fo.replace_file(s_, "ghost.docx", io.BytesIO(b"x"), root)

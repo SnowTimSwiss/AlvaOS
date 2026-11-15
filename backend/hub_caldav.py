@@ -38,6 +38,7 @@ from flask import Blueprint, Response, redirect, request
 
 import hub_calendar as cal
 import hub_data
+import hub_vcard
 
 bp = Blueprint('hub_caldav', __name__)
 
@@ -48,6 +49,7 @@ PREFIX = {DAV: 'D', CALDAV: 'C', CS: 'CS', APPLE: 'A', CARDDAV: 'CR'}
 METHODS = ['OPTIONS', 'GET', 'HEAD', 'PUT', 'DELETE', 'PROPFIND', 'PROPPATCH', 'REPORT', 'MKCOL', 'MKCALENDAR',
            'MOVE', 'COPY']
 MAX_BODY = 512 * 1024
+MAX_COUNT = 5000     # longer repeats are cut here; the weekday walk below is one step per day
 NAME_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._@+~=-]{0,199}$')
 TASKS = '~tasks'
 
@@ -165,20 +167,23 @@ def _repeat(rule: str, first: date) -> tuple[str, str]:
         day, moment = _local({}, parts['UNTIL'])
         until = (day or (moment.date() if moment else None) or first).isoformat()
     elif parts.get('COUNT', '').isdigit() and int(parts['COUNT']) > 0:
-        n = int(parts['COUNT']) - 1
-        if repeat == 'daily':
-            last = first + timedelta(days=n)
-        elif repeat == 'weekly':
-            last = first + timedelta(weeks=n)
-        elif repeat == 'weekdays':
-            last = first
-            while n:
-                last += timedelta(days=1)
-                n -= last.weekday() < 5
-        elif repeat == 'monthly':
-            last = _add_months(first, n)
-        else:
-            last = _add_months(first, 12 * n)
+        n = min(int(parts['COUNT']), MAX_COUNT) - 1
+        try:
+            if repeat == 'daily':
+                last = first + timedelta(days=n)
+            elif repeat == 'weekly':
+                last = first + timedelta(weeks=n)
+            elif repeat == 'weekdays':
+                last = first
+                while n:
+                    last += timedelta(days=1)
+                    n -= last.weekday() < 5
+            elif repeat == 'monthly':
+                last = _add_months(first, n)
+            else:
+                last = _add_months(first, 12 * n)
+        except (OverflowError, ValueError):
+            return '', ''                     # runs past the last year a date can have: not a rule we can show
         until = last.isoformat()
     return repeat, until
 
@@ -228,6 +233,7 @@ def task_from(props: dict[str, tuple[dict[str, str], str]]) -> dict[str, Any]:
 # ── iCalendar: writing ──────────────────────────────────────────────────────
 
 def _escape(value: str) -> str:
+    value = hub_vcard.strip_control(value)
     return value.replace('\\', '\\\\').replace(';', '\\;').replace(',', '\\,').replace('\n', '\\n')
 
 
@@ -378,8 +384,17 @@ def _wanted(root: ET.Element | None) -> list[tuple[str, str]] | None:
     return out
 
 
+def read_body() -> bytes | None:
+    """The request body, or None when it is longer than MAX_BODY. Reads the stream itself because
+    content_length is 0 for a chunked body."""
+    if (request.content_length or 0) > MAX_BODY:
+        return None
+    data = request.stream.read(MAX_BODY + 1)
+    return data if len(data) <= MAX_BODY else None
+
+
 def _body_xml() -> tuple[ET.Element | None, Response | None]:
-    data = request.get_data(cache=False) if (request.content_length or 0) <= MAX_BODY else None
+    data = read_body()
     if data is None:
         return None, Response('Too large\n', 413)
     if not data.strip():
@@ -568,9 +583,10 @@ def put(session: dict[str, Any], parts: list[str]) -> Response:
     coll = _find(session, parts[1])
     if not coll:
         return Response('Not found\n', 404)
-    if (request.content_length or 0) > MAX_BODY:
+    data = read_body()
+    if data is None:
         return Response('Too large\n', 413)
-    text = request.get_data(cache=False).decode('utf-8', 'replace')
+    text = data.decode('utf-8', 'replace')
     found = [(k, p) for k, p in components(text) if 'RECURRENCE-ID' not in p]
     want = 'VEVENT' if coll['kind'] == 'event' else 'VTODO'
     props = next((p for k, p in found if k == want), None)

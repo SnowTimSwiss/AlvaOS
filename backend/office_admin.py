@@ -9,9 +9,6 @@ from typing import Any
 
 import hub_office
 
-DONE = ('completed', 'success', 'installed', 'idle')
-
-
 def state(app_store: Any, enabled: bool, ready: bool | None = None) -> dict[str, Any]:
     """{'state': off | installing | error | starting | ready | missing, 'message', 'progress'} for the admin page."""
     if not enabled:

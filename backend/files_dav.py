@@ -366,6 +366,8 @@ def move_or_copy(session, raw: str, copying: bool) -> Response:
     if dshare['name'] != share['name']:
         return Response('Move and copy work inside one shared folder; copy across shared folders on your '
                         'computer.\n', 502)
+    if os.path.normpath(os.path.join(folder, name)) == os.path.normpath(os.path.join(dfolder, dname)):
+        return Response('The source and the destination are the same.\n', 403)   # before anything is trashed
     user = fs.as_user(session)
     if _stat(os.path.join(folder, name), user) is None:
         return Response('Not found\n', 404)

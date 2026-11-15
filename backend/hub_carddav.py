@@ -192,9 +192,10 @@ def _write(session: dict[str, Any], change) -> tuple[Any, Response | None]:
 def put(session: dict[str, Any], parts: list[str]) -> Response:
     if len(parts) != 3 or not NAME_RE.match(parts[2]):
         return Response('Not allowed here\n', 403)
-    if (request.content_length or 0) > dav.MAX_BODY:
+    data = dav.read_body()
+    if data is None:
         return Response('Too large\n', 413)
-    text = request.get_data(cache=False).decode('utf-8', 'replace')
+    text = data.decode('utf-8', 'replace')
     found = hub_vcard.cards(text)
     if not found:
         return Response('Only a vCard belongs in the address book.\n', 415)

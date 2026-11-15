@@ -2,6 +2,7 @@
 
 import io
 import json
+import time
 
 import pytest
 
@@ -346,8 +347,9 @@ def test_upload_links_take_files_and_show_nothing(client, monkeypatch):
     for what in ("list", "file?path=photo.jpg", "zip", "thumb?path=photo.jpg"):
         assert visitor.get(f"/api/public/{token}/{what}").status_code == 403, what
     assert visitor.post(f"/api/public/{token}/upload/start", json={"name": "x.jpg"}).status_code == 403  # header
-    for bad in ("", "../x", ".hidden", "a/b"):
+    for bad in ("", "../x", ".hidden", "a/b", "x" * 241):
         assert visitor.post(f"/api/public/{token}/upload/start", json={"name": bad}, headers=H).status_code == 400
+        assert visitor.post(f"/api/public/{token}/upload/finish", json={"name": bad, "size": 1}, headers=H).status_code == 400
     started = visitor.post(f"/api/public/{token}/upload/start", json={"name": "photo.jpg"}, headers=H).get_json()
     assert started == {"name": "photo (3).jpg", "size": 0}          # never over an existing file
     visitor.post(f"/api/public/{token}/upload/piece?name=photo (3).jpg&offset=0", data=b"abc", headers=H)
@@ -726,22 +728,30 @@ def test_a_saved_version_from_the_document_server_replaces_the_file_as_the_perso
     import requests
     monkeypatch.setattr(requests, "get", lambda url, **kw: (fetched.append(url) or _Raw(b"new")))
     body = {"status": 2, "url": "http://some-other-host:9/cache/files/data/k/output.docx?md5=a", "key": "k"}
-    signed = {"Authorization": "Bearer " + hub_office.jwt_encode({"payload": body}, "ds-secret")}
+    signed = {"Authorization": "Bearer " + hub_office.jwt_encode({"payload": body, "exp": time.time() + 60}, "ds-secret")}
     got = office.post(cb, json=body, headers=signed)
     assert got.get_json() == {"error": 0}
     assert saved == [(["files-replace", "/mnt/alvaos/main/Anna", "plan.docx"], b"new", "anna")]
     assert fetched == ["http://127.0.0.1:8082/cache/files/data/k/output.docx?md5=a"]       # the editor itself, whatever the host says
     # Not signed by the editor: refused, nothing saved. Still being edited: nothing to do.
     assert office.post(cb, json=body).status_code == 403
-    assert office.post(cb, json=body, headers={"Authorization": "Bearer " + hub_office.jwt_encode({"payload": body}, "wrong")}).status_code == 403
+    assert office.post(cb, json=body, headers={"Authorization": "Bearer " + hub_office.jwt_encode({"payload": body, "exp": time.time() + 60}, "wrong")}).status_code == 403
     editing = {"status": 1}
-    assert office.post(cb, json=editing, headers={"Authorization": "Bearer " + hub_office.jwt_encode({"payload": editing}, "ds-secret")}).get_json() == {"error": 0}
+    assert office.post(cb, json=editing, headers={"Authorization": "Bearer " + hub_office.jwt_encode({"payload": editing, "exp": time.time() + 60}, "ds-secret")}).get_json() == {"error": 0}
     assert len(saved) == 1
     # A link for looking only never saves.
     sign_in(office, "ben", "ben-pass")
     view = _config(office, share="Family", path="plan.docx").get_json()["config"]["document"]["url"]
     saved.clear()
     assert office.post("/api/office/callback?t=" + view.split("t=")[1], json=body, headers=signed).get_json() == {"error": 1}
+    assert not saved
+    # Access taken away after the link was made: the old link no longer saves.
+    sign_in(office, "anna", "anna-pass")
+    own = _config(office).get_json()["config"]["document"]["url"]
+    real = fs.shares_for
+    monkeypatch.setattr(fs, "shares_for",
+                        lambda session: {k: {**v, "access": "read"} for k, v in real(session).items()})
+    assert office.post("/api/office/callback?t=" + own.split("t=")[1], json=body, headers=signed).get_json() == {"error": 1}
     assert not saved
 
 

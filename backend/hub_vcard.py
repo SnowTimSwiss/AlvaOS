@@ -182,7 +182,17 @@ def _birthday(value: str) -> str:
 
 # ── Writing ─────────────────────────────────────────────────────────────────
 
+_CONTROL_RE = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]')
+
+
+def strip_control(value: Any) -> str:
+    """Text without control characters (a CR or CRLF becomes LF), which would otherwise end a line
+    in the vCard or iCalendar we write. Shared by Contacts and Calendar."""
+    return _CONTROL_RE.sub('', str(value if value is not None else '').replace('\r\n', '\n').replace('\r', '\n'))
+
+
 def escape(value: str) -> str:
+    value = strip_control(value)
     return (value.replace('\\', '\\\\').replace('\n', '\\n').replace(',', '\\,').replace(';', '\\;'))
 
 
