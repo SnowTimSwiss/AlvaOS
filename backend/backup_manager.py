@@ -191,7 +191,7 @@ class BackupManager:
                 f.write("ok")
             probe.unlink(missing_ok=True)
             return str(preferred)
-        except Exception:
+        except OSError:
             fallback = (Path(__file__).resolve().parent / ".." / ".alvaos_state").resolve()
             fallback.mkdir(parents=True, exist_ok=True)
             return str(fallback)
@@ -204,7 +204,7 @@ class BackupManager:
             if os.path.exists(path):
                 with open(path) as f:
                     return json.load(f)
-        except Exception:
+        except (OSError, ValueError):
             pass
         return default
 
@@ -239,7 +239,7 @@ class BackupManager:
             return None
         try:
             return datetime.fromisoformat(value)
-        except Exception:
+        except (TypeError, ValueError):
             return None
 
     def _now_iso(self) -> str:
@@ -279,7 +279,7 @@ class BackupManager:
         try:
             os.rename(src, dst)
             return True, ""
-        except Exception as exc:
+        except OSError as exc:
             last_error = str(exc)
 
         mv_cmd = self._mv_cmd()
@@ -475,12 +475,12 @@ class BackupManager:
         pb["enabled"] = bool(pb.get("enabled", False))
         try:
             pb["interval_minutes"] = max(15, min(43200, int(pb.get("interval_minutes", 1440))))
-        except Exception:
+        except (TypeError, ValueError):
             pb["interval_minutes"] = 1440
 
         try:
             pb["keep_last"] = max(1, min(200, int(pb.get("keep_last", 30))))
-        except Exception:
+        except (TypeError, ValueError):
             pb["keep_last"] = 30
         if pb.get("retention") not in RETENTION_MODES:
             pb["retention"] = "smart"
@@ -509,12 +509,12 @@ class BackupManager:
         sb["enabled"] = bool(sb.get("enabled", False))
         try:
             sb["interval_minutes"] = max(15, min(43200, int(sb.get("interval_minutes", 10080))))
-        except Exception:
+        except (TypeError, ValueError):
             sb["interval_minutes"] = 10080
 
         try:
             sb["keep_last"] = max(1, min(100, int(sb.get("keep_last", 10))))
-        except Exception:
+        except (TypeError, ValueError):
             sb["keep_last"] = 10
 
         sb["target_path"] = self._normalize_path(sb.get("target_path"))
@@ -661,7 +661,7 @@ class BackupManager:
                 m = re.search(r"uuid:\s+([A-Fa-f0-9-]+)", res.stdout, re.IGNORECASE)
                 if m:
                     return m.group(1).lower()
-        except Exception:
+        except Exception:  # noqa: BLE001 - a failed UUID lookup just means the filesystem is unknown
             pass
         return None
 
@@ -679,7 +679,7 @@ class BackupManager:
             if uuid_a:
                 uuid_b = self._get_btrfs_uuid(path_b)
                 return uuid_a == uuid_b
-        except Exception:
+        except (OSError, ValueError):
             pass
         return False
 
@@ -689,7 +689,7 @@ class BackupManager:
             return None
         try:
             return int(os.stat(target).st_dev)
-        except Exception:
+        except (OSError, ValueError):
             return None
 
     def _best_temp_snapshot_parent(self, source_path: str) -> str:
@@ -757,7 +757,7 @@ class BackupManager:
             probe = os.path.realpath(self._existing_probe_path(target))
             root = os.path.realpath("/")
             return os.stat(probe).st_dev == os.stat(root).st_dev
-        except Exception:
+        except (OSError, ValueError):
             return False
 
     def _filesystem_type_for_path(self, path: str) -> str | None:
@@ -798,7 +798,7 @@ class BackupManager:
                     if mount_len > best_len:
                         best_len = mount_len
                         best_fs_type = fs_type
-        except Exception:
+        except (OSError, ValueError):
             return None
 
         return best_fs_type
@@ -833,7 +833,7 @@ class BackupManager:
             try:
                 Path(container).mkdir(parents=True, exist_ok=True)
                 return True, "", container
-            except Exception as e:
+            except OSError as e:
                 return False, str(e), ""
 
         if force_subvolume and os.path.exists(container) and not self._path_is_btrfs_subvolume(container):
@@ -881,7 +881,7 @@ class BackupManager:
             if "Subvolume ID:" in line:
                 try:
                     return int(line.split(":", 1)[1].strip())
-                except Exception:
+                except (IndexError, ValueError):
                     return None
         return None
 
@@ -897,7 +897,7 @@ class BackupManager:
             return None
         try:
             return int(m.group(1))
-        except Exception:
+        except ValueError:
             return None
 
     def get_system_state(self) -> dict:
@@ -1049,7 +1049,7 @@ class BackupManager:
             except PermissionError as exc:
                 last_error = str(exc)
                 continue
-            except Exception as exc:
+            except OSError as exc:
                 return None, str(exc)
 
         return None, last_error or "Failed to write full-backup manifest"
@@ -1133,7 +1133,7 @@ class BackupManager:
             try:
                 if os.path.exists(stream_file):
                     os.remove(stream_file)
-            except Exception:
+            except OSError:
                 pass
 
     def create_snapshot(
@@ -1595,7 +1595,7 @@ class BackupManager:
                             if candidate and self._path_exists_or_is_subvolume(candidate):
                                 snapshot = candidate
                                 break
-                    except Exception:
+                    except OSError:
                         pass
 
         if not self._path_exists_or_is_subvolume(snapshot):
@@ -1699,7 +1699,7 @@ class BackupManager:
         while not self._stop_event.is_set():
             try:
                 self._schedule_tick()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - the scheduler loop must survive any error and report it
                 scheduler_error = f"Scheduler error: {e}"
                 self._save_status({
                     "pool_last_status": "error",

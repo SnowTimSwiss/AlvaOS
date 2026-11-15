@@ -81,7 +81,7 @@ def read_stderr(stderr) -> str:
     try:
         stderr.seek(0)
         return stderr.read()[-4000:].decode("utf-8", "replace").strip()
-    except Exception:
+    except (OSError, ValueError):
         return ""
 
 
@@ -91,14 +91,14 @@ def stop_process(proc) -> None:
     try:
         if proc.stdout is not None:
             proc.stdout.close()
-    except Exception:
+    except (OSError, ValueError):
         pass
     try:
         proc.wait(timeout=60)
-    except Exception:
+    except (OSError, subprocess.SubprocessError):
         try:
             proc.kill()
-        except Exception:
+        except OSError:
             pass
 
 
@@ -305,7 +305,7 @@ class VaultReplicator:
             cmd = ["sudo", "-n"] + cmd
         try:
             result = subprocess.run(cmd, input=stdin, capture_output=True, timeout=900, env={"LC_ALL": "C"})
-        except Exception as exc:
+        except (OSError, subprocess.SubprocessError) as exc:
             return False, str(exc)
         out = result.stdout.decode("utf-8", "replace").strip().splitlines()
         if result.returncode != 0:
