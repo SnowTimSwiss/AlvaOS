@@ -110,3 +110,19 @@ def test_uninstall_only_removes_containers_of_that_exact_project(store):
     ok, error = store.uninstall_app("jellyfin", keep_data=True)
     assert ok, error
     assert removed == ["a"]
+
+
+def test_an_operation_cut_off_by_a_restart_does_not_block_new_ones(store):
+    import json
+    with open(store.install_status_file, "w") as f:
+        json.dump({"app_id": "jellyfin", "action": "install", "status": "installing", "logs": []}, f)
+    assert store._is_operation_in_progress()[0] is True
+    store._end_interrupted_operation()
+    assert store._is_operation_in_progress()[0] is False
+    assert store.get_install_status()["status"] == "error"
+
+
+def test_apps_state_is_owner_only(store):
+    import os
+    store._save_apps_state({"a": {}})
+    assert os.stat(store.apps_state_file).st_mode & 0o777 == 0o600

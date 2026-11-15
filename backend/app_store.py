@@ -126,6 +126,18 @@ class AppStore:
         # Ensure directories exist
         Path('/var/lib/alvaos').mkdir(parents=True, exist_ok=True)
 
+        self._end_interrupted_operation()
+
+    def _end_interrupted_operation(self) -> None:
+        """An install or update that was running when the backend stopped has no
+        worker any more; left as it is, it would block every later operation."""
+        status = self.get_install_status()
+        if status.get('status') in ('starting', 'installing', 'updating'):
+            self._update_install_status(
+                str(status.get('app_id') or ''), 'error', 0,
+                'The operation was interrupted by a restart. Start it again.',
+                logs=status.get('logs') or [], force_write=True, action=str(status.get('action') or 'install'))
+
     def _get_catalog_path(self) -> str:
         """Get the app catalog path (production or development)"""
         prod_path = '/opt/alvaos/apps/catalog.json'
@@ -397,9 +409,14 @@ class AppStore:
 
     def _save_apps_state(self, state: dict) -> None:
         """Save installed apps state"""
+        # Owner-only and in one piece: it holds the passwords typed at install time.
         try:
-            with open(self.apps_state_file, 'w') as f:
+            tmp = f'{self.apps_state_file}.tmp'
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, 'w') as f:
+                os.fchmod(f.fileno(), 0o600)
                 json.dump(state, f, indent=2)
+            os.replace(tmp, self.apps_state_file)
         except Exception as e:
             print(f"Error saving apps state: {e}")
 
