@@ -13,7 +13,8 @@ import subprocess
 import threading
 from datetime import datetime, UTC
 
-from common import CMD, run_sudo_command, ensure_directories, parse_size_to_bytes
+from common import (CMD, StateFileError, ensure_directories, parse_size_to_bytes, read_json_state,
+                    run_sudo_command, write_json_atomic)
 
 # ── State file ────────────────────────────────────────────────────────────────
 POOLS_STATE_FILE = '/var/lib/alvaos/pools.json'
@@ -259,23 +260,36 @@ def _collect_smart_report(disk_name, detailed=False, timeout=6):
 
 # ── Pool state ────────────────────────────────────────────────────────────────
 
-def load_pools_state():
-    """Load pools state from file"""
+def pools_state_readable() -> bool:
+    """False when pools.json is there but damaged. Without it AlvaOS cannot
+    tell its own pools from foreign ones, so nothing may be offered for erasing."""
     try:
-        if os.path.exists(POOLS_STATE_FILE):
-            with open(POOLS_STATE_FILE) as f:
-                return json.load(f)
-    except (OSError, ValueError):
-        pass
-    return {}
+        read_json_state(POOLS_STATE_FILE, {})
+        return True
+    except StateFileError:
+        return False
+
+
+def load_pools_state():
+    """The pools AlvaOS manages, by id. {} when the file is missing or damaged
+    (see pools_state_readable)."""
+    try:
+        state = read_json_state(POOLS_STATE_FILE, {})
+    except StateFileError as e:
+        print(f"Error: {e}")
+        return {}
+    return state if isinstance(state, dict) else {}
 
 
 def save_pools_state(state):
-    """Save pools state to file"""
+    """Save pools state to file. A damaged file is left alone: writing the few
+    pools a caller knows would drop the others for good."""
+    if not pools_state_readable():
+        print(f"Error: {POOLS_STATE_FILE} is damaged; not overwriting it")
+        return
     try:
         ensure_directories()
-        with open(POOLS_STATE_FILE, 'w') as f:
-            json.dump(state, f, indent=2)
+        write_json_atomic(POOLS_STATE_FILE, state)
     except (OSError, TypeError, ValueError) as e:
         print(f"Error saving pools state: {e}")
 
@@ -598,12 +612,14 @@ def _pool_member_names(pool: dict[str, Any]) -> set[str]:
 
 
 def describe_disks(blockdevices: list[dict[str, Any]], pools: list[dict[str, Any]],
-                   system_disk_names: AbstractSet[str] = frozenset()) -> list[dict[str, Any]]:
+                   system_disk_names: AbstractSet[str] = frozenset(),
+                   registry_ok: bool = True) -> list[dict[str, Any]]:
     """Turn lsblk output into the disk list the Storage page shows.
 
     pools are the known Btrfs pools (detect_btrfs_pools() entries, with
     is_managed / is_system_pool / mount_point filled in). Each disk gets a
     'usage' entry: its role, one plain sentence, and what may be done with it.
+    registry_ok: pools.json could be read (see pools_state_readable).
     """
     disks = []
     mounted_disks: set[str] = set()
@@ -646,6 +662,10 @@ def describe_disks(blockdevices: list[dict[str, Any]], pools: list[dict[str, Any
         else:
             usage.update(role='empty', summary='Empty and ready for a pool.')
         usage['can_erase'] = usage['role'] in ('has_data', 'other_pool')
+        if usage['role'] == 'other_pool' and not registry_ok:
+            usage['can_erase'] = False
+            usage['summary'] = (f'Holds the Btrfs pool "{pool.get("name")}". The list of AlvaOS pools '
+                                'could not be read, so this disk is not offered for erasing.')
         usage['can_add_to_pool'] = usage['role'] == 'empty'
 
         model = (device.get('model') or '').strip()
@@ -703,7 +723,7 @@ def disk_inventory() -> list[dict[str, Any]]:
     }
     devices = read_block_devices()
     system_names |= {str(d.get('name')) for d in devices if is_secure_system_device(str(d.get('name') or ''))}
-    return describe_disks(devices, pools, system_names)
+    return describe_disks(devices, pools, system_names, registry_ok=pools_state_readable())
 
 
 def find_disk(disks: list[dict[str, Any]], device: str):
