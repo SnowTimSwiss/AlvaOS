@@ -46,6 +46,9 @@ The whole codebase was reviewed in six parts (API, Hub, storage and backup, syst
 - **Apps for phones and computers**: an `alvaos://pair` link from a web page connected the phone to any host without asking; it asks now. The Android bridge answers only the NAS page. A failed gallery query no longer reads as "every photo deleted". The desktop app keeps a damaged secrets file instead of overwriting it, opens only web links outside, and tells a lost connection from a refusal.
 - **Scripts**: `apply_update.sh` rolls back when a migration fails instead of reporting success; the installer no longer aborts without an EFI entry or with a NIC named like `wlo1`.
 - **Note for next time**: the Kotlin and Rust changes were not built here (no Android SDK, no libdbus): CI builds them. Office saves now require `exp` in the Document Server's callback token (its default); check one save on a real NAS (TESTING 12zzi). Open from the review, not done: Hub folder scoping by share root instead of the data root (`files_ops.open_dir`), certificate pinning in the apps, the Windows drive token on the `net use` command line, and the review's low findings in `api_*` and the system services.
+## Updates: a release without its files is looked at again
+
+- A release is often published before its package is uploaded; the check kept that answer for an hour, so "This release has no installable package yet" stayed. Now a release without a `.deb` is trusted for two minutes only, and "Install" looks again once by itself before it gives up. "Check now" always asked GitHub afresh, but it was hidden as soon as an update was shown; it is there now in that state too. The backup tests no longer need btrfs-progs on the machine (they failed without it; `_btrfs_cmd` is faked like the runner).
 
 ---
 
