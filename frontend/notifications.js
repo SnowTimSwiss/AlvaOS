@@ -47,15 +47,22 @@ window.showToast = function (message, type = 'info', options = {}) {
         ? window.alvaIcon(getToastIconName(type), 'toast-type-icon', 'aria-hidden="true"')
         : '';
 
+    // Messages carry names and server text, so they are text unless the caller
+    // opts in with { html: true } and escapes its own inputs.
+    const asHtml = options.html === true;
     toast.innerHTML = `
         <div class="toast-body"${link ? ' style="cursor:pointer;"' : ''}>
             <span class="toast-type-icon-wrap">${iconHtml}</span>
-            <span class="toast-message">${message}</span>
+            <span class="toast-message"></span>
         </div>
         <button class="toast-close" aria-label="Close notification">
             ${window.alvaIcon ? window.alvaIcon('x', '', 'aria-hidden="true"') : 'x'}
         </button>
     `;
+
+    const messageEl = toast.querySelector('.toast-message');
+    if (asHtml) messageEl.innerHTML = message;
+    else messageEl.textContent = message;
 
     toastContainer.appendChild(toast);
     if (window.renderAlvaIcons) window.renderAlvaIcons(toast);
@@ -87,7 +94,7 @@ window.showToast = function (message, type = 'info', options = {}) {
         window.notificationCenter.pushLocal({
             severity: type,
             title: options.title || (String(type).charAt(0).toUpperCase() + String(type).slice(1)),
-            message: typeof message === 'string' ? message.replace(/<[^>]+>/g, '') : String(message),
+            message: asHtml && typeof message === 'string' ? message.replace(/<[^>]+>/g, '') : String(message),
             link,
         });
     }
@@ -336,8 +343,9 @@ window.promptModal = function (message, options = {}) {
     if (!options.title && body.includes('\n')) {
         const parts = body.split('\n');
         title = parts[0] || title;
-        body = parts.slice(1).join('<br>');
+        body = parts.slice(1).join('\n');
     }
+    body = body.split('\n').map((line) => escapeHtml(line)).join('<br>');
 
     const inputType = options.type || 'text';
     const confirmLabel = options.confirmLabel || 'Continue';
@@ -646,6 +654,12 @@ function mergedNotificationFeed() {
     return [...local, ...server].sort((a, b) => new Date(b.ts) - new Date(a.ts));
 }
 
+// The list was already changed locally; reload it so it shows what the server has.
+function notifSyncFailed() {
+    window.showToast('Could not save that change to the notification. Reloading the list.', 'error', { record: false });
+    fetchServerNotifications();
+}
+
 function notifMarkRead(id, isLocal) {
     if (isLocal) {
         markLocalRead(id);
@@ -657,7 +671,7 @@ function notifMarkRead(id, isLocal) {
         fetch(`/api/v1/notifications/${encodeURIComponent(id)}/read`, {
             method: 'POST',
             headers: { Authorization: token }
-        }).catch(() => { });
+        }).then((res) => { if (!res.ok) throw new Error('rejected'); }).catch(notifSyncFailed);
     }
     const entry = serverNotifications.find((n) => n.id === id);
     if (entry) entry.read = true;
@@ -675,7 +689,7 @@ function notifDismiss(id, isLocal) {
         fetch(`/api/v1/notifications/${encodeURIComponent(id)}/dismiss`, {
             method: 'POST',
             headers: { Authorization: token }
-        }).catch(() => { });
+        }).then((res) => { if (!res.ok) throw new Error('rejected'); }).catch(notifSyncFailed);
     }
     serverNotifications = serverNotifications.filter((n) => n.id !== id);
     renderNotificationCenter();
@@ -688,7 +702,7 @@ function notifMarkAllRead() {
         fetch('/api/v1/notifications/read-all', {
             method: 'POST',
             headers: { Authorization: token }
-        }).catch(() => { });
+        }).then((res) => { if (!res.ok) throw new Error('rejected'); }).catch(notifSyncFailed);
     }
     serverNotifications.forEach((n) => { n.read = true; });
     renderNotificationCenter();
@@ -872,7 +886,7 @@ if (document.readyState === 'loading') {
         }
         if (!parts.length) return;
         window.showToast(parts.join(' '), info.failed > 0 ? 'warning' : 'info',
-            info.failed > 0 ? { link: 'system.html#security' } : {});
+            info.failed > 0 ? { html: true, link: 'system.html#security' } : { html: true });
     };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => setTimeout(show, 600));
     else setTimeout(show, 600);
