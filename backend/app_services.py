@@ -38,7 +38,7 @@ def get_version():
         elif os.path.exists(dev_path):
             with open(dev_path) as f:
                 return f.read().strip()
-    except Exception as e:
+    except (OSError, ValueError) as e:
         print(f"Error reading version file: {e}")
     return "unknown"
 

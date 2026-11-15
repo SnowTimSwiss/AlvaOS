@@ -62,7 +62,7 @@ class DockerManager:
             return result, None
         except subprocess.TimeoutExpired:
             return None, "Command timed out"
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any failure is returned to the caller as text
             return None, str(e)
 
     def list_containers(self, all_containers: bool = True) -> tuple[list[dict] | None, str | None]:
@@ -228,7 +228,7 @@ class DockerManager:
             }, None
         except subprocess.TimeoutExpired:
             return None, "Command timed out"
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any failure is returned to the caller as text
             return None, str(e)
 
     def get_container_stats(self, container_id: str) -> tuple[dict | None, str | None]:
@@ -317,7 +317,7 @@ class DockerManager:
 
                 return True, None
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any failure is returned to the caller as text
             return False, str(e)
 
     def update_container_from_compose(
@@ -394,13 +394,13 @@ class DockerManager:
                 return False, f"Failed to recreate containers: {err}"
 
             return True, None
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any failure is returned to the caller as text
             return False, str(e)
         finally:
             try:
                 if 'compose_file' in locals() and compose_file and os.path.exists(compose_file):
                     os.unlink(compose_file)
-            except Exception:
+            except OSError:
                 pass
 
     def pull_image(self, image: str) -> tuple[bool, str | None]:
@@ -425,5 +425,5 @@ class DockerManager:
                 return False, "Docker daemon is not running"
 
             return True, None
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError) as e:
             return False, str(e)

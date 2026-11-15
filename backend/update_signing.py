@@ -143,7 +143,7 @@ def read_deb_field(package_path: str, field: str) -> str | None:
             ['/usr/bin/dpkg-deb', '-f', package_path, field],
             capture_output=True, text=True, timeout=30, env={'LC_ALL': 'C'},
         )
-    except Exception:
+    except (OSError, subprocess.SubprocessError):
         return None
     if res.returncode != 0:
         return None
